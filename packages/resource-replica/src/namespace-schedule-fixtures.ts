@@ -88,7 +88,29 @@ export function move(
     source: loc(path),
     intentId: `i${++counter}`,
     operationId: `o${counter}`,
-    destination: { scheme: "manuscript", workId: null, folderPath: parts.join("/"), name },
+    destination: {
+      parent: parts.length
+        ? {
+            kind: "folder",
+            folderId:
+              (
+                {
+                  P: "P",
+                  Q: "P",
+                  "P/A": "A",
+                  "Q/A": "A",
+                  B: "B",
+                  "B/A": "A",
+                  "B/sub": "sub",
+                  "C/sub": "sub",
+                  "D/sub": "sub",
+                  "C/A": "A",
+                } as Record<string, string>
+              )[parts.join("/")] ?? `absent:${parts.join("/")}`,
+          }
+        : { kind: "root", scheme: "manuscript", owner: { workId: null } },
+      name,
+    },
   });
   assert(write);
   validateFolderNamespaceUpdate(record, write.next);
@@ -109,10 +131,14 @@ export function del(id: string, path: string, record: FolderNamespaceRecord | nu
   return write.next;
 }
 export function submit(record: FolderNamespaceRecord) {
-  const write = prepareFolderNamespaceAttempt(record, {
-    attemptId: `a${++counter}`,
-    operationId: `o${counter}`,
-  });
+  const write = prepareFolderNamespaceAttempt(
+    record,
+    {
+      attemptId: `a${++counter}`,
+      operationId: `o${counter}`,
+    },
+    (id) => (id === "P" ? loc("P") : id === "A" ? loc("P/A") : id === "B" ? loc("B") : null),
+  );
   assert(write);
   validateFolderNamespaceUpdate(record, write.next);
   return write.next;
@@ -170,6 +196,7 @@ export function evidence(
       command: {
         kind: "move",
         sourceUri: `manuscript://${request.body.path}`,
+        destinationParent: request.body.destinationParent,
         destinationUri: `manuscript://${destinationPath}`,
         expected: request.body.expected,
       },

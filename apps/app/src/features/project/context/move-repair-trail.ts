@@ -8,16 +8,18 @@ export function moveRepairTrail(
   destination: ResourceDestination,
   ownTrail: readonly DrillNode[],
 ): DrillNode[] | null {
-  const targetPath = destination.folderPath.replace(/^\/+|\/+$/g, "");
+  const parent = destination.parent;
   const visit = (trail: DrillNode[]): DrillNode[] | null => {
     const node = trail.at(-1);
     const folder = node && source.folderFor(node.id);
     if (
       folder &&
-      folder.scheme === destination.scheme &&
-      (folder.owner.workId ?? null) === destination.workId &&
-      (folder.owner.rootThreadId ?? null) === (destination.rootThreadId ?? null) &&
-      folder.path.replace(/^\/+|\/+$/g, "") === targetPath
+      (parent.kind === "folder"
+        ? folder.entryId === parent.folderId
+        : folder.entryId === folder.catalog.root.entryId &&
+          folder.scheme === parent.scheme &&
+          (folder.owner.workId ?? null) === parent.owner.workId &&
+          (folder.owner.rootThreadId ?? null) === (parent.owner.rootThreadId ?? null))
     )
       return trail;
     for (const child of source.tree.children(node?.id ?? null)) {

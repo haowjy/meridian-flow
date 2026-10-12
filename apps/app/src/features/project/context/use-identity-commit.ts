@@ -125,10 +125,21 @@ export function useIdentityCommit({
       const authority = destinationOwner(destination, works, noWork);
       if (!authority) throw new Error("The destination Work is unavailable");
       const ownership = await resources.setLocation(projectId, key, {
-        scheme: destination.scheme,
-        folderPath: destination.folderPath,
+        parent:
+          destination.parent ??
+          (!destination.folderPath.split("/").filter(Boolean).length
+            ? { kind: "root", scheme: destination.scheme, owner: authority }
+            : tab.kind !== "new" &&
+                destination.scheme === tab.scheme &&
+                destination.folderPath === tabLocation(tab).parentPath
+              ? await resources.parentForEntry(projectId, tab.documentId)
+              : await resources.parentAtLocation(projectId, {
+                  scheme: destination.scheme,
+                  path: destination.folderPath,
+                  name: "",
+                  ...authority,
+                })),
         name: plan.desired.name,
-        ...authority,
       });
       const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       onCommitted(

@@ -76,7 +76,10 @@ function OpenMovePicker({
   const openAt = (repairMove && moveRepairTrail(source, repairMove, currentTrail)) || currentTrail;
   const name = moveEntryName(entry.name, repairMove);
   const failedFolder = repairMove
-    ? (repairMove.folderPath.split("/").filter(Boolean).at(-1) ?? schemeLabel(repairMove.scheme))
+    ? repairMove.parent.kind === "root"
+      ? schemeLabel(repairMove.parent.scheme)
+      : (source.folderFor(repairMove.parent.folderId)?.catalog.findPath("/")?.name ??
+        t`that folder`)
     : null;
   const refusal = failedFolder
     ? t`Couldn't move to ${failedFolder}. Try again or pick another folder.`
@@ -119,11 +122,12 @@ function OpenMovePicker({
         noWork,
       );
       if (!authority) throw new Error(unavailable);
-      const location = {
-        scheme: destination.scheme,
-        folderPath: destination.path === "/" ? "" : destination.path,
+      const location: ResourceDestination = {
+        parent:
+          destination.entryId === destination.catalog.root.entryId
+            ? { kind: "root", scheme: destination.scheme, owner: authority }
+            : { kind: "folder", folderId: destination.entryId },
         name,
-        ...authority,
       };
       const result =
         entry.kind === "folder"

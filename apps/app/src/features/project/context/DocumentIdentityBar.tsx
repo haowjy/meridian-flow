@@ -78,7 +78,7 @@ export function DocumentIdentityBar({
   };
 
   // Only provisional placement can be repaired here; homed refusals stay in lists.
-  const { records } = useAccountResourceProjection(projectId);
+  const { records, placement } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.resourceHandle
       ? resource.handle === tab.resourceHandle
@@ -90,10 +90,12 @@ export function DocumentIdentityBar({
       ? ({ kind: "error", name: repair.name } as const)
       : null;
   const repairMove = resource?.resource.canonical
-    ? refusedMoveDestination(repair?.destination, resource.resource.canonical)
+    ? refusedMoveDestination(repair?.destination, placement.parentForResource(resource))
     : undefined;
   const failedFolder = repairMove
-    ? (repairMove.folderPath.split("/").filter(Boolean).at(-1) ?? schemeLabel(repairMove.scheme))
+    ? repairMove.parent.kind === "root"
+      ? schemeLabel(repairMove.parent.scheme)
+      : t`that folder`
     : null;
   const passiveFailure = failedFolder
     ? t`Couldn't move to ${failedFolder}. Use Move… in the file list to try again.`
@@ -216,7 +218,7 @@ const DEVICE_ONLY_GRACE_MS = 2_000;
 
 /** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
 function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
-  const { records } = useAccountResourceProjection(projectId);
+  const { records, placement } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>
     tab.kind === "new"
       ? resource.handle === tab.resourceHandle

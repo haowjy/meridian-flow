@@ -26,12 +26,7 @@ function intent(overrides: Partial<NamespaceIntent> = {}): NamespaceIntent {
     identityRevision: 1,
     desired: {
       kind: "set-location",
-      destination: {
-        scheme: "manuscript",
-        workId: null,
-        folderPath: "Book",
-        name: "new.md",
-      },
+      destination: { parent: { kind: "folder", folderId: "Book" }, name: "new.md" },
     },
     attempts: [],
     state: "pending",

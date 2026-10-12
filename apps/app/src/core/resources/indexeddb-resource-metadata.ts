@@ -58,14 +58,13 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
     readonly accountId: string,
     onVersionChange: () => void,
   ) {
-    this.database = new Dexie(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    this.database = new Dexie(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
     this.database.version(1).stores({
       resources: "handle",
       intents: "intentId,handle,projectId",
       catalogs: "key,projectId",
+      folders: "handle,projectId",
     });
-    this.database.version(2).stores({ folders: "handle,projectId" });
-    this.database.version(4).stores({ committedDeletions: null });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");

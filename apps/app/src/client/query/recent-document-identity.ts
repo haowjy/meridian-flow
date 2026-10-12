@@ -41,7 +41,8 @@ export function recentDocumentIdentityIndex(
   for (const { resource, intents } of snapshot?.records ?? []) {
     if (
       resource.lifecycle.kind === "terminal" ||
-      intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent))
+      intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent)) ||
+      !placement.resourceLocation({ resource, intents })
     )
       identities.set(resource.identity.documentId, null);
   }

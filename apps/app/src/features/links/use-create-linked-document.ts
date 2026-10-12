@@ -9,7 +9,8 @@
  * brings, so neither is creatable here.
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
- * and syncs in the background; the server's move creates any missing folders.
+ * and syncs in the background. Explicit folder creation establishes identities
+ * for any missing address parents before filing.
  * A later sync failure lands on the document itself. Nothing about the link
  * changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
@@ -19,6 +20,7 @@ import { validateContextEntryName } from "@meridian/contracts/context-entry-vali
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import { useCallback, useRef, useState } from "react";
 
+import { createContextEntry } from "@/client/api/projects-api";
 import {
   type CreatableLinkScheme,
   documentFileName,
@@ -72,6 +74,28 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
+        // A link is an address-create command, not a picked existing folder.
+        // Create its named parent explicitly; moves never manufacture folder paths.
+        if (target.folderPath) {
+          const result = await createContextEntry(projectId, target.scheme, {
+            type: "folder",
+            path: target.folderPath,
+          });
+          if (result.status !== "created" && result.status !== "conflict")
+            throw new Error("Cannot create link parent");
+          await resources.acquireCatalogAfter(
+            projectId,
+            target.scheme === "user"
+              ? { kind: "user", userId: resources.accountId }
+              : { kind: "project", projectId },
+          );
+        }
+        const parent = await resources.parentAtLocation(projectId, {
+          scheme: target.scheme,
+          path: target.folderPath ? `/${target.folderPath}` : "",
+          name: "",
+          workId: null,
+        });
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
@@ -79,10 +103,8 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
         documentId = reservation.content.handle.documentId;
         try {
           await resources.setLocation(projectId, reservation.key, {
-            scheme: target.scheme,
-            folderPath: target.folderPath,
+            parent,
             name: target.name,
-            workId: null,
           });
         } finally {
           reservation.content.handle.release();

@@ -24,16 +24,18 @@ it("projects only the requesting project's durable location intention", () => {
     projectId: "project-a",
     intentId: "place",
     eligibleAt: 1,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
   });
   if (!placed) throw new Error("Expected placement");
 
-  expect(projectResourceLocation("project-a", placed.next)).toMatchObject({
+  expect(
+    projectResourceLocation("project-a", placed.next, (id) => ({
+      scheme: "manuscript",
+      path: `/${id}`,
+      name: id,
+      workId: null,
+    })),
+  ).toMatchObject({
     scheme: "manuscript",
     path: "/chapters/opening.md",
     provisional: false,
@@ -48,13 +50,18 @@ it("projects only the requesting project's durable location intention", () => {
   settled.intents = settled.intents.map((intent) =>
     intent.desired.kind === "create" ? { ...intent, state: "settled" } : intent,
   );
-  const submitted = prepareNamespaceAttempt(settled, { attemptId: "file", operationId: "file" });
+  const submitted = prepareNamespaceAttempt(
+    settled,
+    { attemptId: "file", operationId: "file" },
+    (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+  );
   if (!submitted) throw new Error("Missing placement attempt");
   const received = recordNamespaceOutcome(submitted.next, "place", "file", {
     kind: "operation",
     receipt: {
       operationId: "file",
       command: {
+        destinationParent: { kind: "folder" as const, folderId: "chapters" },
         kind: "move",
         sourceUri: "user://shared.md",
         destinationUri: "manuscript://chapters/opening.md",

@@ -24,6 +24,7 @@ import {
   reconcileNamespaceJournal,
 } from "./resource-namespace";
 import type {
+  DestinationParentLookup,
   FolderNamespaceRecord,
   FolderNamespaceWrite,
   MetadataCommitResult,
@@ -39,7 +40,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-import { ownerOf, sameOwner } from "./resource-records";
+import { destinationLocation, destinationParentLocation, sameOwner } from "./resource-records";
 import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
 
 /** Browser persistence implements this alongside its file journal, in the same account owner. */
@@ -52,15 +53,6 @@ export interface FolderNamespaceStore {
 
 function pathParts(path: string): string[] {
   return path.split("/").filter(Boolean);
-}
-
-export function namespaceDestinationLocation(destination: ResourceDestination): ResourceLocation {
-  return {
-    scheme: destination.scheme,
-    path: `/${[...pathParts(destination.folderPath), destination.name].join("/")}`,
-    name: destination.name,
-    ...ownerOf(destination),
-  };
 }
 
 export function projectFolderNeedsRepair(record: FolderNamespaceRecord): {
@@ -87,14 +79,17 @@ export function folderNeedsBackgroundReconciliation(record: FolderNamespaceRecor
   );
 }
 
-export function projectFolderLocation(record: FolderNamespaceRecord): ResourceLocation {
+export function projectFolderLocation(
+  record: FolderNamespaceRecord,
+  lookup: DestinationParentLookup = () => null,
+): ResourceLocation {
   const desired = owningLocationIntent(
     record.projectId,
     record.intents,
     Boolean(record.canonicalRefresh),
   )?.desired;
   return desired?.kind === "set-folder-location"
-    ? namespaceDestinationLocation(desired.destination)
+    ? (destinationLocation(desired.destination, lookup) ?? record.canonical)
     : record.canonical;
 }
 
@@ -186,7 +181,6 @@ export function planFolderLocation(input: {
     canonical: input.source,
     intents: [],
   };
-  resourceContextAuthority(input.destination.scheme, input.destination);
   resourceContextAuthority(record.canonical.scheme, record.canonical);
   if (
     !input.destination.name ||
@@ -198,16 +192,20 @@ export function planFolderLocation(input: {
     { intents: record.intents },
     record.projectId,
   );
-  const source = projectFolderLocation({ ...record, intents: superseded.intents });
-  const destination = namespaceDestinationLocation(input.destination);
   if (
-    source.scheme === destination.scheme &&
-    sameOwner(source, destination) &&
-    (destination.path === source.path || destination.path.startsWith(`${source.path}/`))
-  ) {
-    if (destination.path === source.path && !superseded.repaired) return null;
-    if (destination.path !== source.path) throw new Error("Cannot move a folder inside itself");
-  }
+    input.destination.parent.kind === "folder" &&
+    input.destination.parent.folderId === input.folderId
+  )
+    throw new Error("Cannot move a folder inside itself");
+  const destination = destinationLocation(input.destination, () => null);
+  if (
+    destination &&
+    destination.scheme === record.canonical.scheme &&
+    sameOwner(destination, record.canonical) &&
+    destination.path === record.canonical.path &&
+    !superseded.repaired
+  )
+    return null;
   const intent: NamespaceIntent = {
     handle: input.handle,
     projectId: input.projectId,
@@ -312,6 +310,7 @@ function replaceIntent(
 export function prepareFolderNamespaceAttempt(
   record: FolderNamespaceRecord,
   ids: NamespaceAttemptIds,
+  lookup: DestinationParentLookup = () => null,
 ): FolderNamespaceWrite | null {
   const intent = activeNamespaceIntent(record);
   if (
@@ -351,7 +350,13 @@ export function prepareFolderNamespaceAttempt(
     }));
   }
   const destination = intent.desired.destination;
-  const owners = moveOwnerFields(source, destination);
+  const parent = destinationParentLocation(destination.parent, lookup);
+  if (!parent)
+    return replaceIntent(record, intent.intentId, (current) => ({
+      ...current,
+      state: "needs-repair",
+    }));
+  const owners = moveOwnerFields(source, parent);
   const request: Extract<NamespaceRequest, { kind: "move" }> = {
     kind: "move",
     scheme: source.scheme,
@@ -360,8 +365,9 @@ export function prepareFolderNamespaceAttempt(
       operationId: intent.operationId ?? ids.operationId,
       path: pathParts(source.path).join("/"),
       expected: { kind: "folder", nodeId: record.folderId },
-      destinationScheme: destination.scheme,
-      destinationFolderPath: pathParts(destination.folderPath).join("/"),
+      destinationParent: destination.parent,
+      destinationScheme: parent.scheme,
+      destinationFolderPath: pathParts(parent.path).join("/"),
       ...owners.body,
       ...(destination.name !== source.name ? { newName: destination.name } : {}),
     },
@@ -556,7 +562,21 @@ export function reconcileFolderNamespace(input: {
         }),
       );
     },
-    prepare: prepareFolderNamespaceAttempt,
+    prepare: async (record, ids) => {
+      const intent = activeNamespaceIntent(record);
+      const parent =
+        intent?.desired.kind === "set-folder-location" ? intent.desired.destination.parent : null;
+      const observed =
+        parent?.kind === "folder"
+          ? await input.transport.lookupIdentity(intent!.projectId, {
+              kind: "folder",
+              id: parent.folderId,
+            })
+          : null;
+      return prepareFolderNamespaceAttempt(record, ids, () =>
+        observed?.kind === "available" ? observed.location : null,
+      );
+    },
     recordOutcome: recordFolderNamespaceOutcome,
     settle: (record: FolderNamespaceRecord) => settleFolderNamespaceOutcome(record, input.now?.()),
     // A changed source path must reach the server for an authoritative, identity-bound

@@ -164,12 +164,7 @@ it("preserves the first create-eligibility witness when filing later", () => {
     projectId: "project",
     intentId: "move",
     eligibleAt: 2,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
   });
   if (!placed) throw new Error("Expected placement");
 
@@ -234,12 +229,7 @@ it("rebases queued placement behind the retry when creation remints", () => {
     projectId: "project",
     intentId: "place-a",
     eligibleAt: 1,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
   });
   if (!withPlacement) throw new Error("Expected placement");
   const received = recordNamespaceOutcome(withPlacement.next, "create-a", "attempt", {

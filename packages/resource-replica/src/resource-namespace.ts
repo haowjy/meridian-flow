@@ -12,6 +12,7 @@ import {
 } from "./namespace-journal-policy";
 import { committedResourceDeletion } from "./resource-deletion";
 import type {
+  DestinationParentLookup,
   NamespaceAttempt,
   NamespaceIdentityAvailability,
   NamespaceIntent,
@@ -25,7 +26,7 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
-import { sameOwner } from "./resource-records";
+import { destinationParentLocation, sameOwner } from "./resource-records";
 import { moveOwnerFields, resourceContextAuthority } from "./resource-work-authority";
 
 type AttemptOf<Kind extends NamespaceRequest["kind"]> = Extract<
@@ -96,6 +97,7 @@ function requestFor(
   record: ResourceRecord,
   intent: NamespaceIntent,
   operationId: string,
+  lookup: DestinationParentLookup,
 ): NamespaceRequest | null {
   const { resource } = record;
   if (resource.obligations.canonicalRefresh) return null;
@@ -135,7 +137,9 @@ function requestFor(
     };
   }
   const destination = intent.desired.destination;
-  const owners = moveOwnerFields(source, destination);
+  const parent = destinationParentLocation(destination.parent, lookup);
+  if (!parent) return null;
+  const owners = moveOwnerFields(source, parent);
   return {
     kind: "move",
     scheme: source.scheme,
@@ -144,8 +148,9 @@ function requestFor(
       operationId,
       path: normalizedPath(source.path),
       expected: { kind: "file", nodeId: resource.identity.documentId },
-      destinationScheme: destination.scheme,
-      destinationFolderPath: normalizedPath(destination.folderPath),
+      destinationParent: destination.parent,
+      destinationScheme: parent.scheme,
+      destinationFolderPath: normalizedPath(parent.path),
       ...owners.body,
       ...(destination.name !== source.name ? { newName: destination.name } : {}),
     },
@@ -169,6 +174,7 @@ function replaceIntent(
 export function prepareNamespaceAttempt(
   record: ResourceRecord,
   ids: NamespaceAttemptIds,
+  lookup: DestinationParentLookup = () => null,
 ): ResourceWrite | null {
   const intent = activeNamespaceIntent(record);
   if (intent?.state !== "pending") return null;
@@ -189,7 +195,18 @@ export function prepareNamespaceAttempt(
       })),
     };
   }
-  const request = requestFor(record, intent, intent.operationId ?? ids.operationId);
+  if (
+    (intent.desired.kind === "set-location" || intent.desired.kind === "set-folder-location") &&
+    !destinationParentLocation(intent.desired.destination.parent, lookup)
+  )
+    return {
+      expectedRevision: record.resource.revision,
+      next: replaceIntent(record, intent.intentId, (current) => ({
+        ...current,
+        state: "needs-repair",
+      })),
+    };
+  const request = requestFor(record, intent, intent.operationId ?? ids.operationId, lookup);
   if (!request) return null;
   const next = replaceIntent(record, intent.intentId, (current) => ({
     ...current,
@@ -265,14 +282,16 @@ export function namespaceOutcomeMatches(
         receipt.command.destinationParent,
         attempt.request.body.destinationParent,
       ) &&
-      destination.value.scheme === attempt.request.body.destinationScheme &&
-      destination.value.path === destinationPath &&
-      authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
-        workId: attempt.request.body.destinationWorkId ?? null,
-        workSlug: attempt.request.destinationWorkSlug,
-        rootThreadId: attempt.request.body.destinationRootThreadId,
-        rootThreadRef: attempt.request.destinationRootThreadRef,
-      }) &&
+      (attempt.request.body.destinationParent?.kind === "folder"
+        ? destination.value.path.split("/").at(-1) === (attempt.request.body.newName ?? currentName)
+        : destination.value.scheme === attempt.request.body.destinationScheme &&
+          destination.value.path === destinationPath &&
+          authorityMatches(attempt.request.body.destinationScheme, destination.value.authority, {
+            workId: attempt.request.body.destinationWorkId ?? null,
+            workSlug: attempt.request.destinationWorkSlug,
+            rootThreadId: attempt.request.body.destinationRootThreadId,
+            rootThreadRef: attempt.request.destinationRootThreadRef,
+          })) &&
       JSON.stringify(receipt.command.expected) === JSON.stringify(attempt.request.body.expected)
     );
   }
@@ -575,7 +594,21 @@ export function reconcileResourceNamespace(input: {
     ...input,
     read: () => input.metadata.readResource(input.key),
     commit: (write: ResourceWrite) => input.metadata.commitResource(write),
-    prepare: prepareNamespaceAttempt,
+    prepare: async (record, ids) => {
+      const intent = activeNamespaceIntent(record);
+      const parent =
+        intent?.desired.kind === "set-location" ? intent.desired.destination.parent : null;
+      const observed =
+        parent?.kind === "folder"
+          ? await input.transport.lookupIdentity(intent!.projectId, {
+              kind: "folder",
+              id: parent.folderId,
+            })
+          : null;
+      return prepareNamespaceAttempt(record, ids, () =>
+        observed?.kind === "available" ? observed.location : null,
+      );
+    },
     recordOutcome: recordNamespaceOutcome,
     settle: (record: ResourceRecord) => settleNamespaceOutcome(record, input.now?.()),
     replayEligible,
@@ -612,7 +645,7 @@ export async function reconcileNamespaceJournal<
   newAttemptIds: () => NamespaceAttemptIds;
   read: () => Promise<Record | null>;
   commit: (write: Write) => Promise<"committed" | "stale">;
-  prepare: (record: Record, ids: NamespaceAttemptIds) => Write | null;
+  prepare: (record: Record, ids: NamespaceAttemptIds) => Write | null | Promise<Write | null>;
   recordOutcome: (
     record: Record,
     intentId: string,
@@ -641,7 +674,7 @@ export async function reconcileNamespaceJournal<
     if (!intent) return "idle";
     if (intent.state === "needs-repair") return "needs-repair";
     if (intent.state === "pending") {
-      const write = input.prepare(record, input.newAttemptIds());
+      const write = await input.prepare(record, input.newAttemptIds());
       if (!write) return "blocked";
       if ((await input.commit(write)) === "stale") continue;
       if (

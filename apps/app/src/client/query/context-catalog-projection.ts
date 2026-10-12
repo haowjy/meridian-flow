@@ -4,11 +4,7 @@ import type {
   Filetype,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
-import type {
-  CatalogCacheView,
-  ResourceDestination,
-  ResourceLocation,
-} from "@meridian/resource-replica";
+import type { CatalogCacheView, ParentRef, ResourceDestination } from "@meridian/resource-replica";
 
 type CatalogFileBase = {
   kind: "file";
@@ -80,15 +76,9 @@ export type CatalogContextView = {
 /** A rename retains its projected parent and owner; everything else is a move. */
 export function refusedMoveDestination(
   destination: ResourceDestination | undefined,
-  current: ResourceLocation,
+  current: ParentRef | null,
 ): ResourceDestination | undefined {
-  if (!destination) return undefined;
-  const segments = (path: string) => path.split("/").filter(Boolean);
-  const parent = segments(current.path).slice(0, -1).join("/");
-  return destination.scheme !== current.scheme ||
-    destination.workId !== current.workId ||
-    destination.rootThreadId !== current.rootThreadId ||
-    segments(destination.folderPath).join("/") !== parent
+  return destination && JSON.stringify(destination.parent) !== JSON.stringify(current)
     ? destination
     : undefined;
 }

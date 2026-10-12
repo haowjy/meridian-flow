@@ -1,9 +1,9 @@
 /** Shared identity placement over all installed catalogs and namespace journals. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { CatalogEntry } from "@meridian/contracts/protocol";
-import { sameCatalogScope } from "./catalog-scope";
-import { folderOwnsDeletion, projectFolderNeedsRepair } from "./folder-namespace";
+import { projectFolderNeedsRepair } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
+import { owningLocationIntent } from "./resource-intent-policy";
 import { projectResourceLocation } from "./resource-projection";
 import type {
   FolderNamespaceRecord,
@@ -11,7 +11,6 @@ import type {
   ResourceProjectionSnapshot,
   ResourceRecord,
 } from "./resource-records";
-import { sameOwner } from "./resource-records";
 import {
   catalogEntryOwner,
   ownerListedInScope,
@@ -25,15 +24,6 @@ export function createResourcePlacement(
   entries: readonly CatalogEntry[],
   folders: readonly FolderNamespaceRecord[],
 ) {
-  const deleted = new Set(
-    folders
-      .filter(
-        (folder) =>
-          (folder.projectId === null || folder.projectId === projectId) &&
-          folderOwnsDeletion(folder),
-      )
-      .map((folder) => folder.folderId),
-  );
   const locations = new Map<string, ResourceLocation>();
   for (const entry of entries) {
     if (entry.kind !== "file" && entry.kind !== "folder") continue;
@@ -74,22 +64,19 @@ export function createResourcePlacement(
   const graph = folderPlacementGraph(projectId, nodes, folders, (location) =>
     Boolean(sourceFor(location)),
   );
-  function hiddenLocation(location: ResourceLocation) {
-    return [...deleted].some((id) => {
-      const folder = graph.locations.get(id)!;
-      return (
-        folder.scheme === location.scheme &&
-        sameOwner(folder, location) &&
-        (folder.path === location.path || location.path.startsWith(`${folder.path}/`))
-      );
-    });
-  }
   function resourceLocation(record: ResourceRecord) {
-    const own = projectResourceLocation(projectId, record);
+    const own = projectResourceLocation(projectId, record, (id) => graph.locations.get(id) ?? null);
     if (!own) return null;
-    const next = graph.rebase(own);
-    if (hiddenLocation(next)) return null;
-    return next === own ? own : { ...next, provisional: own.provisional };
+    const desired = owningLocationIntent(
+      projectId,
+      record.intents,
+      Boolean(record.resource.obligations.canonicalRefresh),
+    )?.desired;
+    const placed = graph.place(
+      record.resource.canonical ?? own,
+      desired?.kind === "set-location" ? desired.destination : undefined,
+    );
+    return placed.hidden ? null : { ...placed.location, provisional: own.provisional };
   }
   function projectCatalog(
     input: readonly CatalogEntry[],
@@ -110,7 +97,7 @@ export function createResourcePlacement(
           ? (graph.locations.get(entry.entryId) ?? location)
           : record
             ? resourceLocation(record)
-            : location && graph.rebase(location);
+            : location && graph.place(location).location;
       if (!next) return entry;
       const source = rows.find(
         (candidate) =>
@@ -175,30 +162,31 @@ export function createResourcePlacement(
         hasChildren: false,
       });
     }
-    // Install all real identities first. Only then fill unoccupied ancestor homes.
-    // A missing parent must never steal a real recovery identity's children.
+    // One qualified-home index installs real rows before navigation-only gaps.
+    const homeKey = (sourceId: string, path: string) => JSON.stringify([sourceId, path]);
+    const homes = new Map(
+      projected.flatMap((row) =>
+        row.kind === "folder" ? [[homeKey(row.sourceId, row.path.join("/")), row] as const] : [],
+      ),
+    );
     for (const entry of [...projected]) {
-      if (entry.kind !== "folder") continue;
+      if (entry.kind !== "folder" && entry.kind !== "file") continue;
+      const parentPath = entry.path.slice(0, -1).join("/");
+      if (!parentPath || homes.has(homeKey(entry.sourceId, parentPath))) continue;
       let parentId = entry.sourceId;
+      const parsed = parseContextUri(entry.uri);
+      if (!parsed.ok) continue;
       for (let depth = 1; depth < entry.path.length; depth++) {
         const parts = entry.path.slice(0, depth);
-        const existing = projected.find(
-          (row) =>
-            row.kind === "folder" &&
-            row.sourceId === entry.sourceId &&
-            sameCatalogScope(row.scope, entry.scope) &&
-            row.path.join("/") === parts.join("/"),
-        );
+        const key = homeKey(entry.sourceId, parts.join("/"));
+        const existing = homes.get(key);
         if (existing) {
           parentId = existing.entryId;
           continue;
         }
-        const entryId = `repair-parent:${entry.sourceId}:${parts.join("/")}`;
-        const parsed = parseContextUri(entry.uri);
-        if (!parsed.ok) continue;
-        projected.push({
+        const row: Extract<CatalogEntry, { kind: "folder" }> = {
           kind: "folder",
-          entryId,
+          entryId: `repair-parent:${entry.sourceId}:${parts.join("/")}`,
           sourceId: entry.sourceId,
           parentId,
           scope: entry.scope,
@@ -212,65 +200,35 @@ export function createResourcePlacement(
           })!,
           hasChildren: true,
           navigationOnly: true,
-        });
-        parentId = entryId;
+        };
+        homes.set(key, row);
+        projected.push(row);
+        parentId = row.entryId;
       }
     }
-    const topology = projected.map((entry): CatalogEntry => {
-      if (entry.kind !== "file" && entry.kind !== "folder") return entry;
-      const parentPath = entry.path.slice(0, -1).join("/");
-      const parent = projected.find(
-        (candidate) =>
-          candidate.kind === "folder" &&
-          candidate.sourceId === entry.sourceId &&
-          sameCatalogScope(candidate.scope, entry.scope) &&
-          candidate.path.join("/") === parentPath,
-      );
-      const parentId = parent?.entryId ?? (parentPath ? entry.parentId : entry.sourceId);
-      return { ...entry, parentId };
-    });
-    // Deletion follows placement: a moved-in node belongs to the deleted destination's subtree.
-    const byId = new Map(topology.map((entry) => [entry.entryId, entry]));
-    return topology.filter((entry) => {
+    return projected.flatMap((entry): CatalogEntry[] => {
+      if (entry.kind !== "file" && entry.kind !== "folder") return [entry];
+      const record = byDocument.get(entry.entryId);
+      const location = locations.get(entry.entryId);
       if (
-        entry.kind === "file" &&
-        byDocument.has(entry.entryId) &&
-        !resourceLocation(byDocument.get(entry.entryId)!)
+        entry.kind === "folder"
+          ? graph.hidden(entry.entryId)
+          : record
+            ? !resourceLocation(record)
+            : location && graph.place(location).hidden
       )
-        return false;
-      if (entry.kind === "file" || entry.kind === "folder") {
-        const parsed = parseContextUri(entry.uri);
-        if (
-          parsed.ok &&
-          hiddenLocation({
-            scheme: parsed.value.scheme,
-            path: `/${entry.path.join("/")}`,
-            name: entry.name,
-            ...catalogEntryOwner(entry.scope, parsed.value.authority),
-          })
-        )
-          return false;
-      }
-      let current = entry;
-      const seen = new Set<string>();
-      for (;;) {
-        if (deleted.has(current.entryId)) return false;
-        if (current.kind !== "file" && current.kind !== "folder") return true;
-        if (seen.has(current.entryId)) return true;
-        seen.add(current.entryId);
-        if (deleted.has(current.parentId)) return false;
-        const parent = byId.get(current.parentId);
-        if (!parent) return true;
-        current = parent;
-      }
+        return [];
+      const parent = homes.get(homeKey(entry.sourceId, entry.path.slice(0, -1).join("/")));
+      return [{ ...entry, parentId: parent?.entryId ?? entry.sourceId }];
     });
   }
+
   return {
     resourceLocation,
     resourcePlacementPending: (record: ResourceRecord) => {
       const own = projectResourceLocation(projectId, record);
       return (
-        Boolean(own && graph.rebase(own) !== own) ||
+        Boolean(own && resourceLocation(record)?.path !== own.path) ||
         record.intents.some(
           (intent) =>
             intent.projectId === projectId &&
@@ -282,6 +240,20 @@ export function createResourcePlacement(
       );
     },
     folderLocation: (id: string) => graph.locations.get(id) ?? null,
+    parentForLocation: graph.canonicalParent,
+    parentForFolder: graph.parentForFolder,
+    parentForResource: (record: ResourceRecord) => {
+      const desired = owningLocationIntent(
+        projectId,
+        record.intents,
+        Boolean(record.resource.obligations.canonicalRefresh),
+      )?.desired;
+      return desired?.kind === "set-location"
+        ? desired.destination.parent
+        : record.resource.canonical
+          ? graph.canonicalParent(record.resource.canonical)
+          : null;
+    },
     projectCatalog,
   };
 }

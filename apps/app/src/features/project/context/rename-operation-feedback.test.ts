@@ -24,18 +24,14 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 
-const destination = {
-  scheme: "manuscript" as const,
-  workId: null,
-  folderPath: "Book",
-  name: "new.md",
-};
+const destination = { parent: { kind: "folder" as const, folderId: "Book" }, name: "new.md" };
 const receipt = {
   operationId: "move",
   command: {
     kind: "move" as const,
     sourceUri: "manuscript://old.md",
     destinationUri: "manuscript://Book/new.md",
+    destinationParent: destination.parent,
     expected: { kind: "file" as const, nodeId: "entry" },
   },
   result: { ok: true as const, value: { destinationPath: "Book/new.md" } },
@@ -60,15 +56,19 @@ async function fixture(
     metadata.beginClose();
     await replica.finishClose();
     await metadata.finishClose();
-    await deleteIndexedDb(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
+    await deleteIndexedDb(`meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`);
   }
 }
 function withReceipt(record: ResourceRecord): ResourceRecord {
   const prepared = required(
-    prepareNamespaceAttempt(record, {
-      attemptId: "move-attempt",
-      operationId: "move",
-    }),
+    prepareNamespaceAttempt(
+      record,
+      {
+        attemptId: "move-attempt",
+        operationId: "move",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    ),
   ).next;
   const moving = required(
     prepared.intents.find(

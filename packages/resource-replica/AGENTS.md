@@ -14,21 +14,25 @@ catalogs, resource locations, Editor tabs, the dock and Recent. Build it from al
 known project catalogs and all project journals, not from journal folders alone.
 UI projections require that context explicitly.
 
-Bind destinations through canonical and historical rename locations; resolve parents
-before children, independently of record order. Missing destinations and cycles fall
-back to canonical placement. Qualified canonical and historical homes bind parent identities directly, including
-installed descendants beneath historical ancestor homes. Never enumerate historical
-rewrite paths. Memoized identity resolution marks in-progress cycle members and
-falls back to their canonical homes together. Binding is bounded by path depth. Suppress deletions only after placement topology exists.
+Destinations are `{ parent: ParentRef, name }`: a picked folder ID or qualified
+area root. One canonical qualified-home index binds parent edges; memoized walks
+resolve folders and documents together. Cycle members revert their canonical
+parent edges, so an independent ancestor rename still applies. Missing or terminal
+destinations revert to canonical edges. Pending-deleted and terminal ancestors
+suppress their subtree in this same walk, including known Recent identities
+without catalog rows. Only unoccupied qualified homes receive navigation-only
+ancestors. No historical-home aliases or path-containment rebasing.
 
 Namespace intent `settled` means accepted by the server. Rejected work retired
 by a later command (including a reminted create conflict) is terminal
 `superseded`: retain its attempts as evidence, never as executable work or
 placement/deletion ownership.
 
-Move receipt matching includes the captured destination parent identity when the
-request carries one. The server supports that contract; local destination producers
-still use paths until the identity-parent restructuring is completed.
+App moves always carry `destinationParent`. Preparation observes the parent's
+server-canonical location, not its optimistic projection; unavailable parents
+enter move repair. Immutable receipts match the captured folder identity, not
+its possibly renamed or relocated path. Root destinations still match qualified
+URI authority. Requests and attempts never retarget after submission.
 
 Typed non-retryable HTTP 4xx refusals also settle namespace attempts when route
 intake rejects before a server receipt exists. Persist that refusal against the
