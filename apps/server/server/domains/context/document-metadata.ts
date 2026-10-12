@@ -1,4 +1,5 @@
 /** Canonical decoding of catalog-visible document metadata. */
+import type { StoredDocumentProperties } from "@meridian/contracts";
 export function documentAliases(metadata: unknown): string[] {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
   const aliases = (metadata as { aliases?: unknown }).aliases;
@@ -20,6 +21,8 @@ export interface CopiedFrom {
 export interface DocumentCreationMetadata {
   copiedFrom?: CopiedFrom;
   importPending?: boolean;
+  properties?: StoredDocumentProperties;
+  aliases?: string[];
 }
 
 /** Only an explicit metadata boolean marks an arriving import. */

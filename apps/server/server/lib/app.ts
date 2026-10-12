@@ -4,6 +4,7 @@
  * and pure service wiring.
  */
 
+import { createImportObjectSweeper } from "../domains/import/index.js";
 import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
 import { getDb } from "./db.js";
@@ -44,6 +45,11 @@ async function createAppServices(): Promise<AppServices> {
   await ports.fileAccessChanges.listen();
   const scheduler = startRecoveryScheduler(
     [
+      {
+        name: "import-object-sweep",
+        delayMs: WAKE_SWEEP_INTERVAL_MS,
+        run: createImportObjectSweeper(db, ports.objectStore),
+      },
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
       { name: "orphan-repair", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.repairOrphans },
       { name: "work-purge", delayMs: WORK_PURGE_INTERVAL_MS, run: app.recovery.purgeWorks },

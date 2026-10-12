@@ -36,3 +36,25 @@ Restore, staging tree, ZIP extraction or automatic model sort in this domain.
 The API probe is pnpm exec tsx apps/server/scripts/probe-import.mjs PROJECT URI
 PATH... [--files]. It builds a manifest with the shared Obsidian frontmatter
 splitter and uses ./mf api for every request.
+
+## Reports and activity
+
+Reasons and findings are the typed codes/params in contracts/imports. Raw
+failures go to server observability only. Unreadable selections are skipped,
+with the reader's code in reasonParams. They never acquire a document row.
+
+The imports row cannot also be the progress counter: shared landing fences
+would deadlock on lock upgrades. import_progress sequences publication in a
+before-commit transaction participant, after all entry/content locks. The same
+commit writes entry versions and activity. Repeatable-read report cuts combine
+summary and entries; since returns only changed file entries, not the roots.
+
+Both long multipart receives and owned landing attempts pulse every 30 seconds.
+An expired attempt cannot renew a replacement's lease. Open summaries list
+unfinished imports and undismissed finished reports; dismissal is finished-only
+and never deletes documents. Version values are decimal strings.
+
+Catalog pending-flag clearing uses Context's exact-file reconciliation. It
+reserves publication ordering without changing namespace observations for
+unrelated siblings. Bulk planning reconciles live manifest membership once
+per chunk, not once per placeholder.

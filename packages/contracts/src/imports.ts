@@ -11,6 +11,7 @@ export interface ImportManifest {
     meridianExport?: string;
   }[];
   folders: { rootId: number; path: string }[];
+  unreadable?: { rootId: number; path: string; reason?: ImportUnreadableReason }[];
   entries: {
     entryId: number;
     rootId: number;
@@ -30,9 +31,71 @@ export type ImportEntryState =
   | "skipped"
   | "deleted"
   | "not_imported";
-export interface ImportFinding {
-  code: string;
-  message: string;
+export type ImportFailureReason =
+  | "conversion_failed"
+  | "upload_failed"
+  | "changed_since_chosen"
+  | "too_large"
+  | "edited_before_arrival"
+  | "deleted_before_arrival"
+  | "folder_deleted"
+  | "server_error";
+export type ImportSkipReason =
+  | "obsidian_canvas"
+  | "trash"
+  | "hidden"
+  | "unreadable"
+  | "too_large"
+  | "export_works";
+export type ImportEntryReason = ImportFailureReason | ImportSkipReason;
+export type ImportUnreadableReason =
+  | "unreadable"
+  | "permission_denied"
+  | "not_found"
+  | "symlink"
+  | "folder_unreadable";
+export interface ImportFindingParams {
+  hidden_notes: { count: number };
+  link_to_existing: { text: string; path: string };
+  link_via_alias: { text: string; path: string };
+  link_ambiguous: { text: string; count: number; path: string; candidates: string[] };
+  link_unresolved: { text: string; folder: string };
+  heading_not_followed: { text: string; name: string; heading: string };
+  block_ref_dropped: { text: string; name: string };
+  note_embed_to_link: { name: string };
+  embed_to_link: { name: string };
+  image_size_dropped: { name: string; size: string };
+  picture_elsewhere: { name: string; holderId?: string; holderUri?: string };
+  kept_as_text: { callouts: number; highlights: number; tags: number; footnotes: number };
+  settings_unreadable: { name: string };
+  name_clash: { original: string };
+  folder_note: Record<string, never>;
+  binary_extension: { original: string; type: string };
+  zip: { name: string };
+}
+export type ImportFinding = {
+  [Code in keyof ImportFindingParams]: { code: Code; params: ImportFindingParams[Code] };
+}[keyof ImportFindingParams];
+export interface ImportCounts {
+  total: number;
+  landed: number;
+  failed: number;
+  arriving: number;
+  deleted: number;
+  notImported: number;
+  skipped: number;
+  findings: number;
+}
+export interface ImportSummary {
+  importId: string;
+  state: ImportState;
+  destination: { folderUri: string };
+  sort: boolean;
+  counts: ImportCounts;
+  lastActivityAt: string;
+  /** Decimal commit-ordered sequence; never coerced through a JS number. */
+  version: string;
+  dismissedAt: string | null;
 }
 export interface ImportEntryReport {
   entryId: number;
@@ -46,14 +109,12 @@ export interface ImportEntryReport {
   state: ImportEntryState;
   uri: string | null;
   name: string;
-  reason: string | null;
+  reason: ImportEntryReason | null;
+  reasonParams?: { readReason: ImportUnreadableReason };
+  exists: boolean;
   findings: ImportFinding[];
 }
-export interface ImportReport {
-  importId: string;
-  state: ImportState;
-  destination: { folderUri: string };
-  sort: boolean;
+export interface ImportReport extends ImportSummary {
   roots: {
     rootId: number;
     kind: "folder" | "file";
@@ -63,3 +124,5 @@ export interface ImportReport {
   }[];
   entries: ImportEntryReport[];
 }
+
+export type ImportReportChanges = ImportSummary & { entries: ImportEntryReport[] };

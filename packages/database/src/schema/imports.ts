@@ -1,5 +1,7 @@
 /** Resumable folder/file import records and identity-bearing entry receipts. */
+import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -21,6 +23,8 @@ export const imports = pgTable("imports", {
   sourceId: uuid("source_id").notNull(),
   folderId: uuid("folder_id"),
   state: text("state").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
 });
 export const importEntries = pgTable(
   "import_entries",
@@ -37,6 +41,19 @@ export const importEntries = pgTable(
     leaseUntil: timestamp("lease_until", { withTimezone: true }),
     storageUrl: text("storage_url"),
     uri: text("uri"),
+    version: bigint("version", { mode: "bigint" }).notNull().default(sql.raw("0")),
   },
-  (table) => [index("import_entries_import_order").on(table.importId, table.ordinal)],
+  (table) => [
+    index("import_entries_import_order").on(table.importId, table.ordinal),
+    index("import_entries_import_version").on(table.importId, table.version),
+  ],
 );
+
+/** Commit-order progress is separate from the row held FOR SHARE by parallel landings. */
+export const importProgress = pgTable("import_progress", {
+  importId: uuid("import_id")
+    .primaryKey()
+    .references(() => imports.id, { onDelete: "cascade" }),
+  version: bigint("version", { mode: "bigint" }).notNull().default(sql.raw("0")),
+  lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
+});

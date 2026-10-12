@@ -1,8 +1,3 @@
-import {
-  type AccountSettingsRepository,
-  createDrizzleAccountSettingsRepository,
-  createInMemoryAccountSettingsRepository,
-} from "../domains/preferences/index.js";
 /**
  * Composition root: wires production adapters into AppServices and owns the pure
  * runtime service graph. App startup supplies process-level resources; this file
@@ -35,6 +30,7 @@ import {
 } from "../domains/collab/index.js";
 import {
   type ContextCatalog,
+  type ContextCatalogFileMutationPort,
   type ContextCatalogMutationPort,
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
@@ -87,6 +83,7 @@ import {
   type FileAccessChanges,
   type PgFileAccessChanges,
 } from "../domains/file-policy/index.js";
+import { createProductionImportService, type ImportService } from "../domains/import/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
   createNoopEventSink,
@@ -111,7 +108,12 @@ import {
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { createDrizzleProjectPreferencesRepository } from "../domains/preferences/index.js";
+import {
+  type AccountSettingsRepository,
+  createDrizzleAccountSettingsRepository,
+  createDrizzleProjectPreferencesRepository,
+  createInMemoryAccountSettingsRepository,
+} from "../domains/preferences/index.js";
 import {
   createDrizzleProjectBootstrapRepository,
   createDrizzleProjectRepository,
@@ -253,6 +255,7 @@ import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
+  imports(projectId: string, userId: string): ImportService;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
@@ -353,6 +356,7 @@ export type ProductionAppPorts = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog &
     ContextCatalogMutationPort &
+    ContextCatalogFileMutationPort &
     ProjectCatalogLifecyclePort &
     ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
@@ -1102,6 +1106,21 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentSync: ports.documentSync,
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
+    imports: (projectId, userId) =>
+      createProductionImportService(
+        {
+          db: ports.db,
+          collab: ports.documentSync,
+          contextPorts: ports.contextPorts,
+          catalog: ports.contextCatalog,
+          links: ports.linkScopes,
+          ahead: ports.linkAheadRegistry,
+          objects: ports.objectStore,
+          eventSink: ports.eventSink,
+        },
+        projectId,
+        userId,
+      ),
     contextCatalog: ports.contextCatalog,
     contextCatalogRefresh: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
@@ -1396,6 +1415,9 @@ export function createInMemoryAppServices(): AppServices {
     documentSync,
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
+    imports: () => {
+      throw new Error("Import requires durable persistence");
+    },
     contextCatalog,
     contextCatalogRefresh: {
       async refreshProjectDocuments() {

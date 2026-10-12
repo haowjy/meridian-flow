@@ -1,7 +1,8 @@
 /** Selection skip rules and the shared intake classifier. */
+import type { ImportSkipReason } from "@meridian/contracts";
 import { classifyFiletype } from "@meridian/contracts/protocol";
 import { classifyUpload, intakeFilename, sniffMime } from "../../file-intake/index.js";
-export function skipPath(path: string): "omit" | string | null {
+export function skipPath(path: string): "omit" | ImportSkipReason | null {
   const segments = path.split("/");
   if (
     segments[0] === ".obsidian" ||
@@ -11,8 +12,8 @@ export function skipPath(path: string): "omit" | string | null {
   )
     return "omit";
   if (segments.some((value) => value.startsWith(".")))
-    return segments[0] === ".trash" ? "Obsidian trash" : "Hidden file or folder";
-  if (/\.(canvas|base)$/i.test(path)) return "Obsidian canvas or database";
+    return segments[0] === ".trash" ? "trash" : "hidden";
+  if (/\.(canvas|base)$/i.test(path)) return "obsidian_canvas";
   return null;
 }
 export function classify(filename: string, sniff: Uint8Array) {

@@ -580,7 +580,7 @@ export class ContextFS implements ContextSchemeAdapter {
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
-    if (bound && !this.boundWrites.boundFor(path, bound, null)) {
+    if (bound && !this.boundWrites.boundFor(path, bound, null, options?.documentId)) {
       return Err({ code: "io_error", message: `Content was bound for another document` });
     }
     return this.commandExecutor.run(() =>

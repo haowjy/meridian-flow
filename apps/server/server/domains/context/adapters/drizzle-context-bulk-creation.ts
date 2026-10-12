@@ -23,7 +23,7 @@ import {
 export function createDrizzleContextBulkCreation(deps: {
   db: Database;
   documents: Pick<MarkdownDocumentStore, "bindStatic" | "seedFromMarkdown">;
-  recordMembership(documentId: DocumentId): Promise<void>;
+  recordMembership(documentIds: readonly DocumentId[]): Promise<void>;
   arrivals: DocumentArrivals;
   catalog: ContextCatalogMutationPort;
 }): ContextBulkCreation {
@@ -132,12 +132,13 @@ export function createDrizzleContextBulkCreation(deps: {
           );
         for (const folder of directoryRows)
           await claimDocumentLocation(deps.db, contextSourceId, folder.parentId, folder.name);
+        await deps.recordMembership(placeholders.map((row) => row.id as DocumentId));
         for (const [index, document] of placeholders.entries()) {
           const filename = document.extension
             ? `${document.name}.${document.extension}`
             : document.name;
           await claimDocumentLocation(deps.db, contextSourceId, document.folderId, filename);
-          await deps.recordMembership(document.id as DocumentId);
+
           const seeded = await deps.documents.seedFromMarkdown(document.id, seeds[index], {
             type: "system",
           });

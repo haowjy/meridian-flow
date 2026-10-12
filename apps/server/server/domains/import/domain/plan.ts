@@ -1,8 +1,14 @@
 /** Pure identity graph, folder-note relocation and exact-case name allocation. */
-import type { ImportFinding, ImportManifest } from "@meridian/contracts";
+import type {
+  ImportEntryReason,
+  ImportFinding,
+  ImportManifest,
+  ImportUnreadableReason,
+} from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import { classify, skipPath } from "./classify.js";
+import { IMPORT_LIMITS } from "./manifest.js";
 
 export interface PlannedNode {
   id: string;
@@ -12,6 +18,7 @@ export interface PlannedNode {
   path: string;
   filename: string;
   name: string;
+  previewName?: string;
   extension: string;
   kind: "folder" | "note" | "docx" | "code" | "binary";
   filetype: Filetype;
@@ -19,7 +26,8 @@ export interface PlannedNode {
   sha256: string;
   mimeType: string;
   state: "planned" | "skipped";
-  reason: string | null;
+  reason: ImportEntryReason | null;
+  reasonParams?: { readReason: ImportUnreadableReason };
   findings: ImportFinding[];
 }
 export function codePointOrder(a: string, b: string): number {
@@ -52,11 +60,15 @@ export function planSelection(
   manifest: ImportManifest,
   mintId: () => string,
   destinationId: string | null,
+  listing: readonly { kind: "folder" | "file"; name: string; extension: string }[] = [],
 ): PlannedNode[] {
   const nodes: PlannedNode[] = [];
   for (const root of [...manifest.roots].sort(
     (a, b) => codePointOrder(a.name, b.name) || a.rootId - b.rootId,
   )) {
+    const unreadableRoot =
+      root.kind === "folder" &&
+      (manifest.unreadable ?? []).some((item) => item.rootId === root.rootId && item.path === "");
     const folders = new Map<string, PlannedNode>();
     const makeFolder = (path: string): PlannedNode => {
       const existing = folders.get(path);
@@ -86,7 +98,7 @@ export function planSelection(
       nodes.push(node);
       return node;
     };
-    if (root.kind === "folder") {
+    if (root.kind === "folder" && !unreadableRoot) {
       makeFolder("");
       for (const entry of [...manifest.folders, ...manifest.entries].filter(
         (item) => item.rootId === root.rootId,
@@ -103,7 +115,8 @@ export function planSelection(
       .filter((entry) => entry.rootId === root.rootId)
       .sort((a, b) => codePointOrder(a.path, b.path))) {
       const filename = root.kind === "file" ? root.name : (entry.path.split("/").at(-1) ?? "");
-      const skip = skipPath(entry.path || filename);
+      const skip =
+        entry.size > IMPORT_LIMITS.fileBytes ? "too_large" : skipPath(entry.path || filename);
       if (skip === "omit") continue;
       const typed = classify(filename, Buffer.from(entry.sniff ?? "", "base64"));
       let parentPath = entry.path.includes("/")
@@ -117,15 +130,18 @@ export function planSelection(
         folders.has(folderNote)
       ) {
         parentPath = folderNote;
-        findings.push({ code: "folder_note", message: "Moved inside its folder" });
+        findings.push({ code: "folder_note", params: {} });
       }
       if (/\.zip$/i.test(filename))
         findings.push({
           code: "zip",
-          message: "Unzip it and select the folder to import its contents",
+          params: { name: filename },
         });
       if (renderFilename(typed.name, typed.extension) !== filename && typed.kind === "binary")
-        findings.push({ code: "binary_extension", message: "Renamed to match its binary type" });
+        findings.push({
+          code: "binary_extension",
+          params: { original: filename, type: typed.filetype },
+        });
       nodes.push({
         id: mintId(),
         parentId: root.kind === "folder" ? makeFolder(skip ? "" : parentPath).id : destinationId,
@@ -142,12 +158,34 @@ export function planSelection(
       });
     }
   }
+  for (const [index, unreadable] of (manifest.unreadable ?? []).entries()) {
+    const root = manifest.roots.find((root) => root.rootId === unreadable.rootId);
+    const filename = unreadable.path.split("/").at(-1) || root?.name || "";
+    nodes.push({
+      id: mintId(),
+      parentId: destinationId,
+      rootId: unreadable.rootId,
+      entryId: -index - 1,
+      path: unreadable.path,
+      filename,
+      name: filename,
+      extension: "",
+      kind: "note",
+      filetype: "markdown",
+      size: 0,
+      sha256: "",
+      mimeType: "",
+      state: "skipped",
+      reason: "unreadable",
+      reasonParams: { readReason: unreadable.reason ?? "unreadable" },
+      findings: [],
+    });
+  }
   // Parents precede children; the already-spelled canonical name wins among siblings.
-  const depth = (node: PlannedNode): number => {
-    const parent = nodes.find((item) => item.id === node.parentId);
-    return parent ? depth(parent) + 1 : 0;
-  };
-  return nodes.sort(
+  const depths = new Map<string, number>();
+  for (const node of nodes) depths.set(node.id, (depths.get(node.parentId ?? "") ?? -1) + 1);
+  const depth = (node: PlannedNode) => depths.get(node.id) ?? 0;
+  const ordered = nodes.sort(
     (a, b) =>
       depth(a) - depth(b) ||
       (a.kind === "folder" ? -1 : 1) - (b.kind === "folder" ? -1 : 1) ||
@@ -155,4 +193,20 @@ export function planSelection(
         Number(renderFilename(a.name, a.extension) === a.filename) ||
       codePointOrder(a.filename, b.filename),
   );
+  const occupied = new Map<
+    string | null,
+    { kind: "folder" | "file"; name: string; extension: string }[]
+  >([[destinationId, [...listing]]]);
+  for (const node of ordered) {
+    if (node.state !== "planned") continue;
+    const siblings = occupied.get(node.parentId) ?? [];
+    node.previewName = allocateName(node, siblings);
+    siblings.push({
+      kind: node.kind === "folder" ? "folder" : "file",
+      name: node.previewName,
+      extension: node.extension,
+    });
+    occupied.set(node.parentId, siblings);
+  }
+  return ordered;
 }

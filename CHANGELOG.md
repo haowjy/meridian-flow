@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
+- Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
+
+### Removed
+- The old corpus import service and Knowledge Base batch-import route.
+
+
+### Added
 - Resumable folder/file import manifests, identity planning and durable receipt storage.
 
 

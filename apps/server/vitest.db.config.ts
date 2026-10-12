@@ -16,6 +16,7 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[])
   : [];
 const expectedSuites = [
+  "apps/server/server/domains/import/import.db.test.ts",
   "apps/server/server/domains/context/adapters/drizzle-context-bulk-creation.db.test.ts",
   "apps/server/server/domains/collab/document-landing.db.test.ts",
   "apps/server/server/domains/preferences/adapters/drizzle/account-settings-repository.db.test.ts",
@@ -57,7 +58,6 @@ const expectedSuites = [
   "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts",
   "apps/server/server/domains/context/link-ahead-arrivals.db.test.ts",
   "apps/server/server/domains/context/uploads/upload-intake.db.test.ts",
-  "apps/server/server/domains/context/corpus-import/corpus-import.db.test.ts",
   "apps/server/server/domains/context/figures/figure-assets.db.test.ts",
   "apps/server/server/domains/context/promotion/adapters/drizzle-result-repository.db.test.ts",
   "apps/server/server/domains/file-policy/adapters/drizzle-file-facts.db.test.ts",

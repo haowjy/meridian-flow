@@ -4,7 +4,7 @@ import type { ImportManifest } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { classify, skipPath } from "./classify.js";
 import { manifestFingerprint, validateManifest } from "./manifest.js";
-import { allocateName, planSelection } from "./plan.js";
+import { allocateName, codePointOrder, planSelection } from "./plan.js";
 
 function manifest(): ImportManifest {
   return {
@@ -30,7 +30,7 @@ describe("import planning", () => {
       parentId: lore?.id,
       name: "Lore",
       kind: "note",
-      findings: [{ code: "folder_note", message: "Moved inside its folder" }],
+      findings: [{ code: "folder_note", params: {} }],
     });
     expect(planned.filter((node) => node.entryId !== null)).toHaveLength(4);
     expect(planned.find((node) => node.filename === "Plot.canvas")?.state).toBe("skipped");
@@ -80,6 +80,19 @@ describe("import planning", () => {
       ]),
     ).toBe("map (2)");
   });
+  it("compares folder spellings through the codec and orders names by Unicode code point", () => {
+    expect(
+      allocateName({ kind: "note", name: "Lore", extension: "" }, [
+        { kind: "folder", name: "Lore.md", extension: "" },
+      ]),
+    ).toBe("Lore (2)");
+    expect(
+      allocateName({ kind: "folder", name: "Lore.md", extension: "" }, [
+        { kind: "file", name: "Lore", extension: "" },
+      ]),
+    ).toBe("Lore.md (2)");
+    expect(codePointOrder("\uE000", "😀")).toBeLessThan(0);
+  });
   it("classifies binary sniffing, DOCX, prose and code without conversion", () => {
     expect(classify("scan.txt", Buffer.from("%PDF-1.5"))).toMatchObject({
       kind: "binary",
@@ -100,7 +113,7 @@ describe("import planning", () => {
       name: "Book.zip",
       extension: "",
     });
-    expect(skipPath(".trash/Old.md")).toBe("Obsidian trash");
+    expect(skipPath(".trash/Old.md")).toBe("trash");
   });
   it.each([
     "../x.md",
