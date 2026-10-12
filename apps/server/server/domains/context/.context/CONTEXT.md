@@ -455,9 +455,11 @@ currently available to the request owner in the requested project.
   Folder identity is resolved in the move transaction before namespace lock
   selection, then again under those locks. A change of namespace while locking
   returns `stale_target` rather than acquiring locks in a new order. Parent
-  tokens fence the durable mutation; identity moves never call
-  `ensureFolderPath`. Absent, terminal and denied destinations return
-  `destination_missing`. The receipt records the parent identity alongside the
+  tokens fence the durable mutation; picked-parent moves never create folders. Absent, terminal and denied destinations return
+  `destination_missing`. Linked creation may carry `createFolders`, a validated name suffix beneath the
+  identity anchor. The move verifies the anchor before ensuring that suffix and
+  filing in the same transaction. A missing anchor creates nothing. Ordinary
+  picked-parent moves have no suffix. The receipt records both alongside the
   original command, and successful identity moves return their committed URI.
   HTTP confirms edit on the resolved destination under its namespace locks.
   URI-addressed moves retain path-based folder creation.

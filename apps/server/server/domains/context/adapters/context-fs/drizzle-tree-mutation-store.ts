@@ -383,7 +383,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       if (
         input.destinationParentToken &&
         !sameLocation(
-          await this.inspect(input.destinationSourceId, treeDirname(destinationPath)),
+          await this.inspect(input.destinationSourceId, input.destinationParentToken.path),
           input.destinationParentToken,
         )
       )
@@ -426,14 +426,15 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         ),
         ...(targetToken?.kind === "file" ? [targetToken.nodeId as DocumentId] : []),
       ]);
-      const destParentId = input.destinationParentToken
-        ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
-          ? null
-          : input.destinationParentToken.nodeId
-        : await this.ensureFolderPath(
-            input.destinationSourceId,
-            treePathSegments(targetParentPath),
-          );
+      const destParentId =
+        input.destinationParentToken && !input.destinationCreateFolders?.length
+          ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
+            ? null
+            : input.destinationParentToken.nodeId
+          : await this.ensureFolderPath(
+              input.destinationSourceId,
+              treePathSegments(targetParentPath),
+            );
       const now = new Date();
 
       if (input.source.kind === "file") {

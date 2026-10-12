@@ -128,7 +128,10 @@ export type DeleteContextEntryRequest = {
 };
 
 /** Stable writer-selected parent. URI callers may continue to omit this. */
-export type ContextDestinationParent =
+export type ContextDestinationParent = {
+  /** Missing address segments created beneath the identity anchor, only for linked creation. */
+  createFolders?: string[];
+} & (
   | { kind: "folder"; folderId: string }
   | {
       kind: "root";
@@ -139,7 +142,8 @@ export type ContextDestinationParent =
         rootThreadId?: string | null;
         rootThreadRef?: string | null;
       };
-    };
+    }
+);
 
 export type MoveContextEntryRequest = {
   destinationParent?: ContextDestinationParent;

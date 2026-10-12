@@ -6,6 +6,7 @@
  * adapter capability.
  */
 
+import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import {
   type ContextDestinationParent,
   type DeleteContextEntryResult,
@@ -359,8 +360,21 @@ export class ContextTreeMover {
     if (!destinationSourceId.ok) return destinationSourceId;
 
     let destinationParentToken: Extract<ContextLocationToken, { kind: "directory" }> | undefined;
+    const createFolders =
+      policy.target === "exact" ? (policy.destinationParent?.createFolders ?? []) : [];
+    if (!createFolders.every((segment) => validateContextEntryName(segment).ok))
+      return Err({ code: "invalid_operation", uri: destination.canonical });
     if (policy.target === "exact" && policy.destinationParent) {
-      const parent = await this.inspect({ ...destination, path: dirname(destination.path) });
+      const parentParts = dirname(destination.path).split("/").filter(Boolean);
+      if (
+        createFolders.some(
+          (segment, index) =>
+            segment !== parentParts[parentParts.length - createFolders.length + index],
+        )
+      )
+        return Err({ code: "invalid_operation", uri: destination.canonical });
+      const anchorPath = parentParts.slice(0, parentParts.length - createFolders.length).join("/");
+      const parent = await this.inspect({ ...destination, path: anchorPath });
       if (!parent.ok) return parent;
       if (
         parent.value?.kind !== "directory" ||
@@ -408,6 +422,7 @@ export class ContextTreeMover {
       source: sourceToken.value,
       destinationSourceId: destinationSourceId.value,
       ...(destinationParentToken ? { destinationParentToken } : {}),
+      ...(createFolders.length ? { destinationCreateFolders: createFolders } : {}),
       destinationPath: targetPath.value,
       expectedTarget,
       overwrite: policy.overwrite,

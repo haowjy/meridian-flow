@@ -828,7 +828,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (
         input.destinationParentToken &&
         !sameLocation(
-          await this.inspect(input.destinationSourceId, treeDirname(destinationPath)),
+          await this.inspect(input.destinationSourceId, input.destinationParentToken.path),
           input.destinationParentToken,
         )
       )
@@ -876,11 +876,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         if (targetToken?.kind === "file") {
           if (!targetRow || targetRow.deletedAt !== null) return Err({ code: "stale_target" });
         }
-        const destParentId = input.destinationParentToken
-          ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
-            ? null
-            : input.destinationParentToken.nodeId
-          : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
+        const destParentId =
+          input.destinationParentToken && !input.destinationCreateFolders?.length
+            ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
+              ? null
+              : input.destinationParentToken.nodeId
+            : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
         const now = this.nextTimestamp();
         if (targetRow) {
           targetRow.deletedAt = now;
@@ -930,11 +931,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       }
       const movedRoot = this.backing.folders.get(input.source.nodeId);
       if (!movedRoot || movedRoot.deletedAt !== null) return Err({ code: "stale_source" });
-      const destParentId = input.destinationParentToken
-        ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
-          ? null
-          : input.destinationParentToken.nodeId
-        : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
+      const destParentId =
+        input.destinationParentToken && !input.destinationCreateFolders?.length
+          ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
+            ? null
+            : input.destinationParentToken.nodeId
+          : this.ensureFolderPath(input.destinationSourceId, treePathSegments(targetParentPath));
       const subtree = this.collectSubtree(movedRoot.id, input.source.sourceId);
       const movedDocumentIds = this.documentIdsInSubtree(subtree, input.source.sourceId);
       for (const id of subtree) {

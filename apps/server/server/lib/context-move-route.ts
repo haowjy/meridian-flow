@@ -197,6 +197,16 @@ export function parseContextMove(input: {
         },
       };
     } else throw createError({ statusCode: 400, message: "Destination parent is invalid" });
+    if (parent.createFolders !== undefined) {
+      if (!Array.isArray(parent.createFolders))
+        throw createError({
+          statusCode: 400,
+          message: "Destination folder suffix must be an array",
+        });
+      destinationParent.createFolders = parent.createFolders.map((segment) =>
+        parseContextMutationName(segment, "destinationParent.createFolders"),
+      );
+    }
   }
   const sourcePath = parseContextMutationPath(body.path, "path");
   const destinationFolderPath = parseContextMutationPath(
