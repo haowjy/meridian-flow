@@ -298,10 +298,11 @@ export function createRunSessions(deps: {
       // A refusal can rest on reads that raced this request's own reservation
       // elsewhere; that reservation commits with the leaf it moves, so a later
       // acceptance read sees it. Another tab's request id never matches.
-      const refuse = async () => {
+      // Shutdown refuses too, but only new work: never an accepted request.
+      const refuse = async (refusal: Error = new ReplyRetryUnavailableError(input.threadId)) => {
         const raced = await accepted();
         if (raced) return raced;
-        throw new ReplyRetryUnavailableError(input.threadId);
+        throw refusal;
       };
 
       const [failedTurn, latestTurn, runState] = await Promise.all([
@@ -309,7 +310,7 @@ export function createRunSessions(deps: {
         deps.repos.turns.getLatestByThread(input.threadId),
         authority.read(input.threadId),
       ]);
-      if (shutdown.started) throw new RuntimeShuttingDownError(input.threadId);
+      if (shutdown.started) return refuse(new RuntimeShuttingDownError(input.threadId));
       if (running.has(input.threadId) || runState.kind === "awake") {
         if ((await authority.readOpenExecutionId(input.threadId)) === null)
           throw new ReplyRetryPendingError(input.threadId);
