@@ -6,6 +6,7 @@ import {
   contextCatalogEntries,
   contextSources,
   documents,
+  folders,
   projects,
   users,
 } from "@meridian/database/schema";
@@ -16,6 +17,7 @@ import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import { processDetachedWork } from "../../runtime/detached-work.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
+import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const url = process.env.DATABASE_URL;
@@ -43,6 +45,105 @@ if (!enabled || !url) {
     afterAll(async () => {
       await processDetachedWork.drain();
       await db.close();
+    });
+
+    it.each([
+      "file",
+      "folder",
+    ] as const)("publishes newer provenance when a %s returns to its previous name before repair", async (kind) => {
+      const table = kind === "file" ? documents : folders;
+      const entryId = kind === "file" ? documentId : "00000000-0000-4000-8000-000000000905";
+      if (kind === "folder") {
+        await db
+          .insert(folders)
+          .values({ id: entryId, contextSourceId: sourceId, name: "chapter" });
+      }
+      let entered!: () => void;
+      let release!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let delayCalls = 0;
+      const catalog = createDrizzleContextCatalog(db, undefined, {
+        delay: async () => {
+          if (++delayCalls === 1) {
+            entered();
+            await blocked;
+          }
+        },
+        manifestMembership: {
+          async resolveManifestMembership() {
+            return { documentId: documentId as never, members: [documentId] };
+          },
+        },
+      });
+      const availability = createDrizzleProjectContextAvailability(db);
+      await catalog.refreshProject(projectId);
+      const initial = await catalog.snapshot(scope);
+      const initialEntry = initial.entries.find((entry) => entry.entryId === entryId);
+      async function rename(name: string) {
+        return runInDrizzleTransaction(db, async () => {
+          await currentDrizzleDb(db).update(table).set({ name }).where(eq(table.id, entryId));
+          return catalog.refreshSources([sourceId], [entryId]);
+        });
+      }
+      await rename("Middle");
+      await started;
+      let middle: Awaited<ReturnType<typeof availability.lookup>> | undefined;
+      let latestGeneration = "";
+      try {
+        middle = await availability.lookup(
+          {
+            projectId,
+            documentIds: kind === "file" ? [documentId as never] : [],
+            folderIds: kind === "folder" ? [entryId as never] : [],
+          },
+          { userId },
+        );
+        latestGeneration = await rename("chapter");
+      } finally {
+        release();
+        await processDetachedWork.drain();
+      }
+      const intermediate =
+        kind === "file" ? middle?.resolutions[0] : middle?.folderResolutions?.[0];
+      if (intermediate?.kind !== "available") throw new Error("Expected exact-ID evidence");
+      const final = await catalog.snapshot(scope);
+      const finalEntry = final.entries.find((entry) => entry.entryId === entryId);
+      const [persisted] = await db
+        .select()
+        .from(contextCatalogEntries)
+        .where(eq(contextCatalogEntries.entryId, entryId));
+      expect(persisted.entry).toEqual(finalEntry);
+      const changes = await catalog.changes(scope, initial.cursor);
+      if (changes.kind !== "delta") throw new Error("Expected retained repair commits");
+      const published = changes.commits
+        .flatMap((commit) => commit.changes)
+        .filter((change) => change.operation === "upsert" && change.entry.entryId === entryId);
+      expect(published).toContainEqual(expect.objectContaining({ entry: finalEntry }));
+      if (
+        (finalEntry?.kind !== "file" && finalEntry?.kind !== "folder") ||
+        (initialEntry?.kind !== "file" && initialEntry?.kind !== "folder")
+      ) {
+        throw new Error("Expected namespace entries");
+      }
+      expect(BigInt(finalEntry.observationVersion)).toBeGreaterThan(
+        BigInt(intermediate.entry.observationVersion),
+      );
+      expect(BigInt(intermediate.entry.observationVersion)).toBeGreaterThan(
+        BigInt(initialEntry.observationVersion),
+      );
+      const [head] = await db
+        .select()
+        .from(contextAvailabilityHeads)
+        .where(eq(contextAvailabilityHeads.authorityKey, `project:${projectId}`));
+      expect(String(head.generation)).toBe(latestGeneration);
+      // A subsequent no-op refresh deduplicates equal evidence, not newer observations.
+      await catalog.refreshProject(projectId);
+      expect((await catalog.snapshot(scope)).cursor).toBe(final.cursor);
     });
 
     it("serializes burst repairs and retries stale observation cuts, preserving invalidations", async () => {
