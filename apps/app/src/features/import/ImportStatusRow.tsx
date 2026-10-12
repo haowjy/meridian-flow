@@ -38,6 +38,13 @@ export function ImportStatusRow({
   const route = useImportRoute();
   const { state, display, counts, store } = useImport(importId, "row");
   const element = useRef<HTMLDivElement>(null);
+  // A finished import's "worth a look" count comes from the whole report (the server's
+  // count includes renames), so read it once for a row that shows one.
+  const needsReport =
+    display === "finished" && (counts?.findings ?? 0) > 0 && !state.report?.complete;
+  useEffect(() => {
+    if (needsReport) void store.refresh(true);
+  }, [needsReport, store]);
   // The importing tab's own row scrolls into view once, when it appears.
   const startedHere = state.local !== null;
   useEffect(() => {
@@ -60,7 +67,8 @@ export function ImportStatusRow({
     preparingTotal: local?.total ?? 0,
     hashedPercent,
     stopped: false,
-    worthALook: state.report?.complete ? buildReportModel(state).worthALookCount : undefined,
+    // Until the report is read, say nothing rather than a count the report would contradict.
+    worthALook: state.report?.complete ? buildReportModel(state).worthALookCount : 0,
   });
   const failed = (FAILURE_STATES as readonly string[]).includes(display);
   const line2 = state.dismissFailed ? t`Couldn't dismiss. Try again.` : lines.line2;
