@@ -67,6 +67,8 @@ vi.mock("@/client/query/useProjectThreads", () => ({
 vi.mock("@/client/query/useContextCatalog", async (original) => ({
   ...(await original<typeof import("@/client/query/useContextCatalog")>()),
   // The live catalog settled without the document, as it does for any pending draft.
+  useContextCatalogViews: (_project: string, schemes: string[]) =>
+    Object.fromEntries(schemes.map((scheme) => [scheme, { catalog: null }])),
   useContextCatalogView: () => ({
     catalog: {
       normalized: { generation: "g", appliedRevision: "1", entries: new Map() },

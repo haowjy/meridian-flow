@@ -1,5 +1,6 @@
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 /** Branch-backed review wire types for work-draft cards. */
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 
 import type { DocumentId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { ApplyItemResult, HeldReason } from "./draft-publication.js";

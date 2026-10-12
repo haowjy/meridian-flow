@@ -1,4 +1,3 @@
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 /**
  * context-tab-from-draft — ContextTab synthesized from a work-draft group.
  *
@@ -15,6 +14,8 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
  * tree uses): a prose document's stored name has no extension and is markdown,
  * a visible extension (`outline.json`) states its type.
  */
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
 
 import type { ServerContextTab } from "@/client/stores";
