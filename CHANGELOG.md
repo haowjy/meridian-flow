@@ -20,6 +20,8 @@
 
 ### Fixed
 
+- Chat reference identity no longer spans separate authored links with the same destination.
+
 - Unaligned table headers now line up with their cells in chat and the Editor. Explicit column alignment is unchanged.
 
 - Chat separates every document block and restores the manuscript’s outbound link markers and internal link chips.
