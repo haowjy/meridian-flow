@@ -950,21 +950,20 @@ it("an unrelated restoration hold leaves applied Undo and Redo in live through A
       }),
     ).toMatchObject({ status: "reversed", acceptedParts: 1 });
     for (const direction of ["undo", "redo"] as const) {
-      expect(
-        await view.collab.reverseTurn({
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          direction,
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).toMatchObject({
-        status: "reversed",
-        acceptedParts: 1,
-        documents: [{ destination: { kind: "live" } }],
+      const outcome = await view.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        direction,
+        actor: { type: "user", userId: USER_ID },
       });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
         direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
       );
+      expect(outcome).toMatchObject({
+        status: "reversed",
+        acceptedParts: 1,
+        documents: [{ destination: { kind: "live" } }],
+      });
     }
     await view.collab.draftReview.applyWorkDraft(scope);
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
