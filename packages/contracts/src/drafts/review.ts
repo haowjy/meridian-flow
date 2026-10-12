@@ -118,7 +118,8 @@ export type ReviewFormattingChange =
   | { kind: "mark"; mark: string; change: "added" | "removed" | "changed"; text: string }
   | { kind: "heading"; before: number; after: number }
   | { kind: "block"; before: string; after: string }
-  | { kind: "attributes" };
+  | { kind: "attributes" }
+  | { kind: "structure" };
 
 export type ReviewBlockDisplay = { type: string; display: string };
 

@@ -1,6 +1,7 @@
 /** Pure document materialization and effect-verification primitives for branch pushes. */
 import { createHash } from "node:crypto";
 import {
+  type BlockRef,
   decodeUpdateForDependencies,
   deleteRanges,
   rangeCovers,
@@ -54,6 +55,7 @@ export function publicationBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
+  renderBlock?(doc: Y.Doc, block: BlockRef): string;
 }): PublicationBlockChange[] {
   return documentDifference(input.beforeDoc, input.afterDoc, input.model)
     .flatMap((entry) => {
@@ -61,8 +63,14 @@ export function publicationBlockChanges(input: {
       return [
         {
           blockId: entry.kind === "delete" ? entry.live.id : entry.draft.id,
-          beforeText: entry.kind === "insert" ? null : entry.live.text,
-          afterText: entry.kind === "delete" ? null : entry.draft.text,
+          beforeText:
+            entry.kind === "insert"
+              ? null
+              : (input.renderBlock?.(input.beforeDoc, entry.live.block) ?? entry.live.text),
+          afterText:
+            entry.kind === "delete"
+              ? null
+              : (input.renderBlock?.(input.afterDoc, entry.draft.block) ?? entry.draft.text),
         },
       ];
     })

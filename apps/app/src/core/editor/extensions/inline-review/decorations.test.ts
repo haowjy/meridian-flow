@@ -202,7 +202,8 @@ describe("block insertions", () => {
         [
           {
             ...blockInsertion(editor, "Agent block", "b1", ["a1"]),
-            deletedBlock: { type: "paragraph", display: "Agent block" },
+            deletedBlock: { type: "paragraph", display: "Old formatting" },
+            formatting: [{ kind: "attributes" }],
           },
           blockInsertion(editor, "Writer block", "b2", ["w1"]),
         ],

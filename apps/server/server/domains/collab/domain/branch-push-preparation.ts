@@ -79,19 +79,25 @@ export async function preparePushUnderLiveLock(
           ] as const,
       ),
     );
-    const beforeBodies = new Map(before.map((block) => [block.hash, block.serialized]));
-    const afterBodies = new Map(after.map((block) => [block.hash, block.serialized]));
+    const beforeBodies = new Map(
+      before.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
+    );
+    const afterBodies = new Map(
+      after.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
+    );
     const changedBlocks = publicationBlockChanges({
       model: input.model,
       beforeDoc: lockCutDoc,
       afterDoc,
-    }).map((change) => ({
-      ...change,
-      beforeText:
-        change.beforeText === null ? null : (beforeBodies.get(change.blockId) ?? change.beforeText),
-      afterText:
-        change.afterText === null ? null : (afterBodies.get(change.blockId) ?? change.afterText),
-    }));
+      renderBlock(doc, block) {
+        const identity = input.model.getCanonicalBlockIdentity(block);
+        const body = (doc === lockCutDoc ? beforeBodies : afterBodies).get(
+          `${identity.clientID}:${identity.clock}`,
+        );
+        if (body === undefined) throw new Error("Publication block is missing its rich snapshot");
+        return body;
+      },
+    });
     const changes: RawTrailChange[] = preparedTrailChanges({
       documentId: phase.branch.documentId,
       changedBlocks,

@@ -95,6 +95,7 @@ export function formattingChangeText(change: ReviewFormattingChange): string {
     return t`${before} → ${after}`;
   }
   if (change.kind === "attributes") return t`Formatting changed`;
+  if (change.kind === "structure") return t`Structure changed`;
   const text = change.text.replace(/\s+/g, " ").slice(0, 60);
   const mark = markLabel(change.mark);
   if (change.change === "added") return t`${mark} on “${text}”`;

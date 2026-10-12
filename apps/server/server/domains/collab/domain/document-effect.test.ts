@@ -19,8 +19,8 @@ it.each([
   },
   { kind: "heading level", before: "## Alpha", after: "### Alpha" },
   { kind: "list type", before: "- Alpha", after: "1. Alpha" },
-  { kind: "split", before: "AlphaBeta", after: "Alpha\n\nBeta" },
-  { kind: "restore then retype", before: "**Alpha**", after: "Alpha" },
+  { kind: "split", before: "> AlphaBeta", after: "> Alpha\n>\n> Beta" },
+  { kind: "restore then retype", before: "**Alpha** and **Beta**", after: "Alpha and **Beta**" },
 ])("reviews, Applies and Discards $kind with exact content and attribution", ({
   kind,
   before,
@@ -59,8 +59,19 @@ it.each([
       write(9, () => {
         const text = unwrapBlock(first).get(0) as Y.XmlText;
         text.delete(0, text.length);
-        text.insert(0, "Alpha", { strong: {} });
+        text.insert(0, "Alpha and Beta");
+        text.format(0, 5, { strong: {} });
+        text.format(10, 4, { strong: {} });
       });
+    }
+    if (kind === "heading level")
+      write(9, () => {
+        const heading = unwrapBlock(first);
+        const level = heading.getAttribute("level");
+        if (level === undefined) throw new Error("Missing heading level");
+        heading.setAttribute("level", level);
+      });
+    if (rows.length > 0) {
       // History alone is not a content change; stable block identity survives retyping.
       expect(documentEffectsEqual(live, draft)).toBe(true);
       expect(
@@ -70,10 +81,7 @@ it.each([
       expect(publicationBlockChanges({ model, beforeDoc: live, afterDoc: draft })).toEqual([]);
     }
     write(10, () => {
-      if (kind === "split") {
-        model.applyTextEdit(toDocHandle(draft), first, { from: 5, to: 9 }, "");
-        model.insertBlocks(toDocHandle(draft), first, codec.parse("Beta"));
-      } else if (kind === "list type") {
+      if (kind === "list type") {
         model.insertBlocks(toDocHandle(draft), first, codec.parse(after));
         model.deleteBlock(toDocHandle(draft), first);
       } else model.applyBlockReplacement(toDocHandle(draft), first, codec.parse(after).blocks[0]);
@@ -94,6 +102,11 @@ it.each([
       draftUpdates: rows,
     });
     expect(preview.diagnostics).toEqual([]);
+    if (kind === "split")
+      expect(preview.hunks[0]).toMatchObject({
+        kind: "block",
+        formatting: [{ kind: "structure" }],
+      });
     expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(2);
     const selected = preview.operations.find((op) => op.sourceUpdateIds.includes(10 as never));
     if (!selected) throw new Error("Missing rich change");

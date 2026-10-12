@@ -11,9 +11,9 @@ import type { ReviewFormattingChange } from "@meridian/contracts/drafts";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT, type Diff } from "@sanity/diff-match-patch";
 import * as Y from "yjs";
 import {
-  contentValue,
   documentEffectsEqual,
-  structuralShape,
+  richDifference,
+  textContentShape,
   visibleContent,
   visibleItemRanges,
 } from "./document-content.js";
@@ -74,8 +74,11 @@ export type RawBlockHunk = RawHunkBase & {
 export type RawHunk = RawTextHunk | RawBlockHunk;
 
 export function describeBlocks(doc: Y.Doc, model: AgentEditModel): BlockInfo[] {
-  return model.getBlocks(toDocHandle(doc)).map((block) => ({
-    id: model.getBlockId(block),
+  const handle = toDocHandle(doc);
+  const blocks = model.getBlocks(handle);
+  const ids = model.getDocumentBlockIds(handle);
+  return blocks.map((block, index) => ({
+    id: ids[index],
     identity: JSON.stringify(model.getCanonicalBlockIdentity(block)),
     type: model.getBlockType(block),
     text: model.getText(block),
@@ -316,18 +319,32 @@ function blockDeleteHunk(
 function blockChangeHunk(live: BlockInfo, draft: BlockInfo, draftDoc: Y.Doc): RawHunk {
   const insertedBlock = displayBlock(draft);
   const deletedBlock = displayBlock(live);
+  const rich = isDeepStrictEqual(
+    textContentShape(unwrapBlock(live.block)),
+    textContentShape(unwrapBlock(draft.block)),
+  )
+    ? richDifference(unwrapBlock(live.block), unwrapBlock(draft.block))
+    : null;
   return {
     kind: "block",
     anchor: anchorForWholeBlock(draft, draftDoc),
-    ...(live.text === draft.text ? { formatting: formattingChanges(live, draft) } : {}),
+    ...(live.text === draft.text
+      ? {
+          formatting:
+            rich?.formatting ??
+            (live.type === draft.type
+              ? [{ kind: "structure" }]
+              : [{ kind: "block", before: live.type, after: draft.type }]),
+        }
+      : {}),
     ...(live.id !== draft.id ? { beforeBlockKey: live.id } : {}),
     insertedBlock: {
       ...insertedBlock,
-      ranges: subtractRanges(changeRanges(draft, live), changeRanges(live, draft)),
+      ranges: rich?.insertedRanges ?? subtractRanges(draft.effectRanges, live.effectRanges),
     },
     deletedBlock: {
       ...deletedBlock,
-      ranges: subtractRanges(changeRanges(live, draft), changeRanges(draft, live)),
+      ranges: rich?.deletedRanges ?? subtractRanges(live.effectRanges, draft.effectRanges),
     },
     blockKey: draft.id,
   };
@@ -714,75 +731,4 @@ export function documentDifference(
 
 function alignmentIdentity(block: BlockAlignmentInput): string {
   return block.identity ?? block.id;
-}
-
-function changeRanges(block: BlockInfo, other: BlockInfo): ClockRange[] {
-  return block.text === other.text &&
-    isDeepStrictEqual(
-      structuralShape(unwrapBlock(block.block)),
-      structuralShape(unwrapBlock(other.block)),
-    )
-    ? block.richRanges
-    : block.effectRanges;
-}
-
-/** Compare mark runs by UTF-16 offset, without attributing unchanged characters to a formatter. */
-function formattingChanges(live: BlockInfo, draft: BlockInfo): ReviewFormattingChange[] {
-  const before = unwrapBlock(live.block),
-    after = unwrapBlock(draft.block);
-  if (live.type !== draft.type) return [{ kind: "block", before: live.type, after: draft.type }];
-  if (live.type === "heading" && before.getAttribute("level") !== after.getAttribute("level"))
-    return [
-      {
-        kind: "heading",
-        before: Number(before.getAttribute("level") ?? 1),
-        after: Number(after.getAttribute("level") ?? 1),
-      },
-    ];
-  const runs = (block: BlockInfo) =>
-    block.textSegments.flatMap((segment) => {
-      let offset = segment.start;
-      return segment.text
-        .toDelta()
-        .map((run: { insert: unknown; attributes?: Record<string, unknown> }) => {
-          const start = offset;
-          offset += typeof run.insert === "string" ? run.insert.length : 0;
-          return {
-            start,
-            end: offset,
-            attributes: (run.attributes ?? {}) as Record<string, unknown>,
-          };
-        });
-    });
-  const left = runs(live),
-    right = runs(draft);
-  const changes: ReviewFormattingChange[] = [];
-  let previousEnd = -1;
-  for (const source of left)
-    for (const target of right) {
-      const start = Math.max(source.start, target.start),
-        end = Math.min(source.end, target.end);
-      if (end <= start) continue;
-      for (const mark of new Set([
-        ...Object.keys(source.attributes),
-        ...Object.keys(target.attributes),
-      ])) {
-        const a = source.attributes[mark],
-          b = target.attributes[mark];
-        if (isDeepStrictEqual(contentValue(a), contentValue(b))) continue;
-        const change = a === undefined ? "added" : b === undefined ? "removed" : "changed";
-        const text = draft.text.slice(start, end);
-        const previous = changes.at(-1);
-        if (
-          previous?.kind === "mark" &&
-          previous.mark === mark &&
-          previous.change === change &&
-          previousEnd === start
-        )
-          previous.text += text;
-        else changes.push({ kind: "mark", mark, change, text });
-        previousEnd = end;
-      }
-    }
-  return changes.length ? changes : [{ kind: "attributes" }];
 }
