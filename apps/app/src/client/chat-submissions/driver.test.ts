@@ -561,3 +561,57 @@ it("Retry and Edit finish incomplete deletion before handling a received first s
     r.dispose();
   }
 });
+
+it("Edit on an existing chat still checks server-attested deletion before transferring words", async () => {
+  const r = rig();
+  r.records.set("record-1", { ...record(), creation: undefined, state: "rejected" });
+  const transferred = vi.fn(() => true);
+  const deleted = vi.fn(async () => {
+    r.records.clear();
+    return true;
+  });
+  const retire = vi.fn(async () => ({ kind: "deleted" as const, submissionId: "sub-1" }));
+  const { owner } = r.mount({
+    controller: {
+      retireSubmission: retire,
+      lookupSubmission: vi.fn(),
+      recoverSubmission: vi.fn(),
+    },
+    transferForEdit: transferred,
+    deleted,
+  });
+  try {
+    await owner.edit("sub-1");
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(deleted).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Keep the opening" }),
+      "deleted",
+    );
+    expect(transferred).not.toHaveBeenCalled();
+    expect(r.records.size).toBe(0);
+  } finally {
+    r.dispose();
+  }
+});
+
+it("a send into a still-creating fork cannot be edited or dispatched until creation settles", async () => {
+  const r = rig();
+  r.records.set("record-1", { ...record(), creation: undefined });
+  const creating = scenarioGate<boolean>();
+  const transferred = vi.fn(() => true);
+  const { owner } = r.mount({ whenDerived: () => creating.promise, transferForEdit: transferred });
+  try {
+    const sending = owner.drive("thread_1");
+    await owner.edit("sub-1");
+    expect(r.records.size).toBe(1);
+    expect(transferred).not.toHaveBeenCalled();
+    expect(r.scenario.appendRequests).toHaveLength(0);
+    expect(r.scenario.retireRequests).toHaveLength(0);
+    creating.resolve(true);
+    await sending;
+    expect(r.scenario.appendRequests).toHaveLength(1);
+    expect(r.records.size).toBe(0);
+  } finally {
+    r.dispose();
+  }
+});

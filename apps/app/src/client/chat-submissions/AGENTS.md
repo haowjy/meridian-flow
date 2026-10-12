@@ -38,7 +38,11 @@ attempts and the shared recovery eligibility/status snapshot for every mounted p
 - Retry looks up the same submission id first. Acceptance bridges without a POST;
   not-seen posts the same id; only a durable rejection re-mints the id in the same
   record key. Edit fences an existing chat's submission before transferring its
-  structured draft ahead of newer writing. Never-created chat Edit transfers all
+  structured draft ahead of newer writing. A failed, unacknowledged fork/handoff has
+  never passed the derivation admission gate: Edit locally returns just that send
+  to its existing destination box, retaining the derivation intent and Retry.
+  Pending derivations still wait; acknowledged destinations still fence on the server.
+  Never-created chat Edit transfers all
   its journal drafts and this tab's unsent writing to New chat before retirement.
 - Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
 - Codec rejects wrong-version and foreign envelopes without throwing. Unreadable
