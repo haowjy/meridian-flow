@@ -208,13 +208,24 @@ ambient transaction. No JavaScript-managed savepoint spans awaits: rolling it
 back could undo concurrently queued sibling statements. Existing caller-owned
 locks remain the caller's responsibility.
 Persistence materializes the range before acquiring its own mutation lock, then
-revalidates generation under lock. Materialization uses immutable fetched inputs,
+revalidates generation and input retention under lock. The generation-local head
+`retired_through_seq` monotonically records every compacted prefix in the same
+transaction as deletion, including zero-fold compaction covered by an ordinary
+checkpoint. It resets on generation replacement. Materialization checks this
+boundary after fetching rows and on cached reads; persistence checks it even for
+already materialized cuts. A suffix cut whose floor predates retirement is rejected
+and must be recaptured. Document cascade deletion removes the head and invalidates
+its capabilities; other update foreign keys do not cascade. Never infer retention
+from checkpoint reason. Materialization uses immutable fetched inputs,
 yields between replay batches, and refuses ranges retired by compaction rather
 than advancing a floor over deleted history. Base hydration and final encoding
 remain synchronous Yjs operations. Explicit persistence still joins its caller's
 transaction, so it cannot wait on itself through a second connection. A writer
 row committed before room apply is included in the captured range. The public cut
-contract exposes no raw state/watermark constructor. Agent-edit's generic journal
+contract is nominal (spreading a cut loses its private member), and persistence
+resolves its payload through an adapter-private identity registry. Cloned or forged
+objects are rejected at runtime, even if a caller bypasses TypeScript. It exposes
+no raw state/watermark constructor. Agent-edit's generic journal
 port does not expose checkpoint production; initialize-only seeds and compaction
 remain host-owned.
 

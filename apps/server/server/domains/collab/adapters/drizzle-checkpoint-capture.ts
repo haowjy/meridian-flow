@@ -1,11 +1,12 @@
 /** Trusted checkpoint minting: a short locked range snapshot, then unlocked journal replay. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentYjsCheckpoints, documentYjsUpdates } from "@meridian/database";
+import { documentYjsCheckpoints, documentYjsHeads, documentYjsUpdates } from "@meridian/database";
 import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
+import { mintCheckpointCut } from "./checkpoint-capability.js";
 import { materializeCheckpoint } from "./checkpoint-materialization.js";
 
 type JournalDb = Pick<Database, "select" | "execute">;
@@ -29,6 +30,24 @@ export async function captureDrizzleCheckpoint(
     baseId: reference.base_id === null ? null : Number(reference.base_id),
     floor: Number(reference.floor_seq),
     ceiling: Number(reference.ceiling_seq),
+  };
+  const validateInputs = async () => {
+    const [head] = await currentDrizzleDb(db as Database)
+      .select({
+        authorityId: documentYjsHeads.authorityId,
+        generation: documentYjsHeads.authorityGeneration,
+        retiredThroughSeq: documentYjsHeads.retiredThroughSeq,
+      })
+      .from(documentYjsHeads)
+      .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
+    if (
+      !head ||
+      head.authorityId !== authority.authorityId ||
+      head.generation !== authority.generation ||
+      (selected.ceiling > selected.floor && head.retiredThroughSeq > selected.floor)
+    ) {
+      throw new Error("Checkpoint inputs retired during materialization");
+    }
   };
   let state: Promise<Uint8Array> | undefined;
   const materialize = async () => {
@@ -55,36 +74,25 @@ export async function captureDrizzleCheckpoint(
         ),
       )
       .orderBy(asc(documentYjsUpdates.id));
-    // Compaction/restore replace the checkpoint atomically with deleting
-    // suffix rows. Never certify a floor if those inputs may be missing.
-    const [compacted] = await readDb
-      .select({ id: documentYjsCheckpoints.id })
-      .from(documentYjsCheckpoints)
-      .where(
-        and(
-          eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
-          eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-          eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
-          eq(documentYjsCheckpoints.reason, "compact"),
-          gt(documentYjsCheckpoints.upToSeq, selected.floor),
-        ),
-      )
-      .limit(1);
-    if (compacted) {
-      throw new Error("Checkpoint inputs retired during materialization");
-    }
+    // Check after reading: a concurrent deletion either leaves a complete read
+    // or invalidates it. Persistence repeats this check under the mutation lock.
+    await validateInputs();
     return materializeCheckpoint(
       base ? new Uint8Array(base.state) : null,
       rows.map((row) => new Uint8Array(row.update)),
     );
   };
-  return Object.freeze({
+  return mintCheckpointCut({
     documentId: docId,
     authority,
     upToSeq: selected.ceiling,
+    validateInputs,
     async materializeState() {
+      await validateInputs();
       state ??= materialize();
-      return (await state).slice();
+      const bytes = await state;
+      await validateInputs();
+      return bytes.slice();
     },
-  }) as CapturedCheckpointCut;
+  });
 }
