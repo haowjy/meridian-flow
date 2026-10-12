@@ -220,6 +220,7 @@ it.each([
     uri: "manuscript://P/Historical.bin",
     observationVersion: version,
     aliases: [],
+    importPending: false,
     provisionalName: false,
     editable: false,
     disposition: "binary",
