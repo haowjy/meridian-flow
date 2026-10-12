@@ -82,7 +82,7 @@ export async function drainInbox(input: {
   workContext?: RenderedWorkContext;
   /**
    * Peeked `NoticePort` notices for this thread. The prepare/commit boundary
-   * consumes their selected IDs only when it persists the matching turn.
+   * consumes their selected IDs on commit, even when their content cancels out.
    */
   notices: readonly Notice[];
   threadId: ThreadId;
@@ -245,7 +245,7 @@ export function planMessageTurns(input: {
   blocks: BlockUpsertedRow[];
   events: OrchestratorEvent[];
   leafTurnId: TurnId | null;
-  /** The trailing notices turn's id, when `notices` was non-empty. */
+  /** The trailing notices turn's id, when the batch rendered notice content. */
   noticesTurnId: TurnId | null;
 } {
   const turns: Turn[] = [];
@@ -292,10 +292,11 @@ export function planMessageTurns(input: {
       )
       .map(inboxMessageNotice),
   ];
-  if (notices.length) {
+  const noticeText = formatNotices(notices).trim();
+  if (noticeText) {
     const { turn, block } = noticesTurnFor(
       input.threadId,
-      notices,
+      noticeText,
       leafTurnId,
       nextTurnPosition(leafPosition === null ? null : { position: leafPosition }),
     );
@@ -372,9 +373,9 @@ export function messageTurnFor(
  * this once makes the notice reproduce identically on every later request
  * instead of vanishing once the drain that carried it ends.
  */
-export function noticesTurnFor(
+function noticesTurnFor(
   threadId: ThreadId,
-  notices: readonly Notice[],
+  text: string,
   prevTurnId: TurnId | null,
   position: number,
 ): { turn: Turn; block: BlockUpsertedRow } {
@@ -392,7 +393,7 @@ export function noticesTurnFor(
     id: turn.id,
     turnId: turn.id,
     blockType: "text",
-    textContent: `<system_update>\n${formatNotices(notices)}\n</system_update>`,
+    textContent: `<system_update>\n${text}\n</system_update>`,
     sequence: 0,
     status: "complete",
   });
