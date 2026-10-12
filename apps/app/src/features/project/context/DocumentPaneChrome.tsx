@@ -32,7 +32,7 @@ export type DocumentPaneChromeProps = {
   tab: ContextTab;
   /** Set when the document is frozen by its archived Work. */
   archivedWork: Work | null;
-  onCloseTab: (documentId: string) => void;
+  onCloseTab: (tab: ContextTab) => void;
   identity: PaneIdentity | null;
 };
 
@@ -60,9 +60,7 @@ export function DocumentPaneChrome({
           editorWorkId={identity.editorWorkId}
           tab={tab}
           readOnly={identity.readOnly}
-          onCloseDraftOnly={
-            tab.kind !== "new" && tab.draftOnly ? () => onCloseTab(tab.documentId) : undefined
-          }
+          onCloseDraftOnly={tab.kind !== "new" && tab.draftOnly ? () => onCloseTab(tab) : undefined}
           onCommitted={identity.onCommitted}
           onOpenExisting={identity.onOpenExisting}
         />

@@ -2,7 +2,7 @@
 
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import { useRef } from "react";
-import { type ContextTab, isEditorTab } from "@/client/stores";
+import { type ContextTab, editorTabsForWork } from "@/client/stores";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import type { ProjectAddress } from "./project-address";
 
@@ -51,7 +51,7 @@ export function selectEditorEntryTab(input: {
   /** The Editor being entered: its row id, or null while unresolved. */
   workId: string | null;
 }): ContextTab | null {
-  const eligible = input.tabs.filter((tab) => isEditorTab(tab, input.workId));
+  const eligible = editorTabsForWork(input.tabs, input.workId);
   const selected = eligible.find((tab) => tab.documentId === input.selectedDocumentId);
   if (selected) return selected;
   for (const route of input.recentRoutes) {

@@ -6,6 +6,7 @@
 - Refuse selective Discard when the clicked class's closed rows or rich effect changed, even when its stable review identity did not. Keep independent typing admissible and preserve admission evidence through queued clicks and retries.
 - Show every removed and inserted run in change-row excerpts, in document order; only the row width truncates the display.
 - Keep phone review tap targets inside their own horizontal boxes and remove empty whole-document Work expand controls.
+- Close, rename and settle review tabs by their exact Work, draft and mounted instance. Applying one Work’s review no longer hides another Work’s live document.
 
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 
