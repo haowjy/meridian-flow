@@ -238,6 +238,7 @@ If the immutable destination Work or lineage authority retired before intake,
 identity moves refuse as `destination_missing` (move repair), even when the
 folder has since relocated. Source authority errors retain their own meaning.
 
-The app's existing path-only producers have not yet been migrated to this
-contract. The replica identity-parent restructuring remains separate unfinished
-work; this server capability alone does not fix optimistic placement.
+Every app writer move sends `destinationParent`. A caller that addresses a
+location by URI omits it and keeps path semantics, including folder creation
+along the path. No model tool or `./mf` command moves files today; when one
+does, it is path-addressed.
