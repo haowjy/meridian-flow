@@ -112,6 +112,8 @@ export type ResourceDescriptor = ResourceKey & {
   canonical: ResourceLocation | null;
   /** Parent identity from the same canonical observation; absent until observed. */
   canonicalParent?: ParentRef;
+  /** Server namespace watermark of the canonical observation; absent for local identities. */
+  observationVersion?: string;
   lifecycle:
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
@@ -123,6 +125,7 @@ export type ResourceDescriptor = ResourceKey & {
     canonicalRefresh?: {
       operationId: string;
       identityRevision: number;
+      observationVersion?: string;
     };
     sessionAdoption?: {
       transitionId: string;
@@ -220,7 +223,9 @@ export type FolderNamespaceRecord = ResourceKey & {
   canonical: ResourceLocation;
   /** Parent identity installed atomically with the canonical location. */
   canonicalParent?: ParentRef;
-  canonicalRefresh?: { operationId: string };
+  /** Server namespace watermark of the canonical observation; absent for local identities. */
+  observationVersion?: string;
+  canonicalRefresh?: { operationId: string; observationVersion?: string };
   /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
   terminal?: { generation: string };
   intents: readonly NamespaceIntent[];
@@ -286,8 +291,8 @@ export type NamespaceOutcome =
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
 export type NamespaceIdentityAvailability =
-  | { kind: "available"; location: ResourceLocation; parent: ParentRef }
-  | { kind: "deleted"; generation: string }
+  | { kind: "available"; location: ResourceLocation; parent: ParentRef; observationVersion: string }
+  | { kind: "deleted"; generation: string; observationVersion: string }
   | { kind: "unavailable" };
 
 /** The caller persists the immutable attempt before submit and retains uncertainty on failure. */

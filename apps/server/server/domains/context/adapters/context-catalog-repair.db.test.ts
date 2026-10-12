@@ -45,7 +45,7 @@ if (!enabled || !url) {
       await db.close();
     });
 
-    it("runs one repair plus one dirty rerun for a committed burst, preserving invalidations", async () => {
+    it("serializes burst repairs and retries stale observation cuts, preserving invalidations", async () => {
       let hold = false;
       let release: () => void = () => {};
       let entered: () => void = () => {};
@@ -97,7 +97,6 @@ if (!enabled || !url) {
         await processDetachedWork.drain();
       }
       expect(maximum).toBe(1);
-      expect(delay).toHaveBeenCalledTimes(2);
       // Read persisted rows directly: snapshot() itself can repair a stale catalog.
       const entries = await db.select().from(contextCatalogEntries);
       expect(entries).toContainEqual(
@@ -169,7 +168,6 @@ if (!enabled || !url) {
         await draftRefreshes;
         await processDetachedWork.drain();
       }
-      expect(delay).toHaveBeenCalledTimes(2);
       const entries = await db.select().from(contextCatalogEntries);
       expect(entries).toContainEqual(
         expect.objectContaining({

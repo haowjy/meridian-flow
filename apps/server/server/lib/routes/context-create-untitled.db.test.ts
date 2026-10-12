@@ -136,6 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({
         entry: {
+          observationVersion: "1",
           kind: "file",
           entryId: DOCUMENT_ID,
           name: "Untitled 1",
@@ -155,6 +156,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toMatchObject({
         entry: {
+          observationVersion: "1",
           kind: "file",
           entryId: DOCUMENT_ID,
           name: "Opening scene",

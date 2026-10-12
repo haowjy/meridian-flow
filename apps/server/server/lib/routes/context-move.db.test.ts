@@ -324,6 +324,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         projectId,
         operationId,
         receipt: {
+          observationVersion: "1",
           operationId,
           command: {
             kind: "delete",

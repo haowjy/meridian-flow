@@ -22,6 +22,7 @@ const source = (w: string): CatalogEntry => ({
   scope: scope(w),
 });
 const node = (id: string, w: string, path: string, parentId = `s${w}`): CatalogEntry => ({
+  observationVersion: "1",
   kind: "folder",
   entryId: id,
   sourceId: `s${w}`,

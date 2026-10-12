@@ -53,7 +53,11 @@ export function createResourceNamespaceTransport(
               .resolutions[0];
       requireOpen();
       if (resolution.kind === "deleted")
-        return { kind: "deleted", generation: resolution.generation };
+        return {
+          kind: "deleted",
+          generation: resolution.generation,
+          observationVersion: resolution.observationVersion,
+        };
       if (resolution.kind !== "available") return { kind: "unavailable" };
       const entry = resolution.entry;
       const parsed = parseContextUri(entry.uri);
@@ -65,6 +69,7 @@ export function createResourceNamespaceTransport(
         throw new TypeError("Invalid namespace availability location");
       return {
         kind: "available",
+        observationVersion: entry.observationVersion,
         parent:
           entry.parentId === entry.sourceId
             ? {

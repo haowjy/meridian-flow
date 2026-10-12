@@ -670,6 +670,7 @@ export class AccountResourceReplica {
         folderId,
         source,
         sourceParent: current?.canonicalParent ?? observation?.parent,
+        sourceObservationVersion: current?.observationVersion ?? observation?.observationVersion,
         intentId: crypto.randomUUID(),
         operationId,
       });

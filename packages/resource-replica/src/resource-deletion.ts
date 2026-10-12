@@ -1,5 +1,6 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
+import { newerCanonicalObservation } from "./canonical-observation";
 import { intentOwnsDeletion, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
 
@@ -62,7 +63,9 @@ export function committedResourceDeletion(
   resource: ResourceRecord["resource"],
   generation: string,
   transitionId: string,
+  observationVersion = generation,
 ): ResourceRecord["resource"] {
+  if (!newerCanonicalObservation(observationVersion, resource.observationVersion)) return resource;
   const {
     sessionAdoption: _superseded,
     canonicalRefresh: _unexecutable,
@@ -71,6 +74,7 @@ export function committedResourceDeletion(
   return {
     ...resource,
     canonical: null,
+    observationVersion,
     obligations,
     lifecycle: { kind: "terminal", generation, transitionId },
   };

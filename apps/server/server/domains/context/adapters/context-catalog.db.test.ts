@@ -395,7 +395,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await failed;
       expect(delay.mock.calls.map(([ms]) => ms)).toEqual([10, 50, 250, 1_000]);
       await expect(db.select().from(contextCatalogEntries)).resolves.toEqual(beforeEntries);
-      await expect(db.select().from(contextAvailabilityHeads)).resolves.toEqual(beforeHeads);
+      await expect(db.select().from(contextAvailabilityHeads)).resolves.toMatchObject(
+        beforeHeads.map(({ namespaceGeneration: _namespace, ...head }) => head),
+      );
       expect(eventSink.events).toContainEqual(
         expect.objectContaining({
           source: "context-catalog",
@@ -525,6 +527,54 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ]),
       );
+    });
+
+    it("keeps historical replay versions below newer exact-ID and snapshot observations", async () => {
+      const db = database.current;
+      await seedProject(db, "catalog-freshness");
+      await db
+        .insert(documents)
+        .values({ id: DOCUMENT_ID, contextSourceId: SOURCE_ID, name: "Start", extension: "md" });
+      const catalog = createDrizzleContextCatalog(db);
+      const scope = { kind: "project" as const, projectId: PROJECT_ID };
+      await catalog.refreshSources([SOURCE_ID]);
+      const before = await catalog.snapshot(scope);
+      await db.update(documents).set({ name: "Historical" }).where(eq(documents.id, DOCUMENT_ID));
+      await catalog.refreshSources([SOURCE_ID]);
+      const historical = await catalog.snapshot(scope);
+      const historicalEntry = historical.entries.find((entry) => entry.entryId === DOCUMENT_ID);
+      if (historicalEntry?.kind !== "file") throw new Error("Missing historical entry");
+      const historicalVersion = historicalEntry.observationVersion;
+      await db.update(documents).set({ name: "Newest" }).where(eq(documents.id, DOCUMENT_ID));
+      await catalog.refreshSources([SOURCE_ID]);
+      const newest = await catalog.snapshot(scope);
+      const newestEntry = newest.entries.find((entry) => entry.entryId === DOCUMENT_ID);
+      if (newestEntry?.kind !== "file") throw new Error("Missing newest entry");
+      const newestVersion = newestEntry.observationVersion;
+      const available = await createDrizzleProjectContextAvailability(db).lookup(
+        { projectId: PROJECT_ID, documentIds: [DOCUMENT_ID] },
+        { userId: USER_ID },
+      );
+      const resolution = available.resolutions[0];
+      expect(resolution).toMatchObject({
+        kind: "available",
+        entry: { name: "Newest.md", observationVersion: newestVersion },
+      });
+      const snapshot = await catalog.snapshot(scope);
+      expect(snapshot.entries.find((entry) => entry.entryId === DOCUMENT_ID)).toMatchObject({
+        observationVersion: newestVersion,
+      });
+      const page = await catalog.changes(scope, before.cursor, 1);
+      if (page.kind !== "delta") throw new Error("Expected replay");
+      expect(page.hasMore).toBe(true);
+      const change = page.commits[0]?.changes.find(
+        (change) => change.operation === "upsert" && change.entry.entryId === DOCUMENT_ID,
+      );
+      expect(change).toMatchObject({
+        operation: "upsert",
+        entry: { name: "Historical.md", observationVersion: historicalVersion },
+      });
+      expect(BigInt(historicalVersion)).toBeLessThan(BigInt(newestVersion));
     });
 
     it("rolls real ContextFS metadata and its catalog commit back together", async () => {

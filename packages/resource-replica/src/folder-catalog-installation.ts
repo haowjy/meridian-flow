@@ -1,4 +1,5 @@
 /** Folder canonical locations follow the catalog observation that proves them, in the same commit. */
+import { newerCanonicalObservation } from "./canonical-observation";
 import type { CatalogCacheView } from "./catalog";
 import {
   type CatalogObservationFence,
@@ -21,14 +22,18 @@ export function installedFolderObservation(
   catalogs: readonly ResourceCatalogCheckpoint[],
   projectId: string,
   folderId: string,
-): { location: ResourceLocation; parent: ParentRef } | null {
+): { location: ResourceLocation; parent: ParentRef; observationVersion: string } | null {
   for (const checkpoint of catalogs) {
     if (checkpoint.projectId !== projectId) continue;
     const view = catalogViewFromCheckpoint(checkpoint);
     const entry = view.entries.get(folderId);
     if (entry?.kind === "folder") {
       const location = catalogEntryLocation(view, entry);
-      return { location, parent: catalogEntryParent(entry, location) };
+      return {
+        location,
+        parent: catalogEntryParent(entry, location),
+        observationVersion: entry.observationVersion,
+      };
     }
   }
   return null;
@@ -74,12 +79,14 @@ export function planFolderCatalogInstallation(input: {
         projectId: location.scheme === "user" ? null : input.projectId,
         revision: 1,
         canonical: location,
+        observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),
         intents: [],
       },
     });
   }
   for (const record of input.folders) {
+    if (record.terminal) continue;
     if (record.projectId !== null && record.projectId !== input.projectId) continue;
     const entry = input.view.entries.get(record.folderId);
     const observed = input.fence.folders?.get(record.handle);
@@ -92,23 +99,20 @@ export function planFolderCatalogInstallation(input: {
         record.canonicalRefresh.operationId,
         location,
         catalogEntryParent(entry, location),
+        entry.observationVersion,
       );
       if (write) writes.push(write);
       continue;
     }
-    if (
-      (sameResourceLocation(record.canonical, location) &&
-        JSON.stringify(record.canonicalParent) ===
-          JSON.stringify(catalogEntryParent(entry, location))) ||
-      !sameResourceLocation(observed.canonical, record.canonical)
-    )
-      continue;
+    if (!newerCanonicalObservation(entry.observationVersion, record.observationVersion)) continue;
+    if (!sameResourceLocation(observed.canonical, record.canonical)) continue;
     writes.push({
       expectedRevision: record.revision,
       next: {
         ...record,
         revision: record.revision + 1,
         canonical: location,
+        observationVersion: entry.observationVersion,
         canonicalParent: catalogEntryParent(entry, location),
       },
     });

@@ -267,6 +267,34 @@
       "when": 1791753623898,
       "tag": "0037_old_adam_destine",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791772096995,
+      "tag": "0038_perfect_excalibur",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791772626207,
+      "tag": "0039_canonical_observation_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791773566867,
+      "tag": "0040_daffy_sebastian_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791773568765,
+      "tag": "0041_initialize_namespace_versions",
+      "breakpoints": true
     }
   ]
 }

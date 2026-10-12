@@ -6,6 +6,7 @@ import { movedDestinationName } from "./LinkUpdateNote";
 it("names the receipt's destination without mistaking a rename or refusal for placement", () => {
   const receipt = (sourceUri: string, destinationUri: string, ok = true) =>
     ({
+      observationVersion: "1",
       operationId: "move",
       command: { kind: "move", sourceUri, destinationUri, expected: {} },
       result: ok

@@ -17,7 +17,25 @@ UI projections require that context explicitly.
 Destinations are `{ parent: ParentRef, createFolders?: string[], name }`: a picked
 folder ID or qualified area root, with an optional missing-folder suffix only for
 linked creation. Canonical parents come only from server parent IDs, installed
-atomically with their location and guarded by observation revisions. Catalog installation retains folder observations even without local commands, so
+atomically with their location.
+
+**Canonical freshness:** every server file/folder entry and operation receipt carries
+a decimal `observationVersion`, allocated from a dedicated global namespace sequence under
+the publisher commit fence. Availability generations group an ambient transaction
+and are not canonical-observation versions. Each namespace change advances affected authority
+watermarks, including multiple changes within one transaction and mutations
+whose manifest publication is deferred. Snapshot and exact-ID entries read that
+watermark with their canonical rows; historical catalog commits retain their
+original stamps. Records replace canonical location, parent and classification
+only for strictly newer versions. Equal/older entries advance replay checkpoints
+without replacing canonical evidence. Equal held evidence may discharge a
+matching move refresh only at or above its receipt version; older evidence cannot.
+Deletion receipts use the same freshness comparison, independently of their
+availability-generation lifecycle proof. Local CAS revisions still protect
+concurrent commands, but are not server freshness. A move receipt is historical
+command evidence, never a current placement.
+
+ Catalog installation retains folder observations even without local commands, so
 ancestry survives missing checkpoints in Recent. Exact-ID
 availability already carries the catalog entry (including parentId); never bind
 canonical identities through old or current paths. Iterative memoized walks resolve

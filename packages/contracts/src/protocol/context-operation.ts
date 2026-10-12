@@ -60,6 +60,8 @@ export type ContextOperationResult<K extends ContextOperationCommand["kind"]> =
 export type ContextOperationReceipt = {
   [K in ContextOperationCommand["kind"]]: {
     operationId: string;
+    /** Server namespace watermark captured with this immutable command outcome. */
+    observationVersion: string;
     command: Extract<ContextOperationCommand, { kind: K }>;
     result: ContextOperationResult<K>;
   };

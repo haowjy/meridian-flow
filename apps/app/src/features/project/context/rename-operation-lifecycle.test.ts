@@ -6,6 +6,7 @@ import { operationLifecycle, RenameOperationLifecycle } from "./rename-operation
 
 const subject = { kind: "file" as const, id: "document" };
 const receipt = {
+  observationVersion: "1",
   operationId: "move",
   command: {
     kind: "move",
