@@ -1,4 +1,4 @@
-/** Formats a review operation as concise change text. */
+/** Complete review text runs and localized formatting labels. */
 import { t } from "@lingui/core/macro";
 import type {
   ReviewFormattingChange,
@@ -6,17 +6,13 @@ import type {
   ReviewOperation,
 } from "@meridian/contracts/drafts";
 
+export type ChangeTextRun = { kind: "removed" | "added"; text: string };
 export type OperationChangeText = {
-  removed: string | null;
-  added: string | null;
+  runs: ChangeTextRun[];
   formatting?: ReviewFormattingChange[];
 };
 
-/**
- * What these hunks took out and put in. An unclassified text hunk has no
- * operation to carry an excerpt, so its own `insertedText` is the insertion;
- * `operations` only supply excerpts when the hunks themselves say nothing.
- */
+/** Complete visible hunk runs in document order, not the operations' first-hunk excerpts. */
 export function changeTextForHunks(
   hunks: readonly ReviewHunk[],
   operations: readonly ReviewOperation[] = [],
@@ -24,35 +20,28 @@ export function changeTextForHunks(
   const formatting = hunks.flatMap((hunk) =>
     hunk.kind === "block" ? (hunk.formatting ?? []) : [],
   );
-  const removedParts: string[] = [];
-  const addedParts: string[] = [];
+  const runs: ChangeTextRun[] = [];
   for (const hunk of hunks) {
     if (hunk.kind === "text") {
-      if (hunk.deletedText) removedParts.push(hunk.deletedText);
-      if (hunk.unclassified && hunk.insertedText) addedParts.push(hunk.insertedText);
+      if (hunk.deletedText) runs.push({ kind: "removed", text: hunk.deletedText });
+      if (hunk.insertedText) runs.push({ kind: "added", text: hunk.insertedText });
     } else {
       if (hunk.formatting) continue;
-      // Structural block displays (horizontal_rule → "───") are decoration,
-      // not prose: a card body of nothing but separators reads as broken, so
-      // only displays with actual words count as content here.
-      if (hunk.deletedBlock && hasProse(hunk.deletedBlock.display)) {
-        removedParts.push(hunk.deletedBlock.display);
-      }
-      if (hunk.insertedBlock && hasProse(hunk.insertedBlock.display)) {
-        addedParts.push(hunk.insertedBlock.display);
-      }
+      // Structural separators are decoration rather than prose.
+      if (hunk.deletedBlock && hasProse(hunk.deletedBlock.display))
+        runs.push({ kind: "removed", text: hunk.deletedBlock.display });
+      if (hunk.insertedBlock && hasProse(hunk.insertedBlock.display))
+        runs.push({ kind: "added", text: hunk.insertedBlock.display });
     }
   }
-  if (formatting.length && removedParts.length === 0 && addedParts.length === 0)
-    return { removed: null, added: null, formatting };
-  return {
-    removed:
-      joinTrim(removedParts) ??
-      joinTrim(operations.map((op) => op.beforeExcerpt ?? "").filter(Boolean)),
-    added:
-      joinTrim(addedParts) ??
-      joinTrim(operations.map((op) => op.afterExcerpt ?? "").filter(Boolean)),
-  };
+  if (runs.length) return { runs };
+  if (formatting.length) return { runs, formatting };
+  // A class without visible hunks can still carry an operation description.
+  const removed = joinTrim(operations.map((op) => op.beforeExcerpt ?? ""));
+  const added = joinTrim(operations.map((op) => op.afterExcerpt ?? ""));
+  if (removed) runs.push({ kind: "removed", text: removed });
+  if (added) runs.push({ kind: "added", text: added });
+  return { runs };
 }
 
 function hasProse(text: string): boolean {

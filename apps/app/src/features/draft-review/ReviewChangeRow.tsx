@@ -46,9 +46,7 @@ export function ReviewChangeRow({
   wholeDocument = false,
   documentName,
 }: ReviewChangeRowProps) {
-  const { added, removed } = documentName
-    ? { added: documentName, removed: null }
-    : changeExcerpt(change);
+  const runs = documentName ? [{ kind: "added", text: documentName }] : changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
   const firstLine = touch ? "min-h-11" : change.target.kind !== "display" ? "min-h-6" : undefined;
@@ -91,15 +89,21 @@ export function ReviewChangeRow({
             )}
           >
             <span className="min-w-0 flex-1 truncate">
-              {removed && !added ? (
-                <span className="text-muted-foreground line-through">{removed}</span>
+              {runs.length ? (
+                runs.map((run, index) => (
+                  <span
+                    // Runs retain document order, including repeated identical words.
+                    key={index}
+                    className={cn(
+                      index < runs.length - 1 && "mr-1",
+                      run.kind === "removed" && "text-muted-foreground line-through",
+                    )}
+                  >
+                    {run.text}
+                  </span>
+                ))
               ) : (
-                <>
-                  {removed ? (
-                    <span className="mr-1 text-muted-foreground line-through">{removed}</span>
-                  ) : null}
-                  <span>{added ?? <Trans>Edited</Trans>}</span>
-                </>
+                <Trans>Edited</Trans>
               )}
             </span>
           </button>

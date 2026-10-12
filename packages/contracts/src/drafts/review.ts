@@ -131,7 +131,7 @@ export type ReviewDeletedSpan = {
 export type ReviewTextHunk = ReviewHunkBase & {
   kind: "text";
   spans: ReviewHunkSpan[];
-  /** Full insertion fallback for an unclassified hunk. */
+  /** Complete inserted run for list excerpts, whether attributed or unclassified. */
   insertedText?: string;
   deletedText?: string;
   deletedSpans?: ReviewDeletedSpan[];

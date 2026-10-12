@@ -146,6 +146,11 @@ used by placement. The first menu mounts with its final trail and highlight IDs.
 row width: parent crumbs, icon labels, stepper count, then Apply label. The
 filename keeps 64px and every command remains in the row. A link-update note is a direct sibling of the
 path, so an absent note occupies neither a flex item nor a gap.
+Identity-row touch targets extend vertically to 44px without changing row height.
+Their horizontal hit area is exactly their visible box; gaps, including the full
+gap beside Discard draft, stay unclaimed. The fit ladder measures the real 24px
+minimum control widths on phone/coarse pointers.
+
 
 Link-update feedback derives its destination from the matched move receipt, not
 from a picker-provided label. The remount registry retains only operation
