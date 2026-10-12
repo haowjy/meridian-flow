@@ -1060,6 +1060,7 @@ msgstr ""
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
+#: src/rich-content/DocumentMarkdown.tsx
 msgid "Copied"
 msgstr ""
 
@@ -1088,6 +1089,7 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
+#: src/rich-content/DocumentMarkdown.tsx
 msgid "Copy code"
 msgstr ""
 

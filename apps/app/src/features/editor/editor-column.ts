@@ -86,7 +86,7 @@ export const editorProseScrollPastEnd = "pb-[50vh]";
  */
 export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
-    "prose-tokens min-h-full shrink-0 px-10",
+    "prose-tokens document-prose min-h-full shrink-0 px-10",
     editorProseScrollPastEnd,
     toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
   );

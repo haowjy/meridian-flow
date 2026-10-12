@@ -7,6 +7,7 @@ is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-12, driven with `./mf`.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
+- [Settled chat Markdown](chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
 - [Draft review](draft-review.md): visual editor and review workflows.
