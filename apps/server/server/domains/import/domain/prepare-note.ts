@@ -60,7 +60,7 @@ export async function prepareImportedNote(
     settings.attachmentFolderPath === "./"
       ? (holder?.path.split("/").slice(0, -1).join("/") ?? "")
       : settings.attachmentFolderPath;
-  let converted = holder
+  const converted = holder
     ? convertObsidianNote(text, {
         source: holder,
         index: createLinkIndex(candidates, existing),
@@ -69,28 +69,23 @@ export async function prepareImportedNote(
       })
     : null;
   if (converted) {
-    // Locate only selected identities this note actually names. A large vault must
-    // not do one database location lookup per candidate for every uploaded note.
+    // Locate only identities this note actually names, then respell their addresses;
+    // a large vault must not do one location lookup per candidate for every note.
+    const planned = new Map(entries.map((item) => [item.id, item]));
+    const uris = new Map<string, string>();
     for (const targetId of new Set(converted.targets.values())) {
-      const target = [...candidates, ...existing].find((candidate) => candidate.id === targetId);
-      if (!target) continue;
-      const planned = entries.find((item) => item.id === targetId);
       const current = await tree.currentUri(targetId, "file");
+      const target = planned.get(targetId);
       const parent =
-        !current && planned?.parentId ? await tree.currentUri(planned.parentId, "folder") : null;
-      target.uri =
+        !current && target?.parentId ? await tree.currentUri(target.parentId, "folder") : null;
+      const uri =
         current ??
-        (parent && planned
-          ? `${parent}${planned.name}${planned.extension ? `.${planned.extension}` : ""}`
-          : target.uri);
+        (parent && target
+          ? `${parent}${target.name}${target.extension ? `.${target.extension}` : ""}`
+          : null);
+      if (uri) uris.set(targetId, uri);
     }
-    if (holder)
-      converted = convertObsidianNote(text, {
-        source: holder,
-        index: createLinkIndex(candidates, existing),
-        attachmentFolder,
-        aheadFolder: aheadFolder ?? "",
-      });
+    converted.markdown = converted.respell(uris);
   }
   return { converted, settings, root };
 }

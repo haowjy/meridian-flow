@@ -258,6 +258,21 @@ describe("raw frontmatter", () => {
   });
 });
 
+describe("Markdown link destinations", () => {
+  it("spans only each destination, through nested pictures, code-span labels and angle brackets", () => {
+    const source =
+      '[![cover](map.png)](Note.md) [`x](x`](<A B.md> "t") [ref][n] [](Empty.md)\n\n[n]: R.md\n';
+    const destinations = scanObsidian(source)
+      .findings.filter((finding) => finding.kind === "markdownLink")
+      .map((finding) =>
+        finding.kind === "markdownLink" && finding.destination
+          ? source.slice(finding.destination.from, finding.destination.to)
+          : null,
+      );
+    expect(destinations).toEqual(["Note.md", "map.png", "<A B.md>", "Empty.md"]);
+  });
+});
+
 describe("project wikilink ranking", () => {
   const located = (uri: string) => {
     const item = locate(uri, uri);

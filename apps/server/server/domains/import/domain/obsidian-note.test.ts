@@ -176,4 +176,31 @@ describe("Obsidian conversion", () => {
     own.rootId = null;
     expect(convert("[[Sects]]", source, [source, own], existing).targets.get(0)).toBe(own.id);
   });
+  it("edits only destinations: a picture inside a link and a code-span label stay intact", () => {
+    const image = convert("[![cover](../attachments/map.png)](../Lore/Sects.md) after");
+    expect(image.markdown).toBe(
+      "[![cover](kb://vault/attachments/map.png)](kb://vault/Lore/Sects) after",
+    );
+    // The schema has no linked pictures, so the picture is the only occurrence.
+    expect(links(image.markdown).map((link) => [link.kind, link.attrs.href])).toEqual([
+      ["image", "kb://vault/attachments/map.png"],
+    ]);
+    expect([...image.targets]).toEqual([[0, "attachments/map.png"]]);
+    expect(convert("[`x](x`](../Lore/Sects.md) after").markdown).toBe(
+      "[`x](x`](kb://vault/Lore/Sects) after",
+    );
+  });
+  it("carries identity per occurrence, never through a shared or hand-written address", () => {
+    const source = candidate("Holder.md");
+    const a = { ...candidate("A/map.png"), uri: "kb://vault/B/map.png" };
+    const b = candidate("B/map.png");
+    const shared = convert("![[A/map.png]] ![[B/map.png]]", source, [source, a, b]);
+    expect([...shared.targets]).toEqual([
+      [0, "A/map.png"],
+      [1, "B/map.png"],
+    ]);
+    // A link already spelled at the converted address is not the converted occurrence.
+    const manual = convert("[manual](kb://vault/Lore/Sects) [[Sects]]");
+    expect([...manual.targets]).toEqual([[1, "Lore/Sects.md"]]);
+  });
 });

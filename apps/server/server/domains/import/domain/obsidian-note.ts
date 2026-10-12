@@ -20,6 +20,16 @@ export interface ConvertedObsidianNote {
   findings: ImportFinding[];
   /** Occurrence numbers in the binder's codec walk, including images. */
   targets: Map<number, string>;
+  /** The same Markdown with these target ids spelled at other addresses; structure is unchanged. */
+  respell(uris: ReadonlyMap<string, string>): string;
+}
+/** One converted destination: its target identity and how its address is spelled. */
+interface Written {
+  targetId: string | null;
+  /** Address used when the target has no override: its candidate URI or the ahead location. */
+  href: string;
+  /** `#heading` kept after the target's address. */
+  fragment: string;
 }
 export function convertObsidianNote(
   text: string,
@@ -52,14 +62,20 @@ export function convertObsidianNote(
   const edits: { from: number; to: number; text: string }[] = frontmatter
     ? [{ from: 0, to: frontmatter.to, text: "" }]
     : [];
-  const identities = new Map<string, string>();
+  // Each converted destination is written as a unique placeholder, so the codec
+  // walk finds every occurrence by position, never by a (possibly shared) address.
+  let nonce = "mfimport";
+  while (scan.source.includes(nonce)) nonce += "x";
+  const written: Written[] = [];
+  const placeholder = (entry: Written) => `${nonce}-${written.push(entry) - 1}-z`;
   for (const finding of scan.findings) {
     if (finding.kind !== "wikilink" && finding.kind !== "markdownLink") continue;
     const wiki = finding.kind === "wikilink";
-    const written = wiki ? finding.linkpath : finding.url;
-    if (!wiki && /^(?:[a-z][a-z\d+.-]*:|#|\/\/)/i.test(written)) continue;
-    const hash = wiki ? -1 : written.indexOf("#");
-    const path = hash < 0 ? written : written.slice(0, hash);
+    const spelled = wiki ? finding.linkpath : finding.url;
+    if (!wiki && /^(?:[a-z][a-z\d+.-]*:|#|\/\/)/i.test(spelled)) continue;
+    if (!wiki && !finding.destination) continue;
+    const hash = wiki ? -1 : spelled.indexOf("#");
+    const path = hash < 0 ? spelled : spelled.slice(0, hash);
     const match = wiki
       ? path
         ? options.index.resolveLinkpath(
@@ -76,11 +92,11 @@ export function convertObsidianNote(
       decodedPath(path).split("/").at(-1) ||
         storedName(options.source.path.split("/").at(-1) ?? ""),
     );
-    let href = target?.uri ?? `${options.aheadFolder}${normalizedPath(path)}`;
-    const heading = wiki ? finding.heading : hash < 0 ? null : decodedPath(written.slice(hash + 1));
+    const href = target?.uri ?? `${options.aheadFolder}${normalizedPath(path)}`;
+    const heading = wiki ? finding.heading : hash < 0 ? null : decodedPath(spelled.slice(hash + 1));
     const block = wiki ? finding.block : null;
+    const fragment = heading ? `#${encodeURIComponent(heading)}` : "";
     if (heading) {
-      href += `#${encodeURIComponent(heading)}`;
       findings.push({
         code: "heading_not_followed",
         params: { text: scan.source.slice(finding.from, finding.to), name, heading },
@@ -91,8 +107,7 @@ export function convertObsidianNote(
         code: "block_ref_dropped",
         params: { text: scan.source.slice(finding.from, finding.to), name },
       });
-    if (target) identities.set(href, target.id);
-    else
+    if (!target)
       findings.push({
         code: "link_unresolved",
         params: { text: path, folder: options.aheadFolder },
@@ -119,17 +134,16 @@ export function convertObsidianNote(
             target.filetype,
           )
         : /\.(png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i.test(path));
-    const label = wiki ? finding.label || `${name}${heading ? ` > ${heading}` : ""}` : null;
-    let replacement: string;
-    if (wiki) replacement = `${image ? "!" : ""}${formatMarkdownLink(label ?? name, href)}`;
-    else {
-      // Keep labels, inline formatting and optional title; replace only the destination.
-      const original = scan.source.slice(finding.from, finding.to);
-      const replaced = replaceDestination(original, href);
-      if (replaced === null) continue;
-      replacement = replaced;
+    const destination = placeholder({ targetId: target?.id ?? null, href, fragment });
+    if (!wiki) {
+      // Keep labels, nested pictures, code spans and any title; replace only the destination.
+      const span = finding.destination;
+      if (span) edits.push({ from: span.from, to: span.to, text: destination });
+      continue;
     }
-    if (wiki && embed && !image) {
+    const label = finding.label || `${name}${heading ? ` > ${heading}` : ""}`;
+    let replacement = `${image ? "!" : ""}${formatMarkdownLink(label, destination)}`;
+    if (embed && !image) {
       findings.push({
         code:
           target?.kind === "note" || target?.kind === "docx" || !target
@@ -139,7 +153,7 @@ export function convertObsidianNote(
       });
       replacement = `\n\n${replacement}\n\n`;
     }
-    if (wiki && finding.size)
+    if (finding.size)
       findings.push({
         code: "image_size_dropped",
         params: {
@@ -149,47 +163,30 @@ export function convertObsidianNote(
       });
     edits.push({ from: finding.from, to: finding.to, text: replacement });
   }
-  let markdown = scan.source;
+  let template = scan.source;
   for (const edit of edits.sort((a, b) => b.from - a.from))
-    markdown = markdown.slice(0, edit.from) + edit.text + markdown.slice(edit.to);
+    template = template.slice(0, edit.from) + edit.text + template.slice(edit.to);
+  const pattern = new RegExp(`${nonce}-(\\d+)-z`, "g");
   const targets = new Map<number, string>();
-  walkLinkOccurrences(codec.parse(markdown).blocks).forEach((occurrence, index) => {
+  walkLinkOccurrences(codec.parse(template).blocks).forEach((occurrence, index) => {
     const href = occurrence.attrs.href;
-    const id = typeof href === "string" ? identities.get(href) : undefined;
+    const match = typeof href === "string" ? new RegExp(`^${pattern.source}$`).exec(href) : null;
+    const id = match ? written[Number(match[1])]?.targetId : null;
     if (id) targets.set(index, id);
   });
-  return { markdown, properties, aliases: parsed.aliases, findings, targets };
-}
-
-/** Replace a Markdown inline destination, respecting escapes and balanced parentheses. */
-function replaceDestination(original: string, href: string): string | null {
-  const opening = /\]\(\s*/.exec(original);
-  if (!opening) return null;
-  const start = (opening.index ?? 0) + opening[0].length;
-  let end = start,
-    depth = 0;
-  if (original[start] === "<") {
-    end++;
-    while (end < original.length && original[end] !== ">") {
-      if (original[end] === "\\") end++;
-      end++;
-    }
-    if (original[end] !== ">") return null;
-    end++;
-  } else {
-    while (end < original.length) {
-      const character = original[end];
-      if (character === "\\") {
-        end += 2;
-        continue;
-      }
-      if (character === "(") depth++;
-      else if (character === ")") {
-        if (!depth) break;
-        depth--;
-      } else if (/\s/.test(character) && !depth) break;
-      end++;
-    }
-  }
-  return original.slice(0, start) + formatMarkdownLink("", href).slice(3, -1) + original.slice(end);
+  const respell = (uris: ReadonlyMap<string, string>) =>
+    template.replace(pattern, (_, index: string) => {
+      const entry = written[Number(index)];
+      const address = (entry.targetId && uris.get(entry.targetId)) || entry.href;
+      // The bare destination as formatMarkdownLink spells it, angle brackets included.
+      return formatMarkdownLink("", `${address}${entry.fragment}`).slice(3, -1);
+    });
+  return {
+    markdown: respell(new Map()),
+    properties,
+    aliases: parsed.aliases,
+    findings,
+    targets,
+    respell,
+  };
 }
