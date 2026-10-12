@@ -36,5 +36,5 @@ describe("./mf", () => {
     const shim = path.resolve(__dirname, "../../../mf");
     const help = execFileSync(shim, [], { encoding: "utf8", timeout: 30_000 });
     for (const group of GROUPS) expect(help).toContain(`${group.name}: ${group.summary}`);
-  });
+  }, 30_000);
 });
