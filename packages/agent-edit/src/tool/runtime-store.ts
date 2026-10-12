@@ -33,7 +33,7 @@ export interface RuntimeStore {
   attachRuntime(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): Promise<void>;
   evictResponseRuntimes(
-    documents: readonly RuntimeRecoveryDocument[],
+    documents: readonly Pick<RuntimeRecoveryDocument, "docId" | "session">[],
     options?: RuntimeEvictOptions,
   ): Promise<void>;
   evictThreadRuntimes(
@@ -121,7 +121,7 @@ export function createRuntimeStore(deps: {
   }
 
   async function evictResponseRuntimes(
-    documents: readonly RuntimeRecoveryDocument[],
+    documents: readonly Pick<RuntimeRecoveryDocument, "docId" | "session">[],
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
     await Promise.all(

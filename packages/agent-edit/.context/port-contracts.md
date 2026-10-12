@@ -71,6 +71,12 @@ after admission and CAS accept. The buffer applies kept writes, failed-receipt
 owners and helper replacement together after that acceptance. The response helper is replaced from that cut plus
 surviving staged writes before the next command. A discarded write and its later
 dependents receive failed per-write receipts; independent writes still commit.
+The prepared response view pairs its runtime, replay capability and required cut.
+It is the only helper owner while draft writes are buffered: commands and scoped
+response reads consume it without peer reconstruction or ambient merges.
+Concurrent staging and terminal reports use separate disposable snapshots;
+historical pre-own snapshots remain receipt evidence, not the current base cut.
+Staging requires the document label and edit description used by failed notices.
 The helper cut survives a receipt-only buffer. Notices group by document and
 handle, distinguish partial from whole rejection and name the rejected writes.
 Terminal concurrency reporting uses the frozen pre-publication cut, so the

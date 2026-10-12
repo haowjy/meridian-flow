@@ -111,23 +111,26 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    const runtime = runtimeFor(session, address.documentId);
+    const prepared = context.responseId
+      ? responseCommitter.preparedResponseView(context.responseId, address.documentId)
+      : undefined;
+    const runtime = prepared?.runtime ?? runtimeFor(session, address.documentId);
 
-    const stagedUpdates = context.responseId
-      ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
-      : [];
-    const restored = await runtimeStore.restoreRuntimeFromLive(
-      session,
-      address.documentId,
-      runtime,
-      "read",
-    );
-    if (isInternalWriteResult(restored)) {
-      if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
-      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    }
-    for (const update of stagedUpdates) {
-      Y.applyUpdate(runtime.doc, update, { type: "system" });
+    if (!prepared) {
+      const restored = await runtimeStore.restoreRuntimeFromLive(
+        session,
+        address.documentId,
+        runtime,
+        "read",
+      );
+      const updates = context.responseId
+        ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
+        : [];
+      if (isInternalWriteResult(restored)) {
+        if (restored.status !== "document_not_found" || updates.length === 0) return restored;
+        runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
+      }
+      for (const update of updates) Y.applyUpdate(runtime.doc, update, { type: "system" });
     }
     const links = await openCommandLinks(options, {
       documentId: address.documentId,
@@ -208,7 +211,10 @@ export function createWriteCommands(deps: {
       });
     }
 
-    const runtime = runtimeFor(session, address.documentId);
+    const prepared = context.responseId
+      ? responseCommitter.preparedResponseView(context.responseId, address.documentId)
+      : undefined;
+    const runtime = prepared?.runtime ?? runtimeFor(session, address.documentId);
     const given = copiedNodes ?? boundNodes;
     const parsed: ParseForCommandResult = given
       ? { ok: true, parsed: { blocks: [...given] } }
@@ -250,7 +256,7 @@ export function createWriteCommands(deps: {
       liveCheck.status === "document_not_found";
     if (isInternalWriteResult(liveCheck) && !missingLiveForDeferredNewDocument) return liveCheck;
 
-    if (!missingLiveForDeferredNewDocument) {
+    if (!prepared && !missingLiveForDeferredNewDocument) {
       const restored = await runtimeStore.restoreRuntimeFromLive(
         session,
         address.documentId,
@@ -259,10 +265,10 @@ export function createWriteCommands(deps: {
       );
       if (isInternalWriteResult(restored)) return restored;
     }
-    if (missingLiveForDeferredNewDocument) {
+    if (!prepared && missingLiveForDeferredNewDocument) {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
     }
-    if (context.responseId && actor.kind === "agent") {
+    if (!prepared && context.responseId && actor.kind === "agent") {
       for (const update of bufferedResponseUpdates) {
         Y.applyUpdate(runtime.doc, update, { type: "system" });
       }
@@ -527,10 +533,15 @@ export function createWriteCommands(deps: {
         writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
       });
     }
-    const runtime = runtimeFor(session, address.documentId);
-    const synced = await requireSynced(session, address.documentId, command.command, runtime);
+    const prepared = context.responseId
+      ? responseCommitter.preparedResponseView(context.responseId, address.documentId)
+      : undefined;
+    const runtime = prepared?.runtime ?? runtimeFor(session, address.documentId);
+    const synced = prepared
+      ? { ok: true as const }
+      : await requireSynced(session, address.documentId, command.command, runtime);
     if (!synced.ok) return synced.response;
-    if (context.interactionContext) {
+    if (!prepared && context.interactionContext) {
       const merged = await runtimeStore.syncLocalFromLive(
         session,
         address.documentId,
@@ -655,6 +666,7 @@ export function createWriteCommands(deps: {
               runtime,
               links,
               agentUpdate: ownUpdate,
+              reportingOnly: interactionContext.mode === "threadPeer",
               interactionContext,
               preOwnSnapshot,
               ...(turnId ? { ownTurnId: turnId } : {}),
