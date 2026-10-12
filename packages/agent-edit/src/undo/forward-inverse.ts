@@ -146,6 +146,7 @@ class Lineage {
   readonly forward = new Map<Key, Key[]>();
   readonly backward = new Map<Key, Key>();
   readonly owners = new Map<Key, InversePart>();
+  readonly inverseRestorations = new Set<Key>();
   readonly ordered: InversePart[];
   constructor(
     readonly doc: Y.Doc,
@@ -160,6 +161,7 @@ class Lineage {
             target = key({ client: alias.target.client, clock: alias.target.clock + n });
           if (this.backward.has(target) && this.backward.get(target) !== source)
             throw new Error("Conflicting restoration aliases");
+          if (p.kind !== "write") this.inverseRestorations.add(source);
           this.backward.set(target, source);
           const links = this.forward.get(source) ?? [];
           links.push(target);
@@ -210,14 +212,7 @@ class Lineage {
     });
   }
   restored(k: Key): boolean {
-    const family = new Set(this.descendants(this.root(k)));
-    return this.ordered.some(
-      (p) =>
-        p.kind !== "write" &&
-        p.aliases.some((a) =>
-          clocks([{ ...a.source, len: a.len }]).some((source) => family.has(source)),
-        ),
-    );
+    return this.descendants(this.root(k)).some((source) => this.inverseRestorations.has(source));
   }
   hydrate(): void {
     const pairs: { source: Y.ID; target: Y.ID }[] = [];
@@ -468,4 +463,19 @@ export function computeInverse(
   } finally {
     scratch.destroy();
   }
+}
+
+/** Visible identity by restoration root, used by host-owned cross-view holds. */
+export function inspectEditRoots(
+  doc: Y.Doc,
+  history: readonly InversePart[],
+  effect: EditEffect,
+): { root: string; identity: string | null }[] {
+  const index = new Lineage(doc, history);
+  return [
+    ...new Set(clocks([...effect.inserted, ...effect.deleted]).map((k) => index.root(k))),
+  ].map((root) => {
+    const effective = index.effective(root);
+    return { root, identity: visible(doc, effective) ? effective : null };
+  });
 }
