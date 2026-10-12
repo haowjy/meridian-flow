@@ -65,6 +65,14 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore, FolderN
       catalogs: "key,projectId",
       folders: "handle,projectId",
     });
+    this.database
+      .version(2)
+      .stores({})
+      .upgrade(async (transaction) => {
+        // A cursor with unversioned entries cannot prove canonical freshness.
+        // Checkpoints are reacquirable; content identities and offline journals survive.
+        await transaction.table("catalogs").clear();
+      });
     this.resources = this.database.table("resources");
     this.intents = this.database.table("intents");
     this.catalogs = this.database.table("catalogs");
