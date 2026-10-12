@@ -42,7 +42,13 @@ export class PaintHold extends Component<FrameProps, Hold> {
     if (!node || !paint) return;
     node.innerHTML = paint.html;
     for (const patch of this.patches) patch(node);
+    this.restoreScrolls(node, paint);
   };
+
+  private restoreScrolls(cover: HTMLElement, paint: Paint) {
+    for (const [index, node] of cover.querySelectorAll<HTMLElement>(".meridian-editor").entries())
+      node.scrollTop = paint.scrolls[index] ?? 0;
+  }
 
   /**
    * Change the cover's own DOM: the last paint cannot be redrawn by its (gone)
@@ -112,11 +118,7 @@ export class PaintHold extends Component<FrameProps, Hold> {
       });
     }
     if (paint && this.cover.current) {
-      for (const [index, node] of this.cover.current
-        .querySelectorAll<HTMLElement>(".meridian-editor")
-        .entries()) {
-        node.scrollTop = paint.scrolls[index] ?? 0;
-      }
+      this.restoreScrolls(this.cover.current, paint);
       if (paint.focused && !previous.paint) this.status.current?.focus({ preventScroll: true });
     } else if (!paint) {
       // First, whatever was waiting for the cover to lift (the content's place
