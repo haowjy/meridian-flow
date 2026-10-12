@@ -16,7 +16,7 @@ import {
   type Principal,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 
 export { containerTarget, documentTarget } from "./file-targets.js";
 

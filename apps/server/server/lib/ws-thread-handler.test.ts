@@ -9,8 +9,8 @@ import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;

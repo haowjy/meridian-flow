@@ -76,7 +76,19 @@ not the later client move/navigation policy.
    cookie jar and compare that chat's snapshot refusal with a random missing
    UUID's refusal. The serialized envelopes must match byte-for-byte:
    `thread_not_found`, attested to the second account, no deletion disclosure.
-6. Restore the disposable chat with POST `/api/threads/<id>/restore`, or leave
+6. Create a second disposable project and a live chat in it. Delete the project
+   with DELETE `/api/projects/<projectId>`. Repeat the four thread gates and
+   both existing-id creation routes: each returns `thread_deleted` with
+   `details.projectDeleted: true` and the authenticated user id, even though
+   the chat row itself is still live. Repeat with a trashed chat in that project.
+7. GET `/api/projects/<projectId>` and both creation routes with a new chat id
+   return HTTP 404 `project_deleted`, with `details.authenticatedUserId`.
+   Missing projects and foreign projects (live or deleted) retain the identical
+   generic `Project not found` refusal. Project DELETE remains idempotent;
+   context availability explicitly reads tombstones and retains its policy.
+8. A deleted chat in a live project, including a Work cascade, must have no
+   `projectDeleted` field at all (not `false`).
+9. Restore the disposable chat with POST `/api/threads/<id>/restore`, or leave
    it in trash. Do not change another worktree's identity or stack.
 
 The DB gate contract also covers deleted parent projects, Work-cascade markers,

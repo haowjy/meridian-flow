@@ -152,7 +152,7 @@ the handlers: Nitro treats test modules under `routes/` as production routes.
 | `mock-model-script-route.ts` | `/api/debug/mock-model/script` queue/list/clear; 404 when no scriptable mock is composed. |
 | `context-read-route.ts` | Ownership-gated context path resolution. Tracked files return content/schema; binary refs resolve signed object-store URLs. |
 | `backend-policy.ts` | Small policy helpers for backend selection/guarding. |
-| `interrupt-boundary.ts` / `interrupt-error-handler.ts` | HTTP-facing interrupt/error mapping. |
+| `../shared/interrupt-boundary.ts` / `interrupt-error-handler.ts` | HTTP-facing interrupt/error mapping. The shared boundary is available to domain owner gates without importing composition-layer code. |
 | `startup-guards.ts` / `process-crash-policy.ts` | Boot-time guardrails and process-level crash policy. |
 
 Context ports and runtime tool algorithms live in their owning domains

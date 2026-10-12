@@ -4,8 +4,15 @@
  */
 
 import type { UserId } from "@meridian/contracts/runtime";
-import type { Thread, ThreadAvailabilityCode } from "@meridian/contracts/threads";
-import { throwHttpInterrupt, throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
+import type {
+  Thread,
+  ThreadAvailabilityCode,
+  ThreadAvailabilityDetails,
+} from "@meridian/contracts/threads";
+import {
+  throwHttpInterrupt,
+  throwHttpInterruptForStatus,
+} from "../../shared/interrupt-boundary.js";
 import { parseRequestId } from "../../shared/uuid.js";
 import type { ProjectRepository, WorkContextNotices } from "../projects/index.js";
 import { threadAvailabilityCode } from "./domain/thread-availability.js";
@@ -17,14 +24,21 @@ import {
 import type { ThreadRepositories, ThreadRepository } from "./ports/repositories.js";
 
 /** Shared HTTP proof for both repository and runtime owner gates. */
-function throwThreadAvailability(code: ThreadAvailabilityCode, userId: UserId): never {
+function throwThreadAvailability(
+  code: ThreadAvailabilityCode,
+  userId: UserId,
+  projectDeleted = false,
+): never {
   throwHttpInterrupt(
     {
       code,
       message: code === "thread_deleted" ? "Thread deleted" : "Thread not found",
       retryable: false,
       source: "system",
-      details: { authenticatedUserId: userId },
+      details: {
+        authenticatedUserId: userId,
+        ...(projectDeleted ? { projectDeleted: true } : {}),
+      } satisfies ThreadAvailabilityDetails,
     },
     404,
   );
@@ -34,8 +48,8 @@ export function throwThreadNotFound(userId: UserId): never {
   throwThreadAvailability("thread_not_found", userId);
 }
 
-export function throwThreadDeleted(userId: UserId): never {
-  throwThreadAvailability("thread_deleted", userId);
+export function throwThreadDeleted(userId: UserId, projectDeleted = false): never {
+  throwThreadAvailability("thread_deleted", userId, projectDeleted);
 }
 
 /** Owner gate: classify ownership before deletion, including the parent project. */
@@ -50,7 +64,7 @@ export async function requireThreadOwner(
   }
   const row = await repos.threads.findByIdIncludingDeleted(parsedThreadId);
   const code = threadAvailabilityCode(row, row?.project, userId);
-  if (code === "thread_deleted") throwThreadDeleted(userId);
+  if (code === "thread_deleted") throwThreadDeleted(userId, !!row?.project?.deletedAt);
   if (code === "thread_not_found" || !row) throwThreadNotFound(userId);
   const { project: _project, ...thread } = row;
   return thread;

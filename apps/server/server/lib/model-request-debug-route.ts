@@ -7,8 +7,8 @@ import type { ModelRequestDebugRecord } from "@meridian/contracts/threads";
 import { createError } from "nitro/h3";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
+import { throwHttpInterruptForStatus } from "../shared/interrupt-boundary.js";
 import type { ThreadRepositories } from "./compose.js";
-import { throwHttpInterruptForStatus } from "./interrupt-boundary.js";
 
 export interface ModelRequestDebugRouteDeps {
   repos: Pick<ThreadRepositories, "threads">;
