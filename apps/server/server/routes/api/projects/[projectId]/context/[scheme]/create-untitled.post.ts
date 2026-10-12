@@ -57,17 +57,15 @@ export async function createUntitledContextDocument(input: {
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, workId, authority, port } = await resolveContextRoute(event, {
-    recoverAcrossProject: true,
-  });
-  const result = await createUntitledContextDocument({
-    port,
-    userId,
-    scheme,
-    workId,
-    authority,
-    body: parseCreateUntitledBody(await readBody(event)),
-  });
+  const { userId, scheme, workId, authority, port, container, edit } = await resolveContextRoute(
+    event,
+    { recoverAcrossProject: true },
+  );
+  const body = parseCreateUntitledBody(await readBody(event));
+  // The client minted the id, so this is a create into the route's folder.
+  const result = await edit([container], () =>
+    createUntitledContextDocument({ port, userId, scheme, workId, authority, body }),
+  );
   if (result.status === "conflict") setResponseStatus(event, 409);
   return result;
 });

@@ -1,10 +1,12 @@
 import { catalogScopeKey } from "@meridian/contracts/protocol";
-import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import { type AiWriteMode, decodeWorkSlug, type Work } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
+  contentDocumentPredicate,
   contextAvailabilityHeads,
   contextCatalogScopeHeads,
+  documents,
   projects,
   works,
 } from "@meridian/database/schema";
@@ -17,6 +19,13 @@ import {
 import { lockWorkThreadTree } from "../../../../shared/thread-work-lock.js";
 import { isUuid } from "../../../../shared/uuid.js";
 import { lockWorkLifecycle } from "../../../../shared/work-lifecycle-lock.js";
+import {
+  ContextEntryConflictError,
+  guardWorkContextRestore,
+  type LineageScratchLifecycle,
+} from "../../../context/index.js";
+import type { DocumentArrivals } from "../../../context/ports/document-arrivals.js";
+import type { FileAccessChanges } from "../../../file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../../domain/work-lifecycle.js";
 import { decideWorkRestore } from "../../domain/work-restore.js";
 import type {
@@ -73,12 +82,26 @@ function mapWork(row: WorkRow): Work {
 export interface DrizzleWorkRepositoryDeps {
   db: Database;
   projectionMutation: WorkProjectionMutation;
+  /** Each lifecycle change re-decides the Work's own files' access (file-access §7). */
+  fileAccessChanges: Pick<FileAccessChanges, "publish">;
+  lineageScratch: LineageScratchLifecycle;
+  /** Restored documents arrive at their addresses (contract §9.3). */
+  arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
   now?: () => Date;
 }
 export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): WorkRepository {
   const { db } = deps;
+  const lineageScratch = deps.lineageScratch;
   const projectionMutation = deps.projectionMutation;
   const now = deps.now ?? (() => new Date());
+
+  async function workHiddenDocumentIds(workId: WorkId): Promise<DocumentId[]> {
+    const rows = await currentDrizzleDb(db)
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(eq(documents.deletedByWorkId, workId), contentDocumentPredicate()));
+    return rows.map((row) => row.id as DocumentId);
+  }
 
   async function lockProjectWorkCreation(projectId: ProjectId): Promise<void> {
     await currentDrizzleDb(db).execute(
@@ -160,12 +183,12 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
               projectId: input.projectId,
               createdByUserId:
                 project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
-              name: input.name.trim(),
+              name: input.name,
               slug: nextWorkSlug(
                 input.name,
                 existingSlugs.map(({ slug }) => slug),
               ),
-              goal: input.goal,
+              goal: input.goal ?? null,
             })
             .returning();
         } catch (cause) {
@@ -269,7 +292,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       await requireUnlocked(id);
       const patch: Partial<typeof works.$inferInsert> = {};
-      if (input.name !== undefined) patch.name = input.name.trim();
+      if (input.name !== undefined) patch.name = input.name;
       if (input.goal !== undefined) patch.goal = input.goal;
       if (input.status !== undefined) patch.status = input.status;
       try {
@@ -284,12 +307,16 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async archive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
       if (existing.archivedAt !== null) return existing;
-      return updateWork(id, { archivedAt: new Date() });
+      const archived = await updateWork(id, { archivedAt: new Date() });
+      await deps.fileAccessChanges.publish({ workId: id });
+      return archived;
     },
     async unarchive(id: WorkId): Promise<Work> {
       const existing = await requireUnlocked(id);
       if (existing.archivedAt === null) return existing;
-      return updateWork(id, { archivedAt: null });
+      const unarchived = await updateWork(id, { archivedAt: null });
+      await deps.fileAccessChanges.publish({ workId: id });
+      return unarchived;
     },
     async softDelete(id: WorkId) {
       return runInDrizzleTransaction(db, async () => {
@@ -318,7 +345,9 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           })
           .where(and(eq(works.id, id), isNull(works.deletedAt)));
         await projectionMutation.publishWorks([id]);
+        await deps.fileAccessChanges.publish({ workId: id });
         const after = await findWorkById(id);
+        await lineageScratch.reconcile(lockedTree.threadIds);
         return { before, after, threadIds: deletedThreadIds };
       });
     },
@@ -331,6 +360,11 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
           if (decideWorkRestore(existing, now()) === "unchanged") {
             return { before: existing, after: existing, changed: false };
           }
+          // Thread forest → Work above, then the namespaces the restore re-occupies, before
+          // any row reappears (contract §9.3). Individually deleted rows stay deleted.
+          const arriving = deps.arrivals ? await workHiddenDocumentIds(id) : [];
+          if (arriving.length > 0) await deps.arrivals?.lockNamespaces(arriving);
+          await guardWorkContextRestore(db, id);
           const restoredAt = now();
           const [row] = await currentDrizzleDb(db)
             .update(works)
@@ -348,10 +382,15 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             liveThreadIds: lockedTree.liveThreadIds,
             at: restoredAt,
           });
+          await lineageScratch.reconcile(lockedTree.threadIds);
+          if (arriving.length > 0) await deps.arrivals?.settle(arriving);
           await projectionMutation.publishWorks([row.id]);
+          await deps.fileAccessChanges.publish({ workId: id });
           return { before: existing, after: mapWork(row), changed: true };
         });
       } catch (cause) {
+        if (cause instanceof ContextEntryConflictError)
+          throw new WorkRestoreConflictError("content");
         const constraint = workUniqueConstraint(cause);
         if (constraint === "works_project_name_active") {
           throw new WorkRestoreConflictError("name");

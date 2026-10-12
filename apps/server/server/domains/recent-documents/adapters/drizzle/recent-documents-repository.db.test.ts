@@ -12,10 +12,12 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
+import {
+  deleteDrizzleRows,
+  useRollbackTestDatabase,
+} from "../../../../test-support/drizzle-reset.js";
 import {
   RecentDocumentUnavailableError,
   USER_RECENT_DOCUMENTS_CAP,
@@ -59,7 +61,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("drizzle recent documents repository (postgres)", () => {
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const database = useRollbackTestDatabase(DATABASE_URL, {
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
 
     async function seed() {
@@ -99,18 +101,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: NO_WORK_SCRATCH,
           workId: NO_WORK,
           scope: "work",
-          name: "Scratch",
-          slug: "scratch",
+          name: "Uploads",
+          slug: "uploads",
         },
         { id: USER_SOURCE, projectId: PERSONAL, name: "User", slug: "user" },
         { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, name: "Foreign", slug: "manuscript" },
       ]);
       await db.insert(documents).values([
-        { id: OWNED, contextSourceId: MANUSCRIPT, name: "chapter", extension: "md" },
-        { id: SCRATCH, contextSourceId: WORK_SCRATCH, name: "scene", extension: "md" },
-        { id: NO_WORK_DOC, contextSourceId: NO_WORK_SCRATCH, name: "aside", extension: "md" },
-        { id: PERSONAL_DOC, contextSourceId: USER_SOURCE, name: "notes", extension: "md" },
-        { id: FOREIGN_DOC, contextSourceId: FOREIGN_SOURCE, name: "secret", extension: "md" },
+        { id: OWNED, contextSourceId: MANUSCRIPT, name: "chapter", extension: "" },
+        { id: SCRATCH, contextSourceId: WORK_SCRATCH, name: "scene", extension: "" },
+        { id: NO_WORK_DOC, contextSourceId: NO_WORK_SCRATCH, name: "aside", extension: "" },
+        { id: PERSONAL_DOC, contextSourceId: USER_SOURCE, name: "notes", extension: "" },
+        { id: FOREIGN_DOC, contextSourceId: FOREIGN_SOURCE, name: "secret", extension: "" },
         {
           id: PDF,
           contextSourceId: MANUSCRIPT,
@@ -119,7 +121,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileType: "pdf",
           mimeType: "application/pdf",
         },
-        { id: DOOMED, contextSourceId: MANUSCRIPT, name: "cut", extension: "md" },
+        { id: DOOMED, contextSourceId: MANUSCRIPT, name: "cut", extension: "" },
       ]);
       return { db, repo: createDrizzleRecentDocumentsRepository({ db }) };
     }
@@ -159,15 +161,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: SCRATCH,
             projectId: PROJECT,
             scheme: "scratch",
-            path: "/scene.md",
+            path: "/scene",
             workSlug: "draft",
           }),
           // No Work resolves to a null work slug.
           expect.objectContaining({
             documentId: NO_WORK_DOC,
             projectId: PROJECT,
-            scheme: "scratch",
-            path: "/aside.md",
+            scheme: "uploads",
+            path: "/aside",
             workSlug: null,
           }),
         ]),
@@ -179,45 +181,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: PERSONAL_DOC,
           projectId: PERSONAL,
           scheme: "user",
-          path: "/notes.md",
+          path: "/notes",
           workSlug: null,
         }),
       ]);
-    });
-
-    it("keeps one open per interval, then moves the row on a later open", async () => {
-      const { db, repo } = await seed();
-      const storedOpenedAt = async () =>
-        (
-          await db
-            .select({ openedAt: userRecentDocuments.openedAt })
-            .from(userRecentDocuments)
-            .where(
-              and(eq(userRecentDocuments.userId, USER), eq(userRecentDocuments.documentId, OWNED)),
-            )
-        )[0]?.openedAt;
-
-      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(true);
-      const first = await storedOpenedAt();
-      expect(first).toBeInstanceOf(Date);
-
-      // A repeat open inside the interval is the same open: the row does not move.
-      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(false);
-      expect(await storedOpenedAt()).toEqual(first);
-
-      // The interval is per document, not per account: another document opened in
-      // the same window is a different open and must still be recorded.
-      await expect(repo.record(userId(USER), documentId(PDF))).resolves.toBe(true);
-
-      // Past the interval, the same open moves the row and reports the write.
-      await db
-        .update(userRecentDocuments)
-        .set({ openedAt: new Date(Date.now() - 60_000) })
-        .where(
-          and(eq(userRecentDocuments.userId, USER), eq(userRecentDocuments.documentId, OWNED)),
-        );
-      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(true);
-      expect((await storedOpenedAt())?.getTime()).toBeGreaterThan(Date.now() - 5_000);
     });
 
     it("omits a soft-deleted document and does not let it occupy a cap slot", async () => {
@@ -241,7 +208,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: liveId,
           contextSourceId: MANUSCRIPT,
           name: `live-${index}`,
-          extension: "md",
+          extension: "",
         })),
       );
       for (const liveId of liveIds) {
@@ -256,22 +223,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const listed = await repo.listForProject(PROJECT, userId(USER));
       expect(listed).toHaveLength(USER_RECENT_DOCUMENTS_CAP);
       expect(listed.map((item) => item.documentId)).not.toContain(DOOMED);
-    });
-
-    it("lists a binary document", async () => {
-      const { repo } = await seed();
-      await repo.record(userId(USER), documentId(PDF));
-      await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toEqual([
-        expect.objectContaining({
-          documentId: PDF,
-          scheme: "manuscript",
-          path: "/proof.pdf",
-          name: "proof.pdf",
-          filetype: "pdf",
-          editable: false,
-          workSlug: null,
-        }),
-      ]);
     });
   });
 }

@@ -17,6 +17,7 @@ import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { decodeWorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
+  contextAvailabilityHeads,
   contextCatalogCommits,
   contextCatalogEntries,
   contextCatalogScopeHeads,
@@ -24,26 +25,39 @@ import {
   documents,
   folders,
   projects,
+  threads,
   works,
 } from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
+  deferUntilDrizzleCommit,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type {
   ContextCatalog,
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
+  ProjectCatalogLifecyclePort,
+  ProjectDocumentCatalogRefreshPort,
   WorkAuthorityCatalogMutationPort,
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
 import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
+import {
+  type ManifestMembershipResolver,
+  resolveCatalogDocumentMembership,
+} from "../visible-document-membership.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
+import { type CatalogRepairRequest, createCatalogRepairQueue } from "./catalog-repair-queue.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const DEFAULT_RETAINED_COMMITS_PER_SCOPE = 1_000;
+const REFRESH_RETRY_DELAYS_MS = [10, 50, 250, 1_000] as const;
 
 type CatalogDb = Pick<Database, "delete" | "insert" | "select" | "update">;
 
@@ -72,6 +86,12 @@ function decodeCursor(cursor: string): CursorPayload | null {
   }
 }
 
+function isLockTimeout(cause: unknown): boolean {
+  if (!cause || typeof cause !== "object") return false;
+  if ("code" in cause && cause.code === "55P03") return true;
+  return "cause" in cause && isLockTimeout(cause.cause);
+}
+
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value && typeof value === "object") {
@@ -86,11 +106,18 @@ function stableJson(value: unknown): string {
 function scopeForSource(row: {
   sourceProjectId: string | null;
   sourceWorkId: string | null;
+  sourceRootThreadId: string | null;
   projectUserId: string | null;
   projectIsPersonal: boolean | null;
   workProjectId: string | null;
   sourceSlug: string;
 }): CatalogScope | null {
+  if (row.sourceRootThreadId && row.sourceProjectId)
+    return {
+      kind: "lineage",
+      projectId: row.sourceProjectId,
+      rootThreadId: row.sourceRootThreadId,
+    };
   if (row.sourceWorkId && row.workProjectId) {
     return { kind: "work", projectId: row.workProjectId, workId: row.sourceWorkId };
   }
@@ -112,6 +139,7 @@ async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly C
     .select({
       sourceProjectId: contextSources.projectId,
       sourceWorkId: contextSources.workId,
+      sourceRootThreadId: contextSources.rootThreadId,
       sourceSlug: contextSources.slug,
       projectUserId: projects.userId,
       projectIsPersonal: projects.isPersonal,
@@ -127,21 +155,27 @@ async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly C
 
 async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
   const conditions =
-    scope.kind === "work"
-      ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
-      : scope.kind === "user"
-        ? and(
-            eq(projects.userId, scope.userId),
-            eq(projects.isPersonal, true),
-            eq(contextSources.slug, "user"),
-            isNull(projects.deletedAt),
-            isNull(contextSources.deletedAt),
-          )
-        : and(
-            eq(contextSources.projectId, scope.projectId),
-            inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
-            isNull(contextSources.deletedAt),
-          );
+    scope.kind === "lineage"
+      ? and(
+          eq(contextSources.rootThreadId, scope.rootThreadId),
+          eq(contextSources.projectId, scope.projectId),
+          isNull(contextSources.deletedAt),
+        )
+      : scope.kind === "work"
+        ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
+        : scope.kind === "user"
+          ? and(
+              eq(projects.userId, scope.userId),
+              eq(projects.isPersonal, true),
+              eq(contextSources.slug, "user"),
+              isNull(projects.deletedAt),
+              isNull(contextSources.deletedAt),
+            )
+          : and(
+              eq(contextSources.projectId, scope.projectId),
+              inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
+              isNull(contextSources.deletedAt),
+            );
   return db
     .select({
       id: contextSources.id,
@@ -149,15 +183,21 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
       slug: contextSources.slug,
       workId: contextSources.workId,
       workSlug: works.slug,
+      rootThreadRef: threads.ref,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
     .leftJoin(works, eq(contextSources.workId, works.id))
+    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
     .where(conditions)
     .orderBy(asc(contextSources.sortOrder), asc(contextSources.id));
 }
 
-async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<CatalogEntry[]> {
+async function buildScopeEntries(
+  db: CatalogDb,
+  scope: CatalogScope,
+  manifestMembership?: ManifestMembershipResolver,
+): Promise<CatalogEntry[]> {
   if (scope.kind !== "user") {
     const [activeProject] = await db
       .select({ id: projects.id })
@@ -180,6 +220,16 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!visibleWork) return [];
     }
   }
+  const [namespaceHead] = await db
+    .select({ version: contextAvailabilityHeads.namespaceGeneration })
+    .from(contextAvailabilityHeads)
+    .where(
+      eq(
+        contextAvailabilityHeads.authorityKey,
+        scope.kind === "user" ? `user:${scope.userId}` : `project:${scope.projectId}`,
+      ),
+    );
+  const observationVersion = String(namespaceHead?.version ?? 0n);
   const sourceRows = await sourcesForScope(db, scope);
   const sourceIds = sourceRows.map((row) => row.id);
   const folderRows =
@@ -189,11 +239,22 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
           .select()
           .from(folders)
           .where(and(inArray(folders.contextSourceId, sourceIds), isNull(folders.deletedAt)));
-  const documentRows =
+  let documentRows =
     sourceIds.length === 0
       ? []
       : await db
-          .select()
+          .select({
+            id: documents.id,
+            contextSourceId: documents.contextSourceId,
+            folderId: documents.folderId,
+            name: documents.name,
+            extension: documents.extension,
+            fileType: documents.fileType,
+            storageUrl: documents.storageUrl,
+            mimeType: documents.mimeType,
+            metadata: documents.metadata,
+            provisionalName: documents.provisionalName,
+          })
           .from(documents)
           .where(
             and(
@@ -202,6 +263,24 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
               isNull(documents.deletedAt),
             ),
           );
+  if (scope.kind === "project" && manifestMembership) {
+    const manuscriptSourceIds = new Set(
+      sourceRows.filter((source) => source.slug === "manuscript").map((source) => source.id),
+    );
+    if (manuscriptSourceIds.size > 0) {
+      const visibleMembership = await resolveCatalogDocumentMembership({
+        projectId: scope.projectId,
+        resolver: manifestMembership,
+      });
+      if (visibleMembership) {
+        documentRows = documentRows.filter(
+          (document) =>
+            !manuscriptSourceIds.has(document.contextSourceId) ||
+            visibleMembership.has(document.id),
+        );
+      }
+    }
+  }
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
   const childCounts = new Map<string, number>();
   for (const folder of folderRows) {
@@ -229,7 +308,12 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
   const entries: CatalogEntry[] = [];
   for (const source of sourceRows) {
     const scheme = source.slug as ContextUriScheme;
-    const authority = catalogSourceAuthority(scheme, source.workId, source.workSlug);
+    const authority = catalogSourceAuthority(
+      scheme,
+      source.workId,
+      source.workSlug,
+      source.rootThreadRef,
+    );
     entries.push({
       kind: "source",
       entryId: source.id,
@@ -243,6 +327,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!path) continue;
       entries.push({
         kind: "folder",
+        observationVersion,
         entryId: folder.id,
         scope,
         sourceId: source.id,
@@ -260,9 +345,11 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         mapAuthoritativeFile({
           document,
           scope,
+          observationVersion,
           scheme,
           workId: source.workId,
           workSlug: source.workSlug,
+          rootThreadRef: source.rootThreadRef,
           parentPath,
         }),
       );
@@ -325,14 +412,127 @@ export function createDrizzleContextCatalog(
   options: {
     retainedCommitsPerScope?: number;
     availabilityMutations?: ProjectContextAvailabilityMutationPort;
+    manifestMembership?: ManifestMembershipResolver;
+    eventSink?: EventSink;
+    delay?: (milliseconds: number) => Promise<void>;
+    /** Owns the post-commit repair so shutdown and test resets can drain it. */
+    backgroundTasks?: DetachedWorkTracker;
   } = {},
-): ContextCatalog & ContextCatalogMutationPort & WorkAuthorityCatalogMutationPort {
+): ContextCatalog &
+  ContextCatalogMutationPort &
+  ProjectCatalogLifecyclePort &
+  ProjectDocumentCatalogRefreshPort &
+  WorkAuthorityCatalogMutationPort {
   const availabilityMutations =
     options.availabilityMutations ?? createDrizzleProjectContextAvailability(db);
   const retainedCommitsPerScope = Math.max(
     1,
     Math.floor(options.retainedCommitsPerScope ?? DEFAULT_RETAINED_COMMITS_PER_SCOPE),
   );
+  async function retryRefresh<T>(operation: () => Promise<T>): Promise<T> {
+    let lastCause: unknown;
+    for (const delayMs of REFRESH_RETRY_DELAYS_MS) {
+      await (options.delay ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))))(
+        delayMs,
+      );
+      try {
+        return await operation();
+      } catch (cause) {
+        lastCause = cause;
+      }
+    }
+    throw lastCause;
+  }
+  const repairQueue = createCatalogRepairQueue(async (requests) => {
+    const scopes = new Map<string, { scope: CatalogScope; roots: Set<string> }>();
+    const publications = new Map<
+      string,
+      {
+        generation: string | undefined;
+        projectIds: string[];
+        userIds: string[];
+      }
+    >();
+    const sourceIds = new Set<string>();
+    for (const request of requests) {
+      for (const scope of request.scopes) {
+        const key = catalogScopeKey(scope);
+        const entry = scopes.get(key) ?? { scope, roots: new Set<string>() };
+        for (const root of request.invalidatedRootIds) entry.roots.add(root);
+        scopes.set(key, entry);
+      }
+      for (const sourceId of request.sourceIds) sourceIds.add(sourceId);
+      for (const [kind, ids] of [
+        ["project", request.projectIds],
+        ["user", request.userIds],
+      ] as const) {
+        for (const id of ids) {
+          const key = `${kind}:${id}`;
+          const previous = publications.get(key);
+          // Generations order an authority, not a group of unrelated authorities.
+          // A post-draft refresh reserves a fresh generation inside the repair.
+          if (
+            !previous ||
+            request.availabilityGeneration === undefined ||
+            (previous.generation !== undefined &&
+              BigInt(request.availabilityGeneration) > BigInt(previous.generation))
+          ) {
+            publications.set(key, {
+              generation: request.availabilityGeneration,
+              projectIds: kind === "project" ? [id] : [],
+              userIds: kind === "user" ? [id] : [],
+            });
+          }
+        }
+      }
+    }
+    const commitId = randomUUID();
+    try {
+      await retryRefresh(() =>
+        runInRootDrizzleTransaction(
+          db,
+          async () => {
+            await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+            const reservedPublications = [];
+            for (const publication of publications.values()) {
+              reservedPublications.push({
+                ...publication,
+                generation: publication.generation ?? (await availabilityMutations.reserve()),
+              });
+            }
+            for (const [, { scope, roots }] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
+              await refreshScope(scope, [...roots], commitId);
+            }
+            for (const publication of reservedPublications) {
+              await availabilityMutations.publishReserved(publication);
+            }
+          },
+          { isolationLevel: "repeatable read" },
+        ),
+      );
+    } catch (cause) {
+      if (options.eventSink) {
+        emitEvent(options.eventSink, {
+          level: isLockTimeout(cause) ? "warn" : "error",
+          source: "context-catalog",
+          name: "DeferredRefreshFailure",
+          payload: {
+            sourceIds: [...sourceIds],
+            scopeKeys: [...scopes.keys()],
+            ...unknownToEventPayload(cause),
+          },
+        });
+      }
+      throw cause;
+    }
+  });
+  function enqueueRepair(request: CatalogRepairRequest): Promise<void> {
+    // Track at enqueue, not at the immediate: drains must include queued reruns.
+    return (options.backgroundTasks ?? processDetachedWork).track(
+      repairQueue.enqueue(request),
+      "context catalog repair",
+    );
+  }
   async function refreshScope(
     scope: CatalogScope,
     invalidatedRootIds: readonly string[] = [],
@@ -350,20 +550,36 @@ export function createDrizzleContextCatalog(
         .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
         .limit(1);
       if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
-      const authoritative = await buildScopeEntries(tx, scope);
+      const authoritative = await buildScopeEntries(tx, scope, options.manifestMembership);
       const existing = await tx
         .select()
         .from(contextCatalogEntries)
         .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
       const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
+      // Deduplicate complete observations below: equal payloads with newer namespace
+      // versions still publish, including moves back before deferred repair catches up.
       const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
+      // Replay clears the old subtree before installing this commit. Restore every
+      // survivor, including entries already published by a separate repair and
+      // descendants that moved out of the root during this refresh.
+      const replacedIds = new Set(invalidatedRootIds);
+      const children = new Map<string, Set<string>>();
+      for (const entry of [...oldById.values(), ...nextById.values()]) {
+        if (entry.kind !== "folder" && entry.kind !== "file") continue;
+        const ids = children.get(entry.parentId) ?? new Set<string>();
+        ids.add(entry.entryId);
+        children.set(entry.parentId, ids);
+      }
+      for (const entryId of replacedIds) {
+        for (const childId of children.get(entryId) ?? []) replacedIds.add(childId);
+      }
       const changes: CatalogChange[] = [];
       for (const rootEntryId of new Set(invalidatedRootIds)) {
         changes.push({ operation: "invalidate-subtree", ordinal: changes.length, rootEntryId });
       }
       for (const [entryId, entry] of nextById) {
         const old = oldById.get(entryId);
-        if (!old || stableJson(old) !== stableJson(entry)) {
+        if (replacedIds.has(entryId) || !old || stableJson(old) !== stableJson(entry)) {
           changes.push({ operation: "upsert", ordinal: changes.length, entry });
         }
       }
@@ -432,7 +648,7 @@ export function createDrizzleContextCatalog(
             .where(eq(contextCatalogScopeHeads.scopeKey, catalogScopeKey(scope)))
             .limit(1);
           if (!head) throw new Error(`Catalog head disappeared: ${catalogScopeKey(scope)}`);
-          const entries = await buildScopeEntries(tx as never, scope);
+          const entries = await buildScopeEntries(tx as never, scope, options.manifestMembership);
           return {
             scope,
             generation: head.generation,
@@ -557,27 +773,51 @@ export function createDrizzleContextCatalog(
               .leftJoin(projects, eq(contextSources.projectId, projects.id))
               .leftJoin(works, eq(contextSources.workId, works.id))
               .where(inArray(contextSources.id, [...new Set(sourceIds)] as never));
-      const availabilityGeneration = await availabilityMutations.advance({
-        projectIds: [
-          ...new Set(
-            ownershipRows.flatMap(
-              (row) => [row.projectId ?? row.workProjectId].filter(Boolean) as string[],
-            ),
+      const manifestBackedProjectIds = new Set(
+        options.manifestMembership
+          ? ownershipRows.flatMap((row) =>
+              row.sourceSlug === "manuscript" && row.projectId ? [row.projectId] : [],
+            )
+          : [],
+      );
+      const projectIds = [
+        ...new Set(
+          ownershipRows.flatMap(
+            (row) => [row.projectId ?? row.workProjectId].filter(Boolean) as string[],
           ),
-        ],
-        userIds: [
-          ...new Set(
-            ownershipRows.flatMap((row) =>
-              row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId
-                ? [row.projectUserId]
-                : [],
-            ),
+        ),
+      ];
+      const userIds = [
+        ...new Set(
+          ownershipRows.flatMap((row) =>
+            row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId
+              ? [row.projectUserId]
+              : [],
           ),
-        ],
-      });
-      for (const scope of [...scopes.values()].sort((a, b) =>
+        ),
+      ];
+      const orderedScopes = [...scopes.values()].sort((a, b) =>
         catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
-      )) {
+      );
+      if (manifestBackedProjectIds.size > 0) {
+        const availabilityGeneration = await availabilityMutations.reserve({ projectIds, userIds });
+        const request: CatalogRepairRequest = {
+          scopes: orderedScopes,
+          invalidatedRootIds,
+          availabilityGeneration,
+          projectIds,
+          userIds,
+          sourceIds,
+        };
+        const launchRepair = () => {
+          void enqueueRepair(request).catch(() => undefined);
+        };
+        if (deferUntilDrizzleCommit(launchRepair)) return availabilityGeneration;
+        await enqueueRepair(request);
+        return availabilityGeneration;
+      }
+      const availabilityGeneration = await availabilityMutations.advance({ projectIds, userIds });
+      for (const scope of orderedScopes) {
         await refreshScope(scope, invalidatedRootIds, commitId);
       }
       return availabilityGeneration;
@@ -608,6 +848,16 @@ export function createDrizzleContextCatalog(
       )) {
         await refreshScope(scope, [], commitId);
       }
+    },
+    refreshProjectDocuments(projectId) {
+      // The queue reports failures; waitUntil must not reclassify contention as error.
+      return enqueueRepair({
+        scopes: [{ kind: "project", projectId }],
+        invalidatedRootIds: [],
+        projectIds: [projectId],
+        userIds: [],
+        sourceIds: [],
+      }).catch(() => undefined);
     },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();

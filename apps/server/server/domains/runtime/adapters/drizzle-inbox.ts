@@ -93,6 +93,14 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .limit(limit);
       return rows.map(({ id }) => id as ThreadId);
     },
+    async findMessage(id) {
+      const [row] = await db_()
+        .select()
+        .from(schema.threadInboxMessages)
+        .where(eq(schema.threadInboxMessages.id, id))
+        .limit(1);
+      return row ? toInboxMessage(row) : null;
+    },
     async enqueue(draft) {
       const [inserted] = await db_()
         .insert(schema.threadInboxMessages)
@@ -184,7 +192,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .from(schema.threadInboxMessages)
         .where(
           and(
-            eq(schema.threadInboxMessages.intent, "message"),
+            inArray(schema.threadInboxMessages.intent, ["message", "control"]),
             afterThreadId ? gt(schema.threadInboxMessages.threadId, afterThreadId) : undefined,
             isNull(schema.threadInboxMessages.deliveredAt),
           ),

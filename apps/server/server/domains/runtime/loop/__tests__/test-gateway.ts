@@ -31,6 +31,7 @@ export function createInertGateway(defaultModel?: string): Gateway {
 export function scriptedGateway(
   options: {
     results?: GenerateResult[];
+    usage?: GenerateResult["usage"];
     onStream?: (call: number) => Promise<void>;
     errorAtCall?: number;
     pauseAt?: readonly number[];
@@ -80,7 +81,7 @@ export function scriptedGateway(
           content: [{ type: "text", text: "done" }],
           toolCalls: [],
           finishReason: "end_turn",
-          usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+          usage: options.usage ?? { inputTokens: 1_000_000, outputTokens: 1_000_000 },
           model: "gpt-4.1-mini",
           provider: "openai",
         },

@@ -4,8 +4,7 @@
  * The editor owns the lifecycle — the slot, the progress, the failure, the
  * abort — and knows nothing about projects, figure endpoints, or CORS. This
  * component is that seam, the same shape as `ProjectLinkRuntime`: it registers
- * the two ports the ingress asks for and feeds the editor's asset index from
- * the project tree the app already caches.
+ * the two ports the ingress asks for.
  *
  * It renders nothing. What the writer sees while a drag is in the air, or when
  * a file is refused, is `ImageIngressOverlay`.
@@ -15,9 +14,7 @@ import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
-  editorAssetIndex,
   type ImageBytesPort,
   type ImageUploadPort,
   imageAttrsFromUpload,
@@ -33,11 +30,6 @@ export function ImageIngressRuntime({
   projectId: string | undefined;
   documentId: string;
 }) {
-  const { catalog: manuscriptCatalog } = useContextCatalogView(projectId ?? "", "manuscript", {
-    enabled: Boolean(projectId),
-    workId: null,
-  });
-
   const upload = useMemo<ImageUploadPort | null>(
     () => (projectId ? figureUploadPort(projectId, documentId) : null),
     [documentId, projectId],
@@ -47,18 +39,6 @@ export function ImageIngressRuntime({
     if (!editor || !upload) return;
     return registerImageIngressHost(editor, { upload, fetchBytes: fetchImageBytes });
   }, [editor, upload]);
-
-  // Pictures already in the project: the clipboard translates paths to refs in
-  // both directions, and it can only do that for assets it has been told about.
-  useEffect(() => {
-    const assetIndex = editorAssetIndex(editor);
-    if (!assetIndex || !manuscriptCatalog) return;
-    for (const file of manuscriptCatalog.files()) {
-      if (!file.editable && file.fileType === "image") {
-        assetIndex.remember(file.documentId, file.path.replace(/^\//, ""));
-      }
-    }
-  }, [editor, manuscriptCatalog]);
 
   return null;
 }
@@ -74,13 +54,8 @@ function figureUploadPort(projectId: string, hostDocumentId: string): ImageUploa
       signal,
       onProgress: ({ percent }) => onProgress(percent),
     });
-    const attrs = imageAttrsFromUpload(reference);
-    return {
-      src: attrs.src,
-      alt: attrs.alt,
-      assetDocumentId: reference.assetDocumentId,
-      assetPath: reference.assetPath,
-    };
+    const picture = imageAttrsFromUpload(reference);
+    return { src: picture.src, alt: picture.alt };
   };
 }
 

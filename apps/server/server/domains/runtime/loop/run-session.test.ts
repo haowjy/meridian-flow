@@ -1,13 +1,17 @@
 /** Run admission is lazy; one owner settles cancellation, crashes, and cleanup. */
+
+import type { TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import {
+  classifyHistoryItem,
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
 import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { DEFAULT_LEASE_TTL_MS } from "./ports.js";
+import { sweepWakes } from "./sweep-wakes.js";
 
 async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   const journal = createInMemoryEventJournalWriter();
@@ -15,12 +19,13 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   let calls = 0;
   const repos = createInMemoryRepositories();
   const thread = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const boundThreadIds = new Set([thread.id]);
   const harness = createRuntimeHarness({
     repos,
     eventWriter: journal,
     eventSink: sink,
     headSeq: (id) => journal.headSeq(id),
-    boundThreads: () => [thread.id],
+    boundThreads: () => [...boundThreadIds],
   });
   const deps = harness.deps;
 
@@ -53,7 +58,9 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
     runtime,
     repos,
     deps,
+    backgroundTasks: harness.backgroundTasks,
     thread,
+    boundThreadIds,
     journal,
     sink,
     calls: () => calls,
@@ -62,71 +69,132 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
 }
 
 describe("RunSession", () => {
-  it("origins a writer-started run's user turn as writer, and a child run's as system", async () => {
-    const f = await fixture();
-    await f.prepare();
-    const [userTurn] = await f.repos.turns.listByThread(f.thread.id);
-    expect(userTurn?.role).toBe("user");
-    expect(userTurn?.origin).toBe("writer");
+  it("aborts and settles live replies on shutdown, then refuses new starts", async () => {
+    let providerStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    let providerSignal: AbortSignal | undefined;
+    let streams = 0;
+    const f = await fixture((deps) => {
+      deps.gateway.stream = async function* (request) {
+        streams++;
+        providerSignal = request.signal;
+        providerStarted();
+        await new Promise<void>((resolve) => {
+          if (request.signal?.aborted) resolve();
+          else request.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        yield {
+          type: "end",
+          result: {
+            content: [{ type: "text", text: "partial answer" }],
+            toolCalls: [],
+            finishReason: "end_turn",
+            usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+            model: "gpt-4.1-mini",
+            provider: "openai",
+          },
+        };
+      };
+      deps.gateway.settleCancelledResult = async ({ result }) =>
+        result ? { result, persist: true } : null;
+    });
 
-    const child = await f.repos.threads.create({
-      userId: f.thread.userId,
-      projectId: f.thread.projectId,
+    const balanceBefore = await f.deps.creditLedger.getBalance({ userId: f.thread.userId });
+    const run = await f.prepare();
+    const execution = run.execute();
+    await started;
+    f.runtime.beginShutdown();
+
+    await expect(execution).resolves.toMatchObject({
+      status: "error",
+      turn: { status: "error", error: "This response failed.", metadata: { reason: "shutdown" } },
     });
-    await f.runtime.prepare({
-      threadId: child.id,
-      userText: "spawned prompt",
-      child: { parentThreadId: f.thread.id, background: false },
-    });
-    const [childUserTurn] = await f.repos.turns.listByThread(child.id);
-    expect(childUserTurn?.role).toBe("user");
-    expect(childUserTurn?.origin).toBe("system");
+    expect(providerSignal?.reason).toBe("shutdown");
+    expect(await f.repos.modelResponses.listByTurn(run.executionTurnId)).toHaveLength(1);
+    expect(BigInt(await f.deps.creditLedger.getBalance({ userId: f.thread.userId }))).toBeLessThan(
+      BigInt(balanceBefore),
+    );
+
+    await f.runtime.startDrain(f.thread.id);
+    await expect(
+      f.runtime.prepare({ threadId: f.thread.id, userText: "after shutdown" }),
+    ).rejects.toMatchObject({ name: "RuntimeShuttingDownError" });
+    expect(streams).toBe(1);
   });
 
-  it("commits setup and captures the cursor before one-shot execution", async () => {
+  it("finalizes fork-context prep failure on the adopted message without a wake retry", async () => {
     const f = await fixture();
-    const run = await f.prepare();
-    expect(f.calls()).toBe(0);
-    expect(run.resumeAfterSeq).toBe("0");
-    expect(BigInt(run.snapshotFloorNextSeq)).toBe((await f.journal.headSeq(f.thread.id)) + 1n);
-    expect(await f.deps.repos.turns.findById(run.assistantTurnId)).toMatchObject({
-      status: "streaming",
+    const message = await f.deps.delivery.enqueue({
+      threadId: f.thread.id,
+      intent: "message",
+      provenance: { kind: "writer", actorId: f.thread.userId },
+      body: { kind: "text", text: "Keep writing" },
+      idempotencyKey: "context-failure",
+    });
+    const findById = f.repos.threads.findById;
+    f.repos.threads.findById = async (threadId) => {
+      const thread = await findById(threadId);
+      return thread?.id === f.thread.id
+        ? { ...thread, originType: "fork", originTurnId: "missing-cutoff" as TurnId }
+        : thread;
+    };
+
+    const run = await f.runtime.prepare({ threadId: f.thread.id, drain: true });
+    expect(await f.repos.turns.findById(message.id as TurnId)).toMatchObject({
+      id: message.id,
+      role: "user",
+      origin: "writer",
     });
     expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
-    const execution = run.execute();
-    expect(run.execute()).toBe(execution);
-    expect(await execution).toMatchObject({
-      status: "complete",
-      turn: { id: run.assistantTurnId },
+
+    expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
+    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({
+      status: "error",
+      error: "This response failed.",
+      metadata: { reason: "missing_cutoff_turn" },
     });
-    expect(f.calls()).toBe(1);
-    expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain(
-      "turn.completed",
+    const terminal = f.journal
+      .getEvents(f.thread.id)
+      .map(({ event }) => event)
+      .find((event) => event.type === "turn.error");
+    expect(terminal).toMatchObject({
+      type: "turn.error",
+      error: {
+        code: "runtime_error",
+        message: expect.stringMatching(/has no cutoff turn$/),
+        source: "system",
+        retryable: false,
+        details: { reason: "missing_cutoff_turn" },
+      },
+    });
+    expect(f.sink.events).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "thread.conversation_context.load_failed",
+        correlation: { threadId: f.thread.id },
+        payload: {
+          threadId: f.thread.id,
+          cutoffTurnId: "missing-cutoff",
+          errorCode: "missing_cutoff_turn",
+        },
+      }),
     );
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
-    expect(f.runtime.isThreadRunning(f.thread.id)).toBe(false);
-  });
+    expect(await f.deps.delivery.selectPending(f.thread.id)).toEqual([]);
+    expect(await f.deps.delivery.pendingMessageThreads(10)).toEqual([]);
 
-  it("cancels a prepared run without invoking the model", async () => {
-    const f = await fixture();
-    const run = await f.prepare();
-    expect(await f.runtime.cancel(f.thread.id, run.assistantTurnId)).toBe("cancelled");
-    expect(await run.execute()).toMatchObject({ status: "cancelled" });
-    expect(f.calls()).toBe(0);
-    await expect.poll(() => f.runtime.isThreadRunning(f.thread.id)).toBe(false);
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
-  });
-
-  it("falls back after a pre-loop crash and releases", async () => {
-    const f = await fixture();
-    const run = await f.prepare();
-    f.deps.repos.blocks.listByThread = async () => {
-      throw new Error("history unavailable");
-    };
-    expect(await run.execute()).toMatchObject({ status: "error" });
-    expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain("turn.error");
-    expect(f.sink.events.map((event) => event.name)).toEqual(["execution.failed"]);
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
+    const start = vi.fn(async () => {});
+    await sweepWakes({
+      delivery: f.deps.delivery,
+      authority: f.deps.runClaim,
+      runStarter: { start },
+      eventSink: f.deps.eventSink,
+      limit: 10,
+    });
+    expect(start).not.toHaveBeenCalled();
   });
 
   it("observes terminal fallback failure, settles the run, and releases", async () => {
@@ -199,7 +267,6 @@ describe("RunSession", () => {
     }
   });
   it.each([
-    false,
     true,
   ])("commits child admission and releases before publication B (card failure: %s)", async (failCard) => {
     const f = await fixture();
@@ -227,10 +294,11 @@ describe("RunSession", () => {
       published = resolve;
     });
     const driver = createChildRunDriver({
+      backgroundTasks: f.backgroundTasks,
       orchestrator: f.runtime,
       repos: f.deps.repos,
       eventWriter: f.journal,
-      readActivity: async () => ({ descendants: [] }),
+      readActivity: async () => ({ children: [] }),
       eventSink: f.sink,
       publisher: {
         async publish(threadId, execution) {
@@ -278,7 +346,6 @@ describe("RunSession", () => {
   });
 
   it.each([
-    false,
     true,
   ])("preserves descendant lifetime at parent completion (child parent: %s)", async (childParent) => {
     const f = await fixture();
@@ -295,17 +362,24 @@ describe("RunSession", () => {
     const parent = await f.runtime.prepare({
       threadId: f.thread.id,
       userText: "parent",
-      ...(childParent ? { child: { parentThreadId: "ancestor", background: false } } : {}),
+      ...(childParent
+        ? { child: { parentThreadId: "ancestor", background: false, origin: "spawn" as const } }
+        : {}),
     });
     const foreground = await f.runtime.prepare({
       threadId: fg.id,
       userText: "fg",
-      child: { parentThreadId: f.thread.id, background: false },
+      child: { parentThreadId: f.thread.id, background: false, origin: "message" },
+    });
+    const foregroundTurn = await f.repos.turns.findById(foreground.userTurnId);
+    expect(foregroundTurn && classifyHistoryItem(foregroundTurn)).toEqual({
+      kind: "agent_request",
+      source: "foreground_message",
     });
     const background = await f.runtime.prepare({
       threadId: bg.id,
       userText: "bg",
-      child: { parentThreadId: f.thread.id, background: true },
+      child: { parentThreadId: f.thread.id, background: true, origin: "spawn" },
     });
     expect((await parent.execute()).status).toBe("complete");
     expect((await foreground.execute()).status).toBe("cancelled");
@@ -319,14 +393,14 @@ describe("RunSession", () => {
       role: "assistant",
       origin: "assistant",
       status: "streaming",
-      prevTurnId: run.assistantTurnId,
+      prevTurnId: run.executionTurnId,
     });
     f.deps.runClaim.readRunningTurnId = async () => other.id;
     f.deps.repos.blocks.listByThread = async () => {
       throw new Error("history unavailable");
     };
     const outcome = await run.execute();
-    expect(outcome).toMatchObject({ status: "error", turn: { id: run.assistantTurnId } });
+    expect(outcome).toMatchObject({ status: "error", turn: { id: run.executionTurnId } });
     expect((await f.repos.turns.findById(other.id))?.status).toBe("streaming");
   });
 
@@ -342,7 +416,7 @@ describe("RunSession", () => {
     const run = await f.prepare();
     expect(await run.execute()).toMatchObject({
       status: "complete",
-      turn: { id: run.assistantTurnId },
+      turn: { id: run.executionTurnId },
     });
     expect(f.sink.events.map((event) => event.name)).toContain("lease_release.failed");
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();

@@ -6,6 +6,7 @@
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 
 export function deriveJournalTurnId(event: OrchestratorEvent): string | null {
+  if (event.type === "context.compacted") return event.compactionTurnId;
   if (event.type === "turn.change_trail_updated" || event.type === "turn.change_trail_settled") {
     return event.turnId;
   }

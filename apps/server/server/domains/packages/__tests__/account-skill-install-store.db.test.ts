@@ -6,7 +6,7 @@ import {
 } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
+import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleAccountSkillInstallStore } from "../adapters/drizzle-account-skill-install-store.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
 import { installPackagedAccountSkill } from "../domain/account-skill-install.js";
@@ -33,7 +33,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     const installs = createDrizzleAccountSkillInstallStore(db);
 
     beforeEach(async () => {
-      await truncateDrizzleTables(db, [schema.users, schema.agentPackageRevisions]);
+      await deleteDrizzleRows(db, [schema.users, schema.agentPackageRevisions]);
       await db
         .insert(schema.users)
         .values([

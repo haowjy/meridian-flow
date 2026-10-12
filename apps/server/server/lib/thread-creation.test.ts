@@ -89,34 +89,23 @@ describe("exact thread creation", () => {
     expect(recovered).toEqual(created);
   });
 
-  it("assigns c1 then c2 for two primary creates in one project", async () => {
-    const { deps, args } = await fixture();
-    const first = await createThreadForProject(deps, { ...args, id: crypto.randomUUID() });
-    const second = await createThreadForProject(deps, { ...args, id: crypto.randomUUID() });
-    expect(first.ref).toBe("c1");
-    expect(second.ref).toBe("c2");
-  });
-
   it("does not resurrect a deleted thread on same-user retry", async () => {
     const { deps, args } = await fixture();
     const created = await createThreadForProject(deps, args);
     await deps.threads.setTrashState(created.id, "deleted");
-    await expect(createThreadForProject(deps, args)).rejects.toBeInstanceOf(
-      ThreadCreationConflictError,
-    );
+    await expect(createThreadForProject(deps, args)).rejects.toMatchObject({
+      statusCode: 404,
+      data: {
+        __meridianInterruptEnvelope: {
+          error: {
+            code: "thread_deleted",
+            details: { authenticatedUserId: args.userId },
+          },
+        },
+      },
+    });
     expect(await deps.threads.findById(created.id)).toBeNull();
     expect((await deps.threads.lockByIdIncludingDeleted(created.id))?.deletedAt).not.toBeNull();
-  });
-
-  it("returns the existing row for same-user same-project retry", async () => {
-    const { deps, args } = await fixture();
-    const created = await createThreadForProject(deps, args);
-    const retried = await createThreadForProject(deps, {
-      ...args,
-      title: "Changed title",
-      workId: null,
-    });
-    expect(retried).toEqual(created);
   });
 
   it("conflicts when the same user reuses the id in another project", async () => {

@@ -28,8 +28,10 @@ export function catalogSourceAuthority(
   scheme: ContextUriScheme,
   workId: string | null,
   workSlug: string | null,
+  rootThreadRef?: string | null,
 ): CanonicalContextAuthority {
   if (scheme !== "scratch" && scheme !== "uploads") return { kind: "contextual" };
+  if (scheme === "scratch" && rootThreadRef) return { kind: "lineage", rootThreadRef };
   if (!workId) throw new Error("Work-scoped catalog row is missing Work id");
   if (workSlug === null) return { workId, workSlug: null } as ResolvedWorkAuthority;
   const decoded = decodeWorkSlug(workSlug);
@@ -39,11 +41,13 @@ export function catalogSourceAuthority(
 
 export function mapAuthoritativeFile(input: {
   document: CatalogFileRow;
+  observationVersion: string;
   scope: CatalogScope;
   scheme: ContextUriScheme;
   workId: string | null;
   workSlug: string | null;
   parentPath: readonly string[];
+  rootThreadRef?: string | null;
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
@@ -81,6 +85,7 @@ export function mapAuthoritativeFile(input: {
           };
   return {
     kind: "file",
+    observationVersion: input.observationVersion,
     entryId: document.id,
     scope,
     sourceId: document.contextSourceId,
@@ -91,7 +96,7 @@ export function mapAuthoritativeFile(input: {
     uri: canonicalContextUri(
       scheme,
       path.join("/"),
-      catalogSourceAuthority(scheme, input.workId, input.workSlug),
+      catalogSourceAuthority(scheme, input.workId, input.workSlug, input.rootThreadRef),
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,

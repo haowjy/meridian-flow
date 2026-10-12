@@ -137,6 +137,12 @@ export interface DestructiveDocumentEffectInput {
   before: DocHandle;
   afterCandidate: DocHandle;
   attributedLineage?: readonly (ContentLineage & { origin: "human" | "agent" })[];
+  /**
+   * What the actor's own writes saw and removed. Removing what it saw is the
+   * write, not a sweep: such a block is reported only when it also held
+   * content the actor never saw, such as words a writer typed into it.
+   */
+  ownWrites?: { seen: readonly LineageRange[]; removed: readonly LineageRange[] };
 }
 
 /**
@@ -173,7 +179,16 @@ export async function classifyDestructiveDocumentEffect(
       provenance.afterCandidate,
       input.attributedLineage ?? [],
     ),
-  }).affectedBefore.map(({ block }) => block);
+  })
+    .affectedBefore.filter(({ block, ranges }) => {
+      const own = input.ownWrites;
+      if (!own) return true;
+      return (
+        subtractLineageRanges(ranges, own.removed).length > 0 ||
+        subtractLineageRanges(block.lineage, own.seen).length > 0
+      );
+    })
+    .map(({ block }) => block);
 }
 
 function applyAttributedLineage(

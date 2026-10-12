@@ -1,14 +1,16 @@
 /** Pure-markdown plugin and convenience codec preset. */
 
 import type { Schema } from "prosemirror-model";
+import type { PluggableList } from "unified";
 
 import { createMarkupCodec } from "../codec.js";
 import { demoteAutolinks } from "../helpers.js";
-import type { AssetPathResolver, BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
+import type { BlockCodec, MarkCodec, MarkupPlugin } from "../types.js";
 import {
   blockquoteCodec,
   bulletListCodec,
   codeBlockCodec,
+  hardBreakCodec,
   headingCodec,
   horizontalRuleCodec,
   imageCodec,
@@ -25,7 +27,6 @@ import {
   strikeMarkCodec,
   strongMarkCodec,
 } from "./marks/index.js";
-import { remarkWikiLink } from "./wikilink.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
   tableCodec,
@@ -37,6 +38,7 @@ export const markdownBlockCodecs: readonly BlockCodec[] = [
   listItemCodec,
   blockquoteCodec,
   imageCodec,
+  hardBreakCodec,
   horizontalRuleCodec,
 ];
 
@@ -56,14 +58,19 @@ export function markdown(): MarkupPlugin {
   return {
     blocks: markdownBlockCodecs,
     marks: markdownMarkCodecs,
-    remarkPlugins: [remarkWikiLink],
     preprocess: normalizeGfmTableHardBreaks,
     postParse: demoteAutolinks,
   };
 }
 
-export function markdownCodec(options: { schema: Schema; assetPathResolver: AssetPathResolver }) {
-  return createMarkupCodec(options)
+/**
+ * The canonical Markdown codec. Callers may extend parsing with
+ * `remarkPlugins`; without them it is the wire codec.
+ */
+export function markdownCodec(options: { schema: Schema; remarkPlugins?: PluggableList }) {
+  const { remarkPlugins, ...codecOptions } = options;
+  return createMarkupCodec(codecOptions)
     .use(markdown())
+    .use({ remarkPlugins })
     .build({ requiredBlockNames: markdownRequiredBlockNames });
 }

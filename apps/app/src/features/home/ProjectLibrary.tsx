@@ -107,7 +107,12 @@ export function ProjectLibrary() {
                         >
                           {title}
                         </h3>
-                        <p className="shrink-0 cursor-text select-text text-xs text-ink-muted">
+                        {/* The account locale reconciles while streamed route chunks hydrate.
+                            This timestamp can differ from the server's English snapshot. */}
+                        <p
+                          suppressHydrationWarning
+                          className="shrink-0 cursor-text select-text text-xs text-ink-muted"
+                        >
                           {t`Edited ${formatRelativeTime(project.updatedAt, now)}`}
                         </p>
                       </div>

@@ -1,0 +1,7 @@
+# Markup follow-up
+
+- Preserve entity-looking link destinations during mark serialization. A PM link
+  with href `https://x/?a=&copy;` serializes with `©` in its destination because
+  `markdownLinkDestination` leaves `&` unescaped before the internal Markdown
+  reparse. Reproduced on the codec-link-words branch and its pre-fix parent;
+  independent of the removed MDX angle expansion. Cover both codecs when fixing.

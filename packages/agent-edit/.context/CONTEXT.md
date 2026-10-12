@@ -12,11 +12,21 @@ Read the page that owns the seam you are changing:
 - [Port contracts](port-contracts.md) — journal, coordinator, lifecycle, codec,
   model, session-store, and core interfaces.
 - [Write architecture](write-architecture.md) — module boundaries, codec flow,
-  semantic certification, tiered application, and cold reversal.
+  semantic certification, edit application, and cold reversal.
 - [Write invariants](write-invariants.md) — block identity, destructive-edit
   safety, synchronization, and resolver constraints.
+- [Link identity](link-correspondence.md) — ref assignment at every write
+  door, find-splice restoration, shown-link facts, and exact correspondence.
 - [Write tool surface](write-tool-surface.md) — lifecycle behavior, outcomes,
   simplifications, and test coverage.
 
 Deferred work remains in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md); rejected
 alternatives live in [ALTERNATIVES.md](ALTERNATIVES.md).
+
+## Host revision identity
+
+The required `DocumentLinksPort.revision(doc, scope)` identifies the exact
+runtime read or authority apply, synchronously, in the command's prepared
+link scope (so a host can make a tree-only move change it). Its result stays on host outcomes and response
+receipts, not `AgentEditResultV1`. A host without revision identity, or recovery
+without proof of the original apply state, returns null.

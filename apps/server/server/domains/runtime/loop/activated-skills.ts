@@ -5,7 +5,8 @@
  * A `/skill` activation stamps the slugs at enqueue; whichever drain first
  * adopts the turn reads them back, loads each body, and persists it as a
  * hidden `system`-role turn chained immediately after the invoking turn
- * (`persistSkillBodies` in orchestrator.ts) -- once, so a later request
+ * (`prepareSkillBodies` in orchestrator.ts), then persists it with the
+ * surrounding turn-start transition so a later request
  * reproduces the exact bytes an earlier request saw even if the skill's live
  * content changes afterward. The body is never kept request-only: a
  * request-only rendering here would vanish on the next request and break the
@@ -22,22 +23,26 @@
  * is never routed to `UserTurn` in the first place.
  */
 import type { JsonValue, Turn } from "@meridian/contracts/threads";
+import { classifyHistoryItem, skillBodyMetadata } from "../../threads/index.js";
+import { skillFileHeader } from "./skill-files.js";
 
 /** One activated skill's loaded body, ready to render onto its hidden body turn. */
 export interface ActivatedSkillBody {
   slug: string;
   description: string;
   body: string;
+  /** Whether the model can read the skill's files; if so the body takes `skill`'s header (D58). */
+  readable: boolean;
 }
 
 /** Metadata stamped on the hidden turn carrying activated skill bodies. */
-export const SKILL_BODY_METADATA = { kind: "system_update", section: "skill_body" } as const;
+export const SKILL_BODY_METADATA = skillBodyMetadata();
 
 /** True for a turn built from `SKILL_BODY_METADATA` -- structural, not text-prefix, identification. */
 export function isSkillBodyTurn(turn: Pick<Turn, "metadata">): boolean {
-  const metadata = turn.metadata as { kind?: string; section?: string } | null;
   return (
-    metadata?.kind === SKILL_BODY_METADATA.kind && metadata?.section === SKILL_BODY_METADATA.section
+    classifyHistoryItem({ role: "system", origin: "system", metadata: turn.metadata }).kind ===
+    "skill_body"
   );
 }
 
@@ -63,7 +68,7 @@ export function formatInvokedSkills(skills: readonly ActivatedSkillBody[]): stri
 function formatInvokedSkill(skill: ActivatedSkillBody): string {
   const description = skill.description.replace(/\s+/g, " ").trim();
   return [
-    `skill invoked: ${skill.slug}`,
+    skill.readable ? skillFileHeader(skill.slug, "SKILL.md") : `skill invoked: ${skill.slug}`,
     ...(description ? ["", `description: ${description}`] : []),
     "",
     skill.body,

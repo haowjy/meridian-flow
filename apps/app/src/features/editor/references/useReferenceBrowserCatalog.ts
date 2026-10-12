@@ -1,6 +1,8 @@
+import type { CatalogScope } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   catalogViewFromCheckpoint,
+  resourcePlacementForSnapshot,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import { QueryClientContext } from "@tanstack/react-query";
@@ -21,6 +23,8 @@ export function useReferenceBrowserCatalog(
   projectId: string | null | undefined,
   workId: string | null | undefined,
   label: string,
+  /** A No Work chat's lineage: its Scratch joins the Work's Uploads in the catalog. */
+  rootThreadId?: string | null,
 ): AtReferenceCatalog | null {
   const queryClient = useContext(QueryClientContext);
   const resources = useOptionalAccountResourceReplica();
@@ -33,9 +37,10 @@ export function useReferenceBrowserCatalog(
             { kind: "project" as const, projectId },
             { kind: "user" as const, userId: "self" },
             ...(workId ? [{ kind: "work" as const, projectId, workId }] : []),
+            ...(rootThreadId ? [{ kind: "lineage" as const, projectId, rootThreadId }] : []),
           ]
         : [],
-    [projectId, workId],
+    [projectId, workId, rootThreadId],
   );
   useEffect(() => {
     if (!queryClient || !projectId || !resources || projectPending) return;
@@ -48,7 +53,7 @@ export function useReferenceBrowserCatalog(
         ? (() => {
             let snapshot = projection.snapshot;
             let projectionError = projection.error;
-            const read = (scope: (typeof scopes)[number]) => {
+            const read = (scope: CatalogScope) => {
               const checkpoint = snapshot?.catalogs.find(
                 (candidate) =>
                   candidate.projectId === projectId &&
@@ -60,7 +65,15 @@ export function useReferenceBrowserCatalog(
                     projectQueryKeys.contextCatalog(projectId, scope),
                   );
               return view
-                ? projectResourceCatalogView(projectId, scope, view, snapshot?.records ?? [])
+                ? projectResourceCatalogView(
+                    projectId,
+                    scope,
+                    view,
+                    snapshot?.records ?? [],
+                    snapshot
+                      ? resourcePlacementForSnapshot(projectId, snapshot)
+                      : projection.placement,
+                  )
                 : null;
             };
             return {
@@ -111,7 +124,13 @@ export function useReferenceBrowserCatalog(
                     contextCatalogQueryOptions(resources, projectId, scope),
                   );
                   snapshot = await resources.readProjection(projectId);
-                  return projectResourceCatalogView(projectId, scope, view, snapshot.records);
+                  return projectResourceCatalogView(
+                    projectId,
+                    scope,
+                    view,
+                    snapshot.records,
+                    resourcePlacementForSnapshot(projectId, snapshot),
+                  );
                 },
               },
             };
@@ -123,6 +142,7 @@ export function useReferenceBrowserCatalog(
       projectPending,
       projection.error,
       projection.snapshot,
+      projection.placement,
       queryClient,
       resources,
       scopes,

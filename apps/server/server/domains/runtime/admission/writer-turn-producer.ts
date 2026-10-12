@@ -15,10 +15,15 @@ import type {
   AdmissionFingerprint,
   UserMessageBlock,
   UserTurnAdmissionInput,
+  UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import {
+  type TurnRepository,
+  TurnStartConflictError,
+  writerSendMetadata,
+} from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { InboxReader } from "../loop/ports.js";
@@ -37,16 +42,16 @@ function winnerProjection(
   winner: AdmissionRecord,
   fingerprint: string,
   submissionId: string,
-): AcceptedAdmission | { kind: "pending" | "rejected"; submissionId: string; code?: string } {
+): UserTurnAdmissionResult {
   if (winner.fingerprint !== null && winner.fingerprint !== fingerprint) {
     throw new AdmissionConflictError();
   }
   if (winner.state === "accepted") return { ...winner.response, kind: "already-accepted" };
   if (winner.state === "pending") return { kind: "pending", submissionId };
   return {
-    kind: "rejected",
+    kind: winner.state,
     submissionId,
-    code: winner.state === "retired" ? "retired" : winner.code,
+    code: winner.code,
   };
 }
 
@@ -85,28 +90,26 @@ export function createWriterTurnProducer(deps: {
       // at durable rows, and only for the setup window where the runner has not
       // published the assistant id yet. `createdAfter` keeps an older orphan out.
       const live = deps.runner.getRunningTurn(threadId);
-      const assistantTurnId = live
-        ? (live.assistantTurnId ??
-          (await deps.turns.findRunningAssistantId(threadId, {
-            createdAfter: live.startedAt,
-          })))
-        : null;
+      const assistantTurnId =
+        live && live.kind !== "compaction"
+          ? (live.turnId ??
+            (await deps.turns.findRunningAssistantId(threadId, {
+              createdAfter: live.startedAt,
+            })))
+          : null;
       const turnMetadata =
         activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
         input.userTurnMetadata ??
         null;
 
-      type Projection =
-        | AcceptedAdmission
-        | { kind: "pending" | "rejected"; submissionId: string; code?: string };
       try {
-        return await persistWriterEnqueue<Projection>({
+        return await persistWriterEnqueue<UserTurnAdmissionResult>({
           persistence: deps.persistence,
           hub: deps.hub,
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          userTurnMetadata: assistantTurnId ? markSteerDelivery(turnMetadata) : turnMetadata,
+          userTurnMetadata: writerSendMetadata(turnMetadata, assistantTurnId ? "steer" : "send"),
           delivery: deps.delivery,
           inbox: deps.inbox,
           beforePersist: () => deps.requireWritableThread(threadId),
@@ -166,14 +169,4 @@ export function createWriterTurnProducer(deps: {
       }
     },
   };
-}
-
-/** The writer enqueue's live assistant binding is the durable authority for a mid-run steer. */
-function markSteerDelivery(metadata: JsonValue | null): JsonValue {
-  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
-    return { ...metadata, delivery: "steer" };
-  }
-  return metadata === null
-    ? { delivery: "steer" }
-    : { delivery: "steer", originalMetadata: metadata };
 }

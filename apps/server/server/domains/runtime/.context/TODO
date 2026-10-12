@@ -1,7 +1,3 @@
 # TODO: must-do follow-ups (runtime)
 
-- DeepSeek V4 Flash caps output at `maxOutputTokens: 16_384`
-  (`gateway/config/registry.ts`). A subagent that writes a long document in one
-  `write` call hits the cap and ends as `Model exhausted its output tokens`
-  (`loop/orchestrator.ts`). Raise the cap to the provider maximum, or recover
-  from a `max_tokens` stop mid tool call instead of failing the run.
+- Measure `anthropic` and `gemini` live with `scripts/probe-compaction-estimates.ts` when working API keys are available, then tighten their provisional CJK rates.

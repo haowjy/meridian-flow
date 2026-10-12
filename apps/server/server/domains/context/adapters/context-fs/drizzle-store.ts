@@ -1,6 +1,7 @@
 /** Drizzle ContextDocumentStore for one Meridian context source. */
 
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contentDocumentPredicate, documents, folders } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -8,7 +9,6 @@ import {
   currentDrizzleDb,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
-  runOutsideDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
@@ -18,9 +18,10 @@ import {
   ContextEntryConflictError,
   type ContextFolder,
   type CreateBinaryDocumentInput,
+  type CreateDocumentInput,
   type UpsertBinaryDocumentInput,
-  type UpsertDocumentInput,
 } from "../../ports/context-document-store.js";
+import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import {
   claimDocumentLocation,
   hasOppositeContextEntry,
@@ -63,6 +64,7 @@ export interface DrizzleContextDocumentStoreDeps {
   contextSourceId: string;
   membershipObserver?: ContextDocumentMembershipObserver;
   catalogMutations?: ContextCatalogMutationPort;
+  arrivals?: DocumentArrivals;
 }
 
 export async function notifyMembershipObserver(
@@ -75,7 +77,7 @@ export async function notifyMembershipObserver(
   const completed = new Promise<void>((resolve, reject) => {
     deferred = runAfterDrizzleCommit(async () => {
       try {
-        await runOutsideDrizzleTransaction(() => observer[method](documentId));
+        await observer[method](documentId);
         resolve();
       } catch (cause) {
         reject(cause);
@@ -85,23 +87,6 @@ export async function notifyMembershipObserver(
     if (deferred) resolve();
   });
   await completed;
-}
-
-export async function updateDocumentProjectionById(
-  db: Database,
-  documentId: string,
-  markdown: string,
-): Promise<boolean> {
-  const [row] = await db
-    .update(documents)
-    .set({
-      markdownProjection: markdown,
-      sizeBytes: Buffer.byteLength(markdown, "utf8"),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
-    .returning({ id: documents.id });
-  return Boolean(row);
 }
 
 export class DrizzleContextDocumentStore implements ContextDocumentStore {
@@ -147,7 +132,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
       if (await hasOppositeContextEntry(this.db, this.sourceId, parentId, name, "folder"))
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("file");
       const [row] = await this.db
         .insert(folders)
         .values({ contextSourceId: this.sourceId, parentId, name })
@@ -186,11 +171,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return row ? mapDocument(row) : null;
   }
 
-  async updateDocumentProjection(documentId: string, markdown: string): Promise<boolean> {
-    return updateDocumentProjectionById(this.db, documentId, markdown);
-  }
-
-  async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
+  async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
       if (
@@ -202,29 +183,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("folder");
       const existing = await this.findDocument(input.folderId, input.name, input.extension);
       if (existing && existing.fileType !== null) {
         throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
       }
-      const values = {
-        fileType: input.filetype,
-        storageUrl: null,
-        mimeType: null,
-        markdownProjection: input.markdown,
-        sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
-        updatedAt: new Date(),
-      };
-      if (existing) {
-        const [row] = await this.db
-          .update(documents)
-          .set(values)
-          .where(and(eq(documents.id, existing.id), isNull(documents.storageUrl)))
-          .returning();
-        if (!row)
-          throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
-        return mapDocument(row);
-      }
+      if (existing) throw new ContextEntryConflictError("file");
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -251,7 +215,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     });
   }
 
-  async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+  async createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
       if (
@@ -263,7 +227,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        return null;
+        throw new ContextEntryConflictError("folder");
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -276,6 +240,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           markdownProjection: input.markdown,
           sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
           provisionalName: input.provisionalName ?? false,
+          ...(input.metadata ? { metadata: input.metadata } : {}),
         })
         .onConflictDoNothing()
         .returning();
@@ -336,7 +301,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("folder");
       const existing = await this.findDocument(input.folderId, input.name, input.extension);
       if (existing) {
         const [row] = await this.db
@@ -370,7 +335,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           "file",
         )
       )
-        throw new ContextEntryConflictError();
+        throw new ContextEntryConflictError("folder");
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -384,6 +349,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           mimeType: input.mimeType,
           sizeBytes: input.sizeBytes,
           markdownProjection: "",
+          ...(input.metadata ? { metadata: input.metadata } : {}),
         })
         .returning();
       if (!row) throw new Error("Failed to create binary document");
@@ -394,7 +360,11 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         renderFilename(input.name, input.extension),
       );
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
-      await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
+      // The upload is an arrival (contract §9.3): its membership and the settlement of a ref
+      // waiting at this address publish together, under the namespace key this command holds,
+      // before the manifest holder lock the publication takes.
+      await this.deps.membershipObserver?.documentCreated(row.id);
+      await this.deps.arrivals?.settle([row.id as DocumentId]);
       return mapDocument(row);
     });
   }

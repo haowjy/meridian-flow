@@ -11,8 +11,10 @@ import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import { createDrizzleContextCatalog } from "../../apps/server/server/domains/context/adapters/context-catalog.ts";
+import { createDrizzleLineageScratchLifecycle } from "../../apps/server/server/domains/context/adapters/lineage-scratch-lifecycle.ts";
 import { createDrizzleProjectContextAvailability } from "../../apps/server/server/domains/context/adapters/project-context-availability.ts";
 import { createContextCatalogWakeHub } from "../../apps/server/server/domains/context/context-catalog-wake-hub.ts";
+import { createLocalFileAccessChanges } from "../../apps/server/server/domains/file-policy/adapters/file-access-changes.ts";
 import { createNoopEventSink } from "../../apps/server/server/domains/observability/adapters/noop/noop-event-sink.ts";
 import { createDrizzleProjectRepository } from "../../apps/server/server/domains/projects/adapters/project-repository/drizzle.ts";
 import { createWorkProjectionMutation } from "../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
@@ -86,12 +88,16 @@ async function main(): Promise<void> {
     catalog: contextCatalog,
   });
 
+  const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog);
+
   try {
     await cleanupSmokeRows(db);
 
     const workRepository = createDrizzleWorkRepository({
+      lineageScratch,
       db,
       projectionMutation: workProjectionMutation,
+      fileAccessChanges: createLocalFileAccessChanges(),
     });
     const repos = {
       projects: createDrizzleProjectRepository({
@@ -100,7 +106,7 @@ async function main(): Promise<void> {
         ensureNoWork: (projectId) => workRepository.ensureNoWork(projectId),
       }),
       works: workRepository,
-      ...createDrizzleRepositories(db, workProjectionMutation),
+      ...createDrizzleRepositories(db, workProjectionMutation, lineageScratch),
     };
 
     console.log("1. create + list");

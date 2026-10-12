@@ -1,6 +1,6 @@
 /** Hocuspocus load/store persistence hooks and queue metrics for collab documents. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { UpdateJournal, UpdateMeta } from "@meridian/agent-edit/integration";
+import type { UpdateMeta } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
@@ -15,10 +15,20 @@ import type {
 } from "./domain/branch-coordinator.js";
 import { createDocumentContainment } from "./domain/document-containment.js";
 import {
+  documentAuthority,
+  isDocumentHandleRetired,
+  RetiredDocumentHandleError,
+  retireDocumentHandle,
+} from "./domain/document-handle.js";
+import {
   admitWriterUpdate,
   ReservedWriterClientIdError,
 } from "./domain/document-mutation-policy.js";
 import type { OfflineReconciliation } from "./domain/offline-reconciliation.js";
+import type {
+  CheckpointAuthority,
+  CheckpointJournal,
+} from "./domain/ports/checkpoint-authority.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 
@@ -28,14 +38,32 @@ type PendingAppend = {
   promise: Promise<void>;
 };
 
+type PendingCheckpoint = {
+  document: Y.Doc;
+  authority: CheckpointAuthority;
+  state: Uint8Array;
+  upToSeq: number;
+};
+
+type CheckpointSlot = {
+  next?: PendingCheckpoint;
+  running: Promise<void>;
+};
+
 type HocuspocusPersistenceDeps = {
-  journal: UpdateJournal;
+  journal: CheckpointJournal;
   branchStore?: BranchStore;
   branchCoordinator?: BranchCoordinator;
   hocuspocus(): Hocuspocus | null;
   eventSink?: EventSink;
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   latestUpdateSeq(documentId: string): Promise<number>;
+  /**
+   * Runs `callback` once the caller's ambient DB transaction commits, outside
+   * it, and drops it on rollback; with no ambient transaction it runs now.
+   * Defaults to running now, for adapters without transactions.
+   */
+  afterCallerCommit?(callback: () => void): void;
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
@@ -49,6 +77,7 @@ export type HocuspocusPersistenceService = Pick<
   | "loadHocuspocusBranchState"
   | "admitLiveWriterUpdate"
   | "currentLiveGeneration"
+  | "validateHocuspocusDocument"
   | "admitBranchWriterUpdate"
   | "persistConnectionUpdate"
   | "storeHocuspocusDocument"
@@ -72,9 +101,11 @@ export function createHocuspocusPersistenceService(
   const liveAppendTails = new Map<string, Promise<void>>();
   const ingressGenerations = new Map<string, number>();
   const admittedByDocument = new Map<string, Map<number, Promise<unknown>>>();
+  // A reconnected client has current transport authority but can replay cached
+  // pre-restore structs/deletes. Handle fencing cannot identify that byte history.
   const retiredStateVectors = new Map<string, Uint8Array>();
-  const retiredLiveDocuments = new WeakSet<Y.Doc>();
-  const liveGenerations = new Map<string, bigint>();
+  const checkpointSlots = new Map<string, CheckpointSlot>();
+  const afterCallerCommit = deps.afterCallerCommit ?? ((callback: () => void) => callback());
   const documentContainment = createDocumentContainment();
   let nextPendingId = 1;
 
@@ -165,6 +196,55 @@ export function createHocuspocusPersistenceService(
     });
   }
 
+  function emitCheckpointFailure(documentId: string, cause: unknown): void {
+    if (!deps.eventSink) return;
+    emitEvent(deps.eventSink, {
+      level: "error",
+      source: "collab.hocuspocus",
+      name: "checkpoint.failed",
+      correlation: { documentId },
+      payload: unknownToEventPayload(cause),
+    });
+  }
+
+  /**
+   * Writes live checkpoints in the background, one at a time per document; a
+   * snapshot that arrives while one is writing replaces any queued one.
+   */
+  function startCheckpoint(documentId: string, pending: PendingCheckpoint): void {
+    const slot = checkpointSlots.get(documentId);
+    if (slot) {
+      slot.next = pending;
+      return;
+    }
+    const created: CheckpointSlot = { next: pending, running: Promise.resolve() };
+    checkpointSlots.set(documentId, created);
+    created.running = (async () => {
+      while (created.next) {
+        const { document, authority, state, upToSeq } = created.next;
+        created.next = undefined;
+        // A retired room's state belongs to an authority generation that has
+        // since been replaced.
+        if (isDocumentHandleRetired(document)) {
+          continue;
+        }
+        try {
+          await deps.journal.checkpoint(documentId, state, upToSeq, authority);
+        } catch (cause) {
+          emitCheckpointFailure(documentId, cause);
+        }
+      }
+    })().finally(() => {
+      checkpointSlots.delete(documentId);
+    });
+  }
+
+  async function drainCheckpoints(): Promise<void> {
+    while (checkpointSlots.size > 0) {
+      await Promise.allSettled([...checkpointSlots.values()].map((slot) => slot.running));
+    }
+  }
+
   function emitOfflineReconciliationFailure(documentId: string, cause: unknown): void {
     if (!deps.eventSink) return;
     emitEvent(deps.eventSink, {
@@ -232,15 +312,40 @@ export function createHocuspocusPersistenceService(
     return deps.branchCoordinator;
   }
 
+  function retireRoom(documentId: DocumentId, document: Y.Doc): void {
+    retireDocumentHandle(document);
+    const hp = deps.hocuspocus();
+    if (hp?.documents.get(documentId) !== document) return;
+    hp.closeConnections(documentId);
+    hp.documents.delete(documentId);
+  }
+
+  async function validateHocuspocusDocument(
+    documentId: DocumentId,
+    document: Y.Doc,
+  ): Promise<void> {
+    try {
+      const authority = documentAuthority(document);
+      const generation = await deps.readAuthorityHeadGeneration?.(documentId);
+      if (
+        isDocumentHandleRetired(document) ||
+        (generation !== undefined && authority.generation !== generation)
+      ) {
+        throw new RetiredDocumentHandleError();
+      }
+    } catch (cause) {
+      if (cause instanceof RetiredDocumentHandleError) {
+        retireRoom(documentId, document);
+      }
+      throw cause;
+    }
+  }
+
   return {
     writerIngressBarrier,
+    validateHocuspocusDocument,
     async currentLiveGeneration(documentId) {
-      const generation =
-        liveGenerations.get(documentId) ??
-        (await deps.readAuthorityHeadGeneration?.(documentId)) ??
-        1n;
-      liveGenerations.set(documentId, generation);
-      return generation;
+      return (await deps.readAuthorityHeadGeneration?.(documentId)) ?? 1n;
     },
 
     async resolveBranchHocuspocusRoom(branchId, generation) {
@@ -248,21 +353,31 @@ export function createHocuspocusPersistenceService(
       if (
         branch?.status !== "active" ||
         branch.kind !== "work_draft" ||
+        !branch.workId ||
         branch.generation !== generation
       )
         return null;
       return {
         branchId: branch.branchId,
         documentId: branch.documentId,
+        workId: branch.workId,
         generation: branch.generation,
         schemaVersion: branch.schemaVersion,
         status: branch.status,
       };
     },
 
-    async loadHocuspocusDocument(documentId) {
+    async loadHocuspocusDocument(documentId, document) {
       unsafeCheckpointDocuments.delete(documentId);
-      return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
+      if (!document) return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
+      try {
+        const state = await loadDocumentState(deps.journal, documentId, document);
+        await validateHocuspocusDocument(documentId, document);
+        return state ?? undefined;
+      } catch (cause) {
+        if (cause instanceof RetiredDocumentHandleError) retireRoom(documentId, document);
+        throw cause;
+      }
     },
 
     async loadHocuspocusBranchState(branchId, generation) {
@@ -280,13 +395,7 @@ export function createHocuspocusPersistenceService(
     },
 
     async admitLiveWriterUpdate(input) {
-      const trackedGeneration = liveGenerations.get(input.documentId);
-      const currentGeneration =
-        trackedGeneration ??
-        (deps.readAuthorityHeadGeneration
-          ? await deps.readAuthorityHeadGeneration(input.documentId)
-          : 1n);
-      liveGenerations.set(input.documentId, currentGeneration);
+      const authority = documentAuthority(input.document);
       const liveDocument = deps.hocuspocus()?.documents.get(input.documentId);
       const retiredStateVector = retiredStateVectors.get(input.documentId);
       try {
@@ -294,7 +403,7 @@ export function createHocuspocusPersistenceService(
           targetDocument: input.document,
           update: input.update,
           validateTarget() {
-            if (currentGeneration !== input.expectedGeneration) {
+            if (authority.generation !== input.expectedGeneration) {
               recordDroppedConnectionUpdate(input.documentId);
               throw new Error("stale-durable-authority-generation");
             }
@@ -322,9 +431,15 @@ export function createHocuspocusPersistenceService(
                   input.documentId,
                   input.update,
                   deps.metaForOrigin(input.origin),
+                  authority,
                 )
               : deps.journal
-                  .append(input.documentId, input.update, deps.metaForOrigin(input.origin))
+                  .append(
+                    input.documentId,
+                    input.update,
+                    deps.metaForOrigin(input.origin),
+                    authority,
+                  )
                   .then((seq) => ({ seq, joinedSettlement: false }));
             const tracked = append.catch((cause) => {
               recordDroppedConnectionUpdate(input.documentId);
@@ -406,7 +521,8 @@ export function createHocuspocusPersistenceService(
     },
 
     async storeHocuspocusDocument(documentId, document) {
-      if (retiredLiveDocuments.has(document)) return;
+      if (isDocumentHandleRetired(document)) return;
+      const authority = documentAuthority(document);
       await drainPending(documentId);
       const reservedClientId = unsafeCheckpointDocuments.get(documentId);
       if (reservedClientId !== undefined) {
@@ -421,7 +537,21 @@ export function createHocuspocusPersistenceService(
       const upToSeq = await deps.latestUpdateSeq(documentId);
       // upToSeq must be ≤ the updates reflected in state; appends after this
       // point are intentionally replayed when the document reloads.
-      await deps.journal.checkpoint(documentId, Y.encodeStateAsUpdate(document), upToSeq);
+      const pending: PendingCheckpoint = {
+        document,
+        authority,
+        state: Y.encodeStateAsUpdate(document),
+        upToSeq,
+      };
+      // Releasing a server-side room runs this hook inline in the releaser's
+      // async context, often inside its DB transaction. The checkpoint takes the
+      // document's mutation lock, so writing it here either holds that lock for
+      // the rest of the caller's transaction or waits on a lock the caller holds;
+      // either way a caller that then waits on another connection deadlocks.
+      // A checkpoint only caches durable journal state, so it is written after
+      // the caller commits, and skipped if the caller rolls back, since the
+      // room may hold that transaction's uncommitted updates.
+      afterCallerCommit(() => startCheckpoint(documentId, pending));
     },
 
     async storeHocuspocusBranch(branchId, _document) {
@@ -431,8 +561,9 @@ export function createHocuspocusPersistenceService(
       // and re-enter the branch critical section.
     },
 
-    drainHocuspocusPersistence() {
-      return drainPending();
+    async drainHocuspocusPersistence() {
+      await drainPending();
+      await drainCheckpoints();
     },
 
     drainHocuspocusBranchPersistence(branchId) {
@@ -452,15 +583,27 @@ export function createHocuspocusPersistenceService(
       }
     },
 
-    async disconnectLiveGeneration(documentId, _generation) {
-      liveGenerations.set(documentId, _generation + 1n);
+    async disconnectLiveGeneration(documentId, generation) {
       const hocuspocus = deps.hocuspocus();
+      // Hocuspocus publishes a room only after all load hooks complete. Its
+      // registered continuation publishes before this one retires and evicts it.
+      void hocuspocus?.loadingDocuments?.get(documentId)?.then(
+        (loaded) => {
+          if (
+            isDocumentHandleRetired(loaded) ||
+            documentAuthority(loaded).generation <= generation
+          ) {
+            retireRoom(documentId, loaded);
+          }
+        },
+        () => {},
+      );
       const document = hocuspocus?.documents.get(documentId);
       if (!hocuspocus || !document) return;
+      if (!isDocumentHandleRetired(document) && documentAuthority(document).generation > generation)
+        return;
       retiredStateVectors.set(documentId, Y.encodeStateVector(document));
-      retiredLiveDocuments.add(document);
-      hocuspocus.closeConnections(documentId);
-      hocuspocus.documents.delete(documentId);
+      retireRoom(documentId, document);
     },
 
     async rejectStaleBranchSyncStep1(input) {

@@ -4,6 +4,7 @@ import type { H3Event } from "nitro/h3";
 import { createError, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
+import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
 import { requireRequestId } from "../../../../../../lib/request-id.js";
 
 export async function resolveCatalogRoute(event: H3Event) {
@@ -18,13 +19,18 @@ export async function resolveCatalogRoute(event: H3Event) {
   else if (kind === "work") {
     const workId = requireRequestId(query.workId, "workId");
     if (!(await app.workAuthorityResolver.byId(projectId, workId))) {
-      throw createError({ statusCode: 404, message: "Work not found" });
+      throwContextWorkUnavailableHttpError("work_missing");
     }
     scope = { kind, projectId, workId };
+  } else if (kind === "lineage") {
+    const rootThreadId = requireRequestId(query.rootThreadId, "rootThreadId");
+    if (!(await app.contextPorts.lineages.byId(projectId, rootThreadId)))
+      throw createError({ statusCode: 404, message: "Chat not found" });
+    scope = { kind, projectId, rootThreadId };
   } else {
     throw createError({ statusCode: 400, message: `Unsupported catalog scope: ${kind}` });
   }
-  return { app, query, scope };
+  return { app, query, scope, userId: user.userId };
 }
 
 export function optionalPositiveSafeIntegerQuery(

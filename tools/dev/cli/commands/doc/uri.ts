@@ -4,6 +4,8 @@ import {
   apiProjectDocumentAddressPath,
   type DocumentAddressResult,
   type ProjectContextTreeScheme,
+  parseDocumentFilename,
+  renderFilename,
 } from "@meridian/contracts/protocol";
 import { CliError, usageError } from "../../core/cli-error";
 
@@ -35,7 +37,13 @@ export async function resolveUri(
       workOverride ?? (authority.kind === "work" ? `@${authority.workSlug}` : undefined);
     workId = await resolveWorkId(session, projectId, workRaw);
   }
-  return { scheme, path, uri: normalized, workId };
+  const slash = path.lastIndexOf("/");
+  const parsedName = parseDocumentFilename(path.slice(slash + 1));
+  if (!parsedName.ok) throw usageError(parsedName.error.message);
+  const canonicalPath =
+    path.slice(0, slash + 1) + renderFilename(parsedName.value.name, parsedName.value.extension);
+  const uri = normalized.slice(0, normalized.length - path.length) + canonicalPath;
+  return { scheme, path: canonicalPath, uri, workId };
 }
 
 /** Live documentId for a URI, or a not_found CliError. */

@@ -53,7 +53,7 @@ export function buildModelRequestDebugRecord(
       : (JSON.parse(serializedRequest) as ModelRequestDebugRequest);
 
   return {
-    schema: "meridian.model-request-debug.v1",
+    schema: "meridian.model-request-debug.v2",
     gatewayCallId: input.gatewayCallId,
     threadId: input.threadId,
     turnId: input.turnId,

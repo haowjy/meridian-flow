@@ -15,7 +15,6 @@ export type CatalogCacheView = {
   observedHeadRevision: string;
   cursor: string;
   entries: ReadonlyMap<string, CatalogEntry>;
-  invalidatedEntryIds: ReadonlySet<string>;
   childIdsByParentId: ReadonlyMap<string, readonly string[]>;
   sourceIdsByScheme: ReadonlyMap<string, string>;
 };
@@ -28,7 +27,6 @@ export function emptyCatalogView(scope: CatalogScope): CatalogCacheView {
     observedHeadRevision: "0",
     cursor: "",
     entries: new Map(),
-    invalidatedEntryIds: new Set(),
     childIdsByParentId: new Map(),
     sourceIdsByScheme: new Map(),
   };
@@ -56,24 +54,22 @@ function descendants(entries: ReadonlyMap<string, CatalogEntry>, rootId: string)
 function applyCommit(
   current: CatalogCacheView,
   commit: CatalogCommit,
-): Pick<CatalogCacheView, "entries" | "invalidatedEntryIds"> {
+): ReadonlyMap<string, CatalogEntry> {
   const entries = new Map(current.entries);
-  const invalidated = new Set(current.invalidatedEntryIds);
   const changes = [...commit.changes].sort((a, b) => a.ordinal - b.ordinal);
   for (const change of changes) {
     if (change.operation === "upsert") {
       entries.set(change.entry.entryId, change.entry);
-      invalidated.delete(change.entry.entryId);
       continue;
     }
     if (change.operation === "delete") {
       entries.delete(change.entryId);
-      invalidated.delete(change.entryId);
       continue;
     }
-    for (const entryId of descendants(entries, change.rootEntryId)) invalidated.add(entryId);
+    // A whole commit replaces this subtree with its subsequent authoritative upserts.
+    for (const entryId of descendants(entries, change.rootEntryId)) entries.delete(entryId);
   }
-  return { entries, invalidatedEntryIds: invalidated };
+  return entries;
 }
 
 function revision(value: string): bigint | null {
@@ -117,7 +113,6 @@ export function catalogViewFromSnapshot(snapshot: CatalogSnapshot): CatalogCache
     observedHeadRevision: snapshot.headRevision,
     cursor: snapshot.cursor,
     entries: new Map(snapshot.entries.map((entry) => [entry.entryId, entry])),
-    invalidatedEntryIds: new Set(),
   });
 }
 
@@ -139,8 +134,7 @@ export function applyCatalogChanges(
     const applied = applyCommit(next, commit);
     next = {
       ...next,
-      entries: applied.entries,
-      invalidatedEntryIds: applied.invalidatedEntryIds,
+      entries: applied,
       appliedRevision: commit.lastRevision,
     };
   }
@@ -164,20 +158,18 @@ export function applyCatalogChanges(
     appliedRevision: next.appliedRevision,
     observedHeadRevision: changes.headRevision,
     entries: next.entries,
-    invalidatedEntryIds: next.invalidatedEntryIds,
   });
 }
 
 export function catalogChildren(view: CatalogCacheView, parentId: string): CatalogEntry[] {
   return (view.childIdsByParentId.get(parentId) ?? []).flatMap((entryId) => {
     const entry = view.entries.get(entryId);
-    return entry && !view.invalidatedEntryIds.has(entryId) ? [entry] : [];
+    return entry ? [entry] : [];
   });
 }
 
 export function catalogFiles(view: CatalogCacheView): CatalogFileEntry[] {
   return [...view.entries.values()].filter(
-    (entry): entry is CatalogFileEntry =>
-      entry.kind === "file" && !view.invalidatedEntryIds.has(entry.entryId),
+    (entry): entry is CatalogFileEntry => entry.kind === "file",
   );
 }

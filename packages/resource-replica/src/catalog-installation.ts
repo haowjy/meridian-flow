@@ -1,25 +1,41 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
+
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { CatalogFileClassification, CatalogFileEntry } from "@meridian/contracts/protocol";
+import type {
+  CatalogFileClassification,
+  CatalogFileEntry,
+  CatalogFolderEntry,
+} from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { newerCanonicalObservation } from "./canonical-observation";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
 import { installCanonicalRefresh } from "./resource-namespace";
-import type {
-  ResourceCatalogCheckpoint,
-  ResourceDescriptor,
-  ResourceLocation,
-  ResourceRecord,
-  ResourceWrite,
+import {
+  ownerOf,
+  type ParentRef,
+  type ResourceCatalogCheckpoint,
+  type ResourceDescriptor,
+  type ResourceLocation,
+  type ResourceRecord,
+  type ResourceWrite,
+  sameOwner,
 } from "./resource-records";
+import { resourceLineageOwner } from "./resource-work-authority";
 
 export type CatalogObservationFence = Readonly<{
+  /** Folder canonical state captured before HTTP; a refresh barrier is proven only by its operation id. */
+  folders?: ReadonlyMap<
+    string,
+    { revision: number; canonical: ResourceLocation; refreshOperationId?: string }
+  >;
   /** Exact resource state captured before HTTP distinguishes local location changes from unrelated CAS. */
   resources?: ReadonlyMap<
     string,
     {
       revision: number;
       canonical: ResourceLocation | null;
+      canonicalParent?: ParentRef;
       classification: CatalogFileClassification;
     }
   >;
@@ -38,14 +54,14 @@ function displayedPath(path: string): string {
   return path ? `/${path}` : "/";
 }
 
-function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceLocation {
+/** The canonical location a catalog view gives one of its file or folder entries. */
+export function catalogEntryLocation(
+  view: CatalogCacheView,
+  entry: CatalogFileEntry | CatalogFolderEntry,
+): ResourceLocation {
   if (!sameCatalogScope(entry.scope, view.scope)) throw new Error("Catalog file scope mismatch");
   const source = view.entries.get(entry.sourceId);
-  if (
-    source?.kind !== "source" ||
-    view.invalidatedEntryIds.has(source.entryId) ||
-    !sameCatalogScope(source.scope, view.scope)
-  )
+  if (source?.kind !== "source" || !sameCatalogScope(source.scope, view.scope))
     throw new Error("Catalog file source is unavailable");
   const parsed = parseContextUri(entry.uri);
   if (
@@ -70,8 +86,24 @@ function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceL
   }
   if (!isWorkScopedProjectContextScheme(scheme))
     throw new Error("Catalog file URI is not Work scoped");
+  if (view.scope.kind === "lineage") {
+    if (scheme !== "scratch" || authority.kind !== "lineage")
+      throw new Error("Catalog file URI has invalid chat authority");
+    return {
+      scheme,
+      path: displayedPath(path),
+      name: entry.name,
+      ...resourceLineageOwner(view.scope, authority.rootThreadRef),
+    };
+  }
   if (authority.kind === "none") {
-    return { scheme, path: displayedPath(path), name: entry.name, workId: view.scope.workId };
+    return {
+      scheme,
+      path: displayedPath(path),
+      name: entry.name,
+      workId: view.scope.workId,
+      workSlug: null,
+    };
   }
   if (authority.kind !== "work") throw new Error("Catalog file URI has invalid Work authority");
   return {
@@ -83,14 +115,26 @@ function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceL
   };
 }
 
-function sameLocation(left: ResourceLocation | null, right: ResourceLocation | null): boolean {
+/** Server catalog parent ids are identity evidence, even when the parent row is absent. */
+export function catalogEntryParent(
+  entry: CatalogFileEntry | CatalogFolderEntry,
+  location: ResourceLocation,
+): ParentRef {
+  return entry.parentId === entry.sourceId
+    ? { kind: "root", scheme: location.scheme, owner: ownerOf(location) }
+    : { kind: "folder", folderId: entry.parentId };
+}
+
+export function sameResourceLocation(
+  left: ResourceLocation | null,
+  right: ResourceLocation | null,
+): boolean {
   if (!left || !right) return left === right;
   return (
     left.scheme === right.scheme &&
     left.path === right.path &&
     left.name === right.name &&
-    left.workId === right.workId &&
-    left.workSlug === right.workSlug
+    sameOwner(left, right)
   );
 }
 
@@ -141,36 +185,44 @@ function observedResourceWrite(input: {
   record: ResourceRecord;
   location: ResourceLocation;
   classification: CatalogFileClassification;
+  parent: ParentRef;
   fence: CatalogObservationFence;
+  observationVersion: string;
 }): ResourceWrite | null {
-  const { record, location, classification, fence } = input;
+  const { record, location, classification, parent, fence } = input;
   const current = record.resource;
   if (current.lifecycle.kind !== "acknowledged") return null;
+  const newer = newerCanonicalObservation(input.observationVersion, current.observationVersion);
   const observed = fence.resources?.get(current.handle);
   if (!observed) return null;
   if (
     observed.revision !== current.revision &&
-    (!sameLocation(observed.canonical, current.canonical) ||
+    (!sameResourceLocation(observed.canonical, current.canonical) ||
+      JSON.stringify(observed.canonicalParent) !== JSON.stringify(current.canonicalParent) ||
       !sameClassification(observed.classification, current.classification))
   )
     return null;
 
   const refresh = current.obligations.canonicalRefresh;
   const refreshed = refresh
-    ? installCanonicalRefresh({ record, operationId: refresh.operationId, location })
+    ? installCanonicalRefresh({
+        record,
+        operationId: refresh.operationId,
+        location,
+        parent,
+        observationVersion: input.observationVersion,
+      })
     : null;
-  const changed =
-    refreshed !== null ||
-    !sameLocation(current.canonical, location) ||
-    !sameClassification(current.classification, classification);
+  if (!newer) return refreshed;
   const base = refreshed?.next.resource ?? current;
   const obligations = { ...base.obligations };
-  if (!changed) return null;
   const next: ResourceDescriptor = {
     ...base,
     revision: current.revision + 1,
     classification,
     canonical: location,
+    canonicalParent: parent,
+    observationVersion: input.observationVersion,
     obligations,
   };
   return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
@@ -185,6 +237,8 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     content: { kind: "unacquired" },
     classification: classificationFor(entry),
     canonical: location,
+    canonicalParent: catalogEntryParent(entry, location),
+    observationVersion: entry.observationVersion,
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     aliases: {},
     obligations: {},
@@ -212,14 +266,16 @@ export function planCatalogInstallation(input: {
   const resources: ResourceWrite[] = [];
   const fence = input.observedAfter ?? {};
   for (const entry of catalogFiles(input.view)) {
-    const location = locationFor(input.view, entry);
+    const location = catalogEntryLocation(input.view, entry);
     const current = index.current.get(entry.entryId);
     if (current) {
       const write = observedResourceWrite({
         record: current,
         location,
         classification: classificationFor(entry),
+        parent: catalogEntryParent(entry, location),
         fence,
+        observationVersion: entry.observationVersion,
       });
       if (write) resources.push(write);
       continue;
@@ -246,7 +302,6 @@ export function planCatalogInstallation(input: {
       entries: [...input.view.entries.values()].sort((left, right) =>
         left.entryId.localeCompare(right.entryId),
       ),
-      invalidatedEntryIds: [...input.view.invalidatedEntryIds].sort(),
     },
     resources,
   };
@@ -260,7 +315,6 @@ export function catalogViewFromCheckpoint(checkpoint: ResourceCatalogCheckpoint)
     observedHeadRevision: checkpoint.observedHeadRevision,
     cursor: checkpoint.cursor,
     entries: new Map(checkpoint.entries.map((entry) => [entry.entryId, entry])),
-    invalidatedEntryIds: new Set(checkpoint.invalidatedEntryIds),
   });
   return indexed;
 }

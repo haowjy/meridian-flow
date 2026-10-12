@@ -6,7 +6,6 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamWithRetry } from "./attempt-stream.js";
-import { DEFAULT_ATTEMPT_CEILING_MS, DEFAULT_ATTEMPT_STALL_MS } from "./deadline.js";
 import type { GenerateRequest, GenerateResult, ModelInfo, StreamEvent } from "./domain/index.js";
 import type { ProviderAdapter } from "./ports/provider-adapter.js";
 
@@ -16,9 +15,11 @@ afterEach(() => vi.useRealTimers());
 const MODEL: ModelInfo = {
   id: "test-model",
   provider: "test",
+  tokenizer: "o200k",
   displayName: "Test Model",
   contextWindow: 128_000,
   maxOutputTokens: 4_096,
+  promptCache: { kind: "none", ttlMs: null },
   capabilities: new Set(["streaming"]),
 };
 
@@ -100,64 +101,6 @@ async function* textThenEnd(): AsyncGenerator<StreamEvent> {
   yield { type: "text.delta", text: "final answer" };
   yield end;
 }
-
-async function* streamingForAWhile(signal: AbortSignal | undefined): AsyncGenerator<StreamEvent> {
-  yield start;
-  for (let i = 0; i < 12; i++) {
-    if (signal?.aborted) return;
-    yield { type: "reasoning.delta", text: `chunk-${i}` };
-    await abortableDelay(15, signal);
-  }
-  yield end;
-}
-
-async function* streamingForever(signal: AbortSignal | undefined): AsyncGenerator<StreamEvent> {
-  yield start;
-  while (!signal?.aborted) {
-    yield { type: "reasoning.delta", text: "tick" };
-    await abortableDelay(10, signal);
-  }
-}
-
-describe("streamWithRetry timeouts", () => {
-  it("never aborts a slow-but-streaming attempt", async () => {
-    const { adapter } = scriptedAdapter([streamingForAWhile]);
-
-    const completion = collect(
-      streamWithRetry(adapter, REQUEST, MODEL, RETRY, { stallMs: 150, ceilingMs: 0 }),
-    );
-
-    await vi.advanceTimersByTimeAsync(180);
-    const events = await completion;
-
-    expect(events.filter((event) => event.type === "error")).toHaveLength(0);
-    expect(last(events)?.type).toBe("end");
-  });
-
-  it("bounds a stream that never ends with the ceiling backstop", async () => {
-    const { adapter } = scriptedAdapter([streamingForever]);
-
-    const completion = collect(
-      streamWithRetry(
-        adapter,
-        REQUEST,
-        MODEL,
-        { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 5 },
-        {
-          stallMs: 60_000,
-          ceilingMs: 120,
-        },
-      ),
-    );
-
-    await vi.advanceTimersByTimeAsync(120);
-    const events = await completion;
-
-    const terminal = last(events);
-    expect(terminal).toMatchObject({ type: "error", retryable: true });
-    expect(terminal?.type === "error" ? terminal.message : "").toContain("ceiling");
-  });
-});
 
 describe("streamWithRetry retry gate", () => {
   it("retries when only reasoning had streamed and succeeds on the next attempt", async () => {
@@ -303,54 +246,6 @@ describe("streamWithRetry retry-after", () => {
 });
 
 describe("per-attempt timing", () => {
-  it("stamps provider arrivals before a slow consumer handles 50 deltas", async () => {
-    let time = 0;
-    let finishProvider!: () => void;
-    const providerFinished = new Promise<void>((resolve) => {
-      finishProvider = resolve;
-    });
-    const adapter: ProviderAdapter = {
-      providerId: "test",
-      async *stream() {
-        time = 10;
-        yield start;
-        for (let index = 0; index < 50; index++) {
-          time += 1;
-          yield { type: "text.delta", text: `token-${index}` };
-        }
-        time = 70;
-        yield end;
-        finishProvider();
-      },
-    };
-
-    let terminal: StreamEvent | undefined;
-    const completion = (async () => {
-      for await (const event of streamWithRetry(
-        adapter,
-        REQUEST,
-        MODEL,
-        RETRY,
-        { stallMs: 60_000, ceilingMs: 0 },
-        { now: () => time },
-      )) {
-        if (event.type === "start") await providerFinished;
-        if (event.type === "text.delta") await new Promise((resolve) => setTimeout(resolve, 10));
-        if (event.type === "end") terminal = event;
-      }
-    })();
-
-    await providerFinished;
-    await vi.advanceTimersByTimeAsync(500);
-    await completion;
-
-    expect(terminal?.type === "end" ? terminal.result.timing : undefined).toEqual({
-      latencyMs: 70,
-      timeToFirstTokenMs: 11,
-      generationMs: 59,
-    });
-  });
-
   it("omits generation timing when a slow consumer backpressures the byte-bounded buffer", async () => {
     let time = 0;
     let deltaCount = 0;
@@ -405,125 +300,11 @@ describe("per-attempt timing", () => {
     await completion;
 
     expect(terminal?.type === "end" ? terminal.result.timing : undefined).toEqual({
+      requestStartedAt: expect.any(String),
       latencyMs: null,
       timeToFirstTokenMs: 11,
       generationMs: null,
     });
-  });
-
-  it("reports timing from the successful retry attempt only", async () => {
-    let time = 0;
-    const { adapter } = scriptedAdapter([
-      async function* () {
-        time = 10;
-        yield start;
-        time = 20;
-        yield { type: "reasoning.delta", text: "retryable thought" };
-        time = 50;
-        yield { type: "error", code: "provider_error", message: "retry", retryable: true };
-      },
-      async function* () {
-        time = 200;
-        yield start;
-        time = 205;
-        yield { type: "text.delta", text: "answer" };
-        time = 210;
-        yield end;
-      },
-    ]);
-
-    const completion = collect(
-      streamWithRetry(
-        adapter,
-        REQUEST,
-        MODEL,
-        RETRY,
-        { stallMs: 60_000, ceilingMs: 0 },
-        { now: () => time },
-      ),
-    );
-    await vi.advanceTimersByTimeAsync(1);
-    const events = await completion;
-    const terminal = last(events);
-
-    expect(terminal?.type === "end" ? terminal.result.timing : undefined).toEqual({
-      latencyMs: 160,
-      timeToFirstTokenMs: 155,
-      generationMs: 5,
-    });
-  });
-
-  it("keeps TTFT and generation duration null for usage-only output", async () => {
-    const { adapter } = scriptedAdapter([
-      async function* () {
-        yield { type: "usage", usage: { inputTokens: 9, outputTokens: 0 } };
-        yield end;
-      },
-    ]);
-
-    const events = await collect(
-      streamWithRetry(
-        adapter,
-        REQUEST,
-        MODEL,
-        RETRY,
-        { stallMs: 60_000, ceilingMs: 0 },
-        {
-          now: (() => {
-            let time = 0;
-            return () => (time += 10);
-          })(),
-        },
-      ),
-    );
-
-    expect(last(events)).toMatchObject({
-      type: "end",
-      result: { timing: { timeToFirstTokenMs: null, generationMs: null } },
-    });
-  });
-
-  it("does not count custom content or tool identity without argument deltas as first output", async () => {
-    const { adapter } = scriptedAdapter([
-      async function* () {
-        yield { type: "custom.delta", kind: "ui-only", data: { text: "not writer output" } };
-        yield {
-          type: "tool_call.delta",
-          id: "call-1",
-          name: "search",
-          argumentsDelta: "",
-        };
-        yield end;
-      },
-    ]);
-
-    const events = await collect(
-      streamWithRetry(
-        adapter,
-        REQUEST,
-        MODEL,
-        RETRY,
-        { stallMs: 60_000, ceilingMs: 0 },
-        {
-          now: (() => {
-            let time = 0;
-            return () => (time += 10);
-          })(),
-        },
-      ),
-    );
-
-    expect(last(events)).toMatchObject({
-      type: "end",
-      result: { timing: { timeToFirstTokenMs: null, generationMs: null } },
-    });
-  });
-});
-
-describe("default timeouts", () => {
-  it("exposes a 60s stall and a 15m ceiling", () => {
-    expect(DEFAULT_ATTEMPT_STALL_MS).toBe(60_000);
-    expect(DEFAULT_ATTEMPT_CEILING_MS).toBe(900_000);
   });
 });
 

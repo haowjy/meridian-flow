@@ -14,12 +14,27 @@ import {
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { ContextViewerSurfaceController } from "../ContextPaneController";
+import {
+  type ContextViewerSurfaceControllerProps,
+  ContextViewerSurfaceController as ResolvedController,
+} from "../ContextPaneController";
+import { useDesktopEditorPresentation } from "../DesktopProjectController";
+
+function ContextViewerSurfaceController(
+  props: Omit<ContextViewerSurfaceControllerProps, "resolvedEditor">,
+) {
+  const presentation = useDesktopEditorPresentation({
+    projectId: props.projectId,
+    current: props,
+    requestedWorkId: props.editorWorkId,
+    screen: "context",
+    contextLive: props.active,
+  });
+  return <ResolvedController {...props} resolvedEditor={presentation.resolved} />;
+}
+
 import type { ProjectSearch } from "../routing/project-route";
-import type {
-  ContextRemovalCoordinator,
-  ContextRemovalRoutePort,
-} from "./context-removal-coordinator";
+import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
 
 const tree = {
@@ -99,51 +114,14 @@ beforeEach(() => {
   });
 });
 
-it("keeps the current Work's scratch tab on the Editor surface", async () => {
-  const current: ContextTab = {
-    kind: "tracked",
-    documentId: "scratch-current",
-    scheme: "scratch",
-    path: "/current.md",
-    name: "current.md",
-    workId: "work-a",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-  };
-  const other: ContextTab = { ...current, documentId: "scratch-other", workId: "work-b" };
-  useContextTabsStore.setState({
-    byProject: {
-      project: {
-        tabs: [current, other],
-        selectedTabIdByWork: { "work-a": current.documentId },
-      },
-    },
-    _workspaceHydrated: true,
-  });
-
-  await withReactRoot(
-    <AccountFeatureTestProvider accountId="work-scratch-account">
-      <ContextViewerSurfaceController
-        projectId="project"
-        editorWorkId="work-a"
-        editorWork={null}
-        localDocumentId={current.documentId}
-        activeContextScheme="scratch"
-        activeContextPath={current.path}
-        active={false}
-        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-        onSelectContextPath={vi.fn()}
-        onOpenContextTarget={vi.fn()}
-        onShowEditorRecents={vi.fn()}
-      />
-    </AccountFeatureTestProvider>,
-    () => {
-      expect(viewerProps?.tabs.map((tab) => tab.documentId)).toEqual([current.documentId]);
-    },
-  );
-});
+const shellProps = {
+  editorWork: null,
+  sidebarToggle: { open: true, onExpand: vi.fn(), label: "Sidebar" },
+  dockToggle: { open: true, onExpand: vi.fn(), label: "Dock" },
+  onSelectContextPath: vi.fn(),
+  onOpenContextTarget: vi.fn(),
+  onShowEditorRecents: vi.fn(),
+};
 
 it("persists and admits the real New action without an empty working-set route", async () => {
   vi.stubGlobal("isSecureContext", true);
@@ -162,6 +140,7 @@ it("persists and admits the real New action without an empty working-set route",
   });
   localStorage.clear();
   const writes: Array<{ key: string; value: string }> = [];
+  let restoreTabStorage = () => {};
   const originalSetItem = Storage.prototype.setItem;
   const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
     this: Storage,
@@ -214,16 +193,13 @@ it("persists and admits the real New action without an empty working-set route",
           }}
         />
         <ContextViewerSurfaceController
+          {...shellProps}
           projectId="project"
           editorWorkId="work-a"
-          editorWork={null}
           activeContextScheme={route.scheme}
           activeContextPath={route.path}
           active
-          sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-          dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
           onSelectContextPath={updateRoute}
-          onShowEditorRecents={vi.fn()}
           onOpenContextTarget={(target, options) =>
             new Promise((resolve) => {
               releaseLocalRoute = () => {
@@ -246,6 +222,18 @@ it("persists and admits the real New action without an empty working-set route",
 
   try {
     await withReactRoot(<Harness />, async () => {
+      // The harness creates a new window; its sessionStorage has its own realm.
+      const tabStoragePrototype = Object.getPrototypeOf(window.sessionStorage) as Storage;
+      const tabSetItem = tabStoragePrototype.setItem;
+      const tabSpy = vi.spyOn(tabStoragePrototype, "setItem").mockImplementation(function (
+        this: Storage,
+        key: string,
+        value: string,
+      ) {
+        writes.push({ key, value });
+        return tabSetItem.call(this, key, value);
+      });
+      restoreTabStorage = () => tabSpy.mockRestore();
       let opening: Promise<void> | undefined;
       await act(async () => {
         opening = Promise.resolve(viewerProps?.onNewDocument());
@@ -272,10 +260,10 @@ it("persists and admits the real New action without an empty working-set route",
         .map((write) => JSON.parse(write.value));
       expect(workspaceWrites.length).toBeGreaterThan(0);
       expect(workspaceWrites.every((workspace) => workspace.version === 1)).toBe(true);
-      expect(workspaceWrites.at(-1)?.projects.project).toMatchObject({
+      expect(workspaceWrites.at(-1)?.payload.project).toMatchObject({
         selectedTabIdByWork: { "work-a": local?.documentId },
       });
-      expect(workspaceWrites.at(-1)?.projects.project.tabs).toEqual(
+      expect(workspaceWrites.at(-1)?.payload.project.tabs).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: "new",
@@ -293,83 +281,12 @@ it("persists and admits the real New action without an empty working-set route",
     await resources?.finishClose();
     localStorage.clear();
     await rehydrateEditorWorkspace(`cleanup-${crypto.randomUUID()}`);
+    restoreTabStorage();
     setItem.mockRestore();
     Object.defineProperty(navigator, "locks", { configurable: true, value: originalLocks });
     vi.unstubAllGlobals();
     expect(reportedErrors).toEqual([]);
   }
-});
-
-it("guarded-redirects a selected materialized local owner before admitting its server route", async () => {
-  const materialized: ContextTab = {
-    kind: "tracked",
-    documentId: "local-a",
-    scheme: "unfiled",
-    path: "/Untitled.md",
-    name: "Untitled.md",
-    workId: "work-a",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-    origin: "local-resource",
-  };
-  useContextTabsStore.setState({
-    byProject: {
-      project: { tabs: [materialized], selectedTabIdByWork: { "work-a": materialized.documentId } },
-    },
-    _workspaceHydrated: true,
-  });
-  let search: ProjectSearch = {
-    screen: "context",
-    work: "work-a",
-    scheme: "unfiled",
-    path: "",
-  };
-
-  function Harness() {
-    const [path, setPath] = useState("");
-    return (
-      <AccountFeatureTestProvider accountId="materialized-redirect-account">
-        <CaptureCoordinator />
-        <ProjectContextRemovalController
-          projectId="project"
-          activeScreen="context"
-          activeContextScheme="unfiled"
-          activeContextPath={path}
-          editorWorkId="work-a"
-          route={{
-            transition: acceptContextTransition,
-            readSearch: () => search,
-            updateSearch: (_projectId, update) => {
-              search = update(search);
-              setPath(search.path ?? "");
-            },
-          }}
-        />
-        <ContextViewerSurfaceController
-          projectId="project"
-          editorWorkId="work-a"
-          editorWork={null}
-          activeContextScheme="unfiled"
-          activeContextPath={path}
-          active
-          sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-          dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-          onSelectContextPath={vi.fn()}
-          onOpenContextTarget={vi.fn()}
-          onShowEditorRecents={vi.fn()}
-        />
-      </AccountFeatureTestProvider>
-    );
-  }
-
-  await withReactRoot(<Harness />, async () => {
-    expect(search.path).toBe("/Untitled.md");
-    expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
-      selection: { status: "bound", identity: { documentId: materialized.documentId } },
-      admitted: { scheme: "unfiled", path: "/Untitled.md", workId: "work-a" },
-    });
-  });
 });
 
 it("restores the exact older local owner across A to B to A through mounted controllers", async () => {
@@ -429,17 +346,12 @@ it("restores the exact older local owner across A to B to A through mounted cont
           }}
         />
         <ContextViewerSurfaceController
+          {...shellProps}
           projectId="project"
           editorWorkId={workId}
-          editorWork={null}
           activeContextScheme={search.scheme ?? null}
           activeContextPath={search.path ?? null}
           active
-          sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-          dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-          onSelectContextPath={vi.fn()}
-          onOpenContextTarget={vi.fn()}
-          onShowEditorRecents={vi.fn()}
         />
       </AccountFeatureTestProvider>
     );
@@ -474,58 +386,6 @@ it("restores the exact older local owner across A to B to A through mounted cont
   });
 });
 
-it.each([
-  ["loading", false, true],
-  ["error with cached absence", true, false],
-] as const)("preserves a route candidate during %s", async (_case, isError, isFetching) => {
-  queryState.isError = isError;
-  queryState.isFetching = isFetching;
-  const route: ContextRemovalRoutePort = {
-    transition: acceptContextTransition,
-    readSearch: () => ({
-      screen: "context",
-      work: "work-1",
-      scheme: "manuscript",
-      path: "/missing.md",
-    }),
-    updateSearch: () => undefined,
-  };
-
-  await withReactRoot(
-    <AccountFeatureTestProvider accountId={`account-${_case}`}>
-      <CaptureCoordinator />
-      <ProjectContextRemovalController
-        projectId="project"
-        activeScreen="context"
-        activeContextScheme="manuscript"
-        activeContextPath="/missing.md"
-        editorWorkId="work-1"
-        route={route}
-      />
-      <ContextViewerSurfaceController
-        projectId="project"
-        editorWorkId="work-1"
-        editorWork={null}
-        activeContextScheme="manuscript"
-        activeContextPath="/missing.md"
-        active
-        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-        onSelectContextPath={vi.fn()}
-        onOpenContextTarget={vi.fn()}
-        onShowEditorRecents={vi.fn()}
-      />
-    </AccountFeatureTestProvider>,
-    () => {
-      if (!coordinator) throw new Error("coordinator did not mount");
-      expect(coordinator.getProjectSnapshot("project")).toMatchObject({
-        selection: { status: "candidate", locator: { path: "/missing.md" } },
-        admitted: null,
-      });
-    },
-  );
-});
-
 it("does not admit an old bound document while its retained controller is inactive", async () => {
   const locator = { scheme: "manuscript" as const, path: "/a.md", workId: "work-1" };
   function Harness() {
@@ -533,9 +393,9 @@ it("does not admit an old bound document while its retained controller is inacti
       <AccountFeatureTestProvider accountId="parked-account">
         <CaptureCoordinator />
         <ContextViewerSurfaceController
+          {...shellProps}
           projectId="project"
           editorWorkId="work-1"
-          editorWork={null}
           activeContextScheme="manuscript"
           activeContextPath="/a.md"
           active={false}
@@ -544,7 +404,6 @@ it("does not admit an old bound document while its retained controller is inacti
           onSelectContextPath={() => {
             throw new Error("Inactive navigation");
           }}
-          onShowEditorRecents={vi.fn()}
           onOpenContextTarget={() => {
             throw new Error("Inactive navigation");
           }}

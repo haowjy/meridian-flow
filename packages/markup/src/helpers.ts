@@ -13,7 +13,6 @@ import type {
   MdastParagraph,
   MdastRoot,
   MdastText,
-  MdastWikiLinkImage,
   MdxJsxAttribute,
   MdxJsxAttributeValueExpression,
 } from "./ast.js";
@@ -23,8 +22,8 @@ import {
   type ComponentSpec,
   type PropSpec,
 } from "./components.js";
+import { HARD_BREAK_TAG } from "./markdown/blocks/hard-break.js";
 import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
-import { wikilinkTarget } from "./markdown/wikilink-target.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext } from "./types.js";
 
@@ -45,7 +44,6 @@ export type {
   MdastTable,
   MdastTableCell,
   MdastThematicBreak,
-  MdastWikiLinkImage,
   MdxJsxAttribute,
 } from "./ast.js";
 
@@ -60,9 +58,7 @@ export function pmBlockChildrenToMdast(node: PMNode, ctx: SerializeContext): Mda
   const out: MdastBlock[] = [];
   node.forEach((child) => {
     const serialized = runtime.serializeBlock(child, ctx);
-    out.push(
-      ...demoteAutolinks(parseWithOpaqueHtmlTables(serialized, runtime.parseMarkdown)).children,
-    );
+    out.push(...parseWithOpaqueHtmlTables(serialized, runtime.parseMarkdown).children);
   });
   return out;
 }
@@ -199,11 +195,9 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
           tokens.push({ type: "html", value: imageHtmlTag(image), marks: child.marks });
           break;
         }
-        const target = wikilinkTarget(image.url);
         tokens.push({
-          ...(target === null
-            ? { type: "image" as const, url: image.url }
-            : { type: "wikiLinkImage" as const, target }),
+          type: "image",
+          url: image.url,
           alt: image.alt,
           title: image.title,
           marks: child.marks,
@@ -214,6 +208,14 @@ export function inlineContentToMdast(node: PMNode, ctx: SerializeContext): Mdast
         throw new Error(`pm->mdast: unsupported inline node "${child.type.name}"`);
     }
   });
+  // A hard break ending the text has no Markdown spelling (`\` there is a
+  // literal backslash), so it escalates to the tag, as a sized picture does,
+  // and so does every break before it: remark writes a `\` break followed by
+  // raw HTML as a literal backslash.
+  for (let index = tokens.length - 1; tokens[index]?.type === "break"; index--) {
+    ensureBlockCodecRegistered("hard_break", ctx);
+    tokens[index] = { type: "html", value: HARD_BREAK_TAG, marks: [] };
+  }
   return inlineTokensToMdast(tokens, ctx);
 }
 
@@ -233,18 +235,17 @@ export function parseInlineChildren(
       case "break":
         out.push(ctx.schema.node("hard_break"));
         break;
-      case "image":
-      case "wikiLinkImage": {
-        const image = parseInlineImage(child, ctx);
+      case "image": {
+        const image = parseInlineAtom(child, ctx);
         if (image) out.push(image);
         break;
       }
       default: {
-        // A raw `<img>` tag: pure Markdown hands it over as `html`, MDX as a
-        // parsed JSX element, and the image codec reads both.
-        const image = parseInlineImage(child, ctx);
-        if (image) {
-          out.push(image);
+        // A raw `<br>` or `<img>` tag: pure Markdown hands it over as `html`,
+        // MDX as a parsed JSX element, and the break and image codecs read both.
+        const atom = parseInlineAtom(child, ctx);
+        if (atom) {
+          out.push(atom);
           break;
         }
         const marked = addRegisteredMark(activeMarks, child, ctx);
@@ -467,18 +468,27 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return false;
 }
 
-export function demoteAutolinks(tree: MdastRoot): MdastRoot {
+/** Bare GFM autolink literals stay prose; bracket and angle links are intentional. */
+export function demoteAutolinks(tree: MdastRoot, source: string): MdastRoot {
   visitChildren(tree, (node, idx, parent) => {
     const record = asRecord(node);
     if (record?.type !== "link" || idx === null || !parent) return;
+    const position = asRecord(record.position);
+    const offset = asRecord(position?.start)?.offset;
+    // Without source positions we cannot prove a link was implicit: retain it.
+    if (
+      typeof offset !== "number" ||
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      offset >= source.length
+    )
+      return;
+    if (source[offset] === "[" || source[offset] === "<") return;
     const children = record.children;
-    const url = record.url;
-    const title = record.title;
-    if (!Array.isArray(children) || typeof url !== "string" || title) return;
-    const first = children[0];
-    const firstRecord = asRecord(first);
-    if (children.length === 1 && firstRecord?.type === "text" && firstRecord.value === url) {
-      parent.children[idx] = { type: "text", value: url };
+    if (!Array.isArray(children) || children.length !== 1) return;
+    const text = asRecord(children[0]);
+    if (text?.type === "text" && typeof text.value === "string") {
+      parent.children[idx] = children[0];
     }
   });
   return tree;
@@ -493,7 +503,6 @@ type InlineToken =
   | (MdastText & { marks: readonly Mark[] })
   | (MdastBreak & { marks: readonly Mark[] })
   | (MdastImage & { marks: readonly Mark[] })
-  | (MdastWikiLinkImage & { marks: readonly Mark[] })
   /** A raw tag standing among the words: the escalated spelling of a sized picture. */
   | { type: "html"; value: string; marks: readonly Mark[] };
 
@@ -571,7 +580,6 @@ function plainText(tokens: readonly InlineToken[]): string {
         case "break":
           return "\n";
         case "image":
-        case "wikiLinkImage":
           return token.alt ?? "";
         case "html":
           return token.value;
@@ -598,15 +606,24 @@ function addRegisteredMark(
   return null;
 }
 
+/** Inline atoms whose codecs also read the raw tags they escalate to. */
+const INLINE_ATOM_CODECS = ["hard_break", "image"] as const;
+
 /**
- * The picture an inline AST node means, through the one registered image codec:
- * `![alt](src)`, a wikilink picture, and the raw `<img>` tag a sized picture
- * escalates to, in whichever shape this dialect's parser reports it.
+ * The break or picture an inline AST node means, through the registered codec:
+ * `![alt](src)`, the raw `<img>` tag a sized picture escalates to, or the
+ * `<br/>` a trailing break escalates to, in whichever shape this dialect's
+ * parser reports it.
  */
-function parseInlineImage(ast: unknown, ctx: ParseContext): PMNode | null {
-  const imageCodec = getRuntime(ctx).blockMap.get("image");
-  if (!imageCodec) throw new Error('mdast->pm: missing "image" codec');
-  return imageCodec.parse(ast, ctx);
+function parseInlineAtom(ast: unknown, ctx: ParseContext): PMNode | null {
+  const blockMap = getRuntime(ctx).blockMap;
+  for (const name of INLINE_ATOM_CODECS) {
+    const codec = blockMap.get(name);
+    if (!codec) throw new Error(`mdast->pm: missing "${name}" codec`);
+    const parsed = codec.parse(ast, ctx);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function ensureBlockCodecRegistered(name: string, ctx: SerializeContext): void {

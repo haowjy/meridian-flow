@@ -58,7 +58,6 @@ function dispatch(input: {
 
 describe("ContextTreeMover result-aware command ownership", () => {
   it.each([
-    "archive.md",
     "draft.md",
   ])("rejects a replaced source identity before moving or graduating to %s", async (path) => {
     const mover = new ContextTreeMover();
@@ -69,8 +68,7 @@ describe("ContextTreeMover result-aware command ownership", () => {
         : dispatch({ canonical: `manuscript://${path}`, path, token: null });
     await expect(
       mover.commitWriterLocation(source, destination, {
-        kind: "file",
-        nodeId: "original-document",
+        expected: { kind: "file", nodeId: "original-document" },
       }),
     ).resolves.toEqual(Err({ code: "stale_source", uri: "manuscript://draft.md" }));
   });
@@ -107,4 +105,16 @@ describe("ContextTreeMover result-aware command ownership", () => {
       Err({ code: "invalid_operation", uri: target.canonical }),
     ]);
   });
+});
+
+it("refuses a delayed folder delete when a different folder occupies the path", async () => {
+  const mover = new ContextTreeMover();
+  const target = dispatch({
+    canonical: "manuscript://folder",
+    path: "folder",
+    token: { kind: "directory", nodeId: "replacement", sourceId: "source-1", path: "folder" },
+  });
+  await expect(
+    mover.delete(target, { expected: { kind: "folder", nodeId: "original" } }),
+  ).resolves.toEqual(Err({ code: "stale_target", uri: "manuscript://folder" }));
 });

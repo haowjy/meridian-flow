@@ -2,7 +2,9 @@
 
 > **v3 full-stack rebuild.** TypeScript with Yjs + TipTap, Drizzle over Postgres,
 > WorkOS AuthKit, and credits-only billing. There are no real users or data.
-> Change schemas freely, delete unused code, and never add compatibility shims.
+> Change schemas freely, delete unused code, and never add compatibility shims;
+> write migrations as if production data exists (no data loss, online-safe DDL,
+> and no skips that rely on empty tables).
 
 ## Mission
 
@@ -41,11 +43,14 @@ because the new one has not finished materializing.
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds qualified `scratch://` context.
 Every project has one locked **No Work** row. Omitting a Work or sending
-explicit null binds the thread to that row. After creation, the writer or LLM
-may explicitly rebind the chat through one canonical operation; Work management
-and navigation never invoke it implicitly. Work-capable URIs use `@/` for No Work authority and
-`@slug` for a named Work; internal IDs never appear in URI authority. The schema
-is `works` + `thread_works`.
+explicit null binds the thread to that row. After creation, the writer may
+explicitly rebind the chat through one canonical operation; Work management
+and navigation never invoke it implicitly. The model can't rebind; see the
+[model's `work switch`][model-work-switch]. Named-Work URIs use `@slug`;
+No Work Uploads use `@/`. No Work owns no Scratch: a No Work chat's Scratch
+belongs to its lineage (the first chat, its forks and subagents) at
+`scratch://@/c12/`, named by the first chat's handle. Internal IDs never
+appear in URI authority. The schema is `works` + `thread_works`.
 
 ## Agency
 
@@ -104,12 +109,27 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
 Driving or inspecting the running app (threads, docs, mock model, logs): use
-`./mf`, not the browser, unless it is visual. See
+`./mf` for setup and durable reads (`thread view`, `thread events`, `thread context`,
+`log`, `doc read`). Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
+lands, `./mf thread send` and `thread tail --until-idle` can report another message's
+reply or stop before the reply that answers yours: check run outcomes against
+`./mf thread view` (the durable transcript) or in the browser. See
 [docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
 
 ## Build and test
 
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
+`pnpm test:all` runs unit and managed DB tests together. Keep automated tests
+below 2,000 expanded cases (including `it.each` rows and browser-device
+variants) and target at most 60 seconds for that full run. Write few unit
+tests: a new test must protect a named risk; prune weaker duplicate coverage
+rather than adding another layer. Skips, exclusions, and bundling unrelated
+cases do not satisfy the budget. To verify a change, prefer probes,
+end-to-end smoke scripts and written manual-testing steps in the
+[runtime probe catalog](docs/qa/README.md); add or update the recipe that
+covers what you changed. Contracts, markup, and DB suites reuse worker module caches:
+no module/global mocks there. Keep test data and connections instance-owned;
+DB rollback/FK resets, not fresh module loading, isolate persisted state.
 
 ## Git workflow
 
@@ -120,6 +140,14 @@ instructing the agent to merge. Merges between working branches need no gate.
 Documentation-only changes commit directly to `main`; never open a PR only for
 documentation. This includes `AGENTS.md`, `.context/`, KB, and the Meridian Flow
 docs repository.
+
+Prune a worktree as soon as its branch merges, whether into `main`, `staging`,
+or a longer-lived integration branch — `pnpm dev:prune-worktrees -- --target
+<work-id|path|branch|pr> --dry-run` (see [tools/dev/AGENTS.md](tools/dev/AGENTS.md)).
+Don't defer this: if the integration branch is later squash-merged, none of
+its side-lane branches remain provable as merged by PR match or by ancestry,
+and only a human who tracked the actual history can confirm by hand that they
+are safe to remove.
 
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its
@@ -136,3 +164,4 @@ git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 - Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
+[model-work-switch]: apps/server/server/domains/runtime/.context/tools.md#permissions

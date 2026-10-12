@@ -37,10 +37,6 @@ type CustomBlockUpsertPayload = {
   };
 };
 
-type BlockPrunedPayload = {
-  blockId: string;
-};
-
 type PositionalBlockIdentity = {
   id: string;
   turnId: string;
@@ -55,7 +51,6 @@ type StoreEventTarget = {
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
-  removeAssistantBlock(threadId: string, blockId: string): void;
   invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
@@ -167,6 +162,9 @@ function toolBlock(args: {
   input?: JsonValue;
   status: "complete" | "partial";
   output?: JsonValue;
+  // The tool's typed result beside the model-facing `output` text; mirrors the
+  // durable block's `content.result`.
+  result?: JsonValue;
   message?: string | null;
   isError?: boolean;
   // Live, append-only interleaved stdout/stderr buffer streamed via the
@@ -190,6 +188,7 @@ function toolBlock(args: {
       toolName: args.toolName,
       input: args.input ?? null,
       output: args.output ?? null,
+      result: args.result ?? null,
       message: typeof args.message === "string" ? args.message : null,
       isError: args.isError ?? false,
       streamedOutput: typeof args.streamedOutput === "string" ? args.streamedOutput : null,
@@ -208,18 +207,20 @@ function toolIsErrorFromContent(content: Record<string, JsonValue>): boolean {
 function preservedToolFields(content: Record<string, JsonValue>): {
   input: JsonValue;
   output: JsonValue;
+  result: JsonValue;
   message: string | null;
   isError: boolean;
   // Carried across every tool-block upsert so TOOL_CALL_ARGS/END/RESULT and
   // tool.progress activity events don't wipe the running stdout/stderr log.
-  // Intentionally kept past completion — the structured `output` is what the
-  // card's preview consumes, but the streamed buffer remains visible in details.
+  // Intentionally kept past completion — the typed `result` is what the card's
+  // preview consumes, but the streamed buffer remains visible in details.
   streamedOutput: string | null;
   metadata: Record<string, JsonValue> | null;
 } {
   return {
     input: content.input ?? null,
     output: content.output ?? null,
+    result: content.result ?? null,
     message: typeof content.message === "string" ? content.message : null,
     isError: toolIsErrorFromContent(content),
     streamedOutput: typeof content.streamedOutput === "string" ? content.streamedOutput : null,
@@ -235,6 +236,11 @@ function recordContentField(
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, JsonValue>)
     : null;
+}
+
+/** The typed result the server sends beside the model-facing text, when the tool has one. */
+function toolResultEventResult(event: object): JsonValue {
+  return ((event as Record<string, unknown>).result as JsonValue | undefined) ?? null;
 }
 
 function toolResultEventMetadata(event: object): Record<string, JsonValue> | null {
@@ -373,13 +379,6 @@ function parseCustomBlockUpsertPayload(value: unknown): CustomBlockUpsertPayload
       status: candidate.status === "partial" ? "partial" : "complete",
     },
   };
-}
-
-function parseBlockPrunedPayload(value: unknown): BlockPrunedPayload | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const blockId = (value as Record<string, unknown>).blockId;
-  if (typeof blockId !== "string" || blockId.length === 0) return null;
-  return { blockId };
 }
 
 function blockFromCustomUpsertPayload(payload: CustomBlockUpsertPayload): Block {
@@ -621,17 +620,12 @@ function writeModeFromRunStarted(rawEvent: unknown): Turn["writeMode"] | undefin
 
 /** The addressed block vocabulary has one reducer owner, independent of a run. */
 export function isDurableBlockEvent(event: AGUIEvent): boolean {
-  return (
-    event.type === EventType.CUSTOM &&
-    (event.name === "meridian.block.upserted" || event.name === "meridian.block.pruned")
-  );
+  return event.type === EventType.CUSTOM && event.name === "meridian.block.upserted";
 }
 
 export function isWellFormedDurableBlockEvent(event: AGUIEvent): boolean {
   if (!isDurableBlockEvent(event) || event.type !== EventType.CUSTOM) return false;
-  return event.name === "meridian.block.upserted"
-    ? parseCustomBlockUpsertPayload(event.value) !== null
-    : parseBlockPrunedPayload(event.value) !== null;
+  return parseCustomBlockUpsertPayload(event.value) !== null;
 }
 
 /** False means the owned vocabulary was malformed, not an opaque CUSTOM event. */
@@ -642,23 +636,9 @@ export function applyDurableBlockEvent(
 ): boolean {
   if (!isDurableBlockEvent(event) || (eventH(event) && event.threadId !== threadId)) return false;
   if (event.type !== EventType.CUSTOM) return false;
-  if (event.name === "meridian.block.upserted") {
-    const payload = parseCustomBlockUpsertPayload(event.value);
-    if (!payload) return false;
-    applyCustomBlockUpsertEvent(store, threadId, payload);
-    return true;
-  }
-  const payload = parseBlockPrunedPayload(event.value);
+  const payload = parseCustomBlockUpsertPayload(event.value);
   if (!payload) return false;
-  if (
-    !(store.turns(threadId) ?? []).some((turn) =>
-      turn.blocks.some((block) => block.id === payload.blockId),
-    )
-  ) {
-    store.invalidateThreadSnapshot(threadId);
-    return true;
-  }
-  store.removeAssistantBlock(threadId, payload.blockId);
+  applyCustomBlockUpsertEvent(store, threadId, payload);
   return true;
 }
 
@@ -970,6 +950,7 @@ export function applyAguiEventToStore(
           ...preservedToolFields(content),
           status: "complete",
           output: parseToolOutput(event.content),
+          result: toolResultEventResult(event),
           isError: toolIsErrorFromContent(content),
           ...(resultMetadata ? { metadata: resultMetadata } : {}),
         }),
@@ -1087,8 +1068,11 @@ export function applyAguiEventToStore(
       }
       if (event.name === "meridian.usage" || event.name === "meridian.permission.denied") return;
       // Subagent activity is live read-model state consumed via ThreadLiveState;
-      // it is not transcript content, so it never becomes a turn block.
-      if (event.name === "meridian.subagent.activity") return;
+      // it is not transcript content, so it never becomes a turn block. The
+      // spawn hint is not either: the invocation card carries its `from`
+      // source durably, and its value holds the child's whole prompt.
+      if (event.name === "meridian.subagent.activity" || event.name === "meridian.agent.spawn")
+        return;
       // Durable custom projections are consumed by live listeners — the
       // useThreadDurableProjections trail/Work-binding listener and the
       // pending-inbox projection (usePendingInbox) — so they are not transcript

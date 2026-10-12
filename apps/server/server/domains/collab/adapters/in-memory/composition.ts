@@ -1,12 +1,15 @@
 /** Explicit in-memory collab composition and behavior-preserving unsupported stubs. */
+
 import {
-  type AgentEditCodec,
+  type AgentEditCodecFactory,
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
+import { createAllowAllFileAccess } from "../../../file-policy/index.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
 import type {
@@ -15,20 +18,24 @@ import type {
   CollabDomain,
   CollabDrafts,
 } from "../../contracts.js";
-import { asThreadPeerAgentEditCore } from "../../domain/agent-edit-cores.js";
 import {
   attributionFromMeta,
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
+import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
-import {
-  createDocumentProjectionRefresher,
-  createDocumentWriteHookRunner,
-} from "../../domain/document-projection-refresher.js";
+import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
+import { versioned } from "../../domain/document-revision.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
+import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
+import {
+  enlistResponseParticipant,
+  runResponseTransaction,
+} from "../../domain/response-transaction.js";
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
+import { createThreadPeerCorePool } from "../../domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
 import { reverseTurn } from "../../domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
@@ -45,6 +52,10 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
+import {
+  createStaticDocumentLinkScopes,
+  UNSUPPORTED_AHEAD_REFS,
+} from "./static-document-link-scopes.js";
 
 export function createInMemoryCollabDomain(): CollabDomain {
   const journal = createInMemoryJournal();
@@ -60,7 +71,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
     hook: async () => {},
     diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   });
+  const links = createStaticDocumentLinkScopes();
   const runtime = createAgentEditRuntime({
+    links,
+    aheadRefs: UNSUPPORTED_AHEAD_REFS,
+    inTransaction: () => false,
     journal,
     coordinator,
     lifecycle: documentCreation,
@@ -76,12 +91,33 @@ export function createInMemoryCollabDomain(): CollabDomain {
     resolveDocumentFiletype: async () => null,
     observability: createAgentEditObservabilityOptions({}),
   });
-  const agentEdit = asThreadPeerAgentEditCore(runtime.liveUtilityCore);
-  const projections = createDocumentProjectionRefresher({
-    documents: runtime.markdownDocuments,
-    runDocumentWriteHook,
-    diagnostics: SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
+  // No Work drafts exist in memory, so the pool routes both destinations to the live core.
+  const agentEdit = createThreadPeerCorePool({
+    liveUtilityCore: runtime.liveUtilityCore,
+    createThreadCore: () => runtime.liveUtilityCore,
+    liveHistory: journal,
+    reversalHistory: {
+      branches: {
+        resolveThreadBranch: async (documentId, threadId) => {
+          throw new BranchNotFoundError(documentId, threadId);
+        },
+        getBranch: async () => null,
+      },
+      branchRows: { listJournalRowsForBranch: async () => [] },
+    },
+    discardThreadPeerBranches: async () => {},
+    pullThreadPeer: async () => undefined,
+    commitThreadResponseAtomically: (operation) => operation(),
+    responseTransactionSettlement: {
+      deferUntilCommit: () => false,
+      deferUntilRollback: () => false,
+    },
+    responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
+    fileAccess: createAllowAllFileAccess(),
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
   });
+  const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal,
     hocuspocus: hocuspocusBinding.current,
@@ -123,6 +159,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
 
   return createCollabFacade({
+    lifecycle: { dispose: () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
       primeReservedNamespaceIndex,
@@ -132,6 +169,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       loadHocuspocusBranchState: hocuspocusPersistence.loadHocuspocusBranchState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitBranchWriterUpdate: hocuspocusPersistence.admitBranchWriterUpdate,
       writerIngressBarrier: hocuspocusPersistence.writerIngressBarrier,
       persistConnectionUpdate: hocuspocusPersistence.persistConnectionUpdate,
@@ -145,7 +183,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     authorityHeads,
     agentEdit: {
-      agentEdit: (context) => (context?.draftOwner === null ? runtime.liveUtilityCore : agentEdit),
+      agentEdit: () => agentEdit,
     },
     reversal: {
       reverseTurn: (input) =>
@@ -168,11 +206,25 @@ export function createInMemoryCollabDomain(): CollabDomain {
     documents: {
       ensureDocument: lifecycle.ensureDocument,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,
+      readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
-      editDocument: runtime.markdownDocuments.editDocument,
+      bindMarkdown: runtime.linkBinder.bindMarkdown,
+      bindStatic: runtime.linkBinder.bindStatic,
     },
-    projections: { refreshDocumentProjection: projections.refresh },
+    projections: {
+      refreshDocumentProjection: projections.refresh,
+      documentDerivations: {
+        derive: async (documentId) => {
+          await projections.refresh({ documentId });
+          return { status: "missing" };
+        },
+        schedule: () => {},
+        sweep: async () => 0,
+        flush: async () => {},
+        stop: async () => {},
+      },
+    },
     lineage,
     responses: responseFinalizer,
     checkpoints,
@@ -191,6 +243,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       coordinator,
       runtime.model,
       runtime.codec,
+      links,
     ),
     drafts: createInMemoryDraftStub(runtime.markdownDocuments),
     documentCreation,
@@ -217,30 +270,48 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
 
 function createInMemoryBranchPeerStub(
   documents: {
-    readAsMarkdown(
+    readVersionedMarkdown(
       documentId: string,
     ): ReturnType<
-      import("../../domain/markdown-document.js").MarkdownDocumentEngine["readAsMarkdown"]
+      import("../../domain/markdown-document.js").MarkdownDocumentEngine["readVersionedMarkdown"]
     >;
   },
   coordinator: {
     withDocument<T>(documentId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T>;
   },
   model: YProsemirrorDocumentModel,
-  codec: AgentEditCodec,
+  codec: AgentEditCodecFactory,
+  links: DocumentLinkScopes,
 ): BranchPeerShadowAccess {
   return {
+    async readEffectiveRevision(input) {
+      const read = await documents.readVersionedMarkdown(input.documentId);
+      return read.ok ? read.value.revision : null;
+    },
     async pullThreadPeer() {},
     async flushBranchLivePull() {},
-    readEffectiveMarkdown: (input) => documents.readAsMarkdown(input.documentId),
+    readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
-      coordinator.withDocument(input.documentId, async (doc) =>
-        Ok(model.serializeBlockLines(toDocHandle(doc), codec)),
-      ),
+      coordinator.withDocument(input.documentId, async (doc) => {
+        const scope = links.holder({ documentId: input.documentId, view: LIVE_VIEW });
+        const bound = codec.forScope(scope);
+        const read = versioned(doc, scope, (doc) =>
+          model.serializeBlockLines(toDocHandle(doc), bound),
+        );
+        const blockLinks = model
+          .projectBlocks(toDocHandle(doc))
+          .map((block) => spelledLinks([block], scope));
+        return Ok({
+          ...read,
+          links: blockLinks,
+          holder: { uri: scope.holder.uri, view: LIVE_VIEW },
+        });
+      }),
     async resolveManifestMembership() {
       return { documentId: "" as DocumentId, members: [] };
     },
     async reconcileProjectManifest() {},
+    async transferLiveManifestMembership() {},
     async recordManifestDocumentCreated() {},
     async recordManifestDocumentDeleted() {},
   };

@@ -11,6 +11,7 @@ import net from "node:net";
 const LOOPBACK_HOST = "127.0.0.1";
 const TERMINATE_TIMEOUT_MS = 1_000;
 const FORCE_TIMEOUT_MS = 1_000;
+type IsPortFree = (port: number) => Promise<boolean>;
 
 export interface PortHolder {
   readonly pid: number;
@@ -41,6 +42,7 @@ interface PortReleaseOptions {
   readonly intervalMs?: number;
   readonly terminateTimeoutMs?: number;
   readonly forceTimeoutMs?: number;
+  readonly isPortFree?: IsPortFree;
   readonly discoverHolders?: (port: number) => PortHolderDiscovery;
   readonly killProcess?: (pid: number, signal: NodeJS.Signals) => void;
   readonly onKill?: (entry: { readonly port: number; readonly holder: PortHolder }) => void;
@@ -92,21 +94,25 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 export async function waitForPortsFree(
   ports: readonly number[],
-  { timeoutMs = 5_000, intervalMs = 100 }: { timeoutMs?: number; intervalMs?: number } = {},
+  {
+    timeoutMs = 5_000,
+    intervalMs = 100,
+    isPortFree = isLocalPortFree,
+  }: { timeoutMs?: number; intervalMs?: number; isPortFree?: IsPortFree } = {},
 ): Promise<number[]> {
   const unique = [...new Set(ports)];
   const deadline = Date.now() + timeoutMs;
-  let held = await filterHeld(unique);
+  let held = await filterHeld(unique, isPortFree);
   while (held.length > 0 && Date.now() < deadline) {
     await delay(intervalMs);
-    held = await filterHeld(held);
+    held = await filterHeld(held, isPortFree);
   }
   return held;
 }
 
-async function filterHeld(ports: readonly number[]): Promise<number[]> {
+async function filterHeld(ports: readonly number[], isPortFree: IsPortFree): Promise<number[]> {
   const results = await Promise.all(
-    ports.map(async (port) => ({ port, free: await isLocalPortFree(port) })),
+    ports.map(async (port) => ({ port, free: await isPortFree(port) })),
   );
   return results.filter((entry) => !entry.free).map((entry) => entry.port);
 }
@@ -114,13 +120,14 @@ async function filterHeld(ports: readonly number[]): Promise<number[]> {
 async function inspectHeldPorts(
   ports: readonly number[],
   discoverHolders: (port: number) => PortHolderDiscovery,
+  isPortFree: IsPortFree,
 ): Promise<{ held: HeldPort[]; errors: { port: number; error: string }[] }> {
   const held: HeldPort[] = [];
   const errors: { port: number; error: string }[] = [];
   for (const port of ports) {
     const discovery = discoverHolders(port);
     if (discovery.ok) held.push({ port, holders: discovery.holders });
-    else if (!(await isLocalPortFree(port))) errors.push({ port, error: discovery.error });
+    else if (!(await isPortFree(port))) errors.push({ port, error: discovery.error });
   }
   return { held, errors };
 }
@@ -187,14 +194,15 @@ export async function releaseFixedPorts(
   options: PortReleaseOptions = {},
 ): Promise<PortReleaseResult> {
   const unique = [...new Set(ports)];
-  const initiallyHeld = await filterHeld(unique);
+  const isPortFree = options.isPortFree ?? isLocalPortFree;
+  const initiallyHeld = await filterHeld(unique, isPortFree);
   if (initiallyHeld.length === 0) return { status: "released", ports: unique };
 
   const discoverHolders = options.discoverHolders ?? discoverPortHolders;
   const killProcess = options.killProcess ?? ((pid, signal) => process.kill(pid, signal));
   const announcedPids = new Set<number>();
   const terminatedPids = new Set<number>();
-  let inspection = await inspectHeldPorts(initiallyHeld, discoverHolders);
+  let inspection = await inspectHeldPorts(initiallyHeld, discoverHolders, isPortFree);
 
   while (true) {
     if (inspection.errors.length > 0) {
@@ -217,8 +225,9 @@ export async function releaseFixedPorts(
       const afterTerminate = await waitForPortsFree(heldPorts(inspection.held), {
         timeoutMs: options.terminateTimeoutMs ?? TERMINATE_TIMEOUT_MS,
         intervalMs: options.intervalMs,
+        isPortFree,
       });
-      inspection = await inspectHeldPorts(afterTerminate, discoverHolders);
+      inspection = await inspectHeldPorts(afterTerminate, discoverHolders, isPortFree);
       continue;
     }
 
@@ -232,10 +241,11 @@ export async function releaseFixedPorts(
     const afterForce = await waitForPortsFree(heldPorts(inspection.held), {
       timeoutMs: options.forceTimeoutMs ?? FORCE_TIMEOUT_MS,
       intervalMs: options.intervalMs,
+      isPortFree,
     });
     if (afterForce.length === 0) return { status: "released", ports: unique };
 
-    inspection = await inspectHeldPorts(afterForce, discoverHolders);
+    inspection = await inspectHeldPorts(afterForce, discoverHolders, isPortFree);
     if (inspection.errors.length > 0) {
       return { status: "discoveryError", errors: inspection.errors };
     }

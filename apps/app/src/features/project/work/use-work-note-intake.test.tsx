@@ -27,7 +27,7 @@ it("keeps a refused note after the tab remounts and retries it under the same na
   mutateAsync.mockRejectedValueOnce(new Error("Rejected"));
   await withReactRoot(<Probe workId="work-1" />, async () => {
     await act(async () => {
-      expect(await intake.createNote(["Scratch note.md"])).toBeNull();
+      expect(await intake.createNote(["Scratch note"])).toBeNull();
     });
     expect(intake.note?.state).toBe("failed");
   });

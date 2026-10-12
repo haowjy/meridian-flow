@@ -41,6 +41,7 @@ async function createAppServices(): Promise<AppServices> {
     eventHub: app.threadEventHub,
     eventSink,
   });
+  await ports.fileAccessChanges.listen();
   const scheduler = startRecoveryScheduler(
     [
       { name: "wake-scan", delayMs: WAKE_SWEEP_INTERVAL_MS, run: app.recovery.scanWakes },
@@ -56,11 +57,18 @@ async function createAppServices(): Promise<AppServices> {
         delayMs: SYSTEM_UPDATE_SWEEP_MS,
         run: app.workContextNotices.sweepWorkNotices,
       },
+      {
+        name: "document-derivations",
+        delayMs: 10000,
+        run: app.documentSync.documentDerivations.sweep,
+      },
       { name: "change-trail", delayMs: CHANGE_TRAIL_POLL_MS, run: app.changeTrailDelivery.drain },
     ],
     eventSink,
   );
-  registerProcessShutdownCallback(() => scheduler.stop());
+  registerProcessShutdownCallback(async () => {
+    await Promise.all([scheduler.stop(), app.shutdown()]);
+  });
   return app;
 }
 

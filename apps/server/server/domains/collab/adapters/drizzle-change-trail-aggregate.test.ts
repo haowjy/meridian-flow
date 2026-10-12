@@ -1,7 +1,7 @@
 /** Regression coverage for the persisted trail reducer across successive pushes. */
 import { describe, expect, it } from "vitest";
 import type { TrailChangeV1 } from "../domain/trail-read-kernel.js";
-import { mergeTrailChanges, refinePushChanges } from "./drizzle-change-trail-aggregate.js";
+import { mergeTrailChanges } from "./drizzle-change-trail-aggregate.js";
 
 function change(
   input: Partial<TrailChangeV1> &
@@ -69,43 +69,5 @@ describe("mergeTrailChanges", () => {
       afterTextAtReceipt: "A",
     });
     expect(mergeTrailChanges(mergeTrailChanges([], [forward]), [reverse])).toEqual([]);
-  });
-
-  it("keeps globally stable ordinals across documents and pushes", () => {
-    const first = change({
-      changeId: "a",
-      documentId: "doc-a",
-      beforeText: null,
-      afterTextAtReceipt: "A",
-    });
-    const second = change({
-      changeId: "b",
-      documentId: "doc-b",
-      beforeText: null,
-      afterTextAtReceipt: "B",
-    });
-    expect(
-      mergeTrailChanges(mergeTrailChanges([], [first]), [second]).map((item) => [
-        item.documentId,
-        item.ordinal,
-      ]),
-    ).toEqual([
-      ["doc-a", 0],
-      ["doc-b", 1],
-    ]);
-  });
-});
-
-describe("refinePushChanges", () => {
-  it("preserves ordinary rows when an empty replacement is empty", () => {
-    const ordinary = change({
-      changeId: "o",
-      documentId: "doc-a",
-      beforeText: "before|Captured ordinary body.",
-      afterTextAtReceipt: null,
-      pushId: "7",
-    });
-
-    expect(refinePushChanges([ordinary], [])).toEqual([ordinary]);
   });
 });

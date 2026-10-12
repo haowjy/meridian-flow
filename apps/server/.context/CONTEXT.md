@@ -75,7 +75,9 @@ The shipped route surface covers:
   route handling.
 
 Project-scoped handlers gate through `requireProjectOwner` from
-`server/domains/projects` before reading or mutating project-owned data.
+`server/domains/projects` before reading or mutating project-owned data, then
+ask the [file policy](../server/domains/file-policy/.context/CONTEXT.md) for
+each document they read or change.
 WorkOS AuthKit is the auth boundary; alternate auth adapter route code is not part of
 Meridian Flow. The removed external execution-provider route surface is also out
 of scope for Meridian; do not port it back while filling route parity gaps.
@@ -200,10 +202,6 @@ same grammar; `server/lib/request-id.ts` wraps it with HTTP error mapping.
 Malformed HTTP IDs become 400 responses before any repository call; thread
 WebSocket messages deliberately report not-found.
 
-`UUID_SHAPE_PATTERN` in `context/uri.ts` is a URI disambiguator for UUID-shaped
-typos, not a second DB-UUID grammar. Actual acceptance still goes through
-`parseRequestId`.
-
 ### Route-core handlers
 
 Heavier routes keep testable route-core functions in `server/lib/*-route.ts`.
@@ -233,9 +231,10 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 - **Database checks** run through root `pnpm test:db`, whose owned local
   database lifecycle is in `tools/dev/run-db-tests.ts`. The closed manifest in
   `apps/server/vitest.db.config.ts` must exactly match every discovered
-  `*.db.test.ts` suite in the server and database package. A real-Postgres
-  suite with another suffix remains outside the gate until it is renamed and
-  registered. Do not use a separate root Vitest DB wrapper.
+  `*.db.test.ts` suite under `apps/server`, `packages/database`, and `tools/dev`.
+  A real-Postgres suite with another suffix remains outside the gate until it
+  is renamed and registered. The combined `pnpm test:all` run includes this
+  same DB project; do not duplicate its manifest or lifecycle.
 - **Browser/runtime checks** should use portless HTTPS routes, never raw ports,
   so tests exercise the real proxy/TLS path.
 

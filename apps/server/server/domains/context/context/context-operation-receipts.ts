@@ -51,12 +51,13 @@ export class ContextOperationReceipts {
         if (!(error instanceof RejectedOperation)) throw error;
         result = error.result;
       }
-      if (
-        !result.ok &&
-        (result.error.code === "io_error" || result.error.code === "context_unavailable")
-      )
-        return result;
-      await this.store.insert({ operationId, command, result } as ContextOperationReceipt);
+      if (!result.ok && result.error.code === "io_error") return result;
+      await this.store.insert({
+        operationId,
+        command,
+        result,
+        observationVersion: await this.store.observationVersion(command),
+      } as ContextOperationReceipt);
       return result;
     });
   }

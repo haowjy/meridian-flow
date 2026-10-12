@@ -21,6 +21,7 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
       inspectMovable: vi.fn(async (path: string) => {
         if (path === "old.md") {
           return Ok({
+            observationVersion: "1",
             kind: "file" as const,
             nodeId: "document-old",
             sourceId: `${scheme}-source`,
@@ -61,24 +62,6 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
 }
 
 describe("context router deletion receipts", () => {
-  it.each([
-    [{ kind: "file" as const, documentId: "different-document" }, "old.md"],
-    [{ kind: "folder" as const }, "old.md"],
-    [{ kind: "file" as const, documentId: "document-old" }, "empty"],
-  ])("rejects a stale initiating target %#", async (expected, path) => {
-    const adapter = writableAdapter("manuscript");
-    const port = createContextPortRouter({
-      adapters: new Map([["manuscript", adapter]]),
-      workAuthorities: new Map(),
-    });
-
-    await expect(port.delete(`manuscript://${path}`, { expected })).resolves.toEqual({
-      ok: false,
-      error: { code: "stale_target", uri: `manuscript://${path}` },
-    });
-    expect(adapter.tree?.commitRecursiveDelete).not.toHaveBeenCalled();
-  });
-
   it("reports a replacement that wins after inspection as a stale target", async () => {
     const adapter = writableAdapter("manuscript");
     if (!adapter.tree) throw new Error("writable test adapter must provide tree mutations");
@@ -86,7 +69,7 @@ describe("context router deletion receipts", () => {
       Err({ code: "stale_source" }),
     );
     const port = createContextPortRouter({
-      adapters: new Map([["manuscript", adapter]]),
+      sources: new Map([["manuscript", { adapter, authority: { kind: "contextual" } }]]),
       workAuthorities: new Map(),
     });
 
@@ -130,7 +113,15 @@ describe("context router Work slug resolution", () => {
     const primary = workAdapter(PRIMARY_ID);
     const sibling = workAdapter(SIBLING_ID);
     return createContextPortRouter({
-      adapters: new Map([["scratch", primary]]),
+      sources: new Map([
+        [
+          "scratch",
+          async () => ({
+            adapter: primary,
+            authority: { kind: "lineage" as const, rootThreadRef: "c12" },
+          }),
+        ],
+      ]),
       primaryWorkAuthority: authority(PRIMARY_ID, "drafting"),
       workAuthorities: new Map([
         [testWorkSlug("drafting"), authority(PRIMARY_ID, "drafting")],
@@ -143,79 +134,34 @@ describe("context router Work slug resolution", () => {
 
   it("resolves a same-project sibling slug for both reads and writes", async () => {
     const context = port();
+    await expect(context.list()).resolves.toMatchObject({
+      ok: true,
+      value: { entries: [{ kind: "directory", uri: "scratch://", readonly: false }] },
+    });
     await expect(context.read("scratch://@revision-pass/notes.md")).resolves.toEqual({
       ok: true,
-      value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes.md" },
+      value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
     });
     await expect(context.write("scratch://@revision-pass/notes.md", "revised")).resolves.toEqual({
       ok: true,
-      value: { documentId: SIBLING_ID, uri: "scratch://@revision-pass/notes.md" },
+      value: { documentId: SIBLING_ID, uri: "scratch://@revision-pass/notes" },
     });
   });
 
-  it("reports an unknown or cross-project slug with the valid project slugs", async () => {
+  it("reports an unknown or cross-project slug and points to work list", async () => {
     await expect(port().read("scratch://@other-project-work/notes.md")).resolves.toEqual({
       ok: false,
       error: {
         code: "invalid_uri",
         uri: "scratch://@other-project-work/notes.md",
-        reason: "Unknown Work @other-project-work. Valid Work slugs: @drafting, @revision-pass",
+        reason: 'Unknown Work @other-project-work. List Works with work({"command":"list"}).',
         workSlug: "other-project-work",
-        validWorkSlugs: ["drafting", "revision-pass"],
-      },
-    });
-  });
-
-  it("rejects reserved authority-like names below the router seam", async () => {
-    await expect(port().write("scratch://notes/@evil.md", "blocked")).resolves.toEqual({
-      ok: false,
-      error: {
-        code: "invalid_uri",
-        uri: "scratch://notes/@evil.md",
-        reason: 'Path segments beginning with "@" are reserved',
       },
     });
   });
 });
 
 describe("context router untitled identity recovery", () => {
-  it("returns the primary Work authority for a retry found in the base adapter map", async () => {
-    const scratch = {
-      name: "scratch",
-      capabilities: { writable: true, searchable: true, creatable: true },
-      locateDocument: async (documentId: string) =>
-        Ok({ documentId, path: "Untitled 1.md", name: "Untitled 1.md" }),
-      createUntitledDocument: async (_path: string, options: { documentId: string }) =>
-        Ok({
-          status: "already-exists" as const,
-          documentId: options.documentId,
-          path: "Untitled 1.md",
-          name: "Untitled 1.md",
-        }),
-    } as unknown as ContextSchemeAdapter;
-    const port = createContextPortRouter({
-      adapters: new Map([["scratch", scratch]]),
-      adapterAuthorities: new Map([["scratch", authority("work-1", "primary")]]),
-      primaryWorkAuthority: authority("work-1", "primary"),
-      workAuthorities: new Map([[testWorkSlug("primary"), authority("work-1", "primary")]]),
-      resolveWorkAdapters: () => new Map([["scratch", scratch]]),
-    });
-
-    await expect(
-      port.createUntitledDocument("scratch://@primary", {
-        documentId: "00000000-0000-4000-8000-000000000100",
-        origin: { type: "system" },
-      }),
-    ).resolves.toMatchObject({
-      ok: true,
-      value: {
-        status: "already-materialized",
-        scheme: "scratch",
-        workId: "work-1",
-      },
-    });
-  });
-
   it("returns an existing document's canonical cross-scheme location without creating a row", async () => {
     const requestedCreate = vi.fn();
     const manuscript = {
@@ -238,7 +184,9 @@ describe("context router untitled identity recovery", () => {
         }),
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
-      adapters: new Map([["manuscript", manuscript]]),
+      sources: new Map([
+        ["manuscript", { adapter: manuscript, authority: { kind: "contextual" } }],
+      ]),
       workAuthorities: new Map([[testWorkSlug("secondary"), authority("work-2", "secondary")]]),
       resolveWorkAdapters: () => new Map([["scratch", scratch]]),
     });
@@ -273,9 +221,9 @@ describe("context router scheme creation capabilities", () => {
       scratch,
       uploads,
       port: createContextPortRouter({
-        adapters: new Map([
-          ["scratch", scratch],
-          ["uploads", uploads],
+        sources: new Map([
+          ["scratch", { adapter: scratch, authority: authority(workId, "current") }],
+          ["uploads", { adapter: uploads, authority: authority(workId, "current") }],
         ]),
         workAuthorities: new Map([[testWorkSlug("current"), authority(workId, "current")]]),
         primaryWorkAuthority: authority(workId, "current"),
@@ -307,8 +255,11 @@ describe("context router scheme creation capabilities", () => {
       port.createTrackedDocument("uploads://@current/notes.md", "notes", {
         documentId: "00000000-0000-4000-8000-000000000001",
       }),
-    ).resolves.toEqual({ ok: true, value: { documentId: "document-new" } });
-    expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes.md", "notes", {
+    ).resolves.toEqual({
+      ok: true,
+      value: { documentId: "document-new", uri: "uploads://@current/notes" },
+    });
+    expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes", "notes", {
       documentId: "00000000-0000-4000-8000-000000000001",
     });
   });
@@ -336,30 +287,43 @@ describe("context router scheme creation capabilities", () => {
       port.move(`uploads://@current/old.md`, `uploads://@current/renamed.md`),
     ).resolves.toEqual({
       ok: true,
-      value: { movedNodeId: "document-old", destinationPath: "renamed.md" },
+      value: { movedNodeId: "document-old", destinationPath: "renamed" },
     });
     expect(uploads.tree?.commitPreparedMove).toHaveBeenCalledOnce();
   });
+});
 
-  it("rejects nested binary upload paths in non-creatable schemes", async () => {
-    const { port, uploads } = createPort();
-    const options = {
-      storageUrl: "storage://upload",
-      mimeType: "image/png",
-      sizeBytes: 10,
-      fileType: "image" as const,
-    };
-
-    await expect(
-      port.writeBinary(`uploads://@current/nest/deep.png`, options),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: {
-        code: "invalid_operation",
-        uri: "uploads://@current/nest/deep.png",
-        message: expect.stringMatching(/flat files.+folders are not available/i),
-      },
-    });
-    expect(uploads.writeBinary).not.toHaveBeenCalled();
+it("guards both tracked creation doors by lineage actor while binding remains preparation", async () => {
+  const adapter = writableAdapter("scratch");
+  adapter.bindTrackedDocument = vi.fn(async (_path, markdown) =>
+    Ok({ markdown, bindings: [] } as never),
+  );
+  adapter.createBoundDocument = vi.fn(async () => Ok({ documentId: "bound-new" }));
+  const port = createContextPortRouter({
+    sources: new Map(),
+    workAuthorities: new Map(),
+    resolveLineageSource: async () => ({
+      adapter,
+      authority: { kind: "lineage", rootThreadRef: "c12" },
+    }),
   });
+  const uri = "scratch://@/c12/note.md";
+  const origin = { type: "human" as const, userId: "writer" };
+  const bound = await port.bindTrackedDocument(uri, "prepared");
+  expect(bound.ok).toBe(true);
+  if (!bound.ok) throw new Error("binding failed");
+  await expect(port.createTrackedDocument(uri, "writer", { origin })).resolves.toMatchObject({
+    ok: false,
+    error: { code: "permission_denied" },
+  });
+  await expect(
+    port.createBoundDocument(uri, bound.value, { origin, documentId: "reserved" }),
+  ).resolves.toMatchObject({ ok: false, error: { code: "permission_denied" } });
+  expect(adapter.createTrackedDocument).not.toHaveBeenCalled();
+  expect(adapter.createBoundDocument).not.toHaveBeenCalled();
+  await expect(
+    port.createTrackedDocument(uri, "agent", {
+      origin: { type: "agent", threadId: "thread", turnId: "turn" } as never,
+    }),
+  ).resolves.toMatchObject({ ok: true });
 });

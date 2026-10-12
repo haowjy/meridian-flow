@@ -1,7 +1,6 @@
 /** JSON-natural Work mutation receipts shared by runtime, reversal, and UI. */
 import type { WorkId } from "../ids.js";
-import { type AiWriteMode, INVALID_WORK_STATUS, normalizeWorkStatus } from "./index.js";
-import { decodeWorkSlug, type WorkSlug } from "./work-slug.js";
+import { INVALID_WORK_STATUS, normalizeWorkStatus } from "./index.js";
 
 export type WorkReceiptState = {
   name: string;
@@ -10,74 +9,32 @@ export type WorkReceiptState = {
   archived: boolean;
 };
 
-export type WorkBindingReceiptState = WorkReceiptState & {
-  workId: WorkId;
-  slug: WorkSlug | null;
-  aiWriteMode: AiWriteMode;
-};
-
 export type WorkReceiptInverse =
   | { command: "delete"; workId: WorkId }
   | { command: "update"; workId: WorkId; state: WorkReceiptState }
   | { command: "restore"; workId: WorkId };
 
-type WorkReceiptBase = {
+export type WorkReceipt = {
+  operation: "create" | "update" | "delete";
   changed: boolean;
   workId: WorkId;
   workName: string;
   before: WorkReceiptState | null;
   after: WorkReceiptState | null;
-};
-
-export type WorkMutationReceipt = WorkReceiptBase & {
-  operation: "create" | "update" | "delete";
-  category: "mutate";
   inverse: WorkReceiptInverse | null;
 };
 
-export type WorkBindingReceipt = {
-  operation: "switch";
-  category: "binding";
-  before: WorkBindingReceiptState;
-  after: WorkBindingReceiptState;
-  inverse: null;
-};
-
-export type WorkReceipt = WorkMutationReceipt | WorkBindingReceipt;
-
-export function isReversibleWorkMutationReceipt(
+export function isReversibleWorkReceipt(
   receipt: WorkReceipt,
-): receipt is WorkMutationReceipt & { inverse: WorkReceiptInverse } {
-  return receipt.category === "mutate" && receipt.changed && receipt.inverse !== null;
+): receipt is WorkReceipt & { inverse: WorkReceiptInverse } {
+  return receipt.changed && receipt.inverse !== null;
 }
 
 export function parseWorkReceipt(value: unknown): WorkReceipt | null {
   const receipt = record(value);
   if (!receipt) return null;
   const operation = receipt.operation;
-  if (
-    operation !== "create" &&
-    operation !== "update" &&
-    operation !== "delete" &&
-    operation !== "switch"
-  ) {
-    return null;
-  }
-  const expectedCategory: WorkReceipt["category"] = operation === "switch" ? "binding" : "mutate";
-  if (receipt.category !== expectedCategory) return null;
-  if (operation === "switch") {
-    if (receipt.inverse !== null) return null;
-    const before = parseBindingState(receipt.before);
-    const after = parseBindingState(receipt.after);
-    if (!before || !after) return null;
-    return {
-      operation,
-      category: "binding",
-      before,
-      after,
-      inverse: null,
-    };
-  }
+  if (operation !== "create" && operation !== "update" && operation !== "delete") return null;
   if (typeof receipt.changed !== "boolean") return null;
   if (typeof receipt.workId !== "string" || typeof receipt.workName !== "string") return null;
   const before = receipt.before === null ? null : parseState(receipt.before);
@@ -89,7 +46,6 @@ export function parseWorkReceipt(value: unknown): WorkReceipt | null {
   if (receipt.changed !== (inverse !== null)) return null;
   return {
     operation,
-    category: "mutate",
     changed: receipt.changed,
     workId: receipt.workId as WorkId,
     workName: receipt.workName,
@@ -97,32 +53,6 @@ export function parseWorkReceipt(value: unknown): WorkReceipt | null {
     after,
     inverse,
   };
-}
-
-function parseBindingState(value: unknown): WorkBindingReceiptState | null {
-  const state = record(value);
-  if (!state) return null;
-  if (
-    typeof state.workId !== "string" ||
-    typeof state.name !== "string" ||
-    (state.aiWriteMode !== "direct" && state.aiWriteMode !== "draft")
-  ) {
-    return null;
-  }
-  const details = parseState(state);
-  if (!details) return null;
-  if (state.slug === null) {
-    return {
-      workId: state.workId as WorkId,
-      slug: null,
-      aiWriteMode: state.aiWriteMode,
-      ...details,
-    };
-  }
-  const slug = decodeWorkSlug(state.slug);
-  return slug
-    ? { workId: state.workId as WorkId, slug, aiWriteMode: state.aiWriteMode, ...details }
-    : null;
 }
 
 function parseState(value: unknown): WorkReceiptState | null {

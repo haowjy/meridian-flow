@@ -1,12 +1,12 @@
 # TODO — features/project
 
-- Open in Editor for Scratch and Uploads lands on the "not available yet"
-  placeholder. Tracked in https://github.com/haowjy/meridian-flow/issues/625.
-- Dock file slot is synced by effects (`dock/dock-view-store.ts` `workFile.active`,
-  `enterWork`/`leaveWork`, the `ProjectView.tsx` layout effect, `DockShell`
-  re-checks). Derive the shown file from the route's Work instead of syncing it.
-  Deferred to a dedicated side-panel work item (mention-first peeking, #625),
-  which also decides whether returning to a Work reopens its file.
+- Open in Editor for Uploads lands on the "not available yet" placeholder
+  (Scratch opens in the Editor). Tracked in https://github.com/haowjy/meridian-flow/issues/625.
+- The dock document slot is synced by an effect (`dock/dock-view-store.ts`
+  `syncDocumentScope`, called from the `ProjectView.tsx` layout effect). Derive
+  the shown document from the route's Work instead of syncing it. Deferred to a
+  dedicated side-panel work item (mention-first peeking, #625), which also
+  decides whether returning to a Work reopens its document.
 - Composer attachments still ride on Work-scoped `uploads://`
   (`components/app/composer/Composer.tsx` `ComposerUploadPort` →
   `client/api/upload-intake-api.ts` → the Work upload route), though the Work
@@ -14,3 +14,16 @@
   the Work `uploads://` scheme:
   [#631](https://github.com/haowjy/meridian-flow/issues/631). Uploading into
   the file tree is [#630](https://github.com/haowjy/meridian-flow/issues/630).
+- Reloading a document's old address steps through its earlier names before
+  settling: the removal coordinator replays the move history one repair at a
+  time. Bounded and pre-existing; repair straight to the current locator.
+- The phone document header has no Apply or Discard during review
+  (`mobile/MobileDocumentHost.tsx`); the writer reaches them through Open chat.
+  Give the phone review the header's dispositions.
+- The phone document host has no recovery for a failed live open:
+  `mobile/MobileDocumentHost.tsx` calls `useLiveDocumentBinding` but never uses
+  its `retry`, and it does not retry when the resource availability revision
+  advances the way the desktop `ContextTabSessionBoundary` does. Give the phone
+  host the same Retry and revision retry. Found in knowledge capture for
+  draft-review-repair.
+- `context/ContextTreePanel.tsx` and `mobile/MobileContextBrowser.tsx` still thread an `editorWorkId` that only Scratch and Uploads used; the Editor lists project areas alone, so it feeds no tree query. Drop it with the "Editor has no Work" drafts rework.

@@ -4,7 +4,8 @@
  * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
  */
 
-import type { AgentSelection } from "../agents/index.js";
+import { z } from "zod";
+import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
@@ -54,7 +55,7 @@ export type ThreadLiveState = {
   /** Derived from the live lease, not the durable thread row. */
   status: ThreadStatus;
   runningTurnId: string | null;
-  /** Recursive subagent activity for this thread's own subtree; derived, never a turn block. */
+  /** Direct subagent activity for this thread; derived, never a turn block. */
   activity: ThreadActivity;
   /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
   pending: ThreadPendingInbox;
@@ -109,6 +110,11 @@ export type CreateUntitledContextDocumentResponse = {
   workId?: string | null;
 };
 
+/** Creation uses the same conflict payload for files and folders, including HTTP 409. */
+export type CreateContextEntryResult =
+  | { status: "created"; documentId?: string; uri?: string }
+  | { status: "conflict"; uri: string; occupantKind?: "file" | "folder" };
+
 export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
   | { status: "conflict" };
@@ -123,10 +129,29 @@ export type DeleteContextEntryResult = {
 export type DeleteContextEntryRequest = {
   operationId: string;
   path: string;
-  expected: { kind: "file"; documentId: string } | { kind: "folder" };
+  expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
 };
 
+/** Stable writer-selected parent. URI callers may continue to omit this. */
+export type ContextDestinationParent = {
+  /** Missing address segments created beneath the identity anchor, only for linked creation. */
+  createFolders?: string[];
+} & (
+  | { kind: "folder"; folderId: string }
+  | {
+      kind: "root";
+      scheme: ProjectContextTreeScheme;
+      owner: {
+        workId: string | null;
+        workSlug?: string | null;
+        rootThreadId?: string | null;
+        rootThreadRef?: string | null;
+      };
+    }
+);
+
 export type MoveContextEntryRequest = {
+  destinationParent?: ContextDestinationParent;
   operationId: string;
   path: string;
   expected: { kind: "file" | "folder"; nodeId: string };
@@ -135,12 +160,15 @@ export type MoveContextEntryRequest = {
   destinationFolderPath: string;
   newName?: string;
   /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
+  sourceRootThreadId?: string | null;
+  destinationRootThreadId?: string | null;
   sourceWorkId?: WorkId | null;
   /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
   destinationWorkId?: WorkId | null;
 };
 
 export type MoveContextEntrySuccess = {
+  linkUpdate?: { links: number; documents: number };
   status: "moved";
   scheme: ProjectContextTreeScheme;
   path: string;
@@ -157,6 +185,11 @@ export type MoveContextEntryLocator =
       scheme: WorkAuthorityScheme;
       path: string;
       authority: { workId: WorkId; workSlug: WorkSlug | null };
+    }
+  | {
+      scheme: "scratch";
+      path: string;
+      authority: { kind: "lineage"; rootThreadId: string; rootThreadRef: string };
     };
 export type MoveContextEntryConflict = {
   status: "conflict";
@@ -190,14 +223,32 @@ export function isWorkScopedProjectContextScheme(
 
 export type WorkAuthorityScheme = WorkScopedContextUriScheme;
 
+/**
+ * A recent document and its owner. Scratch and Uploads name a Work; a No Work
+ * chat's Scratch names its lineage by the first chat's id (`rootThreadId`).
+ */
 export type WorkingSetRoute =
   | {
       documentId: DocumentId;
       scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
       path: string;
       workId?: never;
+      rootThreadId?: never;
     }
-  | { documentId: DocumentId; scheme: WorkAuthorityScheme; path: string; workId: WorkId | null };
+  | {
+      documentId: DocumentId;
+      scheme: WorkAuthorityScheme;
+      path: string;
+      workId: WorkId | null;
+      rootThreadId?: never;
+    }
+  | {
+      documentId: DocumentId;
+      scheme: "scratch";
+      path: string;
+      workId?: never;
+      rootThreadId: string;
+    };
 
 export type WorkingSetRouteParseResult =
   | { ok: true; value: WorkingSetRoute }
@@ -215,7 +266,9 @@ export type ProjectWorkingSet = {
   updatedAt: string;
 };
 
-export type AccountSettings = { workingSetSyncEnabled: boolean };
+export type AccountSettings = import("../preferences/index.js").AccountAppearancePreferences & {
+  workingSetSyncEnabled: boolean;
+};
 
 /** Authenticated identity resolved through Meridian's user provisioning boundary. */
 export type AuthenticatedUser = {
@@ -245,6 +298,22 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
   }
   if (typeof route.path !== "string" || route.path.length === 0 || route.path.length > 1024) {
     return { ok: false, message: "Working-set route path must contain 1 to 1024 characters" };
+  }
+
+  if (route.rootThreadId !== undefined) {
+    const rootThreadId = parseRequestId(route.rootThreadId);
+    if (route.scheme !== "scratch" || route.workId !== undefined || !rootThreadId) {
+      return { ok: false, message: "Only Scratch routes name a lineage, and without a workId" };
+    }
+    return {
+      ok: true,
+      value: {
+        documentId: documentId as DocumentId,
+        scheme: route.scheme,
+        path: route.path,
+        rootThreadId,
+      },
+    };
   }
 
   if (isWorkScopedProjectContextScheme(route.scheme)) {
@@ -361,15 +430,37 @@ export type CreateThreadRequest = {
 
 export type CreateThreadResponse = Thread;
 
-/** Omission or the parent's revision retains its frozen prompt and Agent configuration. */
-export type ForkThreadRequest = {
-  agentSelection?: AgentSelection;
-  originTurnId?: string | null;
-};
+export const forkThreadRequestSchema = z
+  .object({
+    /** Client-minted id makes a navigate-first fork retryable. */
+    id: z.string(),
+    originTurnId: z.uuid(),
+  })
+  .strict();
+
+export const handoffThreadRequestSchema = z.strictObject({
+  id: z.uuid(),
+  originTurnId: z.uuid(),
+  agentSelection: agentSelectionSchema,
+});
+export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
+
+export const handoffBriefRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type HandoffBriefRetryRequest = z.infer<typeof handoffBriefRetryRequestSchema>;
+
+/** Client-minted assistant-turn identity for an explicit retry of a failed reply. */
+export const replyRetryRequestSchema = z.strictObject({ id: z.uuid() });
+export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
+
+export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
+
+/** What happens to a Work's pending changes when it switches to auto-apply. */
+export type PendingChangesChoice = "apply" | "keep";
 
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
-  confirmedPush?: boolean;
+  /** Omitted until the writer has chosen; the server then answers `confirmation_required`. */
+  pending?: PendingChangesChoice;
 };
 
 export type UpdateWorkWriteModeResponse =
@@ -448,6 +539,24 @@ export type ThreadSnapshotResponse = {
   nextSeq: string;
   /** Point-looked-up spawn path, ordered root → direct parent; no ancestor conversations. */
   ancestors: ThreadSnapshotAncestor[];
+};
+
+/** GET /api/threads/:threadId/transcript: one keyset page of the effective or inherited transcript. */
+export type TranscriptPageResponse = {
+  /** Page entries are chronological, even when requested newest-first. */
+  entries: Array<{ turn: Turn; blocks: Block[]; ownerThreadId: string }>;
+  owners: Array<{ threadId: string; ref: string; title: string | null; trashed: boolean }>;
+  segment: {
+    index: number;
+    bakeId: string | null;
+    openedBy: { turnId: string; kind: "compaction" | "other" } | null;
+    compactedThrough?: { turnId: string; blockSequence?: number };
+  };
+  segmentBoundary: boolean;
+  hasMore: boolean;
+  nextCursor?: string;
+  /** A live, non-cursor preview returned only on the first effective newest-first page. */
+  unsettledTail?: Array<{ turn: Turn; blocks: Block[] }>;
 };
 
 /** Dev-only: per-request model context captured by the orchestrator. */

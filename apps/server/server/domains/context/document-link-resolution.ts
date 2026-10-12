@@ -3,12 +3,15 @@ import {
   type ContextUriScheme,
   documentTitleFromUri,
   isProjectScopedScheme,
+  matchDocumentPath,
   parseContextUri,
+  resolveDocumentHref,
 } from "@meridian/contracts";
 import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
 import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
 import type { ContextCatalog } from "./ports/context-catalog.js";
 import type {
+  DocumentLinkHistory,
   DocumentLinkResolver,
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
@@ -19,8 +22,12 @@ type Location = { scope: CatalogScope; scheme: ContextUriScheme; path: string };
 export function createDocumentLinkResolver({
   catalog,
   workAuthorityResolver,
+  history,
+  lineages,
 }: {
   catalog: ContextCatalog;
+  lineages?: import("./scratch-owner.js").ScratchLineages;
+  history?: DocumentLinkHistory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
   async function noWorkScope(projectId: ResolveDocumentLinkInput["projectId"]) {
@@ -33,67 +40,62 @@ export function createDocumentLinkResolver({
     return work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
   }
   async function location(input: ResolveDocumentLinkInput, uri: string): Promise<Location | null> {
-    if (!uri.includes("://")) return null;
     const parsed = parseContextUri(uri);
     if (!parsed.ok || !parsed.value.path) return null;
     const { scheme, path, authority } = parsed.value;
     let scope: CatalogScope | null;
     if (scheme === "user") scope = { kind: "user", userId: input.userId };
     else if (isProjectScopedScheme(scheme)) scope = { kind: "project", projectId: input.projectId };
-    else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
+    else if (scheme === "scratch" && authority.kind === "lineage") {
+      const lineage = await lineages?.byRef(input.projectId, authority.rootThreadRef);
+      scope = lineage
+        ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
+        : null;
+    } else if (scheme === "scratch" && authority.kind === "contextual" && input.rootThreadId) {
+      const lineage = await lineages?.byId(input.projectId, input.rootThreadId);
+      scope = lineage
+        ? { kind: "lineage", projectId: input.projectId, rootThreadId: lineage.rootThreadId }
+        : null;
+    } else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
     else if (authority.kind === "work") {
       const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
       scope = work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
     } else scope = await currentScope(input);
     return scope ? { scope, scheme, path } : null;
   }
-  async function files(scope: CatalogScope) {
-    return (await catalog.snapshot(scope)).entries.filter(
-      (entry): entry is CatalogFileEntry => entry.kind === "file",
-    );
+  async function atUri(
+    input: ResolveDocumentLinkInput,
+    uri: string,
+    allowHistory: boolean,
+  ): Promise<ResolvedDocumentLink | null> {
+    const address = await location(input, uri);
+    if (!address) return null;
+    const files = (await catalog.snapshot(address.scope)).entries.flatMap((entry) => {
+      if (entry.kind !== "file") return [];
+      const parsed = parseContextUri(entry.uri);
+      return parsed.ok && parsed.value.scheme === address.scheme
+        ? [{ entry, path: parsed.value.path }]
+        : [];
+    });
+    const match = matchDocumentPath(files, address.path, (file) => file.path);
+    if (match) return resolvedLink(match.entry);
+    const previous = allowHistory ? await history?.previous(input, address) : null;
+    return previous ? atUri(input, previous, false) : null;
   }
   return {
     async resolve(input) {
       const { target } = input;
-      if (target.kind === "wikilink") {
-        const name = target.name.trim().toLowerCase();
-        if (!name || /[\r\n[\]|]/.test(name)) return null;
-        const current = await currentScope(input);
-        if (!current) return null;
-        const scopes: CatalogScope[] = [
-          { kind: "project", projectId: input.projectId },
-          { kind: "user", userId: input.userId },
-          current,
-        ];
-        const candidates = (await Promise.all(scopes.map(files))).flat();
-        return unique(
-          candidates.filter((file) =>
-            [file.name, documentTitleFromUri(file.uri), ...file.aliases].some(
-              (alias) => alias?.trim().toLowerCase() === name,
-            ),
-          ),
-        );
-      }
-      const base = await location(input, target.kind === "scheme" ? target.uri : target.baseUri);
-      if (!base) return null;
-      const path = target.kind === "relative" ? relativePath(base.path, target.path) : base.path;
-      if (!path) return null;
-      return unique(
-        (await files(base.scope)).filter((file) => {
-          const parsed = parseContextUri(file.uri);
-          return (
-            parsed.ok && parsed.value.scheme === base.scheme && pathMatches(parsed.value.path, path)
-          );
-        }),
-      );
+      const resolved =
+        target.kind === "scheme"
+          ? resolveDocumentHref(target.uri, null)
+          : resolveDocumentHref(target.path, target.baseUri);
+      if (!resolved) return null;
+      return atUri(input, resolved.uri, input.previousLocations === true);
     },
   };
 }
 
-function unique(files: readonly CatalogFileEntry[]): ResolvedDocumentLink | null {
-  if (files.length !== 1) return null;
-  const file = files[0];
-  if (!file) return null;
+function resolvedLink(file: CatalogFileEntry): ResolvedDocumentLink | null {
   const parsed = parseContextUri(file.uri);
   if (!parsed.ok) return null;
   return {
@@ -102,28 +104,7 @@ function unique(files: readonly CatalogFileEntry[]): ResolvedDocumentLink | null
     scheme: parsed.value.scheme,
     path: parsed.value.path,
     uri: file.uri,
+    ...(file.scope.kind === "lineage" ? { rootThreadId: file.scope.rootThreadId } : {}),
     workId: file.scope.kind === "work" ? file.scope.workId : null,
   };
-}
-
-function pathMatches(candidate: string, requested: string): boolean {
-  return (
-    candidate === requested ||
-    (candidate.lastIndexOf(".") > candidate.lastIndexOf("/") &&
-      candidate.slice(0, candidate.lastIndexOf(".")) === requested)
-  );
-}
-
-function relativePath(base: string, relative: string): string | null {
-  if (!relative || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) return null;
-  const segments = base.split("/");
-  segments.pop();
-  for (const part of relative.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") {
-      if (!segments.length) return null;
-      segments.pop();
-    } else segments.push(part);
-  }
-  return segments.length ? segments.join("/") : null;
 }

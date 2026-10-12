@@ -4,6 +4,7 @@ import type {
   FolderId,
   ProjectId,
   ProjectSettings,
+  ThreadId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
@@ -17,6 +18,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -117,9 +119,10 @@ export const works = pgTable(
       "works_slug_valid",
       sql`${table.slug} IS NULL OR ${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
     ),
+    // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.
     check(
       "works_status_length",
-      sql`${table.status} IS NULL OR char_length(${table.status}) <= ${WORK_STATUS_MAX_LENGTH}`,
+      sql`${table.status} IS NULL OR char_length(${table.status}) <= ${sql.raw(String(WORK_STATUS_MAX_LENGTH))}`,
     ),
     check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     unique("works_project_id_unique").on(table.projectId, table.id),
@@ -137,6 +140,8 @@ export const contextSources = pgTable(
     workId: uuid("work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "cascade" }),
+    // Lineage identity is not a thread-row FK: trashing/purging the first chat must not cascade.
+    rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     scope: text("scope").notNull().default("project"),
@@ -157,23 +162,28 @@ export const contextSources = pgTable(
     index("context_sources_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    uniqueIndex("context_sources_project_slug")
+    uniqueIndex("context_sources_project_scope_slug")
       .on(table.projectId, table.slug)
-      .where(sql`${table.workId} IS NULL AND ${table.deletedAt} IS NULL`),
+      .where(
+        sql`${table.workId} IS NULL AND ${table.rootThreadId} IS NULL AND ${table.deletedAt} IS NULL`,
+      ),
     uniqueIndex("context_sources_work_slug")
       .on(table.workId, table.slug)
       .where(sql`${table.workId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    uniqueIndex("context_sources_lineage_slug")
+      .on(table.rootThreadId, table.slug)
+      .where(sql`${table.rootThreadId} IS NOT NULL`),
     index("context_sources_project_sort")
       .on(table.projectId, table.sortOrder)
       .where(sql`${table.deletedAt} IS NULL`),
     check(
       "context_sources_exactly_one_scope",
-      sql`(${table.projectId} IS NOT NULL AND ${table.workId} IS NULL) OR (${table.projectId} IS NULL AND ${table.workId} IS NOT NULL)`,
+      sql`(${table.scope} = 'project' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'work' AND ${table.projectId} IS NULL AND ${table.workId} IS NOT NULL AND ${table.rootThreadId} IS NULL) OR (${table.scope} = 'lineage' AND ${table.projectId} IS NOT NULL AND ${table.workId} IS NULL AND ${table.rootThreadId} IS NOT NULL AND ${table.slug} = 'scratch')`,
     ),
-    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'work')`),
+    check("context_sources_scope_valid", sql`${table.scope} IN ('project', 'work', 'lineage')`),
     check(
       "context_sources_scope_work_fk",
-      sql`${table.scope} = 'project' OR ${table.workId} IS NOT NULL`,
+      sql`${table.scope} <> 'work' OR ${table.workId} IS NOT NULL`,
     ),
     check(
       "context_sources_scope_project_fk",
@@ -218,6 +228,9 @@ export const folders = pgTable(
     uniqueIndex("folders_context_root_name_active")
       .on(table.contextSourceId, table.name)
       .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL`),
+    // Image path lookups walk deleted folders too, so the active-only indexes miss them.
+    index("folders_context_root").on(table.contextSourceId).where(sql`${table.parentId} IS NULL`),
+    index("folders_parent").on(table.parentId),
   ],
 );
 
@@ -236,12 +249,13 @@ export const documents = pgTable(
         onDelete: "cascade",
       }),
     name: text("name").notNull(),
-    extension: text("extension").notNull().default("md"),
+    extension: text("extension").notNull().default(""),
     fileType: text("file_type").notNull().default("markdown"),
     description: text("description"),
     storageUrl: text("storage_url"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
+    locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
     markdownProjection: text("markdown_projection").notNull().default(""),
     provisionalName: boolean("provisional_name").notNull().default(false),
     metadata: jsonbDefault("metadata"),
@@ -270,6 +284,10 @@ export const documents = pgTable(
     uniqueIndex("documents_manifest_context_active")
       .on(table.contextSourceId)
       .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manifest'`),
+    // Image path lookups, deleted images included.
+    index("documents_context_images")
+      .on(table.contextSourceId)
+      .where(sql`${table.fileType} = 'image' AND ${table.kind} = 'content'`),
     index("documents_markdown_projection_fts").using(
       "gin",
       sql`to_tsvector('simple', ${table.markdownProjection})`,
@@ -372,5 +390,71 @@ export const documentPreviousLocations = pgTable(
     index("document_previous_locations_path").using("hash", table.path),
     index("document_previous_locations_source").on(table.contextSourceId),
     index("document_previous_locations_document").on(table.documentId),
+  ],
+);
+
+/**
+ * Outgoing links of a holder, one row per link key, from the same durable cut as the projection.
+ * A hint from a certified cut, not link authority: target and ahead columns carry no FKs.
+ */
+export const documentLinks = pgTable(
+  "document_links",
+  {
+    sourceDocumentId: uuid("source_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    /** `doc:<id>`, `ahead:<uuid>`, `asset:<id>`, or the contextual href itself. */
+    linkKey: text("link_key").notNull(),
+    /** `doc:` and `asset:` keys. */
+    targetDocumentId: uuid("target_document_id").$type<DocumentId>(),
+    aheadId: uuid("ahead_id"),
+    /** Decoded canonical address for ref keys (registration recovery); null for contextual. */
+    address: text("address"),
+    occurrences: integer("occurrences").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceDocumentId, table.linkKey] }),
+    index("document_links_target_document").on(table.targetDocumentId),
+    index("document_links_ahead").on(table.aheadId),
+  ],
+);
+
+/**
+ * Durable identity for a link written before its target document arrived.
+ * Settlement is permanent: every document that arrived, finalized uploads
+ * included, leaves through the soft-delete lifecycle and keeps its row, so a
+ * settled ref answers gone and never captures a later occupant. No product
+ * path hard-deletes a document (an upload reservation that never finalized
+ * has no document row); SET NULL only lets an out-of-band row removal unsettle
+ * a ref instead of failing.
+ */
+export const linkAheadRefs = pgTable(
+  "link_ahead_refs",
+  {
+    aheadId: uuid("ahead_id").primaryKey(),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    scheme: text("scheme").notNull(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
+    rootThreadId: uuid("root_thread_id"),
+    path: text("path").notNull(),
+    settledDocumentId: uuid("settled_document_id")
+      .$type<DocumentId>()
+      .references(() => documents.id, { onDelete: "set null" }),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (table) => [
+    // A decoded path has no byte bound, so the key carries its md5; lookups recheck the
+    // exact path (Postgres B-tree tuples cap near 2.7 kB).
+    index("link_ahead_refs_owner_unsettled")
+      .on(table.projectId, table.scheme, table.workId, table.rootThreadId, sql`md5(${table.path})`)
+      .where(sql`${table.settledDocumentId} IS NULL`),
+    index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],
 );

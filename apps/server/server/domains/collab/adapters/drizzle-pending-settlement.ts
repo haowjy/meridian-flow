@@ -18,10 +18,13 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
+import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { BranchSnapshot } from "../domain/branch-coordinator.js";
@@ -33,8 +36,11 @@ import type {
   SettlementClaim,
 } from "../domain/branch-push-contracts.js";
 import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
+import { deriveDocument } from "../domain/document-derivations.js";
+import { manifestMembershipRowDocumentId } from "../domain/manifest-membership-journal.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import { parseDurableTrailSeedV1 } from "../domain/ports/change-trail-persistence.js";
+import type { DocumentDerivationStore } from "../domain/ports/document-derivations.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 import type { DurableProjectionSerializer } from "../domain/ports/durable-projection.js";
 import type {
@@ -43,11 +49,12 @@ import type {
 } from "../domain/ports/pending-settlement-store.js";
 import { journalInsertionRanges, ProvenanceMaterializationError } from "../domain/provenance.js";
 import { materializeSweepEvidence } from "../domain/sweep-policy.js";
+import { loadDocumentState } from "./document-loader.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
-import { lockDocumentMutation } from "./drizzle-document-mutation-lock.js";
+import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export async function stagePendingSettlementWithinTx(
   db: DrizzleDb,
@@ -103,8 +110,10 @@ export function createDrizzlePendingSettlementStore(
   durableProjectionSerializer: DurableProjectionSerializer,
   projectionEffects: DocumentProjectionEffects,
   changeTrails: ChangeTrailPersistence,
+  derivationStore: DocumentDerivationStore,
   notices?: NoticePort,
   eventSink?: EventSink,
+  arrivals?: DocumentArrivals,
 ): PendingSettlementStore {
   return {
     async joinAdmission(input) {
@@ -183,6 +192,13 @@ export function createDrizzlePendingSettlementStore(
       try {
         return await runInDrizzleTransaction(db, async () => {
           const txDb = currentDrizzleDb(db);
+          // Completion touches the draft's Work row; take it before the
+          // document lock, in the order every write seam uses (file-access §5).
+          await lockWorksInIdOrder(txDb, await pushWorkIds(txDb, input.pushId));
+          // A manifest push publishes draft-created documents: they arrive here. Their
+          // namespace keys go between the Work and holder locks (contract §9.4, O6).
+          const arriving = arrivals ? await arrivingDocumentIds(txDb, input.pushId) : [];
+          if (arriving.length > 0) await arrivals?.lockNamespaces(arriving);
           await lockDocumentMutation(txDb, input.documentId);
           const [owned] = await txDb
             .select({ pushId: branchPushSettlementOutbox.pushId })
@@ -205,12 +221,15 @@ export function createDrizzlePendingSettlementStore(
             input.documentId,
             durableProjectionSerializer,
             projectionEffects,
+            derivationStore,
           );
           const result = complete();
           if (result !== "applied" && result !== "already_applied" && result !== "retry") {
             throw new Error("Completion fence callback must return synchronously");
           }
           if (result === "retry") throw new CompletionRetry();
+          // Membership is published above, in this transaction: settle against it.
+          if (arriving.length > 0) await arrivals?.settle(arriving);
           const [completed] = await txDb
             .update(branchPushSettlementOutbox)
             .set({
@@ -374,6 +393,42 @@ export function createDrizzlePendingSettlementStore(
   };
 }
 
+/** The Work whose draft a push came from; none for a live-only push. */
+async function pushWorkIds(db: DrizzleDb, pushId: number): Promise<string[]> {
+  const rows = await db
+    .select({ workId: documentBranches.workId })
+    .from(pushLineage)
+    .innerJoin(documentBranches, eq(documentBranches.id, pushLineage.branchId))
+    .where(eq(pushLineage.id, pushId))
+    .limit(1);
+  return rows.flatMap((row) => (row.workId ? [row.workId] : []));
+}
+
+/**
+ * Documents whose live manifest entry this push publishes, from its immutable journal rows.
+ * Read after the Work locks and before the namespace and holder locks; the rows never change, so
+ * the read needs no lock of its own. Only a draft's manifest push carries them.
+ */
+async function arrivingDocumentIds(db: DrizzleDb, pushId: number): Promise<DocumentId[]> {
+  const [push] = await db
+    .select({ journalIds: pushLineage.journalIds })
+    .from(pushLineage)
+    .where(eq(pushLineage.id, pushId))
+    .limit(1);
+  if (!push || push.journalIds.length === 0) return [];
+  const rows = await db
+    .select({ updateMeta: branchWriteJournal.updateMeta })
+    .from(branchWriteJournal)
+    .where(
+      and(
+        inArray(branchWriteJournal.id, push.journalIds),
+        sql`${branchWriteJournal.updateMeta}->>'kind' = 'manifest_membership'`,
+        sql`(${branchWriteJournal.updateMeta}->>'present')::boolean IS TRUE`,
+      ),
+    );
+  return [...new Set(rows.flatMap((row) => manifestMembershipRowDocumentId(row) ?? []))].sort();
+}
+
 /** Makes one staged candidate effective inside the completion-fence transaction. */
 async function completeStagedPush(
   db: DrizzleDb,
@@ -381,6 +436,7 @@ async function completeStagedPush(
   documentId: DocumentId,
   durableProjectionSerializer: DurableProjectionSerializer,
   projectionEffects: DocumentProjectionEffects,
+  derivationStore: DocumentDerivationStore,
 ): Promise<void> {
   const [staged] = await db
     .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
@@ -478,7 +534,6 @@ async function completeStagedPush(
       upstreamBranchId: branchRow.upstreamBranchId,
       workId: branchRow.workId,
       threadId: branchRow.threadId,
-      pushPolicy: branchRow.pushPolicy,
       status: branchRow.status,
       generation: branchRow.generation,
       state: new Uint8Array(branchRow.state),
@@ -489,15 +544,26 @@ async function completeStagedPush(
       schemaVersion: unpackCollabSchemaVersion(branchRow.schemaVersion),
     };
     await writeMutationRows(db, branch, journalRows, authoredRows);
-    const durable = await deriveDurableProjection(db, documentId, durableProjectionSerializer);
-    await upsertHead(db, documentId, canonicalRow.id, durable.stateVector);
-    await projectionEffects.applyPushCompletion({
-      documentId: branch.documentId,
-      markdown: durable.markdownProjection,
-      ...(branch.workId ? { workId: branch.workId } : {}),
-      at: new Date(),
-    });
   }
+  const derivation = await deriveDocument(
+    {
+      store: derivationStore,
+      serializer: durableProjectionSerializer,
+    },
+    documentId,
+  );
+  // Completion already owns the mutation transaction: a stale cut is not an
+  // expected scheduling deferral here and must not certify push completion.
+  if (derivation.status !== "derived")
+    throw new Error(`Uncertified durable document for push ${pushId}: ${derivation.status}`);
+  const { stateVector } = derivation;
+  await upsertHead(db, documentId, canonicalRow.id, stateVector);
+  await projectionEffects.applyPushCompletion({
+    documentId,
+    ...(branchRow?.workId ? { workId: branchRow.workId } : {}),
+    at: new Date(),
+  });
+
   await joinAdmissionWithinTx(db, {
     documentId,
     source: { kind: "staged_push", id: String(canonicalRow.id) },
@@ -867,96 +933,16 @@ export async function joinAdmissionWithinTx(
   return joined;
 }
 
-async function deriveDurableProjection(
-  db: DrizzleDb,
-  documentId: DocumentId,
-  durableProjectionSerializer: DurableProjectionSerializer,
-): Promise<{ markdownProjection: string; stateVector: Uint8Array }> {
-  await lockDocumentYjsHead(db, documentId);
-  const [{ minRetainedSeq } = { minRetainedSeq: null }] = await db
-    .select({ minRetainedSeq: sql<number | null>`min(${documentYjsUpdates.id})` })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, documentId));
-  const checkpoint = minRetainedSeq
-    ? (
-        await db
-          .select()
-          .from(documentYjsCheckpoints)
-          .where(
-            and(
-              eq(documentYjsCheckpoints.documentId, documentId),
-              lt(documentYjsCheckpoints.upToSeq, minRetainedSeq),
-            ),
-          )
-          .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-          .limit(1)
-      )[0]
-    : null;
-  const rows = await db
-    .select({ updateData: documentYjsUpdates.updateData })
-    .from(documentYjsUpdates)
-    .where(eq(documentYjsUpdates.documentId, documentId))
-    .orderBy(documentYjsUpdates.id);
-  const doc = createCollabYDoc({ gc: false });
-  try {
-    if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
-    for (const row of rows) Y.applyUpdate(doc, row.updateData);
-    const markdownProjection = await durableProjectionSerializer.serializeDocument(documentId, doc);
-    return {
-      markdownProjection,
-      stateVector: Y.encodeStateVector(doc),
-    };
-  } finally {
-    doc.destroy();
-  }
-}
-
 async function materializeDurableDocumentBefore(
   db: DrizzleDb,
   documentId: DocumentId,
   beforeUpdateSeq: number,
 ): Promise<Y.Doc> {
-  const [checkpoint] = await db
-    .select()
-    .from(documentYjsCheckpoints)
-    .where(
-      and(
-        eq(documentYjsCheckpoints.documentId, documentId),
-        lt(documentYjsCheckpoints.upToSeq, beforeUpdateSeq),
-      ),
-    )
-    .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-    .limit(1);
-  const rows = await db
-    .select({ id: documentYjsUpdates.id, update: documentYjsUpdates.updateData })
-    .from(documentYjsUpdates)
-    .where(
-      and(
-        eq(documentYjsUpdates.documentId, documentId),
-        lt(documentYjsUpdates.id, beforeUpdateSeq),
-        checkpoint ? sql`${documentYjsUpdates.id} > ${checkpoint.upToSeq}` : undefined,
-      ),
-    )
-    .orderBy(documentYjsUpdates.id);
+  const journal = createDrizzleJournal(db as Database);
+  // Journal bounds are inclusive; settlement must exclude its own push update.
+  const snapshot = await journal.read(documentId, { until: beforeUpdateSeq - 1 });
+  const state = await loadDocumentState(journal, documentId, undefined, snapshot);
   const doc = createCollabYDoc({ gc: false });
-  if (checkpoint) Y.applyUpdate(doc, checkpoint.state);
-  for (const row of rows) Y.applyUpdate(doc, row.update);
+  if (state) Y.applyUpdate(doc, state);
   return doc;
-}
-
-async function lockDocumentYjsHead(db: DrizzleDb, documentId: DocumentId): Promise<void> {
-  const packedSchemaVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
-  await db
-    .insert(documentYjsHeads)
-    .values({
-      documentId,
-      schemaVersion: packedSchemaVersion,
-      latestUpdateSeq: 0,
-      latestStateVector: Buffer.from(new Uint8Array()),
-      latestCheckpointId: null,
-    })
-    .onConflictDoNothing({ target: documentYjsHeads.documentId });
-  await db.execute(
-    sql`SELECT document_id FROM document_yjs_heads WHERE document_id = ${documentId} FOR UPDATE`,
-  );
 }

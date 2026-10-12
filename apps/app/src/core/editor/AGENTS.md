@@ -19,16 +19,29 @@ change-trail events, not manuscript content.
   rebuild destroys the Yjs UndoManager and drops keystrokes in flight.
   `EditorMountIdentity` carries every construction fact, `editorMountKey()`
   turns it into the React key that owns the mount, and `useMountedEditor()`
-  constructs and destroys TipTap itself so the schema-repair witness can
-  synchronously bracket every extension lifecycle mutation. Anything a caller
+  constructs and destroys TipTap itself through the session binding seam so
+  schema-repair observation synchronously brackets extension construction. Anything a caller
   can change while the writer keeps typing is `EditorSurfaceOptions` and
   reaches the running instance; projection data arrives through stores the
   extensions subscribe to (`SessionMarkerStore`, `AgentNameStore`). A new
   construction knob belongs in the identity type — never in an effect
   dependency list.
-- Schema repair is observed and reported, never fenced. Keep the pre-bind
-  snapshot, single update listener, and atomic open-to-live phase transition
-  together in `schema-repair-witness.ts`; do not add a second listener or move
+- Device reading memory is owned by `use-reading-position.ts` at the mounted
+  view boundary, shared by main Editor and side-panel hosts. Persist only Yjs
+  anchors and dimensionless viewport offsets in the account-stamped, versioned
+  localStorage record (300-document LRU), never pixel scroll values. Warm views
+  keep their DOM; only a new mount restores, without taking focus. Explicit
+  navigation claims before async opens through `reading-position-navigation.ts`;
+  direct DOM jumps mark their editor there, and mounted-editor marks every
+  `scrollIntoView` transaction. Review rooms never consume or overwrite live
+  document places. New jump paths must participate in that same precedence.
+- Schema repair is observed and reported, never fenced. `DocumentSession` owns
+  one witness for its Y.Doc, armed lazily by `bindEditor()` immediately before
+  the first editor construction. Every bound view supplies PM attribution to
+  that witness; releasing a view removes only its attribution. Later views read
+  the session's correlated verdicts, never install document listeners.
+  Keep the pre-bind snapshot, single update listener, and atomic open-to-live
+  phase transition together in `schema-repair-witness.ts`; do not add a second listener or move
   construction back behind TipTap's deferred `useEditor` lifecycle. Its live
   correlation resolves each delete-only candidate independently within a Yjs
   transaction batch; the batch bounds candidate lifetime, not a batch-wide
@@ -83,7 +96,7 @@ change-trail events, not manuscript content.
 
 - **A menu the writer types underneath is a spec, not a plugin.**
   `extensions/suggestion/` holds one mechanism that wires `@tiptap/suggestion`,
-  the kernel keymap, and the catalog fence for every lane; `/` and `[[` each
+  the kernel keymap, and the catalog fence for every lane; `/` and `@` each
   declare a spec (char, envelope predicate, matches, row projection, choice) and
   nothing else, so a third trigger is a spec rather than a third copy of the
   lifecycle. The presentation-neutral half — the generation-fenced suggestion
@@ -177,8 +190,8 @@ change-trail events, not manuscript content.
   keymap cannot empty the rectangle, and declines caret/text selections to the
   ordinary split chain.
 
-- What an href means is `links/`, once. A link is four kinds — wikilink,
-  scheme, relative, external — and every consumer (the click, the hover hint,
+- What an href means is `links/`, once. A link is a standard Markdown link of
+  three kinds — Context URI, relative path, external — and every consumer (the click, the hover hint,
   the menu, the mark's own rendering, the paste sanitizer) reads the same
   classifier. TipTap's link extension does not know the internal family and
   must be configured against ours.
@@ -202,7 +215,6 @@ and navigation contracts.
 → [`chrome/AGENTS.md`](chrome/AGENTS.md) — the headless chrome kernel
 → [`extensions/auto-pair/AGENTS.md`](extensions/auto-pair/AGENTS.md) — closers the editor writes
 → [`extensions/slash/AGENTS.md`](extensions/slash/AGENTS.md) — the `/` trigger
-→ [`extensions/wikilink/AGENTS.md`](extensions/wikilink/AGENTS.md) — the `[[` trigger
 → [`../completion/AGENTS.md`](../completion/AGENTS.md) — the headless menu store and reference catalog
 → [`objects/AGENTS.md`](objects/AGENTS.md) — object physics
 → [`diagrams/AGENTS.md`](diagrams/AGENTS.md) — which fences draw, and who draws them

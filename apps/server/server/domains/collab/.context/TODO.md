@@ -1,29 +1,24 @@
 # collab TODO
 
-## Make archived Work documents read-only in live Yjs sessions
+## Paths that hold a pooled connection while taking another
 
-Archived Work documents remain readable and therefore pass document access and
-live-room admission. The app mounts the archived surface read-only, but the live
-Yjs writer-ingress path does not consult Work lifecycle, so a direct or already
-connected peer can still submit updates for durable journaling. Add a read-only
-lifecycle fact to live-session admission and fence updates without revoking the
-readable room.
+The live-pull deadlock (10 concurrent pulls each held a root transaction and
+waited for a second connection) is fixed by snapshotting first. These paths
+still hold one connection while acquiring another, on purpose for lock
+order, so enough concurrent callers can exhaust the pool the same way:
 
-Affected paths: `apps/server/server/lib/document-access.ts`,
-`apps/server/server/lib/yjs-ws-handler.ts`, project document opening, and live
-session availability contracts.
+- `pullThreadPeer` in `domain/branch-pulls.ts`, called inside a caller's
+  transaction: its live snapshots and its `run(...)` each need a connection.
+- `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: locks the
+  thread in one transaction, then opens a separate root transaction.
+- `createDeferredLiveProjectionCoordinator.withDocument` in
+  `adapters/hocuspocus-coordinator.ts`: inside a response transaction, reads
+  committed state on a second connection.
 
-## Refresh the markdown projection after human Yjs writes
-
-The WebSocket persistence path durably journals and checkpoints human Yjs
-updates but does not schedule `DocumentProjectionRefresher.refresh`.
-`documents.markdown_projection` can therefore remain at the pre-edit manuscript
-while the CRDT head is current; AI context and any projection reader then see
-stale prose. Define the post-journal projection obligation for human writes and
-make it retryable without delaying each live update acknowledgement.
-
-Affected paths: `apps/server/server/lib/yjs-ws-handler.ts`, the collab durable
-projection port/adapter, and projection consumers.
+Reproduce each with more concurrent callers than the pool's size (the PR 2
+perf bench's item 9 shows how), then restructure so no path waits for a
+connection while holding one. See
+[file-policy performance](../../file-policy/.context/performance.md).
 
 ## Draft preview fails on empty paragraphs
 
@@ -54,11 +49,38 @@ round-trip tests.
 
 ## Cold-start concurrent journal scan
 
-`listConcurrentJournalRows` has no lower bound when a branch has no previous
-watermark. Production promotion advances the watermark after the first
-interaction, but a simple max-id floor is unsound because journal-id order is
-not push order. The unbounded pushed-row scan is the same hole. Tracked at the
-query site in `branch-pulls.ts`.
+`listConcurrentJournalRows` in `adapters/drizzle-branch-push.ts` has no lower
+bound without an attribution watermark. The watermark advances only for novel
+attributed rows after a successful branch commit; ordinary writes whose history
+is already in the baseline can keep scanning indefinitely. Snapshot containment
+skips replay, not the query or update decoding. A future floor must follow push
+visibility: maximum journal ID is unsound because allocation order is not push
+order.
+
+## Thread-peer pull cost on every drafted write
+
+Profile before changing. `threadPeerContext` in
+`domain/thread-peer-core-pool.ts` calls `pullThreadPeer`
+(`domain/branch-pulls.ts`) on each drafted call outside an open response
+document. The pull encodes a full live snapshot, then reads the whole branch
+for the attribution baseline. Span runs on 2026-10-08 (500-document seed)
+measured 96–131 ms for a first write and 90–162 ms for later writes. Cost grows
+with retained Yjs bytes in this workload; Work-size scaling was not measured.
+Likely direction: reuse coherent captured live and peer state, and coalesce redundant
+root pulls. Keep the pull-time baseline and the final fence intact. Evidence:
+`experiments/draft-write-perf.md` and `experiments/spans-tables.md` in the
+docs repo's `model-tool-surface` work item.
+
+## Retained-state cost after attribution shortcut
+
+The 2026-10-08 repeated overwrite/restore probe still shows a later-write slope
+after attribution falls to single-digit milliseconds. Profile full-state
+materialization, encodes, persistence, and thread-peer checkpointing in
+`domain/branch-coordinator.ts` before choosing incremental update/checkpoint
+storage. Preserve the final concurrency fence, generation CAS, durable recovery,
+and delete-only changes. This is the remaining owner of the unfulfilled overall
+approximately 10% later/first target, alongside the peer pull task above. Evidence:
+`experiments/draft-speed-fix-probe.md` in the model-tool-surface work item.
 
 ## Thread-peer vs Work-draft generation split
 

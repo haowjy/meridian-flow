@@ -9,8 +9,8 @@ function saved(
 ): SavedExecutionReport {
   return {
     childThreadId: "child-id",
-    terminalAssistantTurnId: null,
-    assistantTurnId: "execution-id",
+    terminalTurnId: null,
+    executionTurnId: "execution-id",
     admittedAt: "2026-01-01T00:00:00.000Z",
     handle: "p3",
     origin: "spawn",
@@ -20,7 +20,7 @@ function saved(
     toolCallId: "spawn-call",
     cardBlockId: "card-id",
     agentSlug: "critic",
-    description: null,
+    name: null,
     capture: null,
     captureToolCallId: null,
     outcome: "succeeded",
@@ -37,7 +37,7 @@ function saved(
 }
 
 describe("savedReportToSpawnResult", () => {
-  it("returns exact successful execution content and cost", () => {
+  it("returns exact successful execution content, never its cost", () => {
     expect(savedReportToSpawnResult(saved())).toEqual({
       status: "completed",
       execution: "execution-id",
@@ -45,8 +45,8 @@ describe("savedReportToSpawnResult", () => {
       report: {
         handle: "p3",
         threadId: "child-id",
+        source: "final_assistant",
         summary: "final public text",
-        costMillicredits: 42,
       },
     });
   });

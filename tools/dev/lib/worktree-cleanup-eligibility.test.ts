@@ -105,15 +105,28 @@ describe("decideCleanupEligibility", () => {
 });
 
 describe("validateCleanupEligibility", () => {
-  it("refuses execution after the planned local ref moves", () => {
+  it("accepts manually verified evidence while the branch remains at its planned commit", () => {
+    const evidence = {
+      kind: "manual" as const,
+      branch: "feature",
+      plannedOid,
+      baseBranch: "main",
+      note: "verified against the preserved integration tip",
+    };
+
+    expect(
+      validateCleanupEligibility({ evidence, currentOid: plannedOid, isAncestor: undefined }),
+    ).toEqual({ eligible: true, evidence });
+  });
+
+  it("refuses manually verified evidence after the planned local ref moves", () => {
     const decision = validateCleanupEligibility({
       evidence: {
-        kind: "pull-request",
+        kind: "manual",
         branch: "feature",
         plannedOid,
         baseBranch: "main",
-        repositoryOwner: "haowjy",
-        pullRequestNumber: 42,
+        note: "verified against the preserved integration tip",
       },
       currentOid: "3333333333333333333333333333333333333333",
       isAncestor: undefined,

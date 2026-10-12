@@ -3,7 +3,7 @@
 Three small modules and the spec that hands them to the shared mechanism: where
 `/` may open (`slash-trigger.ts`), what a choice does to the document
 (`slash-insertion.ts`), and what the menu is offering (`slash-catalog.ts`). The
-lifecycle is [`../suggestion/`](../suggestion/suggestion-lane.ts), which `[[`
+lifecycle is [`../suggestion/`](../suggestion/suggestion-lane.ts), which `@`
 uses too; the open menu React reads is the headless store in
 [`@/core/completion`](../../../completion/AGENTS.md). The surface that renders it
 is
@@ -70,7 +70,7 @@ other.
   keys' timing, dismissal, and the refusal to gate on transaction origin are one
   mechanism's contracts, reasoned about in
   [`../suggestion/suggestion-lane.ts`](../suggestion/suggestion-lane.ts). A
-  correction to any of them belongs there, where `[[` and the next trigger get
+  correction to any of them belongs there, where `@` and the next trigger get
   it too.
 
 ## Anti-patterns

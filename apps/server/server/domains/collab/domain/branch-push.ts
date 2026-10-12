@@ -1,5 +1,4 @@
 /** One data-driven pipeline for durable branch pushes into live documents. */
-import { createAgentEditCodec } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -51,13 +50,13 @@ type BatchPipelineResult =
 export function createBranchPushService(input: BranchPushServiceInput): BranchPushService {
   const criticalSections = input.criticalSections ?? createBranchCriticalSections();
   const computePushUpdate = input.pushUpdateComputer ?? wholeBranchPushUpdate;
-  const attributionCodec = createAgentEditCodec(input.codec);
   const transition = createBranchPushTransition({
     commitStore: input.commitStore,
     settlementStore: input.settlementStore,
     liveCoordinator: input.liveCoordinator,
     model: input.model,
-    codec: attributionCodec,
+    codec: input.codec,
+    links: input.links,
     changeEventDelivery: input.changeEventDelivery,
     writerIngressBarrier: input.writerIngressBarrier,
     sweepProjectionDiagnostics: input.sweepProjectionDiagnostics,
@@ -128,7 +127,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     receiptId: string,
   ) =>
     preparePushUnderLiveLock(
-      { model: input.model, attributionCodec },
+      { model: input.model, codec: input.codec, links: input.links },
       {
         branch: phase.branch,
         rows: phase.candidate.rows,
@@ -248,27 +247,38 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Promise<T> {
     const retryBranchId = branchIds[0];
     if (!retryBranchId) throw new Error("active work draft lock requires at least one branch");
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-      try {
-        return await criticalSections.withBranches(branchIds, async (lease) => {
-          const branches = await Promise.all(
-            branchIds.map(async (branchId) =>
-              assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId),
-            ),
-          );
-          return run(branches, lease);
-        });
-      } catch (cause) {
-        if (cause instanceof BranchPushCommitConflictError) {
-          if (attempt >= maxCasRetries) {
-            throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
+    const documentIds = await Promise.all(
+      branchIds.map(
+        async (branchId) =>
+          assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId)
+            .documentId,
+      ),
+    );
+    // The tree is independent of branch state. Open the scope before either
+    // content or companion-manifest locks, then revalidate every branch under its lock.
+    return input.links.within({ documentId: documentIds[0] as string, documentIds }, async () => {
+      for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
+        try {
+          return await criticalSections.withBranches(branchIds, async (lease) => {
+            const branches = await Promise.all(
+              branchIds.map(async (branchId) =>
+                assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId),
+              ),
+            );
+            return run(branches, lease);
+          });
+        } catch (cause) {
+          if (cause instanceof BranchPushCommitConflictError) {
+            if (attempt >= maxCasRetries) {
+              throw new BranchPushRetryExhaustedError(cause.branchId, maxCasRetries, cause);
+            }
+            continue;
           }
-          continue;
+          throw cause;
         }
-        throw cause;
       }
-    }
-    throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
+      throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
+    });
   }
 
   async function resetAutoBranchIfDrained(
@@ -332,9 +342,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       if (source.rows.length === 0) return mapNoActiveRows(await noActiveRows(source.branch));
       const batch = buildWholeBranchCandidates({
         source,
-        ...((pushInput.resetPolicy ?? source.branch.pushPolicy) === "auto"
-          ? { resetPolicy: "auto" as const }
-          : {}),
+        ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
         ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
       });
       const result = await executeCandidateBatch(
@@ -379,10 +387,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     );
 
   const workPushPolicy = createWorkPushPolicy({
-    branchStore: input.branchStore,
     workPushPolicyStore: input.workPushPolicyStore,
     workDraftPending: createWorkDraftPending(input.workDraftPendingStore),
-    pushToLive,
     applyPendingDraft: ({ draft, pushedByUserId }) =>
       draft.manifestEntry
         ? pushToLiveWithManifestEntry({

@@ -9,10 +9,11 @@
  * `parentId`/`folderId` of `null` denotes the source root.
  */
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import type { DocumentCreationMetadata } from "../document-metadata.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
 export class ContextEntryConflictError extends Error {
-  constructor() {
+  constructor(readonly occupantKind?: "file" | "folder") {
     super("Context entry already exists");
     this.name = "ContextEntryConflictError";
   }
@@ -46,7 +47,7 @@ export interface LocatedContextDocument {
   active: boolean;
 }
 
-export interface UpsertDocumentInput {
+export interface CreateDocumentInput {
   /** Optional caller-chosen document id for imports that need stable keys before insert. */
   id?: string;
   folderId: string | null;
@@ -55,6 +56,7 @@ export interface UpsertDocumentInput {
   markdown: string;
   filetype: Filetype;
   provisionalName?: boolean;
+  metadata?: DocumentCreationMetadata;
 }
 
 /** Input for creating a binary (storage-backed) document in the context tree. */
@@ -67,6 +69,7 @@ export interface CreateBinaryDocumentInput {
   storageUrl: string;
   mimeType: string;
   sizeBytes: number;
+  metadata?: DocumentCreationMetadata;
 }
 
 /** Input for creating or overwriting a binary document at the same path. */
@@ -90,14 +93,13 @@ export interface ContextDocumentStore {
   findDocumentById(documentId: string): Promise<LocatedContextDocument | null>;
   /** Persist membership inside the caller's ambient document-creation transaction. */
   recordDocumentMembership(documentId: string): Promise<void>;
-  /** Update the search/list projection by stable identity, even if a concurrent move changed path. */
-  updateDocumentProjection(documentId: string, markdown: string): Promise<boolean>;
-  upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument>;
+  createDocument(input: CreateDocumentInput): Promise<ContextDocument>;
   /**
    * Claim only the SQL/tree identity. The document-creation aggregate owns
    * Yjs initialization and manifest membership around this operation.
    */
-  createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null>;
+  /** Opposite-kind occupancy throws ContextEntryConflictError with the folder kind. */
+  createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
   upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
   listFolders(parentId: string | null): Promise<ContextFolder[]>;

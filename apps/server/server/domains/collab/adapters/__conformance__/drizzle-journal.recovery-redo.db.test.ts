@@ -1,15 +1,18 @@
 /** Recovery/redo integration tests using the Drizzle journal against local Postgres. */
 import {
-  createAgentEditCodec,
+  createAgentEditCodecFactory,
   createAgentEditCore,
+  createStaticDocumentLinks,
   type DocumentCoordinator,
   DocumentNotFoundError,
   type ReversalStore,
+  renderAgentEditResult,
   type UpdateJournal,
   type WriteContext,
+  type WriteOutcome,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
   AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
@@ -19,8 +22,6 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import { prosemirrorToYXmlFragment } from "y-prosemirror";
 import * as Y from "yjs";
-import { expectReversalCompactionContract } from "./journal-reversal-compaction-contract.js";
-import { expectReversalMutationStatusContract } from "./journal-reversal-mutation-status-contract.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -49,9 +50,8 @@ const LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 
 const schema = buildDocumentSchema();
-const codec = createAgentEditCodec(
-  mdxCodec({ schema, assetPathResolver: unresolvedAssetPathResolver }),
-);
+const codecFactory = createAgentEditCodecFactory(mdxCodec({ schema }));
+const codec = codecFactory.forScope(UNSCOPED_DOCUMENT_LINKS);
 const model = yProsemirrorModel(schema);
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
@@ -73,15 +73,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { asc, eq } = await import("drizzle-orm");
-    const { useRollbackTestDatabase } = await import(
-      "../../../../test-support/rollback-test-database.js"
+    const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
+      "../../../../test-support/drizzle-reset.js"
     );
-    const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
-    const { createDrizzleJournal } = await import("../drizzle-journal.js");
+    const { createDrizzleJournal: createUngrantedJournal } = await import("../drizzle-journal.js");
+    const { grantedJournal } = await import("../../../../test-support/file-grants.js");
+    // These cases drive the journal seam directly, as a granted tool call does.
+    const createDrizzleJournal = (...args: Parameters<typeof createUngrantedJournal>) =>
+      grantedJournal(createUngrantedJournal(...args));
 
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 
@@ -104,10 +107,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         id: DOC_ID,
         contextSourceId: CONTEXT_SOURCE_ID,
         name: "chapter",
-        extension: "md",
+        extension: "",
         fileType: "markdown",
       });
       await db.insert(threads).values({
+        rootThreadId: THREAD_ID,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -119,6 +123,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_A,
           threadId: THREAD_ID,
+          position: 1,
           role: "assistant",
           origin: "assistant",
           status: "complete",
@@ -126,6 +131,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_B,
           threadId: THREAD_ID,
+          position: 2,
           parentTurnId: TURN_A,
           role: "assistant",
           origin: "assistant",
@@ -134,6 +140,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_C,
           threadId: THREAD_ID,
+          position: 3,
           parentTurnId: TURN_B,
           role: "assistant",
           origin: "assistant",
@@ -142,6 +149,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_D,
           threadId: THREAD_ID,
+          position: 4,
           parentTurnId: TURN_C,
           role: "assistant",
           origin: "assistant",
@@ -150,14 +158,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           id: TURN_E,
           threadId: THREAD_ID,
+          position: 5,
           parentTurnId: TURN_D,
           role: "assistant",
           origin: "assistant",
           status: "complete",
         },
-        ...CONCURRENT_TURNS.map((id) => ({
+        ...CONCURRENT_TURNS.map((id, index) => ({
           id,
           threadId: THREAD_ID,
+          position: index + 6,
           parentTurnId: TURN_E,
           role: "assistant" as const,
           origin: "assistant" as const,
@@ -171,6 +181,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           sequence: 1,
           provider: "test",
           model: "test",
+          requestMessageCount: 1,
+          predictedCacheState: "cold" as const,
+          predictedCacheReason: "facts_unavailable" as const,
         })),
       );
     }
@@ -197,26 +210,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await ensureFixtures();
     });
 
-    it("matches reversal mutation status transitions", async () => {
-      await expectReversalMutationStatusContract({
-        createJournal: () => createDrizzleJournal(db),
-        docId: DOC_ID,
-        threadId: THREAD_ID,
-        turnIds: [TURN_A, TURN_B],
-        userId: USER_ID,
-      });
-    });
-
-    it("matches reversal compaction history semantics", async () => {
-      await expectReversalCompactionContract({
-        createJournal: () => createDrizzleJournal(db),
-        docId: DOC_ID,
-        threadId: THREAD_ID,
-        turnIds: [TURN_A, TURN_B],
-        userId: USER_ID,
-      });
-    });
-
     it("reconstructs undo from a compacted checkpoint plus retained updates", async () => {
       const journal = createDrizzleJournal(db);
       const liveDoc = createDoc("Alpha sword.\n\nBeta shield.", LIVE_CLIENT_ID);
@@ -226,15 +219,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const core = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
-        "Alpha sword.",
-      );
+      expect(outcomeText(await core.read({ file: DOC_ID }, context))).toContain("Alpha sword.");
       expect(
         outcomeText(
           await core.write(
@@ -267,7 +259,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).toEqual(["Alpha blade.", "Beta ward."]);
 
       const undoLater = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
-      expect(undoLater).toContain("status: reconciled");
+      expect(undoLater).toContain("status: reversed");
       expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta shield."]);
       expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
         { wId: 1, status: "active" },
@@ -280,7 +272,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "status: nothing_to_undo",
       );
       const redoLater = outcomeText(await core.write({ command: "redo", file: DOC_ID }, context));
-      expect(redoLater).toContain("status: reconciled");
+      expect(redoLater).toContain("status: reversed");
       expect(blockTexts(liveDoc)).toEqual(["Alpha blade.", "Beta ward."]);
     });
 
@@ -293,16 +285,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const core = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
       const turnContext = { ...context, turnId: TURN_A };
 
-      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
-        "Alpha sword.",
-      );
+      expect(outcomeText(await core.read({ file: DOC_ID }, context))).toContain("Alpha sword.");
       expect(
         outcomeText(
           await core.write(
@@ -312,7 +303,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).toContain("status: success");
       expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
-        "status: reconciled",
+        "status: reversed",
       );
       expect(
         outcomeText(
@@ -323,7 +314,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).toContain("status: success");
       expect(outcomeText(await core.write({ command: "undo", file: DOC_ID }, context))).toContain(
-        "status: reconciled",
+        "status: reversed",
       );
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
 
@@ -345,11 +336,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const restarted = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
-      expect(outcomeText(await restarted.redo(DOC_ID, THREAD_ID))).toContain("status: reconciled");
+      expect(outcomeText(await restarted.redo(DOC_ID, THREAD_ID))).toContain("status: reversed");
 
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await journal.mutationsForWrite?.(DOC_ID, THREAD_ID, "w1")).toMatchObject([
@@ -369,15 +361,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const core = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
       const context: WriteContext = { sessionId: "journal-session", threadId: THREAD_ID };
 
-      expect(outcomeText(await core.write({ command: "read", file: DOC_ID }, context))).toContain(
-        "Alpha sword.",
-      );
+      expect(outcomeText(await core.read({ file: DOC_ID }, context))).toContain("Alpha sword.");
       expect(
         outcomeText(
           await core.write(
@@ -392,7 +383,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
 
       const undo = outcomeText(await core.write({ command: "undo", file: DOC_ID }, context));
-      expect(undo).toContain("status: reconciled");
+      expect(undo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha sword."]);
       expect(await mutationRows()).toMatchObject([
         { turnId: TURN_A, status: "reversed", wId: 1, reversedBy: "agent" },
@@ -411,16 +402,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const restarted = createAgentEditCore({
         journal,
         coordinator,
-        codec,
+        codec: codecFactory,
+        links: createStaticDocumentLinks(),
         model,
         undoClientId: REVERSAL_CLIENT_ID,
       });
-      expect(
-        outcomeText(await restarted.write({ command: "read", file: DOC_ID }, context)),
-      ).toContain("Alpha sword.");
+      expect(outcomeText(await restarted.read({ file: DOC_ID }, context))).toContain(
+        "Alpha sword.",
+      );
 
       const redo = outcomeText(await restarted.write({ command: "redo", file: DOC_ID }, context));
-      expect(redo).toContain("status: reconciled");
+      expect(redo).toContain("status: reversed");
       expect(blockTexts(coordinator.require(DOC_ID))).toEqual(["Alpha blade."]);
       expect(await mutationRows()).toMatchObject([
         { turnId: TURN_A, status: "active", wId: 1, undoUpdateSeq: null, reversedBy: null },
@@ -472,8 +464,8 @@ class MemoryCoordinator implements DocumentCoordinator {
   }
 }
 
-function outcomeText(outcome: { text: string }): string {
-  return outcome.text;
+function outcomeText(outcome: WriteOutcome): string {
+  return renderAgentEditResult(outcome.result);
 }
 
 function createDoc(markdown: string, clientID: number): Y.Doc {

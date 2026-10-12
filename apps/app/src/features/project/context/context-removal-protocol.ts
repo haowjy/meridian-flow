@@ -1,7 +1,7 @@
 /** Pure selection and represented-removal obligation protocol. */
 
 import type { ContextTab } from "@/client/stores";
-import type { ContextRouteTarget } from "../routing/project-route";
+import { type ContextRouteTarget, sameContextTarget } from "../routing/project-route";
 import {
   type ContextRemovalIntent,
   type ContextRouteIdentity,
@@ -65,9 +65,7 @@ export type SelectionTransition = {
   retireReentryGuard: boolean;
 };
 
-export function sameLocator(a: ContextRouteTarget, b: ContextRouteTarget): boolean {
-  return a.scheme === b.scheme && a.path === b.path && a.workId === b.workId;
-}
+export const sameLocator = sameContextTarget;
 
 export function continuityForSelection(selection: ContextRouteSelection): RouteContinuityVerdict {
   return selection.status === "bound"
@@ -287,12 +285,7 @@ function representedTab(
       if (tab.kind === "new") {
         return selection.locator.scheme === "unfiled" && selection.locator.path === "";
       }
-      return contextTabMatchesRoute(
-        tab,
-        selection.locator.scheme,
-        selection.locator.path,
-        selection.locator.workId,
-      );
+      return contextTabMatchesRoute(tab, selection.locator);
     }) ??
     tabs.find((tab) => contextTabEligibleForRemoval(tab, intent)) ??
     null
@@ -306,7 +299,7 @@ export function reduceRepresentedRemoval(
   exactBoundIdentity = false,
 ): { selection: ContextRouteSelection; planning: RemovalPlanningEffect } {
   const represented = representedTab(tabs, intent, selection);
-  if (!represented) {
+  if (!represented || selection.status === "none") {
     if (
       exactBoundIdentity &&
       selection.status === "bound" &&
@@ -338,10 +331,7 @@ export function reduceRepresentedRemoval(
       },
     };
   }
-  const locator = routeTargetForTab(
-    represented,
-    selection.status === "none" ? null : selection.locator.workId,
-  );
+  const locator = routeTargetForTab(represented, selection.locator.workId);
   const identity: ContextRouteIdentity = {
     kind: represented.kind === "new" ? "local" : "server",
     documentId: represented.documentId,
@@ -355,7 +345,7 @@ export function reduceRepresentedRemoval(
   const cleanup = cleanupForProof(proof);
   let nextSelection = selection;
   let current = continuityForSelection(selection);
-  let repair: "allow" | "never" = selection.status === "none" ? "never" : "allow";
+  let repair: "allow" | "never" = "allow";
   if (selection.status === "candidate" && sameLocator(selection.locator, locator)) {
     nextSelection = {
       ...selection,
@@ -370,7 +360,7 @@ export function reduceRepresentedRemoval(
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
   } else if (selection.status === "rejected" && sameLocator(selection.locator, locator)) {
     current = { kind: "proven-removed", revision: selection.revision, locator, identity };
-  } else if (selection.status !== "none" && !sameLocator(selection.locator, locator)) {
+  } else if (!sameLocator(selection.locator, locator)) {
     repair = "never";
   }
   return { selection: nextSelection, planning: { intent, cleanup, current, repair } };

@@ -28,29 +28,6 @@ function customBlock(props: Record<string, JsonValue>): Block {
   };
 }
 
-describe("thread store block upserts", () => {
-  it("does not change turn or block references for duplicate historical replacement", () => {
-    const store = setup();
-    store.getState().ensureAssistantTurn("thread-1", "turn-1");
-    store.getState().ensureAssistantTurn("thread-1", "turn-2");
-    store
-      .getState()
-      .upsertAssistantBlock("thread-1", "turn-1", customBlock({ outcome: "succeeded" }));
-    const before = store.getState().turns("thread-1") ?? [];
-    const beforeBlocks = before[0]?.blocks;
-    const otherTurn = before[1];
-
-    store
-      .getState()
-      .upsertAssistantBlock("thread-1", "turn-1", customBlock({ outcome: "succeeded" }));
-
-    const after = store.getState().turns("thread-1") ?? [];
-    expect(after).toBe(before);
-    expect(after[0]?.blocks).toBe(beforeBlocks);
-    expect(after[1]).toBe(otherTurn);
-  });
-});
-
 describe("durable block wire freshness", () => {
   it("keeps the cursor and snapshot floor monotonic beyond safe integers", () => {
     const store = setup();
@@ -80,4 +57,18 @@ describe("durable block wire freshness", () => {
     expect(actions.turns("thread-1")).toBe(before);
     expect(store.getState().durableBlockCursorByThread["thread-1"]).toBe("375000");
   });
+});
+
+it("keeps a failed optimistic writer row local instead of invalidating server truth", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  const { createThreadCache } = await import("./thread-cache");
+  const client = new QueryClient();
+  const key = ["threads", "thread-1", "snapshot"];
+  client.setQueryData(key, { turns: [] });
+  const store = createThreadStore({ now: 0, threadCache: createThreadCache(client) });
+  const row = store.getState().appendUserTurn("thread-1", [{ type: "text", text: "Keep it" }]);
+  store.getState().patchTurnStatus("thread-1", row.id, "error");
+  await Promise.resolve();
+  expect(store.getState().turns("thread-1")?.[0]?.status).toBe("error");
+  expect(client.getQueryState(key)?.isInvalidated).toBe(false);
 });

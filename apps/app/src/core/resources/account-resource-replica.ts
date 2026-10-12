@@ -4,23 +4,34 @@ import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
   acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
+  type FolderNamespaceRecord,
+  type FolderNamespaceWrite,
+  folderNeedsBackgroundReconciliation,
+  installedFolderObservation,
   markResourceCreateEligible,
+  ownerOf,
+  type ParentRef,
   planCachedSessionAdoption,
+  planFolderDeletion,
+  planFolderLocation,
   planResourceDeletion,
   planResourceLocation,
-  projectResourceLocation,
   publishResourceTerminal,
   ResourceCatalogAcquisition,
+  type ResourceDestination,
   type ResourceKey,
   type ResourceLocation,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
+  reconcileFolderNamespace,
   reconcileResourceNamespace,
   recordAcquiredResourceContent,
   remintCreateConflict,
   reserveResourceDocument,
   resourceNeedsBackgroundReconciliation,
+  resourcePlacementForSnapshot,
   resourceVisibleInProject,
+  sameOwner,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { nativeLocks } from "@/core/cross-context-locks";
@@ -31,6 +42,7 @@ import type {
   LocalLineageTerminalOperation,
   LocalLineageTerminalPort,
 } from "@/core/editor/document-session-coordination-contract";
+import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { createResourceCatalogTransport } from "./resource-catalog-transport";
 import type { ResourceContentOpenResult } from "./resource-content-access";
@@ -38,6 +50,11 @@ import { ResourceContentAccess } from "./resource-content-access";
 import { createResourceNamespaceLock } from "./resource-namespace-lock";
 import { createResourceNamespaceTransport } from "./resource-namespace-transport";
 import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption";
+
+/** Folders share the account journal under a handle that can never collide with a document's. */
+function folderKey(folderId: string): ResourceKey {
+  return { handle: `folder:${folderId}` };
+}
 
 function exactPersistenceName(accountId: string, persistenceId: string): string {
   return `meridian:resource:${collabSchemaKeyTag()}:${encodeURIComponent(accountId)}:${encodeURIComponent(persistenceId)}`;
@@ -120,7 +137,7 @@ export class AccountResourceReplica {
   private readonly namespace;
   private readonly adoption;
   private readonly runners = new Map<string, Promise<void>>();
-  private readonly reruns = new Map<string, ResourceKey>();
+  private readonly reruns = new Map<string, () => void>();
   private readonly projectionStreams = new Map<
     string,
     {
@@ -130,19 +147,24 @@ export class AccountResourceReplica {
     }
   >();
   private readonly observedResourceRevisions = new Map<string, number>();
+  private readonly observedFolderRevisions = new Map<string, number>();
   private readonly serverSessionCaptures = new Map<string, Promise<void>>();
   private reservationTail: Promise<void> = Promise.resolve();
   private readonly reservationLocks = nativeLocks();
   private readonly locationOperations = new ResourceLocationOperationQueue();
+  private stopHints: (() => void) | null = null;
   private retryTimer: number | null = null;
   private started = false;
   private stopReconciliation: (() => void) | null = null;
   private readonly retryAll = () => {
     void this.metadata
       .readProjection("")
-      .then(({ records }) => {
+      .then(({ records, folders }) => {
         for (const record of records) {
           if (resourceNeedsBackgroundReconciliation(record)) this.schedule(record.resource);
+        }
+        for (const folder of folders) {
+          if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
         }
       })
       .catch(() => undefined);
@@ -153,6 +175,7 @@ export class AccountResourceReplica {
     readonly accountId: string,
     private readonly runtime: AccountDocumentSessionRuntime,
     onInvalidated: (error: Error) => void = () => undefined,
+    private readonly connectivityHints?: ConnectivityHintsPort,
   ) {
     if (runtime.accountId !== accountId) throw new Error("Resource replica account mismatch");
     this.metadata = new IndexedDbResourceMetadata(accountId, () => {
@@ -247,10 +270,11 @@ export class AccountResourceReplica {
     const key = { handle: crypto.randomUUID() };
     const documentId = crypto.randomUUID();
     const projection = await this.metadata.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, projection);
     const names = new Set(
       projection.records.flatMap((record) => {
         if (!resourceVisibleInProject(projectId, record, projection.catalogs)) return [];
-        const name = projectResourceLocation(projectId, record)?.name;
+        const name = placement.resourceLocation(record)?.name;
         return name ? [name] : [];
       }),
     );
@@ -280,14 +304,18 @@ export class AccountResourceReplica {
     this.requireOpen();
     if (this.started) return;
     this.started = true;
-    window.addEventListener("focus", this.retryAll);
-    window.addEventListener("online", this.retryAll);
+    this.stopHints =
+      this.connectivityHints?.subscribe(this, (hint) => {
+        if (hint === "retry-now") this.retryAll();
+      }) ?? null;
     this.retryTimer = window.setInterval(this.retryAll, 30_000);
     // Reconciliation belongs to the account lifetime, not mounted catalog consumers.
     this.stopReconciliation = this.metadata.observeProjection(
       "",
-      ({ records }) => {
-        if (!this.closing) this.reconcileProjectionRecords(records);
+      ({ records, folders }) => {
+        if (this.closing) return;
+        this.reconcileProjectionRecords(records);
+        this.reconcileProjectionFolders(folders);
       },
       () => undefined,
     );
@@ -376,7 +404,10 @@ export class AccountResourceReplica {
     return Boolean(
       known &&
         known.record.resource.lifecycle.kind === "acknowledged" &&
-        projectResourceLocation(projectId, known.record),
+        resourcePlacementForSnapshot(
+          projectId,
+          await this.readProjection(projectId),
+        ).resourceLocation(known.record),
     );
   }
 
@@ -530,27 +561,124 @@ export class AccountResourceReplica {
     return this.catalogs.acquire(projectId, scope);
   }
 
+  /** A catalog observation that starts after this call; never joins an older in-flight one. */
+  acquireCatalogAfter(projectId: string, scope: CatalogScope) {
+    return this.catalogs.acquireAfter(projectId, scope);
+  }
+
   hintCatalog(projectId: string, scope: CatalogScope, headRevision: string) {
     return this.catalogs.hint(projectId, scope, headRevision);
   }
 
+  /** Capture a displayed row's identity before admitting a command. Never persist a path edge. */
+  async findParentAtLocation(
+    projectId: string,
+    location: ResourceLocation,
+  ): Promise<ParentRef | null> {
+    if (!location.path || location.path === "/")
+      return { kind: "root", scheme: location.scheme, owner: ownerOf(location) };
+    const snapshot = await this.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, snapshot);
+    for (const entry of snapshot.catalogs.flatMap((catalog) => catalog.entries)) {
+      if (entry.kind !== "folder" || entry.navigationOnly) continue;
+      const home = placement.folderLocation(entry.entryId);
+      if (
+        home &&
+        home.scheme === location.scheme &&
+        sameOwner(home, location) &&
+        home.path === location.path
+      )
+        return { kind: "folder", folderId: entry.entryId };
+    }
+    return null;
+  }
+
+  async parentForEntry(projectId: string, entryId: string): Promise<ParentRef> {
+    const snapshot = await this.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, snapshot);
+    const record = snapshot.records.find((r) => r.resource.identity.documentId === entryId);
+    const parent = record
+      ? placement.parentForResource(record)
+      : placement.parentForFolder(entryId);
+    if (!parent) throw new Error("Entry parent is unavailable");
+    return parent;
+  }
+
+  /** `operationId` names the move's receipt; absent when nothing changed. */
   async setLocation(
     projectId: string,
     key: ResourceKey,
-    destination: Omit<ResourceLocation, "path"> & { folderPath: string },
-  ): Promise<{ isLatest: boolean }> {
-    return this.locationOperations.run(key, async () => {
-      await this.commitPlan(key, (record) =>
-        planResourceLocation({
-          record,
-          projectId,
-          intentId: crypto.randomUUID(),
-          eligibleAt: Date.now(),
-          destination,
-        }),
-      );
+    destination: ResourceDestination,
+  ): Promise<{ isLatest: boolean; operationId?: string }> {
+    const operationId = crypto.randomUUID();
+    let admitted = false;
+    const { isLatest } = await this.locationOperations.run(key, async () => {
+      admitted =
+        (await this.commitPlan(key, (record) =>
+          planResourceLocation({
+            record,
+            projectId,
+            intentId: crypto.randomUUID(),
+            operationId,
+            eligibleAt: Date.now(),
+            destination,
+          }),
+        )) === "committed";
       this.schedule(key);
     });
+    return { isLatest, ...(admitted ? { operationId } : {}) };
+  }
+
+  /**
+   * Admit a folder rename or move locally. The source is the installed catalog's location,
+   * never the optimistic projection, so a pending parent move cannot leak into the request.
+   */
+  async setFolderLocation(
+    projectId: string,
+    folderId: string,
+    destination: ResourceDestination,
+  ): Promise<{ operationId?: string }> {
+    return this.commitFolderPlan(projectId, folderId, (input) =>
+      planFolderLocation({ ...input, destination }),
+    );
+  }
+
+  async deleteFolder(projectId: string, folderId: string): Promise<void> {
+    await this.commitFolderPlan(projectId, folderId, planFolderDeletion);
+  }
+
+  private async commitFolderPlan(
+    projectId: string,
+    folderId: string,
+    plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
+  ): Promise<{ operationId?: string }> {
+    this.requireOpen();
+    const key = folderKey(folderId);
+    const operationId = crypto.randomUUID();
+    for (;;) {
+      const [current, projection] = await Promise.all([
+        this.metadata.readFolder(key),
+        this.metadata.readProjection(projectId),
+      ]);
+      const observation = installedFolderObservation(projection.catalogs, projectId, folderId);
+      const source = current?.canonical ?? observation?.location;
+      if (!source) throw new Error("Folder is unavailable");
+      const write = plan({
+        record: current,
+        projectId,
+        handle: key.handle,
+        folderId,
+        source,
+        sourceParent: current?.canonicalParent ?? observation?.parent,
+        sourceObservationVersion: current?.observationVersion ?? observation?.observationVersion,
+        intentId: crypto.randomUUID(),
+        operationId,
+      });
+      if (!write) return {};
+      if ((await this.metadata.commitFolder(write)) !== "committed") continue;
+      this.scheduleFolder(key);
+      return { operationId };
+    }
   }
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<void> {
@@ -601,23 +729,61 @@ export class AccountResourceReplica {
     }
   }
 
+  private reconcileProjectionFolders(folders: readonly FolderNamespaceRecord[]): void {
+    for (const folder of folders) {
+      if (this.observedFolderRevisions.get(folder.handle) === folder.revision) continue;
+      this.observedFolderRevisions.set(folder.handle, folder.revision);
+      if (folderNeedsBackgroundReconciliation(folder)) this.scheduleFolder(folder);
+    }
+  }
+
   private schedule(key: ResourceKey): void {
+    this.scheduleOnce(
+      key,
+      () => this.run(key),
+      () => this.schedule(key),
+    );
+  }
+
+  private scheduleFolder(key: ResourceKey): void {
+    this.scheduleOnce(
+      key,
+      () => this.runFolder(key),
+      () => this.scheduleFolder(key),
+    );
+  }
+
+  /** One runner per handle; a request that arrives mid-run reruns once when it finishes. */
+  private scheduleOnce(key: ResourceKey, start: () => Promise<void>, rerun: () => void): void {
     if (this.closing) return;
     const id = encodeURIComponent(key.handle);
     if (this.runners.has(id)) {
-      this.reruns.set(id, key);
+      this.reruns.set(id, rerun);
       return;
     }
-    const runner = this.run(key)
+    const runner = start()
       .catch(() => undefined)
       .finally(() => {
         if (this.runners.get(id) !== runner) return;
         this.runners.delete(id);
-        const rerun = this.reruns.get(id);
+        const again = this.reruns.get(id);
         this.reruns.delete(id);
-        if (rerun) this.schedule(rerun);
+        again?.();
       });
     this.runners.set(id, runner);
+  }
+
+  private async runFolder(key: ResourceKey): Promise<void> {
+    for (let step = 0; step < 100 && !this.closing; step += 1) {
+      const result = await reconcileFolderNamespace({
+        key,
+        metadata: this.metadata,
+        transport: this.namespace,
+        lock: this.lock,
+        newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
+      });
+      if (result !== "progressed") return;
+    }
   }
 
   private async run(key: ResourceKey): Promise<void> {
@@ -629,7 +795,9 @@ export class AccountResourceReplica {
         lock: this.lock,
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
-      if (namespace === "needs-repair" && (await this.remintCreateConflict(key))) continue;
+      if (namespace === "needs-repair") {
+        if (await this.remintCreateConflict(key)) continue;
+      }
       await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
       const adoption = await this.adoption.reconcile(key);
       const cleanup = await this.reconcileLocalCleanup(key);
@@ -747,8 +915,8 @@ export class AccountResourceReplica {
     if (this.closing) return;
     this.closing = true;
     if (this.started) {
-      window.removeEventListener("focus", this.retryAll);
-      window.removeEventListener("online", this.retryAll);
+      this.stopHints?.();
+      this.stopHints = null;
       if (this.retryTimer !== null) window.clearInterval(this.retryTimer);
       this.retryTimer = null;
     }

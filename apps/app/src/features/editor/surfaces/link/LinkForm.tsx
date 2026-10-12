@@ -1,7 +1,7 @@
 /** Destination and display-text editing over the anchored link commands. */
 
 import { t } from "@lingui/core/macro";
-import { formatWikilink } from "@meridian/markup";
+import { type DocumentRef, documentRef, storedHref } from "@meridian/contracts";
 import type { Editor } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { Unlink } from "lucide-react";
@@ -29,6 +29,7 @@ import {
   type LinkFormRequest,
   type LinkSurface,
   linkInputStepsAsideFromReferences,
+  linkKeyOfMark,
   linkTargetLabel,
   mapLinkDraft,
   normalizeLinkHref,
@@ -110,19 +111,28 @@ function LinkFields({
 }) {
   const [text, setText] = useState(draft.text);
   const [href, setHref] = useState(draft.href);
-  const [query, setQuery] = useState("");
-  const [choosing, setChoosing] = useState(!draft.href);
-  const [selectedDestination, setSelectedDestination] = useState<{
+  // The document picked from search, assigned by its id at commit, and how the
+  // form names it.
+  const [selected, setSelected] = useState<{
+    ref: DocumentRef;
     label: string;
     location: string;
   } | null>(null);
+  const draftLinkRef = draft.identity ? linkKeyOfMark(draft.identity.attrs).ref : null;
+  const [query, setQuery] = useState("");
+  const [choosing, setChoosing] = useState(!draft.href);
   const [invalid, setInvalid] = useState(false);
   const [refused, setRefused] = useState(false);
-  const resolution = useLinkResolution(editor, href || null);
+  // The existing link's own answer while its destination is unchanged; a
+  // destination the writer typed has no ref until it is committed.
+  const resolution = useLinkResolution(
+    editor,
+    href ? { ref: selected?.ref ?? (href === draft.href ? draftLinkRef : null), href } : null,
+  );
   const target = classifyLinkTarget(href);
   const destinationLabel =
-    selectedDestination?.label ??
-    (resolution?.state === "resolved"
+    selected?.label ??
+    (resolution?.state === "document"
       ? resolution.document.title
       : target
         ? linkTargetLabel(target)
@@ -130,14 +140,20 @@ function LinkFields({
   const fieldId = useId();
   const textInputRef = useRef<HTMLInputElement>(null);
   const hrefInputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const [hrefInput, setHrefInput] = useState<HTMLInputElement | null>(null);
   const attachHrefInput = useCallback((node: HTMLInputElement | null) => {
     hrefInputRef.current = node;
     setHrefInput(node);
   }, []);
   const referenceOwnerId = "link-reference-menu";
-  const { projectId, workId } = useEditorScope();
-  const referenceCatalog = useReferenceBrowserCatalog(projectId, workId, t`Link a file`);
+  const { projectId, workId, rootThreadId } = useEditorScope();
+  const referenceCatalog = useReferenceBrowserCatalog(
+    projectId,
+    workId,
+    t`Link a file`,
+    rootThreadId,
+  );
   const referenceDriver = useMemo(
     () =>
       referenceCatalog
@@ -147,8 +163,14 @@ function LinkFields({
             label: () => referenceCatalog.label,
             onCompleteSegment: ({ prefix }) => setQuery(prefix),
             onSelect: ({ row }) => {
-              setHref(formatWikilink(row.action.reference.uri));
-              setSelectedDestination({ label: row.label, location: row.location });
+              // Assigned the way the Editor's `@` assigns it: by the document's id,
+              // spelled with its full address.
+              setHref(storedHref(row.action.reference.uri, ""));
+              setSelected({
+                ref: documentRef(row.action.reference.documentId),
+                label: row.label,
+                location: row.location,
+              });
               setText((current) => current || row.label);
               setChoosing(false);
               setInvalid(false);
@@ -156,7 +178,7 @@ function LinkFields({
             },
           })
         : null,
-    [referenceCatalog],
+    [editor, referenceCatalog],
   );
 
   useEffect(() => {
@@ -173,6 +195,9 @@ function LinkFields({
         if (linkInputStepsAsideFromReferences(value)) return null;
         return { query: value, text: value, triggerRange: { from: 0, to: value.length } };
       },
+      // Below the whole form, not at the caret: the field sits above Save, and
+      // a menu hanging from the caret covered it and swallowed its click.
+      anchorRect: () => formRef.current?.getBoundingClientRect() ?? null,
     });
     transport.sync();
     return transport.destroy;
@@ -200,15 +225,9 @@ function LinkFields({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const address = choosing ? query.trim() : href;
-    // Search words are not destinations. Explicit pasted addresses still use the core normalizer.
-    if (
-      choosing &&
-      !(
-        linkInputStepsAsideFromReferences(address) ||
-        /[./]/.test(address) ||
-        address.startsWith("[[")
-      )
-    ) {
+    // Search words are not destinations. A web URL, a Context URI, or a
+    // relative path the writer typed goes through the core normalizer.
+    if (choosing && !(linkInputStepsAsideFromReferences(address) || /[./]/.test(address))) {
       setInvalid(true);
       return;
     }
@@ -217,10 +236,10 @@ function LinkFields({
       setInvalid(true);
       return;
     }
-    const destination = classifyLinkTarget(normalized);
     const result = commitLinkDraft(editor, readDraft(), {
       text,
-      href: destination?.kind === "scheme" ? formatWikilink(destination.uri) : normalized,
+      href: normalized,
+      ...(selected && !choosing ? { ref: selected.ref } : {}),
     });
     if (result === "invalid") {
       setInvalid(true);
@@ -234,7 +253,7 @@ function LinkFields({
   };
 
   return (
-    <form className="flex flex-col gap-2" onSubmit={submit}>
+    <form ref={formRef} className="flex flex-col gap-2" onSubmit={submit}>
       <LinkField
         id={`${fieldId}-text`}
         ref={textInputRef}
@@ -273,14 +292,17 @@ function LinkFields({
               }}
             >{t`Change`}</Button>
           </div>
-          {selectedDestination || resolution?.state === "resolved" ? (
+          {selected || resolution?.state === "document" ? (
             <span className="text-xs text-muted-foreground">
-              {selectedDestination?.location ??
-                (resolution?.state === "resolved" ? resolution.document.path : "")}
+              {selected?.location ??
+                (resolution?.state === "document" ? resolution.document.path : "")}
             </span>
           ) : null}
-          {resolution?.state === "unresolved" ? (
-            <span className="text-xs text-muted-foreground">{t`No document with this name yet`}</span>
+          {resolution?.state === "missing" ? (
+            <span className="text-xs text-muted-foreground">{t`Doesn't exist yet`}</span>
+          ) : null}
+          {resolution?.state === "gone" ? (
+            <span className="text-xs text-muted-foreground">{t`No longer available`}</span>
           ) : null}
         </div>
       )}

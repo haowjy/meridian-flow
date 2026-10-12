@@ -1,5 +1,9 @@
 /** Owns a thread run from submission through transport recovery. */
-import { EventType } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  type SubmittedReference,
+  type UserMessageBlock,
+} from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
@@ -11,9 +15,10 @@ import {
   retireUserMessageAdmission,
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
+import { abortable } from "@/client/chat-submissions/lock";
+import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
-import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
 import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
@@ -34,39 +39,41 @@ export type SubscribeLiveOptions = {
 };
 
 export type SubmitOptions = {
+  signal: AbortSignal;
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
-  optimisticUserTurnId?: string;
-  keepOptimisticOnFailure?: boolean;
-  /** Install mounted durable projections at the accepted cursor before replay starts. */
-  activateProjection?: (after: string) => boolean;
+  optimisticUserTurnId: string;
 };
 
-export type SubmissionPayload = Pick<
-  ComposerSubmitEnvelope,
-  "submissionId" | "acceptedRevision" | "text" | "blocks" | "references" | "activatedSkillSlugs"
->;
+export type SubmissionPayload = {
+  submissionId: string;
+  text: string;
+  blocks: readonly UserMessageBlock[];
+  references: readonly SubmittedReference[];
+  activatedSkillSlugs: readonly string[];
+};
+
+export type SubmissionOutcome = {
+  kind:
+    | "accepted"
+    | "rejected"
+    | "ambiguous"
+    | "not-seen"
+    | "abandoned"
+    | "deleted"
+    | "project-deleted";
+  submissionId: string;
+};
 
 type SessionFence = () => boolean;
 
-/** What a dispatch does when the server accepts the POST after this session has already lost ownership (a fence that no longer matches). */
-type StaleAcceptPolicy = "bridge-row" | "leave-row";
-
-function isAdmissionPending(error: unknown): boolean {
-  return (
-    (error instanceof HttpResponseError || isMeridianApiError(error)) &&
-    (error.message === "admission_pending" || error.message.includes("admission_pending"))
-  );
-}
-
-/** A structured refusal or a 4xx proves the endpoint rejected the write, so the journal entry may be retired. */
-function isDefinitiveWriteRejection(error: unknown): boolean {
-  if (isMeridianApiError(error)) {
-    return error.status === undefined || (error.status >= 400 && error.status < 500);
+/** A refusal proves rejection; transport, server errors and pending admissions do not. */
+export function classifyWriteFailure(error: unknown): "rejected" | "ambiguous" {
+  if (error instanceof HttpResponseError || isMeridianApiError(error)) {
+    if (error.status === 409 && error.message.includes("admission_pending")) return "ambiguous";
+    if (error.status === undefined || (error.status >= 400 && error.status < 500))
+      return "rejected";
   }
-  if (error instanceof HttpResponseError) {
-    return error.status >= 400 && error.status < 500;
-  }
-  return false;
+  return "ambiguous";
 }
 
 export type ThreadRunControllerOptions = {
@@ -124,8 +131,7 @@ export class ThreadRunController {
   private activationGeneration = 0;
 
   private activeRun: ActiveRun | null = null;
-  private admissionLease: object | null = null;
-  private admissionEpoch = 0;
+  private leaseTail: Promise<void> = Promise.resolve();
   private recoverySessions = new Set<object>();
   private abortRequested = false;
   private runToken = 0;
@@ -178,33 +184,14 @@ export class ThreadRunController {
     }
   }
 
-  submit(
-    threadId: string,
-    payload: SubmissionPayload,
-    options: SubmitOptions = {},
-  ): Promise<ComposerSubmitOutcome> {
-    return this.dispatch(
-      threadId,
-      payload,
-      options,
-      this.admissionFence(this.admissionEpoch),
-      "bridge-row",
-    );
-  }
-
   /** Re-admit a journal-recovered submission under its owning recovery session. */
   recoverSubmission(
     threadId: string,
     payload: SubmissionPayload,
     options: SubmitOptions,
     session: object,
-  ): Promise<ComposerSubmitOutcome> {
-    return this.dispatch(threadId, payload, options, this.recoveryFence(session), "leave-row");
-  }
-
-  private admissionFence(admissionEpoch: number): SessionFence {
-    return () =>
-      !this.disposed && !this.accountSignal.aborted && this.admissionEpoch === admissionEpoch;
+  ): Promise<SubmissionOutcome> {
+    return this.dispatch(threadId, payload, options, this.recoveryFence(session));
   }
 
   private recoveryFence(session: object): SessionFence {
@@ -225,216 +212,142 @@ export class ThreadRunController {
     this.recoverySessions.delete(session);
   }
 
-  private dropOptimistic(threadId: string, options: SubmitOptions): void {
-    if (options.keepOptimisticOnFailure || !options.optimisticUserTurnId) return;
-    this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-  }
-
   private async dispatch(
     threadId: string,
     envelope: SubmissionPayload,
     options: SubmitOptions,
     fence: SessionFence,
-    staleAccept: StaleAcceptPolicy,
-  ): Promise<ComposerSubmitOutcome> {
-    const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
+  ): Promise<SubmissionOutcome> {
+    const outcome = (kind: SubmissionOutcome["kind"]): SubmissionOutcome => ({
       kind,
       submissionId: envelope.submissionId,
-      acceptedRevision: envelope.acceptedRevision,
     });
-    if (!fence()) return outcome("ambiguous");
-    if (this.admissionLease) {
-      // Not dispatched. Keep the row and journal so recovery still owns it.
-      return outcome("ambiguous");
+    const signal = AbortSignal.any([this.accountSignal, options.signal]);
+    const current = () => fence() && !signal.aborted;
+    if (!current()) return outcome("abandoned");
+    const previous = this.leaseTail;
+    let release!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.leaseTail = previous.then(() => completed);
+    try {
+      await abortable(previous, signal);
+    } catch {
+      release();
+      return outcome("abandoned");
     }
-
-    const lease = {};
-    this.admissionLease = lease;
+    if (!current()) {
+      release();
+      return outcome("abandoned");
+    }
     try {
       let result: Awaited<ReturnType<AppendUserMessageFn>>;
       try {
-        result = await this.appendUserMessageFn({
-          data: {
-            threadId,
-            submissionId: envelope.submissionId,
-            text: envelope.text,
-            blocks: envelope.blocks,
-            references: envelope.references,
-            activatedSkillSlugs: envelope.activatedSkillSlugs,
-          },
-        });
+        result = await abortable(
+          this.appendUserMessageFn({
+            data: {
+              threadId,
+              submissionId: envelope.submissionId,
+              text: envelope.text,
+              blocks: envelope.blocks,
+              references: envelope.references,
+              activatedSkillSlugs: envelope.activatedSkillSlugs,
+            },
+            signal,
+          }),
+          signal,
+        );
       } catch (error) {
-        if (!fence()) return outcome("ambiguous");
-        if (isAdmissionPending(error)) return outcome("ambiguous");
-        if (isDefinitiveWriteRejection(error)) {
-          this.dropOptimistic(threadId, options);
+        if (!current()) return outcome("abandoned");
+        const availability = threadAvailability(error, this.accountId);
+        if (availability === "deleted" || availability === "project-deleted")
+          return outcome(availability);
+        if (classifyWriteFailure(error) === "rejected") {
           return outcome("rejected");
         }
-        const reconciled = await this.reconcile(
-          threadId,
-          envelope.submissionId,
-          envelope.acceptedRevision,
-          options,
-          "lookup",
-          fence,
-        );
-        // A live send cannot conclude "never seen" from a lookup that may race
-        // an in-flight admission: keep it ambiguous so recovery owns replay.
-        return reconciled.kind === "not-seen" ? outcome("ambiguous") : reconciled;
-      }
-      if (!fence()) {
-        // Accepted by the server, but this session no longer owns the thread.
-        // A live send bridges the app-scoped row onto the persisted turn (see
-        // `StaleAcceptPolicy`); a recovery replay leaves the row so the
-        // returning session's own lookup owns the bridge and the retire.
-        // Return `ambiguous` either way so the stale session keeps the journal.
-        if (staleAccept === "bridge-row" && options.optimisticUserTurnId) {
-          this.actions.acknowledgeUserTurn(
-            threadId,
-            options.optimisticUserTurnId,
-            result.userTurnId,
-            result.snapshotFloorNextSeq,
-          );
-        }
         return outcome("ambiguous");
       }
-      if (options.optimisticUserTurnId) {
-        this.actions.acknowledgeUserTurn(
-          threadId,
-          options.optimisticUserTurnId,
-          result.userTurnId,
-          result.snapshotFloorNextSeq,
-        );
-      }
-      if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
-        return outcome("ambiguous");
-      }
+      if (!current()) return outcome("abandoned");
+      this.actions.acknowledgeUserTurn(
+        threadId,
+        options.optimisticUserTurnId,
+        result.userTurnId,
+        result.snapshotFloorNextSeq,
+      );
       this.attachAcceptedRun(threadId, result);
       return outcome("accepted");
     } finally {
-      // An old completion must not release a newer destination's admission lease.
-      if (this.admissionLease === lease) this.admissionLease = null;
+      release();
     }
-  }
-
-  lookup(
-    threadId: string,
-    envelope: ComposerSubmitEnvelope,
-    options: SubmitOptions = {},
-  ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(
-      threadId,
-      envelope.submissionId,
-      envelope.acceptedRevision,
-      options,
-      "lookup",
-      this.admissionFence(this.admissionEpoch),
-    );
-  }
-
-  retire(
-    threadId: string,
-    envelope: ComposerSubmitEnvelope,
-    options: SubmitOptions = {},
-  ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(
-      threadId,
-      envelope.submissionId,
-      envelope.acceptedRevision,
-      options,
-      "retire",
-      this.admissionFence(this.admissionEpoch),
-    );
   }
 
   /** Reconcile a durable journal entry. */
   lookupSubmission(
     threadId: string,
     submissionId: string,
-    options: SubmitOptions = {},
-    session?: object,
-  ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(
-      threadId,
-      submissionId,
-      0,
-      options,
-      "lookup",
-      session ? this.recoveryFence(session) : this.admissionFence(this.admissionEpoch),
-    );
+    options: SubmitOptions,
+    session: object,
+  ): Promise<SubmissionOutcome> {
+    return this.reconcile(threadId, submissionId, options, "lookup", this.recoveryFence(session));
   }
 
   retireSubmission(
     threadId: string,
     submissionId: string,
-    options: SubmitOptions = {},
-    session?: object,
-  ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(
-      threadId,
-      submissionId,
-      0,
-      options,
-      "retire",
-      session ? this.recoveryFence(session) : this.admissionFence(this.admissionEpoch),
-    );
+    options: SubmitOptions,
+    session: object,
+  ): Promise<SubmissionOutcome> {
+    return this.reconcile(threadId, submissionId, options, "retire", this.recoveryFence(session));
   }
 
   private async reconcile(
     threadId: string,
     submissionId: string,
-    acceptedRevision: number,
     options: SubmitOptions,
     operation: "lookup" | "retire",
     fence: SessionFence,
-  ): Promise<ComposerSubmitOutcome> {
-    const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
+  ): Promise<SubmissionOutcome> {
+    const outcome = (kind: SubmissionOutcome["kind"]): SubmissionOutcome => ({
       kind,
       submissionId,
-      acceptedRevision,
     });
-    if (!fence()) return outcome("ambiguous");
+    const signal = AbortSignal.any([this.accountSignal, options.signal]);
+    const current = () => fence() && !signal.aborted;
+    if (!current()) return outcome("abandoned");
+    let result: Awaited<ReturnType<LookupAdmissionFn>> | Awaited<ReturnType<RetireAdmissionFn>>;
     try {
-      const result = await (operation === "retire"
-        ? this.retireAdmissionFn
-        : this.lookupAdmissionFn)({
-        threadId,
-        submissionId,
-      });
-      if (!fence()) {
-        // A late accepted result is not bridged into the store, so it must not
-        // read as acknowledged. A proved refusal still retires the journal.
-        if (result.kind === "rejected" || result.kind === "retired") return outcome("rejected");
-        return outcome("ambiguous");
-      }
-      if (result.kind === "accepted" || result.kind === "already-accepted") {
-        if (options.optimisticUserTurnId) {
-          this.actions.acknowledgeUserTurn(
-            threadId,
-            options.optimisticUserTurnId,
-            result.userTurnId,
-            result.snapshotFloorNextSeq,
-          );
-        }
-        if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
-          return outcome("ambiguous");
-        }
-        this.attachAcceptedRun(threadId, result);
-        return outcome("accepted");
-      }
-      if (result.kind === "rejected" || result.kind === "retired") {
-        // Callers choose whether a proved refusal remains attached to its
-        // optimistic row; the chat surface keeps it for Retry/Edit recovery.
-        if (options.optimisticUserTurnId && !options.keepOptimisticOnFailure) {
-          this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-        }
-        return outcome("rejected");
-      }
-      if (result.kind === "not-seen") return outcome("not-seen");
-      return outcome("ambiguous");
-    } catch {
+      result = await abortable(
+        (operation === "retire" ? this.retireAdmissionFn : this.lookupAdmissionFn)({
+          threadId,
+          submissionId,
+          signal,
+        }),
+        signal,
+      );
+    } catch (error) {
+      if (!current()) return outcome("abandoned");
+      const availability = threadAvailability(error, this.accountId);
+      if (availability === "deleted" || availability === "project-deleted")
+        return outcome(availability);
       return outcome("ambiguous");
     }
+    if (!current()) return outcome("abandoned");
+    if (result.kind === "accepted" || result.kind === "already-accepted") {
+      this.actions.acknowledgeUserTurn(
+        threadId,
+        options.optimisticUserTurnId,
+        result.userTurnId,
+        result.snapshotFloorNextSeq,
+      );
+      this.attachAcceptedRun(threadId, result);
+      return outcome("accepted");
+    }
+    if (result.kind === "rejected" || result.kind === "retired") {
+      return outcome("rejected");
+    }
+    if (result.kind === "not-seen") return outcome("not-seen");
+    return outcome("ambiguous");
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {
@@ -495,10 +408,8 @@ export class ThreadRunController {
     this.requestCancel(activeRun.threadId, activeRun.turnId);
   }
 
-  teardown(): void {
-    // Prevent an append already in flight from attaching after teardown.
-    this.admissionEpoch += 1;
-    this.admissionLease = null;
+  teardown(threadId?: string): void {
+    if (threadId && this.activeRun?.threadId !== threadId) return;
     this.runToken += 1;
     this.cleanupActiveRun();
   }
@@ -691,7 +602,7 @@ export class ThreadRunController {
       },
     };
 
-    // If submit() received the turn id from HTTP before RUN_STARTED arrives,
+    // If admission received the turn id from HTTP before RUN_STARTED arrives,
     // an early cancel can execute now instead of waiting for the stream echo.
     if (this.abortRequested && this.activeRun.turnId) {
       this.abortRequested = false;

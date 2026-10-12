@@ -1,4 +1,4 @@
-/** Browser document locations resolve separately from model-visible wikilinks. */
+/** Browser document locations resolve separately from document links in prose. */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { DocumentAddressResult, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -7,6 +7,7 @@ export type DocumentAddressInput = {
   userId: string;
   scheme: ProjectContextTreeScheme;
   workId: string | null;
+  rootThreadId?: string | null;
   path: string;
 };
 

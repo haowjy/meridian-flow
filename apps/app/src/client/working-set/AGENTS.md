@@ -14,21 +14,24 @@ whole-snapshot PUTs with revision-checked acks. The server row is the
 Key rules:
 
 - Server wins on true conflict (base-revision mismatch); local wins on
-  plain outage. Recovery paths (PUT failure, offline→online, sync
+  plain outage. Recovery paths (PUT failure, shared connectivity retry hints, sync
   re-enable) mark the baseline suspect: fresh GET + the precedence
   reducer before any further push.
 - Sync consent fails closed — only a successfully resolved `true`
   enables the driver. The account-lifetime
-  `WorkingSetSyncPreferenceProvider` owns the confirmed value and calls
-  `configureWorkingSetSync`; the loader prop seeds it only before the first
-  local revision, so a stale loader echo cannot re-enable or disable sync.
+  `AccountSettingsProvider` owns the confirmed value and calls
+  `configureWorkingSetSync`. Pending or failed intents own the displayed choice;
+  confirmed values drive sync and are the only values relayed or cached.
+  Newer ordered reads may replace settled choices.
 - Hydration adoption runs once per mounted project identity in the project
   route bootstrap's layout commit, before `ReadableProjectRoute` mounts (and
   once more when a project being created receives its route data). Never
   adopt during render or repeat adoption for same-project loader echoes.
 - Build routes with `buildWorkingSetRoute`: every server route requires its
   stable document ID, and Work-capable schemes require explicit real-Work or
-  no-Work authority. Never hand-assemble the union.
+  no-Work authority; a No Work chat's Scratch names its lineage
+  (`rootThreadId`, the first chat's id) instead of a Work. Never hand-assemble
+  the union.
 - Do not grow this into a general sync engine. The narrowness is the
   design. A new state kind gets its own record and policy instead of
   widening this one. Account recently-opened documents are a separate

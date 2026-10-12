@@ -5,43 +5,25 @@ import {
   type Turn,
 } from "@meridian/contracts/protocol";
 import { Loader2 } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
-
-import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { memo, useMemo } from "react";
+import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
-import {
-  useOpenProjectDocument,
-  useProjectDocumentNavigationProjectId,
-} from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
 import type {
   MarkdownReferenceOccurrence,
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
-import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
-
-export type UserTurnRecovery =
-  | {
-      kind: "ambiguous";
-      onCheck: () => void;
-      onRetire: () => void;
-    }
-  | {
-      kind: "rejected";
-      onRetry: () => void;
-      /**
-       * Focus or restore the retained draft. Absent when only Retry is honest:
-       * a structured rejection whose live draft is gone cannot be rebuilt from
-       * its text without admitting a different message.
-       */
-      onEdit?: () => void;
-    };
+import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
+import { useReferenceAvailability } from "./reference-availability";
 
 export type UserTurnProps = {
   turn: Turn;
   /** True while the accepted writer turn has not yet been read by the model. */
   queued?: boolean;
-  /** Check submission status / Start over for a recovered ambiguous send. */
+  /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
 };
 
@@ -80,49 +62,18 @@ export function projectUserTurn(turn: Turn): {
 }
 
 function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: UserTurnProps) {
+  // Hand off from a message the model has. A queued one sits beyond the
+  // cutoff the server would use, so it offers none.
+  const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
   const projectId = useProjectDocumentNavigationProjectId();
-  const openDocument = useOpenProjectDocument(projectId ?? undefined);
+  const openDocument = useOpenChatDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
-  const [resolutions, setResolutions] = useState<
-    ReadonlyMap<string, TranscriptReferenceResolution>
-  >(new Map());
-  useEffect(() => {
-    const ids = [...new Set(projected.references.map(({ documentId }) => documentId))];
-    if (!projectId || ids.length === 0) {
-      setResolutions(new Map());
-      return;
-    }
-    let current = true;
-    void lookupProjectContextAvailability(projectId, ids)
-      .then((result) => {
-        if (!current) return;
-        setResolutions(
-          new Map(
-            result.resolutions.flatMap((resolution) =>
-              resolution.kind === "available"
-                ? [
-                    [
-                      resolution.documentId,
-                      {
-                        documentId: resolution.documentId,
-                        uri: resolution.entry.uri,
-                        label: resolution.entry.name,
-                        available: true,
-                      },
-                    ] as const,
-                  ]
-                : [],
-            ),
-          ),
-        );
-      })
-      .catch(() => {
-        if (current) setResolutions(new Map());
-      });
-    return () => {
-      current = false;
-    };
-  }, [projectId, projected.references]);
+  const resolutions = useReferenceAvailability(
+    useMemo(
+      () => [...new Set(projected.references.map(({ documentId }) => documentId))],
+      [projected.references],
+    ),
+  );
 
   return (
     <article
@@ -163,35 +114,57 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
           {t`Queued`}
         </p>
       ) : null}
-      {turn.status === "error" ? (
+      {turn.status === "error" && submissionRecovery?.moving ? (
         <p
           data-user-turn-status="error"
           role="status"
-          className="mt-[var(--chat-space-inline)] text-right text-xs text-destructive"
+          className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
         >
-          {t`Couldn't send.`}
+          {t`Moved to the message box.`}
         </p>
       ) : null}
-      {submissionRecovery?.kind === "ambiguous" ? (
-        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onCheck}>
-            {t`Check submission status`}
-          </Button>
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetire}>
-            {t`Start over`}
-          </Button>
+      {turn.status === "error" && !submissionRecovery?.moving ? (
+        // Zero intrinsic width so a short message's bubble does not stretch to the card;
+        // the card right-aligns inside the row and overhangs to the left.
+        <div className="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end">
+          {/* The chat announces the failure once through its own assertive region, and a
+              rejection restored on reload must stay silent, so the card is not an alert. */}
+          <NoticeCard tone="error" inline announce={false}>
+            <p data-user-turn-status="error" role="status">
+              {t`Couldn't send.`}
+            </p>
+            {submissionRecovery?.onRetry ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={submissionRecovery.onRetry}
+              >
+                {t`Retry`}
+              </Button>
+            ) : null}
+            {submissionRecovery?.onEdit ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                disabled={submissionRecovery.busy}
+                onClick={submissionRecovery.onEdit}
+              >
+                {t`Edit`}
+              </Button>
+            ) : null}
+          </NoticeCard>
         </div>
       ) : null}
-      {submissionRecovery?.kind === "rejected" ? (
-        <div className="mt-[var(--chat-space-inline)] flex justify-end gap-[var(--chat-space-inline)]">
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
-            {t`Retry`}
-          </Button>
-          {submissionRecovery.onEdit ? (
-            <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onEdit}>
-              {t`Edit`}
-            </Button>
-          ) : null}
+      {handoff ? (
+        // A row under the bubble on its right edge, like a reply's actions; revealed
+        // on hover or focus with a mouse, always shown on touch (globals.css).
+        <div
+          className="user-turn-actions mt-[var(--chat-space-inline)] flex min-h-6 items-center justify-end gap-[var(--chat-space-inline)] transition-opacity"
+          data-user-turn-actions
+        >
+          <HandoffTurnAction turnId={turn.id} />
         </div>
       ) : null}
     </article>

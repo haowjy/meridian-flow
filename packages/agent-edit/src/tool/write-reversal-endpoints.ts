@@ -1,10 +1,10 @@
 // Hosted undo/redo/reverse endpoints and thread invalidation for the write tool.
+import type { LinkView } from "@meridian/contracts";
 import * as Y from "yjs";
 
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { ReversalActor } from "../ports/types.js";
-import { parseWriteHandle } from "../ports/update-journal.js";
 import type { ReversalSelection } from "../undo/reversal-plan.js";
 import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { bytesEqual } from "../yjs-update.js";
@@ -33,6 +33,8 @@ export interface ReverseInput {
   actor: ReversalActor;
   requireEffect?: boolean;
   interactionContext?: InteractionContext;
+  /** The view of the destination whose history this reverses (`WriteContext.linkView`). */
+  linkView?: LinkView;
 }
 
 export type VerifiedReverseEffect = "changed" | "unchanged" | "not_checked";
@@ -68,16 +70,19 @@ export function createWriteReversalEndpoints(deps: {
     docId: string,
     threadId: string,
     direction: "undo",
+    linkView?: LinkView,
   ): Promise<TurnUndoResult>;
   function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "redo",
+    linkView?: LinkView,
   ): Promise<TurnRedoResult>;
   function runTurnReversalEndpoint(
     docId: string,
     threadId: string,
     direction: "undo" | "redo",
+    linkView?: LinkView,
   ): Promise<TurnUndoResult | TurnRedoResult> {
     return runHostedReversal({
       docId,
@@ -85,6 +90,7 @@ export function createWriteReversalEndpoints(deps: {
       direction,
       selection: { kind: "latest" },
       actor: { type: "agent" },
+      ...(linkView ? { linkView } : {}),
     }) as Promise<TurnUndoResult | TurnRedoResult>;
   }
 
@@ -101,19 +107,21 @@ export function createWriteReversalEndpoints(deps: {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     if (context.responseId && responseCommitter.hasBufferedWrites(context.responseId)) {
-      // This pre-reversal flush has no wrapping database transaction: the journal write is
-      // immediately durable, so it does not need the server response unit-of-work facade.
-      await responseCommitter.commitResponse(context.responseId);
+      // Undo and redo reverse saved history. The host saves the reply before
+      // one (a save boundary), so a write staged in it here is a host bug.
+      throw new Error(
+        `Invariant violation: ${direction} ran in response ${context.responseId} with staged writes; save the reply first.`,
+      );
     }
     const selection = commandSelection(command);
-    if (!selection.ok) return status("invalid_write", selection.message);
 
     const result = await writeReversal.run({
       docId: address.documentId,
       session,
       commandName: command.command,
       direction,
-      selection: selection.selection,
+      selection,
+      filePath: address.filePath,
       actor:
         context.actor?.kind === "human"
           ? { type: "user", userId: context.actor.userId }
@@ -129,6 +137,7 @@ export function createWriteReversalEndpoints(deps: {
                 : {}),
             },
       interactionContext: context.interactionContext,
+      linkView: context.linkView,
     });
     return result;
   }
@@ -149,6 +158,7 @@ export function createWriteReversalEndpoints(deps: {
               selection: input.selection,
               actor: input.actor,
               interactionContext: input.interactionContext,
+              linkView: input.linkView,
             })
             .catch((cause: unknown) => toOutcome("undo", writeError(cause)) as UndoResult)
         : await writeReversal
@@ -159,6 +169,7 @@ export function createWriteReversalEndpoints(deps: {
               selection: input.selection,
               actor: input.actor,
               interactionContext: input.interactionContext,
+              linkView: input.linkView,
             })
             .catch((cause: unknown) => toOutcome("redo", writeError(cause)) as RedoResult);
     if (outcome.status !== "document_not_found")
@@ -191,45 +202,17 @@ export function createWriteReversalEndpoints(deps: {
   function localSession(id: string, threadId: string): ActorSession {
     const existing = localSessions.get(id);
     if (existing) return existing;
-    const session: ActorSession = { id, threadId, documents: new Map() };
+    const session: ActorSession = { id, threadId, documents: new Set() };
     localSessions.set(id, session);
     return session;
   }
 }
 
-export function commandSelection(
-  command: UndoCommand | RedoCommand,
-): { ok: true; selection: ReversalSelection } | { ok: false; message: string } {
-  const selectors = [
-    command.to !== undefined || command.from !== undefined,
-    command.last !== undefined,
-    command.all === true,
-  ].filter(Boolean).length;
-  if (selectors > 1)
-    return { ok: false, message: "Use only one undo/redo selector: to/from, last, or all." };
-  if (command.all === true) return { ok: true, selection: { kind: "all" } };
-  if (command.last !== undefined) {
-    if (!Number.isInteger(command.last) || command.last < 1) {
-      return { ok: false, message: "last must be a positive integer" };
-    }
-    return { ok: true, selection: { kind: "last", count: command.last } };
-  }
-  if (command.from !== undefined || command.to !== undefined) {
-    if (command.to === undefined) return { ok: false, message: "from requires to" };
-    if (!isWriteHandle(command.to))
-      return { ok: false, message: "to must be a write handle like w3" };
-    if (command.from === undefined)
-      return { ok: true, selection: { kind: "single", to: command.to } };
-    if (!isWriteHandle(command.from))
-      return { ok: false, message: "from must be a write handle like w2" };
-    if (Number(command.from.slice(1)) > Number(command.to.slice(1))) {
-      return { ok: false, message: "from must be before or equal to to" };
-    }
-    return { ok: true, selection: { kind: "range", from: command.from, to: command.to } };
-  }
-  return { ok: true, selection: { kind: "latest" } };
-}
-
-function isWriteHandle(value: string): boolean {
-  return parseWriteHandle(value) !== undefined;
+/** Maps a parsed command to its selection; the schema already enforced the selector rule. */
+export function commandSelection(command: UndoCommand | RedoCommand): ReversalSelection {
+  if (command.all === true) return { kind: "all" };
+  if (command.last !== undefined) return { kind: "last", count: command.last };
+  if (command.to === undefined) return { kind: "latest" };
+  if (command.since === undefined) return { kind: "single", to: command.to };
+  return { kind: "range", since: command.since, to: command.to };
 }

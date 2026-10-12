@@ -11,7 +11,8 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { DeletedChatNotice } from "./DeletedChatNotice";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
@@ -33,7 +34,7 @@ export function CreationComposer({
    */
   newChatFocusRequestId?: number | null;
   /** Explicit Work scope carried by a context-specific New chat action. */
-  newChatWorkId?: string | null;
+  newChatWorkId?: string;
   onNewChatFocusHandled?: (id: number) => void;
 }) {
   const creation = useCreationComposer(projectId);
@@ -62,16 +63,18 @@ export function CreationComposer({
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
-  const workId = choices?.workId === undefined ? (initialWork?.id ?? null) : choices.workId;
-  const selected = workFromSnapshot(
-    works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
-    workId,
-  );
+  const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
+  const selected = workId
+    ? workFromSnapshot(
+        works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
+        workId,
+      )
+    : null;
   // An archived Work refuses new chats, so it is never the new chat's Work.
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
-  const openDocument = useOpenProjectDocument(projectId);
-  const context = agent ? { workId, agent } : undefined;
+  const openDocument = useOpenChatDocument(projectId);
+  const context = agent && workId ? { workId, agent } : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
   const catalogAgent = agents.agents?.find(
@@ -95,18 +98,26 @@ export function CreationComposer({
   return (
     <>
       <Composer
+        notices={
+          creation.draft.notices.length > 0
+            ? creation.draft.notices.map((notice) => (
+                <DeletedChatNotice
+                  key={notice.threadId}
+                  notice={notice}
+                  onDismiss={() => creation.draft.dismissNotice(notice.threadId)}
+                />
+              ))
+            : undefined
+        }
+        key={creation.draft.key}
+        initialDraft={creation.draft.initialDraft}
         ref={composerRef}
         variant={variant}
         autoFocus={autoFocus}
-        onSubmit={async (envelope) => ({
-          kind:
-            choicesReady && context && (await creation.submit(envelope, context))
-              ? "accepted"
-              : "rejected",
-          submissionId: envelope.submissionId,
-          acceptedRevision: envelope.acceptedRevision,
-        })}
-        onDraftChange={creation.updateDraft}
+        onSubmit={async (envelope) =>
+          Boolean(choicesReady && context && creation.submit(envelope, context))
+        }
+        onDraftChange={creation.draft.updateDraft}
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
         onOpenReference={(reference) => {
@@ -133,11 +144,12 @@ export function CreationComposer({
             work={work}
             selectedWorkId={workId}
             works={works.works ?? []}
+            noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
             disabled={modePending}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            onWorkChange={(selected) => creation.updateChoices({ workId: selected?.id ?? null })}
+            onWorkChange={(selected) => creation.updateChoices({ workId: selected.id })}
             onRetryWorks={works.refetch}
             onModePendingChange={setModePending}
           />

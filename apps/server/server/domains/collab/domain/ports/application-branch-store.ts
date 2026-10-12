@@ -5,11 +5,6 @@ import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
 import type { BranchLockLease } from "../branch-critical-sections.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
 
-export type ManifestMutationResult = {
-  workDraftBranchId?: string;
-  policy?: "manual" | "auto";
-};
-
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
     appendJournal(
@@ -56,14 +51,18 @@ export type ApplicationBranchStore = BranchStore &
       threadId?: ThreadId | null;
     }): Promise<{ documentId: DocumentId; members: string[] }>;
     reconcileProjectManifest(projectId: ProjectId): Promise<void>;
+    transferLiveManifestMembership(
+      documentIds: readonly DocumentId[],
+      projects: { from: ProjectId; to: ProjectId },
+    ): Promise<void>;
     recordManifestDocumentCreated(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<ManifestMutationResult>;
+    ): Promise<void>;
     recordManifestDocumentDeleted(
       documentId: DocumentId,
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<ManifestMutationResult>;
+    ): Promise<void>;
   };
 
 /** Discards one Work draft and its draft-only membership without applying content to live. */

@@ -8,7 +8,6 @@ import type {
 } from "@meridian/resource-replica";
 import {
   markResourceCreateEligible,
-  planSessionAdoptionGeneration,
   prepareNamespaceAttempt,
   recordNamespaceOutcome,
   reserveResourceDocument,
@@ -32,7 +31,7 @@ import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption"
 import { deleteIndexedDb } from "./test-support/delete-indexed-db";
 
 const accountId = "resource-session-adoption";
-const metadataName = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;
+const metadataName = `meridian:resource-metadata:v4:${encodeURIComponent(accountId)}`;
 const databaseName = "resource-session-adoption-content";
 const stores: IndexedDbResourceMetadata[] = [];
 const accesses: ResourceContentAccess[] = [];
@@ -239,23 +238,6 @@ it("waits for a caller-owned lease before transferring and acknowledging the ses
   expect(release).toHaveBeenCalledOnce();
 });
 
-it("hands recorded bindable authority to the already-open local session", async () => {
-  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
-  const current = await metadata.readResource(key);
-  if (!current) throw new Error("Missing resource record");
-  const pinned = planSessionAdoptionGeneration(current, "7");
-  if (!pinned) throw new Error("Expected a pending session adoption");
-  expect(await metadata.commitResource(pinned)).toBe("committed");
-  vi.mocked(adoption.inspect).mockResolvedValue("bindable");
-
-  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-
-  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
-  expect(created).toHaveLength(1);
-  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
-  verified.handle.release();
-});
-
 it("rejects an authority fence before pinning the resource generation", async () => {
   const { adoption, availability, coordinator, key, metadata, verified } = await fixture();
   availability.resolve.mockResolvedValue({
@@ -280,13 +262,55 @@ it("rejects an authority fence before pinning the resource generation", async ()
 });
 
 it("keeps a begun handoff retryable while authority is temporarily unavailable", async () => {
-  const { adoption, availability, coordinator, key, metadata } = await fixture();
+  const { adoption, availability, coordinator, created, key, metadata } = await fixture();
   availability.resolve.mockResolvedValueOnce({ kind: "failed" });
 
   await expect(coordinator.reconcile(key)).resolves.toBe("waiting");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "detached", adoptionStalled: true });
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(created[0]?.getSnapshot()).toMatchObject({ adoptionStalled: false });
 
   expect(adoption.begin).toHaveBeenCalledTimes(1);
   expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
+});
+
+function failAcknowledgementOnce(metadata: IndexedDbResourceMetadata) {
+  const commit = metadata.commitResource.bind(metadata);
+  let failed = false;
+  vi.spyOn(metadata, "commitResource").mockImplementation(async (write) => {
+    if (!failed && !write.next.resource.obligations.sessionAdoption) {
+      failed = true;
+      throw new Error("transient acknowledgement failure");
+    }
+    return commit(write);
+  });
+}
+
+it("does not label a transport-owned session offline when only the acknowledgement fails", async () => {
+  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
+  const bind = vi.mocked(adoption.bindAndAdopt).getMockImplementation();
+  if (!bind) throw new Error("Missing bind implementation");
+  vi.mocked(adoption.bindAndAdopt).mockImplementation(async (input) => {
+    const result = await bind(input);
+    created[0]?.attachTransport(() => ({
+      synced: true,
+      whenSynced: Promise.resolve(),
+      whenDurablySynced: Promise.resolve(),
+      subscribeStatus(listener) {
+        listener({ kind: "connected" });
+        return () => {};
+      },
+      destroy() {},
+    }));
+    return result;
+  });
+  failAcknowledgementOnce(metadata);
+
+  await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
+  verified.handle.release();
+  await created[0]?.destroy();
 });

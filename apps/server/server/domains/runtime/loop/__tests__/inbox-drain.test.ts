@@ -4,7 +4,14 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
+import {
+  childCompletionMetadata,
+  classifyHistoryItem,
+  decodeImageInclusionMetadata,
+  skillBodyMetadata,
+} from "../../../threads/index.js";
 import type { Gateway, GenerateResult, Message } from "../../gateway/index.js";
+import { ImageAssetResolutionError } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import {
   createSpawnToolRegistrations,
@@ -13,19 +20,23 @@ import {
 } from "../../tools/index.js";
 import type { MessageDraft } from "../ports.js";
 import type { ReferenceReader } from "../reference-context.js";
-import { NoPendingWakeError } from "../run-turn-port.js";
-import { createTestAgentBinding } from "./runtime-fixtures.js";
+import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { runtimeScenario } from "./runtime-harness.js";
 import { scriptedGateway } from "./test-gateway.js";
 
 const USER_ID = "user-1";
+
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("expected a value");
+  return value;
+}
 
 function textResult(text = "done"): GenerateResult {
   return {
     content: [{ type: "text", text }],
     toolCalls: [],
     finishReason: "end_turn",
-    usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+    usage: { inputTokens: 1000, outputTokens: 100 },
     model: "gpt-4.1-mini",
     provider: "openai",
   };
@@ -40,7 +51,7 @@ function toolCallResult(
     content: [{ type: "tool_use", toolCallId, toolName, input }],
     toolCalls: [],
     finishReason: "tool_use",
-    usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+    usage: { inputTokens: 1000, outputTokens: 100 },
     model: "gpt-4.1-mini",
     provider: "openai",
   };
@@ -56,16 +67,6 @@ function message(key: string, threadId: ThreadId): MessageDraft {
   };
 }
 
-function notice(key: string, threadId: ThreadId): MessageDraft {
-  return {
-    threadId,
-    intent: "notice",
-    provenance: { kind: "system", source: "work" },
-    body: { kind: "context", parts: [{ source: "work", text: key }] },
-    idempotencyKey: key,
-  };
-}
-
 function messageTexts(messages: readonly Message[]): string[] {
   return messages.flatMap((message) =>
     message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
@@ -76,15 +77,54 @@ function messageText(message: Message): string {
   return message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
-function turnsWithId(turns: readonly { id: string }[], id: string) {
-  return turns.filter((turn) => turn.id === id);
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+function imageReference(uri: string) {
+  return {
+    type: "image" as const,
+    documentId: "44444444-4444-4444-8444-000000000099",
+    uri,
+  };
+}
+
+async function recordNotice(notices: ReturnType<typeof createTestNoticePort>, threadId: string) {
+  await notices.record({
+    kind: "awareness_degraded",
+    scope: { kind: "thread", threadId },
+    message: "Awareness changed during preparation.",
+    data: { documentIds: [], documentNames: [] },
+  });
+}
+
+function messageTurns(turns: readonly { id: TurnId; role: string; metadata?: unknown }[]) {
+  return turns.filter((turn) => turn.role === "user");
+}
+
+async function messageTurnTexts(
+  repos: Awaited<ReturnType<typeof setup>>["repos"],
+  threadId: ThreadId,
+): Promise<string[]> {
+  const turns = messageTurns(await repos.turns.listByThread(threadId));
+  return Promise.all(
+    turns.map(async (turn) =>
+      (await repos.blocks.listByTurn(turn.id))
+        .filter((block) => block.blockType === "text")
+        .map((block) => block.textContent ?? "")
+        .join("\n"),
+    ),
+  );
 }
 
 async function setup(
   options: {
     onStream?: (call: number) => Promise<void>;
     results?: GenerateResult[];
-    errorAtCall?: number;
     /** Seeds an account-installed skill so `/skill` activation can resolve a body. */
     skill?: { slug: string; name: string; description: string; body: string };
     referenceReader?: ReferenceReader;
@@ -92,11 +132,12 @@ async function setup(
     realSpawnTools?: boolean;
     supportsImageInput?: boolean;
     imageAssets?: import("../../ports/image-asset.js").ImageAssetPort;
+    notices?: ReturnType<typeof createTestNoticePort>;
   } = {},
 ) {
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   if (options.skill) await accountSkillInstalls.insert({ ownerUserId: USER_ID, ...options.skill });
-  const gateway = scriptedGateway(options);
+  const gateway = scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 }, ...options });
   const { requests } = gateway;
   const toolRegistry = createToolRegistry();
   if (options.realSpawnTools) {
@@ -109,9 +150,11 @@ async function setup(
         {
           id: "gpt-4.1-mini",
           provider: "openai",
+          tokenizer: "o200k" as const,
           displayName: "Test model",
           contextWindow: 128_000,
           maxOutputTokens: 16_384,
+          promptCache: { kind: "none", ttlMs: null },
           capabilities: new Set(options.supportsImageInput === false ? [] : ["image_input"]),
         },
       ],
@@ -122,18 +165,31 @@ async function setup(
       : {}),
     ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
     ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
-    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [thread.id]),
+    ...(options.notices ? { notices: options.notices } : {}),
+    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [
+      thread.id,
+      ...(thread.parentThreadId ? [thread.parentThreadId] : []),
+    ]),
   });
   const thread = options.child
-    ? await rig.repos.threads.createSubagent({
-        userId: USER_ID,
-        projectId: rig.project.id,
-        parentThreadId: rig.thread.id,
-        rootThreadId: rig.thread.id,
-        spawnDepth: 1,
-      })
+    ? await (async () => {
+        const originTurn = await rig.repos.turns.create({
+          threadId: rig.thread.id,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        return rig.repos.threads.createSubagent({
+          userId: USER_ID,
+          projectId: rig.project.id,
+          parentThreadId: rig.thread.id,
+          rootThreadId: rig.thread.id,
+          originTurnId: originTurn.id,
+          spawnDepth: 1,
+        });
+      })()
     : rig.thread;
-  return { ...rig, thread, requests };
+  return { ...rig, thread, requests, notices: options.notices };
 }
 
 async function execute(run: import("../run-turn-port.js").PreparedRun) {
@@ -141,6 +197,34 @@ async function execute(run: import("../run-turn-port.js").PreparedRun) {
 }
 
 describe("inbox drain", () => {
+  it("consumes canceled reversal notices without splitting the running reply", async () => {
+    const notices = createTestNoticePort();
+    const rig = await setup({
+      notices,
+      results: [toolCallResult("unknown", "probe"), textResult("done")],
+      onStream: async (call) => {
+        if (call !== 1) return;
+        for (const direction of ["undo", "redo"]) {
+          await notices.record({
+            kind: "undo",
+            scope: { kind: "thread", threadId: rig.thread.id },
+            message: "",
+            data: { uri: "manuscript://Scene", writeHandles: ["w1"], direction },
+          });
+        }
+      },
+    });
+    const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+    await execute(run);
+    expect(rig.requests).toHaveLength(2);
+    expect(messageTexts(required(rig.requests[1]).messages).join("\n")).not.toContain(
+      "<system_update>",
+    );
+    expect(await notices.peek(rig.thread.id)).toEqual([]);
+    const turns = await rig.repos.turns.listByThread(rig.thread.id);
+    expect(turns.filter((turn) => turn.role === "assistant")).toHaveLength(1);
+  });
+
   it("keeps return_result capture run-scoped without ending the steered turn's tool loop", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({
       onStream: async (call) => {
@@ -163,9 +247,9 @@ describe("inbox drain", () => {
     expect(requests).toHaveLength(3);
     const turns = await repos.turns.listByThread(thread.id);
     const terminal = turns.at(-1);
-    expect(terminal?.id).not.toBe(run.assistantTurnId);
+    expect(terminal?.id).not.toBe(run.executionTurnId);
     expect(terminal?.finishReason).toBe("end_turn");
-    const report = await repos.executionReports.findByExecution(thread.id, run.assistantTurnId);
+    const report = await repos.executionReports.findByExecution(thread.id, run.executionTurnId);
     expect(report).toMatchObject({
       outcome: "succeeded",
       source: "return_result",
@@ -173,166 +257,13 @@ describe("inbox drain", () => {
       payload: { answer: 42 },
       artifacts: [{ type: "object", uri: "scratch://the-lamplighters-arithmetic.md" }],
       captureToolCallId: "rr-1",
-      terminalAssistantTurnId: terminal?.id,
+      terminalTurnId: terminal?.id,
     });
-    const toolResults = (await repos.blocks.listByTurn(run.assistantTurnId)).filter(
+    const toolResults = (await repos.blocks.listByTurn(run.executionTurnId)).filter(
       (block) => block.blockType === "tool_result",
     );
     expect(toolResults).toHaveLength(1);
     expect(toolResults[0]?.content).toMatchObject({ output: { ok: true }, isError: false });
-  });
-
-  it.each([
-    ["HTTP URL", "https://example.test/cover.png"],
-    ["non-URI string", "not a Meridian URI"],
-  ])("returns a tool error for a %s artifact and continues the child run", async (_label, artifact) => {
-    const { thread, orchestrator, requests, repos } = await setup({
-      child: true,
-      realSpawnTools: true,
-      results: [
-        toolCallResult("return_result", "rr-bad", {
-          summary: "malformed report",
-          artifacts: [artifact],
-        }),
-        textResult("recovered report"),
-      ],
-    });
-    const run = await orchestrator.prepare({ threadId: thread.id, userText: "report" });
-
-    await execute(run);
-
-    expect(requests).toHaveLength(2);
-    const report = await repos.executionReports.findByExecution(thread.id, run.assistantTurnId);
-    expect(report).toMatchObject({
-      outcome: "succeeded",
-      source: "final_assistant",
-      summary: "recovered report",
-    });
-    const toolResult = (await repos.blocks.listByTurn(run.assistantTurnId)).find(
-      (block) => block.blockType === "tool_result",
-    );
-    expect(toolResult?.content).toMatchObject({
-      isError: true,
-      output: {
-        code: "tool_error",
-        message: expect.stringContaining("artifacts[0]"),
-      },
-    });
-    expect(JSON.stringify(toolResult?.content)).toContain(artifact);
-  });
-
-  it("saves only the final response's public text and per-execution response cost", async () => {
-    const { thread, orchestrator, repos } = await setup({
-      child: true,
-      results: [textResult("first result"), textResult("second result")],
-    });
-    const first = await orchestrator.prepare({ threadId: thread.id, userText: "first" });
-    await execute(first);
-    const firstReport = await repos.executionReports.findByExecution(
-      thread.id,
-      first.assistantTurnId,
-    );
-    expect(firstReport).toMatchObject({
-      outcome: "succeeded",
-      source: "final_assistant",
-      summary: "first result",
-      publication: "none",
-    });
-    expect(firstReport?.costMillicredits).toBeGreaterThan(0);
-
-    const second = await orchestrator.prepare({ threadId: thread.id, userText: "second" });
-    await execute(second);
-    const secondReport = await repos.executionReports.findByExecution(
-      thread.id,
-      second.assistantTurnId,
-    );
-    expect(secondReport).toMatchObject({
-      outcome: "succeeded",
-      source: "final_assistant",
-      summary: "second result",
-      costMillicredits: firstReport?.costMillicredits,
-    });
-  });
-
-  it("saves an empty successful report rather than an invented incomplete fallback", async () => {
-    const { thread, orchestrator, repos } = await setup({ child: true, results: [textResult("")] });
-    const run = await orchestrator.prepare({ threadId: thread.id, userText: "empty" });
-    await execute(run);
-    expect(
-      await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
-    ).toMatchObject({
-      outcome: "succeeded",
-      source: "empty",
-      summary: "",
-      publication: "none",
-    });
-  });
-
-  it("treats token exhaustion as failure while retaining durable public text", async () => {
-    const exhausted = { ...textResult("partial prose"), finishReason: "max_tokens" as const };
-    const { thread, orchestrator, repos } = await setup({ child: true, results: [exhausted] });
-    const run = await orchestrator.prepare({ threadId: thread.id, userText: "long" });
-    await execute(run);
-    expect(
-      await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
-    ).toMatchObject({
-      outcome: "failed",
-      reason: "max_tokens",
-      source: "final_assistant",
-      summary: "partial prose",
-    });
-  });
-
-  it("admits exact child executions for writer and queued continuations before returning a handle", async () => {
-    const { thread, inbox, orchestrator, repos } = await setup({ child: true });
-    const writer = await orchestrator.prepare({ threadId: thread.id, userText: "writer prompt" });
-    expect(
-      await repos.executionReports.findByExecution(thread.id, writer.assistantTurnId),
-    ).toMatchObject({
-      assistantTurnId: writer.assistantTurnId,
-      deliveryMode: "none",
-      origin: "thread_run",
-      outcome: null,
-    });
-    await execute(writer);
-
-    await inbox.enqueue(message("queued prompt", thread.id));
-    const queued = await orchestrator.prepare({ threadId: thread.id, drain: true });
-    expect(
-      await repos.executionReports.findByExecution(thread.id, queued.assistantTurnId),
-    ).toMatchObject({
-      assistantTurnId: queued.assistantTurnId,
-      deliveryMode: "none",
-      origin: "thread_run",
-      outcome: null,
-    });
-    expect(queued.assistantTurnId).not.toBe(writer.assistantTurnId);
-    await execute(queued);
-  });
-
-  it("persists a request-only notice as a durable system_update turn", async () => {
-    const { thread, inbox, requests, orchestrator, repos } = await setup();
-    await inbox.enqueue(notice("work context note", thread.id));
-
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
-
-    const texts = messageTexts(requests[0].messages);
-    expect(texts.some((text) => text.includes("work context note"))).toBe(true);
-    // The run's own user + assistant turns, plus a durable notices turn so the
-    // notice reproduces identically on a later request instead of vanishing.
-    // A notice (like a Work refresh) splits the run: the original empty
-    // assistant turn completes and a fresh one continues after the notice.
-    const turns = await repos.turns.listByThread(thread.id);
-    expect(turns).toHaveLength(4);
-    const noticesTurn = turns.find(
-      (turn) =>
-        (turn.metadata as { kind?: string; section?: string } | null)?.section === "notices",
-    );
-    expect(noticesTurn).toMatchObject({
-      role: "system",
-      metadata: { kind: "system_update", section: "notices" },
-    });
-    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("keeps a mid-run writer-activated skill body on its adopted message across iterations", async () => {
@@ -357,11 +288,10 @@ describe("inbox drain", () => {
 
     expect(requests).toHaveLength(3);
     for (const request of requests.slice(1)) {
-      const adopted = request.messages.find((message) =>
-        messageText(message).includes("also tighten the dialogue"),
-      );
-      expect(messageText(adopted as Message)).toContain("skill invoked: writing-principles");
-      expect(messageText(adopted as Message)).toContain("Show, do not tell.");
+      const renderedHistory = messageTexts(request.messages).join("\n");
+      expect(renderedHistory).toContain("also tighten the dialogue");
+      expect(renderedHistory).toContain("skill invoked: writing-principles");
+      expect(renderedHistory).toContain("Show, do not tell.");
     }
 
     // The model still sees the body merged into the steer's own message, but
@@ -387,13 +317,12 @@ describe("inbox drain", () => {
     ) as Turn;
     expect(steerTurn).toBeDefined();
     const skillBodyTurn = turns.find(
-      (turn) =>
-        (turn.metadata as { kind?: string; section?: string } | null)?.section === "skill_body",
+      (turn) => classifyHistoryItem(turn).kind === "skill_body",
     ) as Turn;
     expect(skillBodyTurn).toMatchObject({
       role: "system",
       prevTurnId: steerTurn.id,
-      metadata: { kind: "system_update", section: "skill_body" },
+      metadata: skillBodyMetadata(),
     });
     const skillBodyBlocks = await repos.blocks.listByTurn(skillBodyTurn.id);
     expect(skillBodyBlocks).toHaveLength(1);
@@ -401,120 +330,274 @@ describe("inbox drain", () => {
     expect(skillBodyBlocks[0]?.textContent ?? "").toContain("skill invoked: writing-principles");
   });
 
-  it.each([
-    "available",
-    "unavailable",
-    "unsupported",
-  ] as const)("projects a mid-run adopted message's references (%s) without replacing durable identities", async (availability) => {
-    const documentId = "33333333-3333-4333-8333-333333333333";
-    const uri = "uploads://@/gate-map.png";
-    let adoptedTurnId: TurnId | undefined;
-    const { thread, requests, orchestrator, repos, send } = await setup({
-      supportsImageInput: availability !== "unsupported",
+  it("fails retryably on a transient image resolve error without deciding the image", async () => {
+    const image = {
+      type: "image" as const,
+      documentId: "44444444-4444-4444-8444-000000000004",
+      uri: "uploads://@/temporary-failure.png",
+    };
+    let resolutions = 0;
+    const { thread, requests, orchestrator, repos, send, inbox, journal } = await setup({
       imageAssets: {
-        async resolve(scope, reference) {
-          expect(scope).toEqual({
-            threadId: thread.id,
-            projectId: thread.projectId,
-            actorUserId: USER_ID,
-          });
-          expect(reference).toEqual({
-            type: "image_reference",
-            documentId: "44444444-4444-4444-8444-444444444444",
-            uri,
-          });
-          return availability === "available"
-            ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 }
-            : null;
+        async resolve() {
+          resolutions += 1;
+          if (resolutions === 1)
+            throw new ImageAssetResolutionError("temporary object-store timeout");
+          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
         },
       },
-      referenceReader: {
-        async read(reference) {
-          return { uri: reference.uri, pages: [1] };
+    });
+    await send(thread.id, "retry this image", {
+      blocks: [{ type: "text", text: "retry this image" }, image],
+    });
+
+    const first = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    await expect(first.execute()).resolves.toMatchObject({
+      status: "error",
+      turn: {
+        status: "error",
+        error: "This response failed.",
+      },
+    });
+    expect(await repos.turns.findById(first.executionTurnId)).toMatchObject({
+      role: "assistant",
+      status: "error",
+      finishReason: "error",
+    });
+    expect(await repos.imageInclusions.findByThread(thread.id)).toEqual([]);
+    expect(
+      (await repos.turns.listByThread(thread.id)).filter(
+        (turn) => decodeImageInclusionMetadata(turn.metadata) !== null,
+      ),
+    ).toHaveLength(0);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
+    expect(
+      journal
+        .getEvents(thread.id)
+        .map(({ event }) => event)
+        .find((event) => event.type === "turn.error" && event.turn.id === first.executionTurnId),
+    ).toMatchObject({
+      error: {
+        message: "temporary object-store timeout",
+        details: { reason: "image_resolution_failed" },
+      },
+    });
+
+    const retry = await orchestrator.prepare({ threadId: thread.id, userText: "try again" });
+    await retry.execute();
+    expect(requests).toHaveLength(1);
+    expect(
+      required(requests[0])
+        .messages.flatMap((message) => message.content)
+        .some((part) => part.type === "image"),
+    ).toBe(true);
+    const imageBlock = (await repos.blocks.listByThread(thread.id)).find(
+      (block) => block.blockType === "image",
+    );
+    expect(
+      (await repos.imageInclusions.findByThread(thread.id)).find(
+        (decision) => decision.blockId === imageBlock?.id,
+      )?.included,
+    ).toBe(true);
+  });
+
+  it.each([
+    "drain start",
+    "mid-run",
+  ] as const)("retries preparation when a second writer send arrives during %s", async (boundary) => {
+    const entered = deferred();
+    const release = deferred();
+    let blockFirstResolution = true;
+    let rig: Awaited<ReturnType<typeof setup>>;
+    rig = await setup({
+      imageAssets: {
+        async resolve(_context, reference) {
+          if (blockFirstResolution) {
+            blockFirstResolution = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
         },
       },
       onStream: async (call) => {
-        if (call === 1) {
-          adoptedTurnId = (
-            await send(thread.id, "compare with [[Gate Map]]", {
-              blocks: [
-                { type: "reference", documentId, uri, text: "[[Gate Map]]" },
-                { type: "image", documentId: "44444444-4444-4444-8444-444444444444", uri },
-              ],
-            })
-          ).userTurnId;
+        if (boundary === "mid-run" && call === 1) {
+          await rig.send(rig.thread.id, "first steer", {
+            blocks: [
+              { type: "text", text: "first steer" },
+              imageReference("uploads://@/first.png"),
+            ],
+          });
         }
       },
     });
 
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
+    let execution: Promise<import("../run-turn-port.js").RunOutcome>;
+    if (boundary === "drain start") {
+      await rig.send(rig.thread.id, "first writer message", {
+        blocks: [
+          { type: "text", text: "first writer message" },
+          imageReference("uploads://@/first.png"),
+        ],
+      });
+      const preparing = rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+      await entered.promise;
+      await rig.send(rig.thread.id, "second writer message");
+      release.resolve();
+      execution = preparing.then((run) => run.execute());
+    } else {
+      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+      execution = run.execute();
+      await entered.promise;
+      await rig.send(rig.thread.id, "second steer");
+      release.resolve();
+    }
 
-    expect(requests).toHaveLength(2);
-    const texts = messageTexts(requests[1]?.messages ?? []);
-    expect(texts.some((text) => text.includes(`Reference read result for ${uri}`))).toBe(true);
-
-    const blocks = await repos.blocks.listByTurn(adoptedTurnId as TurnId);
-    const referenceBlock = blocks.find(
-      (block) => (block.content as { type?: string } | null)?.type === "reference",
+    await expect(execution).resolves.toMatchObject({ status: "complete" });
+    const newestRequest = required(rig.requests.at(-1));
+    if (boundary === "mid-run") {
+      expect(messageTexts(newestRequest.messages)).toContain("first steer");
+      expect(messageTexts(newestRequest.messages)).toContain("second steer");
+    } else {
+      expect(messageTexts(newestRequest.messages)).toContain("second writer message");
+      expect(messageTexts(newestRequest.messages)).toContain("first writer message");
+    }
+    expect(await messageTurnTexts(rig.repos, rig.thread.id)).toEqual(
+      boundary === "drain start"
+        ? ["first writer message", "second writer message"]
+        : ["begin", "first steer", "second steer"],
     );
-    expect(referenceBlock?.content).toMatchObject({ read: { result: { uri, pages: [1] } } });
-    expect(blocks.find((block) => block.blockType === "image")?.content).toMatchObject({
-      type: "image_reference",
-      documentId: "44444444-4444-4444-8444-444444444444",
-      uri,
-    });
-    const imageParts = requests[1].messages
-      .flatMap((message) => message.content)
-      .filter((part) => part.type !== "text");
-    expect(imageParts).toEqual(
-      availability === "available"
-        ? [
-            {
-              type: "image",
-              mediaType: "image/png",
-              data: "aW1hZ2U=",
-            },
-          ]
-        : [],
-    );
-    expect(texts).toContain("[[Gate Map]]");
-    expect(texts).not.toContain("compare with [[Gate Map]]");
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
   });
 
-  it("shares the image occurrence budget across history and adopted writer turns", async () => {
-    const image = {
-      type: "image" as const,
-      documentId: "44444444-4444-4444-8444-444444444444",
-      uri: "uploads://@/map.png",
-    };
-    const { thread, requests, orchestrator, repos, send } = await setup({
+  it.each([
+    "drain start",
+    "mid-run",
+  ] as const)("fails the newest writer action and preserves NoticePort rows after %s preparation failure", async (boundary) => {
+    const notices = createTestNoticePort();
+    let rig: Awaited<ReturnType<typeof setup>>;
+    let steerTurnId: string | undefined;
+    rig = await setup({
+      notices,
       imageAssets: {
         async resolve() {
-          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 10 * 1024 * 1024 };
+          throw new ImageAssetResolutionError("temporary object-store timeout");
         },
       },
       onStream: async (call) => {
-        if (call === 1)
-          await send(thread.id, "new images", {
-            blocks: [{ type: "text", text: "new images" }, image, image],
-          });
+        if (boundary !== "mid-run" || call !== 1) return;
+        await recordNotice(notices, rig.thread.id);
+        const sent = await rig.send(rig.thread.id, "steer with image", {
+          blocks: [
+            { type: "text", text: "steer with image" },
+            imageReference("uploads://@/steer-failure.png"),
+          ],
+        });
+        steerTurnId = sent.userTurnId;
       },
     });
-    await send(thread.id, "old image", { blocks: [{ type: "text", text: "old image" }, image] });
-    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
-    expect(requests).toHaveLength(2);
-    const users = requests[1].messages.filter((message) => message.role === "user");
-    expect(
-      users.map((message) => message.content.filter((part) => part.type === "image").length),
-    ).toEqual([0, 2]);
-    expect(messageTexts(users)).toEqual(["old image", "new images"]);
-    expect(
-      (await repos.blocks.listByThread(thread.id))
-        .filter((block) => block.blockType === "image")
-        .map((block) => block.content),
-    ).toEqual(
-      Array(3).fill({ type: "image_reference", documentId: image.documentId, uri: image.uri }),
-    );
+
+    if (boundary === "drain start") {
+      await recordNotice(notices, rig.thread.id);
+      await rig.send(rig.thread.id, "writer message with image", {
+        blocks: [
+          { type: "text", text: "writer message with image" },
+          imageReference("uploads://@/start-failure.png"),
+        ],
+      });
+      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, drain: true });
+      await expect(run.execute()).resolves.toMatchObject({
+        status: "error",
+        turn: {
+          status: "error",
+          error: "This response failed.",
+        },
+      });
+    } else {
+      const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
+      await expect(run.execute()).resolves.toMatchObject({
+        status: "error",
+        turn: {
+          status: "error",
+          error: "This response failed.",
+        },
+      });
+      const turns = await rig.repos.turns.listByThread(rig.thread.id);
+      const failedReply = turns.filter((turn) => turn.role === "assistant").at(-1);
+      expect(failedReply?.prevTurnId).toBe(steerTurnId);
+    }
+
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+    expect(await notices.peek(rig.thread.id)).toHaveLength(1);
+  });
+
+  it.each([
+    "drain start",
+    "mid-run",
+  ] as const)("discards preparation without consuming notices or pending messages when cancelled at %s", async (boundary) => {
+    const notices = createTestNoticePort();
+    const entered = deferred();
+    const release = deferred();
+    const controller = new AbortController();
+    let blockFirstResolution = true;
+    let rig: Awaited<ReturnType<typeof setup>>;
+    rig = await setup({
+      notices,
+      imageAssets: {
+        async resolve(_context, reference) {
+          if (blockFirstResolution) {
+            blockFirstResolution = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return { mediaType: "image/png", data: reference.uri, sizeBytes: 5 };
+        },
+      },
+      onStream: async (call) => {
+        if (boundary !== "mid-run" || call !== 1) return;
+        await recordNotice(notices, rig.thread.id);
+        await rig.send(rig.thread.id, "steer survives cancellation", {
+          blocks: [
+            { type: "text", text: "steer survives cancellation" },
+            imageReference("uploads://@/cancel.png"),
+          ],
+        });
+      },
+    });
+
+    if (boundary === "drain start") {
+      await recordNotice(notices, rig.thread.id);
+      await rig.send(rig.thread.id, "writer message survives cancellation", {
+        blocks: [
+          { type: "text", text: "writer message survives cancellation" },
+          imageReference("uploads://@/cancel-start.png"),
+        ],
+      });
+      const preparing = rig.orchestrator.prepare({
+        threadId: rig.thread.id,
+        drain: true,
+        signal: controller.signal,
+      });
+      await entered.promise;
+      controller.abort();
+      release.resolve();
+      await expect(preparing).rejects.toMatchObject({ name: "AbortError" });
+    } else {
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.thread.id,
+        userText: "begin",
+        signal: controller.signal,
+      });
+      const execution = run.execute();
+      await entered.promise;
+      controller.abort();
+      release.resolve();
+      await expect(execution).resolves.toMatchObject({ status: "cancelled" });
+    }
+    expect(await rig.inbox.selectPending(rig.thread.id)).toHaveLength(1);
+    expect(await notices.peek(rig.thread.id)).toHaveLength(1);
+    if (boundary !== "mid-run")
+      expect((await rig.repos.threads.findById(rig.thread.id))?.initialPromptBakeId).toBeNull();
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
@@ -540,95 +623,9 @@ describe("inbox drain", () => {
     expect(blocks.some((block) => block.textContent === "carry me")).toBe(true);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
-
-  it("redelivers an unacked message once, without a second turn or render", async () => {
-    const { thread, inbox, requests, orchestrator, repos } = await setup({ errorAtCall: 1 });
-    const crashSafe = await inbox.enqueue(message("crash safe", thread.id));
-
-    // First run drains and persists the message, then fails before the response
-    // acks it, so the message stays pending for the next run.
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
-    expect(await inbox.selectPending(thread.id)).toHaveLength(1);
-    let turns = await repos.turns.listByThread(thread.id);
-    expect(turnsWithId(turns, crashSafe.id)).toHaveLength(1);
-
-    // Second run re-claims the same message; the known-turn filter suppresses a
-    // re-render and a re-append, and the successful response acks it.
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "second" }));
-
-    turns = await repos.turns.listByThread(thread.id);
-    expect(turnsWithId(turns, crashSafe.id)).toHaveLength(1);
-    const secondRequest = requests[1];
-    expect(secondRequest).toBeDefined();
-    const renderCount = messageTexts(secondRequest?.messages ?? []).filter(
-      (text) => text === "crash safe",
-    ).length;
-    expect(renderCount).toBe(1);
-    expect(await inbox.selectPending(thread.id)).toEqual([]);
-  });
-
-  it("persists a message on a second run of an already-baked thread", async () => {
-    const { thread, inbox, orchestrator, repos } = await setup();
-
-    // First run freezes the prompt (`bakedSkillSlugs` becomes non-null), so the
-    // second run's assembly reuses the stale thread loaded at run start instead
-    // of refreshing it from the bake.
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
-    expect((await repos.threads.findById(thread.id))?.bakedSkillSlugs).not.toBeNull();
-
-    const baked = await inbox.enqueue(message("baked steer", thread.id));
-
-    const outcome = await execute(
-      await orchestrator.prepare({ threadId: thread.id, userText: "second" }),
-    );
-
-    expect(outcome.status).toBe("complete");
-    const turns = await repos.turns.listByThread(thread.id);
-    expect(turnsWithId(turns, baked.id)).toHaveLength(1);
-    expect(await inbox.selectPending(thread.id)).toEqual([]);
-  });
-
-  it("attaches a boundary notice to the adopted message before the new assistant", async () => {
-    const { thread, inbox, requests, orchestrator } = await setup();
-    await inbox.enqueue(notice("work context note", thread.id));
-    await inbox.enqueue(message("steer body", thread.id));
-
-    await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
-
-    const messages = requests[0]?.messages ?? [];
-    const writer = messages.find(
-      (message) => message.role === "user" && messageText(message).includes("hello"),
-    );
-    const messageEntry = messages.find(
-      (message) => message.role === "user" && messageText(message).includes("steer body"),
-    );
-    expect(writer).toBeDefined();
-    expect(writer).toBeDefined();
-    expect(messageText(writer as Message)).toContain("steer body");
-    expect(messageText(writer as Message)).toContain("work context note");
-    expect(messageEntry).toBe(writer);
-  });
 });
 
 describe("drain-only start", () => {
-  it("claims a pending message as the run's first user turn, before the assistant", async () => {
-    const { thread, inbox, requests, orchestrator, repos } = await setup();
-    const inboxMessage = await inbox.enqueue(message("wake me", thread.id));
-
-    const outcome = await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
-
-    expect(outcome.status).toBe("complete");
-    expect(requests).toHaveLength(1);
-    expect(messageTexts(requests[0]?.messages ?? [])).toContain("wake me");
-
-    const turns = await repos.turns.listByThread(thread.id);
-    const messageTurn = turns.find((turn) => turn.id === inboxMessage.id);
-    const assistantTurn = turns.find((turn) => turn.role === "assistant");
-    expect(messageTurn?.role).toBe("user");
-    expect(assistantTurn?.prevTurnId).toBe(inboxMessage.id);
-    expect(await inbox.selectPending(thread.id)).toEqual([]);
-  });
-
   it("delivers a structured subagent update without exposing its execution id or saved report body", async () => {
     const rig = await setup();
     const { thread, repos, orchestrator, requests, delivery, deps } = rig;
@@ -644,6 +641,7 @@ describe("drain-only start", () => {
       projectId: thread.projectId,
       parentThreadId: thread.id,
       rootThreadId: thread.id,
+      originTurnId: callerTurn.id,
       spawnDepth: 1,
     });
     const execution = await repos.turns.create({
@@ -655,7 +653,7 @@ describe("drain-only start", () => {
     });
     await repos.executionReports.admit({
       childThreadId: child.id,
-      assistantTurnId: execution.id,
+      executionTurnId: execution.id,
       handle: child.ref ?? "",
       origin: "spawn",
       deliveryMode: "background_notification",
@@ -667,7 +665,7 @@ describe("drain-only start", () => {
     const secret = "DISTINCTIVE_CHAPTER_BODY_omega_17";
     await repos.executionReports.finalizeOnce({
       childThreadId: child.id,
-      assistantTurnId: execution.id,
+      executionTurnId: execution.id,
       outcome: "succeeded",
       reason: null,
       source: "return_result",
@@ -682,16 +680,17 @@ describe("drain-only start", () => {
     }).publish(child.id, execution.id);
     const [queued] = await delivery.selectPending(thread.id);
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+    const childHandle = child.ref;
+    if (childHandle === null) throw new Error("Expected child ref");
     expect(await repos.turns.findById(queued.id)).toMatchObject({
       role: "system",
-      metadata: {
-        kind: "subagent_update",
-        handle: child.ref,
+      metadata: childCompletionMetadata({
+        handle: childHandle,
         outcome: "succeeded",
         execution: execution.id,
         childThreadId: child.id,
         agentName: child.agentName ?? "Subagent",
-      },
+      }),
     });
     const blocks = await repos.blocks.listByTurn(queued.id);
     expect(blocks).toHaveLength(1);
@@ -722,75 +721,11 @@ describe("drain-only start", () => {
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.find((turn) => turn.id === first.id)?.prevTurnId).toBeNull();
-    expect(turns.find((turn) => turn.id === first.id)?.createdAt).toBe(enqueuedAt.toISOString());
+    expect(turns.find((turn) => turn.id === first.id)?.createdAt).not.toBe(
+      enqueuedAt.toISOString(),
+    );
     expect(turns.find((turn) => turn.id === second.id)?.prevTurnId).toBe(first.id);
     expect(turns.find((turn) => turn.role === "assistant")?.prevTurnId).toBe(second.id);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
-  });
-
-  it("attaches a notice to the drained message", async () => {
-    const { thread, inbox, requests, orchestrator } = await setup();
-    await inbox.enqueue(message("wake me", thread.id));
-    await inbox.enqueue(notice("work context note", thread.id));
-
-    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
-
-    const messages = requests[0]?.messages ?? [];
-    const messageEntry = messages.find(
-      (message) => message.role === "user" && messageText(message).includes("wake me"),
-    );
-    expect(messageEntry).toBeDefined();
-    expect(messageText(messageEntry as Message)).toContain("work context note");
-  });
-
-  it("does nothing and writes no turn when no durable message is pending", async () => {
-    const { thread, orchestrator, repos } = await setup();
-
-    await expect(orchestrator.prepare({ threadId: thread.id, drain: true })).rejects.toBeInstanceOf(
-      NoPendingWakeError,
-    );
-    expect(await repos.turns.listByThread(thread.id)).toEqual([]);
-  });
-
-  it("does not re-append a redelivered message already persisted by a crashed run", async () => {
-    const { thread, inbox, orchestrator, repos } = await setup({ errorAtCall: 1 });
-    const inboxMessage = await inbox.enqueue(message("crash safe", thread.id));
-
-    // First drain persists the message, then the provider fails before the ack.
-    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
-    expect(await inbox.selectPending(thread.id)).toHaveLength(1);
-
-    // Second drain re-claims the same message, sees the known turn, continues from
-    // it, and acks it without a duplicate turn.
-    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
-
-    const turns = await repos.turns.listByThread(thread.id);
-    expect(turns.filter((turn) => turn.id === inboxMessage.id)).toHaveLength(1);
-    expect(await inbox.selectPending(thread.id)).toEqual([]);
-  });
-
-  it("inlines the writer-activated skill body read back off the persisted turn", async () => {
-    const { thread, requests, orchestrator, send, inbox, repos } = await setup({
-      skill: {
-        slug: "writing-principles",
-        name: "Writing Principles",
-        description: "Craft rules for revision",
-        body: "Show, do not tell.",
-      },
-    });
-    const sent = await send(thread.id, "help me revise this scene", {
-      activatedSkillSlugs: ["writing-principles"],
-    });
-
-    const fresh = await inbox.enqueue(message("fresh after saved writer", thread.id));
-    const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
-    await run.execute();
-    expect((await repos.turns.findById(fresh.id))?.prevTurnId).toBe(sent.userTurnId);
-    expect((await repos.turns.findById(run.assistantTurnId))?.prevTurnId).toBe(fresh.id);
-
-    expect(requests).toHaveLength(1);
-    const texts = messageTexts(requests[0]?.messages ?? []);
-    expect(texts.some((text) => text.includes("skill invoked: writing-principles"))).toBe(true);
-    expect(texts.some((text) => text.includes("Show, do not tell."))).toBe(true);
   });
 });

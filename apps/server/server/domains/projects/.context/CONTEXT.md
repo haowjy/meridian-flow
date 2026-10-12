@@ -7,7 +7,7 @@ over its owner-gated operations.
 ## What it owns
 
 - **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
-  idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Scratch and Uploads sources. Bootstrap creates no thread.
+  idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Uploads source. Bootstrap creates no thread.
 - **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a manifest identity before it is returned. It does not seed a chapter document or Work-owned sources.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
@@ -22,6 +22,15 @@ the same owner lock. Project, Work and chat handles remain reserved through soft
 deletion. Exact `findLiveByOwnerSlug` lookup is separate from UUID `findById`;
 missing, foreign-owner and deleted handles resolve unavailable.
 
+`requireProjectOwner` checks ownership before deletion. Missing and foreign
+projects keep the generic 404 `Project not found`; an owned deleted project
+returns attested HTTP 404 `project_deleted` with `details.authenticatedUserId`.
+The message stays `Project not found` for existing unavailable/SSR paths.
+The Work HTTP mapper preserves this project proof rather than replacing it
+with `work_not_found`.
+Explicit `includeSoftDeleted` access still permits idempotent project Delete
+and independent context availability reads on tombstones.
+
 The repository `Project` uses `name` and `systemPrompt`; project HTTP routes
 translate those to `title` and `description` in `ProjectDto`.
 
@@ -34,21 +43,27 @@ translate those to `title` and `description` in `ProjectDto`.
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
 | `listWorkCatalog(deps, input)` | Owner-gates and lists the requested Work collection, then enriches it through one set-oriented pending-draft count read. |
 | `createWork(input)` | Creates an explicit Work. No thread is bound to it yet, so it enqueues no Work context refresh. |
-| `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
+| `updateWorkTransition(workId, input)` | One metadata policy for the human PATCH adapter and LLM `work.update`: locks the lifecycle row, refuses an archived or deleted Work, normalizes and compares requested semantic fields, persists only real changes, enqueues context delivery, and returns exact before/after/changed facts. `updateWork` projects its final Work for routes; LLM receipts remain outside this shared operation. |
 | `setWorkArchived(workId, archived)` | Archive lifecycle only (`archivedAt`); never touches the AI-owned `status` text. Locks the row, refuses a deleted or missing Work with `WorkLifecycleUnavailableError`, and calls `workChanged(workId)` after a real change. |
 | `deleteWorkTransition` / `restoreWork` | Both lifecycle transitions lock and return exact state, including concurrent no-ops. Delete enqueues no Work context (its chats are deleted with it); restore calls `workChanged(workId)` after a real change in the same transaction. Deletion and receipt reversal share one retry/post-commit run-stop helper; restore policy uses the canonical retention function and an adapter-injected clock. |
 | `requireWorkOwner(workId, userId)` | Owner gate for flat `/api/works/:workId` item routes. |
-| `WorkLifecycleUnavailableError` / `WorkNameConflictError` | The typed refusals of Work mutations. `lib/work-http.ts` is the one HTTP mapping: 409 `work_archived`, 404 `work_not_found` (missing or deleted), 409 `work_name_conflict`. The app's writer copy for these codes lives in `client/query/work-update-failure.ts`; add a code in both places or neither. |
+| `WorkLifecycleUnavailableError` / `WorkNameConflictError` | The typed refusals of Work mutations. `lib/work-http.ts` is the one HTTP mapping for Work mutations (file routes map an archived Work's files to 403 through the file policy): 409 `work_archived`, 404 `work_not_found` (missing or deleted), 409 `work_name_conflict`. The app's user-facing copy for these codes lives in `client/query/work-update-failure.ts`; add a code in both places or neither. |
 
 ## Invariants
 
+- The Drizzle `WorkRepository`'s `archive`, `unarchive`, `softDelete` and
+  `restore` are the only writes of `archived_at`/`deleted_at`, and each
+  publishes `{ workId }` on `FileAccessChanges` inside its transaction, so open
+  live rooms of that Work's scratch and drafts reconnect at their new level
+  ([file policy](../../file-policy/.context/CONTEXT.md#live-rooms)). A new
+  lifecycle write must publish too.
 - The bootstrap transaction takes a Postgres advisory lock scoped to the user id
   so concurrent first-load requests converge.
 - Ordinary project creation persists its project-scoped Manuscript source, locked No Work, and catalog lifecycle state in the same transaction as the project row.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
 - Bootstrap creates no Agent, thread, or membership. It does insert the locked No Work
-  row and that Work's Scratch/Uploads sources. System Agent provisioning happens at
+  row and that Work's Uploads source. System Agent provisioning happens at
   startup; root thread creation owns exact catalog selection.
 - Re-running bootstrap must return the same logical bundle instead of creating a
   second personal project, manuscript source, or chapter document.
@@ -59,15 +74,15 @@ translate those to `title` and `description` in `ProjectDto`.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
   never from `markdown_projection`. Any admission or checkpoint means initialized.
 - The project, locked No Work, chapter row, initialize-only canonical seed, live manifest
-  membership, No Work Scratch/Uploads sources, and readiness flag commit in one ambient
+  membership, No Work Uploads source, and readiness flag commit in one ambient
   transaction. Interruption leaves no partial bootstrap.
 - Auth provisioning treats the durable readiness flag as authoritative; legacy
   data repair belongs to a future import, not a process-local readiness overlay.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
 - Omitted and explicit-null root-create `workId` both bind the project's locked
-  No Work as primary. Human Chat rebind and model `work.switch` remain explicit,
-  separate commands.
+  No Work as primary. Only the writer's Chat rebind changes a chat's Work; the
+  model's `work switch` never rebinds ([rule](../../runtime/.context/tools.md#permissions)).
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`. Collection responses
   contain only the requested catalog Works and never select a Work implicitly.
@@ -89,6 +104,19 @@ translate those to `title` and `description` in `ProjectDto`.
   not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
   it commits expired Work and owned-row deletion before best-effort upload/result
   blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
+  Purge defers only `threads_origin_turn_id_turns_id_fk` within that transaction,
+  deletes turns before threads, and lets owner cascades remove prompt bakes and
+  image decisions. Provenance deletion stays forbidden outside purge.
+  A fork or handoff rebound to another Work retains its source turns and bake:
+  purge leaves that source Work hidden while the external reference exists,
+  rather than cascading into the other Work's chat. `purge.retained` records the
+  dependency. Keyset paging passes retained sources and still removes up to 100
+  eligible Works per sweep. References can extend storage retention beyond the
+  restore window; they do not extend the 30-day restore deadline.
+  Purge also deletes the lineage Scratch sources (`context_sources.root_thread_id`)
+  of every root thread in its purge set, with their documents, journal rows,
+  memberships and stored blobs. Work delete never marks lineage Scratch; it is
+  hidden only through lineage liveness when the delete trashes the last live member.
 - Membership changes follow thread-before-Work locking. Delete and purge use
   `lockWorkThreadTree` to read the primary chat forest, lock its threads, lock
   the Work, then recheck the full set; a newly joined chat retries rather than

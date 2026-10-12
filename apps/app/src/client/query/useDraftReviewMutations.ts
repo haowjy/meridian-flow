@@ -2,16 +2,12 @@
  * useDraftReviewMutations — Apply/Discard actions for Work drafts.
  */
 
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { applyDraft, discardDraft } from "@/client/api/drafts-api";
-import { usePostApplyDispositionOwner } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
-import type {
-  ApplyExecutionResult,
-  DraftRecoveryIdentity,
-  DraftRecoveryObligations,
-  DraftRecoveryPresentation,
-} from "@/features/project/draft-apply-recovery/draft-apply-recovery-owner";
+import { httpErrorStatus } from "@/client/api/http-client";
+import { confirmDraftCommand } from "./draft-command-record";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
@@ -23,11 +19,17 @@ type DraftReviewMutationBase = {
   draftId: string;
 };
 
-export type DraftApplyMutationInput = DraftReviewMutationBase & {
-  identity: DraftRecoveryIdentity;
-  presentation: DraftRecoveryPresentation;
-  obligations: DraftRecoveryObligations;
-};
+export type DraftApplyMutationInput = DraftReviewMutationBase;
+
+/**
+ * The Apply request got no HTTP answer, so the server may or may not have
+ * applied the draft. Distinct from a rejection, which has a status.
+ */
+export class DraftApplyOutcomeUnknownError extends Error {
+  constructor() {
+    super("Draft Apply outcome is unknown");
+  }
+}
 
 export type DraftReviewMutationInput = DraftReviewMutationBase & {
   operationIds?: string[];
@@ -65,68 +67,38 @@ function invalidateDraftReviewQueries(
   ]).then(() => undefined);
 }
 
+/**
+ * Apply is done when the server confirms it: the confirmed draft leaves cached
+ * pending membership at once, and everything else refreshes in the background.
+ * A rejection throws as is. A response that never arrived throws the distinct
+ * unknown outcome; nothing here guesses from what the list later shows.
+ */
 export function useApplyDraft() {
   const queryClient = useQueryClient();
-  const owner = usePostApplyDispositionOwner();
 
   return useMutation({
-    mutationFn: async (variables: DraftApplyMutationInput): Promise<ApplyExecutionResult> => {
-      void queryClient.cancelQueries({
-        queryKey: projectQueryKeys.workDrafts(variables.projectId, variables.workId),
-      });
-      const reserved = owner.reserveApply({
-        identity: variables.identity,
-        presentation: variables.presentation,
-        obligations: variables.obligations,
-      });
-      if (reserved.kind === "existing")
-        return { kind: "server-applied-awaiting-live", recovery: reserved.recovery };
-      if (reserved.kind === "settled")
-        return { kind: "server-applied-settled-elsewhere", outcome: reserved.outcome };
-      if (reserved.kind === "blocked") throw new Error("Draft Apply is already pending");
-      const acquired = owner.acquireApplyDispatch(reserved.unsent);
-      if (acquired.kind === "existing")
-        return { kind: "server-applied-awaiting-live", recovery: acquired.recovery };
-      if (acquired.kind === "settled")
-        return { kind: "server-applied-settled-elsewhere", outcome: acquired.outcome };
-      if (acquired.kind === "stale") throw new Error("Draft Apply dispatch became stale");
+    mutationFn: async (variables: DraftApplyMutationInput): Promise<void> => {
+      const draftsKey = projectQueryKeys.workDrafts(variables.projectId, variables.workId);
+      void queryClient.cancelQueries({ queryKey: draftsKey });
       try {
-        const response = await applyDraft(
-          variables.projectId,
-          variables.workId,
-          variables.documentId,
-          {
-            draftId: variables.draftId,
-          },
-        );
-        const promoted = owner.recordServerApplied({
-          kind: "local-response",
-          dispatch: acquired.dispatch,
-          responseDraftId: response.draftId,
+        await applyDraft(variables.projectId, variables.workId, variables.documentId, {
+          draftId: variables.draftId,
         });
-        if (promoted.kind === "recorded" || promoted.kind === "existing") {
-          void Promise.all([
-            queryClient.invalidateQueries({
-              predicate: (query) => isProjectContextCatalogKey(query.queryKey, variables.projectId),
-            }),
-            invalidateDraftReviewQueries(queryClient, variables),
-          ]).catch(() => undefined);
-          return { kind: "server-applied-awaiting-live", recovery: promoted.recovery };
-        }
-        if (promoted.kind === "already-settled")
-          return { kind: "server-applied-settled-elsewhere", outcome: promoted.outcome };
-        throw new Error("Draft Apply response could not be validated");
       } catch (error) {
-        const unknown = owner.markApplyOutcomeUnknown(acquired.dispatch);
         void invalidateDraftReviewQueries(queryClient, variables).catch(() => undefined);
-        if (unknown.kind === "outcome-unknown")
-          return { kind: "apply-outcome-unknown", reservation: unknown.reservation };
-        if (unknown.kind === "existing")
-          return { kind: "server-applied-awaiting-live", recovery: unknown.recovery };
-        if (unknown.kind === "settled")
-          return { kind: "server-applied-settled-elsewhere", outcome: unknown.outcome };
-        throw error;
+        if (httpErrorStatus(error) !== undefined) throw error;
+        throw new DraftApplyOutcomeUnknownError();
       }
+      confirmDraftCommand(variables);
+      queryClient.setQueryData<ThreadDraftListItem[]>(draftsKey, (drafts) =>
+        drafts?.filter((draft) => draft.draftId !== variables.draftId),
+      );
+      void Promise.all([
+        queryClient.invalidateQueries({
+          predicate: (query) => isProjectContextCatalogKey(query.queryKey, variables.projectId),
+        }),
+        invalidateDraftReviewQueries(queryClient, variables),
+      ]).catch(() => undefined);
     },
   });
 }

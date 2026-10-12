@@ -5,12 +5,17 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { contextSources, documentYjsCheckpoints, projects, users } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { createDrizzleDocumentAccess } from "../../../../lib/document-access.js";
-import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
-import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
+import { createAllowAllFileAccess } from "../../../../domains/file-policy/index.js";
+import {
+  deleteDrizzleRows,
+  useRollbackTestDatabase,
+} from "../../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createCollabDomain } from "../../../collab/index.js";
-import { createDrizzleProjectWorkAuthorityResolver } from "../../../projects/index.js";
+import {
+  createTestDocumentLinkScopes,
+  testLinkDeps,
+} from "../../../collab/test-support/document-link-scopes.js";
 import { ContextFS } from "./context-fs.js";
 import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
@@ -28,7 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000914";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
-      prepareSuite: (db) => truncateDrizzleTables(db, [users]),
+      prepareSuite: (db) => deleteDrizzleRows(db, [users]),
     });
     let db = database.current;
 
@@ -53,10 +58,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("persists and reloads a live document with zero CRDT structs", async () => {
       const collab = createCollabDomain({
+        ...testLinkDeps(db),
+        fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -67,6 +72,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
       const fs = new ContextFS({
+        holder: { projectId: PROJECT_ID },
+        links: createTestDocumentLinkScopes(db),
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db),
         documentSync: collab,

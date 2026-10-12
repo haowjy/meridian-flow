@@ -17,4 +17,16 @@ export interface ProjectContextAvailabilityMutationPort {
     projectIds: readonly string[];
     userIds: readonly string[];
   }): Promise<AvailabilityGeneration>;
+  /** Reserve availability ordering without publishing liveness. Supplying affected
+   * authorities publishes a fresh namespace observation watermark in this transaction. */
+  reserve(input?: {
+    projectIds: readonly string[];
+    userIds: readonly string[];
+  }): Promise<AvailabilityGeneration>;
+  /** Publish a reserved generation in the caller's ambient transaction. */
+  publishReserved(input: {
+    generation: AvailabilityGeneration;
+    projectIds: readonly string[];
+    userIds: readonly string[];
+  }): Promise<void>;
 }

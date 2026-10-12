@@ -6,18 +6,20 @@
 import type { TurnContextPreview } from "@meridian/contracts/threads";
 import type { EventSink } from "../domains/observability/index.js";
 import type { AgentRevisionStore } from "../domains/packages/index.js";
-import { loadThreadConversationContext } from "../domains/runtime/loop/fork-thread-context.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
 import type { WorkContextReader } from "../domains/runtime/loop/work-context.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import type { ToolExecutor, ToolRegistry } from "../domains/runtime/tools/index.js";
-import { requireThreadOwner } from "../domains/threads/index.js";
+import {
+  loadThreadConversationContext,
+  requireThreadOwner,
+  ThreadConversationContextError,
+} from "../domains/threads/index.js";
+import { throwHttpInterruptForStatus } from "../shared/interrupt-boundary.js";
 import type { ThreadRepositories } from "./compose.js";
-import { throwHttpInterruptForStatus } from "./interrupt-boundary.js";
 
 export interface TurnContextPreviewRouteDeps {
-  repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks">;
-  projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
+  repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks" | "promptBakes">;
   modelRequestDebug: ModelRequestDebugStore;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
   toolRegistry: ToolRegistry;
@@ -35,27 +37,37 @@ export async function handleGetTurnContextPreview(
   }
 
   const thread = await requireThreadOwner(
-    { threads: deps.repos.threads, projects: deps.projectRepo },
+    { threads: deps.repos.threads },
     input.threadId,
     input.userId,
   );
 
-  const conversation = await loadThreadConversationContext(
-    {
-      threads: deps.repos.threads,
-      turns: deps.repos.turns,
-      blocks: deps.repos.blocks,
-    },
-    thread,
-  );
+  let conversation: Awaited<ReturnType<typeof loadThreadConversationContext>>;
+  try {
+    conversation = await loadThreadConversationContext(
+      {
+        threads: deps.repos.threads,
+        turns: deps.repos.turns,
+        blocks: deps.repos.blocks,
+      },
+      thread,
+    );
+  } catch (error) {
+    if (error instanceof ThreadConversationContextError) {
+      throwHttpInterruptForStatus(500, error.message);
+    }
+    throw error;
+  }
 
   const assembled = await assembleNextTurnContext({
     thread,
     turns: conversation.turns,
     blocks: conversation.blocks,
     agentRevisions: deps.agentRevisions,
+    threads: deps.repos.threads,
     toolRegistry: deps.toolRegistry,
     baseTools: deps.toolExecutor.getDefinitions?.(),
+    promptBakes: deps.repos.promptBakes,
     persistBake: false,
     workContext: deps.workContext,
     eventSink: deps.eventSink,

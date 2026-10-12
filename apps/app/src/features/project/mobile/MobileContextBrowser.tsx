@@ -1,33 +1,35 @@
 /** Renders the mobile context browser. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder } from "lucide-react";
-import { Fragment, useState } from "react";
 import type {
   CatalogContextView,
   CatalogDirectory as ContextDir,
   CatalogFile as ContextFile,
 } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { useWorks } from "@/client/query/useWorks";
 import type { InlineEdit } from "@/components/ui/use-inline-edit";
 import { cn } from "@/lib/utils";
 import {
   DeleteConfirmationDialog,
+  type DeleteTarget,
   type EntryAction,
-  type EntryActionTarget,
   EntryKebabButton,
   useDeleteConfirmation,
 } from "../context/ContextEntryActions";
 import type { ContextCreateKind } from "../context/context-create-kind";
+import type { ContextEntrySibling } from "../context/context-entry-name";
 import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { EntryNameField } from "../context/EntryNameField";
+import { LinkUpdateNote } from "../context/LinkUpdateNote";
+import { NamespaceFailureMark } from "../context/NamespaceFailureMark";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
+import { EntryInteractionShell, useEntryInteraction } from "../context/use-entry-interaction";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import type { ResolvedProjectViewProps } from "../ProjectView";
 
@@ -46,23 +48,21 @@ export type MobileContextBrowserProps = Pick<
     kind: ContextCreateKind;
     scheme: ProjectContextTreeScheme;
     parentPath: string;
-    workId: string | null;
   } | null;
   /** Closes the create row (after commit, cancel, or empty blur). */
   onCreateDone: () => void;
 };
 
 function MobileEntryActionsMenu({
-  allowDelete,
+  allowedActions,
   onAction,
 }: {
-  allowDelete: boolean;
+  allowedActions: readonly EntryAction[];
   onAction: (action: EntryAction) => void;
 }) {
   return (
     <EntryKebabButton
-      allowCreate={false}
-      allowDelete={allowDelete}
+      allowedActions={allowedActions}
       align="end"
       sideOffset={6}
       className={mobileContextTreeOverflowTriggerClassName}
@@ -82,9 +82,7 @@ export function MobileContextBrowser({
   creating,
   onCreateDone,
 }: MobileContextBrowserProps) {
-  const workId = editorWorkId;
   const schemes = EDITOR_CONTEXT_SCHEMES;
-  const { works } = useWorks(projectId);
 
   if (activeContextScheme) {
     return (
@@ -101,9 +99,6 @@ export function MobileContextBrowser({
     );
   }
 
-  const firstWorkScoped = schemes.find(isWorkScopedProjectContextScheme) ?? null;
-  const workLabel = works?.find((work) => work.id === workId)?.name ?? t`Work`;
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -113,21 +108,18 @@ export function MobileContextBrowser({
             // identity icon; folder icons are reserved for real directories.
             const SchemeIcon = schemeIcon(scheme);
             return (
-              <Fragment key={scheme}>
-                {scheme === firstWorkScoped ? <MobileWorkBoundary label={workLabel} /> : null}
-                <li>
-                  <DrillRow
-                    icon={
-                      <SchemeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                    }
-                    label={schemeLabel(scheme)}
-                    trailing={
-                      <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-                    }
-                    onClick={() => onSelectContextScheme(scheme)}
-                  />
-                </li>
-              </Fragment>
+              <li key={scheme}>
+                <DrillRow
+                  icon={
+                    <SchemeIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  }
+                  label={schemeLabel(scheme)}
+                  trailing={
+                    <ChevronRight aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+                  }
+                  onClick={() => onSelectContextScheme(scheme)}
+                />
+              </li>
             );
           })}
         </ul>
@@ -167,11 +159,9 @@ function MobileFolderListing({
   // client-side feedback matching the desktop tree panel.
   const currentEntry = folder ? catalog?.findPath(folder) : catalog?.root;
   const currentDir = currentEntry?.kind === "dir" ? currentEntry : null;
-  const siblingNames = currentDir
-    ? (catalog?.children(currentDir.entryId).map((child) => child.name) ?? [])
-    : [];
+  const siblings = currentDir ? (catalog?.children(currentDir.entryId) ?? []) : [];
 
-  const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
+  const deleteConfirm = useDeleteConfirmation({ projectId });
 
   // The create row pins above the scroll area (iOS Files style) so it stays
   // visible regardless of listing scroll position — and, with the on-screen
@@ -181,11 +171,10 @@ function MobileFolderListing({
       {creating ? (
         <MobileCreateRow
           projectId={projectId}
-          editorWorkId={creating.workId}
           scheme={creating.scheme}
           parent={creating.parentPath}
           kind={creating.kind}
-          siblingNames={siblingNames}
+          siblings={siblings}
           onDone={onCreateDone}
         />
       ) : null}
@@ -238,7 +227,7 @@ function FolderListingBody({
   workId: string | null;
   onSelectContextFolder: MobileContextBrowserProps["onSelectContextFolder"];
   onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
-  onRequestDelete: (target: EntryActionTarget) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
 }) {
   const openDocument = useOpenProjectDocument(projectId);
   if (isError && !catalog) {
@@ -287,33 +276,33 @@ function FolderListingBody({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId });
+    void openDocument({ documentId: file.documentId, workId: workId ?? undefined });
   }
 
-  const siblingNames = children.map((child) => child.name);
+  const siblings = children;
 
   return (
     <ul className="flex flex-col">
       {folders.map((child) => (
         <MobileFolderRow
-          key={child.path}
+          key={child.entryId}
           dir={child}
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
-          siblingNames={siblingNames}
+          siblings={siblings}
           onDrill={() => onSelectContextFolder(child.path)}
           onRequestDelete={onRequestDelete}
         />
       ))}
       {files.map((child) => (
         <MobileFileRow
-          key={child.path}
+          key={child.entryId}
           file={child}
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
-          siblingNames={siblingNames}
+          siblings={siblings}
           onOpen={() => openFile(child)}
           onRequestDelete={onRequestDelete}
         />
@@ -325,30 +314,27 @@ function FolderListingBody({
 /** Phone inline naming row, pinned above the folder listing (iOS Files style). */
 function MobileCreateRow({
   projectId,
-  editorWorkId,
   scheme,
   parent,
   kind,
-  siblingNames,
+  siblings,
   onDone,
 }: {
   projectId: string;
-  editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   /** Parent folder path (`""` for the scheme root). */
   parent: string;
   kind: ContextCreateKind;
   /** Names of siblings in the current folder, for live collision detection. */
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onDone: () => void;
 }) {
   const form = useCreateEntryForm({
     projectId,
-    workId: editorWorkId,
     scheme,
     kind,
     parent,
-    siblingNames,
+    siblings,
     onDone,
   });
   return (
@@ -369,7 +355,7 @@ function MobileFolderRow({
   projectId,
   editorWorkId,
   scheme,
-  siblingNames,
+  siblings,
   onDrill,
   onRequestDelete,
 }: {
@@ -377,47 +363,56 @@ function MobileFolderRow({
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onDrill: () => void;
-  onRequestDelete: (target: EntryActionTarget) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
 }) {
-  const [renaming, setRenaming] = useState(false);
-
-  if (renaming) {
+  const interaction = useEntryInteraction({
+    projectId,
+    node: dir,
+    owner: { workId: editorWorkId },
+    scheme,
+    siblings,
+    capabilities: scheme === "uploads" ? ["rename", "move"] : ["rename", "move", "delete"],
+    onRequestDelete,
+  });
+  if (interaction.renaming) {
     return (
       <li>
-        <MobileRenameRow
-          projectId={projectId}
-          editorWorkId={editorWorkId}
-          scheme={scheme}
-          entryId={dir.entryId}
-          path={dir.path}
-          currentName={dir.name}
-          siblingNames={siblingNames}
-          kind="folder"
-          icon={Folder}
-          onDone={() => setRenaming(false)}
-        />
+        <MobileRenameRow options={interaction.rename} icon={Folder} />
       </li>
     );
   }
 
   return (
     <li>
-      <DrillRow
-        icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-        label={dir.name}
-        trailing={
-          <MobileEntryActionsMenu
-            allowDelete={scheme !== "uploads"}
-            onAction={(action) => {
-              if (action === "rename") setRenaming(true);
-              else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
-            }}
-          />
-        }
-        onClick={onDrill}
-      />
+      <EntryInteractionShell interaction={interaction} contextMenu={false}>
+        <DrillRow
+          icon={<Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+          label={dir.name}
+          trailing={
+            <span className="flex items-center">
+              <LinkUpdateNote
+                projectId={projectId}
+                subject={{ kind: "folder", id: dir.entryId }}
+                operationId={interaction.operationId}
+              />
+              {dir.namespaceFailure ? (
+                <NamespaceFailureMark
+                  failure={dir.namespaceFailure}
+                  move={Boolean(dir.namespaceRepairMove)}
+                  folder
+                />
+              ) : null}
+              <MobileEntryActionsMenu
+                allowedActions={interaction.actions}
+                onAction={interaction.onAction}
+              />
+            </span>
+          }
+          onClick={onDrill}
+        />
+      </EntryInteractionShell>
     </li>
   );
 }
@@ -428,7 +423,7 @@ function MobileFileRow({
   projectId,
   editorWorkId,
   scheme,
-  siblingNames,
+  siblings,
   onOpen,
   onRequestDelete,
 }: {
@@ -436,93 +431,69 @@ function MobileFileRow({
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
-  siblingNames: readonly string[];
+  siblings: readonly ContextEntrySibling[];
   onOpen: () => void;
-  onRequestDelete: (target: EntryActionTarget) => void;
+  onRequestDelete: (target: DeleteTarget) => void;
 }) {
-  const [renaming, setRenaming] = useState(false);
+  const interaction = useEntryInteraction({
+    projectId,
+    node: file,
+    owner: { workId: editorWorkId },
+    scheme,
+    siblings,
+    capabilities: scheme === "uploads" ? ["rename", "move"] : ["rename", "move", "delete"],
+    onRequestDelete,
+  });
   const FileIcon = fileKindIcon(file);
-
-  if (renaming) {
+  if (interaction.renaming) {
     return (
       <li>
-        <MobileRenameRow
-          projectId={projectId}
-          editorWorkId={editorWorkId}
-          scheme={scheme}
-          entryId={file.documentId}
-          path={file.path}
-          currentName={file.name}
-          siblingNames={siblingNames}
-          kind="file"
-          icon={FileIcon}
-          onDone={() => setRenaming(false)}
-        />
+        <MobileRenameRow options={interaction.rename} icon={FileIcon} />
       </li>
     );
   }
 
   return (
     <li>
-      <DrillRow
-        icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-        label={file.name}
-        trailing={
-          <MobileEntryActionsMenu
-            allowDelete={scheme !== "uploads"}
-            onAction={(action) => {
-              if (action === "rename") setRenaming(true);
-              else
-                onRequestDelete({
-                  name: file.name,
-                  path: file.path,
-                  kind: "file",
-                  documentId: file.documentId,
-                });
-            }}
-          />
-        }
-        onClick={onOpen}
-      />
+      <EntryInteractionShell interaction={interaction} contextMenu={false}>
+        <DrillRow
+          icon={<FileIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+          label={file.name}
+          trailing={
+            <span className="flex items-center">
+              <LinkUpdateNote
+                projectId={projectId}
+                subject={{ kind: "file", id: file.documentId }}
+                operationId={interaction.operationId}
+              />
+              {file.namespaceFailure ? (
+                <NamespaceFailureMark
+                  failure={file.namespaceFailure}
+                  move={Boolean(file.namespaceRepairMove)}
+                />
+              ) : null}
+              <MobileEntryActionsMenu
+                allowedActions={interaction.actions}
+                onAction={interaction.onAction}
+              />
+            </span>
+          }
+          onClick={onOpen}
+        />
+      </EntryInteractionShell>
     </li>
   );
 }
 
 /** Mobile inline rename row — replaces the DrillRow while renaming. */
 function MobileRenameRow({
-  projectId,
-  editorWorkId,
-  scheme,
-  entryId,
-  path,
-  currentName,
-  siblingNames,
-  kind,
+  options,
   icon: Icon,
-  onDone,
 }: {
-  projectId: string;
-  editorWorkId: string | null;
-  scheme: ProjectContextTreeScheme;
-  entryId: string;
-  path: string;
-  currentName: string;
-  siblingNames: readonly string[];
-  kind: ContextCreateKind;
+  options: Parameters<typeof useRenameEntryForm>[0];
   icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  onDone: () => void;
 }) {
-  const form = useRenameEntryForm({
-    projectId,
-    workId: editorWorkId,
-    scheme,
-    entryId,
-    path,
-    currentName,
-    siblingNames,
-    kind,
-    onDone,
-  });
+  const form = useRenameEntryForm(options);
 
   return <MobileNameRow form={form} icon={Icon} label={t`Rename`} />;
 }
@@ -544,14 +515,6 @@ function MobileNameRow({
       <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <EntryNameField form={form} label={label} placeholder={placeholder} />
     </div>
-  );
-}
-
-function MobileWorkBoundary({ label }: { label: string }) {
-  return (
-    <li aria-hidden className="px-4 pt-3 pb-1">
-      <span className="text-meta text-muted-foreground">{label}</span>
-    </li>
   );
 }
 

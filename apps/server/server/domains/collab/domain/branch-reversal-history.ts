@@ -15,17 +15,19 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchJournalRow, branchJournalRevision } from "./branch-push-contracts.js";
+import { isBranchNotFoundError } from "./branch-resolver.js";
 
 export type BranchReversalScope = {
   branchId: string;
+  /** The Work whose draft holds this history. */
+  workId: string;
   generation: number;
   state: Uint8Array;
   rows: BranchJournalRow[];
 };
 
-export async function resolveBranchReversalScope(input: {
-  documentId: DocumentId;
-  threadId: ThreadId;
+/** The branch reads that decide where a thread's undo history lives. */
+export type BranchReversalHistoryReader = {
   branches: {
     resolveThreadBranch(
       documentId: DocumentId,
@@ -33,7 +35,7 @@ export async function resolveBranchReversalScope(input: {
     ): Promise<{ branchId: string; doc: Y.Doc }>;
     getBranch(
       branchId: string,
-    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "generation" | "state"> | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "workId" | "generation" | "state"> | null>;
   };
   branchRows: {
     listJournalRowsForBranch(input: {
@@ -41,13 +43,25 @@ export async function resolveBranchReversalScope(input: {
       generation: number;
     }): Promise<BranchJournalRow[]>;
   };
-}): Promise<BranchReversalScope | null> {
-  const peer = await input.branches.resolveThreadBranch(input.documentId, input.threadId);
+};
+
+export async function resolveBranchReversalScope(
+  input: { documentId: DocumentId; threadId: ThreadId } & BranchReversalHistoryReader,
+): Promise<BranchReversalScope | null> {
+  // No peer in the thread's current Work means it never drafted this document
+  // there: its writes went live (D19), so the live journal holds its history.
+  const peer = await input.branches
+    .resolveThreadBranch(input.documentId, input.threadId)
+    .catch((cause: unknown) => {
+      if (isBranchNotFoundError(cause)) return null;
+      throw cause;
+    });
+  if (!peer) return null;
   peer.doc.destroy();
   const peerSnapshot = await input.branches.getBranch(peer.branchId);
   if (!peerSnapshot?.upstreamBranchId) return null;
   const workDraft = await input.branches.getBranch(peerSnapshot.upstreamBranchId);
-  if (!workDraft) return null;
+  if (!workDraft?.workId) return null;
   const rows = (
     await input.branchRows.listJournalRowsForBranch({
       branchId: peerSnapshot.upstreamBranchId,
@@ -64,6 +78,7 @@ export async function resolveBranchReversalScope(input: {
   return ownsHistory
     ? {
         branchId: peerSnapshot.upstreamBranchId,
+        workId: workDraft.workId,
         generation: workDraft.generation,
         state: workDraft.state,
         rows,

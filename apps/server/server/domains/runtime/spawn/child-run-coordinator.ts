@@ -17,13 +17,17 @@ import type {
   SubagentThreadFactory,
   ThreadRepositories,
   ThreadRepository,
+  TurnRepository,
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
 import type { DeliveryProducer } from "../loop/runtime-delivery.js";
+import { threadReferenceBlock } from "../thread-reference.js";
+import { type InvalidArgumentsResult, renderInvalidArguments } from "../tools/invalid-arguments.js";
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
+import { resolveReadableThread } from "./resolve-readable-thread.js";
 import {
   invocationAgentName,
   invocationCardProps,
@@ -37,10 +41,15 @@ import {
 } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
+/** A run's result, or the spawn tool's `invalid_arguments` refusal of an override. */
+type ChildRunResult = SpawnResult | InvalidArgumentsResult;
+
 export interface SpawnChildInput extends ChildDriveInput {
   /** Named roster target; omitted or empty selects the agent-less generic subagent. */
   agentSlug?: string;
-  description?: string;
+  /** Task label the writer sees; becomes the child thread's title. */
+  name?: string;
+  from?: string;
   /** Per-invocation additive prompt layer; omitted appends nothing. */
   appendSystemPrompt?: string;
   /** Per-invocation execution patch, applied over the resolved baseline. */
@@ -77,6 +86,7 @@ export interface ChildRunCoordinatorDeps {
       ThreadRepository,
       "updateSpawnLifecycle" | "findLiveByProjectRef" | "findById" | "lockByIdIncludingDeleted"
     >;
+    turns: Pick<TurnRepository, "findById">;
     subagentThreads: SubagentThreadFactory;
     transaction: ThreadRepositories["transaction"];
   };
@@ -86,7 +96,7 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string>;
   eventWriter: EventJournalWriter;
-  /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
+  /** Recomputes a parent's direct-child activity for its `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
   delivery: DeliveryProducer;
@@ -102,7 +112,7 @@ export interface ChildRunCoordinatorDeps {
 }
 
 export interface ChildRunCoordinator {
-  runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<SpawnResult>;
+  runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<ChildRunResult>;
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
@@ -111,11 +121,24 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function prepareSpawn(
     input: SpawnChildInput,
     background: boolean,
-  ): Promise<PreparedChild | SpawnResult> {
+  ): Promise<PreparedChild | ChildRunResult> {
     const depthError = assertSpawnDepthAllowed(input.budget, input.parentThread.spawnDepth);
     if (depthError) return { status: "error", error: depthError };
     const turnError = assertTurnBudget(input.budget);
     if (turnError) return { status: "error", error: turnError };
+
+    let source: Thread | undefined;
+    if (input.from !== undefined) {
+      const resolved = await resolveReadableThread({
+        caller: input.parentThread,
+        ref: input.from,
+        threads: deps.repos.threads,
+        turns: deps.repos.turns,
+      });
+      if (!resolved.ok) return { status: "error", error: resolved.error };
+      source = resolved.target;
+    }
+    const seedBlocks = source ? [threadReferenceBlock(source)] : undefined;
 
     const parentAgent = await deps.agentRevisions.readThreadBinding(input.parentThread.id);
     if (!parentAgent) {
@@ -136,7 +159,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       },
       deps,
     );
-    if (!resolution.ok) return { status: "error", error: resolution.error };
+    if (!resolution.ok) {
+      return "invalidArguments" in resolution
+        ? resolution.invalidArguments
+        : { status: "error", error: resolution.error };
+    }
     const { revision, configuration, resolvedSlug, defaultTitle, invocationOverlay } = resolution;
 
     const child = await deps.repos.transaction(async () => {
@@ -157,7 +184,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             rootThreadId: input.parentThread.rootThreadId as ThreadId,
             originTurnId: input.parentTurnId,
             spawnDepth: input.parentThread.spawnDepth + 1,
-            title: input.description ?? defaultTitle,
+            title: input.name ?? defaultTitle,
             spawnStatus: "running",
           }),
         resolveWork: (created) =>
@@ -175,6 +202,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         childThreadId: created.id,
         agentSlug: resolvedSlug,
         prompt: input.prompt,
+        ...(source ? { fromThreadId: source.id } : {}),
       });
       if (background) {
         await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
@@ -183,7 +211,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           parentTurnId: input.parentTurnId as string,
           childThreadId: created.id,
           agentSlug: resolvedSlug,
-          description: input.description,
+          name: input.name,
         });
       }
       return created;
@@ -198,10 +226,23 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       await appendSubagentActivity({
         eventWriter: deps.eventWriter,
         readActivity: deps.readActivity,
-        rootThreadId: input.parentThread.rootThreadId as ThreadId,
+        parentThreadId: input.parentThread.id as ThreadId,
         childThreadId: child.id,
       });
-      return { ...prepared, description: input.description };
+      return {
+        ...prepared,
+        name: input.name,
+        seedBlocks,
+        ...(source
+          ? {
+              from: {
+                threadId: source.id as ThreadId,
+                ref: source.ref as string,
+                title: source.title,
+              },
+            }
+          : {}),
+      };
     } catch (error) {
       await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
         spawnStatus: "failed",
@@ -237,17 +278,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function prepare(
     request: ChildRunRequest,
     background: boolean,
-  ): Promise<PreparedChild | SpawnResult> {
-    if (request.kind === "spawn") {
-      const outcome = await prepareSpawn(request, background);
-      return outcome;
-    }
+  ): Promise<PreparedChild | ChildRunResult> {
+    if (request.kind === "spawn") return prepareSpawn(request, background);
 
     const authorized = await authorizeThreadMessage({
       callerThread: request.parentThread,
       targetRef: request.ref,
       mode: background ? "background" : "foreground",
       threads: deps.repos.threads,
+      turns: deps.repos.turns,
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
     return prepareForegroundMessage(request, authorized.target);
@@ -264,7 +303,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       correlation.callerThreadId !== request.parentThread.id ||
       correlation.callerTurnId !== request.parentTurnId ||
       correlation.cardBlockId !== null ||
-      correlation.origin !== (request.kind === "spawn" ? "spawn" : "foreground_message") ||
+      correlation.origin !== (request.kind === "spawn" ? "spawn" : "message") ||
       (request.kind === "message" && correlation.toolCallId !== request.toolCallId) ||
       correlation.deliveryMode !== (background ? "background_notification" : "direct")
     ) {
@@ -286,12 +325,19 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return invocationCardProps({
         agent: request.agentSlug,
         agentName: invocationAgentName(prepared.resolvedSlug, prepared.child.agentName),
-        description: request.description,
+        name: request.name,
         correlation,
         childThreadId: prepared.child.id,
         execution: null,
         startedAt: new Date().toISOString(),
         terminalAt: null,
+        ...(prepared.from
+          ? {
+              fromThreadId: prepared.from.threadId,
+              fromThreadRef: prepared.from.ref,
+              fromThreadTitle: prepared.from.title,
+            }
+          : {}),
       });
     }
     return invocationCardProps({
@@ -308,7 +354,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   /**
    * Background thread_message is a queue producer only: authorize, enqueue a
    * durable message, return. The target's own run (woken by the inbox) drains it;
-   * nothing is driven in the caller's process.
+   * nothing is driven in the caller's process. A parent re-tasking its own child
+   * stamps its invocation on the message, so the run that adopts it reports back
+   * with the same completion notice a background spawn gets.
    */
   async function sendBackgroundMessage(
     request: {
@@ -320,14 +368,28 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       targetRef: request.ref,
       mode: "background",
       threads: deps.repos.threads,
+      turns: deps.repos.turns,
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
 
     const target = authorized.target;
+    const notifiesCaller =
+      target.kind === "subagent" && target.parentThreadId === request.parentThread.id;
+    const agentSlug =
+      target.kind === "subagent"
+        ? ((await deps.agentRevisions.readThreadBinding(target.id))?.revision?.slug ??
+          GENERIC_SUBAGENT_SLUG)
+        : target.kind;
     await deps.delivery.enqueue({
       threadId: target.id as ThreadId,
       intent: "message",
-      provenance: { kind: "agent", threadId: request.parentThread.id as ThreadId },
+      provenance: {
+        kind: "agent",
+        threadId: request.parentThread.id as ThreadId,
+        ...(notifiesCaller
+          ? { notify: { turnId: request.parentTurnId, toolCallId: request.toolCallId } }
+          : {}),
+      },
       body: { kind: "text", text: request.prompt },
       idempotencyKey: `thread-message:${request.toolCallId}`,
     });
@@ -339,14 +401,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       status: "background",
       handle: target.ref ?? "",
       threadId: target.id,
-      agentSlug: target.kind === "subagent" ? GENERIC_SUBAGENT_SLUG : target.kind,
+      agentSlug,
+      notifiesCaller,
     };
   }
 
   async function runChild(
     request: ChildRunRequest,
     options: ChildRunOptions,
-  ): Promise<SpawnResult> {
+  ): Promise<ChildRunResult> {
     const background = options.mode === "background";
     if (request.kind === "message" && background) {
       return sendBackgroundMessage(request);
@@ -355,15 +418,21 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const correlation = invocationCorrelation(request, background);
 
     const prepared = await prepare(request, background);
-    if ("status" in prepared) {
-      if (prepared.status === "error" && request.kind === "spawn") {
+    if ("status" in prepared || "issues" in prepared) {
+      const reason =
+        "issues" in prepared
+          ? renderInvalidArguments("spawn", prepared.issues)
+          : prepared.status === "error"
+            ? prepared.error.message
+            : null;
+      if (reason !== null && request.kind === "spawn") {
         await persistInvocationCard(
           options.transcript,
           unadmittedInvocationFailureProps({
             agent: request.agentSlug,
-            description: request.description,
+            name: request.name,
             correlation,
-            reason: prepared.error.message,
+            reason,
           }),
         );
       }
@@ -400,7 +469,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           handle: prepared.handle,
           threadId: prepared.child.id,
           agentSlug: prepared.resolvedSlug,
-          ...(prepared.description !== undefined ? { description: prepared.description } : {}),
+          ...(prepared.name !== undefined ? { name: prepared.name } : {}),
         };
       } catch (error) {
         if (request.kind === "spawn") {
@@ -450,6 +519,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 }
 
 function readableFailureReason(error: unknown): string {
+  // The conflict's own message names the child thread's id; the card already names the subagent.
+  if (error instanceof TurnStartConflictError) {
+    return error.reason === "already_running"
+      ? "Still working on its last task, so this message wasn't sent."
+      : "The subagent could not start.";
+  }
   return error instanceof Error && error.message.trim()
     ? error.message
     : "The subagent could not start.";

@@ -9,7 +9,6 @@ import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
-  type FirstSendChatSubmission,
 } from "./store";
 
 export {
@@ -17,8 +16,6 @@ export {
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
   type ChatSubmission,
   chatSubmissionStorageKey,
-  type ExistingThreadChatSubmission,
-  type FirstSendChatSubmission,
 } from "./store";
 
 let journal: DeviceChatSubmissionJournal | null = null;
@@ -32,6 +29,9 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
   if (!journal) {
     try {
       journal = new DeviceChatSubmissionJournal(browserStorage());
+      window.addEventListener("storage", (event) => {
+        if (event.storageArea === window.localStorage) journal?.notifyStorageChange(event.key);
+      });
     } catch {
       return null;
     }
@@ -39,8 +39,20 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
   return journal;
 }
 
-export function bindChatSubmissions(accountId: string): void {
-  browserJournal()?.setUser(accountId);
+export function bindChatSubmissions(
+  accountId: string,
+  addressed: (id: string) => boolean = () => false,
+): void {
+  const current = browserJournal();
+  if (!current || current.accountId === accountId) return;
+  const ready = current.setUser(accountId);
+  const epoch = current.epoch;
+  void ready
+    .then(async () => {
+      const { cleanDeletedChatsOnBind } = await import("./deleted-chat");
+      await cleanDeletedChatsOnBind(accountId, epoch, addressed);
+    })
+    .catch((error) => reportError(error));
 }
 
 export function getChatSubmissionAccountId(): string | null {
@@ -57,16 +69,10 @@ export function readChatSubmissions(accountId: string): ChatSubmission[] {
   return current.entries();
 }
 
-export function readFirstSendSubmission(
-  accountId: string,
-  threadId: string,
-): FirstSendChatSubmission | null {
-  return (
-    readChatSubmissions(accountId).find(
-      (entry): entry is FirstSendChatSubmission =>
-        entry.kind === "first-send" && entry.threadId === threadId,
-    ) ?? null
-  );
+/** An unavailable read cannot authorize projection retirement or destination changes. */
+export function readChatSubmissionSnapshot(accountId: string): ChatSubmission[] | null {
+  const current = browserJournal();
+  return current?.accountId === accountId ? current.snapshot() : null;
 }
 
 export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
@@ -75,8 +81,28 @@ export function recordChatSubmission(accountId: string, entry: ChatSubmission): 
 
 export function retireChatSubmission(
   accountId: string,
-  submissionId: string,
+  recordId: string,
   expectedEpoch?: number,
 ): boolean {
-  return browserJournal()?.retire(accountId, submissionId, expectedEpoch) ?? false;
+  return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
+}
+
+/** In-tab writes and cross-tab storage changes share the same subscription. */
+export function subscribeChatSubmissions(listener: () => void): () => void {
+  return browserJournal()?.subscribe(listener) ?? (() => undefined);
+}
+
+/** Provider-scoped pending flags also cover fork and handoff destinations. */
+export function isThreadAwaitingCreation(
+  accountId: string,
+  threadId: string | null | undefined,
+  pendingCreation = false,
+): boolean {
+  return Boolean(
+    threadId &&
+      (pendingCreation ||
+        readChatSubmissions(accountId).some(
+          (entry) => entry.threadId === threadId && entry.creation,
+        )),
+  );
 }

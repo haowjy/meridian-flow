@@ -1,12 +1,11 @@
 /** Canonical preparation for Work-draft turn undo/redo. */
-import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import { hasDependentLaterRows, type UpdateJournal } from "@meridian/agent-edit/integration";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration, BranchPeerIntegrationError } from "./branch-push-plan.js";
-import { hasDependentLaterRows } from "./journal-dependencies.js";
 
 export type PreparedBranchTurnReversal =
   | {

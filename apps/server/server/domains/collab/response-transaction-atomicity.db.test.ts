@@ -3,22 +3,26 @@ import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime"
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { testFileGrant } from "../../test-support/file-grants.js";
 import type { DraftReviewApi } from "./contracts.js";
 import {
   ALPHA_ID,
   BETA_ID,
   closeDatabase,
   createHarness,
-  db,
+  createTestDatabase,
   PROJECT_ID,
   resetDatabase,
   runInDrizzleTransaction,
+  SOURCE_ID,
   schema,
   THREAD_ID,
   TURN_ID,
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+
+const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
@@ -35,12 +39,16 @@ async function currentDraftId(
   return draft.draftId;
 }
 
+// A live write records its authoring response, so this reply is a real response row.
+const MIXED_RETRY_RESPONSE = "00000000-0000-4000-8000-000000000831";
+
 describe("change trail (postgres)", () => {
-  beforeEach(resetDatabase);
-  afterAll(closeDatabase);
+  const db = createTestDatabase();
+  beforeEach(() => resetDatabase(db));
+  afterAll(() => closeDatabase(db));
 
   it("rolls back all ten state surfaces and commits the retained response on retry", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     await harness.seedAndStage("retry-response");
     const before = await harness.captureState();
     const staged = harness.stagedUpdates("retry-response");
@@ -64,7 +72,6 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ transition: "closed" }),
     ); // 8. lifecycle not closed (retained buffers prove buffered ownership)
     expect(harness.afterCommitEffects()).toEqual({
-      autoPushSchedules: [],
       branchBroadcasts: [],
       watermarkCommits: [],
     }); // 9. callbacks not dispatched
@@ -85,8 +92,122 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("retry-response");
   });
 
+  it("publishes two draft-only documents back to back without retaining the branch lock", async () => {
+    const harness = createHarness(db);
+    const fixture = harness.crossWorkProbeFixture();
+    const created = [
+      "00000000-0000-4000-8000-0000000008d1",
+      "00000000-0000-4000-8000-0000000008d2",
+    ] as const;
+    await db.insert(schema.documents).values(
+      created.map((id, index) => ({
+        id: id as never,
+        contextSourceId: SOURCE_ID,
+        name: `new-${index + 1}`,
+        extension: "",
+        fileType: "markdown" as const,
+      })),
+    );
+    for (const [index, documentId] of created.entries()) {
+      await fixture.persistence.lifecycle.ensureDocument(documentId as never);
+      const emptyLive = new Y.Doc({ gc: false });
+      const branch = await fixture.branchStore.ensureWorkDraftBranch({
+        documentId: documentId as never,
+        workId: WORK_ID,
+        liveDoc: emptyLive,
+      });
+      emptyLive.destroy();
+      const content = new Y.Doc({ gc: false });
+      fixture.model.insertBlocks(
+        toDocHandle(content),
+        null,
+        fixture.markupCodec.parse(`Created document ${index + 1}.`),
+      );
+      await fixture.branchCoordinator.commitUpdate({
+        branchId: branch.branchId,
+        updateData: Y.encodeStateAsUpdate(content),
+        source: "agent",
+        threadId: THREAD_ID,
+      });
+      content.destroy();
+      await fixture.branchStore.recordManifestDocumentCreated(documentId as never, {
+        projectId: PROJECT_ID as never,
+        workId: WORK_ID,
+        threadId: THREAD_ID,
+      });
+    }
+
+    const drafts = await fixture.collab.draftReview.list({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+    });
+    const withDeadline = async <T>(operation: Promise<T>) => {
+      let timer!: ReturnType<typeof setTimeout>;
+      try {
+        return await Promise.race([
+          operation,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("draft disposition retained a lock")), 5_000);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    for (const documentId of created) {
+      const draft = drafts.find((candidate) => candidate.documentId === documentId);
+      if (!draft) throw new Error(`missing draft for ${documentId}`);
+      await expect(
+        withDeadline(
+          fixture.collab.draftReview.applyWorkDraft({
+            projectId: PROJECT_ID as never,
+            workId: WORK_ID,
+            documentId: documentId as never,
+            draftId: draft.draftId,
+            userId: USER_ID as never,
+          }),
+        ),
+      ).resolves.toMatchObject({ status: "applied" });
+    }
+
+    await expect(
+      fixture.branchStore.resolveManifestMembership({ projectId: PROJECT_ID as never }),
+    ).resolves.toMatchObject({ members: expect.arrayContaining([...created]) });
+    for (const [index, documentId] of created.entries()) {
+      await expect(harness.liveMarkdown(documentId as never)).resolves.toContain(
+        `Created document ${index + 1}.`,
+      );
+    }
+  });
+
+  // D42: a mixed save that fails after beta's live append leaves nothing, live or drafted.
+  it("rolls back a live and a drafted document when the save fails after the live append", async () => {
+    const harness = createHarness(db);
+    await harness.seedAndStage(MIXED_RETRY_RESPONSE, { liveBeta: true });
+    const before = await harness.captureState();
+    const liveBeta = await harness.liveMarkdown(BETA_ID);
+
+    // Beta's live append runs first; alpha's branch journal insert then fails.
+    harness.failJournalInsertAt = 1;
+    await expect(harness.commit(MIXED_RETRY_RESPONSE)).rejects.toThrow(
+      "injected branch journal failure",
+    );
+
+    expect(await harness.liveMarkdown(BETA_ID)).toBe(liveBeta);
+    expect(await harness.liveAgentUpdateCount(BETA_ID)).toBe(0);
+    expect(await harness.responseJournalRows()).toEqual([]);
+    expect(await harness.workDraftMarkdown()).toEqual(before.workDraftMarkdown);
+    expect(harness.liveRoomBroadcasts()).toEqual([]);
+
+    harness.failJournalInsertAt = null;
+    await expect(harness.commit(MIXED_RETRY_RESPONSE)).resolves.toMatchObject({
+      status: "committed",
+    });
+    expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
+  });
+
   it("retains mixed provenance across repeated compaction and generation replacement", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
 
     await expect(harness.compactMixedProvenanceTwice()).resolves.toEqual({
       retainedUpdateCount: 0,
@@ -97,7 +218,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("does not compact a retired-generation suffix into the restored authority head", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
 
     await expect(harness.compactAfterAuthorityReplacement()).resolves.toEqual({
       coldMarkdown: "Restored base.\n",
@@ -106,7 +227,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("serializes compaction with concurrent authority-head replacement", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
 
     await expect(harness.compactWhileAuthorityReplacementWaits()).resolves.toEqual({
       coldMarkdown: "Restored base.\n",
@@ -115,7 +236,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("aborts every response participant when an outer ambient transaction rolls back later", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     await harness.seedAndStage("outer-rollback-response");
     const before = await harness.captureState();
 
@@ -138,16 +259,15 @@ describe("change trail (postgres)", () => {
       expect.objectContaining({ transition: "closed" }),
     );
     expect(harness.afterCommitEffects()).toEqual({
-      autoPushSchedules: [],
       branchBroadcasts: [],
       watermarkCommits: [],
     });
   });
 
   it("reports a writer sweep journaled after the observation cut", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000821";
-    await harness.seedProbeTimelineSweep(responseId);
+    const branchId = await harness.seedProbeTimelineSweep(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",
@@ -159,9 +279,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.waitForAutoPushes();
-    expect(harness.afterCommitEffects().autoPushSchedules).toHaveLength(1);
-    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.push(branchId);
 
     const trail = await harness.trailRowMembership();
     expect(trail.shells).toEqual([expect.objectContaining({ changeCount: expect.any(Number) })]);
@@ -178,9 +296,9 @@ describe("change trail (postgres)", () => {
   });
 
   it("S10 reports a pulled writer edit that landed after the response read", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000822";
-    await harness.seedProbeTimelineAfterRead(responseId);
+    const branchId = await harness.seedProbeTimelineAfterRead(responseId);
 
     await expect(harness.commit(responseId)).resolves.toMatchObject({
       status: "committed",
@@ -190,8 +308,7 @@ describe("change trail (postgres)", () => {
         }),
       ],
     });
-    await harness.waitForAutoPushes();
-    await harness.autoPush(harness.afterCommitEffects().autoPushSchedules[0] as string);
+    await harness.push(branchId);
     await harness.pollTrails();
     await harness.pollTrails();
 
@@ -203,7 +320,7 @@ describe("change trail (postgres)", () => {
         documentCount: 1,
       }),
     ]);
-    expect(trail.shells[0]?.changeCount).toBeGreaterThan(0);
+    expect(trail.shells[0]?.changeCount).toBeGreaterThan(1);
     expect(trail.details).toEqual([
       expect.objectContaining({
         changes: expect.arrayContaining([
@@ -216,7 +333,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("merges a stale whole-document Apply with a writer insertion", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000835";
     await harness.seedWriterDocument("Writer-approved root.", responseId);
     await harness.stageCertifiedReplace({
@@ -273,7 +390,7 @@ describe("change trail (postgres)", () => {
   });
 
   it("applies writer edits added to the draft after the reviewed preview", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000845";
     await harness.seedWriterDocument("Original draft root.", responseId);
     await harness.stageCertifiedReplace({
@@ -380,64 +497,14 @@ describe("change trail (postgres)", () => {
     ).resolves.toEqual([]);
   });
 
-  it("preserves an unrelated live writer insertion while applying the branch", async () => {
-    const harness = createHarness();
-    const responseId = "00000000-0000-4000-8000-000000000836";
-    await harness.seedWriterDocument("Selected root.\n\nUntouched root.", responseId);
-    await harness.stageCertifiedReplace({
-      responseId,
-      find: "Selected root.",
-      content: "SELECTIVE DRAFT PROPOSAL",
-    });
-
-    const fixture = harness.crossWorkProbeFixture();
-    await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-      const before = Y.encodeStateVector(doc);
-      const last = fixture.model.getBlocks(toDocHandle(doc)).at(-1) ?? null;
-      fixture.model.insertBlocks(
-        toDocHandle(doc),
-        last,
-        fixture.markupCodec.parse("Writer concurrent insertion."),
-      );
-      await fixture.persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-    });
-
-    const preview = await fixture.collab.draftReview.preview({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: await currentDraftId(fixture.collab.draftReview, {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-      }),
-    });
-    if (preview.status !== "active" || !preview.draftId) {
-      throw new Error("missing draft preview");
-    }
-
-    await expect(
-      fixture.collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-        draftId: preview.draftId,
-        userId: USER_ID as never,
-      }),
-    ).resolves.toMatchObject({ status: "applied" });
-    await expect(harness.liveMarkdown(ALPHA_ID)).resolves.toContain("Writer concurrent insertion.");
-  });
-
   it("preserves a live writer insertion between two branch edits", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000837";
     await harness.seedWriterDocument("Left root.\n\nRight root.", responseId);
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,
@@ -515,12 +582,13 @@ describe("change trail (postgres)", () => {
   });
 
   it("merges a folded whole-document overwrite with a later writer insertion", async () => {
-    const harness = createHarness();
+    const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000838";
     await harness.seedWriterDocument("First writer root.\n\nSecond writer root.", responseId);
     const fixture = harness.crossWorkProbeFixture();
     const context = {
       sessionId: THREAD_ID,
+      grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
       responseId,

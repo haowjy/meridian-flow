@@ -1,3 +1,4 @@
+import { throwContextWorkUnavailableHttpError } from "../../../../../../lib/context-error-http.js";
 /**
  * Shared route helpers for `/api/projects/:projectId/context/:scheme/*` routes.
  *
@@ -20,11 +21,18 @@ import {
   contextPortForProjectRecovery,
 } from "../../../../../../domains/context/context-port-resolution.js";
 import type { ContextPort } from "../../../../../../domains/context/index.js";
+import type { FileTarget } from "../../../../../../domains/file-policy/index.js";
 import { requireProjectOwner } from "../../../../../../domains/projects/index.js";
 import { requireAppUser } from "../../../../../../lib/auth-gate.js";
 import type { AppServices } from "../../../../../../lib/compose.js";
+import {
+  containerTarget,
+  requireFileGrant,
+  withEditGrants,
+} from "../../../../../../lib/file-access-http.js";
 
 export { contextErrorToHttp } from "../../../../../../lib/context-error-http.js";
+export { documentTarget } from "../../../../../../lib/file-access-http.js";
 
 export function parseScheme(value: string): ProjectContextTreeScheme {
   if (isProjectContextTreeScheme(value)) return value;
@@ -45,11 +53,18 @@ export async function resolveContextRoute(
   workId: string | null;
   authority: CanonicalContextAuthority;
   port: ContextPort;
+  /** The folder this route's scheme names, for creates and uploads (file-access §4). */
+  container: FileTarget;
+  /** Runs a write under the writer's edit grants on these targets; refusals become 404 or 403. */
+  edit<T>(targets: readonly FileTarget[], operation: () => Promise<T>): Promise<T>;
 }> {
   const { app, user } = await requireAppUser(event);
   const projectId = getRouterParam(event, "projectId") ?? "";
   const scheme = parseScheme(getRouterParam(event, "scheme") ?? "");
   const query = getQuery(event);
+  const rootThreadId = typeof query.rootThreadId === "string" ? query.rootThreadId : null;
+  if (rootThreadId && (scheme !== "scratch" || query.workId))
+    throw createError({ statusCode: 400, message: "Choose one Scratch owner" });
   const workId = typeof query.workId === "string" ? query.workId : null;
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const deps = {
@@ -64,18 +79,54 @@ export async function resolveContextRoute(
         userId: user.userId,
         requestedWorkId: workId,
       })
-    : await contextPortForProjectBrowse({ deps, projectId, userId: user.userId, workId });
-  if (!port) throw createError({ statusCode: 404, message: "Work not found" });
+    : await contextPortForProjectBrowse({
+        deps,
+        projectId,
+        userId: user.userId,
+        workId,
+        rootThreadId,
+      });
+  if (!port) throwContextWorkUnavailableHttpError("work_missing");
   let authority: CanonicalContextAuthority = { kind: "contextual" };
-  if (isWorkScopedBrowseScheme(scheme)) {
+  if (rootThreadId) {
+    const lineage = await app.contextPorts.lineages.byId(projectId, rootThreadId);
+    if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
+    authority = { kind: "lineage", rootThreadRef: lineage.rootThreadRef };
+  } else if (isWorkScopedBrowseScheme(scheme)) {
     if (!workId) authority = { kind: "none" };
     else {
       const resolved = await app.workAuthorityResolver.byId(projectId, workId);
       if (!resolved) {
-        throw createError({ statusCode: 404, message: "Work not found" });
+        throwContextWorkUnavailableHttpError("work_missing");
       }
       authority = resolved;
     }
   }
-  return { app, userId: user.userId, projectId, scheme, workId, authority, port };
+  if (
+    scheme === "scratch" &&
+    !rootThreadId &&
+    !("workSlug" in authority && authority.workSlug !== null)
+  )
+    throw createError({ statusCode: 400, message: "Scratch requires a chat or named Work" });
+  const container: FileTarget = rootThreadId
+    ? { kind: "container", scheme, owner: { scope: "lineage", projectId, rootThreadId } }
+    : await containerTarget(app.workRepo, { projectId, scheme, workId });
+  const edit = async <T>(targets: readonly FileTarget[], operation: () => Promise<T>) => {
+    const grants = [];
+    for (const target of targets) {
+      grants.push(await requireFileGrant(app.fileAccess, user.userId, target, "edit"));
+    }
+    return withEditGrants(app.fileAccess, grants, operation);
+  };
+  return {
+    app,
+    userId: user.userId,
+    projectId,
+    scheme,
+    workId,
+    authority,
+    port,
+    container,
+    edit,
+  };
 }

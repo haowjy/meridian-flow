@@ -1,0 +1,2 @@
+ALTER TABLE "model_responses" DROP CONSTRAINT "model_responses_predicted_cache_reason_valid";--> statement-breakpoint
+ALTER TABLE "model_responses" ADD CONSTRAINT "model_responses_predicted_cache_reason_valid" CHECK ("model_responses"."predicted_cache_reason" IN ('reusable_prefix', 'uncached', 'no_response', 'model_changed', 'prompt_epoch', 'image_eviction', 'compaction', 'ttl_unknown', 'ttl_expired', 'summary_transcript', 'fork_cutoff', 'fork_bake_changed', 'facts_unavailable'));

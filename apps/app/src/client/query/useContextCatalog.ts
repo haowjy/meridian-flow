@@ -1,9 +1,10 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import {
   type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
+  contextOwner,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -12,10 +13,15 @@ import {
   type catalogChildren,
   catalogViewFromCheckpoint,
   emptyCatalogView,
+  type FolderNamespaceRecord,
   indexCatalogView,
-  projectResourceLocation,
+  projectFolderNeedsRepair,
   projectResourceNeedsRepair,
+  type ResourceLocation,
+  type ResourcePlacement,
   type ResourceRecord,
+  resourceContextAuthority,
+  resourceUriQualifier,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
 import {
@@ -30,28 +36,56 @@ import {
 import { useCallback, useEffect, useMemo } from "react";
 import { getContextCatalogLookup } from "@/client/api/projects-api";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
-import type {
-  CatalogContextView,
-  CatalogDirectory,
-  CatalogFile,
-  CatalogNode,
+import {
+  type CatalogContextView,
+  type CatalogDirectory,
+  type CatalogFile,
+  type CatalogNode,
+  refusedMoveDestination,
 } from "@/client/query/context-catalog-projection";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
+import type { ContextOwner } from "./context-request-options";
 import { projectQueryKeys } from "./project-query-keys";
 import { useIsProjectPendingCreation } from "./useProjectCreation";
+
+/** The catalog listing a scheme's documents for this owner; null when a Work-scoped scheme has none. */
+/**
+ * The catalog an aggregate view (the link index) reads a scheme from. Scratch
+ * reads with the lineage when there is one; Uploads always reads with the Work
+ * row, so a lineage scope still has a scope, and a catalog, for every scheme.
+ */
+export function aggregateCatalogScope(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  owners: {
+    workId?: string | null;
+    rootThreadId?: string | null;
+    uploadsWorkId?: string | null;
+  },
+): CatalogScope | null {
+  return contextCatalogScope(
+    projectId,
+    scheme,
+    scheme === "uploads" && owners.uploadsWorkId
+      ? { workId: owners.uploadsWorkId }
+      : contextOwner(owners.workId, owners.rootThreadId),
+  );
+}
 
 export function contextCatalogScope(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  workId: string | null,
+  owner: ContextOwner,
 ): CatalogScope | null {
   if (scheme === "user") return { kind: "user", userId: "self" };
+  if (scheme === "scratch" && owner.rootThreadId)
+    return { kind: "lineage", projectId, rootThreadId: owner.rootThreadId };
   if (scheme === "scratch" || scheme === "uploads") {
-    return workId ? { kind: "work", projectId, workId } : null;
+    return owner.workId ? { kind: "work", projectId, workId: owner.workId } : null;
   }
   return { kind: "project", projectId };
 }
@@ -79,21 +113,20 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   uploads: "Uploads",
 };
 
-function locationBelongsToScope(
-  location: ReturnType<typeof projectResourceLocation> & {},
-  scope: CatalogScope,
-): boolean {
+function locationBelongsToScope(location: ResourceLocation, scope: CatalogScope): boolean {
   if (scope.kind === "project")
     return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
   if (scope.kind === "user") return location.scheme === "user";
   if (!isWorkScopedProjectContextScheme(location.scheme)) return false;
+  if (scope.kind === "lineage") return location.rootThreadId === scope.rootThreadId;
   return scope.kind === "work" && location.workId === scope.workId;
 }
 
-function catalogUri(scheme: ProjectContextTreeScheme, path: string): string {
-  return isWorkScopedProjectContextScheme(scheme)
-    ? canonicalContextUri(scheme, path, { kind: "contextual" })
-    : canonicalContextUri(scheme, path);
+function catalogUri(location: ResourceLocation, path: string): string {
+  const prefix = resourceUriQualifier(resourceContextAuthority(location.scheme, location));
+  const parsed = parseContextUri(`${location.scheme}://${prefix}${path}`);
+  if (!parsed.ok) throw new Error("Invalid local catalog URI");
+  return parsed.value.normalized;
 }
 
 /** One normalized catalog read model: durable local intentions overlay the server checkpoint. */
@@ -103,34 +136,32 @@ function overlayResourceCatalogView(
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
   isKnownVisible: (record: ResourceRecord) => boolean,
+  placement: ResourcePlacement,
 ): CatalogCacheView {
   const entries = new Map(view.entries);
-  const invalidatedEntryIds = new Set(view.invalidatedEntryIds);
   for (const record of records) {
     const documentId = record.resource.identity.documentId;
-    const location = projectResourceLocation(projectId, record);
+    const location = placement.resourceLocation(record);
     const visible =
       isKnownVisible(record) ||
       record.intents.some(
         (intent) => intent.projectId === projectId && intent.state !== "cancelled",
       ) ||
       location?.scheme === "user" ||
-      (entries.has(documentId) && !invalidatedEntryIds.has(documentId));
+      entries.has(documentId);
     if (!visible) continue;
     const installed = entries.get(documentId);
     const installedMatches =
       installed?.kind === "file" &&
       installed.uri.startsWith(`${location?.scheme}://`) &&
-      `/${installed.path.join("/")}` === location?.path;
+      `/${installed.path.join("/")}` === location?.path &&
+      installed.provisionalName === location?.provisional;
     if (installed && !installedMatches) entries.delete(documentId);
     if (!location || !locationBelongsToScope(location, scope) || installedMatches) continue;
 
     const sourceId =
       [...entries.values()].find(
-        (entry) =>
-          entry.kind === "source" &&
-          entry.scheme === location.scheme &&
-          !invalidatedEntryIds.has(entry.entryId),
+        (entry) => entry.kind === "source" && entry.scheme === location.scheme,
       )?.entryId ?? `local-source:${location.scheme}:${JSON.stringify(scope)}`;
     if (!entries.has(sourceId)) {
       entries.set(sourceId, {
@@ -139,10 +170,9 @@ function overlayResourceCatalogView(
         scope,
         scheme: location.scheme,
         name: ROOT_NAMES[location.scheme],
-        uri: catalogUri(location.scheme, ""),
+        uri: catalogUri(location, ""),
       });
     }
-    invalidatedEntryIds.delete(sourceId);
     const path = location.path.split("/").filter(Boolean);
     let parentId = sourceId;
     for (let depth = 1; depth < path.length; depth += 1) {
@@ -151,8 +181,7 @@ function overlayResourceCatalogView(
         (entry) =>
           entry.kind === "folder" &&
           entry.sourceId === sourceId &&
-          entry.path.join("/") === folderPath.join("/") &&
-          !invalidatedEntryIds.has(entry.entryId),
+          entry.path.join("/") === folderPath.join("/"),
       );
       if (existing?.kind === "folder") {
         parentId = existing.entryId;
@@ -161,21 +190,23 @@ function overlayResourceCatalogView(
       const folderId = `local-folder:${sourceId}:${folderPath.join("/")}`;
       entries.set(folderId, {
         kind: "folder",
+        observationVersion: "0",
         entryId: folderId,
         scope,
         sourceId,
         parentId,
         name: folderPath.at(-1) ?? "",
         path: folderPath,
-        uri: catalogUri(location.scheme, folderPath.join("/")),
+        uri: catalogUri(location, folderPath.join("/")),
         hasChildren: true,
+        navigationOnly: true,
       });
-      invalidatedEntryIds.delete(folderId);
       parentId = folderId;
     }
-    const uri = catalogUri(location.scheme, path.join("/"));
+    const uri = catalogUri(location, path.join("/"));
     entries.set(documentId, {
       kind: "file",
+      observationVersion: record.resource.observationVersion ?? "0",
       entryId: documentId,
       scope,
       sourceId,
@@ -187,9 +218,8 @@ function overlayResourceCatalogView(
       provisionalName: location.provisional,
       ...record.resource.classification,
     } satisfies CatalogFileEntry);
-    invalidatedEntryIds.delete(documentId);
   }
-  return indexCatalogView({ ...view, entries, invalidatedEntryIds });
+  return indexCatalogView({ ...view, entries });
 }
 
 /** Overlay recoverable resource state without treating unrelated account records as project files. */
@@ -198,8 +228,19 @@ export function projectResourceCatalogView(
   scope: CatalogScope,
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
+  placement: ResourcePlacement,
 ): CatalogCacheView {
-  return overlayResourceCatalogView(projectId, scope, view, records, () => false);
+  const placed = indexCatalogView({
+    ...view,
+    entries: new Map(
+      placement
+        .projectCatalog([...view.entries.values()], records)
+        .filter((entry) => sameCatalogProjectionScope(entry.scope, scope))
+        .map((entry) => [entry.entryId, entry]),
+    ),
+  });
+  // Insert local-only rows against final folder identities, never stale paths.
+  return overlayResourceCatalogView(projectId, scope, placed, records, () => false, placement);
 }
 
 /** Project one record whose replica lookup already proved this project's access. */
@@ -207,6 +248,7 @@ export function accessibleResourceCatalogView(
   projectId: string,
   scope: CatalogScope,
   record: ResourceRecord,
+  placement: ResourcePlacement,
 ): CatalogCacheView {
   return overlayResourceCatalogView(
     projectId,
@@ -214,6 +256,7 @@ export function accessibleResourceCatalogView(
     emptyCatalogView(scope),
     [record],
     () => true,
+    placement,
   );
 }
 
@@ -250,8 +293,15 @@ export function projectCatalogFile(
 }
 
 function projectCatalogDirectory(
+  projectId: string,
   entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "folder" }>,
+  folder: FolderNamespaceRecord | undefined,
+  placement: ResourcePlacement,
 ): CatalogDirectory {
+  const repair = folder ? projectFolderNeedsRepair(folder) : null;
+  const failureAt = repair
+    ? folder?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+    : undefined;
   return {
     kind: "dir",
     entryId: entry.entryId,
@@ -259,6 +309,21 @@ function projectCatalogDirectory(
     name: entry.name,
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
+    ...(entry.navigationOnly ? { navigationOnly: true } : {}),
+    ...(repair
+      ? {
+          namespaceFailure: repair.kind,
+          namespaceRepairName: repair.name,
+          namespaceRepairMove:
+            folder && repair.destination
+              ? refusedMoveDestination(
+                  repair.destination,
+                  placement.parentForFolder(folder.folderId),
+                )
+              : undefined,
+          ...(failureAt === undefined ? {} : { namespaceFailureAt: failureAt }),
+        }
+      : {}),
   };
 }
 
@@ -266,7 +331,9 @@ export function projectCatalogView(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   view: CatalogCacheView,
+  placement: ResourcePlacement,
   records: readonly ResourceRecord[] = [],
+  folders: readonly FolderNamespaceRecord[] = [],
 ): CatalogContextView {
   const sourceId = view.sourceIdsByScheme.get(scheme);
   const source = sourceId ? view.entries.get(sourceId) : undefined;
@@ -282,12 +349,13 @@ export function projectCatalogView(
   const resourcesByDocument = new Map(
     records.map((record) => [record.resource.identity.documentId, record]),
   );
+  const foldersById = new Map(folders.map((folder) => [folder.folderId, folder]));
   const fileFromEntry = (
     entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "file" }>,
   ): CatalogFile | null => {
     if (entry.sourceId !== sourceId) return null;
     const record = resourcesByDocument.get(entry.entryId);
-    const effective = record ? projectResourceLocation(projectId, record) : null;
+    const effective = record ? placement.resourceLocation(record) : null;
     if (
       record &&
       (!effective || effective.scheme !== scheme || effective.path !== `/${entry.path.join("/")}`)
@@ -295,9 +363,14 @@ export function projectCatalogView(
       return null;
     const file = projectCatalogFile(entry);
     const repair = record ? projectResourceNeedsRepair(projectId, record) : null;
+    const repairedAt = repair
+      ? record?.intents.find((intent) => intent.intentId === repair.intentId)?.settledAt
+      : undefined;
+    const placementPending = record && placement.resourcePlacementPending(record);
     return record
       ? {
           ...file,
+          ...(placementPending ? { placementPending: true as const } : {}),
           ...(record.resource.content.kind === "exact"
             ? {
                 resourceHandle: record.resource.handle,
@@ -316,22 +389,32 @@ export function projectCatalogView(
           ...(repair?.kind === "delete"
             ? { namespaceFailure: "delete" as const }
             : repair?.kind === "set-location"
-              ? { namespaceFailure: "set-location" as const, namespaceRepairName: repair.name }
+              ? {
+                  namespaceFailure: repair.kind,
+                  namespaceRepairName: repair.name,
+                  namespaceRepairMove: effective
+                    ? refusedMoveDestination(
+                        repair.destination,
+                        placement.parentForResource(record),
+                      )
+                    : undefined,
+                  ...(repairedAt === undefined ? {} : { namespaceFailureAt: repairedAt }),
+                }
               : {}),
         }
       : file;
   };
   const node = (entryId: string): CatalogNode | null => {
     const entry = view.entries.get(entryId);
-    if (!entry || view.invalidatedEntryIds.has(entryId)) return null;
+    if (!entry) return null;
     if (entry.kind === "file") return fileFromEntry(entry);
     if (entry.kind === "folder" && entry.sourceId === sourceId)
-      return projectCatalogDirectory(entry);
+      return projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), placement);
     return null;
   };
   const files = () =>
     [...view.entries.values()].flatMap((entry) =>
-      entry.kind === "file" && !view.invalidatedEntryIds.has(entry.entryId)
+      entry.kind === "file"
         ? (() => {
             const file = fileFromEntry(entry);
             return file ? [file] : [];
@@ -352,9 +435,8 @@ export function projectCatalogView(
       [...view.entries.values()].flatMap((entry) =>
         entry.kind === "folder" &&
         entry.sourceId === sourceId &&
-        !view.invalidatedEntryIds.has(entry.entryId) &&
         `/${entry.path.join("/")}` === path
-          ? [projectCatalogDirectory(entry)]
+          ? [projectCatalogDirectory(projectId, entry, foldersById.get(entry.entryId), placement)]
           : [],
       )[0] ??
       null,
@@ -369,10 +451,10 @@ export function projectCatalogView(
 export async function lookupContextCatalogFile(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  workId: string | null,
+  owner: ContextOwner,
   lookup: { entryId: string } | { uri: string },
 ) {
-  const scope = contextCatalogScope(projectId, scheme, workId);
+  const scope = contextCatalogScope(projectId, scheme, owner);
   if (!scope) return null;
   const result = await getContextCatalogLookup(projectId, scope, lookup);
   return result.entry?.kind === "file" && result.entry.uri.startsWith(`${scheme}://`)
@@ -383,7 +465,7 @@ export async function lookupContextCatalogFile(
 export function useContextCatalogView(
   projectId: string,
   scheme: ProjectContextTreeScheme,
-  options: { enabled?: boolean; workId: string | null },
+  options: { enabled?: boolean } & ContextOwner,
 ) {
   const schemes = useMemo(() => [scheme], [scheme]);
   return useContextCatalogViews(projectId, schemes, options)[scheme];
@@ -402,21 +484,35 @@ type CatalogViewResult = {
 export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   projectId: string,
   schemes: readonly S[],
-  options: { enabled?: boolean; workId: string | null },
+  options: {
+    enabled?: boolean;
+    /**
+     * An aggregate scope (the link index) can hold a lineage's Scratch and a
+     * Work's Uploads together. Each document and request still has one owner;
+     * Uploads reads with this Work where `owner` names a lineage.
+     */
+    uploadsWorkId?: string | null;
+  } & ContextOwner,
 ): Record<S, CatalogViewResult> {
   const projectPending = useIsProjectPendingCreation(projectId);
   const enabled = (options.enabled ?? true) && !projectPending;
+  const { workId, rootThreadId, uploadsWorkId } = options;
+  const scopeFor = useCallback(
+    (scheme: ProjectContextTreeScheme) =>
+      aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
+    [projectId, workId, rootThreadId, uploadsWorkId],
+  );
   const scopes = useMemo(() => {
     const result: CatalogScope[] = [];
     for (const scheme of schemes) {
-      const scope = contextCatalogScope(projectId, scheme, options.workId);
+      const scope = scopeFor(scheme);
       if (scope && !result.some((existing) => sameCatalogProjectionScope(existing, scope)))
         result.push(scope);
     }
     return result;
-  }, [projectId, schemes, options.workId]);
+  }, [schemes, scopeFor]);
   const resources = useOptionalAccountResourceReplica();
-  const { records, snapshot, error } = useAccountResourceProjection(projectId);
+  const { records, folders, snapshot, placement, error } = useAccountResourceProjection(projectId);
   const combine = useCallback(
     (queries: UseQueryResult<CatalogCacheView>[]) => {
       const results = {} as Record<S, CatalogViewResult>;
@@ -429,14 +525,21 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
         const view = resources
           ? checkpoint
             ? catalogViewFromCheckpoint(checkpoint)
-            : (query.data ?? (records.length > 0 ? emptyCatalogView(scope) : null))
+            : (query.data ??
+              (records.length > 0 || folders.some((folder) => projectFolderNeedsRepair(folder))
+                ? emptyCatalogView(scope)
+                : null))
           : query.data;
-        const projected = view ? projectResourceCatalogView(projectId, scope, view, records) : null;
+        const projected = view
+          ? projectResourceCatalogView(projectId, scope, view, records, placement)
+          : null;
         for (const scheme of schemes) {
-          const requested = contextCatalogScope(projectId, scheme, options.workId);
+          const requested = scopeFor(scheme);
           if (!requested || !sameCatalogProjectionScope(requested, scope)) continue;
           results[scheme] = {
-            catalog: projected ? projectCatalogView(projectId, scheme, projected, records) : null,
+            catalog: projected
+              ? projectCatalogView(projectId, scheme, projected, placement, records, folders)
+              : null,
             isComplete: resources ? Boolean(checkpoint) : Boolean(query.data),
             isError: query.isError || error !== null,
             isFetching: query.isFetching,
@@ -456,7 +559,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
       }
       return results;
     },
-    [projectId, schemes, options.workId, scopes, resources, records, snapshot, error],
+    [projectId, schemes, scopeFor, scopes, resources, records, folders, snapshot, placement, error],
   );
   return useQueries({
     queries: scopes.map((scope) => ({
@@ -473,6 +576,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
   const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
   const scopeWorkId = scope.kind === "work" ? scope.workId : undefined;
+  const scopeRootThreadId = scope.kind === "lineage" ? scope.rootThreadId : undefined;
   const stableScope = useMemo<CatalogScope>(
     () =>
       scopeKind === "user"
@@ -483,8 +587,14 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
               projectId: scopeProjectId as string,
               workId: scopeWorkId as string,
             }
-          : { kind: "project", projectId: scopeProjectId as string },
-    [scopeKind, scopeProjectId, scopeUserId, scopeWorkId],
+          : scopeKind === "lineage"
+            ? {
+                kind: "lineage",
+                projectId: scopeProjectId as string,
+                rootThreadId: scopeRootThreadId as string,
+              }
+            : { kind: "project", projectId: scopeProjectId as string },
+    [scopeKind, scopeProjectId, scopeUserId, scopeWorkId, scopeRootThreadId],
   );
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId);
@@ -498,11 +608,29 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
         candidate.projectId === projectId &&
         sameCatalogProjectionScope(candidate.scope, stableScope),
     );
-    const view = checkpoint ? catalogViewFromCheckpoint(checkpoint) : query.data;
+    const view = checkpoint
+      ? catalogViewFromCheckpoint(checkpoint)
+      : (query.data ??
+        (projection.folders.some((folder) => projectFolderNeedsRepair(folder))
+          ? emptyCatalogView(stableScope)
+          : undefined));
     return view
-      ? projectResourceCatalogView(projectId, stableScope, view, projection.records)
+      ? projectResourceCatalogView(
+          projectId,
+          stableScope,
+          view,
+          projection.records,
+          projection.placement,
+        )
       : undefined;
-  }, [projectId, projection.records, projection.snapshot, query.data, stableScope]);
+  }, [
+    projectId,
+    projection.records,
+    projection.placement,
+    projection.snapshot,
+    query.data,
+    stableScope,
+  ]);
   return {
     ...query,
     data,
@@ -543,7 +671,14 @@ export function useContextCatalogWake(
   );
 }
 
-/** Duplicate-tolerant wake hint handler; the hint never mutates cache state itself. */
+/**
+ * Duplicate-tolerant wake hint handler; the hint never mutates cache state itself.
+ *
+ * A manifest change is also the one signal another page's Apply or Discard sends: a draft-only
+ * document joins or never joins the manifest, and nothing else tells this page its Work's draft
+ * list is out of date. Mounted draft lists re-read, which is what ends a review and settles a
+ * draft-only tab whose draft was disposed elsewhere.
+ */
 export function pullContextCatalogOnHint(
   queryClient: QueryClient,
   resources: Pick<AccountResourceReplica, "hintCatalog">,
@@ -554,8 +689,15 @@ export function pullContextCatalogOnHint(
     hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
   void resources
     .hintCatalog(projectId, requestedScope, hint.headRevision)
-    .then((next) =>
-      queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, requestedScope), next),
-    )
+    .then((next) => {
+      queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, requestedScope), next);
+      void queryClient.invalidateQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] === "projects" &&
+          queryKey[1] === projectId &&
+          queryKey[2] === "works" &&
+          queryKey[4] === "drafts",
+      });
+    })
     .catch(() => undefined);
 }

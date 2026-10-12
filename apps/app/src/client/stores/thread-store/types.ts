@@ -1,29 +1,18 @@
 /** Shared types for the per-thread store. */
-import type { AgentSelection } from "@meridian/contracts/agents";
-import type { Block, Thread, ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
+import type {
+  Block,
+  Thread,
+  ThreadListItem,
+  Turn,
+  TurnStatus,
+  UserMessageBlock,
+} from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   InterruptResponseEntry,
   InterruptResponseIdentity,
   InterruptResponseState,
 } from "@/core/session/interrupt-response";
-
-export type PendingStreamStart = {
-  after?: string;
-  expectedTurnId?: string;
-  creation?: {
-    projectId: string;
-    title: string;
-    text: string;
-    agentSelection: AgentSelection;
-    workId?: string | null;
-    optimisticUserTurnId?: string;
-    workingTurnId?: string;
-    submissionId?: string;
-    activatedSkillSlugs?: readonly string[];
-    createProject?: boolean;
-  };
-};
 
 export type LiveTurnMeta = {
   eventsApplied: number;
@@ -78,8 +67,7 @@ export type ThreadStoreActions = {
   turns(id: string): Turn[] | undefined;
   setStreamingThreadId(id: string | null, projectId?: string | null): void;
   ensureThread(thread: Thread): void;
-  markHandoffPending(threadId: string): void;
-  appendUserTurn(threadId: string, text: string): Turn;
+  appendUserTurn(threadId: string, blocks: readonly UserMessageBlock[]): Turn;
   acknowledgeUserTurn(
     threadId: string,
     optimisticTurnId: string,
@@ -89,7 +77,6 @@ export type ThreadStoreActions = {
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
-  removeAssistantBlock(threadId: string, blockId: string): void;
   invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
@@ -111,8 +98,6 @@ export type ThreadStoreActions = {
       nextSeq: string;
     },
   ): boolean;
-  markPendingStream(threadId: string, start?: PendingStreamStart): void;
-  consumePendingStream(threadId: string): PendingStreamStart | null;
   markPendingCreation(args: { threadId: string }): void;
   clearPendingCreation(args: { threadId: string }): void;
 
