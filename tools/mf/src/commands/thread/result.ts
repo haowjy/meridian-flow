@@ -88,14 +88,31 @@ export async function timeoutReport(session: Session, threadId: string) {
   return classifyDeadline(snapshot, threadId);
 }
 
+type UnavailableDeadlineReport = { reason: "unconfirmed"; next: string[] };
+type DeadlineReport =
+  | UnavailableDeadlineReport
+  | (ReturnType<typeof snapshotActivity> & {
+      reason: "running" | "owed" | "lease_awake" | "unconfirmed";
+      next: string[];
+    });
+
 /** Describe the last deadline evidence, never infer a confirmed outcome from it. */
-export function classifyDeadline(snapshot: ThreadSnapshotResponse | null, threadId: string) {
-  const activity = snapshot ? snapshotActivity(snapshot) : { stillRunning: null, owed: [] };
+export function classifyDeadline(
+  snapshot: ThreadSnapshotResponse | null,
+  threadId: string,
+): DeadlineReport {
+  if (!snapshot) {
+    return {
+      reason: "unconfirmed",
+      next: [`./mf thread tail ${threadId} --until-idle`],
+    } satisfies UnavailableDeadlineReport;
+  }
+  const activity = snapshotActivity(snapshot);
   const reason = activity.stillRunning
     ? ("running" as const)
     : activity.owed.length > 0
       ? ("owed" as const)
-      : snapshot?.liveState.status.kind === "awake"
+      : snapshot.liveState.status.kind === "awake"
         ? ("lease_awake" as const)
         : ("unconfirmed" as const);
   return {

@@ -80,8 +80,11 @@ remaining deadline. A tail timeout uses the last snapshot with
 rather than extending the deadline for another HTTP request. This remains exit
 124, never proof of idle, even if the last snapshot looks idle.
 On a deadline, send reads a final snapshot; until-idle tail reports its last
-bounded snapshot as described above. Results report `stillRunning`, pending writer
-messages (`owed`), and `next`; they never cancel. Both use `classifyDeadline`
+bounded snapshot as described above. With a snapshot, results report `stillRunning`,
+pending writer messages (`owed`), and `next`; they never cancel. Without a
+snapshot, the deadline report contains only `reason: "unconfirmed"` and `next`;
+the tail envelope adds `snapshotUnavailable: true`. Absent `stillRunning` and
+`owed` mean unknown, not no running turn or no owed messages. Both use `classifyDeadline`
 in `result.ts`, in precedence order: `running` for a running turn,
 `owed` for pending writer messages, `lease_awake` for an awake lease with
 neither, then `unconfirmed` (including no snapshot or an idle-looking snapshot
