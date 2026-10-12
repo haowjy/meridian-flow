@@ -313,6 +313,9 @@
 .document-prose th {
   background: var(--color-muted);
   font-weight: 650;
+  /* The UA default centres headers; GFM leaves unaligned columns at start.
+     Aligned columns override this with an inline text-align. */
+  text-align: start;
 }
 
 .document-prose img {
