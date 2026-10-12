@@ -340,6 +340,7 @@ describe("write tool dispatch", () => {
 
   it("scopes tool_use_id idempotency to the response identity", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
+    const appended = vi.spyOn(ctx.journal, "appendBatch");
     await ctx.core.read({ file: "chapter.md" }, context);
 
     const first = await ctx.core.write(
@@ -388,7 +389,9 @@ describe("write tool dispatch", () => {
       "Second response write.",
     ]);
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(2);
-    expect(ctx.journal.mutationRecords("chapter.md").map((row) => row.writeId)).toEqual([
+    expect(
+      appended.mock.calls.flatMap(([entries]) => entries.map((entry) => entry.mutation?.writeId)),
+    ).toEqual([
       "response:response-provider-local-a:tool:provider-local-write",
       "response:response-provider-local-b:tool:provider-local-write",
     ]);

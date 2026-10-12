@@ -13,7 +13,6 @@ import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  agentEditMutations,
   agentEditWidCounters,
   documentYjsCheckpoints,
   documentYjsHeads,
@@ -662,47 +661,19 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           });
         }
 
-        const mutationValues: Array<{
-          index: number;
-          seq: number;
-          wId: number;
-          threadId: string;
-          turnId: string | null;
-          authoringResponseId?: string;
-          actorKind: "agent" | "human" | "system";
-          userId?: string;
-          writeId: string;
-          docId: string;
-        }> = [];
-        for (let i = 0; i < entries.length; i++) {
-          const entry = entries[i];
+        const ordinals = new Map<number, number>();
+        for (const [index, entry] of entries.entries()) {
           if (!entry.mutation) continue;
-          const seq = updateRows[i].id;
-          const wId =
+          ordinals.set(
+            index,
             entry.mutation.wId ??
-            (await reserveWriteOrdinal(txDb, {
-              documentId: entry.docId,
-              threadId: entry.mutation.threadId,
-            }));
-          mutationValues.push({
-            index: i,
-            seq,
-            wId,
-            threadId: entry.mutation.threadId,
-            turnId: entry.mutation.turnId,
-            ...(entry.mutation.authoringResponseId
-              ? { authoringResponseId: entry.mutation.authoringResponseId }
-              : {}),
-            actorKind: entry.mutation.actorKind,
-            ...(entry.mutation.userId ? { userId: entry.mutation.userId } : {}),
-            writeId:
-              entry.mutation.writeId ??
-              `${entry.mutation.threadId}:${entry.mutation.turnId}:${seq}`,
-            docId: entry.docId,
-          });
+              (await reserveWriteOrdinal(txDb, {
+                documentId: entry.docId,
+                threadId: entry.mutation.threadId,
+              })),
+          );
         }
 
-        const ordinals = new Map(mutationValues.map((value) => [value.index, value.wId]));
         await captureLiveEdits(
           txDb,
           receiptStates,
@@ -715,39 +686,11 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           updateRows,
         );
 
-        if (mutationValues.length > 0) {
-          await txDb.insert(agentEditMutations).values(
-            mutationValues.map((mv) => ({
-              wId: mv.wId,
-              documentId: asDocumentId(mv.docId),
-              threadId: asThreadId(mv.threadId),
-              turnId: mv.turnId === null ? null : asTurnId(mv.turnId),
-              authoringResponseId: asModelResponseId(mv.authoringResponseId) ?? null,
-              actorKind: mv.actorKind,
-              userId: mv.userId ?? null,
-              writeId: mv.writeId,
-              createdSeq: mv.seq,
-            })),
-          );
-        }
-
-        const results: Array<{
-          seq: number;
-          journalCommitKind: typeof journalCommitKind;
-          wId?: number;
-        }> = [];
-        let mutIdx = 0;
-        for (let i = 0; i < entries.length; i++) {
-          const seq = updateRows[i].id;
-          const mv = mutationValues[mutIdx];
-          if (mv && mv.index === i) {
-            results.push({ seq, wId: mv.wId, journalCommitKind });
-            mutIdx += 1;
-          } else {
-            results.push({ seq, journalCommitKind });
-          }
-        }
-        return results;
+        return updateRows.map((row, index) => ({
+          seq: row.id,
+          journalCommitKind,
+          ...(ordinals.has(index) ? { wId: ordinals.get(index) } : {}),
+        }));
       });
     },
 

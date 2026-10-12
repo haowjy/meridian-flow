@@ -224,7 +224,6 @@ export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
   schema.changeTrailShells,
   schema.pendingNotices,
   schema.agentEditWidCounters,
-  schema.agentEditMutations,
   schema.branchWriteJournal,
   schema.pushLineage,
   schema.documentBranches,

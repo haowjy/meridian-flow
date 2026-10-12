@@ -13,16 +13,6 @@ import type {
   UpdateJournal,
 } from "../ports/update-journal.js";
 
-export type StoredAgentEditMutation = {
-  wId: number;
-  documentId: string;
-  threadId: string;
-  turnId: string | null;
-  writeId: string;
-  createdSeq: number;
-  createdAt: Date;
-};
-
 export interface InMemoryAgentEditJournalOptions {
   now?: () => Date;
 }
@@ -43,7 +33,7 @@ export interface JournalEntry {
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
   attributionUpdates: StoredUpdate[];
-  mutations: StoredAgentEditMutation[];
+  turnsByThread: Map<string, Set<string>>;
 }
 
 /**
@@ -81,17 +71,15 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     return entries.map((batchEntry) => {
       const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
       if (!batchEntry.mutation) return { seq, journalCommitKind: "durable" };
-      const wId = this.appendMutationSync(
-        batchEntry.docId,
-        batchEntry.mutation.threadId,
-        batchEntry.mutation.turnId,
-        batchEntry.mutation.writeId ??
-          `${batchEntry.mutation.threadId}:${batchEntry.mutation.turnId}:${seq}`,
+      const wId =
         batchEntry.mutation.wId ??
-          this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId),
-        seq,
-        storedAt,
-      );
+        this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId);
+      if (batchEntry.mutation.turnId) {
+        const turns = this.entry(batchEntry.docId).turnsByThread;
+        const threadTurns = turns.get(batchEntry.mutation.threadId) ?? new Set<string>();
+        threadTurns.add(batchEntry.mutation.turnId);
+        turns.set(batchEntry.mutation.threadId, threadTurns);
+      }
       return { seq, wId, journalCommitKind: "durable" };
     });
   }
@@ -239,7 +227,9 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
           meta: { ...update.meta },
           storedAt: copyDate(update.storedAt),
         })),
-        mutations: entry.mutations.map(copyMutationRecord),
+        turnsByThread: new Map(
+          [...entry.turnsByThread].map(([threadId, turns]) => [threadId, new Set(turns)]),
+        ),
       });
     }
     return target;
@@ -252,42 +242,14 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
   documentsForTurn(threadId: string, turnId: string): Promise<string[]> {
     return Promise.resolve(
       [...this.data]
-        .filter(([, entry]) =>
-          entry.mutations.some((row) => row.threadId === threadId && row.turnId === turnId),
-        )
+        .filter(([, entry]) => entry.turnsByThread.get(threadId)?.has(turnId))
         .map(([id]) => id)
         .sort(),
     );
   }
 
-  mutationRecords(docId: string): StoredAgentEditMutation[] {
-    return this.entry(docId).mutations.map(copyMutationRecord);
-  }
-
   debugEntry(docId: string): JournalEntry | undefined {
     return this.data.get(docId);
-  }
-
-  private appendMutationSync(
-    docId: string,
-    threadId: string,
-    turnId: string | null,
-    writeId: string,
-    wId: number,
-    createdSeq: number,
-    createdAt: Date,
-  ): number {
-    const entry = this.entry(docId);
-    entry.mutations.push({
-      wId,
-      documentId: docId,
-      threadId,
-      turnId,
-      writeId,
-      createdSeq,
-      createdAt: copyDate(createdAt),
-    });
-    return wId;
   }
 
   private reserveWriteOrdinalSync(docId: string, threadId: string): number {
@@ -307,7 +269,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
         nextWIdByThread: new Map(),
         updates: [],
         attributionUpdates: [],
-        mutations: [],
+        turnsByThread: new Map(),
       };
       this.data.set(docId, entry);
     }
@@ -326,18 +288,6 @@ function copyPersistedUpdate(update: PersistedUpdate): PersistedUpdate {
     seq: update.seq,
     update: copyBytes(update.update),
     meta: { ...update.meta },
-  };
-}
-
-function copyMutationRecord(record: StoredAgentEditMutation): StoredAgentEditMutation {
-  return {
-    wId: record.wId,
-    documentId: record.documentId,
-    threadId: record.threadId,
-    turnId: record.turnId,
-    writeId: record.writeId,
-    createdSeq: record.createdSeq,
-    createdAt: copyDate(record.createdAt),
   };
 }
 

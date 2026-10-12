@@ -40,20 +40,17 @@ CREATE TABLE "change_trail_dirty_log" (
 	"turn_id" uuid
 );
 --> statement-breakpoint
-ALTER TABLE "turn_trail_work" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
-DROP TABLE "turn_trail_work" CASCADE;--> statement-breakpoint
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
+ALTER TABLE "agent_edit_mutations" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "document_yjs_reversal_ops" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "document_yjs_reversals" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+ALTER TABLE "turn_trail_work" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
+DROP TABLE "agent_edit_mutations" CASCADE;--> statement-breakpoint
 DROP TABLE "document_yjs_reversal_ops" CASCADE;--> statement-breakpoint
 DROP TABLE "document_yjs_reversals" CASCADE;--> statement-breakpoint
-ALTER TABLE "agent_edit_mutations" DROP CONSTRAINT "agent_edit_mutations_status_valid";--> statement-breakpoint
+DROP TABLE "turn_trail_work" CASCADE;--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" DROP CONSTRAINT "document_yjs_updates_reversal_actor_user_id_users_id_fk";
---> statement-breakpoint
-DROP INDEX "agent_edit_mutations_document_thread_write_id"; -- migration-lint: skip DROP_INDEX_NOT_CONCURRENTLY (retired columns and their indexes are removed in the same bounded-lock transaction)
---> statement-breakpoint
-DROP INDEX "agent_edit_mutations_thread_status"; -- migration-lint: skip DROP_INDEX_NOT_CONCURRENTLY (retired columns and their indexes are removed in the same bounded-lock transaction)
 --> statement-breakpoint
 SET LOCAL lock_timeout = '3s';
 --> statement-breakpoint
@@ -85,19 +82,8 @@ CREATE INDEX "change_trail_dirty_log_owner_seq" ON "change_trail_dirty_log" USIN
 ALTER TABLE "document_yjs_updates" ADD CONSTRAINT "document_yjs_updates_edit_id_document_edits_id_fk" FOREIGN KEY ("edit_id") REFERENCES "public"."document_edits"("id") ON DELETE set null ON UPDATE no action NOT VALID;--> statement-breakpoint
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
-ALTER TABLE "agent_edit_mutations" DROP COLUMN "status";--> statement-breakpoint
-ALTER TABLE "agent_edit_mutations" DROP COLUMN "undo_update_seq";--> statement-breakpoint
-ALTER TABLE "agent_edit_mutations" DROP COLUMN "reversed_at";--> statement-breakpoint
-ALTER TABLE "agent_edit_mutations" DROP COLUMN "reversed_by";--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" DROP COLUMN "reversal_actor_type";--> statement-breakpoint
 ALTER TABLE "document_yjs_updates" DROP COLUMN "reversal_actor_user_id";
---> statement-breakpoint
-ALTER TABLE "change_trail_dirty_log" VALIDATE CONSTRAINT "change_trail_dirty_log_thread_id_threads_id_fk";
---> statement-breakpoint
-ALTER TABLE "change_trail_dirty_log" VALIDATE CONSTRAINT "change_trail_dirty_log_turn_id_turns_id_fk";
---> statement-breakpoint
-ALTER TABLE "document_yjs_updates" VALIDATE CONSTRAINT "document_yjs_updates_edit_id_document_edits_id_fk";
-
 --> statement-breakpoint
 ALTER TABLE "document_edit_parts" VALIDATE CONSTRAINT "document_edit_parts_edit_id_document_edits_id_fk";
 --> statement-breakpoint
@@ -108,3 +94,9 @@ ALTER TABLE "document_edits" VALIDATE CONSTRAINT "document_edits_thread_id_threa
 ALTER TABLE "document_edits" VALIDATE CONSTRAINT "document_edits_turn_id_turns_id_fk";
 --> statement-breakpoint
 ALTER TABLE "document_edits" VALIDATE CONSTRAINT "document_edits_actor_user_id_users_id_fk";
+--> statement-breakpoint
+ALTER TABLE "change_trail_dirty_log" VALIDATE CONSTRAINT "change_trail_dirty_log_thread_id_threads_id_fk";
+--> statement-breakpoint
+ALTER TABLE "change_trail_dirty_log" VALIDATE CONSTRAINT "change_trail_dirty_log_turn_id_turns_id_fk";
+--> statement-breakpoint
+ALTER TABLE "document_yjs_updates" VALIDATE CONSTRAINT "document_yjs_updates_edit_id_document_edits_id_fk";

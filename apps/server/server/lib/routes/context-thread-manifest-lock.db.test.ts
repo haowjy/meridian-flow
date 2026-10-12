@@ -132,7 +132,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         schema.changeTrailShells,
         schema.pendingNotices,
         schema.agentEditWidCounters,
-        schema.agentEditMutations,
         schema.branchWriteJournal,
         schema.pushLineage,
         schema.documentBranches,
