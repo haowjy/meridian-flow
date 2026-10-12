@@ -173,7 +173,7 @@ it.each([
     }
     if (origin === "redo") {
       expect(
-        await view.collab.agentEdit().write({ ...address, command: "redo" }, redoContext),
+        await view.collab.agentEdit().write({ ...address, command: "redo", count: 2 }, redoContext),
       ).toMatchObject({ status: "cant_redo_held" });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
       const edits = await view.collab
@@ -189,7 +189,7 @@ it.each([
         userId: USER_ID as never,
       });
       expect(
-        await view.collab.agentEdit().write({ ...address, command: "redo" }, redoContext),
+        await view.collab.agentEdit().write({ ...address, command: "redo", count: 2 }, redoContext),
       ).toMatchObject({ status: "success" });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nGold.\n");
       return;

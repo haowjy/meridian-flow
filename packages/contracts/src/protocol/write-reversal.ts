@@ -18,6 +18,8 @@ export type WriteErrorStatus =
   | "cant_redo_held"
   | "cant_redo_elsewhere"
   | "cant_redo_users_undo"
+  | "insufficient_undo"
+  | "insufficient_redo"
   | "nothing_to_revert"
   | "work_archived"
   | "read_required"

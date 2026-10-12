@@ -52,3 +52,11 @@ it("counts section and whole-file reads once, without merging different document
     countFoldTools([...tools, read("manuscript://chapter-12.md#the-pill-hall")]).readDocuments.size,
   ).toBe(2);
 });
+
+it("labels a refused redo by its result, not its non-error transport", () => {
+  const redo = tool("write", "redo");
+  for (const status of ["nothing_to_redo", "insufficient_redo", "cant_redo_users_undo"]) {
+    expect(toolActivityPhrase({ ...redo, result: { status } }).verb).toBe("Couldn't redo");
+  }
+  expect(toolActivityPhrase({ ...redo, result: { status: "success" } }).verb).toBe("Redid");
+});

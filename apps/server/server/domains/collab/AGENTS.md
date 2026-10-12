@@ -106,3 +106,9 @@ either provider response or helper scope. `document_edits.response_id` retains
 provider authorship; `edit_scope_id` selects the rotated scope. Failed-scope
 rollback includes its durable undo, redo and revert edits and restores stack
 availability from non-rolled-back actions. Provider FKs are unchanged.
+
+Model inverse `count` measures edits in both directions. Multi-edit Undo plans
+on a scratch copy, admits atomically, and stores one action per target edit.
+Redo restores the last undone edit first; insufficient counts refuse with the
+available count and no mutation. All actions retain the shared edit scope for
+failed-scope rollback. Card grouping and writer-only redo are unchanged.
