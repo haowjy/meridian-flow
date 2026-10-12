@@ -15,6 +15,7 @@
 
 
 ### Changed
+- Share project wikilink ranking between editor paste and note imports.
 - Share upload/import classification and filename decoding; preserve case-only upload names and reject multiple upload file parts.
 - Define the verbatim YAML document-properties storage contract.
 

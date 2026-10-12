@@ -218,3 +218,12 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
   }
   return { source, findings: findings.sort((a, b) => a.from - b.from || b.to - a.to) };
 }
+
+export {
+  type Located,
+  locate,
+  rankWikilinkMatches,
+  storedName,
+  type WikilinkTarget,
+  wantedPath,
+} from "./project-ranking.js";
