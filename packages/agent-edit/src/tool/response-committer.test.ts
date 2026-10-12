@@ -1,5 +1,9 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
+
 import { describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
+import { unwrapDoc } from "../handles.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
 import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, outcomeText } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
@@ -54,6 +58,98 @@ describe("response committer", () => {
       transition: "closed",
       closedOutcome: "committed",
     });
+
+    const prepared = harness({ "chapter.md": "Alpha." });
+    const snapshots: {
+      bytes: Uint8Array;
+      cut: import("../ports/document-coordinator.js").StagedHelperCut;
+    }[] = [];
+    let pauseNext = false;
+    let entered!: () => void, release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    Object.assign(prepared.coordinator, {
+      withStagedWrites: (async (request) => {
+        if (pauseNext) {
+          pauseNext = false;
+          entered();
+          await gate;
+        }
+        snapshots.push({ bytes: Y.encodeStateAsUpdate(request.sourceDoc), cut: request.helperCut });
+        return prepared.coordinator.withDocument(request.docId, async (canonical) => {
+          const candidate = new Y.Doc({ gc: false });
+          Y.applyUpdate(candidate, Y.encodeStateAsUpdate(canonical));
+          for (const entry of request.entries) Y.applyUpdate(candidate, entry.update);
+          const state = Y.encodeStateAsUpdate(candidate);
+          candidate.destroy();
+          return {
+            keptEntries: request.entries,
+            helperState: state,
+            helperCut: { generation: 1, state: Y.encodeStateAsUpdate(canonical) },
+            beforeState: Y.encodeStateAsUpdate(canonical),
+          };
+        });
+      }) satisfies NonNullable<DocumentCoordinator["withStagedWrites"]>,
+    });
+    const peer = {
+      ...context,
+      responseId: "prepared-abort",
+      turnId: "prepared-turn",
+      interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, afterJournalId: 0 },
+    };
+    await prepared.core.read({ file: "chapter.md" }, peer);
+    expect(
+      (await prepared.core.write({ command: "insert", file: "chapter.md", content: "Beta." }, peer))
+        .status,
+    ).toBe("success");
+    const borrowed = await prepared.core.prepare(peer.responseId, "chapter.md");
+    if (!borrowed) throw new Error("Missing prepared lease");
+    unwrapDoc(borrowed.doc).getMap("foreign").set("must-stay-on-replica", true);
+    borrowed.dispose();
+    const before = snapshots.at(-1);
+    await prepared.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.", content: "Pink." },
+      context,
+    );
+    let rollback: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
+    await prepared.core.rollbackResponse(peer.responseId, {
+      deferFinalization: (deferred) => {
+        rollback = deferred;
+      },
+    });
+    await rollback?.abort();
+    (await prepared.core.prepare(peer.responseId, "chapter.md"))?.dispose();
+    expect(snapshots.at(-1)).toEqual(before);
+    // A scoped read replay started before a later stage must not reject that new write.
+    pauseNext = true;
+    const reading = prepared.core.prepare(peer.responseId, "chapter.md");
+    await waiting;
+    try {
+      expect(
+        (
+          await prepared.core.write(
+            { command: "insert", file: "chapter.md", content: "Gamma." },
+            peer,
+          )
+        ).status,
+      ).toBe("success");
+    } finally {
+      release();
+    }
+    const current = await reading;
+    if (!current) throw new Error("Missing read lease");
+    try {
+      expect(blockTexts(unwrapDoc(current.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+    } finally {
+      current.dispose();
+    }
+    expect((await prepared.core.read({ file: "chapter.md" }, peer)).result.message).toBeUndefined();
+    await prepared.core.rollbackResponse(peer.responseId);
+    expect(prepared.core.hasResponseDocument(peer.responseId, "chapter.md")).toBe(false);
   });
 
   it("commits a multi-document thread-peer response in one journal batch", async () => {

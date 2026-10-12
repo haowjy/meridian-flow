@@ -73,33 +73,6 @@ export function createEffectiveDocumentReader(input: {
     return staged === undefined || staged.kind === command.destination;
   }
 
-  function readWithStagedResponseOverlay<T>(
-    doc: Y.Doc,
-    command: EffectiveReadInput,
-    read: (doc: DocHandle) => Promise<T>,
-  ): Promise<T> {
-    if (!stagedInVersion(command)) return read(toDocHandle(doc));
-    return input.agentEdit
-      .withResponseDocument(command.responseId, command.documentId, toDocHandle(doc), read)
-      .then((staged) => staged ?? read(toDocHandle(doc)));
-  }
-
-  function readStagedResponseOnly<T>(
-    command: EffectiveReadInput,
-    read: (doc: DocHandle) => Promise<T>,
-  ): Promise<T> | null {
-    if (!stagedInVersion(command)) return null;
-    if (!input.agentEdit.hasResponseDocument(command.responseId, command.documentId)) return null;
-    return input.agentEdit
-      .withResponseDocument(command.responseId, command.documentId, null, read)
-      .then((result) => {
-        if (result === null) {
-          throw new Error(`Staged response document disappeared: ${command.documentId}`);
-        }
-        return result;
-      });
-  }
-
   /**
    * Reads the document's effective Y.Doc for this command: the reply's staged
    * create, its thread peer, its Work draft, or else live content. Choosing
@@ -110,32 +83,18 @@ export function createEffectiveDocumentReader(input: {
     command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, SyncError>> {
-    const fallback = () => readLive(command, read);
-    const isStagedOnlyCreatedDocument = Boolean(
-      command.responseId &&
-        input.agentEdit
-          .responseDocuments(command.responseId, command.threadId ?? undefined)
-          .created.includes(command.documentId),
-    );
-    if (isStagedOnlyCreatedDocument) {
-      const stagedOnly = readStagedResponseOnly(command, read);
-      if (stagedOnly !== null) return Ok(await stagedOnly);
-    }
-    if (command.destination === "live") {
-      // Live reads ignore any Work draft, kept or not (D40), but still see this
-      // reply's own staged writes.
-      if (
-        stagedInVersion(command) &&
-        input.agentEdit.hasResponseDocument(command.responseId, command.documentId)
-      ) {
-        return Ok(
-          await input.liveCoordinator.withDocument(command.documentId, (doc) =>
-            readWithStagedResponseOverlay(doc, command, read),
-          ),
-        );
+    const lease = stagedInVersion(command)
+      ? await input.agentEdit.prepare(command.responseId, command.documentId)
+      : null;
+    if (lease) {
+      try {
+        return Ok(await read(lease.doc));
+      } finally {
+        lease.dispose();
       }
-      return fallback();
     }
+    const fallback = () => readLive(command, read);
+    if (command.destination === "live") return fallback();
     if (command.threadId) {
       try {
         const existingPeer = await input.branches.resolveThreadBranch(
@@ -155,7 +114,7 @@ export function createEffectiveDocumentReader(input: {
           command.documentId,
           command.threadId,
         );
-        return Ok(await readEffectiveBranch(branch, command, read));
+        return Ok(await readEffectiveBranch(branch, read));
       } catch (cause) {
         if (!(cause instanceof BranchNotFoundError)) throw cause;
       }
@@ -165,12 +124,10 @@ export function createEffectiveDocumentReader(input: {
           command.documentId,
           command.threadId,
         );
-        return Ok(await readEffectiveBranch(workDraft, command, read));
+        return Ok(await readEffectiveBranch(workDraft, read));
       } catch (cause) {
         if (!(cause instanceof BranchNotFoundError)) throw cause;
       }
-      const stagedOnly = readStagedResponseOnly(command, read);
-      if (stagedOnly !== null) return Ok(await stagedOnly);
     }
     return fallback();
   }
@@ -195,12 +152,11 @@ export function createEffectiveDocumentReader(input: {
 
   async function readEffectiveBranch<T>(
     branch: { branchId: string; doc: Y.Doc },
-    command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<T> {
     try {
       return input.branchCoordinator.readBranch(branch.branchId, async (doc) =>
-        readWithStagedResponseOverlay(doc, command, read),
+        read(toDocHandle(doc)),
       );
     } finally {
       branch.doc.destroy();

@@ -71,14 +71,20 @@ after admission and CAS accept. The buffer applies kept writes, failed-receipt
 owners and helper replacement together after that acceptance. The response helper is replaced from that cut plus
 surviving staged writes before the next command. A discarded write and its later
 dependents receive failed per-write receipts; independent writes still commit.
-The prepared response view pairs its runtime, replay capability and required cut.
-It is the only helper owner while draft writes are buffered: commands and scoped
-response reads consume it without peer reconstruction or ambient merges.
+The prepared response view owns a private Y.Doc, replay capability and required cut.
+It is never a RuntimeDocumentState and is never registered in the runtime store.
+Every content exposure goes through prepare: scoped reads borrow disposable
+replicas; commands stage through committer-owned call leases. Effective reads
+prepare before taking a branch-read lock. No raw helper or staged-byte reader is
+public. Ordinary live replicas are dispatched at the same gate.
 Concurrent staging and terminal reports use separate disposable snapshots;
 historical pre-own snapshots remain receipt evidence, not the current base cut.
 Staging requires the document label and edit description used by failed notices.
-The helper cut survives a receipt-only buffer. Notices group by document and
-handle, distinguish partial from whole rejection and name the rejected writes.
+Rollback marks the response pending settlement without changing its view. Commit
+closes/disposes it (and evicts live replicas); abort restores buffered ownership
+unchanged. The helper cut survives a receipt-only buffer. Notices wait in a
+committer outbox that only tool results drain, including cached results without
+caching their notice. Notices group by document and handle, distinguish partial from whole rejection and name the rejected writes.
 Terminal concurrency reporting uses the frozen pre-publication cut, so the
 response's own newly journaled rows are not mistaken for concurrent writer text.
 The ordinary live-document path and durable recovery remain unchanged.
