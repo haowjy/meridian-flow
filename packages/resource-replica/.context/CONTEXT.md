@@ -119,14 +119,22 @@ captures the deepest existing identity and missing folder names beneath it.
 Projection appends that suffix to the anchor's current home and reuses navigation-only
 ancestor completion until real catalog identities arrive. Preparation carries both
 in `destinationParent`; receipts must match both. Picker, rename and File it do
-not manufacture missing paths. One canonical qualified
-home index binds parent edges from the installed checkpoints and retained journal
-identities. A newer exact canonical folder observation supplies that folder's edge
-without disconnecting children whose checkpoint still names its prior home.
+not manufacture missing paths. Server catalog `parentId` supplies each canonical
+parent identity; the name and parent install atomically with the canonical location.
+The existing observation fence and metadata CAS revision prevent a late catalog
+response from overwriting a newer exact-ID observation. Availability already returns
+a full catalog entry, so its parentId travels through the namespace transport too.
+Catalog installation also discovers command-free folder records, retaining identity
+ancestry after a checkpoint disappears (including Recent). One retained observation
+per identity supersedes its earlier checkpoint; paths never
+establish identity dependencies. Children remain connected by their server parent IDs.
 Effective edges use the owning intent, otherwise the canonical parent. Memoized
-walks produce location and ancestor suppression together. Cycles revert every
-member's canonical parent edge before continuing resolution, including newly
-exposed cycles; independently renamed ancestors still apply. Missing/terminal
+iterative walks produce location and ancestor suppression together. Pending cycles
+revert every member to canonical edges, including newly exposed cycles. Canonical
+cycles permanently root all members at their own absolute location observations;
+there is no folder edge to restore in that fallback. Missing parent IDs likewise
+retain the absolute location, completed by navigation-only ancestors built once
+per qualified home. No prefix search is repeated for sparse siblings; independently renamed ancestors still apply. Missing/terminal
 destinations use canonical edges. Pending-deleted or terminal ancestors suppress
 descendants, including known resources absent from catalogs in Recent.
 

@@ -390,6 +390,7 @@ describe("namespace record transitions", () => {
     const refreshed = installCanonicalRefresh({
       record: settled.next,
       operationId: "move-operation",
+      parent: { kind: "folder", folderId: "chapters" },
       location: {
         scheme: "manuscript",
         path: "/chapters/after",

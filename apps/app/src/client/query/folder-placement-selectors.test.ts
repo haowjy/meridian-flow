@@ -50,7 +50,11 @@ it.each([
   const refreshed = installFolderNamespaceAvailability(
     accepted,
     accepted.canonicalRefresh!.operationId,
-    { kind: "available", location: loc(destination) },
+    {
+      kind: "available",
+      location: loc(destination),
+      parent: { kind: "folder", folderId: destination.startsWith("B/") ? "B" : "P" },
+    },
   )!.next;
   for (const folder of [pending, accepted, refreshed]) {
     const placement = createResourcePlacement("p", entries, [folder]);

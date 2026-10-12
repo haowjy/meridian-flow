@@ -21,7 +21,18 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
   if (!deletion) throw new Error("Missing deletion");
   const snapshot: ResourceProjectionSnapshot = {
     records: [],
-    folders: [deletion.next],
+    folders: [
+      deletion.next,
+      {
+        projectId: "project",
+        handle: "folder:A",
+        folderId: "A",
+        revision: 1,
+        canonical: { scheme: "kb", path: "/P/A", name: "A", workId: null },
+        canonicalParent: { kind: "folder", folderId: "P" },
+        intents: [],
+      },
+    ],
     catalogs: [
       {
         projectId: "project",
@@ -120,6 +131,7 @@ it.each([
     intentId: "create",
   }).next;
   record.resource.canonical = { scheme: "kb", path: "/P/A/doc.md", name: "doc.md", workId: null };
+  record.resource.canonicalParent = { kind: "folder", folderId: "A" };
   record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   record.intents = [];
   const deletion = planFolderDeletion({
@@ -134,7 +146,18 @@ it.each([
   const scope = { kind: "project" as const, projectId: "project" };
   const snapshot: ResourceProjectionSnapshot = {
     records: [record],
-    folders: [deletion.next],
+    folders: [
+      deletion.next,
+      {
+        projectId: "project",
+        handle: "folder:A",
+        folderId: "A",
+        revision: 1,
+        canonical: { scheme: "kb", path: "/P/A", name: "A", workId: null },
+        canonicalParent: { kind: "folder", folderId: "P" },
+        intents: [],
+      },
+    ],
     catalogs: checkpoint
       ? [
           {

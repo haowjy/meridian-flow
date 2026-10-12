@@ -123,6 +123,7 @@ function fileMachine(): Machine {
             record,
             operationId: barrier.operationId,
             location: loc("B/doc.md"),
+            parent: { kind: "folder", folderId: "B" },
           }),
         );
     },
@@ -188,7 +189,10 @@ function folderMachine(): Machine {
     refresh: () => {
       if (record.canonicalRefresh)
         apply(
-          installFolderCanonicalRefresh(record, record.canonicalRefresh.operationId, loc("B/A")),
+          installFolderCanonicalRefresh(record, record.canonicalRefresh.operationId, loc("B/A"), {
+            kind: "folder",
+            folderId: "B",
+          }),
         );
     },
   };

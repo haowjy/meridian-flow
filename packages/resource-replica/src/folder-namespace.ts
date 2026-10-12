@@ -32,6 +32,7 @@ import type {
   NamespaceIntent,
   NamespaceOutcome,
   NamespaceRequest,
+  ParentRef,
   ResourceDestination,
   ResourceKey,
   ResourceLocation,
@@ -104,6 +105,7 @@ export function planFolderDeletion(input: {
   handle: string;
   folderId: string;
   source: ResourceLocation;
+  sourceParent?: ParentRef;
   intentId: string;
   operationId: string;
 }): FolderNamespaceWrite | null {
@@ -121,6 +123,7 @@ export function planFolderDeletion(input: {
     folderId: input.folderId,
     revision: 0,
     canonical: input.source,
+    canonicalParent: input.sourceParent,
     intents: [],
   };
   if (folderOwnsDeletion(record)) return null;
@@ -160,6 +163,7 @@ export function planFolderLocation(input: {
   handle: string;
   folderId: string;
   source: ResourceLocation;
+  sourceParent?: ParentRef;
   intentId: string;
   operationId: string;
   destination: ResourceDestination;
@@ -179,6 +183,7 @@ export function planFolderLocation(input: {
     folderId: input.folderId,
     revision: 0,
     canonical: input.source,
+    canonicalParent: input.sourceParent,
     intents: [],
   };
   resourceContextAuthority(record.canonical.scheme, record.canonical);
@@ -504,13 +509,14 @@ export function installFolderCanonicalRefresh(
   record: FolderNamespaceRecord,
   operationId: string,
   location: ResourceLocation,
+  parent: ParentRef,
 ): FolderNamespaceWrite | null {
   if (record.canonicalRefresh?.operationId !== operationId) return null;
   resourceContextAuthority(location.scheme, location);
   const { canonicalRefresh: _completed, ...rest } = record;
   return {
     expectedRevision: record.revision,
-    next: { ...rest, revision: record.revision + 1, canonical: location },
+    next: { ...rest, revision: record.revision + 1, canonical: location, canonicalParent: parent },
   };
 }
 
@@ -522,7 +528,12 @@ export function installFolderNamespaceAvailability(
 ): FolderNamespaceWrite | null {
   if (record.canonicalRefresh?.operationId !== operationId) return null;
   if (availability.kind === "available")
-    return installFolderCanonicalRefresh(record, operationId, availability.location);
+    return installFolderCanonicalRefresh(
+      record,
+      operationId,
+      availability.location,
+      availability.parent,
+    );
   const { canonicalRefresh: _completed, ...rest } = record;
   const terminal =
     availability.kind === "deleted" ? { generation: availability.generation } : record.terminal;

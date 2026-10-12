@@ -1,4 +1,4 @@
-/** Memoized identity parent edges shared by folders, documents and deletion visibility. */
+/** Identity parent edges shared by folders, documents and deletion visibility. */
 import { folderOwnsDeletion } from "./folder-namespace";
 import { owningLocationIntent } from "./resource-intent-policy";
 import type {
@@ -9,12 +9,23 @@ import type {
 } from "./resource-records";
 import { destinationLocation, ownerOf } from "./resource-records";
 
-export type FolderPlacementNode = { id: string; canonical: ResourceLocation };
+export type FolderPlacementNode = {
+  id: string;
+  canonical: ResourceLocation;
+  parent?: ParentRef;
+  /** Retained ancestry alone does not prove a missing destination is installed. */
+  ancestryOnly?: boolean;
+};
 type Placement = { location: ResourceLocation; hidden: boolean };
-export const qualifiedHome = (location: ResourceLocation) =>
-  JSON.stringify([location.scheme, ownerOf(location), location.path.replace(/\/$/, "")]);
 
-/** Canonical homes bind once. Pending commands supply edges, never path aliases. */
+/** Unknown ancestry is an absolute observation, never evidence about another identity. */
+function absoluteEdge(location: ResourceLocation): ResourceDestination {
+  return {
+    parent: { kind: "root", scheme: location.scheme, owner: ownerOf(location) },
+    name: location.path.startsWith("/") ? location.path.slice(1) : location.path,
+  };
+}
+
 export function folderPlacementGraph(
   projectId: string,
   nodes: readonly FolderPlacementNode[],
@@ -27,33 +38,22 @@ export function folderPlacementGraph(
       .map((r) => [r.folderId, r]),
   );
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const homes = new Map([
-    ...[...byId.values()].map((n) => [qualifiedHome(n.canonical), n.id] as const),
-    ...[...recordsById.values()].map((r) => [qualifiedHome(r.canonical), r.folderId] as const),
-  ]);
-  function canonicalEdge(location: ResourceLocation): ResourceDestination {
-    let path = location.path.slice(0, location.path.lastIndexOf("/"));
-    while (path) {
-      const id = homes.get(qualifiedHome({ ...location, path }));
-      if (id)
-        return {
-          parent: { kind: "folder", folderId: id },
-          name: location.path.slice(path.length + 1),
-        };
-      path = path.slice(0, path.lastIndexOf("/"));
-    }
-    return {
-      parent: { kind: "root", scheme: location.scheme, owner: ownerOf(location) },
-      name: location.path.replace(/^\//, ""),
-    };
+  const canonicalLocations = new Map<string, ResourceLocation>();
+  const canonical = new Map<string, ResourceDestination>();
+  for (const node of byId.values()) {
+    const record = recordsById.get(node.id);
+    // Record observations are fenced by their CAS revision during installation. Local
+    // command admission without a parent observation does not supersede the catalog.
+    const location = record?.canonicalParent ? record.canonical : node.canonical;
+    const parent = record?.canonicalParent ?? node.parent;
+    canonicalLocations.set(node.id, location);
+    canonical.set(
+      node.id,
+      parent?.kind === "folder" && byId.has(parent.folderId)
+        ? { parent, name: location.name }
+        : absoluteEdge(location),
+    );
   }
-  const canonicalParent = (location: ResourceLocation): ParentRef => canonicalEdge(location).parent;
-  const canonical = new Map(
-    [...byId.values()].map((n) => [
-      n.id,
-      canonicalEdge(recordsById.get(n.id)?.canonical ?? n.canonical),
-    ]),
-  );
   const edges = new Map<string, ResourceDestination>();
   for (const node of byId.values()) {
     const record = recordsById.get(node.id);
@@ -64,7 +64,11 @@ export function folderPlacementGraph(
     let edge =
       desired?.kind === "set-folder-location" ? desired.destination : canonical.get(node.id)!;
     if (edge.parent.kind === "folder") {
-      if (!byId.has(edge.parent.folderId) || recordsById.get(edge.parent.folderId)?.terminal)
+      if (
+        !byId.has(edge.parent.folderId) ||
+        byId.get(edge.parent.folderId)?.ancestryOnly ||
+        recordsById.get(edge.parent.folderId)?.terminal
+      )
         edge = canonical.get(node.id)!;
     } else if (
       !destinationInstalled({
@@ -77,7 +81,6 @@ export function folderPlacementGraph(
       edge = canonical.get(node.id)!;
     edges.set(node.id, edge);
   }
-  // Find cycles before resolving; all cycle members revert their edge together.
   const done = new Set<string>();
   for (const id of byId.keys()) {
     const chain: string[] = [];
@@ -86,7 +89,15 @@ export function folderPlacementGraph(
     while (next && !done.has(next)) {
       const start = active.get(next);
       if (start !== undefined) {
-        for (const member of chain.slice(start)) edges.set(member, canonical.get(member)!);
+        const members = chain.slice(start);
+        const canonicalCycle = members.every(
+          (member) => edges.get(member) === canonical.get(member),
+        );
+        // Each cycle permanently removes a pending edge or roots canonical members, so the finite edge set must terminate.
+        for (const member of members) {
+          if (canonicalCycle) canonical.set(member, absoluteEdge(canonicalLocations.get(member)!));
+          edges.set(member, canonical.get(member)!);
+        }
         for (const member of chain.splice(start)) active.delete(member);
         continue;
       }
@@ -98,36 +109,54 @@ export function folderPlacementGraph(
     for (const member of chain) done.add(member);
   }
   const resolved = new Map<string, Placement>();
-  function resolve(id: string): Placement {
-    const cached = resolved.get(id);
-    if (cached) return cached;
-    const edge = edges.get(id)!;
-    const parent = edge.parent.kind === "folder" ? resolve(edge.parent.folderId) : null;
-    const location = destinationLocation(edge, (parentId) => resolve(parentId).location)!;
-    const record = recordsById.get(id);
-    const result = {
-      location,
-      hidden: Boolean(parent?.hidden || (record && folderOwnsDeletion(record))),
-    };
-    resolved.set(id, result);
-    return result;
+  for (const id of byId.keys()) {
+    const chain: string[] = [];
+    let next: string | undefined = id;
+    while (next && !resolved.has(next)) {
+      chain.push(next);
+      const parent: ParentRef = edges.get(next)!.parent;
+      next = parent.kind === "folder" ? parent.folderId : undefined;
+    }
+    for (const member of chain.reverse()) {
+      const edge = edges.get(member)!;
+      const parent = edge.parent.kind === "folder" ? resolved.get(edge.parent.folderId) : null;
+      const record = recordsById.get(member);
+      resolved.set(member, {
+        location:
+          edge === canonical.get(member) && edge.parent.kind === "root"
+            ? canonicalLocations.get(member)!
+            : destinationLocation(edge, (parentId) => resolved.get(parentId)?.location ?? null)!,
+        hidden: Boolean(parent?.hidden || (record && folderOwnsDeletion(record))),
+      });
+    }
   }
-  for (const id of byId.keys()) resolve(id);
-  function place(location: ResourceLocation, destination?: ResourceDestination): Placement {
-    const fallback = canonicalEdge(location);
+  function place(
+    location: ResourceLocation,
+    destination?: ResourceDestination,
+    canonicalParent?: ParentRef,
+  ): Placement {
+    const fallback =
+      canonicalParent?.kind === "folder" && byId.has(canonicalParent.folderId)
+        ? { parent: canonicalParent, name: location.name }
+        : absoluteEdge(location);
     let edge = destination ?? fallback;
     if (
       edge.parent.kind === "folder" &&
-      (!byId.has(edge.parent.folderId) || recordsById.get(edge.parent.folderId)?.terminal)
+      (!byId.has(edge.parent.folderId) ||
+        byId.get(edge.parent.folderId)?.ancestryOnly ||
+        recordsById.get(edge.parent.folderId)?.terminal)
     )
       edge = fallback;
     const parent = edge.parent.kind === "folder" ? resolved.get(edge.parent.folderId) : null;
-    const next = destinationLocation(edge, (id) => resolved.get(id)?.location ?? null) ?? location;
-    return { location: next, hidden: Boolean(parent?.hidden) };
+    return {
+      location:
+        edge === fallback && edge.parent.kind === "root"
+          ? location
+          : (destinationLocation(edge, (id) => resolved.get(id)?.location ?? null) ?? location),
+      hidden: Boolean(parent?.hidden),
+    };
   }
   return {
-    homes,
-    canonicalParent,
     parentForFolder: (id: string) => edges.get(id)?.parent ?? null,
     locations: new Map([...resolved].map(([id, value]) => [id, value.location])),
     hidden: (id: string) => resolved.get(id)?.hidden ?? false,

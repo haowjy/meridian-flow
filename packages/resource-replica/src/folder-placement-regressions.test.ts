@@ -108,7 +108,9 @@ it("does not synthesize navigation ancestors for a suppressed incomplete subtree
 it("binds document observations to a parent's exact canonical home ahead of its checkpoint", () => {
   const record = move("B", "C", "D");
   const graph = folderPlacementGraph("p", [{ id: "B", canonical: loc("B") }], [record]);
-  expect(graph.place(loc("C/doc.md")).location).toMatchObject({
+  expect(
+    graph.place(loc("C/doc.md"), undefined, { kind: "folder", folderId: "B" }).location,
+  ).toMatchObject({
     path: "/D/doc.md",
     name: "doc.md",
   });
@@ -152,4 +154,10 @@ it("roots a two-folder canonical cycle at each member's absolute observation", (
   const placement = createResourcePlacement("p", catalog, []);
   expect(placement.folderLocation("A")?.path).toBe("/old/A");
   expect(placement.folderLocation("B")?.path).toBe("/new/B");
+});
+
+it("roots a self-parent canonical observation without attaching its old home", () => {
+  const placement = createResourcePlacement("p", [entries[0], node("F", "old/F", "F")], []);
+  expect(placement.folderLocation("F")?.path).toBe("/old/F");
+  expect(placement.parentForFolder("F")?.kind).toBe("root");
 });

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Canonical folder parents retain server identity across renamed and reused paths. Incoherent ancestry cannot freeze placement, and sparse folders no longer repeat ancestor searches.
+
 - Open linked documents immediately even when their folders do not exist yet. Missing folders are created atomically beneath the captured parent identity.
 - Treat delivery into a retired destination authority as move repair rather than a missing Work.
 - Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.

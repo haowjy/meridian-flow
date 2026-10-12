@@ -65,6 +65,14 @@ export function createResourceNamespaceTransport(
         throw new TypeError("Invalid namespace availability location");
       return {
         kind: "available",
+        parent:
+          entry.parentId === entry.sourceId
+            ? {
+                kind: "root",
+                scheme: parsed.value.scheme,
+                owner: catalogEntryOwner(entry.scope, parsed.value.authority),
+              }
+            : { kind: "folder", folderId: entry.parentId },
         location: {
           scheme: parsed.value.scheme,
           path: `/${parsed.value.path}`,
