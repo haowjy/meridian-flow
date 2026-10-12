@@ -34,6 +34,21 @@ export type DeletedChatPorts = {
   surfaces(): DeletedChatSurface[];
   lock: SubmissionLock;
 };
+const ownDeletes = new Map<string, { epoch: number; pending: boolean }>();
+/** Publish intent before DELETE can race an admission response; rollback only this intent. */
+export function beginOwnChatDelete(accountId: string, threadId: string) {
+  const key = surfaceKey(accountId, threadId);
+  const mark = { epoch: getChatSubmissionEpoch(), pending: true };
+  ownDeletes.set(key, mark);
+  return {
+    confirmed: () => {
+      mark.pending = false;
+    },
+    cancel: () => {
+      if (ownDeletes.get(key) === mark) ownDeletes.delete(key);
+    },
+  };
+}
 const surfaces = new Map<string, Set<DeletedChatSurface>>();
 const surfaceKey = (accountId: string, threadId: string) => JSON.stringify([accountId, threadId]);
 export function registerDeletedChatSurface(
@@ -68,13 +83,20 @@ export async function cleanDeletedChat(
   reason: "deleted" | "project-deleted" | "own-delete",
   ports = browserPorts(accountId, threadId),
   underSubmissionLock = false,
-): Promise<void> {
+  eligible = () => true,
+): Promise<boolean> {
   const clean = async () => {
-    if (!ports.current()) return;
+    if (!ports.current() || !eligible()) return false;
     const panes = ports.surfaces();
-    const visible = reason === "deleted" ? panes.find((pane) => pane.visible()) : undefined;
+    const key = surfaceKey(accountId, threadId);
+    const mark = ownDeletes.get(key);
+    const ownDelete = mark?.epoch === getChatSubmissionEpoch();
+    const visible =
+      reason === "deleted" && !ownDelete ? panes.find((pane) => pane.visible()) : undefined;
     const source = ports.draft(accountId, { kind: "chat", id: threadId });
-    const records = ports.records()?.filter((entry) => entry.threadId === threadId) ?? [];
+    const snapshot = ports.records();
+    if (snapshot === null) return false;
+    const records = snapshot.filter((entry) => entry.threadId === threadId);
     let moved = false;
     if (visible && projectId) {
       const shown = visible.recordIds();
@@ -88,7 +110,6 @@ export async function cleanDeletedChat(
       const box = source.initialDraft;
       if (box && serializeComposerDraft(box.doc).text) {
         snapshots.push(box);
-        receipts.push(`deleted-box:${threadId}:${box.revision}`);
       }
       if (snapshots.length) {
         const target = ports.draft(accountId, { kind: "new-chat", id: projectId });
@@ -98,18 +119,20 @@ export async function cleanDeletedChat(
           count: snapshots.length,
         });
         // Preserve the source if the tab cannot durably receive its words.
-        if (!moved) return;
+        if (!moved) return false;
       }
     }
     source.handoff();
     for (const entry of records) {
-      if (!ports.current()) return;
-      ports.retire(entry.recordId);
+      if (!ports.current() || !ports.retire(entry.recordId)) return false;
     }
     for (const pane of panes) pane.leave(moved);
+    if (ownDelete && !mark?.pending && ownDeletes.get(key) === mark) ownDeletes.delete(key);
+    return true;
   };
-  if (underSubmissionLock) await clean();
-  else await ports.lock.run(accountId, threadId, new AbortController().signal, clean);
+  return underSubmissionLock
+    ? clean()
+    : ports.lock.run(accountId, threadId, new AbortController().signal, clean);
 }
 
 /** Once per bind, bounded read-only probes. Not-found and inconclusive results are inert. */
@@ -139,9 +162,11 @@ export async function sweepDeletedChats(
     }),
   );
 }
-export async function cleanDeletedChatsOnBind(accountId: string, epoch: number) {
-  // The bind happens before React mounts. Let the current surface register first.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+export async function cleanDeletedChatsOnBind(
+  accountId: string,
+  epoch: number,
+  addressed: (id: string) => boolean,
+) {
   const current = () =>
     getChatSubmissionAccountId() === accountId && getChatSubmissionEpoch() === epoch;
   if (!current()) return;
@@ -152,6 +177,7 @@ export async function cleanDeletedChatsOnBind(accountId: string, epoch: number) 
     ...storedChatDraftIds(accountId),
   ]);
   const offScreen = (id: string) =>
+    !addressed(id) &&
     ![...(surfaces.get(surfaceKey(accountId, id)) ?? [])].some((pane) => pane.visible());
   await sweepDeletedChats(
     [...ids].filter(offScreen),
@@ -165,7 +191,15 @@ export async function cleanDeletedChatsOnBind(accountId: string, epoch: number) 
         signal,
       ),
     async (id, reason) => {
-      if (offScreen(id)) await cleanDeletedChat(accountId, id, null, reason);
+      await cleanDeletedChat(
+        accountId,
+        id,
+        null,
+        reason,
+        undefined,
+        false,
+        () => current() && offScreen(id),
+      );
     },
   );
 }

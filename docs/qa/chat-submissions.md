@@ -120,6 +120,20 @@ may remove the other's failed rows before that tab learns of deletion. This is
 accepted: the other tab still moves its own box once it learns. No extra lock
 prevents this rough edge.
 
+Cold-load a deleted chat URL with both a failed row and saved box text: the bind
+pass must defer that URL and the project's remembered dock chat until their panes
+report deletion. The words move together with the note, not vanish. Open a chat
+while bind cleanup waits on its submission lock: it must defer to that pane.
+Restore a moved chat, write new box words at the same composer revision, then
+delete again: the fresh words must move too. Refuse New chat storage or journal
+enumeration: the chat stays, words remain, and Couldn't send replaces Sending.
+Restore storage and Retry, Edit or wake: cleanup completes.
+
+Hold a message POST open, start own Delete, then deliver its attested deletion
+response before DELETE resolves: no words or notice move. A failed DELETE cancels
+that own-delete intent; an account rebind must fence it. Attach a file into a
+deleted project: the real error envelope reads "This project was deleted."
+
 Capture the titled and untitled note in desktop Chat, a 360px dock, and a 390px
 phone, each in light and dark. Crop out account identity and hide the TanStack
 launcher. These captures verify real responsive wrapping, not fixture markup.

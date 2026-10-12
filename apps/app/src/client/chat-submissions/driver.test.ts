@@ -428,6 +428,7 @@ it("stops on owner-attested deletion from send, lookup or retire, without reject
         takeFresh: () => operation === "send",
         deleted: async (_entry, reason) => {
           disposition = reason;
+          return true;
         },
       });
       if (operation === "retire") await owner.edit("sub-1");
@@ -444,4 +445,39 @@ it("stops on owner-attested deletion from send, lookup or retire, without reject
       r.dispose();
     }
   }
+});
+
+it.each([
+  "retry",
+  "edit",
+  "wake",
+])("incomplete deletion settles Couldn't send and can finish on %s", async (action) => {
+  const r = rig();
+  const entry = r.records.get("record-1");
+  if (!entry) throw new Error("Missing fixture");
+  r.records.set(entry.recordId, { ...entry, creation: undefined });
+  let complete = false;
+  const deleted = vi.fn(async () => complete);
+  const status = vi.fn();
+  const outcome = async () => ({ kind: "deleted" as const, submissionId: "sub-1" });
+  const { owner } = r.mount({
+    status,
+    deleted,
+    controller: {
+      recoverSubmission: outcome,
+      lookupSubmission: outcome,
+      retireSubmission: outcome,
+    },
+  });
+  await owner.drive("thread_1");
+  expect(status).toHaveBeenLastCalledWith(
+    expect.objectContaining({ recordId: "record-1" }),
+    "error",
+  );
+  complete = true;
+  if (action === "retry") await owner.retry("sub-1");
+  else if (action === "edit") await owner.edit("sub-1");
+  else await owner.drive("thread_1");
+  expect(deleted).toHaveBeenCalledTimes(2);
+  r.dispose();
 });

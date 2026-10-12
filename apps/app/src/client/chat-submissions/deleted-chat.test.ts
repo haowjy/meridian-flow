@@ -1,16 +1,34 @@
 // @vitest-environment jsdom
 /** Attested deletion disposition, distinct from the never-created destination lifecycle. */
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { MeridianApiError } from "@/client/api/meridian-error";
 import { ComposerSessionDraft } from "@/client/composer-drafts";
 import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
+import { browserSubmissionLock } from "./adapters/browser-lock";
 import { MemorySubmissionLock } from "./adapters/memory-lock";
-import { cleanDeletedChat, type DeletedChatPorts, sweepDeletedChats } from "./deleted-chat";
+import {
+  beginOwnChatDelete,
+  cleanDeletedChat,
+  cleanDeletedChatsOnBind,
+  type DeletedChatPorts,
+  sweepDeletedChats,
+} from "./deleted-chat";
 import type { ChatSubmission } from "./store";
 import { threadAvailability } from "./thread-availability";
+
+const deleteApi = vi.hoisted(() => vi.fn());
+const probe = vi.hoisted(() => vi.fn());
+vi.mock("./thread-availability", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  probeChatDestination: probe,
+}));
+vi.mock("@/client/api/threads-api", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  deleteThread: deleteApi,
+}));
 
 function proof(code = "thread_deleted", accountId = "owner", projectDeleted = false) {
   return new MeridianApiError(
@@ -208,4 +226,170 @@ it("dismiss and Send clear notices but keep transfer receipts", async () => {
   g.target.handoff();
   expect(g.target.notices).toEqual([]);
   expect(g.target.hasReceived("row")).toBe(true);
+});
+
+it("restored chat's fresh box moves on a second deletion even at the same revision", async () => {
+  const f = fixture();
+  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  f.target.handoff();
+  f.source.updateDraft({
+    text: "Fresh words",
+    snapshot: { ...f.snapshot("Fresh words"), revision: 2 },
+  });
+  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+    "Fresh words",
+  );
+});
+it.each([
+  "unreadable journal",
+  "refused destination",
+])("retains all words and stays when cleanup has an %s", async (failure) => {
+  const f = fixture();
+  if (failure === "unreadable journal") f.ports.records = () => null;
+  else vi.spyOn(f.target, "prependSnapshots").mockReturnValue(false);
+  expect(await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports)).toBe(false);
+  expect(f.source.initialDraft).not.toBeNull();
+  expect(f.records()).toHaveLength(1);
+  expect(f.left()).toBeUndefined();
+});
+it("bind cleanup rechecks eligibility inside the lock when the chat becomes visible", async () => {
+  const f = fixture();
+  let eligible = true;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const held = f.ports.lock.run("owner", "chat", new AbortController().signal, () => gate);
+  const cleanup = cleanDeletedChat(
+    "owner",
+    "chat",
+    null,
+    "deleted",
+    f.ports,
+    false,
+    () => eligible,
+  );
+  eligible = false;
+  release();
+  await held;
+  await cleanup;
+  expect(f.records()).toHaveLength(1);
+  expect(f.source.initialDraft).not.toBeNull();
+  expect(f.left()).toBeUndefined();
+});
+
+it("own DELETE intent wins over a send's deletion response while DELETE is still in flight", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  const { bindChatSubmissions } = await import("./index");
+  const { deleteProjectChat } = await import("@/client/query/delete-project-chat");
+  const memory = new MemorySubmissionLock();
+  const lock = vi.spyOn(browserSubmissionLock, "run").mockImplementation(memory.run.bind(memory));
+  bindChatSubmissions("owner", () => true);
+  const f = fixture();
+  let finishDelete!: () => void;
+  deleteApi.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finishDelete = resolve;
+      }),
+  );
+  let answerSend!: () => void;
+  const sendResponse = new Promise<void>((resolve) => {
+    answerSend = resolve;
+  });
+  const sending = f.ports.lock.run("owner", "chat", new AbortController().signal, async () => {
+    await sendResponse;
+    await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports, true);
+  });
+  const deleting = deleteProjectChat(new QueryClient(), "project", "chat");
+  answerSend();
+  await sending;
+  expect(f.target.notices).toEqual([]);
+  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+    "Existing writing",
+  );
+  expect(f.records()).toEqual([]);
+  finishDelete();
+  await deleting;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  lock.mockRestore();
+});
+
+it("bind skips URL and remembered dock chats before panes mount, and rechecks the queued lock", async () => {
+  const {
+    bindChatSubmissions,
+    getChatSubmissionEpoch,
+    recordChatSubmission,
+    readChatSubmissionSnapshot,
+  } = await import("./index");
+  const account = "bind-ordering";
+  bindChatSubmissions(account, () => true);
+  const f = fixture();
+  const row = f.records()[0];
+  if (!row) throw new Error("Missing fixture");
+  for (const id of ["url", "dock", "queued"])
+    recordChatSubmission(account, { ...row, recordId: id, threadId: id });
+  const epoch = getChatSubmissionEpoch();
+  let queuedAddressed = false;
+  const addressed = (id: string) => id !== "queued" || queuedAddressed;
+  let enter!: () => void;
+  let resume!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const lock = vi
+    .spyOn(browserSubmissionLock, "run")
+    .mockImplementation(async (_account, _id, _signal, operation) => {
+      enter();
+      await released;
+      return operation();
+    });
+  probe.mockResolvedValue("deleted");
+  const sweep = cleanDeletedChatsOnBind(account, epoch, addressed);
+  await entered;
+  queuedAddressed = true;
+  resume();
+  await sweep;
+  expect(probe.mock.calls.map(([, id]) => id)).toEqual(["queued"]);
+  expect(
+    readChatSubmissionSnapshot(account)
+      ?.map((row) => row.recordId)
+      .sort(),
+  ).toEqual(["dock", "queued", "url"]);
+  lock.mockRestore();
+  probe.mockClear();
+});
+
+it("failed own DELETE cancels its disposition, and confirmed cleanup releases it for a restored chat", async () => {
+  const { bindChatSubmissions } = await import("./index");
+  bindChatSubmissions("owner", () => true);
+  const failed = beginOwnChatDelete("owner", "chat");
+  failed.cancel();
+  const f = fixture();
+  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  expect(f.target.notices).toHaveLength(1);
+  f.target.handoff();
+  const confirmed = beginOwnChatDelete("owner", "chat");
+  confirmed.confirmed();
+  await cleanDeletedChat("owner", "chat", "project", "own-delete", f.ports);
+  f.source.updateDraft({ text: "Restored writing", snapshot: f.snapshot("Restored writing") });
+  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  expect(serializeComposerDraft(f.target.initialDraft?.doc ?? plainComposerDoc("")).text).toBe(
+    "Restored writing",
+  );
+});
+it("own DELETE's intent cannot survive an account rebind epoch", async () => {
+  const { bindChatSubmissions } = await import("./index");
+  bindChatSubmissions("owner", () => true);
+  const own = beginOwnChatDelete("owner", "chat");
+  bindChatSubmissions("another-owner", () => true);
+  bindChatSubmissions("owner", () => true);
+  const f = fixture();
+  await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
+  expect(f.target.notices).toHaveLength(1);
+  own.cancel();
 });
