@@ -615,3 +615,29 @@ fact-carrying writes in separate paragraphs must produce two review classes,
 and replaying either class alone must leave the other paragraph unchanged.
 Every inverse row must own its metadata client and have no map-entry anchors
 into another inverse row.
+
+### Receipt hold and publication regression checks
+
+- Apply turn A's `Beta → Gamma`. In the same draft, turn B replaces
+  `Blue → Silver`, then Undo B restores `Blue`. Undo A and Redo A must
+  report a **live** destination and change live exactly to
+  `Alpha Beta.\n\nBlue.\n` and `Alpha Gamma.\n\nBlue.\n`.
+  B's unrelated hold must not choose A's destination. Apply leaves the latter
+  text unchanged, with no extra restored copy.
+- For mixed applied/pending parts, use the card's Undo button. The card says
+  **Undone in your draft. Apply it to change your manuscript.** beside its
+  outcome, not in a toast. The live manuscript remains unchanged until Apply.
+- Connect a live Yjs room before acting on a document with no active draft.
+  Keep the connection and its local replica open through Undo and Redo. Drive
+  actions with `./mf`; inspect only that replica between actions, never a
+  document read, reopen or reconnect that could repair a missing publication.
+  The replica must receive each committed inverse. The DB room regression
+  also injects immediate-live failed-response rollback into that same schedule.
+- Extend the long-history correctness case with a 10,000-character deletion
+  through eight Undo/Redo cycles. The on-demand
+  [hold preparation probe][receipt-hold-perf] measures the actual receipt service
+  after those 17 history rows, using fresh invocation-local indices. Record host
+  load with wall time; under ordinary load the receipt read should remain well
+  below one second. This is a service measurement, not browser evidence.
+
+[receipt-hold-perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/draft-review-repair/undo-step2-evidence/r4/holds-probe.mts

@@ -26,13 +26,21 @@ stable reversal-result identity.
   own before/after text. Card inverse rows are writer rows with no turn.
 - **Holds and locking**: a pending inverse holds roots where its draft's visible
   identity differs from live's. Holds and destinations are keyed by branch ID.
+  Only holds intersecting the selected targets can choose their holding draft.
+  The locked invocation prepares one lineage/root-family index per document view
+  and shares its immutable hold evidence across Redo and Undo dry runs.
   A skipped hold marks that draft blocking so Apply/Discard stays reachable when
   its prose equals live. Inverses take sorted transition advisory locks, all branch
   and live process locks, Work rows, then ordinary admission locks. Apply never
   takes the transition lock. Preparation includes the locked live cut in a draft.
 - **Effect and rollback**: `hasEffect` compares visible prose and managed manifest
   membership to the draft's last pulled `liveCut`. Lists, counts and Work
-  publication use effect or blocking, not row count. Only Apply/Discard retire an
+  publication use effect or blocking, not row count. Pull snapshot/effect updates
+  enlist the same Work projection transaction participant as writes, without
+  reacquiring lifecycle locks. Committed live inverses recover the canonical live
+  room before pulling drafts, even when there is no active draft. Card outcomes
+  carry committed per-document destinations; a draft Undo explicitly says Apply
+  is needed to change the manuscript. Only Apply/Discard retire an
   empty generation. Failed-response rollback selects by response and transitions
   accepted parts as terminal rollback edits; only uninvertible pending target rows
   retain rollback_pending. Repeated rollback does not create another inverse.

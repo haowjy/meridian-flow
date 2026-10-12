@@ -122,6 +122,61 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
+    it("publishes a pull's effect and pending count atomically, including root rollback", async () => {
+      const { db, projection } = await fixture();
+      const branches = createDrizzleBranchStore(
+        db,
+        undefined,
+        createBranchCriticalSections(),
+        projection,
+      );
+      await branches.appendJournal?.({
+        branchId: BRANCH_ID,
+        generation: 1,
+        updateData: Y.encodeStateAsUpdate(new Y.Doc()),
+        source: "agent",
+        updateMeta: { kind: "edit" },
+      });
+      await db
+        .update(documentBranches)
+        .set({ hasEffect: true })
+        .where(eq(documentBranches.id, BRANCH_ID));
+      const before = await projectionState();
+      const input = {
+        branchId: BRANCH_ID,
+        expectedGeneration: 1,
+        expectedState: projectionDraft.state,
+        expectedStateVector: projectionDraft.vector,
+        state: projectionDraft.state,
+        stateVector: projectionDraft.vector,
+        liveCut: projectionDraft.state,
+      };
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          expect(await branches.updateBranchSnapshot(input)).toBe(true);
+          throw new Error("forced pull rollback");
+        }),
+      ).rejects.toThrow("forced pull rollback");
+      expect(await projectionState()).toEqual(before);
+      expect(
+        (await db.select().from(documentBranches).where(eq(documentBranches.id, BRANCH_ID)))[0]
+          .hasEffect,
+      ).toBe(true);
+      expect(await branches.updateBranchSnapshot(input)).toBe(true);
+      const after = await projectionState();
+      expect(
+        (await db.select().from(documentBranches).where(eq(documentBranches.id, BRANCH_ID)))[0]
+          .hasEffect,
+      ).toBe(false);
+      expect(after.entityRevision).toBe((before.entityRevision ?? 0n) + 1n);
+      expect(after.availabilityGeneration).toBeGreaterThan(before.availabilityGeneration ?? 0n);
+      expect(BigInt(after.catalogEntityRevision ?? "0")).toBe(after.entityRevision);
+      expect(
+        (await db.select().from(documentBranches).where(eq(documentBranches.id, BRANCH_ID)))[0]
+          .hasEffect,
+      ).toBe(false);
+    });
+
     it("drives real discard, redo, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
       const branches = createDrizzleBranchStore(

@@ -631,5 +631,17 @@ describe("forward inverse on cold Yjs replicas", () => {
     expect(inverse(v, deletion, "reapply")).toBe(1);
     expect(content(v)[0]).toBe(before[0].replace("w0_150", "AI_150"));
     v.doc.destroy();
-  });
+    const long = base(["x".repeat(10_000), "Blue."]);
+    const removed = write(long, [(v) => text(v, 0).delete(0, 10_000)]);
+    for (let cycle = 0; cycle < 8; cycle++) {
+      expect(inverse(long, removed, "invert")).toBe(1);
+      cold(long);
+      expect(states(long, removed)).toEqual(["undone"]);
+      expect(content(long)).toEqual(["x".repeat(10_000), "Blue."]);
+      expect(inverse(long, removed, "reapply")).toBe(1);
+      expect(content(long)).toEqual(["", "Blue."]);
+    }
+    expect(long.history).toHaveLength(17);
+    long.doc.destroy();
+  }, 30_000);
 });

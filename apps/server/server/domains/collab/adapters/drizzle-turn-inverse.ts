@@ -357,6 +357,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 update: Y.mergeUpdates(updates),
               });
             else {
+              await input.coordinator.recover(document.documentId);
               await input.refreshDocument(document.documentId);
               await input.flushLivePull(document.documentId);
             }

@@ -133,7 +133,17 @@ describe("forward card inverse", () => {
           direction,
           actor: { type: "user", userId: USER_ID },
         });
-        expect(outcome).toMatchObject({ status: "reversed", acceptedParts: 2, skips: [] });
+        expect(outcome).toMatchObject({
+          status: "reversed",
+          acceptedParts: 2,
+          skips: [],
+          documents: [
+            {
+              destination:
+                placement === "applied" ? { kind: "live" } : { kind: "draft", branchId: branch.id },
+            },
+          ],
+        });
         const inverseParts = await db
           .select({ update: schema.documentEditParts.update })
           .from(schema.documentEditParts)
@@ -877,6 +887,168 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
       control: "view_change",
     });
   } finally {
+    harness.cancelScheduledPulls();
+    harness.destroyWarmState();
+  }
+});
+
+it("an unrelated restoration hold leaves applied Undo and Redo in live through Apply", async () => {
+  const { harness, view, responseId, context, target } = await fixture();
+  try {
+    await view.collab.agentEdit().write(
+      {
+        command: "replace",
+        documentId: ALPHA_ID,
+        file: "alpha.md",
+        find: "Beta",
+        content: "Gamma",
+        tool_use_id: "applied",
+      },
+      context,
+    );
+    await harness.commit(responseId);
+    const [draft] = await view.collab.draftReview.list({
+      projectId: PROJECT_ID as never,
+      workId: WORK_ID,
+    });
+    const scope = { ...target, draftId: draft.draftId, userId: USER_ID as never };
+    await view.collab.draftReview.applyWorkDraft(scope);
+    const otherTurn = randomUUID() as typeof TURN_ID,
+      otherResponse = randomUUID();
+    const [turn] = await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID));
+    await db
+      .insert(schema.turns)
+      .values({ ...turn, id: otherTurn, parentTurnId: TURN_ID, position: turn.position + 1 });
+    await db.insert(schema.modelResponses).values({
+      id: otherResponse as never,
+      turnId: otherTurn,
+      sequence: 1,
+      provider: "mock",
+      model: "mock",
+      requestMessageCount: 1,
+      predictedCacheState: "cold",
+      predictedCacheReason: "facts_unavailable",
+    });
+    await view.collab.agentEdit().write(
+      {
+        command: "replace",
+        documentId: ALPHA_ID,
+        file: "alpha.md",
+        find: "Blue",
+        content: "Silver",
+        tool_use_id: "unrelated",
+      },
+      { ...context, turnId: otherTurn, responseId: otherResponse },
+    );
+    await harness.commit(otherResponse);
+    expect(
+      await view.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: otherTurn,
+        direction: "undo",
+        actor: { type: "user", userId: USER_ID },
+      }),
+    ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+    for (const direction of ["undo", "redo"] as const) {
+      expect(
+        await view.collab.reverseTurn({
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          direction,
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).toMatchObject({
+        status: "reversed",
+        acceptedParts: 1,
+        documents: [{ destination: { kind: "live" } }],
+      });
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
+        direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
+      );
+    }
+    await view.collab.draftReview.applyWorkDraft(scope);
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
+  } finally {
+    harness.cancelScheduledPulls();
+    harness.destroyWarmState();
+  }
+});
+
+it("an already-connected live room sees Undo, Redo and immediate rollback without a repairing read", async () => {
+  const { harness, view, responseId, context } = await fixture();
+  const peer = new Y.Doc({ gc: false });
+  try {
+    const immediate = {
+      ...context,
+      responseId: undefined,
+      grant: testFileGrant({ kind: "live" }, ALPHA_ID),
+      actor: { kind: "agent" as const, threadId: THREAD_ID, turnId: TURN_ID, responseId },
+    };
+    await view.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, immediate);
+    const room = view.hocuspocus.documents.get(ALPHA_ID);
+    if (!room) throw new Error("Room was not connected");
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(room));
+    room.on("update", (update: Uint8Array) => Y.applyUpdate(peer, update));
+    const prose = () =>
+      peer
+        .getXmlFragment("prosemirror")
+        .toArray()
+        .map((node) =>
+          node instanceof Y.XmlElement
+            ? node
+                .toArray()
+                .map((child) => (child instanceof Y.XmlText ? child.toString() : ""))
+                .join("")
+            : "",
+        )
+        .join("\n\n");
+    expect(
+      await view.collab.agentEdit().write(
+        {
+          command: "replace",
+          documentId: ALPHA_ID,
+          file: "alpha.md",
+          find: "Beta",
+          content: "Gamma",
+          tool_use_id: "immediate",
+        },
+        immediate,
+      ),
+    ).toMatchObject({ status: "success", phase: "committed" });
+    // Reading the fixture creates an empty default draft. Retire it before observing the no-draft room.
+    await db
+      .update(schema.documentBranches)
+      .set({ status: "closed" })
+      .where(
+        and(
+          eq(schema.documentBranches.documentId, ALPHA_ID),
+          eq(schema.documentBranches.kind, "work_draft"),
+        ),
+      );
+    expect(await view.branchStore.listActiveWorkDraftBranchIds(ALPHA_ID)).toEqual([]);
+    expect(prose()).toBe("Alpha Gamma.\n\nBlue.");
+    for (const direction of ["undo", "redo"] as const) {
+      const broadcasts = view.hocuspocus.broadcasts.length;
+      expect(
+        await view.collab.reverseTurn({
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          direction,
+          actor: { type: "user", userId: USER_ID },
+        }),
+      ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+      expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
+      expect(prose()).toBe(direction === "undo" ? "Alpha Beta.\n\nBlue." : "Alpha Gamma.\n\nBlue.");
+    }
+    const broadcasts = view.hocuspocus.broadcasts.length;
+    await view.collab.finalizeResponseRollback(responseId, {
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+    });
+    expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
+    expect(prose()).toBe("Alpha Beta.\n\nBlue.");
+  } finally {
+    peer.destroy();
     harness.cancelScheduledPulls();
     harness.destroyWarmState();
   }
