@@ -5,12 +5,14 @@ import type {
   ImportManifest,
   ImportState,
 } from "@meridian/contracts";
+import type { ImportArea } from "../domain/export-marker.js";
+import type { ImportLinkCandidate } from "../domain/link-index.js";
 import type { PlannedNode } from "../domain/plan.js";
 export interface ImportRecord {
   id: string;
   projectId: string;
   userId: string;
-  manifest: ImportManifest;
+  manifest: ImportManifest & { existingLinks?: ImportLinkCandidate[] };
   fingerprint: string;
   sourceId: string;
   folderId: string | null;
@@ -66,9 +68,13 @@ export interface ImportRepository {
   /** Row locks in ordinal order; skipLocked leaves rows another commit is publishing. */
   lockEntries(ids: readonly string[], options?: { skipLocked?: boolean }): Promise<ImportEntry[]>;
   /** The first unprepared parent's planned, uncreated entries: still pending, and reserved names. */
-  nextPlanningGroup(
-    importId: string,
-  ): Promise<{ parentId: string | null; pending: ImportEntry[]; reserved: ImportEntry[] } | null>;
+  nextPlanningGroup(importId: string): Promise<{
+    parentId: string | null;
+    /** Set for an export's area-root group, whose null parent means that area's root. */
+    area?: ImportArea;
+    pending: ImportEntry[];
+    reserved: ImportEntry[];
+  } | null>;
   /** Patch rows the caller already holds locked (or fences out by Finish's exclusive lock). */
   updateEntry(id: string, patch: Partial<ImportEntry>): Promise<void>;
   updateEntries(patches: readonly { id: string; patch: Partial<ImportEntry> }[]): Promise<void>;

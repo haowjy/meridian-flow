@@ -1,9 +1,8 @@
 /** Context/collab import adapter using bulk creation, identity fill and the isolated binder. */
-import { parseLinkRef, resolveDocumentHref } from "@meridian/contracts";
+import { parseLinkRef } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
-import { walkLinkOccurrences } from "@meridian/markup/links";
-import { inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CollabDomain, ImportLinkBinder } from "../../collab/index.js";
 import {
@@ -29,6 +28,63 @@ export function createContextImportTreeWriter(deps: {
   refreshFiles(ids: readonly string[]): Promise<unknown>;
 }): ImportTreeWriter {
   return {
+    async existingLinks() {
+      const files: {
+        id: string;
+        uri: string;
+        kind: "note" | "code" | "binary";
+        filetype: string;
+      }[] = [];
+      async function visit(uri: string) {
+        const result = await deps.context.list(uri);
+        if (!result.ok) throw new Error(result.error.code);
+        for (const item of result.value.entries) {
+          if (item.kind === "directory") await visit(item.uri);
+          else if (item.documentId)
+            files.push({
+              id: item.documentId,
+              uri: item.uri,
+              kind: item.editable ? (item.schemaType === "code" ? "code" : "note") : "binary",
+              filetype: item.editable ? item.filetype : item.fileType,
+            });
+        }
+      }
+      for (const area of ["manuscript", "kb", "unfiled"]) await visit(`${area}://`);
+      const rows = files.length
+        ? await currentDrizzleDb(deps.db)
+            .select({ id: documents.id, metadata: documents.metadata })
+            .from(documents)
+            .where(
+              inArray(
+                documents.id,
+                files.map((file) => file.id),
+              ),
+            )
+        : [];
+      const metadataById = new Map(rows.map((row) => [row.id, row.metadata]));
+      return files.map((file) => {
+        const metadata = metadataById.get(file.id) as {
+          aliases?: unknown;
+        } | null;
+        return {
+          ...file,
+          rootId: null,
+          path: file.uri,
+          aliases: Array.isArray(metadata?.aliases)
+            ? metadata.aliases.filter((value): value is string => typeof value === "string")
+            : [],
+        };
+      });
+    },
+    async setProperties(id, properties, aliases) {
+      const metadata = { ...(properties ? { properties } : {}), aliases };
+      await currentDrizzleDb(deps.db)
+        .update(documents)
+        .set({
+          metadata: sql`coalesce(${documents.metadata},'{}'::jsonb) || ${JSON.stringify(metadata)}::jsonb`,
+        })
+        .where(eq(documents.id, id));
+    },
     async destination(uri) {
       try {
         return await deps.locations.destination(uri);
@@ -72,34 +128,32 @@ export function createContextImportTreeWriter(deps: {
           })),
       });
     },
-    async bind(entry, text) {
+    async bind(entry, { text, targets, hrefs, pending }) {
       if (entry.kind === "code")
         return deps.binder.bindPlannedCode(entry.id as never, entry.filetype, text);
       return deps.binder.bindMarkdown({
         holder: { documentId: entry.id as never },
         markdown: text,
-        targets: new Map(),
+        targets: targets as never,
+        hrefs,
+        pending: pending as never,
       });
     },
-    aheadTargets(bound, holderUri, entries) {
-      const occurrences = walkLinkOccurrences(bound.blocks);
+    aheadTargets(bound, _holderUri, entries, targets) {
       return bound.aheadRefs.flatMap(({ occurrence, ref }) => {
-        const attrs = occurrences[occurrence]?.attrs;
-        const written = attrs?.href;
-        if (typeof written !== "string") return [];
-        const resolved = resolveDocumentHref(written, holderUri);
-        const target = entries.find(
-          (entry) =>
-            (entry.kind === "binary" || entry.kind === "code") && entry.uri === resolved?.uri,
-        );
-        return target ? [{ targetId: target.id, ref }] : [];
+        const targetId = targets?.get(occurrence);
+        const target = entries.find((entry) => entry.id === targetId);
+        return target && (target.kind === "binary" || target.kind === "code")
+          ? [{ targetId: target.id, ref }]
+          : [];
       });
     },
     async settleAhead(ref, documentId) {
       const parsed = parseLinkRef(ref);
-      return parsed?.kind === "ahead"
-        ? deps.ahead.settleRef(parsed.aheadId, documentId as never)
-        : null;
+      if (parsed?.kind === "ahead") await deps.ahead.settleRef(parsed.aheadId, documentId as never);
+    },
+    async releaseAhead(documentIds) {
+      await deps.ahead.releaseAwaiting(documentIds as never);
     },
     async fill(entry, bound, prepend) {
       if (!(await deps.locations.currentUri(entry.id, "file"))) return "deleted";

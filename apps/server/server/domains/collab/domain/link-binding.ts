@@ -20,6 +20,7 @@
  * document.
  */
 import {
+  type AheadMint,
   assignOccurrences,
   type DocumentCoordinator,
   isDocumentNotFoundError,
@@ -31,7 +32,7 @@ import { documentRef, type LinkView, parseLinkRef } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { MarkupCodec, PMNode } from "@meridian/markup";
-import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
+import { assignFreshLink, walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
@@ -133,12 +134,24 @@ export interface LinkBinderDeps {
 export interface ImportLinkBinder {
   /** Link-free code may be bound to its planned identity before its row exists. */
   bindPlannedCode(documentId: DocumentId, filetype: string, text: string): BoundWrite;
-  bindMarkdown(
-    input: Omit<BindMarkdownInput, "against"> & {
-      targets?: ReadonlyMap<number, DocumentId>;
-    },
-  ): Promise<BoundWrite>;
+  bindMarkdown(input: ImportBindInput): Promise<BoundWrite>;
 }
+export type ImportBindInput = Omit<BindMarkdownInput, "against"> & {
+  /** Identity per occurrence of `markdown`'s own parse. */
+  targets?: ReadonlyMap<number, DocumentId>;
+  /**
+   * Written href per occurrence of `markdown`'s own parse. `markdown` spells
+   * these destinations apart, so adjacent links that share an address stay
+   * separate occurrences through assignment; equal results merge only after.
+   */
+  hrefs?: ReadonlyMap<number, string>;
+  /**
+   * Planned identities that may not exist yet. A target among them that is not
+   * live gets a fresh ahead ref at its written address, settled later by id; the
+   * address is never resolved, so whatever occupies it is not bound.
+   */
+  pending?: ReadonlySet<DocumentId>;
+};
 
 export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   return binderFor(deps);
@@ -212,9 +225,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     }
   }
 
-  async function bind(
-    input: BindMarkdownInput & { targets?: ReadonlyMap<number, DocumentId> },
-  ): Promise<BoundWrite> {
+  async function bind(input: BindMarkdownInput & ImportBindInput): Promise<BoundWrite> {
     const { holder } = input;
     const view = input.view ?? LIVE_VIEW;
     const documentId = "documentId" in holder ? holder.documentId : null;
@@ -241,7 +252,26 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     const { markdown } = input;
     if (schemaType === "code") return finish([codeBlock(markdown, filetype)], markdown);
 
-    const written = deps.codec.parse(markdown).blocks;
+    const parsed = deps.codec.parse(markdown).blocks;
+    const spelled = walkLinkOccurrences(parsed);
+    for (const occurrence of [...(input.targets?.keys() ?? []), ...(input.hrefs?.keys() ?? [])]) {
+      if (!Number.isInteger(occurrence) || occurrence < 0 || occurrence >= spelled.length)
+        throw new RangeError(`Invalid link occurrence: ${occurrence}`);
+    }
+    // Occurrences keep the parsed boundaries; only their hrefs are the written ones.
+    const occurrences = spelled.map((occurrence, index) => {
+      const href = input.hrefs?.get(index);
+      return href === undefined
+        ? occurrence
+        : { ...occurrence, attrs: { ...occurrence.attrs, href } };
+    });
+    const written = input.hrefs?.size
+      ? rebuildOccurrences(
+          parsed,
+          spelled,
+          occurrences.map(({ attrs }) => attrs),
+        )
+      : parsed;
     await deps.links.prepare({
       holders: documentId ? [{ documentId, view }] : [],
       refs: [...(input.targets?.values() ?? [])]
@@ -254,7 +284,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     const scope: HolderLinkScope = documentId
       ? deps.links.holder({ documentId, view })
       : deps.links.reader({ uri: holderUri, view });
-    const occurrences = walkLinkOccurrences(written);
     const assigned = assignOccurrences({
       old: walkLinkOccurrences(previous ?? []),
       written: occurrences,
@@ -262,10 +291,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       shown: [],
     });
     const invalidTargets: { occurrence: number; documentId: DocumentId }[] = [];
-    for (const [occurrence] of input.targets ?? []) {
-      if (!Number.isInteger(occurrence) || occurrence < 0 || occurrence >= occurrences.length)
-        throw new RangeError(`Invalid link occurrence: ${occurrence}`);
-    }
+    const pendingMints: (AheadMint & { awaitedDocumentId: DocumentId })[] = [];
     const attrs = occurrences.map((occurrence, index) => {
       const target = input.targets?.get(index);
       if (!input.targets?.has(index)) return assigned.attrs[index];
@@ -277,16 +303,41 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
         resolved.document.projectId !== scope.holder.projectId ||
         resolved.document.presence !== "live"
       ) {
+        if (ref && input.pending?.has(target as DocumentId)) {
+          const fresh = assignFreshLink({
+            href: occurrence.attrs.href,
+            grammar: occurrence.kind === "link" ? "link" : "source",
+            holderUri: scope.holder.uri,
+            documentFor: () => null,
+          });
+          if (fresh.kind === "ahead") {
+            pendingMints.push({
+              ref: fresh.ref,
+              address: fresh.address,
+              holderProjectId: scope.holder.projectId,
+              awaitedDocumentId: target as DocumentId,
+            });
+            return { ...occurrence.attrs, ref: fresh.ref, href: fresh.href };
+          }
+        }
         invalidTargets.push({ occurrence: index, documentId: target ?? ("" as DocumentId) });
         return { ...occurrence.attrs, ref: null, href: "" };
       }
       return { ...occurrence.attrs, ref };
     });
-    const nodes = rebuildOccurrences(written, occurrences, attrs);
+    const nodes = rebuildOccurrences(parsed, spelled, attrs);
     const keptRefs = new Set(walkLinkOccurrences(nodes).map(({ attrs }) => attrs.ref));
     const minted = assigned.minted.filter(({ ref }) => keptRefs.has(ref));
-    if (minted.length > 0) await deps.registrar.register(aheadRegistrations(minted));
-    const mintedRefs = new Set<string>(minted.map(({ ref }) => ref));
+    const awaiting = pendingMints.filter(({ ref }) => keptRefs.has(ref));
+    if (minted.length + awaiting.length > 0)
+      await deps.registrar.register([
+        ...aheadRegistrations(minted),
+        ...awaiting.map(({ awaitedDocumentId, ...mint }) => ({
+          ...aheadRegistrations([mint])[0],
+          awaitedDocumentId,
+        })),
+      ]);
+    const mintedRefs = new Set<string>([...minted, ...awaiting].map(({ ref }) => ref));
     const aheadRefs = attrs.flatMap((attrs, occurrence) =>
       attrs?.ref && mintedRefs.has(attrs.ref) ? [{ occurrence, ref: attrs.ref }] : [],
     );
@@ -299,7 +350,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       if (planned && input.against) throw new Error("Import binding is fresh only");
       if (planned && input.view && input.view.kind !== "live")
         throw new Error("Import binding requires a live view");
-      if (!planned && "targets" in input)
+      if (!planned && ("targets" in input || "hrefs" in input))
         throw new Error("Planned targets require the import binder");
       const key =
         "documentId" in input.holder

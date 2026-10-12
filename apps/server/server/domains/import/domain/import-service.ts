@@ -7,6 +7,7 @@ import type {
   ImportSummary,
 } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { walkLinkOccurrences } from "@meridian/markup/links";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { DocumentConverterPort } from "../ports/document-converter.js";
 import type { ImportDiagnostics } from "../ports/import-diagnostics.js";
@@ -15,8 +16,18 @@ import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-wr
 import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } from "./manifest.js";
 import { sweepImportObjects } from "./object-sweep.js";
 import { allocateName, planSelection } from "./plan.js";
+import { prepareImportedNote } from "./prepare-note.js";
 import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
+/** Where the writer knows a link target from: its selected path, or an existing document's address. */
+function targetPath(record: ImportRecord, entries: readonly ImportEntry[], id: string): string {
+  const selected = entries.find((entry) => entry.id === id);
+  if (selected) {
+    const root = record.manifest.roots.find((root) => root.rootId === selected.rootId);
+    return root?.kind === "file" ? root.name : selected.path;
+  }
+  return record.manifest.existingLinks?.find((candidate) => candidate.id === id)?.uri ?? "";
+}
 export function createImportService(deps: {
   repository: ImportRepository;
   tree: ImportTreeWriter;
@@ -145,7 +156,7 @@ export function createImportService(deps: {
           rootId: root.rootId,
           kind: root.kind,
           name: root.name,
-          id: node?.id ?? "",
+          id: node?.id ?? null,
           uri: node?.uri ?? null,
         };
       }),
@@ -196,7 +207,12 @@ export function createImportService(deps: {
         if (locked?.state !== "planning") return "done";
         const group = await repo.nextPlanningGroup(record.id);
         if (!group) return "admit";
-        const parent = await tree.parent(locked, group.parentId);
+        const parent = await tree.parent(
+          group.area && !group.parentId
+            ? { ...locked, ...(await tree.destination(`${group.area}://`)) }
+            : locked,
+          group.parentId,
+        );
         // One parent per chunk makes lock ordering stable even after cross-area moves.
         const chunk = await repo.lockEntries(
           group.pending.slice(0, IMPORT_LIMITS.chunkSize).map((entry) => entry.id),
@@ -275,6 +291,15 @@ export function createImportService(deps: {
       );
       await repo.updateEntries(
         unfinished.map((entry) => ({ id: entry.id, patch: { state: "not_imported" } })),
+      );
+      // Links bound to a file that never landed stop waiting for it.
+      await tree.releaseAhead(
+        entries
+          .filter(
+            (entry) =>
+              (entry.kind === "binary" || entry.kind === "code") && entry.state !== "landed",
+          )
+          .map((entry) => entry.id),
       );
       await repo.setState(id, "finished");
     });
@@ -402,19 +427,20 @@ export function createImportService(deps: {
     finish: (id: string, projectId: string) => finish(id, projectId),
     sweep,
     async plan(projectId: string, userId: string, raw: unknown) {
-      const manifest = validateManifest(raw),
-        fingerprint = manifestFingerprint(manifest);
+      const manifest = validateManifest(raw);
+      const fingerprint = manifestFingerprint(manifest);
       let record = await repo.read(manifest.importId, projectId);
       if (!record) {
         const destination = await tree.destination(manifest.destination.folderUri);
         const nodes = planSelection(manifest, randomUUID, destination.folderId);
+        const existingLinks = await tree.existingLinks();
         await repo.transaction(() =>
           repo.insert(
             {
               id: manifest.importId,
               projectId,
               userId,
-              manifest,
+              manifest: { ...manifest, existingLinks },
               fingerprint,
               ...destination,
               state: "planning",
@@ -475,13 +501,43 @@ export function createImportService(deps: {
           );
         const text =
           entry.kind === "docx" ? await convertDocx(bytes) : Buffer.from(bytes).toString("utf8");
-        const bound = entry.kind === "binary" ? null : await tree.bind(entry, text);
+        const entries = await repo.entries(id);
+        const { converted, settings, root } = await prepareImportedNote(
+          tree,
+          record,
+          entry,
+          entries,
+          text,
+        );
+        const targets = converted?.targets ?? new Map<number, string>();
+        // Binaries and code land later. Bound by planned id, an unlanded one gets an
+        // ahead ref settled to that id on arrival; its address is never resolved.
+        const pending = new Set(
+          entries
+            .filter((item) => item.kind === "binary" || item.kind === "code")
+            .map((item) => item.id),
+        );
+        const bound =
+          entry.kind === "binary"
+            ? null
+            : await tree.bind(
+                entry,
+                converted
+                  ? {
+                      text: converted.template,
+                      targets,
+                      hrefs: converted.hrefs,
+                      pending,
+                    }
+                  : { text },
+              );
         const ahead = bound?.aheadRefs.length
           ? tree
               .aheadTargets(
                 bound,
                 (await tree.currentUri(entry.id, "file")) ?? entry.uri ?? "",
-                await repo.entries(id),
+                entries,
+                targets,
               )
               .sort((a, b) => (a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0))
           : [];
@@ -505,7 +561,12 @@ export function createImportService(deps: {
           const fenced = await repo.fence(id, projectId);
           if (fenced?.state !== "ready") return;
           const parent = ["binary", "code"].includes(entry.kind)
-            ? await tree.parent(record, entry.parentId)
+            ? await tree.parent(
+                entry.area && !entry.parentId
+                  ? { ...record, ...(await tree.destination(`${entry.area}://`)) }
+                  : record,
+                entry.parentId,
+              )
             : null;
           const liveNote =
             entry.kind === "note" || entry.kind === "docx"
@@ -532,17 +593,26 @@ export function createImportService(deps: {
               });
               return;
             }
-            const findings = [...current.findings];
+            if (converted)
+              await tree.setProperties(entry.id, converted.properties, converted.aliases);
+            const findings = [...current.findings, ...(converted?.findings ?? [])];
+            if (settings.unreadable)
+              findings.push({ code: "settings_unreadable", params: { name: root?.name ?? "" } });
+            const occurrences = bound.invalidTargets.length
+              ? walkLinkOccurrences(bound.blocks)
+              : [];
+            for (const invalid of bound.invalidTargets)
+              findings.push({
+                code: "link_target_unavailable",
+                params: {
+                  text: occurrences[invalid.occurrence]?.label ?? "",
+                  path: targetPath(record, entries, invalid.documentId),
+                },
+              });
             for (const ref of ahead) {
               const target = await repo.lockEntry(ref.targetId);
-              if (target.state === "landed") {
-                const settled = await tree.settleAhead(ref.ref, target.id);
-                if (settled && settled.documentId !== target.id)
-                  findings.push({
-                    code: "picture_elsewhere",
-                    params: { name: target.name, holderId: entry.id },
-                  });
-              } else
+              if (target.state === "landed") await tree.settleAhead(ref.ref, target.id);
+              else
                 await repo.updateEntry(target.id, {
                   pendingRefs: [...target.pendingRefs, { holderId: entry.id, ref: ref.ref }],
                 });
@@ -563,18 +633,9 @@ export function createImportService(deps: {
           } else {
             const allocated = allocate({ ...current, storageUrl }, parent);
             await tree.land(parent, allocated, bound, bytes);
-            for (const pending of current.pendingRefs) {
-              const settled = await tree.settleAhead(pending.ref, entry.id);
-              if (settled && settled.documentId !== entry.id)
-                allocated.findings.push({
-                  code: "picture_elsewhere",
-                  params: {
-                    name: allocated.name,
-                    holderId: pending.holderId,
-                    holderUri: (await tree.currentUri(pending.holderId, "file")) ?? undefined,
-                  },
-                });
-            }
+            // Each ref awaits this id alone, so settling it cannot lose to another file.
+            for (const pending of current.pendingRefs)
+              await tree.settleAhead(pending.ref, entry.id);
             await repo.updateEntry(entry.id, {
               ...allocated,
               state: "landed",

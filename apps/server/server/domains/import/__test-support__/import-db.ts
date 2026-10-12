@@ -1,5 +1,7 @@
 /** One production-composed PostgreSQL project per test, shared by the import DB suites. */
 import { createHash, randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Hocuspocus } from "@hocuspocus/server";
 import type { ImportManifest } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
@@ -12,6 +14,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
+import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../../lib/compose.js";
@@ -89,10 +92,52 @@ export function loose(files: Record<string, string | Uint8Array>): {
         size: value.length,
         sha256: createHash("sha256").update(value).digest("hex"),
         sniff: Buffer.from(value.subarray(0, 512)).toString("base64"),
+        frontmatter: splitObsidianFrontmatter(Buffer.from(value).toString("utf8")).frontmatter
+          ?.text,
       })),
     },
     bytes,
   };
+}
+/** A folder selection read from a fixture vault, as the browser reader would send it. */
+export function vault(name: string) {
+  const source = new URL(`../__fixtures__/${name}/`, import.meta.url).pathname;
+  const selection = loose({});
+  selection.manifest.roots = [
+    {
+      rootId: 0,
+      kind: "folder",
+      name,
+      appJson: readFileSync(join(source, ".obsidian/app.json"), "utf8"),
+    },
+  ];
+  function walk(path: string) {
+    for (const item of readdirSync(join(source, path), { withFileTypes: true }).sort((a, b) =>
+      a.name < b.name ? -1 : 1,
+    )) {
+      if (item.name === ".obsidian") continue;
+      const relative = [path, item.name].filter(Boolean).join("/");
+      if (item.isDirectory()) {
+        selection.manifest.folders.push({ rootId: 0, path: relative });
+        walk(relative);
+      } else {
+        const bytes = readFileSync(join(source, relative)),
+          entryId = selection.bytes.length;
+        selection.bytes.push(bytes);
+        selection.manifest.entries.push({
+          entryId,
+          rootId: 0,
+          path: relative,
+          size: bytes.length,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          sniff: bytes.subarray(0, 512).toString("base64"),
+          frontmatter: splitObsidianFrontmatter(bytes.toString("utf8")).frontmatter?.text,
+        });
+      }
+    }
+  }
+  walk("");
+  return { source, selection };
 }
 /**
  * Register per-test project setup and teardown on the calling suite. Accessors read

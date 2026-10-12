@@ -55,6 +55,8 @@ export type ImportUnreadableReason =
   | "symlink"
   | "folder_unreadable";
 export interface ImportFindingParams {
+  properties_unreadable: Record<string, never>;
+  link_target_unavailable: { text: string; path: string };
   hidden_notes: { count: number };
   link_to_existing: { text: string; path: string };
   link_via_alias: { text: string; path: string };
@@ -65,7 +67,6 @@ export interface ImportFindingParams {
   note_embed_to_link: { name: string };
   embed_to_link: { name: string };
   image_size_dropped: { name: string; size: string };
-  picture_elsewhere: { name: string; holderId?: string; holderUri?: string };
   kept_as_text: { callouts: number; highlights: number; tags: number; footnotes: number };
   settings_unreadable: { name: string };
   name_clash: { original: string };
@@ -119,7 +120,8 @@ export interface ImportReport extends ImportSummary {
     rootId: number;
     kind: "folder" | "file";
     name: string;
-    id: string;
+    /** Null for a routed export selection: its project wrapper is not created. */
+    id: string | null;
     uri: string | null;
   }[];
   entries: ImportEntryReport[];
@@ -157,4 +159,6 @@ export type ImportRefusalCode =
   | "too_many_parts"
   | "import_request_too_large"
   | "invalid_import_version"
-  | "open_filter_required";
+  | "open_filter_required"
+  | "export_marker_root"
+  | "export_marker_invalid";

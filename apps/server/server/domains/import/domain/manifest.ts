@@ -211,9 +211,13 @@ export function manifestFingerprint(manifest: ImportManifest): string {
       JSON.stringify([
         root.kind,
         root.name,
+        root.appJson ?? null,
+        root.meridianExport ?? null,
         manifest.entries
           .filter((entry) => entry.rootId === root.rootId)
-          .map((entry) => JSON.stringify([entry.path, entry.size, entry.sha256]))
+          .map((entry) =>
+            JSON.stringify([entry.path, entry.size, entry.sha256, entry.frontmatter ?? null]),
+          )
           .sort(),
         manifest.folders
           .filter((folder) => folder.rootId === root.rootId)

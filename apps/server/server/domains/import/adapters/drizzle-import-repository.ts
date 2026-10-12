@@ -16,6 +16,7 @@ import {
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import type { ImportArea } from "../domain/export-marker.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
 
 function record(row: typeof imports.$inferSelect): ImportRecord {
@@ -307,7 +308,10 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
     async nextPlanningGroup(importId) {
       const unprepared = sql`coalesce((${importEntries.spec}->>'prepared')::boolean, false) = false`;
       const [first] = await tx()
-        .select({ parentId: sql<string | null>`${importEntries.spec}->>'parentId'` })
+        .select({
+          parentId: sql<string | null>`${importEntries.spec}->>'parentId'`,
+          area: sql<string | null>`${importEntries.spec}->>'area'`,
+        })
         .from(importEntries)
         .where(
           and(eq(importEntries.importId, importId), eq(importEntries.state, "planned"), unprepared),
@@ -324,12 +328,14 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
             eq(importEntries.state, "planned"),
             eq(importEntries.created, false),
             sql`${importEntries.spec}->>'parentId' IS NOT DISTINCT FROM ${first.parentId}`,
+            sql`${importEntries.spec}->>'area' IS NOT DISTINCT FROM ${first.area}`,
           ),
         )
         .orderBy(importEntries.ordinal);
       const group = rows.map(entry);
       return {
         parentId: first.parentId,
+        ...(first.area ? { area: first.area as ImportArea } : {}),
         pending: group.filter((item) => !item.prepared),
         reserved: group.filter((item) => item.prepared),
       };

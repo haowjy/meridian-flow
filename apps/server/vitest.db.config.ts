@@ -17,6 +17,7 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   : [];
 const expectedSuites = [
   "apps/server/server/domains/collab/import-producer-races.db.test.ts",
+  "apps/server/server/domains/import/import-conversion.db.test.ts",
   "apps/server/server/domains/import/import-landing.db.test.ts",
   "apps/server/server/domains/import/import-planning.db.test.ts",
   "apps/server/server/domains/import/import-reports.db.test.ts",
