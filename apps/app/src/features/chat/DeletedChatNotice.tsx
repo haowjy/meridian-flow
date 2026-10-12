@@ -6,8 +6,8 @@ import { NoticeCard } from "@/components/app/NoticeCard";
 export function DeletedChatNotice({ notice, onDismiss }: { notice: Notice; onDismiss(): void }) {
   const title = notice.title;
   return (
-    <NoticeCard tone="info" inline onDismiss={onDismiss}>
-      <p className="min-w-0 whitespace-normal break-words">
+    <NoticeCard tone="info" onDismiss={onDismiss}>
+      <p className="min-w-0 flex-1 break-words">
         {title ? (
           <Trans>
             <strong>{title}</strong> was deleted.

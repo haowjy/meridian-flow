@@ -519,21 +519,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const failureCard = submitFailure ? (
     <NoticeCard
       tone="error"
-      inline
       onDismiss={() => {
         setSubmitFailure(false);
         editor?.commands.focus(undefined, { scrollIntoView: false });
       }}
     >
-      <p className="whitespace-normal">{t`Couldn't send.`}</p>
+      <p className="min-w-0 flex-1">{t`Couldn't send.`}</p>
     </NoticeCard>
   ) : null;
   return (
     <>
       {notices || failureCard ? (
-        // Above the box and its strips, inset like them: every note above the box is the
+        // Above the box and its strips, as wide as the box: every note above the box is the
         // same card in the same place, whoever raised it. Send is the failure's retry.
-        <div className="mx-[var(--chat-space-block)] mb-[var(--chat-space-inline)] flex flex-col items-start gap-[var(--chat-space-inline)]">
+        <div className="mb-[var(--chat-space-inline)] flex flex-col gap-[var(--chat-space-inline)]">
           {notices}
           {failureCard}
         </div>
