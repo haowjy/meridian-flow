@@ -101,6 +101,26 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: result.pendingDrafts
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "{0, plural, one {# draft the AI hasn't applied isn't included.} other {# drafts the AI hasn't applied aren't included.}}"
+#~ msgstr "{0, plural, one {# draft the AI hasn't applied isn't included.} other {# drafts the AI hasn't applied aren't included.}}"
+
+#. placeholder {0}: result.pendingDrafts
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
+msgstr "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
+
+#. placeholder {0}: result.outsideLinks.count
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "{0, plural, one {# link points to {where}, which isn't included.} other {# links point to {where}, which aren't included.}}"
+#~ msgstr "{0, plural, one {# link points to {where}, which isn't included.} other {# links point to {where}, which aren't included.}}"
+
+#. placeholder {0}: result.outsideLinks.count
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
+msgstr "{0, plural, one {# link points to {where}, which won't be included.} other {# links point to {where}, which won't be included.}}"
+
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
@@ -394,6 +414,10 @@ msgstr "A table keeps at least one row."
 #: src/features/project/work/WorkCollection.tsx
 msgid "A Work groups the chats and drafts for one piece of writing."
 msgstr "A Work groups the chats and drafts for one piece of writing."
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "A ZIP of Markdown files and folders that Obsidian can open. Includes Manuscript, Knowledge Base and Unfiled."
+msgstr "A ZIP of Markdown files and folders that Obsidian can open. Includes Manuscript, Knowledge Base and Unfiled."
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Access lost (not saving to the server)"
@@ -700,6 +724,7 @@ msgstr "Can't undo"
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/creation/CreationDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
@@ -819,9 +844,17 @@ msgstr "Chats in this Work share its goal and scratch files."
 msgid "Checked Work"
 msgstr "Checked Work"
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Checking links…"
+msgstr "Checking links…"
+
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Checking pending changes…"
 msgstr "Checking pending changes…"
+
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "Checking preview…"
+#~ msgstr "Checking preview…"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
@@ -1254,6 +1287,10 @@ msgstr "Couldn't load references."
 msgid "Couldn't load the conversation this fork continues."
 msgstr "Couldn't load the conversation this fork continues."
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Couldn't load the preview."
+msgstr "Couldn't load the preview."
+
 #: src/features/project/context/ContextViewerHost.tsx
 #: src/features/project/context/viewers/TextViewer.tsx
 msgid "Couldn't load this file."
@@ -1407,6 +1444,10 @@ msgstr "Couldn't send."
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't start a new brief. Try again."
 msgstr "Couldn't start a new brief. Try again."
+
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "Couldn't start the export."
+#~ msgstr "Couldn't start the export."
 
 #: src/features/chat/ErrorBlock.tsx
 msgid "Couldn't start the retry."
@@ -1682,6 +1723,10 @@ msgstr "Document"
 msgid "Document name and location"
 msgstr "Document name and location"
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "documents that were deleted"
+msgstr "documents that were deleted"
+
 #: src/core/editor/links/link-mark-view.ts
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
@@ -1690,9 +1735,17 @@ msgstr "Document name and location"
 msgid "Doesn't exist yet"
 msgstr "Doesn't exist yet"
 
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "Done"
+#~ msgstr "Done"
+
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
 msgstr "Download {name}"
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+#~ msgid "Download a folder of Markdown files as a ZIP."
+#~ msgstr "Download a folder of Markdown files as a ZIP."
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -1875,6 +1928,26 @@ msgstr "Exploring"
 msgid "Exploring folders…"
 msgstr "Exploring folders…"
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Export"
+msgstr "Export"
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Export {project}"
+msgstr "Export {project}"
+
+#: src/features/project/shell/ProjectActionsMenu.tsx
+#~ msgid "Export project"
+#~ msgstr "Export project"
+
+#: src/features/project/shell/ProjectMenu.tsx
+msgid "Export project…"
+msgstr "Export project…"
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Exporting {project}."
+msgstr "Exporting {project}."
+
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
 msgstr "Extra usage"
@@ -1925,6 +1998,10 @@ msgstr "File this document"
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
 msgstr "Files"
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Files attached in chat, grouped by Work."
+msgstr "Files attached in chat, grouped by Work."
 
 #: src/features/chat/SubagentHeader.tsx
 msgid "Filter subagents"
@@ -2106,6 +2183,14 @@ msgstr "Image downloaded"
 #: src/core/editor/images/image-uploads.ts
 msgid "Images need a project before they can be uploaded."
 msgstr "Images need a project before they can be uploaded."
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Include Scratch"
+msgstr "Include Scratch"
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Include Uploads"
+msgstr "Include Uploads"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Includes your edits"
@@ -2723,6 +2808,10 @@ msgstr "Not Found"
 msgid "Not reported"
 msgstr "Not reported"
 
+#: src/features/export/ExportProjectDialog.tsx
+msgid "Notes the AI kept, grouped by Work."
+msgstr "Notes the AI kept, grouped by Work."
+
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Nothing here yet"
 msgstr "Nothing here yet"
@@ -2923,6 +3012,10 @@ msgstr "Plans"
 msgid "Preferences"
 msgstr "Preferences"
 
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "Preparing…"
+#~ msgstr "Preparing…"
+
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"
 msgstr "Preview not available"
@@ -2931,6 +3024,10 @@ msgstr "Preview not available"
 #: src/features/account/SettingsDialog.tsx
 msgid "Profile"
 msgstr "Profile"
+
+#: src/features/project/shell/ProjectMenu.tsx
+msgid "Project actions"
+msgstr "Project actions"
 
 #: src/features/project/ProjectCreationNotice.tsx
 msgid "Project creation failed."
@@ -3134,6 +3231,10 @@ msgstr "Rename"
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Rename chat"
 msgstr "Rename chat"
+
+#: src/features/project/shell/ProjectMenu.tsx
+msgid "Rename project"
+msgstr "Rename project"
 
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename project: {title}"
@@ -3347,6 +3448,7 @@ msgstr "Saving…"
 msgid "scene break"
 msgstr "scene break"
 
+#: src/features/export/ExportProjectDialog.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
@@ -3896,6 +3998,14 @@ msgstr "These preferences follow your account wherever you sign in."
 msgid "These preferences stay on this device to suit your screen."
 msgstr "These preferences stay on this device to suit your screen."
 
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "They stay as Meridian links and won't open in Obsidian."
+#~ msgstr "They stay as Meridian links and won't open in Obsidian."
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "They'll stay as Meridian links and won't open in Obsidian."
+msgstr "They'll stay as Meridian links and won't open in Obsidian."
+
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking"
 msgstr "Thinking"
@@ -4369,6 +4479,7 @@ msgstr "Uploading {0}…"
 msgid "Uploading elsewhere…"
 msgstr "Uploading elsewhere…"
 
+#: src/features/export/ExportProjectDialog.tsx
 #: src/features/project/context/context-schemes.ts
 msgid "Uploads"
 msgstr "Uploads"
@@ -4547,6 +4658,11 @@ msgstr "You left checkout. No purchase was confirmed."
 msgid "Your answer may not have reached the agent."
 msgstr "Your answer may not have reached the agent."
 
+#. placeholder {0}: result.fileName
+#: src/features/export/ExportProjectDialog.tsx
+#~ msgid "Your browser is downloading {0}."
+#~ msgstr "Your browser is downloading {0}."
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 msgstr "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
@@ -4574,6 +4690,10 @@ msgstr "Your selected Agent is unavailable. Choose another Agent."
 #: src/features/chat/CreationComposer.tsx
 msgid "Your selected Work is unavailable. Choose another Work or No Work."
 msgstr "Your selected Work is unavailable. Choose another Work or No Work."
+
+#: src/features/export/ExportProjectDialog.tsx
+msgid "your User files"
+msgstr "your User files"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."

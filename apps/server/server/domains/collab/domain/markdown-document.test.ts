@@ -36,6 +36,7 @@ function setup(filetype = "typescript") {
   const coordinator = createInMemoryCoordinator(journal);
   const eventSink = createInMemoryEventSink();
   const engine = createMarkdownDocumentEngine({
+    exportCodec: mdxCodec({ schema, export: true }),
     links: createStaticDocumentLinkScopes(),
     codec: mdxCodec({ schema }),
     model,
@@ -313,5 +314,22 @@ describe("by-identity document landing", () => {
       value: "imported\n\ntyped\n",
     });
     doc.destroy();
+  });
+});
+
+describe("live export read door", () => {
+  it("uses its supplied scope and export codec without changing ordinary reads", async () => {
+    const subject = setup("markdown");
+    await seedCode(subject, "[[Not a link]] [ref] [^1] [target](https://example.com)");
+    const exported = await subject.engine.readForExport(DOCUMENT_ID, (links) => ({
+      spellLink: () => ({ href: "../Knowledge%20Base/Target.md", address: "kb://Target" }),
+      spellSource: links.spellSource,
+    }));
+    expect(exported).toEqual({
+      ok: true,
+      value: "[[Not a link]] \\[ref] \\[^1] [target](../Knowledge%20Base/Target.md)\n",
+    });
+    const ordinary = await subject.engine.readAsMarkdown(DOCUMENT_ID);
+    expect(ordinary.ok && ordinary.value).toContain("\\[\\[Not a link]]");
   });
 });

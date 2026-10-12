@@ -89,6 +89,7 @@ export function createAgentEditRuntime(input: {
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
       codec: markupCodec,
+      exportCodec: mdxCodec({ schema, export: true }),
       links: input.links,
       model,
       journal: input.journal,

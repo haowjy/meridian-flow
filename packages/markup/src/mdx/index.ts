@@ -50,8 +50,12 @@ export function mdx(options?: { components?: ComponentRegistry }): MarkupPlugin 
   };
 }
 
-export function mdxCodec(options: { schema: Schema; components?: ComponentRegistry }) {
+export function mdxCodec(options: {
+  schema: Schema;
+  components?: ComponentRegistry;
+  export?: boolean;
+}) {
   return createMarkupCodec({ schema: options.schema })
     .use(mdx({ components: options.components }))
-    .build({ requireSchemaBlockCoverage: true });
+    .build({ requireSchemaBlockCoverage: true, export: options.export });
 }

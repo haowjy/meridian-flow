@@ -75,6 +75,7 @@ export type MarkdownSerializationAnomalyObserver = (anomaly: MarkdownSerializati
 
 type MarkdownDocumentEngineDeps = {
   codec: MarkupCodec;
+  exportCodec: MarkupCodec;
   /**
    * The operation's document-link scope: each method prepares it with the
    * document it is about to spell, then serializes through the holder. The
@@ -135,6 +136,10 @@ export type MarkdownDocumentEngine = {
     snapshot: Y.Doc,
     origin: RuntimeOrigin,
   ): Promise<Result<MarkdownSetResult, SyncError>>;
+  readForExport(
+    documentId: string,
+    scope: (links: HolderLinkScope) => DocumentLinkScope,
+  ): Promise<Result<string, SyncError>>;
   readAsMarkdown(documentId: string): Promise<Result<string, SyncError>>;
   /**
    * Whole-document writes take a write a `LinkBinder` bound before the
@@ -188,11 +193,12 @@ export function createMarkdownDocumentEngine(
     doc: Y.Doc,
     schemaType: YjsTrackedSchemaType,
     links: DocumentLinkScope,
+    codec: MarkupCodec = deps.codec,
   ): string {
     return projectBlocks(documentId, doc, (blocks) => {
       if (blocks.length === 0) return "";
       if (schemaType === "code") return blocks[0]?.textContent ?? "";
-      return deps.codec.serialize(blocks, links);
+      return codec.serialize(blocks, links);
     });
   }
 
@@ -508,6 +514,28 @@ export function createMarkdownDocumentEngine(
         },
         format.value,
       );
+    },
+
+    async readForExport(documentId, scope) {
+      try {
+        const format = await documentFormat(documentId as DocumentId);
+        if (!format.ok) return format;
+        return Ok(
+          await deps.coordinator.withDocument(documentId, async (doc) => {
+            const links = await spelling(documentId as DocumentId, [doc]);
+            return serializeForSchema(
+              documentId as DocumentId,
+              doc,
+              format.value.schemaType,
+              scope(links),
+              deps.exportCodec,
+            );
+          }),
+        );
+      } catch (cause) {
+        if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
+        throw cause;
+      }
     },
 
     async readAsMarkdown(documentId) {

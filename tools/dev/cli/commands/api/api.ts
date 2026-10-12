@@ -1,6 +1,8 @@
 /** `./mf api`: any authenticated request against this worktree's server (like `gh api`). */
+
 import { usageError } from "../../core/cli-error";
 import { type CommandSpec, readJsonArg, requirePositional, stringOption } from "../../core/command";
+import { downloadApiFile } from "../../core/download";
 import type { HttpMethod } from "../../core/session";
 
 const METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -11,6 +13,7 @@ export const apiCommand: CommandSpec = {
   args: "<METHOD> <path>",
   route: "any /api/* route",
   options: {
+    output: { type: "string", description: "Stream a GET response to this file (binary-safe)" },
     data: { type: "string", description: "JSON body: literal, @file, or - for stdin" },
   },
   examples: [
@@ -25,6 +28,14 @@ export const apiCommand: CommandSpec = {
     if (!path.startsWith("/")) throw usageError("<path> must start with /, e.g. /api/threads");
     const data = stringOption(ctx, "data");
     const session = await ctx.session();
+    const output = stringOption(ctx, "output");
+    if (output) {
+      if (method !== "GET" || data !== undefined)
+        throw usageError("--output requires GET without --data");
+      await downloadApiFile(session, path, output);
+      ctx.out.result({ output }, (value) => `Downloaded ${value.output}`);
+      return undefined;
+    }
     const body = data === undefined ? undefined : readJsonArg(data, "--data");
     const response = await session.request(method, path, body);
     ctx.out.result(response ?? null, (value) =>

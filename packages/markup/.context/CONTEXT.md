@@ -5,6 +5,9 @@
 The root `@meridian/markup` exports:
 
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
+  The separate `mdxCodec({ schema, export: true })` instance preserves literal
+  Obsidian-shaped `[[…]]`/`![[…]]` text spans, while escaping other bracket
+  constructs. Ordinary and model output keep the default configuration.
 - `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
   href and src spells as written, `asset:` refs stay refs). It is for
   comparing stored bytes and for tests; no reader is ever spelled through it. The fixed-table
