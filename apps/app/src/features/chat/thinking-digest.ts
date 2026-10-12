@@ -11,6 +11,7 @@ import { splitDocumentFile } from "@meridian/agent-edit";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ToolView } from "./group-delivery-segments";
 import {
+  documentToolFailed,
   humanizeSkillSlug,
   skillFile,
   stringInput,
@@ -37,16 +38,16 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     const command = toolCommand(tool);
     const skill = stringInput(toolInputObject(tool), "name");
 
-    if (!tool.isError && command === "skill" && skill) {
+    if (!documentToolFailed(tool) && command === "skill" && skill) {
       invokedSkills.add(skill);
       continue;
     }
     // A skill's own files are not the writer's documents; reading one is a step.
-    if (!tool.isError && path && isReadCommand(command) && !skillFile(path)) {
+    if (!documentToolFailed(tool) && path && isReadCommand(command) && !skillFile(path)) {
       readDocuments.add(documentIdentity(path));
       continue;
     }
-    if (!tool.isError && path && isEditCommand(command)) {
+    if (!documentToolFailed(tool) && path && isEditCommand(command)) {
       continue;
     }
     // Failed, non-document (`search`, `ls`, `work`, a `skills://` read) and

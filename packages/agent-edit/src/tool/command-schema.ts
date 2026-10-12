@@ -70,7 +70,7 @@ const INVERSE_COUNT = z
   .min(1)
   .max(20)
   .optional()
-  .describe("How many stack entries to reverse, all or nothing. Default 1.");
+  .describe("How many edits to undo or redo, all or nothing. Default 1.");
 
 /**
  * Which version of a document to read (D3, D14). It has no default: omitted
@@ -164,7 +164,7 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo your most recent edits to this document, newest first. Refused if the user applied or discarded one, or anyone edited it since; then use revert.",
+      "Undo count edits (default 1) to this document, newest first, all or nothing. Each edit can be redone separately. Refused if the user applied or discarded one, or anyone edited it since; then use revert.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
@@ -173,7 +173,8 @@ const MUTATION_BRANCHES = {
     fields: { edit: WRITE_HANDLE },
   },
   redo: {
-    description: "Redo what your last undo here removed. Not after you edit this document again.",
+    description:
+      "Redo count edits (default 1), last undone first, all or nothing. Not after you edit this document again.",
     fields: { count: INVERSE_COUNT },
   },
 } as const;

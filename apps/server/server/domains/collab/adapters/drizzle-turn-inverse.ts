@@ -312,7 +312,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               editScopeId: query.model ? query.responseIdentity?.editScopeId : undefined,
               actorUserId: userId,
               kind,
-              actionId: plan.computed.actionId,
+              actionId: edit.actionId ?? plan.computed.actionId,
               consumes: plan.consumes,
               receipts,
             });
