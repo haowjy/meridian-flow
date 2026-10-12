@@ -515,3 +515,44 @@ on refusal, without a navigation change.
   `pnpm --filter @meridian/server test server/domains/collab/domain/writer-restoration.test.ts`.
   This verifies cold attribution replay as well as complete attribute and rich
   paragraph aliases; it is not browser interaction evidence.
+
+## Response replay after repeated Discards
+
+These are server-seam integrity checks, not browser remount verification. Use an
+owned database and the production preview/selection API. Record exact paragraphs
+and every staged result's settlement ID, not only its grouped `wN` handle.
+
+- Stage `green → lime` over pending `gold / azure / green`. Discard gold,
+  write `red → pink` in the new generation, and read from the open reply.
+  Discard pink, read again and save. Both reads succeed; the saved draft is
+  exactly `red / azure / lime`.
+- Stage only `gold → bronze`. Discard gold, read (its write drops), then
+  Discard azure. Read and save still succeed, with a failed bronze receipt
+  and exactly `red / blue / green`.
+- Stage `gold → gild`, `gild → bronze` and independent `green → lime`.
+  Discard gold and refuse the next Work-draft `commitBranchMutation` once
+  through that existing test port. Restore it and retry. Both rejected
+  settlement IDs remain, lime commits, and the draft is `red / azure / lime`.
+- In that grouped-handle reply, the next tool names the document and handle
+  once, says **part** of the handle was dropped, and identifies both rejected
+  text changes. With no surviving sibling it says all staged writes for that
+  handle were dropped. A subsequent tool does not repeat the notice.
+
+The parameterized Postgres regression exercises those same production seams:
+
+```bash
+DB_TEST_WORKERS=1 pnpm test:db -- \
+  apps/server/server/domains/collab/adapters/drizzle-document-edits.db.test.ts
+```
+
+### Long-history inverse measurements (on demand)
+
+The package test retains one 200-edit, 4,000-word correctness round. The 15-round
+warm/cold timing workload is deliberately outside the automated gate. Run the
+[performance recipe][undo-perf] from the `drr-undo` checkout with `pnpm exec tsx`.
+Its imports name that owned checkout; adjust them when measuring another one.
+Keep its four min/median/max series, revision and machine/load context with the
+work evidence. It uses real Yjs and a cold encoding for every cold round, no
+caches and no timing assertion. Do not count it as browser or live-app evidence.
+
+[undo-perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/draft-review-repair/undo-step1-fix7-evidence/long-history-perf.ts

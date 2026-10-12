@@ -435,10 +435,15 @@ writer carry recovery own the editor transition.
 
 Responses replay staged segment rows onto the current generation under the
 existing branch lock, then check integration and the generation residual.
-Only retired-row structs and deletions may remain in the old helper. A write
+Only retired-row structs and deletions may remain in the old helper. The helper
+records its actual base generation/state even when no staged writes remain;
+retired evidence comes from that cut, never inferred from historical write metadata.
+Host replay returns an isolated typed result after admission/CAS, and the buffer
+replaces kept writes, failed receipts and helper/cut in one synchronous transition. A write
 that cannot integrate, and its later dependent logical writes, are dropped
 atomically per write; independent writes commit. The helper is replaced with
 the current generation plus surviving stages before subsequent tool resolution.
-Dropped handles are named in the next tool result; their save receipts use the
+Dropped writes are named once per document/handle in the next tool result,
+with partial versus whole rejection distinguished; their save receipts use the
 existing per-result failure path. Whole Discard still rolls back the response.
 No settlement deferral or second retirement state machine exists.

@@ -46,6 +46,18 @@ import {
 } from "./write-helpers.js";
 import { scopedToolUseId } from "./write-idempotency.js";
 
+/** Name the rejected logical write, not its possibly shared reversal handle. */
+function stagedWriteDescription(command: WriteCommand): string {
+  const before = "find" in command ? JSON.stringify(command.find) : command.command;
+  const after =
+    "content" in command
+      ? JSON.stringify(command.content)
+      : command.command === "remove"
+        ? '""'
+        : undefined;
+  return [before, after].filter(Boolean).join(" → ");
+}
+
 export function createWriteCommands(deps: {
   options: Pick<
     CreateWriteToolOptions,
@@ -363,6 +375,8 @@ export function createWriteCommands(deps: {
           session,
           runtime,
           commandName: command.command,
+          documentLabel: command.file,
+          description: stagedWriteDescription(command),
           update,
           editParts: parts,
           meta,
@@ -672,6 +686,8 @@ export function createWriteCommands(deps: {
           session,
           runtime,
           commandName: command.command,
+          documentLabel: command.file,
+          description: stagedWriteDescription(command),
           update: ownUpdate,
           segments,
           editParts: parts,

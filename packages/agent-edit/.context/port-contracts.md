@@ -64,10 +64,15 @@ through another transport; the host owns that concurrency fence.
 `DocumentNotFoundError` when the doc is missing.
 
 Movable-generation hosts implement `withStagedWrites`: checked whole-write replay
-and publication under their existing authority lock, returning accepted settlement
-identities and the before cut. The response helper is replaced from that cut plus
+and publication under their existing authority lock. It accepts an explicit helper
+base cut (generation and state), independent of historical write generations,
+and returns typed kept entries, new helper bytes/cut and the before cut only
+after admission and CAS accept. The buffer applies kept writes, failed-receipt
+owners and helper replacement together after that acceptance. The response helper is replaced from that cut plus
 surviving staged writes before the next command. A discarded write and its later
 dependents receive failed per-write receipts; independent writes still commit.
+The helper cut survives a receipt-only buffer. Notices group by document and
+handle, distinguish partial from whole rejection and name the rejected writes.
 Terminal concurrency reporting uses the frozen pre-publication cut, so the
 response's own newly journaled rows are not mistaken for concurrent writer text.
 The ordinary live-document path and durable recovery remain unchanged.

@@ -223,14 +223,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         ...result,
         model: {
           ...result.model,
-          message: [
-            result.model?.message,
-            ...dropped.map(
-              (id) => `${id} was discarded with the text it edited; re-read and retry`,
-            ),
-          ]
-            .filter(Boolean)
-            .join("\n"),
+          message: [result.model?.message, ...dropped].filter(Boolean).join("\n"),
         },
       };
     const outcome = toOutcome(commandName, result, validCommand.file);
