@@ -24,3 +24,11 @@ SET receipt = receipt || jsonb_build_object('observationVersion',
   CASE WHEN receipt->'command'->>'kind' = 'delete' AND receipt->'result'->>'ok' = 'true'
     THEN receipt->'result'->'value'->>'availabilityGeneration'
     ELSE '0' END);
+--> statement-breakpoint
+-- Namespace observations have their own sequence; initialize above imported
+-- pre-sequence evidence without changing availability's transaction grouping.
+SELECT pg_advisory_xact_lock(1296387666, 1096174676);
+--> statement-breakpoint
+SELECT setval('context_namespace_observation_version_seq',
+  greatest(1, (SELECT coalesce(max(namespace_generation), 0) FROM context_availability_heads)),
+  true);

@@ -271,29 +271,15 @@
     {
       "idx": 38,
       "version": "7",
-      "when": 1791772096995,
-      "tag": "0038_perfect_excalibur",
+      "when": 1791774675720,
+      "tag": "0038_namespace_observation_schema",
       "breakpoints": true
     },
     {
       "idx": 39,
       "version": "7",
-      "when": 1791772626207,
-      "tag": "0039_canonical_observation_versions",
-      "breakpoints": true
-    },
-    {
-      "idx": 40,
-      "version": "7",
-      "when": 1791773566867,
-      "tag": "0040_daffy_sebastian_shaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 41,
-      "version": "7",
-      "when": 1791773568765,
-      "tag": "0041_initialize_namespace_versions",
+      "when": 1791774682076,
+      "tag": "0039_backfill_namespace_observation_versions",
       "breakpoints": true
     }
   ]
