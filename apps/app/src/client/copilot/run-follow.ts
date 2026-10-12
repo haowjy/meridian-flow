@@ -234,25 +234,32 @@ export function mergeSnapshot(facts: RunFacts, snapshot: RunFollowSnapshot): Run
   const turns = new Map(facts.turns);
   const deliveries = new Map(facts.deliveries);
   const ended = new Set(facts.ended);
+  let changed = false;
   for (const turn of snapshot.turns) {
     // Turns from before run identity carry no execution: unknown, never followed.
     if (!turn.executionId) continue;
-    withTurn(turns, turn.id, {
-      executionId: turn.executionId,
-      reservedForUserTurnIds: turn.reservedForUserTurnIds ?? [],
-      position: turn.position ?? null,
-    });
-    if (turn.executionId !== snapshot.liveState.openExecutionId) ended.add(turn.executionId);
+    changed =
+      withTurn(turns, turn.id, {
+        executionId: turn.executionId,
+        reservedForUserTurnIds: turn.reservedForUserTurnIds ?? [],
+        position: turn.position ?? null,
+      }) || changed;
+    if (turn.executionId !== snapshot.liveState.openExecutionId && !ended.has(turn.executionId)) {
+      ended.add(turn.executionId);
+      changed = true;
+    }
   }
   for (const turn of snapshot.turns) {
     if (!turn.delivery) continue;
     const { byTurnId } = turn.delivery;
-    withDelivery(deliveries, turn.id, {
-      byTurnId,
-      executionId: byTurnId ? (turns.get(byTurnId)?.executionId ?? null) : null,
-    });
+    changed =
+      withDelivery(deliveries, turn.id, {
+        byTurnId,
+        executionId: byTurnId ? (turns.get(byTurnId)?.executionId ?? null) : null,
+      }) || changed;
   }
-  return { turns, deliveries, ended };
+  // Unchanged facts keep their identity: readers re-render only on news.
+  return changed ? { turns, deliveries, ended } : facts;
 }
 
 /** Which turn (and execution) delivered a message, when the facts know it was delivered. */
@@ -337,11 +344,10 @@ function apply(follow: RunFollow, input: RunFollowInput): RunFollowStep {
       const facts = mergeStreamEvent(follow.facts, input.event);
       return { follow: facts === follow.facts ? follow : { ...follow, facts }, cancel: null };
     }
-    case "snapshot":
-      return {
-        follow: { ...follow, facts: mergeSnapshot(follow.facts, input.snapshot) },
-        cancel: null,
-      };
+    case "snapshot": {
+      const facts = mergeSnapshot(follow.facts, input.snapshot);
+      return { follow: facts === follow.facts ? follow : { ...follow, facts }, cancel: null };
+    }
     case "obligations":
       return { follow: { ...follow, obligations: new Set(input.userTurnIds) }, cancel: null };
     case "steer":

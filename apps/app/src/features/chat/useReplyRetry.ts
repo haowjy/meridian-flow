@@ -86,12 +86,12 @@ export function retryReservationEnded(
 export function useReplyRetry(input: {
   threadId: string;
   storedTurns: readonly Turn[];
-  /** The thread's merged run identity facts, read when the stored turns change. */
-  runFacts: () => RunFacts;
+  /** The thread's merged run identity facts; a new value retires stand-ins whose execution ended. */
+  runFacts: RunFacts;
 }): ReplyRetry {
   const { threadId, storedTurns, runFacts } = input;
   const retired = useCallback(
-    (standIn: StandInIdentity) => retryReservationEnded(standIn, storedTurns, runFacts()),
+    (standIn: StandInIdentity) => retryReservationEnded(standIn, storedTurns, runFacts),
     [runFacts, storedTurns],
   );
   const standIns = useRetryStandIns({

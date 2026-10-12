@@ -578,3 +578,28 @@ describe("TL-D62-m: admission's obligation overlay", () => {
     expect(scenario.activeSubscription()).toBeUndefined();
   });
 });
+
+describe("run facts subscribers", () => {
+  it("are told when only the facts change, and not by a snapshot that adds nothing", () => {
+    const scenario = makeScenario();
+    const listener = vi.fn();
+    const unsubscribe = scenario.controller.subscribeRunFollow(listener);
+    const snapshot = snapshotResponse({
+      turns: [snapshotTurn("c", "compaction", { executionId: "e-r", status: "cancelled" })],
+      openExecutionId: null,
+    });
+    scenario.controller.observeSnapshot("thread_1", snapshot);
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual({
+      following: false,
+      waiting: false,
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    const facts = scenario.controller.runFacts("thread_1");
+    expect(facts.ended.has("e-r")).toBe(true);
+
+    scenario.controller.observeSnapshot("thread_1", snapshot);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(scenario.controller.runFacts("thread_1")).toBe(facts);
+    unsubscribe();
+  });
+});

@@ -24,6 +24,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 
+import type { RunFacts } from "./run-follow";
 import { type RunFollowStatus, ThreadRunController } from "./ThreadRunController";
 
 const MeridianAgentContext = createContext<ThreadRunController | null>(null);
@@ -40,10 +41,21 @@ export function useMeridianAgent(): ThreadRunController {
 export function useRunFollowStatus(threadId: string): RunFollowStatus {
   const controller = useMeridianAgent();
   const subscribe = useCallback(
-    (listener: () => void) => controller.subscribeRunFollowStatus(listener),
+    (listener: () => void) => controller.subscribeRunFollow(listener),
     [controller],
   );
   const read = useCallback(() => controller.runFollowStatus(threadId), [controller, threadId]);
+  return useSyncExternalStore(subscribe, read, read);
+}
+
+/** The chat's run identity facts as the run controller has merged them; renders when they change. */
+export function useRunFacts(threadId: string): RunFacts {
+  const controller = useMeridianAgent();
+  const subscribe = useCallback(
+    (listener: () => void) => controller.subscribeRunFollow(listener),
+    [controller],
+  );
+  const read = useCallback(() => controller.runFacts(threadId), [controller, threadId]);
   return useSyncExternalStore(subscribe, read, read);
 }
 
