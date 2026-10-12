@@ -64,6 +64,10 @@ Paths outside this directory are relative to `apps/app/src`.
   reach the server. Formatting-only edits are real server-vended classes. Block formatting facts
   render as one localized line in the usual row, without a fake text replacement.
   An empty preview is not terminal-settlement evidence.
+- `isWholeDocumentChange` is the shared layout rule: a ready sole whole-draft
+  item is its document row, not a file header plus a repeated change. Chat and
+  expanded Work files use that row’s name as the review door and keep its
+  whole-draft commands. Real per-change items retain their header and rows.
 - Review chrome, strip and change rows each use one line. Lists close on last
   disposition; only the header shows completion. Success has no toast.
 - Draft-only tabs belong to the transient review overlay. Only Apply promotion

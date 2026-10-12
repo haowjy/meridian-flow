@@ -11,7 +11,10 @@ import {
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import type { DraftChangesView } from "@/features/draft-review/draft-changes";
+import {
+  type DraftChangesView,
+  isWholeDocumentChange,
+} from "@/features/draft-review/draft-changes";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
@@ -45,6 +48,7 @@ export function WorkChangeFile({
       (view.status === "ready" && view.items.length === 0 && !view.unlisted))
   )
     return null;
+  const wholeDocument = expanded && isWholeDocumentChange(view);
   const name = file.documentName || file.contextPath || t`Untitled manuscript`;
 
   const review = (focusOperationIds?: readonly string[]) =>
@@ -71,14 +75,20 @@ export function WorkChangeFile({
             )}
           />
         </button>
-        <button
-          type="button"
-          className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
-          disabled={!file.contextPath}
-          onClick={() => review()}
-        >
-          <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-        </button>
+        {wholeDocument ? (
+          <div className="min-w-0 flex-1">
+            <FileChanges view={view} touch={touch} onSelect={review} documentName={name} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
+            disabled={!file.contextPath}
+            onClick={() => review()}
+          >
+            <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
+          </button>
+        )}
       </div>
       {refused && !view.items.some((item) => item.draftFailure) ? (
         <InlineErrorRow
@@ -86,7 +96,7 @@ export function WorkChangeFile({
           onDismiss={() => clearDraftCommandFailure(draft)}
         />
       ) : null}
-      {expanded ? (
+      {expanded && !wholeDocument ? (
         <div className={cn("pb-1.5", touch ? "pl-11" : "pl-8")}>
           <FileChanges view={view} touch={touch} onSelect={review} />
         </div>
@@ -99,13 +109,16 @@ function FileChanges({
   view,
   touch,
   onSelect,
+  documentName,
 }: {
   view: DraftChangesView;
   touch: boolean;
   onSelect: (operationIds: readonly string[]) => void;
+  documentName?: string;
 }) {
   return (
     <DocumentChangeRows
+      documentName={documentName}
       showAttribution
       view={view}
       touch={touch}

@@ -15,7 +15,7 @@ import { t } from "@lingui/core/macro";
 import { type ReactNode, useMemo } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { DraftChangesView } from "./draft-changes";
+import { type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
 import { ReviewChangeRow } from "./ReviewChangeRow";
 import type { ReviewChange } from "./review-changes";
 import { useArrivedChanges } from "./useArrivedChanges";
@@ -26,13 +26,17 @@ export function DocumentChangeRows({
   standIn = null,
   touch = false,
   showAttribution = false,
+  documentName,
 }: {
   view: DraftChangesView;
   onSelect: (change: ReviewChange) => void;
   standIn?: ReactNode;
   touch?: boolean;
   showAttribution?: boolean;
+  /** Catalog name when these rows stand in for a listed file's header. */
+  documentName?: string;
 }) {
+  const wholeDocument = isWholeDocumentChange(view);
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
   const arrived = useArrivedChanges(
     changes,
@@ -63,6 +67,8 @@ export function DocumentChangeRows({
       {view.items.map(({ change, failure, draftFailure }) => (
         <ReviewChangeRow
           touch={touch}
+          wholeDocument={wholeDocument}
+          documentName={wholeDocument ? documentName : undefined}
           showAttribution={showAttribution}
           key={change.classId}
           change={change}

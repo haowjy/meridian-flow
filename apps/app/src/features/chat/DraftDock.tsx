@@ -5,6 +5,7 @@ import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
@@ -172,8 +173,12 @@ function DockFileLine({
   );
   const own = new Set(file.changes.map((change) => change.classId));
   const items = view.items.filter(({ change }) => own.has(change.classId));
+  const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
   // Ownership comes from the rows that will actually render, not the kind of document.
-  const renderedItems = expanded && file.status !== "error" && view.status === "ready" ? items : [];
+  const renderedItems =
+    expanded && !(summary && wholeDocument) && file.status !== "error" && view.status === "ready"
+      ? items
+      : [];
   const failures = dock.fileFailures(file).filter(
     (held) =>
       !renderedItems.some((item) => {
@@ -199,15 +204,17 @@ function DockFileLine({
     >
       {summary ? (
         summary(trouble)
-      ) : expanded ? (
+      ) : expanded && !wholeDocument ? (
         <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-prose-foreground">
           <DockFileName file={file} onReview={() => dock.review(file)} />
           {trouble}
         </div>
       ) : null}
-      {expanded && file.status !== "error" ? (
+      {!summary && wholeDocument ? trouble : null}
+      {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
+            documentName={file.name}
             view={{ ...view, items, locked: view.locked || dock.generating }}
             touch={touch}
             onSelect={(change) => dock.review(file, change)}
