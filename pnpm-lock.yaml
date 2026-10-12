@@ -142,6 +142,9 @@ importers:
       '@meridian/resource-replica':
         specifier: workspace:*
         version: link:../../packages/resource-replica
+      '@meridian/thread-client':
+        specifier: workspace:*
+        version: link:../../packages/thread-client
       '@meridian/yjs-inspect':
         specifier: workspace:*
         version: link:../../packages/yjs-inspect
@@ -802,6 +805,22 @@ importers:
       '@meridian/contracts':
         specifier: workspace:*
         version: link:../contracts
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.9(@types/node@26.0.1)(jsdom@29.1.1)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/thread-client:
+    dependencies:
+      '@meridian/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@meridian/markup':
+        specifier: workspace:*
+        version: link:../markup
     devDependencies:
       typescript:
         specifier: 'catalog:'
