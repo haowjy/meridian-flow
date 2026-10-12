@@ -12,7 +12,7 @@ export type Located = {
 };
 
 /** Fixed order for an exact path in another area; the holder's own area is first. */
-const AREA_ORDER = ["manuscript", "kb", "user", "scratch"];
+const AREA_ORDER = ["manuscript", "kb", "unfiled", "user", "scratch"];
 
 /**
  * Which candidate a target names, of those whose path ends with it. The
@@ -23,7 +23,7 @@ const AREA_ORDER = ["manuscript", "kb", "user", "scratch"];
  * - `[[Name]]`: the holder's own folder, then the holder's area root, then
  *   the rest (holder's area first, fewest folders, alphabetical URI).
  * - `[[a/Name]]`: that path from the holder's area root, then from another
- *   area's root (Manuscript, KB, User, Scratch), then the rest as above.
+ *   area's root (Manuscript, KB, Unfiled, User, Scratch), then the rest as above.
  *
  * Comparisons ignore case. Null only when nothing matches.
  */
@@ -33,7 +33,7 @@ export function rankWikilinkMatches(
   holder: Located | null,
 ): Located | null {
   const wanted = wantedPath(target);
-  const matches = candidates.filter((candidate) => endsWith(candidate.segments, wanted));
+  const matches = wikilinkMatches(candidates, target);
   if (!matches.length) return null;
   const inHolderArea = (candidate: Located) => candidate.area === holder?.area;
   const isPath = (candidate: Located, path: readonly string[]) =>
@@ -66,6 +66,12 @@ export function rankWikilinkMatches(
       (left.uri < right.uri ? -1 : left.uri > right.uri ? 1 : 0),
   );
   return first ?? null;
+}
+
+/** Every candidate whose path ends with the target, segment by segment: the ranked set. */
+export function wikilinkMatches(candidates: readonly Located[], target: WikilinkTarget): Located[] {
+  const wanted = wantedPath(target);
+  return candidates.filter((candidate) => endsWith(candidate.segments, wanted));
 }
 
 export function locate(uri: string, documentId: string | null): Located | null {

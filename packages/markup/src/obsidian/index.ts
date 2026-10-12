@@ -266,4 +266,5 @@ export {
   storedName,
   type WikilinkTarget,
   wantedPath,
+  wikilinkMatches,
 } from "./project-ranking.js";

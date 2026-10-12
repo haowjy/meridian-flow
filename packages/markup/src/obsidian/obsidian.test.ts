@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { markdownParser } from "../markdown-parse.js";
-import { scanObsidian, splitObsidianFrontmatter } from "./index.js";
+import { locate, rankWikilinkMatches, scanObsidian, splitObsidianFrontmatter } from "./index.js";
 
 const fixture = (name: string) =>
   readFileSync(new URL(`./fixtures/${name}.md`, import.meta.url), "utf8");
@@ -255,5 +255,31 @@ describe("raw frontmatter", () => {
   it("requires a leading, closed delimiter block", () => {
     for (const input of ["---\nnot closed", "text\n---\na: b\n---\n", "---", " ---\na: b\n---\n"])
       expect(splitObsidianFrontmatter(input)).toEqual({ frontmatter: null, body: input });
+  });
+});
+
+describe("project wikilink ranking", () => {
+  const located = (uri: string) => {
+    const item = locate(uri, uri);
+    if (!item) throw new Error(uri);
+    return item;
+  };
+  it("prefers an exact path at any other area's root, Unfiled included, over a suffix match", () => {
+    const holder = located("manuscript://Holder");
+    const target = { folders: ["Lore"], name: "Sects" };
+    expect(
+      rankWikilinkMatches(
+        [located("manuscript://Archive/Lore/Sects"), located("unfiled://Lore/Sects")],
+        target,
+        holder,
+      )?.uri,
+    ).toBe("unfiled://Lore/Sects");
+    expect(
+      rankWikilinkMatches(
+        [located("unfiled://Lore/Sects"), located("kb://Lore/Sects")],
+        target,
+        holder,
+      )?.uri,
+    ).toBe("kb://Lore/Sects");
   });
 });
