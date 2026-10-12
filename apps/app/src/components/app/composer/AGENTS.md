@@ -39,7 +39,8 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
 - Send transfers the exact structured fingerprint to the journal before clearing
   unchanged editor words. `onSubmit` returns whether local recording succeeded;
   network admission does not quarantine or lock authoring. A local storage refusal
-  keeps the live draft and reports the failure under the message box as the
-  shared `ErrorCard` (`components/app/ErrorCard.tsx`), right-aligned, a live
-  alert with no buttons: pressing Send again is the retry. Its sentence may wrap at the narrowest
-  dock.
+  keeps the live draft and reports the failure inside the composer frame, above the
+  words, as the shared `ErrorCard` (`components/app/ErrorCard.tsx`), a live alert
+  with no buttons: pressing Send again is the retry. The Composer owns it, so
+  every host draws it the same and it never stacks with the strips above the box.
+  Its sentence may wrap at the narrowest dock.
