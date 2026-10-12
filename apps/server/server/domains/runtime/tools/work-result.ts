@@ -1,10 +1,11 @@
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 /**
  * The `work` result (D65): the typed values the handler returns, and the short
  * text the model reads of them. One line per Work with only what the model
  * decides from; `verbose` adds dates. Ids never reach the text, and
  * `historySummary` reads the typed value.
  */
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 

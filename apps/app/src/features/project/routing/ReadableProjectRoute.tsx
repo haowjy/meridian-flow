@@ -1,5 +1,6 @@
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
+
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -327,6 +328,7 @@ function ReadableProjectDestination({
     isFetching: addressCatalogFetching,
     isError: addressCatalogError,
     refetch: refetchAddressCatalog,
+    // No document destination has no review; the default only supplies an inert browse catalog.
   } = useContextCatalogView(projectId, documentDestination?.scheme ?? "manuscript", {
     ...addressOwner,
     enabled: !!documentDestination && editorWork.status === "present",
@@ -397,7 +399,6 @@ function ReadableProjectDestination({
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
-    documentDestination?.scheme ?? "",
     {
       catalog: addressCatalog,
       isComplete: addressCatalogComplete,

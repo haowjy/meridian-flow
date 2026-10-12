@@ -1,7 +1,6 @@
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
-import { isDrafted } from "../file-policy/index.js";
 /** Draft review respects Work lifecycle while preserving pending items through restore. */
 
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { documentBranches, drafts, works } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
@@ -19,6 +18,7 @@ import {
   selectWorkWriteModeServices,
 } from "../../lib/work-write-mode-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { isDrafted } from "../file-policy/index.js";
 import { deleteWorkTransition, restoreWork } from "../projects/index.js";
 
 describeDraftTreeDb("deleted-live review preview", (start, db) => {

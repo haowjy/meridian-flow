@@ -1,10 +1,11 @@
+// @vitest-environment jsdom
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { isDrafted } from "../../../../../server/server/domains/file-policy/domain/policy";
-// @vitest-environment jsdom
 /** Cross-scope review commands retain identity until the matching Editor claims them. */
 
 import { act, useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useContextTabsStore } from "@/client/stores";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
@@ -150,6 +151,7 @@ function deferred() {
 describe("Editor review handoff", () => {
   beforeEach(() => {
     openTab.mockClear();
+    useContextTabsStore.setState({ _reviewOverlayByProject: {} });
     openReview = null;
     showEditor = null;
     showChat = null;
@@ -164,6 +166,10 @@ describe("Editor review handoff", () => {
           contextLocation: { scheme, path: draftA.contextLocation.path },
           isNewDocument,
         };
+        const navigate = vi.fn<OpenContextRoute>(async (_target, options) => {
+          if (options?.tab) useContextTabsStore.getState().openTab("project-1", options.tab);
+          return { kind: "applied", ticket: 1 } as never;
+        });
         await withHarness(async ({ navigate, enterA }) => {
           await act(async () => {
             await openReview?.(target);
@@ -172,7 +178,20 @@ describe("Editor review handoff", () => {
           expect(navigate.mock.calls[0]?.[1]?.tab).toMatchObject({ scheme });
           await act(async () => showEditor?.(target));
           expect(enterA).toHaveBeenCalledWith(target.documentId, target.draftId);
-        });
+          if (isNewDocument) {
+            const before =
+              useContextTabsStore.getState()._reviewOverlayByProject["project-1"].tabs[0];
+            await act(async () => {
+              await openReview?.(target);
+              await openReview?.(target);
+            });
+            const overlays =
+              useContextTabsStore.getState()._reviewOverlayByProject["project-1"].tabs;
+            expect(overlays).toHaveLength(1);
+            expect(overlays[0].tabInstanceId).toBe(before.tabInstanceId);
+          }
+        }, navigate);
+        useContextTabsStore.setState({ _reviewOverlayByProject: {} });
       }
     }
   });

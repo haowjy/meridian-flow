@@ -246,7 +246,6 @@ export type GatedLiveView =
 
 export function gateLiveView(
   result: DocumentAddressResult | undefined,
-  _scheme: string,
   manifest: {
     catalog: CatalogContextView | null;
     isComplete: boolean;

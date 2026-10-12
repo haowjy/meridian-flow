@@ -1,5 +1,6 @@
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 /** Latest-wins command handoff from any project surface to the Editor review scope. */
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 
 import type { EventRecord } from "@meridian/contracts/observability";
 import {

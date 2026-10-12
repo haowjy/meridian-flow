@@ -61,6 +61,8 @@ vi.mock("@/client/query/useProjectThreads", () => ({
 }));
 vi.mock("@/client/query/useContextCatalog", () => ({
   useContextCatalogView: () => ({ catalog: null }),
+  useContextCatalogViews: (_project: string, schemes: string[]) =>
+    Object.fromEntries(schemes.map((scheme) => [scheme, { catalog: null }])),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ status: "ready", groups: [], refetch: () => {} }),

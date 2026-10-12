@@ -20,14 +20,14 @@ no-op verbs, stuck pending states.
 
 ## Probe A — review-from-dock
 
-Regression guard for #152 (server sent `contextPath: null`, making the dock's
+Regression guard for #152 (server sent no context location, making the dock's
 Review verb a silent no-op).
 
 1. Get the mock assistant to produce a draft on an existing document. Open the
    dock's Changes view.
 2. The row must show the real document title, not a placeholder.
 3. Click Review. PASS: the app navigates to the Context view for that document
-   (`screen=context&scheme=manuscript&path=<doc path>` in the URL) and the
+   (`/p/<project>/editor/<row scheme>/<row path>?work=<work>&draft=<branch>` in the URL) and the
    inline review UI appears in the editor. FAIL: dock switches views but
    nothing else happens.
 4. Repeat with a draft that creates a **new** document (write directive
@@ -45,6 +45,15 @@ Review verb a silent no-op).
    - **Apply all**: the tab stays open on live content with no
      "Access lost" toast, and the document appears in the tree within ~5s
      without a reload.
+
+Repeat the create and existing-edit opens in every source the file policy drafts
+(`CONTEXT_URI_SCHEMES.filter(isDrafted)`), from both the chat row and Work Files.
+The review must follow the row's `contextLocation`, never a default source.
+Switch directly between two new-document reviews, then across sources in both
+directions without reloading. Each destination must show its branch text and
+review controls. Launch the same row repeatedly: it keeps one transient overlay
+and the same mounted tab instance. Record request timings from the click through
+address admission, preview and branch-room loading to the first painted text.
 
 [#153]: https://github.com/haowjy/meridian-flow/issues/153
 
