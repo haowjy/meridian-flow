@@ -47,11 +47,7 @@ export async function resolveUri(
 }
 
 /** Live documentId for a URI, or a not_found CliError. */
-export async function resolveDocumentId(
-  session: Session,
-  projectId: string,
-  target: ResolvedUri,
-): Promise<string> {
+export async function resolveDocument(session: Session, projectId: string, target: ResolvedUri) {
   const address = await session.request<DocumentAddressResult>(
     "GET",
     apiProjectDocumentAddressPath(projectId, target.scheme, target.path, { workId: target.workId }),
@@ -61,7 +57,15 @@ export async function resolveDocumentId(
       hint: `Create it with \`./mf doc put ${target.uri} --text "..."\`.`,
     });
   }
-  return address.document.documentId;
+  return address.document;
+}
+
+export async function resolveDocumentId(
+  session: Session,
+  projectId: string,
+  target: ResolvedUri,
+): Promise<string> {
+  return (await resolveDocument(session, projectId, target)).documentId;
 }
 
 /** `--project`/`--work` shared by every command that takes a document URI. */

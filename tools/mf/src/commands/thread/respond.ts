@@ -1,7 +1,7 @@
 import { CliError, usageError } from "../../core/cli-error";
 import { type CommandSpec, readJsonArg, requirePositional, stringOption } from "../../core/command";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
-import { openThreadSocket } from "./socket";
+import { createThreadClient, subscribeThread } from "./transport";
 
 export const threadRespondCommand: CommandSpec = {
   path: ["thread", "respond"],
@@ -31,29 +31,39 @@ export const threadRespondCommand: CommandSpec = {
       requirePositional(ctx, 0, "<thread>"),
       stringOption(ctx, "project"),
     );
-    const socket = await openThreadSocket(session);
+    const transport = createThreadClient(session);
+    const subscription = subscribeThread(transport, threadId, "0");
+    let rejection: Error | undefined;
+    const offError = transport.onInterruptResponseError(({ error }) => {
+      rejection = error;
+    });
     try {
-      socket.send({ type: "interrupt.respond", threadId, turnId, interruptId, value });
-      // The socket reports failures as error frames; give it a moment to object.
+      const connectionDeadline = Date.now() + 10_000;
+      while ((await subscription.next(connectionDeadline)).type !== "live") {}
+      const receipt = transport.respondInterrupt({ threadId, turnId, interruptId, value });
+      if (!receipt.sent)
+        throw new CliError("unavailable", "Thread socket closed before interrupt response");
+      // Preserve the CLI's existing short rejection window (confirmation is a later lane).
       const deadline = Date.now() + 1_500;
       for (;;) {
-        const message = await socket.next(deadline).catch((error: unknown) => {
-          if (error instanceof CliError && error.code === "timeout") return null;
+        try {
+          await subscription.next(deadline);
+        } catch (error) {
+          if (error instanceof CliError && error.code === "timeout") break;
+          if (error instanceof CliError && error.code === "protocol") {
+            throw new CliError("http_error", `Interrupt response rejected: ${error.message}`, {
+              details: error.details,
+            });
+          }
           throw error;
-        });
-        if (!message) break;
-        if (message.type === "error") {
-          throw new CliError(
-            "http_error",
-            `Interrupt response rejected: ${message.error.message}`,
-            {
-              details: message.error,
-            },
-          );
         }
       }
+      if (rejection)
+        throw new CliError("http_error", `Interrupt response rejected: ${rejection.message}`);
     } finally {
-      socket.close();
+      offError();
+      subscription.unsubscribe();
+      transport.disconnect();
     }
     ctx.out.result(
       { threadId, turnId, interruptId, status: "sent" },

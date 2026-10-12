@@ -2,6 +2,7 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import {
   type AGUIEvent,
+  type DocumentAddressResult,
   serializeTransport,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
@@ -12,6 +13,7 @@ import { runCli } from "../main";
 export const COOKIE = "wos-session=test";
 export const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 export const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
+export const DOCUMENT_ID = "44444444-4444-4444-8444-444444444444";
 export const CHILD_ID = "33333333-3333-4333-8333-333333333333";
 
 type Journal = { seq: string; event: AGUIEvent }[];
@@ -131,6 +133,8 @@ function createFake() {
   const sockets = new Set<WebSocket>();
   const mockScripts: unknown[] = [];
   const removedMockScripts: string[] = [];
+  const messageBodies: unknown[] = [];
+  const resumeCursors: string[] = [];
   let runCounter = 0;
   const nextSeq = () => String(journal.length + 1);
 
@@ -138,7 +142,7 @@ function createFake() {
     const seq = nextSeq();
     journal.push({ seq, event });
     const frame: WsServerMessage = { type: "event", threadId: THREAD_ID, seq, event };
-    for (const socket of sockets) socket.send(JSON.stringify(frame));
+    for (const socket of sockets) if (socket.readyState === 1) socket.send(JSON.stringify(frame));
   };
 
   const runScenario = (text: string) => {
@@ -155,6 +159,7 @@ function createFake() {
     turns.push(assistant);
     setTimeout(() => {
       publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId } as AGUIEvent);
+      if (text.includes("reconnect")) for (const socket of sockets) socket.close(1012, "restart");
       if (text.includes("fail")) {
         assistant.status = "error";
         assistant.error = "boom";
@@ -250,6 +255,37 @@ function createFake() {
     if (route === "GET /api/threads") return sendEnveloped(200, { threads: [threadDto()] });
     if (route === "POST /api/projects/bootstrap-default")
       return send(201, { projectId: PROJECT_ID });
+    if (route === `GET /api/projects/${PROJECT_ID}/context/kb/address`) {
+      return sendEnveloped(200, {
+        kind: "current",
+        document: {
+          kind: "available",
+          documentId: DOCUMENT_ID as never,
+          generation: 1 as never,
+          authority: { kind: "project", projectId: PROJECT_ID as never },
+          entry: {
+            kind: "file",
+            entryId: DOCUMENT_ID as never,
+            scope: { kind: "project", projectId: PROJECT_ID as never },
+            sourceId: "source" as never,
+            parentId: "source" as never,
+            name: "Cover",
+            aliases: [],
+            path: ["cover.png"],
+            uri: "kb://cover.png" as never,
+            provisionalName: false,
+            editable: false,
+            disposition: "binary",
+            fileType: "image",
+            mimeType: "image/png",
+          },
+        },
+      } satisfies DocumentAddressResult);
+    }
+    if (route === `GET /api/threads/${THREAD_ID}/skills`)
+      return send(200, {
+        skills: [{ slug: "revise", name: "Revise", description: "Revise prose" }],
+      });
     if (route === "GET /api/agents") {
       return sendEnveloped(200, {
         agents: [
@@ -279,6 +315,7 @@ function createFake() {
     }
     if (route === `POST /api/threads/${THREAD_ID}/messages`) {
       const body = (await readBody(req)) as { text: string; blocks: { text?: string }[] };
+      messageBodies.push(body);
       const concatenated = body.blocks.map((block) => block.text ?? "").join("");
       if (concatenated !== body.text) return send(400, { message: "text must equal blocks" });
       const resumeAfterSeq = String(journal.length);
@@ -387,22 +424,44 @@ function createFake() {
     wss.handleUpgrade(req, socket, head, (ws) => {
       sockets.add(ws);
       ws.on("close", () => sockets.delete(ws));
+      ws.send(
+        JSON.stringify({
+          type: "connected",
+          connectionToken: "fake-connection",
+          userId: "u1",
+          scope: { type: "standalone" },
+          serverVersion: "fake",
+        } satisfies WsServerMessage),
+      );
+      ws.send(JSON.stringify({ type: "ping", ts: Date.now() } satisfies WsServerMessage));
       ws.on("message", (raw) => {
-        const message = JSON.parse(String(raw)) as { type: string; lastSeq?: string };
-        if (message.type !== "subscribe") return;
-        const after = BigInt(message.lastSeq ?? "0");
-        const frame: WsServerMessage = {
-          type: "subscribed",
-          threadId: THREAD_ID,
-          catchup: journal.filter((entry) => BigInt(entry.seq) > after),
-          state: liveState(String(journal.length), pendingItems) as never,
+        const message = JSON.parse(String(raw)) as {
+          type: string;
+          lastSeq?: string;
+          subscriptions?: { threadId: string; lastSeq: string }[];
         };
-        ws.send(JSON.stringify(frame));
+        const cursors =
+          message.type === "resume"
+            ? (message.subscriptions ?? [])
+            : message.type === "subscribe"
+              ? [{ threadId: THREAD_ID, lastSeq: message.lastSeq ?? "0" }]
+              : [];
+        for (const cursor of cursors) {
+          if (message.type === "resume") resumeCursors.push(cursor.lastSeq);
+          const after = BigInt(cursor.lastSeq);
+          const frame: WsServerMessage = {
+            type: "subscribed",
+            threadId: cursor.threadId,
+            catchup: journal.filter((entry) => BigInt(entry.seq) > after),
+            state: liveState(String(journal.length), pendingItems) as never,
+          };
+          ws.send(JSON.stringify(frame));
+        }
       });
     });
   });
 
-  return { server, mockScripts, removedMockScripts };
+  return { server, mockScripts, removedMockScripts, messageBodies, resumeCursors };
 }
 
 export type FakeStack = ReturnType<typeof createFake> & {

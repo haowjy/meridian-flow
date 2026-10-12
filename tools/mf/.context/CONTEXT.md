@@ -16,7 +16,7 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
   - `src/commands/<group>/` holds one command group each (`thread`, `doc`,
     `project`, `mock`, `log`, `seed`, `api`): one file per command, an `index.ts`
     exporting the `CommandGroup`, and the group's own helpers (thread:
-    `socket.ts`, `stream.ts`, `events-map.ts`, `transcript.ts`, `resolve.ts`;
+    `transport.ts`, `stream.ts`, `events-map.ts`, `transcript.ts`, `resolve.ts`;
     project: `resolve.ts`; doc: `uri.ts`; mock: `queue.ts`). Groups may import
     another group's helper module (`thread/send` uses `mock/queue`, `doc/uri`),
     never `main.ts`; `core/` imports no group.
@@ -43,9 +43,22 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
 ## Package boundaries and verification
 
 JSON fixtures live in `fixtures/`; TypeScript lives in `src/`.
-The package declares its runtime dependencies (`@meridian/contracts`, `ws`)
-and its TypeScript/test tooling. The shared thread client is an allowed workspace
-dependency, not yet used here.
+The package declares its runtime dependencies (`@meridian/contracts`,
+`@meridian/thread-client`, `ws`) and its TypeScript/test tooling.
+
+`transport.ts` composes one `ThreadSocketClient` per command run with the session's
+cookie and Portless CA. The shared client owns connected gating, replay,
+deduplication, gaps and reconnect/resume. A CLI subscription queue bounds waits
+by the command deadline; terminal/auth closes remain exit 4. `stream.ts` only
+maps events, prints them and runs the existing CLI follow predicates. Those
+predicates are not yet the shared follow session, so the existing run-outcome
+limitations still apply. `respond` uses the shared interrupt sender but still
+reports sent, not journal confirmation.
+
+Message admission builds skill nodes, a prose paragraph, then reference nodes
+and passes that document to `serializeMessageDoc`. Reference labels and image
+capability come from the address route's catalog entry. This exercises the app's
+serializer, not the TipTap editor or its submission lifecycle.
 
 The strict tsconfig includes `src/`; TypeScript resolves the imported Portless
 helpers without including the whole `tools/dev` tree. Cached Nx `typecheck` and
