@@ -48,8 +48,8 @@ export interface WriteTool {
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
   prepare: ResponseCommitter["prepare"];
   responseDocuments: ResponseCommitter["responseDocuments"];
-  /** Drop exactly one thread/document pair, including staged writes. */
-  invalidateThreadDocument(docId: string, threadId: string): Promise<void>;
+  /** Drop one thread/document pair; a peerBranchId restricts this to that peer's state. */
+  invalidateThreadDocument(docId: string, threadId: string, peerBranchId?: string): Promise<void>;
   /** Evict one thread's runtimes without revoking its response buffers. */
   evictThread(threadId: string): Promise<void>;
 }
@@ -239,11 +239,14 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     hasResponseDocument: responseCommitter.hasResponseDocument,
     prepare: responseCommitter.prepare,
     responseDocuments: responseCommitter.responseDocuments,
-    async invalidateThreadDocument(docId, threadId) {
-      if (!docId || !threadId)
+    async invalidateThreadDocument(docId, threadId, peerBranchId) {
+      if (!docId || !threadId || peerBranchId === "")
         throw new Error("invalidateThreadDocument names one document and one thread");
-      responseCommitter.dropForThread(docId, threadId);
-      await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+      responseCommitter.dropForThread(docId, threadId, peerBranchId);
+      await runtimeStore.evictThreadRuntimes(docId, threadId, {
+        markLiveDocStale: true,
+        peerBranchId,
+      });
     },
     async evictThread(threadId) {
       if (!threadId) throw new Error("evictThread names one thread");
