@@ -36,6 +36,11 @@ describe("settled document rendering", () => {
     expect(html).toContain('start="3"');
     expect(html).toContain("text-align:right");
     expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('data-link-kind="external"');
+    expect(render("[chapter](manuscript://chapter.md)")).toContain('data-link-chip="filled"');
+    expect(render("[chapter](manuscript://chapter.md)")).toContain(
+      'data-link-chip-icon="manuscript"',
+    );
     expect(html).not.toContain("data-streamdown");
   });
 

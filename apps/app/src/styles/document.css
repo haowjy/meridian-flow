@@ -347,3 +347,14 @@
   opacity: 1;
   pointer-events: auto;
 }
+
+/* One boundary owner, including wrappers whose children cannot collapse margins. */
+.document-prose--chat > * {
+  margin-block: 0;
+}
+.document-prose--chat > * + * {
+  margin-top: var(--prose-space-block);
+}
+.document-prose--chat > .document-code-block > pre {
+  margin-block: 0;
+}

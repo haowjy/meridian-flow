@@ -7,6 +7,9 @@ import { common, createLowlight } from "lowlight";
 import { Check, Copy } from "lucide-react";
 import { createElement, Fragment, type ReactNode, useMemo, useState } from "react";
 
+import { classifyLinkTarget } from "@/core/editor/links";
+import { TranscriptReference } from "./TranscriptReference";
+
 const codec = markdownCodec({ schema: buildDocumentSchema() });
 const lowlight = createLowlight(common);
 
@@ -89,22 +92,24 @@ export function renderDocumentNode(node: PMNode, breaks = false): ReactNode {
       : node.text;
     for (const mark of node.marks) {
       if (mark.type.name === "link") {
-        // Never allow executable schemes into an anchor, including entity-decoded input.
-        const href = /^(?:javascript|vbscript|data):/i.test(
-          String(mark.attrs.href).replace(/\s/g, ""),
-        )
-          ? undefined
-          : mark.attrs.href;
-        content = (
-          <a
-            href={href}
-            title={mark.attrs.title ?? undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {content}
-          </a>
-        );
+        const target = classifyLinkTarget(String(mark.attrs.href));
+        if (target?.kind === "external") {
+          content = (
+            <a
+              href={target.url}
+              data-link-kind="external"
+              title={mark.attrs.title ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {content}
+            </a>
+          );
+        } else if (target) {
+          content = (
+            <TranscriptReference data-target-href={mark.attrs.href}>{content}</TranscriptReference>
+          );
+        }
       } else {
         const tags: Record<string, string> = {
           strong: "strong",
