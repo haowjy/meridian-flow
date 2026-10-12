@@ -12,6 +12,9 @@ export const IMPORT_LIMITS = {
   requestBytes: 8 * 1024 * 1024,
   chunkSize: 200,
   leaseMs: 120_000,
+  /** How long after a lease a hung put may still land its object before cleanup retires. */
+  latePutGraceMs: 60 * 60 * 1000,
+  sweepBatch: 500,
 } as const;
 export class ImportError extends Error {
   constructor(

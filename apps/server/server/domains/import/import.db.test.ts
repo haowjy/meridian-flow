@@ -307,7 +307,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
     selection.manifest.unreadable = [{ rootId: 2, path: "", reason: "permission_denied" }];
     const deps = ports(),
       diagnostics: unknown[] = [];
-    deps.diagnostics = { failed: (input) => diagnostics.push(input) };
+    deps.diagnostics = { ...deps.diagnostics, failed: (input) => diagnostics.push(input) };
     const service = createImportService(deps),
       plan = await service.plan(projectId, userId, selection.manifest);
     expect(plan.counts).toMatchObject({ total: 2, arriving: 2, skipped: 1, landed: 0 });
@@ -341,6 +341,36 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
     expect(BigInt(dismissed.version)).toBeGreaterThan(BigInt(finished?.version ?? "0"));
     expect(await service.listOpen(projectId)).toEqual([]);
     expect(await projectDocuments()).toHaveLength(2);
+  });
+  it("incremental reports publish moves and deletes of landed documents", async () => {
+    const selection = loose({ "A.md": "hello" }),
+      service = createImportService(ports()),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    await service.land(projectId, plan.importId, 0, selection.bytes[0]);
+    const landed = await service.report(plan.importId, projectId);
+    expect((await service.report(plan.importId, projectId, landed.version)).entries).toEqual([]);
+    await ok(context().move("kb://A", "manuscript://Renamed"));
+    const moved = await service.report(plan.importId, projectId, landed.version);
+    expect(BigInt(moved.version)).toBeGreaterThan(BigInt(landed.version));
+    expect(moved.entries).toEqual([
+      expect.objectContaining({
+        entryId: 0,
+        uri: "manuscript://Renamed",
+        name: "Renamed",
+        exists: true,
+      }),
+    ]);
+    expect((await service.report(plan.importId, projectId)).entries[0]).toMatchObject({
+      uri: "manuscript://Renamed",
+    });
+    await ok(
+      context().delete("manuscript://Renamed", {
+        expected: { kind: "file", documentId: plan.entries[0].documentId },
+      }),
+    );
+    const deleted = await service.report(plan.importId, projectId, moved.version);
+    expect(deleted.entries).toEqual([expect.objectContaining({ entryId: 0, exists: false })]);
+    expect((await service.report(plan.importId, projectId, deleted.version)).entries).toEqual([]);
   });
   it("lease renewal advances activity/version, but an old attempt cannot renew", async () => {
     const selection = loose({ "Lease.md": "Imported" }),
@@ -523,17 +553,21 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
       await gate.pause();
       return result;
     };
+    // Armed after planning: ready admission also takes the exclusive fence.
+    let stopArmed = false;
     deps.repository.fence = async (...args) => {
-      if (args[2]) {
+      const stop = stopArmed && args[2];
+      if (stop) {
         finishRequested.release();
         await finishRequested.pause();
       }
       const result = await fence(...args);
-      if (args[2]) await finishAdmitted.pause();
+      if (stop) await finishAdmitted.pause();
       return result;
     };
     const service = createImportService(deps),
       plan = await service.plan(projectId, userId, selection.manifest);
+    stopArmed = true;
     const first = service.land(projectId, plan.importId, 0, selection.bytes[0]);
     await gate.arrived;
     const stopping = service.finish(plan.importId, projectId);
@@ -572,6 +606,47 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("import (postgres)", () =
     await service.sweep();
     expect(objects.size).toBe(0);
     expect(await projectDocuments()).toHaveLength(0);
+  });
+  it("Finish never deletes objects for notes, never sweeps another import, and survives a failed cleanup", async () => {
+    const attempted: string[] = [];
+    let clock = new Date();
+    const failingDeletes: ObjectStorePort = {
+      ...objectStore,
+      async delete(key) {
+        attempted.push(key);
+        return { ok: false, error: { code: "io_error", message: "object store unavailable" } };
+      },
+    };
+    const binary = loose({ "map.png": new Uint8Array([137, 80, 78, 71, 0, 1]) }),
+      binaryService = createImportService({
+        ...ports(),
+        objects: {
+          ...failingDeletes,
+          async put() {
+            return { ok: false, error: { code: "io_error", message: "put failed" } };
+          },
+        },
+        now: () => clock,
+      }),
+      binaryPlan = await binaryService.plan(projectId, userId, binary.manifest);
+    expect(
+      (await binaryService.land(projectId, binaryPlan.importId, 0, binary.bytes[0])).state,
+    ).toBe("failed");
+    clock = new Date(clock.getTime() + 120_001);
+    expect((await binaryService.finish(binaryPlan.importId, projectId))?.state).toBe("finished");
+    expect(attempted).toEqual([`imports/${binaryPlan.importId}/0`]);
+
+    const notes = loose({ "A.md": "a", "B.md": "b" }),
+      noteService = createImportService({ ...ports(), objects: failingDeletes, now: () => clock }),
+      notePlan = await noteService.plan(projectId, userId, notes.manifest);
+    expect((await noteService.finish(notePlan.importId, projectId))?.state).toBe("finished");
+    expect(attempted).toEqual([`imports/${binaryPlan.importId}/0`]);
+    await noteService.sweep();
+    // The periodic sweep retries only the binary whose cleanup failed.
+    expect(attempted).toEqual([
+      `imports/${binaryPlan.importId}/0`,
+      `imports/${binaryPlan.importId}/0`,
+    ]);
   });
   it("a sibling created after preview counts up at the chunk, without overwrite", async () => {
     const selection = loose({ "Sects.md": "Imported" }),

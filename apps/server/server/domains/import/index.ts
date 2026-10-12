@@ -82,6 +82,14 @@ export function createProductionImportPorts(
           correlation: { projectId },
           payload: { importId, entryId, code, ...unknownToEventPayload(cause) },
         }),
+      sweepFailed: ({ importId, entryId, cause }) =>
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "import.sweep",
+          name: "object_delete_failed",
+          correlation: { projectId },
+          payload: { importId, entryId, ...unknownToEventPayload(cause) },
+        }),
     },
     tree: createContextImportTreeWriter({
       db: deps.db,
@@ -106,7 +114,16 @@ export function createProductionImportService(
   return createImportService(createProductionImportPorts(deps, projectId, userId));
 }
 
+/** Periodic bounded reclamation; failed deletes stay candidates and surface to the scheduler. */
 export function createImportObjectSweeper(db: Database, objects: ObjectStorePort) {
   const repository = createDrizzleImportRepository(db);
-  return () => sweepImportObjects(repository, objects);
+  return async () => {
+    const result = await sweepImportObjects(repository, objects);
+    if (result.failed.length)
+      throw new AggregateError(
+        result.failed.map((failure) => failure.cause),
+        `Import object sweep failed for ${result.failed.length} object(s)`,
+      );
+    return result.swept;
+  };
 }

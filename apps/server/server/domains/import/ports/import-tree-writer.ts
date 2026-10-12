@@ -35,4 +35,9 @@ export interface ImportTreeWriter {
   ): Promise<void>;
   clearPending(ids: readonly string[]): Promise<void>;
   currentUri(id: string, kind: "folder" | "file"): Promise<string | null>;
+  /** Batched current addresses; ids without a live address are absent. */
+  currentUris(ids: {
+    files: readonly string[];
+    folders: readonly string[];
+  }): Promise<Map<string, string>>;
 }

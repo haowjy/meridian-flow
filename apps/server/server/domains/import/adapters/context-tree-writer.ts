@@ -153,5 +153,6 @@ export function createContextImportTreeWriter(deps: {
       await deps.refreshFiles(ids);
     },
     currentUri: (id, kind) => deps.locations.currentUri(id, kind),
+    currentUris: (ids) => deps.locations.currentUris(ids),
   };
 }

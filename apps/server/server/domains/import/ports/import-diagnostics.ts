@@ -7,4 +7,6 @@ export interface ImportDiagnostics {
     code: ImportFailureReason;
     cause: unknown;
   }): void;
+  /** Object cleanup failed; the periodic sweep retries it. */
+  sweepFailed(input: { importId: string; entryId: number; cause: unknown }): void;
 }

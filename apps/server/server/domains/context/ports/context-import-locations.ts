@@ -11,4 +11,9 @@ export interface ContextImportLocations {
   lockParent(sourceId: string, folderId: string | null): Promise<ContextImportParent | null>;
   lockDocument(id: string): Promise<boolean>;
   currentUri(id: string, kind: "folder" | "file"): Promise<string | null>;
+  /** Current project-area addresses in one read; absent ids have none (deleted or elsewhere). */
+  currentUris(ids: {
+    files: readonly string[];
+    folders: readonly string[];
+  }): Promise<Map<string, string>>;
 }
