@@ -62,7 +62,7 @@ Paths outside this directory are relative to `apps/app/src`.
   Explicit stale answers get one fresh-cut retry only for identical actionable
   members and unchanged server admission evidence. Transport ambiguity and permission failures never retry.
 - Per-change commands send every operation of the class and the viewed revision
-  tokens. Whole-draft commands settle the current server branch, not a preview.
+  tokens; Discard also sends each clicked class's `admissionToken`. Whole-draft commands settle the current server branch, not a preview.
 - Only new documents are one whole-draft
   change. Its actions use existing whole commands; synthetic class keys never
   reach the server. Formatting-only edits are real server-vended classes. Block formatting facts
@@ -75,10 +75,15 @@ Paths outside this directory are relative to `apps/app/src`.
   alignment spacer. Real per-change items retain their header and rows.
 - Review chrome, strip and change rows each use one line. Lists close on last
   disposition; only the header shows completion. Success has no toast.
+- Change-row excerpts read complete ordered hunk runs, including attributed
+  insertions, never the operations’ first-hunk summaries. Only row CSS truncates
+  their display; repeated words in separate runs remain separate.
 - Draft-only tabs belong to the transient review overlay. Only Apply promotion
   makes one durable; a gone/404 read is not remote-Discard evidence. Apply and
   Discard settle every container through `draft-only-lifecycle.ts`; Close and
-  Back to live stay with the container used. Promotion needs a resolved live
+  Back to live stay with the container used. A review tab is identified by
+  document, Work and draft (`ReviewDraftTabIdentity`): Close and Discard consume
+  that exact tab, never another Work's review of the same document. Promotion needs a resolved live
   presentation of the same document, Work and draft, never a flag transition.
 - Presentational components receive props and callbacks, not controllers.
   Layout belongs to components; pane continuity belongs to shared `PaintHold`.
@@ -96,7 +101,3 @@ Paths outside this directory are relative to `apps/app/src`.
 [reference]: .context/draft-review.md
 [editable]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md
 [authority]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-command-authority.md
-
-Change-row excerpts read complete ordered hunk runs, including attributed
-insertions, never the operations’ first-hunk summaries. Only row CSS truncates
-their display; repeated words in separate runs remain separate.

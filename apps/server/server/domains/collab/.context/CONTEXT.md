@@ -539,5 +539,7 @@ atomically per write; independent writes commit. The helper is replaced with
 the current generation plus surviving stages before subsequent tool resolution.
 Dropped writes are named once per document/handle in the next tool result,
 with partial versus whole rejection distinguished; their save receipts use the
-existing per-result failure path. Whole Discard still rolls back the response.
+existing per-result failure path. Whole Discard does not roll the reply back: its
+peer retirement drops only that thread's staged writes on the discarded draft's
+peer, and the reply's other documents still commit.
 No settlement deferral or second retirement state machine exists.
