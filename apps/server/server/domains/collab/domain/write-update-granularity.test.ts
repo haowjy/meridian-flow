@@ -105,7 +105,7 @@ describe("per-write journal encoding", () => {
           sessionId: threadId,
           threadId,
           turnId: `turn-${i + 1}`,
-          responseId: `reply-${i + 1}`,
+          responseIdentity: { providerResponseId: `reply-${i + 1}`, editScopeId: `reply-${i + 1}` },
           ...(overwrite ? { createdDocument: false } : {}),
           interactionContext: {
             mode: "threadPeer" as const,
@@ -132,7 +132,9 @@ describe("per-write journal encoding", () => {
             )
           ).result.status,
         ).toBe("success");
-        expect((await h.core.commitResponse(context.responseId)).status).toBe("committed");
+        expect((await h.core.commitResponse(context.responseIdentity?.editScopeId)).status).toBe(
+          "committed",
+        );
       }
       const journal = await h.journal.read("chapter.md");
       expect(journal.updates).toHaveLength(2);

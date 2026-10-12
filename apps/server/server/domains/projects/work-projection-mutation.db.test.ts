@@ -28,11 +28,11 @@ import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
 } from "../collab/adapters/drizzle-branch-push.js";
-import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
 import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
+import { createFixtureBranchStore } from "../collab/test-support/fixture-branch-store.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -411,7 +411,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { availabilityMutations: availability },
       );
       const projection = createWorkProjectionMutation({ db, availability, catalog });
-      const branches = createDrizzleBranchStore(
+      const branches = createFixtureBranchStore(
         db,
         undefined,
         createBranchCriticalSections(),

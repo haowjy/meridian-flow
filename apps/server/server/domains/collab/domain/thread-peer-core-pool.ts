@@ -4,6 +4,7 @@ import {
   type AgentEditCore,
   createAgentEditCore,
   type DocumentCoordinator,
+  type DocumentEdits,
   type DocumentLifecycle,
   modelResult,
   parseDocumentAddress,
@@ -63,11 +64,7 @@ import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
 } from "./response-transaction.js";
-import {
-  createThreadPeerReversals,
-  isReversalCommand,
-  type ReversalCommand,
-} from "./thread-peer-reversals.js";
+import { createThreadPeerReversals } from "./thread-peer-reversals.js";
 
 export type ResponseTransactionHooks = {
   enlist(participant: ResponseCommitParticipant): boolean;
@@ -94,6 +91,7 @@ type AgentEditObservability = Pick<
 export function createBranchThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal & ReversalStore;
+  documentEdits?: DocumentEdits;
   liveCoordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   branches: ApplicationBranchStore;
@@ -164,6 +162,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
           codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
           concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
+        documentEdits: input.documentEdits,
         lifecycle: input.lifecycle,
         codec: input.codec,
         model: input.model,
@@ -203,8 +202,6 @@ type ResponseRecord = {
   /** Every core holding this reply's buffered writes; each saves in the reply's one step. */
   participants: Set<AgentEditCore>;
   documents: Map<DocumentId, PinnedDocument>;
-  /** Drafted reversals staged in the reply; history routed them, so they pin nothing. */
-  reversals: Map<DocumentId, PinnedDocument>;
 };
 
 /**
@@ -264,11 +261,9 @@ export function createThreadPeerCorePool(input: {
   function threadViewFor(threadId: ThreadId) {
     return (documentId: string, context: WriteContext | undefined): LinkView => {
       if (context?.linkView) return context.linkView;
-      const responseId = context?.responseId;
+      const responseId = context?.responseIdentity?.editScopeId;
       const record = responseId ? responses.get(responseId) : undefined;
-      const pinned =
-        record?.documents.get(documentId as DocumentId) ??
-        record?.reversals.get(documentId as DocumentId);
+      const pinned = record?.documents.get(documentId as DocumentId);
       if (pinned) return linkViewAt(pinned.grant.destination, responseId);
       throw new Error(
         `Thread ${threadId} spelled ${documentId} without a routed link view; route the call through the pool.`,
@@ -323,7 +318,6 @@ export function createThreadPeerCorePool(input: {
       ...(id ? { threadId: id } : {}),
       participants: new Set(),
       documents: new Map(),
-      reversals: new Map(),
     };
     responses.set(responseId, record);
     return record;
@@ -367,7 +361,10 @@ export function createThreadPeerCorePool(input: {
     // Fresh calls rebuild the runtime from the pulled peer. A previous reply's
     // runtime may contain effects retired by review; Yjs merge cannot erase them.
     // The response committer rebuilds buffered helpers and replays only surviving edits.
-    if (!context.responseId || !core.hasResponseDocument(context.responseId, documentId))
+    if (
+      !context.responseIdentity?.editScopeId ||
+      !core.hasResponseDocument(context.responseIdentity?.editScopeId, documentId)
+    )
       await core.invalidateThread(documentId, context.threadId);
     return {
       ...context,
@@ -404,8 +401,8 @@ export function createThreadPeerCorePool(input: {
     const requested = grant.destination;
     const documentId = documentIdFromCommand(command);
     const pinned =
-      documentId && context.responseId && !liveVersion
-        ? responses.get(context.responseId)?.documents.get(documentId)
+      documentId && context.responseIdentity?.editScopeId && !liveVersion
+        ? responses.get(context.responseIdentity?.editScopeId)?.documents.get(documentId)
         : undefined;
     const destination = liveVersion
       ? ({ kind: "live" } as const)
@@ -414,7 +411,9 @@ export function createThreadPeerCorePool(input: {
     await evictIdleCores();
     const outcome = await core.read(
       command,
-      await threadPeerContext(core, documentId, routedTo(context, destination)),
+      command.format === "edits"
+        ? routedTo(context, destination)
+        : await threadPeerContext(core, documentId, routedTo(context, destination)),
     );
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
@@ -432,12 +431,9 @@ export function createThreadPeerCorePool(input: {
     routed: RoutedWriteContext,
   ): Promise<RoutedWriteOutcome> {
     const { grant, ...context } = routed;
-    if (isReversalCommand(command)) {
-      return reversals.reverse(command, context, grant, documentIdFromCommand(command));
-    }
     const documentId = documentIdFromCommand(command);
-    const record = context.responseId
-      ? responseFor(context.responseId, context.threadId)
+    const record = context.responseIdentity?.editScopeId
+      ? responseFor(context.responseIdentity?.editScopeId, context.threadId)
       : undefined;
     const pinned = documentId ? record?.documents.get(documentId) : undefined;
     // A document keeps its first destination for the rest of the reply, so a
@@ -457,44 +453,23 @@ export function createThreadPeerCorePool(input: {
       if (documentId && !pinned) record.documents.set(documentId, { core, grant });
     }
     await evictIdleCores();
+    const immediateInverse =
+      command.command === "undo" || command.command === "redo" || command.command === "revert";
     const call = async () =>
       core.write(
         command,
-        await threadPeerContext(core, documentId, routedTo(context, destination)),
+        immediateInverse
+          ? routedTo(context, destination)
+          : await threadPeerContext(core, documentId, routedTo(context, destination)),
       );
-    const outcome = record
-      ? await call()
-      : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
+    const outcome =
+      record && !immediateInverse
+        ? await call()
+        : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
     if (!outcome.isError && documentId) {
       if (context.threadId) lastSeen.set(seenKey(context.threadId, documentId), destination);
-      if (!context.responseId && destination.kind === "live") input.afterLiveCommit?.(documentId);
-    }
-    return outcome;
-  }
-
-  async function reverseIn(
-    core: AgentEditCore,
-    command: ReversalCommand,
-    documentId: DocumentId | null,
-    context: WriteContext,
-    grant: FileGrant<"edit">,
-  ): Promise<WriteOutcome> {
-    // Live reversals commit immediately and never join the reply's save.
-    const record =
-      core !== input.liveUtilityCore && context.responseId
-        ? responseFor(context.responseId, context.threadId)
-        : undefined;
-    if (record) {
-      record.participants.add(core);
-      if (documentId && !record.reversals.has(documentId)) {
-        record.reversals.set(documentId, { core, grant });
-      }
-    }
-    const call = async () =>
-      core.write(command, await threadPeerContext(core, documentId, context));
-    const outcome = record ? await call() : await commitNow(core, documentId, context, grant, call);
-    if (!outcome.isError && documentId && core === input.liveUtilityCore) {
-      input.afterLiveCommit?.(documentId);
+      if (!context.responseIdentity?.editScopeId && destination.kind === "live")
+        input.afterLiveCommit?.(documentId);
     }
     return outcome;
   }
@@ -504,8 +479,6 @@ export function createThreadPeerCorePool(input: {
     coreFor,
     reversalHistory: input.reversalHistory,
     liveHistory: input.liveHistory,
-    fileAccess: input.fileAccess,
-    reverseIn,
   });
 
   /**
@@ -515,7 +488,7 @@ export function createThreadPeerCorePool(input: {
    * refused document leaves the reply; the rest saves (D29, D42).
    */
   async function confirmReply(record: ResponseRecord): Promise<RefusedResponseDocument[]> {
-    const pinned = [...record.documents, ...record.reversals];
+    const pinned = [...record.documents];
     if (pinned.length === 0) return [];
     const grants = pinned.map(([, entry]) => entry.grant);
     await input.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
@@ -523,23 +496,20 @@ export function createThreadPeerCorePool(input: {
     const refusals = new Map<DocumentId, FileAccessDenied>();
     for (const denial of refused) refusals.set(targetDocumentId(denial.target), denial);
     for (const documentId of refusals.keys()) {
-      for (const documents of [record.documents, record.reversals]) {
-        const entry = documents.get(documentId);
-        if (!entry) continue;
-        documents.delete(documentId);
-        if (record.threadId) await entry.core.invalidateThread(documentId, record.threadId);
-      }
+      const entry = record.documents.get(documentId);
+      if (!entry) continue;
+      record.documents.delete(documentId);
+      if (record.threadId) await entry.core.invalidateThread(documentId, record.threadId);
     }
     for (const core of [...record.participants]) {
       const holds = (entry: PinnedDocument) => entry.core === core;
-      const writesElsewhere =
-        [...record.documents.values()].some(holds) || [...record.reversals.values()].some(holds);
+      const writesElsewhere = [...record.documents.values()].some(holds);
       if (!writesElsewhere && pinned.some(([, entry]) => holds(entry))) {
         record.participants.delete(core);
       }
     }
     // The seams these documents' participants reach take this as their grant.
-    markReplyConfirmed([...record.documents.keys(), ...record.reversals.keys()]);
+    markReplyConfirmed([...record.documents.keys()]);
     await input.lockLiveDocuments(
       [...record.documents]
         .filter(([, entry]) => entry.core === input.liveUtilityCore)
@@ -807,5 +777,5 @@ function linkViewAt(destination: FileDestination, responseId: string | undefined
 }
 
 function routedTo(context: WriteContext, destination: FileDestination): WriteContext {
-  return { ...context, linkView: linkViewAt(destination, context.responseId) };
+  return { ...context, linkView: linkViewAt(destination, context.responseIdentity?.editScopeId) };
 }

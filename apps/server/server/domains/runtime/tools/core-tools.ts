@@ -222,7 +222,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "read",
         description:
-          "Read a document, or part of it. Results show a block hash before each block; use hashes to target `read` and `write`, and never show them to the user.",
+          "Read a document, or part of it. `format: edits` lists your edits newest first with undo, redo or revert availability. `before` pages older edits. Never show hashes or handles to the user.",
         inputSchema: modelToolSchema(ReadToolInputSchema),
       },
       input: ReadToolInputSchema,

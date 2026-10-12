@@ -26,6 +26,7 @@ export interface LinkSpliceFallbackDetail {
 
 export interface CreateWriteToolOptions {
   journal: UpdateJournal & ReversalStore;
+  documentEdits?: import("../ports/document-edits.js").DocumentEdits;
   coordinator: DocumentCoordinator;
   lifecycle?: DocumentLifecycle;
   /** Parses purely; each command takes its codec for its prepared holder scope. */

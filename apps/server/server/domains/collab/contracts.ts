@@ -4,7 +4,7 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import type { LinkView, ModelResponseIdentity } from "@meridian/contracts";
 import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
@@ -283,12 +283,12 @@ export type ResponseWriteRollbackFinalizeResult = {
 
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: { threadId: ThreadId; turnId: TurnId },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteRollbackFinalizeResult>;
 };

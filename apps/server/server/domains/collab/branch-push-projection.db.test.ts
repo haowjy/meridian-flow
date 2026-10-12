@@ -34,7 +34,6 @@ import {
   createDrizzleWorkDraftPendingStore,
   createDrizzleWorkPushPolicyStore,
 } from "./adapters/drizzle-branch-push.js";
-import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "./adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleDocumentDerivationStore } from "./adapters/drizzle-document-derivations.js";
@@ -47,6 +46,7 @@ import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-docu
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
+import { createFixtureBranchStore } from "./test-support/fixture-branch-store.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -69,7 +69,7 @@ describe("branch-push durable projection", () => {
     },
     async recover() {},
   };
-  const branchStore = createDrizzleBranchStore(db, {
+  const branchStore = createFixtureBranchStore(db, {
     journal: persistence.journal,
     lifecycle: persistence.lifecycle,
     coordinator: liveCoordinator,

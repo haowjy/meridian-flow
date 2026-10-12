@@ -1,0 +1,1 @@
+ALTER TABLE "document_edits" ADD COLUMN "edit_scope_id" text;

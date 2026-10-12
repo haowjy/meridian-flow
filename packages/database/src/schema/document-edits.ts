@@ -47,6 +47,7 @@ export const documentEdits = pgTable(
       .$type<TurnId>()
       .references(() => turns.id, { onDelete: "set null" }),
     responseId: text("response_id"),
+    editScopeId: text("edit_scope_id"),
     actor: text("actor").$type<"agent" | "human" | "system">().notNull(),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()

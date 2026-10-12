@@ -21,7 +21,11 @@ describe("response committer", () => {
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
-      { ...context, responseId, turnId: "turn-deferred-close" },
+      {
+        ...context,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+        turnId: "turn-deferred-close",
+      },
     );
     let participant: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
 
@@ -45,7 +49,11 @@ describe("response committer", () => {
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
-      { ...context, responseId, turnId: "turn-publish-close" },
+      {
+        ...context,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+        turnId: "turn-publish-close",
+      },
     );
     let commit = async () => {};
     await ctx.core.commitResponse(responseId, {
@@ -112,7 +120,7 @@ describe("response committer", () => {
     });
     const peer = {
       ...context,
-      responseId: "prepared-abort",
+      responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
       turnId: "prepared-turn",
       interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, afterJournalId: 0 },
     };
@@ -121,7 +129,7 @@ describe("response committer", () => {
       (await prepared.core.write({ command: "insert", file: "chapter.md", content: "Beta." }, peer))
         .status,
     ).toBe("success");
-    const borrowed = await prepared.core.prepare(peer.responseId, "chapter.md");
+    const borrowed = await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md");
     if (!borrowed) throw new Error("Missing prepared lease");
     unwrapDoc(borrowed.doc).getMap("foreign").set("must-stay-on-replica", true);
     borrowed.dispose();
@@ -131,17 +139,17 @@ describe("response committer", () => {
       context,
     );
     let rollback: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
-    await prepared.core.rollbackResponse(peer.responseId, {
+    await prepared.core.rollbackResponse(peer.responseIdentity.editScopeId, {
       deferFinalization: (deferred) => {
         rollback = deferred;
       },
     });
     await rollback?.abort();
-    (await prepared.core.prepare(peer.responseId, "chapter.md"))?.dispose();
+    (await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"))?.dispose();
     expect(snapshots.at(-1)).toEqual(before);
     // A scoped read replay started before a later stage must not reject that new write.
     pauseNext = true;
-    const reading = prepared.core.prepare(peer.responseId, "chapter.md");
+    const reading = prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md");
     await waiting;
     try {
       expect(
@@ -165,7 +173,9 @@ describe("response committer", () => {
     expect((await prepared.core.read({ file: "chapter.md" }, peer)).result.message).toBeUndefined();
     const replayCount = snapshots.length;
     const readers = await Promise.all(
-      Array.from({ length: 12 }, () => prepared.core.prepare(peer.responseId, "chapter.md")),
+      Array.from({ length: 12 }, () =>
+        prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"),
+      ),
     );
     for (const reader of readers) {
       if (!reader) throw new Error("Missing concurrent read lease");
@@ -175,13 +185,13 @@ describe("response committer", () => {
     expect(snapshots.length - replayCount).toBe(12);
     mutateSaveLinks = true;
     failSaveLinks = true;
-    await expect(prepared.core.commitResponse(peer.responseId)).rejects.toThrow(
+    await expect(prepared.core.commitResponse(peer.responseIdentity.editScopeId)).rejects.toThrow(
       "link preparation refused",
     );
     expect(saveReplicas.length).toBeGreaterThan(0);
     expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
     failSaveLinks = false;
-    await prepared.core.commitResponse(peer.responseId, {
+    await prepared.core.commitResponse(peer.responseIdentity.editScopeId, {
       deferFinalization: (deferred) => {
         rollback = deferred;
       },
@@ -200,10 +210,12 @@ describe("response committer", () => {
     checkSaveReplica();
     expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
     await rollback?.abort();
-    (await prepared.core.prepare(peer.responseId, "chapter.md"))?.dispose();
+    (await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"))?.dispose();
     checkSaveReplica();
-    await prepared.core.rollbackResponse(peer.responseId);
-    expect(prepared.core.hasResponseDocument(peer.responseId, "chapter.md")).toBe(false);
+    await prepared.core.rollbackResponse(peer.responseIdentity.editScopeId);
+    expect(prepared.core.hasResponseDocument(peer.responseIdentity.editScopeId, "chapter.md")).toBe(
+      false,
+    );
   });
 
   it("commits a multi-document thread-peer response in one journal batch", async () => {
@@ -216,7 +228,7 @@ describe("response committer", () => {
         { command: "insert", file, content: "Tail." },
         {
           ...context,
-          responseId,
+          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
           turnId: `turn-${file}`,
           interactionContext: { mode: "threadPeer", branchGeneration: 1 },
         },
@@ -248,7 +260,7 @@ describe("response committer", () => {
     const responseContext = {
       ...context,
       turnId: "turn-durable-projection-recovery-failure",
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
@@ -284,7 +296,11 @@ describe("response committer", () => {
   it("rejects staging while a response commit owns its snapshot", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-stage-during-commit";
-    const responseContext = { ...context, turnId: "turn-stage-during-commit", responseId };
+    const responseContext = {
+      ...context,
+      turnId: "turn-stage-during-commit",
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
@@ -319,7 +335,11 @@ describe("response committer", () => {
       { onResponseCommitterTransition: (event) => transitions.push(event) },
     );
     const responseId = "response-drop-during-append";
-    const responseContext = { ...context, turnId: "turn-drop-during-append", responseId };
+    const responseContext = {
+      ...context,
+      turnId: "turn-drop-during-append",
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
@@ -365,7 +385,10 @@ describe("response committer", () => {
     const responseContext = {
       ...context,
       turnId: "turn-observer-throw",
-      responseId: "response-observer-throw",
+      responseIdentity: {
+        providerResponseId: "response-observer-throw",
+        editScopeId: "response-observer-throw",
+      },
     };
 
     await ctx.core.read({ file: "chapter.md" }, context);
@@ -421,7 +444,7 @@ describe("response committer", () => {
     const responseContext = {
       ...context,
       turnId: "turn-concurrent-commit",
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
 
     await ctx.core.read({ file: "chapter.md" }, context);

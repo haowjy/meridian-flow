@@ -10,7 +10,6 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
-import { createDrizzleBranchStore } from "./adapters/drizzle-branches.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import {
@@ -24,6 +23,7 @@ import {
   TURN_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { createFixtureBranchStore } from "./test-support/fixture-branch-store.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetDatabase(db));
@@ -63,7 +63,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       sessionId: THREAD_ID,
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
     },
   );
@@ -86,7 +86,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
     availability: { advance: async () => {} },
     catalog: { upsertWorkAuthorities: async () => {} },
   } as unknown as Parameters<typeof createWorkProjectionMutation>[0]);
-  const branches = createDrizzleBranchStore(db, undefined, locks, projection);
+  const branches = createFixtureBranchStore(db, undefined, locks, projection);
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, a.state);
   const secondReached = gate(),

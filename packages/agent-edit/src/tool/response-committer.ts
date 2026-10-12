@@ -48,12 +48,13 @@ import type {
 export interface ResponseCommitter {
   assertCanStage(input: ResponseStagePreflightInput): void;
   stageUpdate(input: ResponseStageUpdateInput): InternalWriteResult | null;
+  /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
   commitResponse(
-    responseId: string,
+    editScopeId: string,
     options?: ResponseCommitOptions,
   ): Promise<ResponseCommitSuccessResult>;
   rollbackResponse(
-    responseId: string,
+    editScopeId: string,
     options?: Pick<ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
   hasBufferedWrites(responseId: string): boolean;
@@ -63,7 +64,7 @@ export interface ResponseCommitter {
     threadId?: string,
   ): { staged: readonly string[]; created: readonly string[] };
   dropForThread(docId: string, threadId: string): void;
-  prepare(responseId: string, docId: string): Promise<ResponseReadLease | null>;
+  prepare(editScopeId: string, docId: string): Promise<ResponseReadLease | null>;
   stage<T>(
     input: CommandLeaseInput,
     run: (lease: CommandDocumentLease) => Promise<T>,
@@ -181,6 +182,7 @@ interface StagedResponseUpdate extends JournaledUpdate {
 }
 
 interface ResponseDocumentBufferFields {
+  providerResponseId: string;
   docId: string;
   session: ActorSession;
   commandName: DocumentCommandName;
@@ -407,13 +409,24 @@ export function createResponseCommitter(deps: {
     before: readonly Y.Doc[] = [],
   ): Promise<void> {
     const current = readLease(documentDoc(doc));
+    const providerResponseId = doc.providerResponseId;
+    if (!providerResponseId) {
+      current.dispose();
+      throw new Error("A staged model edit must carry provider authorship");
+    }
     try {
       commitLinks.set(
         doc,
         await openCommandLinks(deps, {
           documentId: doc.docId,
           docs: [unwrapDoc(current.doc), ...before],
-          context: { responseId, threadId: doc.session.threadId },
+          context: {
+            responseIdentity: {
+              providerResponseId,
+              editScopeId: responseId,
+            },
+            threadId: doc.session.threadId,
+          },
         }),
       );
     } finally {
@@ -1317,6 +1330,8 @@ export function createResponseCommitter(deps: {
   }
 
   function stageUpdate(input: ResponseStageUpdateInput): InternalWriteResult | null {
+    if (!input.actor.responseId)
+      throw new Error("A staged model edit requires provider authorship");
     assertCanStage({
       responseId: input.responseId,
       docId: input.docId,
@@ -1341,6 +1356,7 @@ export function createResponseCommitter(deps: {
     let docBuffer = buffer.docs.get(input.docId);
     if (!docBuffer) {
       const fields = {
+        providerResponseId: input.actor.responseId,
         docId: input.docId,
         session: input.session,
         commandName: input.commandName,
@@ -1411,6 +1427,7 @@ export function createResponseCommitter(deps: {
         threadId: input.session.threadId,
         turnId: input.turnId,
         authoringResponseId: input.actor.responseId,
+        editScopeId: input.actor.editScopeId,
         actorKind: "agent",
         writeId:
           input.durableWriteId ??

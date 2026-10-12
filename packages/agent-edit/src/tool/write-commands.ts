@@ -116,7 +116,7 @@ export function createWriteCommands(deps: {
     if (!address.ok) return status("invalid_write", address.message);
     return responseCommitter.stage(
       {
-        responseId: context.responseId,
+        responseId: context.responseIdentity?.editScopeId,
         docId: address.documentId,
         session,
         commandName: "command" in command ? command.command : "read",
@@ -206,9 +206,9 @@ export function createWriteCommands(deps: {
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
-    if (context.responseId && actor.kind === "agent") {
+    if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
       responseCommitter.assertCanStage({
-        responseId: context.responseId,
+        responseId: context.responseIdentity?.editScopeId,
         docId: address.documentId,
         session,
         turnId: context.turnId,
@@ -222,7 +222,8 @@ export function createWriteCommands(deps: {
       : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const responseStagedCreate = context.responseId !== undefined && actor.kind === "agent";
+    const responseStagedCreate =
+      context.responseIdentity?.editScopeId !== undefined && actor.kind === "agent";
     if (responseStagedCreate && context.createdDocument === undefined) {
       return status(
         "invalid_write",
@@ -321,9 +322,9 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    if (context.responseId) {
+    if (context.responseIdentity?.editScopeId) {
       responseCommitter.assertCanStage({
-        responseId: context.responseId,
+        responseId: context.responseIdentity?.editScopeId,
         docId: address.documentId,
         session,
         turnId: context.turnId,
@@ -468,7 +469,7 @@ export function createWriteCommands(deps: {
     let concurrentEdits: import("../apply/types.js").ConcurrentEditInfo | undefined;
     let lateSweep: import("./mutation-commit.js").DestructiveSweepReport | undefined;
     let awarenessDegraded = false;
-    if (context.responseId && actor.kind === "agent") {
+    if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
       // Await attribution before staging: the lease must still be current at acceptance.
       try {
         if (interactionContext) {
@@ -488,7 +489,7 @@ export function createWriteCommands(deps: {
       }
       try {
         const rejected = responseCommitter.stageUpdate({
-          responseId: context.responseId,
+          responseId: context.responseIdentity?.editScopeId,
           docId,
           session,
           runtime,
@@ -539,7 +540,9 @@ export function createWriteCommands(deps: {
                 editParts: parts,
                 threadId: session.threadId,
                 turnId,
-                ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
+                ...(actor.kind === "agent"
+                  ? { authoringResponseId: actor.responseId, editScopeId: actor.editScopeId }
+                  : {}),
                 actorKind: actor.kind,
                 ...(actor.kind === "human" ? { userId: actor.userId } : {}),
                 ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
@@ -697,11 +700,7 @@ export function createWriteCommands(deps: {
     context: WriteContext,
     commandToolUseId?: string,
   ): Promise<{ durableId: string; ordinal: number; handle: string; toolCallId?: string }> {
-    const ordinal = await reversalStore.reserveWriteOrdinal(
-      docId,
-      session.threadId,
-      context.responseId ?? context.turnId,
-    );
+    const ordinal = await reversalStore.reserveWriteOrdinal(docId, session.threadId);
     const durableId =
       scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??
@@ -732,7 +731,8 @@ export function createWriteCommands(deps: {
       kind: "agent",
       turnId,
       threadId: session.threadId,
-      responseId: context.responseId ?? turnId,
+      responseId: context.responseIdentity?.providerResponseId,
+      editScopeId: context.responseIdentity?.editScopeId,
     };
   }
 

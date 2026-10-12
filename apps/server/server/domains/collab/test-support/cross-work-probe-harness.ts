@@ -133,14 +133,14 @@ export async function runCrossWorkProbe(
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
-    responseId: undefined,
+    responseIdentity: undefined,
   };
   const contextB = {
     grant: testFileGrant({ kind: "draft", workId: WORK_B_ID, workSlug: "work-b" }),
     sessionId: THREAD_B_ID,
     threadId: THREAD_B_ID,
     turnId: TURN_B_ID,
-    responseId: undefined,
+    responseIdentity: undefined,
   };
   await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextA);
   await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextB);

@@ -24,6 +24,14 @@ stable reversal-result identity.
   ordinary immutable journal parts with restoration aliases, never rewriting a
   target row or marking it reversed. Partial results name skipped parts with their
   own before/after text. Card inverse rows are writer rows with no turn.
+- **Effective actions**: `inverse-actions.ts` indexes accepted Undo targets per
+  part and subtracts only effective Redo consumption. Rolled-back actions have
+  no stack effect. Card placement/partial selection and model strict stack
+  selection share that index, not their policies. A model entry is popped only
+  when every part is undone or terminally rolled back; partial writer Undo never
+  exposes an older entry or labels the entire entry undone by the user.
+  Rollback is terminal only for its direct selected target, not that inverse's
+  transitive originals. Failed inverse scopes restore previous availability.
 - **Holds and locking**: a pending inverse holds roots where its draft's visible
   identity differs from live's. Holds and destinations are keyed by branch ID.
   Only holds intersecting the selected targets can choose their holding draft.
@@ -46,7 +54,7 @@ stable reversal-result identity.
   inverses recover the canonical live room before pulling drafts, even when there is no active draft. Card outcomes
   carry committed per-document destinations; a draft Undo explicitly says Apply
   is needed to change the manuscript. Only Apply/Discard retire an
-  empty generation. Failed-response rollback selects by response and transitions
+  empty generation. Failed-response rollback selects by edit scope and transitions
   accepted parts as terminal rollback edits; only uninvertible pending target rows
   retain rollback_pending. Repeated rollback does not create another inverse.
   Response checkpoints and refreshes enlist as post-commit participants; a failed

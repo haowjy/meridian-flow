@@ -3,6 +3,7 @@ import {
   createAgentEditCodecFactory,
   createAgentEditCore,
   type DocumentCoordinator,
+  type DocumentEdits,
   type DocumentLifecycle,
   type ReversalStore,
   type UpdateJournal,
@@ -45,6 +46,7 @@ type AgentEditObservability = Pick<
 
 export function createAgentEditRuntime(input: {
   journal: UpdateJournal & ReversalStore;
+  documentEdits?: DocumentEdits;
   coordinator: DocumentCoordinator;
   /**
    * The live agent-edit core's coordinator when it differs from `coordinator`:
@@ -78,6 +80,7 @@ export function createAgentEditRuntime(input: {
         viewFor: liveViewFor,
       }),
       journal: input.journal,
+      documentEdits: input.documentEdits,
       coordinator: input.agentCoordinator ?? input.coordinator,
       lifecycle: input.lifecycle,
       codec,

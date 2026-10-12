@@ -166,7 +166,7 @@ describe("branch concurrent attribution", () => {
       sessionId: "session",
       threadId: "thread-a",
       turnId: "turn-late",
-      responseId: "reply-late",
+      responseIdentity: { providerResponseId: "reply-late", editScopeId: "reply-late" },
     };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
