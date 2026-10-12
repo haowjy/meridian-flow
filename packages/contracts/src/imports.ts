@@ -133,19 +133,24 @@ export interface ImportEntryReport {
   wanted: boolean;
   findings: ImportFinding[];
 }
+export interface ImportRootReport {
+  rootId: number;
+  kind: "folder" | "file";
+  name: string;
+  /** Null for a routed export selection: its project wrapper is not created. */
+  id: string | null;
+  uri: string | null;
+}
 export interface ImportReport extends ImportSummary {
-  roots: {
-    rootId: number;
-    kind: "folder" | "file";
-    name: string;
-    /** Null for a routed export selection: its project wrapper is not created. */
-    id: string | null;
-    uri: string | null;
-  }[];
+  roots: ImportRootReport[];
   entries: ImportEntryReport[];
 }
 
-export type ImportReportChanges = ImportSummary & { entries: ImportEntryReport[] };
+/** What changed since a version: changed entries, and the roots whose node changed. */
+export type ImportReportChanges = ImportSummary & {
+  roots: ImportRootReport[];
+  entries: ImportEntryReport[];
+};
 
 /** Stable codes for refused import requests; bounded numeric params ride beside them. */
 export type ImportRefusalCode =

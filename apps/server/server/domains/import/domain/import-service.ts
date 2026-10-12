@@ -150,27 +150,27 @@ export function createImportService(deps: {
     const reportedEntries = entries
       .filter((entry) => entry.entryId !== null)
       .map((entry) => entryReport(entry));
-    if (since !== undefined) return { ...summary(cut), entries: reportedEntries };
-    return {
-      ...summary(cut),
-      roots: record.manifest.roots.map((root) => {
-        const node = entries.find(
-          (entry) =>
-            entry.rootId === root.rootId &&
-            (root.kind === "folder"
-              ? entry.kind === "folder" && entry.path === ""
-              : entry.entryId !== null),
-        );
-        return {
+    // A since-cut holds only changed rows: it reports just the roots whose node changed.
+    const roots = record.manifest.roots.flatMap((root) => {
+      const node = entries.find(
+        (entry) =>
+          entry.rootId === root.rootId &&
+          (root.kind === "folder"
+            ? entry.kind === "folder" && entry.path === ""
+            : entry.entryId !== null),
+      );
+      if (!node && since !== undefined) return [];
+      return [
+        {
           rootId: root.rootId,
           kind: root.kind,
           name: root.name,
           id: node?.id ?? null,
           uri: node?.uri ?? null,
-        };
-      }),
-      entries: reportedEntries,
-    };
+        },
+      ];
+    });
+    return { ...summary(cut), roots, entries: reportedEntries };
   }
   function entryReport(entry: ImportEntry) {
     const exists = entry.created && entry.exists;

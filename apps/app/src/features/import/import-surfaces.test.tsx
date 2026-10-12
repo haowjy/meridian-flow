@@ -170,7 +170,7 @@ describe("ImportDocumentNotice", () => {
     const server = fakeImportServer();
     const quiet = report({ lastActivityAt: "2000-01-01T00:00:00.000Z" });
     server.api.listOpen = async () => [quiet];
-    server.api.changes = async () => ({ ...quiet, entries: [] });
+    server.api.changes = async () => ({ ...quiet, roots: [], entries: [] });
     const coordinator = new ImportCoordinator("p", server.api);
     context.coordinator = coordinator;
     await coordinator.refreshOpen();

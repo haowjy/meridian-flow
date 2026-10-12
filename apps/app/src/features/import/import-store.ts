@@ -159,6 +159,7 @@ export class ImportStore {
       // A poll that found nothing changes nothing, so nothing downstream re-renders.
       if (
         changes.entries.length === 0 &&
+        changes.roots.length === 0 &&
         changes.version === report.cursor &&
         changes.version === report.summary.version &&
         !state.refreshFailed
@@ -166,12 +167,16 @@ export class ImportStore {
         return state;
       const merged = new Map(report.entries);
       for (const entry of changes.entries) merged.set(entry.entryId, entry);
+      const moved = new Map(changes.roots.map((root) => [root.rootId, root]));
       return {
         ...state,
         ...noteActivity(state, changes),
         refreshFailed: false,
         report: {
           ...report,
+          roots: moved.size
+            ? report.roots.map((root) => moved.get(root.rootId) ?? root)
+            : report.roots,
           summary: newerSummary(report.summary, summaryOf(changes)),
           entries: merged,
           cursor: changes.version,

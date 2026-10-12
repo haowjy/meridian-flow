@@ -62,7 +62,7 @@ function server(): { api: ImportApi; since: string[] } {
     ...fakeImportServer().api,
     changes: async (_projectId, _importId, version) => {
       since.push(version);
-      return { ...summary("2", "finished"), entries: version === "1" ? [landed] : [] };
+      return { ...summary("2", "finished"), roots: [], entries: version === "1" ? [landed] : [] };
     },
   };
   return { api, since };
@@ -93,7 +93,7 @@ describe("ImportStore", () => {
       },
       changes: async () => {
         reads.push("changes");
-        return { ...summary("1"), entries: [] };
+        return { ...summary("1"), roots: [], entries: [] };
       },
     };
     const store = new ImportStore("p", "import-1", api);
@@ -104,6 +104,25 @@ describe("ImportStore", () => {
     expect(reads).toEqual(["full"]);
     expect(store.getSnapshot().report?.entries.get(0)?.wanted).toBe(true);
     expect(store.getSnapshot().report?.roots[0]?.uri).toBe("kb://Moved/Ch 1");
+  });
+
+  it("follows a moved root from what changed, so the report's Open goes to it", async () => {
+    const api: ImportApi = {
+      ...fakeImportServer().api,
+      changes: async () => ({
+        ...summary("2"),
+        roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0", uri: "kb://Moved/Ch 1" }],
+        entries: [],
+      }),
+    };
+    const store = new ImportStore("p", "import-1", api);
+    store.installReport(report("1", [planned]));
+
+    await store.refresh();
+
+    expect(store.getSnapshot().report?.roots).toEqual([
+      { rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0", uri: "kb://Moved/Ch 1" },
+    ]);
   });
 
   it("keeps polling until it has read up to a finished summary", async () => {
