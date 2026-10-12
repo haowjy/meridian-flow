@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
+
 - Keep draft review controls alongside navigable document paths and list-owned moves, with forward database upgrades from main.
 - Restore card Undo and Redo for live model reverts by discovering authorization targets from immutable edits. Finish deleting obsolete reversal state and no-op notices.
 

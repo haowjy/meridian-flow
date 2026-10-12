@@ -474,43 +474,6 @@ export const documentYjsUpdates = pgTable(
   ],
 );
 
-export const agentEditMutations = pgTable(
-  "agent_edit_mutations",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    wId: integer("w_id").notNull(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "cascade" }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
-    actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
-    userId: text("user_id"),
-    // Durable idempotency key for the edit mutation, distinct from its ordinal.
-    writeId: text("write_id").notNull(),
-    createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
-      table.documentId,
-      table.threadId,
-      table.wId,
-    ),
-    index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
-    index("agent_edit_mutations_thread_turn").on(table.threadId, table.turnId),
-  ],
-);
-
 export const pendingNotices = pgTable(
   "pending_notices",
   {
