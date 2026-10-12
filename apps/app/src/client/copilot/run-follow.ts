@@ -28,7 +28,9 @@
  * A Stop press cancels the target. With no target, or when the cancel is
  * refused, it becomes an intent recording the messages owed at the press; the
  * intent lands only on a target whose execution took on or delivered one of
- * them, and never again on the turn that refused it. A fresh press retries.
+ * them, and never again on the turn that refused it. A fresh press retries. A
+ * message owed after the press retires the waiting intent: the later action
+ * wins, so work that batches it with an older message is never cancelled.
  *
  * No React, store, journal or transport imports: this module moves to
  * `packages/` unchanged.
@@ -379,6 +381,15 @@ export function stepRunFollow(follow: RunFollow, input: RunFollowInput): RunFoll
   const owed = owedOf(next);
   if ([...owed].some((id) => !next.tracked.has(id)))
     next = { ...next, tracked: new Set([...next.tracked, ...owed]) };
+  // The later action wins: a message sent after the press retires its waiting
+  // intent, so an execution batching old and new messages is not cancelled.
+  const pressed = next.stop;
+  if (
+    pressed &&
+    pressed.inFlightTurnId === null &&
+    [...owed].some((id) => !pressed.owedAtPress.has(id))
+  )
+    next = { ...next, stop: null };
   const view = viewRunFollow(next);
   if (view.settled) {
     const reset =
