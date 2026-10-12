@@ -1,5 +1,5 @@
 import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/contracts/protocol";
-import { CliError, EXIT, usageError } from "../../core/cli-error";
+import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
   durationOption,
@@ -8,6 +8,7 @@ import {
   stringOption,
 } from "../../core/command";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
+import { finishResult, timeoutReport } from "./result";
 import { followThread } from "./stream";
 
 export const threadTailCommand: CommandSpec = {
@@ -18,7 +19,10 @@ export const threadTailCommand: CommandSpec = {
   options: {
     ...THREAD_TARGET_OPTIONS,
     since: { type: "string", description: "Replay strictly after this seq (default: live only)" },
-    "until-idle": { type: "boolean", description: "Stop after the next run finishes or fails" },
+    "until-idle": {
+      type: "boolean",
+      description: "Wait for the next turn.finished or turn.failed event (not confirmed chat idle)",
+    },
     timeout: { type: "string", description: "Stop after this long (default 10m)" },
     full: { type: "boolean", description: "Do not truncate tool payloads" },
   },
@@ -52,10 +56,38 @@ export const threadTailCommand: CommandSpec = {
         shouldStop: (event) =>
           untilIdle && (event.type === "turn.finished" || event.type === "turn.failed"),
       });
-      return result.stoppedBy?.type === "turn.failed" ? EXIT.failed : undefined;
+      if (!untilIdle) return undefined;
+      const turnId =
+        result.stoppedBy && "turnId" in result.stoppedBy ? result.stoppedBy.turnId : null;
+      const snapshot = await session.request<ThreadSnapshotResponse>(
+        "GET",
+        apiThreadSnapshotPath(threadId),
+      );
+      const turn = snapshot.turns.find((candidate) => candidate.id === turnId);
+      return finishResult(ctx.out, {
+        type: "result",
+        command: "thread.tail",
+        threadId,
+        turnId,
+        outcome:
+          result.stoppedBy?.type === "turn.failed"
+            ? "failed"
+            : turn?.status === "cancelled"
+              ? "cancelled"
+              : "complete",
+        reason: null,
+      });
     } catch (error) {
       // A bounded tail that simply ran out of time is a normal stop, not a failure.
       if (error instanceof CliError && error.code === "timeout" && !untilIdle) return undefined;
+      if (error instanceof CliError && error.code === "timeout")
+        return finishResult(ctx.out, {
+          type: "result",
+          command: "thread.tail",
+          threadId,
+          outcome: "timeout",
+          ...(await timeoutReport(session, threadId)),
+        });
       throw error;
     }
   },

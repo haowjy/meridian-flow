@@ -66,6 +66,7 @@ export function subscribeThread(transport: ThreadTransport, threadId: string, af
   );
   return {
     unsubscribe,
+    reject: (error: Error) => push({ type: "error", error }),
     async next(deadlineAt: number): Promise<SubscriptionItem> {
       if (Date.now() >= deadlineAt)
         throw new CliError("timeout", "Timed out waiting for thread events");

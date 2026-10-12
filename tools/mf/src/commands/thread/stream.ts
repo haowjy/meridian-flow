@@ -10,6 +10,7 @@ import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
   lastSeq: string;
+  truncated: boolean;
   stoppedBy: CliEvent | null;
   state: ThreadLiveState | null;
 };
@@ -38,6 +39,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
   const subscription = subscribeThread(transport, options.threadId, options.lastSeq);
   const mapper = new RunEventMapper();
   let lastSeq = options.lastSeq;
+  let truncated = false;
   let state: ThreadLiveState | null = null;
 
   const emit = (event: CliEvent): boolean => {
@@ -68,14 +70,15 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
       switch (message.type) {
         case "live":
           state = message.state;
-          if (options.catchupOnly) return { lastSeq, stoppedBy: null, state };
+          if (options.catchupOnly) return { lastSeq, truncated, stoppedBy: null, state };
           break;
         case "event": {
           const stop = consume(message.event.seq, message.event);
-          if (stop) return { lastSeq, stoppedBy: stop, state };
+          if (stop) return { lastSeq, truncated, stoppedBy: stop, state };
           break;
         }
         case "gap": {
+          truncated = true;
           const gap = message.gap;
           options.out.record(
             {

@@ -1,6 +1,8 @@
 /** Thread driving commands: create, send (wait by default), tail, cancel, respond. */
 import { randomUUID } from "node:crypto";
 import {
+  type AdmissionLookup,
+  apiThreadAdmissionPath,
   apiThreadMessagePath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
@@ -11,7 +13,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { blockPlainText, type Turn } from "@meridian/contracts/threads";
 import { imageCapable, serializeMessageDoc } from "@meridian/thread-client";
-import { CliError, EXIT, type ExitCode, usageError } from "../../core/cli-error";
+import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
   durationOption,
@@ -28,11 +30,13 @@ import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
+import { exitForResult, finishResult, type Result, timeoutReport } from "./result";
 import { followThread } from "./stream";
 import { createThreadClient } from "./transport";
 
-export type SendOutcome = {
-  type: "result" | "error";
+export type SendOutcome = Result & {
+  type: "result";
+  submissionId?: string;
   threadId: string;
   turnId: string | null;
   status: Turn["status"] | "timeout" | "unknown";
@@ -51,19 +55,7 @@ function assistantText(turn: Turn | undefined): string | null {
   return text || null;
 }
 
-export function exitForOutcome(outcome: SendOutcome): ExitCode {
-  if (outcome.interrupt) return EXIT.interrupt;
-  switch (outcome.status) {
-    case "complete":
-      return EXIT.ok;
-    case "cancelled":
-      return EXIT.cancelled;
-    case "timeout":
-      return EXIT.timeout;
-    default:
-      return EXIT.failed;
-  }
-}
+export const exitForOutcome = exitForResult;
 
 export type SendInput = {
   threadId: string;
@@ -132,16 +124,46 @@ export async function admitMessage(session: Session, input: Omit<SendInput, "tim
       : (await enqueueMockScript(session, input.mock, message.text)).id;
   const submissionId = randomUUID();
   try {
-    const admitted = await session.request<SendMessageResponse>(
-      "POST",
-      apiThreadMessagePath(input.threadId),
-      {
-        submissionId,
-        ...message,
-        references: [...message.references],
-        activatedSkillSlugs: [...message.activatedSkillSlugs],
-      } satisfies SendMessageRequest,
-    );
+    let admitted: SendMessageResponse;
+    try {
+      admitted = await session.request<SendMessageResponse>(
+        "POST",
+        apiThreadMessagePath(input.threadId),
+        {
+          submissionId,
+          ...message,
+          references: [...message.references],
+          activatedSkillSlugs: [...message.activatedSkillSlugs],
+        } satisfies SendMessageRequest,
+      );
+    } catch (error) {
+      if (
+        !(error instanceof CliError) ||
+        error.httpStatus !== undefined ||
+        !["unavailable", "timeout"].includes(error.code)
+      )
+        throw error;
+      let lookup: AdmissionLookup;
+      try {
+        lookup = await session.request<AdmissionLookup>(
+          "GET",
+          apiThreadAdmissionPath(input.threadId, submissionId),
+        );
+      } catch {
+        throw new CliError("unproven", "Admission lookup failed", {
+          details: { submissionId, reason: "admission_unknown" },
+        });
+      }
+      if (lookup.kind === "accepted" || lookup.kind === "already-accepted") {
+        admitted = { ...lookup, status: "accepted" };
+      } else if (lookup.kind === "pending") {
+        throw new CliError("unproven", "Admission is still pending", {
+          details: { submissionId, reason: "admission_unknown" },
+        });
+      } else {
+        throw new CliError("http_error", `Admission ${lookup.kind}`, { details: { submissionId } });
+      }
+    }
     return { submissionId, admitted, mockScriptId };
   } catch (error) {
     if (mockScriptId) await removeMockScript(session, mockScriptId).catch(() => undefined);
@@ -158,7 +180,27 @@ export async function sendMessage(
   out: Output,
   input: SendInput,
 ): Promise<SendOutcome> {
-  const { admitted, mockScriptId } = await admitMessage(session, input);
+  let admission: Awaited<ReturnType<typeof admitMessage>>;
+  try {
+    admission = await admitMessage(session, input);
+  } catch (error) {
+    if (error instanceof CliError && (error.code === "unproven" || error.code === "http_error")) {
+      return {
+        type: "result",
+        command: "thread.send",
+        threadId: input.threadId,
+        turnId: null,
+        outcome: error.code === "unproven" ? "unproven" : "failed",
+        reason: error.code === "unproven" ? "admission_unknown" : null,
+        status: "unknown",
+        finalText: null,
+        error: error.message,
+        submissionId: (error.details as { submissionId?: string } | undefined)?.submissionId,
+      };
+    }
+    throw error;
+  }
+  const { admitted, mockScriptId } = admission;
   try {
     return await followToOutcome(session, out, input, admitted);
   } finally {
@@ -226,7 +268,10 @@ async function followToOutcome(
   } catch (error) {
     if (error instanceof CliError && error.code === "timeout") {
       return {
-        type: "error",
+        type: "result",
+        command: "thread.send",
+        outcome: "timeout",
+        ...(await timeoutReport(session, threadId)),
         threadId,
         turnId: ourTurn,
         status: "timeout",
@@ -247,7 +292,19 @@ async function followToOutcome(
     ? "waiting_interrupt"
     : (turn?.status ?? "unknown");
   return {
-    type: status === "complete" ? "result" : "error",
+    type: "result",
+    command: "thread.send",
+    outcome: interrupt
+      ? "interrupt"
+      : status === "complete"
+        ? "complete"
+        : status === "cancelled"
+          ? "cancelled"
+          : status === "error"
+            ? "failed"
+            : "unproven",
+    reason:
+      !interrupt && !["complete", "cancelled", "error"].includes(status) ? "unconfirmed" : null,
     threadId,
     turnId: ourTurn,
     status,
@@ -274,22 +331,9 @@ function answerForUserTurn(turns: readonly Turn[], userTurnId: string): Turn | u
 }
 
 /** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */
-function finish(out: Output, outcome: SendOutcome): ExitCode {
-  out.record(outcome, null, "err");
-  if (!out.json) {
-    if (outcome.finalText) out.text(outcome.finalText.trim());
-    out.note(
-      outcome.interrupt
-        ? `waiting on interrupt ${outcome.interrupt.interruptId}: ./mf thread respond ${outcome.threadId} --turn ${outcome.interrupt.turnId} --interrupt ${outcome.interrupt.interruptId} --value '<json>'`
-        : `turn ${outcome.turnId ?? "?"} ${outcome.status}${outcome.error ? `: ${outcome.error}` : ""}`,
-    );
-  }
-  return exitForOutcome(outcome);
-}
-
 export const threadSendCommand: CommandSpec = {
   path: ["thread", "send"],
-  summary: "Send a message and wait for the run to finish (exit code = outcome)",
+  summary: "Send and wait for the current CLI follow outcome (not yet proof of your reply)",
   args: "<thread> <text>",
   route: "POST /api/threads/:threadId/messages + WS subscribe",
   options: {
@@ -326,12 +370,29 @@ export const threadSendCommand: CommandSpec = {
     const threadId = await resolveThreadId(session, rawThread, stringOption(ctx, "project"));
 
     if (flag(ctx, "no-wait")) {
-      const { submissionId, admitted, mockScriptId } = await admitMessage(session, {
-        threadId,
-        ...input,
-      });
+      let admission: Awaited<ReturnType<typeof admitMessage>>;
+      try {
+        admission = await admitMessage(session, { threadId, ...input });
+      } catch (error) {
+        if (error instanceof CliError && (error.code === "unproven" || error.code === "http_error"))
+          return finishResult(ctx.out, {
+            type: "result",
+            command: "thread.send",
+            threadId,
+            outcome: error.code === "unproven" ? "unproven" : "failed",
+            reason: error.code === "unproven" ? "admission_unknown" : null,
+            error: error.message,
+            submissionId: (error.details as { submissionId?: string } | undefined)?.submissionId,
+          });
+        throw error;
+      }
+      const { submissionId, admitted, mockScriptId } = admission;
       ctx.out.result(
         {
+          type: "result",
+          command: "thread.send",
+          outcome: "complete",
+          reason: null,
           threadId,
           submissionId,
           userTurnId: admitted.userTurnId,
@@ -352,6 +413,11 @@ export const threadSendCommand: CommandSpec = {
       );
       return undefined;
     }
-    return finish(ctx.out, await sendMessage(session, ctx.out, { threadId, ...input }));
+    const outcome = await sendMessage(session, ctx.out, { threadId, ...input });
+    if (outcome.interrupt)
+      outcome.next = [
+        `./mf thread respond ${threadId} --turn ${outcome.interrupt.turnId} --interrupt ${outcome.interrupt.interruptId} --value '<json>'`,
+      ];
+    return finishResult(ctx.out, outcome);
   },
 };

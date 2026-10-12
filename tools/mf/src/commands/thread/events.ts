@@ -8,6 +8,7 @@ import {
 } from "../../core/command";
 import { presentChild } from "./child-activity";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
+import { finishResult } from "./result";
 import { followThread } from "./stream";
 
 export const threadEventsCommand: CommandSpec = {
@@ -55,6 +56,14 @@ export const threadEventsCommand: CommandSpec = {
     ctx.out.note(
       `(caught up to seq ${result.lastSeq}; ./mf thread tail ${threadId} --since ${result.lastSeq} follows live)`,
     );
-    return undefined;
+    return finishResult(ctx.out, {
+      type: "result",
+      command: "thread.events",
+      threadId,
+      outcome: result.truncated ? "unproven" : "complete",
+      reason: result.truncated ? "replay_truncated" : null,
+      lastSeq: result.lastSeq,
+      next: [`./mf thread tail ${threadId} --since ${result.lastSeq}`],
+    });
   },
 };

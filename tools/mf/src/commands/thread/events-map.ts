@@ -19,14 +19,12 @@ export type CliEvent =
   | { type: "reasoning.completed"; seq: string; messageId: string; text: string }
   | { type: "tool.started"; seq: string; toolCallId: string; name: string }
   | {
-      type: "tool.completed";
+      type: "tool.completed" | "tool.settled";
       seq: string;
       toolCallId: string;
       name: string;
       args: string;
       result: string;
-      /** A later result for the same call: a staged write's receipt settled and replaced it. */
-      settled?: true;
     }
   | { type: "tool.errored"; seq: string; toolCallId: string; name: string }
   | {
@@ -139,13 +137,12 @@ export class RunEventMapper {
         this.tools.set(toolCallId, { ...tool, completed: true });
         return [
           {
-            type: "tool.completed",
+            type: settled ? "tool.settled" : "tool.completed",
             seq,
             toolCallId,
             name: tool.name,
             args: tool.args,
             result: String(e.content ?? ""),
-            ...(settled ? { settled } : {}),
           },
         ];
       }
@@ -200,7 +197,8 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
     case "tool.started":
       return `tool.started ${event.name} (${event.toolCallId})`;
     case "tool.completed":
-      return `${event.settled ? "tool.settled" : "tool.completed"} ${event.name}(${truncate(oneLine(event.args), limit)}) -> ${truncate(oneLine(event.result), limit)}`;
+    case "tool.settled":
+      return `${event.type} ${event.name}(${truncate(oneLine(event.args), limit)}) -> ${truncate(oneLine(event.result), limit)}`;
     case "tool.errored":
       return `tool.errored ${event.name} (${event.toolCallId})`;
     case "interrupt.requested":

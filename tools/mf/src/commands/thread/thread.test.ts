@@ -48,6 +48,9 @@ describe("thread", () => {
     expect(lines.map((line) => line.type)).toContain("message.delta");
     expect(lines.at(-1)).toMatchObject({
       type: "result",
+      command: "thread.send",
+      outcome: "complete",
+      reason: null,
       status: "complete",
       finalText: "Hello there",
     });
@@ -128,7 +131,7 @@ describe("thread", () => {
       await isolated.mf(["thread", "send", THREAD_ID, "hello"]);
       isolated.socketPolicy.replayFloor = "1";
       const result = await isolated.mf(["thread", "events", THREAD_ID, "--json"]);
-      expect(result.code).toBe(EXIT.ok);
+      expect(result.code).toBe(EXIT.unproven);
       const records = result.stdout
         .trim()
         .split("\n")
@@ -141,7 +144,13 @@ describe("thread", () => {
         toSeq: "1",
       });
       expect(records.map((record) => record.type)).not.toContain("turn.started");
-      expect(records.at(-1)).toMatchObject({ type: "turn.finished" });
+      expect(records.at(-2)).toMatchObject({ type: "turn.finished" });
+      expect(records.at(-1)).toMatchObject({
+        type: "result",
+        command: "thread.events",
+        outcome: "unproven",
+        reason: "replay_truncated",
+      });
     } finally {
       await isolated.close();
     }
@@ -170,7 +179,9 @@ describe("thread", () => {
     const failed = await mf(["thread", "send", THREAD_ID, "please fail", "--json"]);
     expect(failed.code).toBe(EXIT.failed);
     expect(JSON.parse(failed.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
-      type: "error",
+      type: "result",
+      outcome: "failed",
+      reason: null,
       status: "error",
       error: "boom",
     });
@@ -193,6 +204,13 @@ describe("thread", () => {
     const result = await mf(["thread", "send", THREAD_ID, "hang", "--timeout", "300ms", "--json"]);
     expect(result.code).toBe(EXIT.timeout);
     expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      command: "thread.send",
+      outcome: "timeout",
+      reason: "running",
+      stillRunning: { turnId: expect.any(String), status: "streaming" },
+      owed: [],
+      next: expect.arrayContaining([expect.stringContaining("thread cancel")]),
       status: "timeout",
     });
   });
@@ -212,5 +230,150 @@ describe("thread", () => {
       { match: "scripted hi", steps: [{ text: "ok" }] },
     ]);
     expect(fake.removedMockScripts).toContain(`script-${fake.mockScripts.length}`);
+  });
+  it.each([
+    ["cancelled", EXIT.cancelled, "cancelled"],
+    ["ask", EXIT.interrupt, "interrupt"],
+  ])("ends %s with exactly one result", async (text, code, outcome) => {
+    const result = await mf(["thread", "send", THREAD_ID, String(text), "--json"]);
+    const records = result.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(result.code).toBe(code);
+    expect(records.filter((record) => record.type === "result")).toHaveLength(1);
+    expect(records.at(-1)).toMatchObject({
+      type: "result",
+      command: "thread.send",
+      threadId: THREAD_ID,
+      outcome,
+      reason: null,
+    });
+  });
+
+  it("keeps reserved terminal keys with --fields finalText", async () => {
+    const result = await mf(["thread", "send", THREAD_ID, "hi", "--json", "--fields", "finalText"]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toEqual({
+      type: "result",
+      command: "thread.send",
+      outcome: "complete",
+      reason: null,
+      finalText: "Hello there",
+    });
+  });
+
+  it.each([false, true])("names staged and committed writes honestly (json=%s)", async (json) => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "write tool",
+      ...(json ? ["--json"] : []),
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    if (json) {
+      const tools = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line))
+        .filter((record) => record.type.startsWith("tool."));
+      expect(tools.map((record) => record.type)).toEqual([
+        "tool.started",
+        "tool.completed",
+        "tool.settled",
+      ]);
+      expect(tools.every((record) => !("settled" in record))).toBe(true);
+    } else {
+      expect(result.stderr).toMatch(/tool.completed[^\n]*staged[\s\S]*tool.settled[^\n]*committed/);
+    }
+  });
+
+  it.each([
+    ["resolved", EXIT.ok, "complete", null],
+    ["unconfirmed", EXIT.unproven, "unproven", "unconfirmed"],
+    ["other", EXIT.unproven, "unproven", "unconfirmed"],
+    ["rejected", EXIT.failed, "failed", null],
+  ] as const)("respond %s is confirmed only by its own interrupt", async (response, code, outcome, reason) => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.interruptPolicy.response = response;
+      const result = await isolated.mf([
+        "thread",
+        "respond",
+        THREAD_ID,
+        "--turn",
+        "turn-a1",
+        "--interrupt",
+        "int-1",
+        "--value",
+        "null",
+        "--timeout",
+        "100ms",
+        "--json",
+      ]);
+      expect(result.code).toBe(code);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        type: "result",
+        command: "thread.respond",
+        outcome,
+        reason,
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it.each([
+    ["accepted", EXIT.ok, "complete", null],
+    ["rejected", EXIT.failed, "failed", null],
+    ["not-seen", EXIT.failed, "failed", null],
+    ["pending", EXIT.unproven, "unproven", "admission_unknown"],
+    ["failed", EXIT.unproven, "unproven", "admission_unknown"],
+  ] as const)("recovers a lost admission answer: %s", async (lookup, code, outcome, reason) => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.admissionPolicy.loseAnswer = true;
+      isolated.admissionPolicy.lookup = lookup;
+      const result = await isolated.mf(["thread", "send", THREAD_ID, "recover me", "--json"]);
+      expect(result.code).toBe(code);
+      expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+        type: "result",
+        command: "thread.send",
+        outcome,
+        reason,
+      });
+      expect(isolated.messageBodies).toHaveLength(1);
+    } finally {
+      await isolated.close();
+    }
+  });
+
+  it("tail --until-idle reports a final timeout snapshot without stopping the run", async () => {
+    const isolated = await startFakeStack();
+    try {
+      await isolated.mf(["thread", "send", THREAD_ID, "hang", "--no-wait"]);
+      const result = await isolated.mf([
+        "thread",
+        "tail",
+        THREAD_ID,
+        "--until-idle",
+        "--timeout",
+        "100ms",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.timeout);
+      expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+        type: "result",
+        command: "thread.tail",
+        outcome: "timeout",
+        reason: "running",
+        stillRunning: { status: "streaming" },
+      });
+      const snapshot = await isolated.mf(["thread", "view", THREAD_ID, "--json"]);
+      expect(snapshot.stdout).toContain("streaming");
+    } finally {
+      await isolated.close();
+    }
   });
 });

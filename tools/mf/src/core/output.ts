@@ -43,14 +43,19 @@ export class Output {
   /**
    * One stream record: an NDJSON line with --json, otherwise a text line (null skips).
    * `--fields` keeps `type` plus whichever requested keys each record has, since
-   * stream records differ in shape and a missing key is not a usage error there.
+   * terminal records also keep command, outcome and reason. Stream records differ in shape and a missing key is not a usage error there.
    */
   record(value: Record<string, unknown>, textLine: string | null, textStream: "out" | "err"): void {
     if (this.mode.json) {
       const fields = this.mode.fields;
       const line = fields?.length
         ? Object.fromEntries(
-            Object.entries(value).filter(([key]) => key === "type" || fields.includes(key)),
+            Object.entries(value).filter(
+              ([key]) =>
+                key === "type" ||
+                (value.type === "result" && ["command", "outcome", "reason"].includes(key)) ||
+                fields.includes(key),
+            ),
           )
         : value;
       this.io.stdout.write(`${JSON.stringify(line)}\n`);
@@ -99,7 +104,13 @@ export function selectFields<T>(value: T, fields: readonly string[] | undefined)
         hint: `Available fields: ${Object.keys(record).join(", ")}`,
       });
     }
-    return Object.fromEntries(fields.filter((field) => field in record).map((f) => [f, record[f]]));
+    const selected =
+      record.type === "result"
+        ? [...new Set(["type", "command", "outcome", "reason", ...fields])]
+        : fields;
+    return Object.fromEntries(
+      selected.filter((field) => field in record).map((f) => [f, record[f]]),
+    );
   };
   return Array.isArray(value) ? value.map(pick) : pick(value);
 }
