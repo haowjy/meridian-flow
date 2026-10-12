@@ -375,12 +375,16 @@ export function NotImportedSection({
 export function RootsBlock({
   roots,
   areasMessage,
-  onOpenRoot,
   summary,
 }: {
-  roots: { rootId: number; kind: "folder" | "file"; name: string; openable: boolean }[];
+  roots: {
+    key: string | number;
+    kind: "folder" | "file";
+    name: string;
+    /** Present when the root can be shown: a folder reveals in the tree, a document opens. */
+    onOpen?: () => void;
+  }[];
   areasMessage?: ReactNode;
-  onOpenRoot: (rootId: number) => void;
   summary: string[];
 }) {
   return (
@@ -389,7 +393,7 @@ export function RootsBlock({
       <ul>
         {roots.map((root) => (
           <ItemRow
-            key={root.rootId}
+            key={root.key}
             name={root.name}
             openable={false}
             icon={
@@ -400,12 +404,12 @@ export function RootsBlock({
               )
             }
             actions={
-              root.openable ? (
+              root.onOpen ? (
                 <Button
                   size="sm"
                   variant="outline"
                   aria-label={t`Open ${root.name}`}
-                  onClick={() => onOpenRoot(root.rootId)}
+                  onClick={root.onOpen}
                 >
                   <Trans>Open</Trans>
                 </Button>

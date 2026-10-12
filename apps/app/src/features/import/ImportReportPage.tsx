@@ -86,8 +86,9 @@ export function ImportReportPage({
   // Stop here before anything was sent: the import ended on this tab alone.
   const nothingImported = !report && local?.phase.kind === "idle" && local.rows.length === 0;
   const destination = destinationName(state);
+  // A Meridian export has no wrapper folder: its areas received the files.
   const exportRoot =
-    model.roots.length === 1 && model.roots[0].id === null && model.areas.length > 1;
+    model.roots.length === 1 && model.roots[0].kind === "folder" && model.roots[0].id === null;
   const header = nothingImported
     ? { title: t`Nothing was imported.` }
     : reportHeader({
@@ -238,12 +239,24 @@ export function ImportReportPage({
         {nothingImported || !report ? null : (
           <>
             <RootsBlock
-              roots={model.roots.map((root) => ({
-                rootId: root.rootId,
-                kind: root.kind,
-                name: root.name,
-                openable: root.uri !== null && display !== "preparing",
-              }))}
+              roots={
+                exportRoot
+                  ? exportAreas(model.areas).map(({ scheme, label }) => ({
+                      key: scheme,
+                      kind: "folder" as const,
+                      name: label,
+                      onOpen: () => coordinator.reveal({ scheme, path: "/" }),
+                    }))
+                  : model.roots.map((root) => ({
+                      key: root.rootId,
+                      kind: root.kind,
+                      name: root.name,
+                      onOpen:
+                        root.uri !== null && display !== "preparing"
+                          ? () => openRoot(root.rootId)
+                          : undefined,
+                    }))
+              }
               areasMessage={
                 exportRoot ? (
                   <Trans>
@@ -251,7 +264,6 @@ export function ImportReportPage({
                   </Trans>
                 ) : undefined
               }
-              onOpenRoot={openRoot}
               summary={counts ? summarySentences(counts) : []}
             />
             <FailedSection
@@ -280,6 +292,18 @@ export function ImportReportPage({
       ) : null}
     </div>
   );
+}
+
+/** The areas a Meridian export filled, in the order the tree lists them. */
+function exportAreas(schemes: readonly string[]): { scheme: string; label: string }[] {
+  const labels: Record<string, string> = {
+    manuscript: t`Manuscript`,
+    kb: t`Knowledge Base`,
+    unfiled: t`Unfiled`,
+  };
+  return ["manuscript", "kb", "unfiled"]
+    .filter((scheme) => schemes.includes(scheme))
+    .map((scheme) => ({ scheme, label: labels[scheme] }));
 }
 
 function NothingDismiss({ onDone }: { onDone: () => void }) {
