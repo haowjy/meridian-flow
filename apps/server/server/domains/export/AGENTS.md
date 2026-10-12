@@ -15,3 +15,10 @@ files move while it streams.
   collab export read door receives an export scope over the frozen map.
 - The visible `meridian-export.json` marker carries `formatVersion`, `areas`,
   `works`, and the count of internal link occurrences excluded from the vault.
+
+Project export starts through POST `/api/projects/:id/exports`. Preparation
+counts outside links and unapplied Work drafts, then issues a ten-minute,
+one-shot owner-bound download ticket. The ticket keeps the frozen inventory,
+not rendered project bytes. The process adapter is ephemeral: a restart or
+expired ticket requires a new start request. Download progress and mid-stream
+failures belong to the browser; preparation failures belong in the dialog.

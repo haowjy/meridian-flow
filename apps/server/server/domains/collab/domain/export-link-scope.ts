@@ -20,7 +20,7 @@ export class ExportLinkScope implements DocumentLinkScope {
     private readonly addresses: ReadonlyMap<string, string>,
     private readonly roots: ReadonlyMap<string, string>,
     private readonly settlements: ReadonlyMap<string, string>,
-    private readonly onExcluded: () => void,
+    private readonly onExcluded: (address: string | null) => void,
   ) {}
 
   private spell(
@@ -31,7 +31,7 @@ export class ExportLinkScope implements DocumentLinkScope {
   ): SpelledHref {
     const holder = this.paths.get(this.holderId);
     if (!target || !holder) {
-      if (internal) this.onExcluded();
+      if (internal) this.onExcluded(fallback.address);
       return fallback;
     }
     const path = posix
@@ -58,7 +58,9 @@ export class ExportLinkScope implements DocumentLinkScope {
           : undefined;
     const fallback = {
       href: attrs.href,
-      address: id ? (this.uris.get(id) ?? address?.uri ?? null) : (address?.uri ?? null),
+      address: id
+        ? (this.uris.get(id) ?? (address?.uri.startsWith("user://") ? address.uri : null))
+        : (address?.uri ?? null),
     };
     let target = id
       ? this.paths.get(id)

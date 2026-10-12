@@ -1,6 +1,13 @@
 /** Live single-file and incremental ZIP export over a frozen project inventory. */
 import { Readable } from "node:stream";
-import { type DocumentId, readStoredDocumentProperties, type UserId } from "@meridian/contracts";
+import {
+  type DocumentId,
+  type ExportOutsideArea,
+  type ProjectExportStart,
+  parseContextUri,
+  readStoredDocumentProperties,
+  type UserId,
+} from "@meridian/contracts";
 import { Zip, ZipPassThrough } from "fflate";
 import { ExportLinkScope } from "../../collab/domain/export-link-scope.js";
 import type { CollabDomain } from "../../collab/index.js";
@@ -8,6 +15,7 @@ import { exportFilename } from "../../context/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type { ExportSnapshotStore } from "../ports/export-snapshot.js";
+import type { ExportTickets } from "../ports/export-tickets.js";
 import { buildExportLayout, type ExportOptions, portableName } from "./export-layout.js";
 
 export class ExportReadError extends Error {
@@ -22,6 +30,8 @@ export class ExportReadError extends Error {
 
 export function createProjectExport(deps: {
   snapshot: ExportSnapshotStore;
+  tickets: ExportTickets;
+  pendingDrafts: { count(projectId: string): Promise<number> };
   documents: Pick<CollabDomain, "readForExport" | "resolveManifestMembership">;
   files: Pick<FileAccess, "listAccess">;
   objects: Pick<ObjectStorePort, "get">;
@@ -47,10 +57,15 @@ export function createProjectExport(deps: {
     );
     const uris = new Map(documents.map((doc) => [doc.id, doc.uri]));
     const byId = new Map(documents.map((doc) => [doc.id, doc]));
-    async function read(
-      documentId: string,
-    ): Promise<{ bytes: Uint8Array; mimeType: string; filename: string; excludedLinks: number }> {
+    async function read(documentId: string): Promise<{
+      bytes: Uint8Array;
+      mimeType: string;
+      filename: string;
+      excludedLinks: number;
+      outsideAreas: ExportOutsideArea[];
+    }> {
       let excludedLinks = 0;
+      const outsideAreas = new Set<ExportOutsideArea>();
       const document = byId.get(documentId);
       if (!document) throw new ExportReadError("not_found", "Document is not available for export");
       const filename =
@@ -65,14 +80,30 @@ export function createProjectExport(deps: {
             result.error.code === "not_found" ? "not_found" : "storage_unavailable",
             result.error.message,
           );
-        return { ...result.value, filename, excludedLinks };
+        return { ...result.value, filename, excludedLinks, outsideAreas: [] };
       }
       const result = await deps.documents.readForExport(
         documentId,
         (links) =>
-          new ExportLinkScope(documentId, links, paths, uris, addresses, roots, settlements, () => {
-            excludedLinks++;
-          }),
+          new ExportLinkScope(
+            documentId,
+            links,
+            paths,
+            uris,
+            addresses,
+            roots,
+            settlements,
+            (address) => {
+              excludedLinks++;
+              const parsed = address ? parseContextUri(address) : null;
+              const scheme = parsed?.ok ? parsed.value.scheme : null;
+              outsideAreas.add(
+                scheme === "scratch" || scheme === "uploads" || scheme === "user"
+                  ? scheme
+                  : "deleted",
+              );
+            },
+          ),
       );
       if (!result.ok)
         throw new ExportReadError("document_unavailable", "Document could not be read for export");
@@ -84,6 +115,7 @@ export function createProjectExport(deps: {
       return {
         filename,
         excludedLinks,
+        outsideAreas: [...outsideAreas],
         bytes: new TextEncoder().encode(frontmatter + result.value),
         mimeType: "text/markdown; charset=utf-8",
       };
@@ -143,8 +175,49 @@ export function createProjectExport(deps: {
         { objectMode: false, highWaterMark: 65536 },
       );
     }
-    return { paths, read, stream };
+    async function summarize() {
+      let count = 0;
+      const areas = new Set<ExportOutsideArea>();
+      for (const id of paths.keys()) {
+        if (byId.get(id)?.storageUrl) continue;
+        const file = await read(id);
+        count += file.excludedLinks;
+        for (const area of file.outsideAreas) areas.add(area);
+      }
+      return { count, areas: [...areas] };
+    }
+    return { paths, read, stream, summarize };
   }
-  return { prepare };
+  return {
+    prepare,
+    async start(
+      projectId: string,
+      accountId: string,
+      projectName: string,
+      options: ExportOptions,
+    ): Promise<ProjectExportStart> {
+      const prepared = await prepare(projectId, accountId, options);
+      const [outsideLinks, pendingDrafts] = await Promise.all([
+        prepared.summarize(),
+        deps.pendingDrafts.count(projectId),
+      ]);
+      const fileName = `${projectName}.zip`;
+      const id = deps.tickets.issue({
+        projectId,
+        accountId,
+        fileName,
+        stream: () => prepared.stream(projectName),
+      });
+      return {
+        downloadUrl: `/api/projects/${encodeURIComponent(projectId)}/export.zip?export=${id}`,
+        fileName,
+        outsideLinks,
+        pendingDrafts,
+      };
+    },
+    download(id: string, projectId: string, accountId: string) {
+      return deps.tickets.take(id, projectId, accountId);
+    },
+  };
 }
 export type ProjectExport = ReturnType<typeof createProjectExport>;

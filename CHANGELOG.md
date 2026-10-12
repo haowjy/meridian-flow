@@ -4,7 +4,7 @@
 
 ### Added
 
-- Export projects as streamed Obsidian-ready ZIPs, with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
+- Prepare counted project exports with visible failures and unapplied-draft summaries, then stream Obsidian-ready ZIPs with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
 - Save binary API downloads with `./mf api GET <path> --output <file>`.
 
 

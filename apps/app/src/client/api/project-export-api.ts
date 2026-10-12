@@ -1,14 +1,17 @@
-/** Project ZIP download, kept native so the browser streams it to disk. */
+/** Counted export preparation, followed by a native streamed browser download. */
+import type { ProjectExportOptions, ProjectExportStart } from "@meridian/contracts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
-export function downloadProjectExport(
+import { postJson } from "./http-client";
+export function startProjectExport(
   projectId: string,
-  options: { scratch: boolean; uploads: boolean },
+  options: ProjectExportOptions,
+  signal?: AbortSignal,
 ) {
-  const query = new URLSearchParams();
-  if (options.scratch) query.set("scratch", "1");
-  if (options.uploads) query.set("uploads", "1");
+  return postJson<ProjectExportStart>(`${apiProjectPath(projectId)}/exports`, options, { signal });
+}
+export function downloadProjectExport(url: string) {
   const anchor = document.createElement("a");
-  anchor.href = `${apiProjectPath(projectId)}/export.zip?${query}`;
+  anchor.href = url;
   anchor.download = "";
   document.body.append(anchor);
   anchor.click();

@@ -1,5 +1,5 @@
-/** Owner-gated project ZIP with optional Work Scratch and Uploads. */
-import { defineEventHandler, getQuery, getRouterParam, setHeader } from "nitro/h3";
+/** Consume a prepared, owner-bound download ticket and stream its frozen ZIP. */
+import { createError, defineEventHandler, getQuery, getRouterParam, setHeader } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/project-access.js";
 import { attachmentDisposition } from "../../../../lib/attachment-disposition.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
@@ -11,12 +11,13 @@ export default defineEventHandler(async (event) => {
     requireRequestId(getRouterParam(event, "projectId"), "projectId"),
     user.userId,
   );
-  const query = getQuery(event);
-  const snapshot = await app.projectExport.prepare(project.id, user.userId, {
-    scratch: query.scratch === "1",
-    uploads: query.uploads === "1",
-  });
+  const token = getQuery(event).export;
+  if (typeof token !== "string")
+    throw createError({ statusCode: 400, message: "Prepare an export before downloading it" });
+  const ticket = app.projectExport.download(token, project.id, user.userId);
+  if (!ticket)
+    throw createError({ statusCode: 404, message: "This export expired. Prepare a new export." });
   setHeader(event, "Content-Type", "application/zip");
-  setHeader(event, "Content-Disposition", attachmentDisposition(`${project.name}.zip`));
-  return snapshot.stream(project.name);
+  setHeader(event, "Content-Disposition", attachmentDisposition(ticket.fileName));
+  return ticket.stream();
 });

@@ -15,4 +15,9 @@ export * from "./drafts/index.js";
 export * from "./enums";
 export * from "./ids";
 export * from "./jsonb";
+export type {
+  ExportOutsideArea,
+  ProjectExportOptions,
+  ProjectExportStart,
+} from "./project-export.js";
 export * from "./usage";

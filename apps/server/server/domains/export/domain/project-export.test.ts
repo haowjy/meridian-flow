@@ -9,6 +9,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { ExportLinkScope } from "../../collab/domain/export-link-scope.js";
+import { createProcessExportTickets } from "../adapters/process-export-tickets.js";
 import type { ExportDocument } from "../ports/export-snapshot.js";
 import { buildExportLayout } from "./export-layout.js";
 import { createProjectExport } from "./project-export.js";
@@ -128,7 +129,14 @@ function fixture() {
   const bytes = new Uint8Array(2 * 1024 * 1024);
   bytes.set([137, 80, 78, 71, 255]);
   const reads: string[] = [];
+  let unavailable = false;
   const service = createProjectExport({
+    tickets: createProcessExportTickets(),
+    pendingDrafts: {
+      async count() {
+        return 3;
+      },
+    },
     snapshot: {
       async read() {
         return {
@@ -148,6 +156,7 @@ function fixture() {
         return { members: docs.map((doc) => doc.id) } as never;
       },
       async readForExport(id, scope) {
+        if (unavailable) return { ok: false, error: { code: "not_found", documentId: id } };
         reads.push(id);
         const holder = createHolderLinkScope(
           {
@@ -194,7 +203,16 @@ function fixture() {
       },
     },
   });
-  return { service, docs, blocks, bytes, reads };
+  return {
+    service,
+    docs,
+    blocks,
+    bytes,
+    reads,
+    failReads() {
+      unavailable = true;
+    },
+  };
 }
 async function entries(stream: AsyncIterable<unknown>) {
   const chunks: Buffer[] = [];
@@ -218,6 +236,31 @@ function checkRelativeLinks(files: Record<string, Uint8Array>) {
   }
 }
 describe("project exports", () => {
+  it("prepares counted, owner-bound one-shot downloads without losing their frozen paths", async () => {
+    const { service, docs, failReads } = fixture();
+    const started = await service.start("project", "account", "Serial", {
+      scratch: false,
+      uploads: false,
+    });
+    expect(started.fileName).toBe("Serial.zip");
+    expect(started.outsideLinks.count).toBe(2);
+    expect(started.outsideLinks.areas.sort()).toEqual(["scratch", "uploads"]);
+    expect(started.pendingDrafts).toBe(3);
+    const token =
+      new URL(started.downloadUrl, "https://meridian.test").searchParams.get("export") ?? "";
+    expect(service.download(token, "project", "another-account")).toBeNull();
+    const lore = docs.find((doc) => doc.id === uuid("lore"));
+    if (!lore) throw new Error("Fixture lore missing");
+    lore.uri = "user://Moved";
+    const ticket = service.download(token, "project", "account");
+    if (!ticket) throw new Error("Prepared download missing");
+    checkRelativeLinks(await entries(ticket.stream()));
+    expect(service.download(token, "project", "account")).toBeNull();
+    failReads();
+    await expect(
+      service.start("project", "account", "Serial", { scratch: false, uploads: false }),
+    ).rejects.toThrow("Document could not be read for export");
+  });
   it("downloads lossless frontmatter and export-only literals without introducing links", async () => {
     const { service, blocks } = fixture();
     const snapshot = await service.prepare("project", "account", {
