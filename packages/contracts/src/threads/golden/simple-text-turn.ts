@@ -25,6 +25,7 @@ export const SIMPLE_TEXT_TURN_ORCHESTRATOR: OrchestratorEvent[] = [
   {
     type: "messages.delivered",
     byTurnId: GOLDEN_ASSISTANT_TURN_ID,
+    byTurnPosition: 1,
     executionId: GOLDEN_EXECUTION_ID,
     userTurnIds: [GOLDEN_USER_TURN_ID],
   },

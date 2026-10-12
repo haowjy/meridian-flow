@@ -18,6 +18,7 @@ export const SIMPLE_TOOL_TURN_AGUI: AGUIEvent[] = [
       writeMode: null,
       executionId: GOLDEN_EXECUTION_ID,
       reservedForUserTurnIds: [GOLDEN_USER_TURN_ID],
+      position: 1,
     },
   },
   {
