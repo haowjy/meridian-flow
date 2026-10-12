@@ -93,7 +93,9 @@ identity-bound `upload.delete.ts`. Upload routes delegate all authority,
 classification, collision, persistence, and deletion decisions to `UploadIntake`.
 Composer reference removal never calls the separate upload-delete route.
 
-Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
+Browser bookmarks use `address.get.ts`. A validated review branch resolves its
+document by identity in its active draft tree, independent of path occupancy;
+its canonical address repairs old locators. Plain bookmarks use a current-occupant-first lookup with
 previous paths pointing directly to stable document IDs. Chat links use previous locations only when there is no current occupant;
 editor links carry a stable ref and never consult them. Every successful namespace claim consumes the exact old
 alias in the same transaction; source provisioning is not a path claim.

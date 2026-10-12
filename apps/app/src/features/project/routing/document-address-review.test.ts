@@ -1,30 +1,63 @@
 /** Review admission requires both explicit branch intent and a resolved Work. */
-import { apiProjectDocumentAddressPath } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
-import { documentAddressReview } from "./document-address-review";
+import { bindDocumentAddressReview, reviewAddressRouteBinding } from "./document-address-review";
 
-it("sends the selected Work and per-document branch", () => {
-  expect(documentAddressReview("branch-a", "work-a")).toEqual({
-    workId: "work-a",
-    draftBranchId: "branch-a",
+// A review must bind before any catalog path occupant can participate.
+it("waits for branch identity and then sends it, independent of the live path", () => {
+  expect(
+    bindDocumentAddressReview("branch-a", "work-a", { status: "loading", groups: null }),
+  ).toEqual({ kind: "pending" });
+  expect(
+    bindDocumentAddressReview("branch-a", "work-a", {
+      status: "ready",
+      groups: [{ documentId: "hidden", draft: { draftId: "branch-a" } }] as never,
+    }),
+  ).toEqual({
+    kind: "review",
+    review: { workId: "work-a", draftBranchId: "branch-a", documentId: "hidden" },
   });
-  const url = apiProjectDocumentAddressPath("project-a", "kb", "hidden.md", {
-    workId: null,
-    review: documentAddressReview("branch-a", "work-a"),
+  expect(
+    bindDocumentAddressReview(undefined, "work-a", { status: "loading", groups: null }),
+  ).toEqual({ kind: "plain" });
+  expect(bindDocumentAddressReview("missing", "work-a", { status: "empty", groups: [] })).toEqual({
+    kind: "unavailable",
   });
-  expect(url).toContain("reviewWorkId=work-a");
-  expect(url).toContain("draftBranchId=branch-a");
 });
 
-it.each([
-  [undefined, "work-a"],
-  ["branch-a", null],
-  [undefined, null],
-] as const)("omits review authority without draft %s or Work %s", (draftId, workId) => {
-  expect(documentAddressReview(draftId, workId)).toBeUndefined();
-  const url = apiProjectDocumentAddressPath("project-a", "kb", "hidden.md", {
-    workId: null,
-    review: documentAddressReview(draftId, workId),
+it("replaces a cold live path binding only after the selected review identity is admitted", () => {
+  const binding = {
+    kind: "review" as const,
+    review: { workId: "work", draftBranchId: "branch", documentId: "hidden" },
+  };
+  const selection = {
+    status: "bound" as const,
+    revision: 2,
+    locator: { scheme: "kb" as const, path: "/Withern", workId: "work" },
+    identity: { kind: "server" as const, documentId: "live" },
+  };
+  const destination = { kind: "document" as const, scheme: "kb" as const, path: "Withern" };
+  const result = {
+    kind: "current",
+    document: { documentId: "hidden" },
+  } as import("@meridian/contracts/protocol").DocumentAddressResult;
+  expect(reviewAddressRouteBinding(binding, result, selection, destination, "work")).toEqual({
+    revision: 2,
+    documentId: "hidden",
   });
-  expect(url).not.toContain("review");
+  expect(
+    reviewAddressRouteBinding({ kind: "pending" }, result, selection, destination, "work"),
+  ).toBeNull();
+  expect(reviewAddressRouteBinding(binding, undefined, selection, destination, "work")).toBeNull();
+  expect(
+    reviewAddressRouteBinding(
+      binding,
+      result,
+      { ...selection, identity: { kind: "server", documentId: "hidden" } },
+      destination,
+      "work",
+    ),
+  ).toBeNull();
+  expect(
+    reviewAddressRouteBinding(binding, result, selection, destination, "other-work"),
+  ).toBeNull();
 });

@@ -1,164 +1,121 @@
-/** Review address selection cannot turn stale or foreign branches into read capabilities. */
+/** Review identity admission preserves draft authority without trusting a client selector. */
 
-import { describe, expect, it, vi } from "vitest";
+import type { DocumentAddressResult } from "@meridian/contracts/protocol";
+import { expect, it } from "vitest";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
-import type { DocumentAddressInput } from "../domains/context/ports/document-address.js";
-import {
-  createFileAccess,
-  createOwnerFileGrants,
-  type FileFacts,
-} from "../domains/file-policy/index.js";
+import type { DocumentAddressResolver } from "../domains/context/ports/document-address.js";
+import type { FileDestination } from "../domains/file-policy/index.js";
 import { handleDocumentAddressRequest } from "./document-address-route.js";
 
 function fixture() {
-  const input: Omit<DocumentAddressInput, "view"> = {
+  const input = {
     projectId: "project" as never,
     userId: "account",
-    scheme: "manuscript",
+    scheme: "kb" as const,
     workId: null,
-    path: "chapters/one.md",
+    path: "Withern",
   };
-  const item = {
-    draftId: "whole-draft",
-    draftBranchId: "branch",
-    documentId: "document",
-    path: "manuscript://chapters/one",
-  } as DraftReviewItem;
-  const resolved = { kind: "current", document: { documentId: "document" } } as const;
+  const state = {
+    work: { id: "work", slug: "review", projectId: "project", deletedAt: null as Date | null },
+    draftId: "whole-draft" as string | null,
+    items: [
+      {
+        draftId: "whole-draft",
+        draftBranchId: "branch",
+        documentId: "hidden",
+        path: "kb://Withern",
+      },
+    ] as DraftReviewItem[],
+    denied: false,
+    available: true,
+  };
+  const document = (documentId: string): DocumentAddressResult =>
+    ({
+      kind: "current",
+      document: { documentId, entry: { uri: "kb://Renamed" } },
+    }) as DocumentAddressResult;
+  const documentAddresses: DocumentAddressResolver = {
+    resolve: async () => document("live"),
+    resolveById: async (selected) =>
+      state.available && selected.documentId === "hidden" && selected.view?.kind === "draft"
+        ? document("hidden")
+        : { kind: "unavailable" },
+  };
   const deps = {
     workRepo: {
-      findById: vi.fn().mockResolvedValue({ id: "work", slug: "review", projectId: "project" }),
+      findById: async (id: string) => (id === state.work.id ? (state.work as never) : null),
     },
-    draftReview: { items: vi.fn().mockResolvedValue({ draftId: "whole-draft", items: [item] }) },
-    documentAddresses: { resolve: vi.fn().mockResolvedValue(resolved) },
+    draftReview: { items: async () => ({ draftId: state.draftId, items: state.items }) as never },
+    documentAddresses,
     fileAccess: {
-      authorize: vi.fn().mockResolvedValue({ kind: "granted" }),
-      authorizeAt: vi.fn().mockResolvedValue({ kind: "granted" }),
+      authorize: async () =>
+        state.denied ? ({ denied: true } as never) : ({ kind: "granted" } as never),
+      authorizeAt: async (_actor: unknown, _target: unknown, destination: FileDestination) =>
+        destination.kind === "draft" && destination.workId === state.work.id && !state.denied
+          ? ({ kind: "granted" } as never)
+          : ({ denied: true } as never),
     },
   };
-  return { input, item, resolved, deps, review: { workId: "work", draftBranchId: "branch" } };
+  return {
+    input,
+    state,
+    deps,
+    review: { workId: "work", draftBranchId: "branch", documentId: "hidden" },
+  };
 }
 
-it("maps the branch to the active whole draft and authorizes the same draft destination", async () => {
-  const { input, deps, review, resolved } = fixture();
-  expect(await handleDocumentAddressRequest(deps, input, review)).toEqual(resolved);
-  expect(deps.documentAddresses.resolve).toHaveBeenCalledWith({
-    ...input,
-    view: { kind: "draft", draftId: "whole-draft" },
-  });
-  expect(deps.fileAccess.authorizeAt).toHaveBeenCalledWith(
-    { accountId: "account" },
-    { kind: "document", documentId: "document" },
-    { kind: "draft", workId: "work", workSlug: "review" },
-    "read",
-  );
-  expect(deps.fileAccess.authorize).not.toHaveBeenCalled();
-});
-
-it("leaves plain addresses live-only", async () => {
-  const { input, deps } = fixture();
-  await handleDocumentAddressRequest(deps, input);
-  expect(deps.documentAddresses.resolve).toHaveBeenCalledWith({ ...input, view: undefined });
-  expect(deps.draftReview.items).not.toHaveBeenCalled();
-  expect(deps.fileAccess.authorizeAt).not.toHaveBeenCalled();
-});
-
-describe("unavailable review addresses", () => {
-  it.each([
-    "another Work",
-    "stale branch",
-    "path mismatch",
-    "another draft",
-    "document mismatch",
-    "empty document identity",
-    "foreign project",
-    "deleted Work",
-  ])("%s", async (reason) => {
-    const { input, deps, review, item } = fixture();
-    if (reason === "another Work") {
-      review.workId = "rival";
-      deps.draftReview.items.mockResolvedValue({ draftId: "rival-draft", items: [] });
-    }
-    if (reason === "stale branch") review.draftBranchId = "stale";
-    if (reason === "path mismatch") input.path = "chapters/two";
-    if (reason === "another draft") item.draftId = "old-draft" as never;
-    if (reason === "document mismatch") Object.assign(review, { documentId: "other" });
-    if (reason === "empty document identity") Object.assign(review, { documentId: "" });
-    if (reason === "foreign project")
-      deps.workRepo.findById.mockResolvedValue({ projectId: "foreign" });
-    if (reason === "deleted Work")
-      deps.workRepo.findById.mockResolvedValue({ projectId: "project", deletedAt: new Date() });
-    expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({
-      kind: "unavailable",
-    });
-    expect(deps.documentAddresses.resolve).not.toHaveBeenCalled();
-    expect(deps.fileAccess.authorizeAt).not.toHaveBeenCalled();
-  });
-
-  it("refuses an identity replaced between validation and resolution", async () => {
-    const { input, deps, review } = fixture();
-    deps.documentAddresses.resolve.mockResolvedValue({
-      kind: "current",
-      document: { documentId: "replacement" },
-    });
-    expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({
-      kind: "unavailable",
-    });
-  });
-});
-
-it("refuses a validated review when the draft read grant is denied", async () => {
+it("selects the branch's hidden document rather than the live path occupant", async () => {
   const { input, deps, review } = fixture();
-  deps.fileAccess.authorizeAt.mockResolvedValue({ denied: true });
-  expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({ kind: "unavailable" });
+  expect(await handleDocumentAddressRequest(deps, input, review)).toMatchObject({
+    kind: "current",
+    document: { documentId: "hidden" },
+  });
+  expect(await handleDocumentAddressRequest(deps, input)).toMatchObject({
+    kind: "current",
+    document: { documentId: "live" },
+  });
 });
 
-it("admits an archived Work's review for its owner, but not another account, through the real file policy", async () => {
-  const { input, deps, review, resolved } = fixture();
-  deps.workRepo.findById.mockResolvedValue({
-    id: "work",
-    slug: "review",
-    projectId: "project",
-    archivedAt: new Date(),
-  });
-  const facts: FileFacts = {
-    target: { kind: "document", documentId: "document" },
-    projectId: "project" as never,
-    ownerAccountId: "account" as never,
-    projectDeleted: false,
-    ownerWork: null,
-    deleted: false,
-    scheme: "manuscript",
-    self: { kind: "document", id: "document" },
-    ancestors: [{ kind: "project", id: "project" as never }],
-    draftWork: {
-      id: "work" as never,
-      slug: "review",
-      isNoWork: false,
-      archived: true,
-      deleted: false,
-    },
-  };
-  const access = createFileAccess({
-    facts: {
-      load: async ({ draftWorkId }) => (draftWorkId === facts.draftWork?.id ? facts : null),
-      loadList: async () => new Map(),
-    },
-    grants: createOwnerFileGrants(),
-    readAgentChain: async () => [],
-  });
-  const services = { ...deps, fileAccess: access };
-  expect(await handleDocumentAddressRequest(services, input, review)).toEqual(resolved);
+it("repairs an old locator from branch identity, including a copied selector with no document id", async () => {
+  const { input, deps, review } = fixture();
+  input.path = "Before rename";
   expect(
-    await handleDocumentAddressRequest(services, { ...input, userId: "another-account" }, review),
-  ).toEqual({ kind: "unavailable" });
-  // The owner's admitted read must not also grant mutation on this frozen draft.
-  expect(
-    await access.authorizeAt(
-      { accountId: input.userId as never },
-      facts.target,
-      { kind: "draft", workId: "work" as never, workSlug: "review" },
-      "edit",
-    ),
-  ).toMatchObject({ denied: true, reason: "work_archived" });
+    await handleDocumentAddressRequest(deps, input, {
+      workId: review.workId,
+      draftBranchId: review.draftBranchId,
+    }),
+  ).toMatchObject({
+    kind: "current",
+    document: { documentId: "hidden", entry: { uri: "kb://Renamed" } },
+  });
+});
+
+it.each([
+  "bad branch",
+  "another Work",
+  "foreign project",
+  "deleted Work",
+  "inactive draft",
+  "another draft",
+  "id mismatch",
+  "hidden unused id",
+  "empty id",
+  "denied grant",
+  "missing identity",
+  "ambiguous branch",
+])("answers unavailable for %s", async (reason) => {
+  const { input, state, deps, review } = fixture();
+  if (reason === "bad branch") review.draftBranchId = "bad";
+  if (reason === "another Work") review.workId = "other";
+  if (reason === "foreign project") state.work.projectId = "other";
+  if (reason === "deleted Work") state.work.deletedAt = new Date();
+  if (reason === "inactive draft") state.draftId = null;
+  if (reason === "another draft")
+    state.items = state.items.map((item) => ({ ...item, draftId: "old" as never }));
+  if (reason === "id mismatch" || reason === "hidden unused id") review.documentId = "unused";
+  if (reason === "empty id") review.documentId = "";
+  if (reason === "denied grant") state.denied = true;
+  if (reason === "missing identity") state.available = false;
+  if (reason === "ambiguous branch") state.items = [...state.items, ...state.items];
+  expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({ kind: "unavailable" });
 });

@@ -1420,6 +1420,9 @@ export function createInMemoryAppServices(): AppServices {
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
     documentAddresses: {
+      async resolveById() {
+        return { kind: "unavailable" };
+      },
       async resolve() {
         return { kind: "unavailable" };
       },

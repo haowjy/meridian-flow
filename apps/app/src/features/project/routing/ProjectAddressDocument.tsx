@@ -1,21 +1,14 @@
 /** Publish an authorized address into the workspace; the document host owns live-session binding. */
-import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import {
-  contextOwner,
-  type DocumentAddressResult,
-  isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
-import { type ParsedRequestId, parseRequestId } from "@meridian/contracts/request-id";
+import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
-import { useContextTabsActions } from "@/client/stores";
+import { type ContextTab, useContextTabs, useContextTabsActions } from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
+import { canonicalDocumentAddress, canonicalReviewTabPatch } from "./document-address-canonical";
 import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
-import { workSelectionFor } from "./project-address-resolution";
 import type { createProjectNavigation } from "./project-navigation";
 
 export type AddressAdmission = {
@@ -52,6 +45,20 @@ export function ProjectAddressDocument({
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
   const { openTab } = useContextTabsActions();
+  const { tabs } = useContextTabs(projectId);
+  const reviewTab = tabs.find(
+    (tab): tab is Extract<ContextTab, { kind: "tracked" }> =>
+      tab.kind === "tracked" &&
+      tab.draftOnly === true &&
+      tab.reviewWorkId === workId &&
+      tab.reviewDraftId === draftOnlyId &&
+      !!result &&
+      result.kind !== "unavailable" &&
+      tab.documentId === result.document.documentId,
+  );
+  const reviewLocatorFingerprint = JSON.stringify(
+    reviewTab ? { scheme: reviewTab.scheme, path: reviewTab.path, name: reviewTab.name } : null,
+  );
   const admissionInput = useRef({ address, result, localFile, draftOnlyId });
   admissionInput.current = { address, result, localFile, draftOnlyId };
   // Address/catalog projections are rebuilt from JSON snapshots. Their object
@@ -62,11 +69,30 @@ export function ProjectAddressDocument({
     if (!workId || !navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
+    const canonical = canonicalDocumentAddress(address, result.document.entry, workId, noWorkId);
+    if (!canonical) {
+      onAdmission({
+        key: entryKey,
+        href,
+        documentId: result.document.documentId,
+        issue: "unavailable",
+      });
+      return;
+    }
     if (draftOnlyId) {
-      // No tab and no live room: the address carries the draft and
+      // No live tab or room: the address carries the draft and
       // EditorReviewAddressOwner opens its review.
-      if (address.draftId !== draftOnlyId)
-        void navigation.replaceIfCurrent(ticket, { ...address, draftId: draftOnlyId });
+      if (reviewTab) {
+        const patch = canonicalReviewTabPatch(
+          reviewTab,
+          canonical.destination,
+          result.document.entry.name,
+        );
+        if (patch)
+          openTab(projectId, { ...reviewTab, ...patch }, () => navigation.isCurrent(ticket));
+      }
+      const next = { ...canonical, draftId: draftOnlyId };
+      if (projectAddressHref(next) !== href) void navigation.replaceIfCurrent(ticket, next);
       return;
     }
     const identity = { href, key: entryKey, documentId: result.document.documentId };
@@ -75,11 +101,6 @@ export function ProjectAddressDocument({
     const publish = (issue: ProjectRouteIssue | undefined) => onAdmission({ ...identity, issue });
     publish("loading");
     const document = result.document.entry;
-    const uri = parseUnifiedContextUri(document.uri);
-    if (!uri.ok || !isProjectContextTreeScheme(uri.value.scheme)) {
-      publish("unavailable");
-      return;
-    }
     const scope = document.scope;
     const tabWorkId = scope.kind === "work" ? scope.workId : undefined;
     const lineageId = scope.kind === "lineage" ? scope.rootThreadId : undefined;
@@ -87,7 +108,7 @@ export function ProjectAddressDocument({
       const installed = openTab(
         projectId,
         contextTabFromFile(
-          uri.value.scheme,
+          canonical.destination.scheme,
           mergeLocalResourceState(projectCatalogFile(document), localFile),
           contextOwner(tabWorkId, lineageId),
         ),
@@ -98,33 +119,7 @@ export function ProjectAddressDocument({
         publish("unavailable");
         return;
       }
-      const destination: ProjectAddress["destination"] = {
-        kind: "document",
-        scheme: uri.value.scheme,
-        path: document.path.join("/"),
-      };
-      // A chat's Scratch is addressed by its lineage; the Editor's own Work stays implicit.
-      const { lineage: _previousLineage, ...previous } = address;
-      const next: ProjectAddress = lineageId
-        ? {
-            ...previous,
-            destination,
-            work: { kind: "absent" },
-            ...(parseRequestId(lineageId)
-              ? { lineage: parseRequestId(lineageId) as ParsedRequestId }
-              : {}),
-          }
-        : {
-            ...previous,
-            destination,
-            work: workSelectionFor(
-              destination,
-              scope.kind === "work" && isWorkScopedProjectContextScheme(uri.value.scheme)
-                ? scope.workId
-                : workId,
-              noWorkId,
-            ),
-          };
+      const next = canonical;
       if (projectAddressHref(next) !== href) {
         const replacement = await navigation.replaceIfCurrent(ticket, next);
         if (
@@ -145,6 +140,7 @@ export function ProjectAddressDocument({
     href,
     entryKey,
     admissionFingerprint,
+    reviewLocatorFingerprint,
     workId,
     noWorkId,
     navigation,
