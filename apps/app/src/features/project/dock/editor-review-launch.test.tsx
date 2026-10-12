@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 /** Review launches retain the row's locator and reuse the real draft-overlay mount. */
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import { CONTEXT_URI_SCHEMES, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { act, useEffect } from "react";
 import { expect, it } from "vitest";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { isDrafted } from "../../../../../server/server/domains/file-policy/domain/policy";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import {
   type AiDraftLaunchTarget,
@@ -14,7 +13,7 @@ import {
 } from "./editor-review-handoff";
 
 it.each(
-  CONTEXT_URI_SCHEMES.filter(isDrafted),
+  CONTEXT_URI_SCHEMES.filter(isDraftedScheme),
 )("launches creates and edits at the row's %s locator, retaining one overlay on repeat", async (scheme) => {
   const prior = useContextTabsStore.getState();
   useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });

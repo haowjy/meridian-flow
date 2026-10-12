@@ -1,12 +1,11 @@
 /** Warm exact content resolves readable routes independently from network address lookup. */
 
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import { CONTEXT_URI_SCHEMES, isDraftedScheme } from "@meridian/contracts/context-uri";
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
 import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
-import { isDrafted } from "../../../../../server/server/domains/file-policy/domain/policy";
 import {
   gateLiveView,
   reconcileDocumentAddress,
@@ -183,7 +182,7 @@ describe("gateLiveView", () => {
   const noTab = () => false;
 
   it("admits only hidden creates as draft-only in every drafted source", () => {
-    for (const scheme of CONTEXT_URI_SCHEMES.filter(isDrafted)) {
+    for (const scheme of CONTEXT_URI_SCHEMES.filter(isDraftedScheme)) {
       expect(gateLiveView(resolved, manifest([]), ready(group(true, scheme)), noTab)).toMatchObject(
         { draftOnly: { draft: { draftId: "draft-id" } } },
       );

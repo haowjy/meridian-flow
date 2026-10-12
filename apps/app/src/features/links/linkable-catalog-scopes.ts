@@ -5,9 +5,8 @@
  * writer's user catalog, the scope Work's catalog by row id (including No
  * Work), and a No Work chat's lineage Scratch. Unresolved surfaces have no
  * scope. These are the catalogs a contextual
- * address resolves in on the server
- * (`apps/server/server/domains/context/document-link-resolution.ts`), so the
- * local index can answer any address they hold.
+ * address resolves in on the server, so the local index can answer any
+ * address they hold.
  */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";

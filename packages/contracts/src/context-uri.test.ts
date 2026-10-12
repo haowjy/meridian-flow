@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalContextUri, documentTitleFromUri, parseContextUri } from "./context-uri.js";
+import {
+  canonicalContextUri,
+  documentTitleFromUri,
+  isDraftedScheme,
+  parseContextUri,
+} from "./context-uri.js";
 
 describe("parseContextUri", () => {
   it("treats Unfiled as a project namespace without Work authority", () => {
@@ -117,4 +122,17 @@ it("preserves literal href syntax in decoded document addresses", () => {
   expect(documentTitleFromUri("manuscript://Chapter#13")).toBe("Chapter#13");
   expect(documentTitleFromUri("manuscript://Book#1/Chapter 13")).toBe("Chapter 13");
   expect(documentTitleFromUri("manuscript://Chapter?13")).toBe("Chapter?13");
+});
+
+describe("isDraftedScheme", () => {
+  it.each([
+    ["manuscript", true],
+    ["kb", true],
+    ["user", true],
+    ["unfiled", true],
+    ["scratch", false],
+    ["uploads", false],
+  ] as const)("drafts %s: %s", (scheme, drafted) => {
+    expect(isDraftedScheme(scheme)).toBe(drafted);
+  });
 });
