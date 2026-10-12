@@ -135,6 +135,7 @@ export class ChatSubmissionOwner {
   get isCreating(): boolean {
     return this.destination === "creating";
   }
+  private creation: ChatSubmission["creation"];
   private reconciling = false;
   private readonly epoch = getChatSubmissionEpoch();
   constructor(private readonly options: OwnerOptions) {
@@ -182,6 +183,7 @@ export class ChatSubmissionOwner {
       },
       created: (thread) => {
         this.destination = "created";
+        this.creation = undefined;
         actions.ensureThread(thread);
         void invalidateProjectThreadData(queryClient, projectId);
         if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
@@ -272,9 +274,12 @@ export class ChatSubmissionOwner {
     const snapshot = readChatSubmissionSnapshot(accountId);
     if (!snapshot) return;
     const records = snapshot.filter((entry) => entry.threadId === threadId);
-    if (this.destination !== "editing") {
-      if (records.some((entry) => entry.creation)) this.destination = "creating";
-      else if (records.length > 0) this.destination = "created";
+    if (this.destination !== "editing" && this.destination !== "created") {
+      const creation = records.find((entry) => entry.creation)?.creation;
+      if (creation) {
+        this.creation = creation;
+        this.destination = "creating";
+      }
     }
     if (!records.length && this.destination === "creating") {
       void this.reconcileDestination();
@@ -335,12 +340,13 @@ export class ChatSubmissionOwner {
         if (!current() || !isThreadNotFound(error)) return;
         missing = true;
       }
-      if (!current()) return;
+      if (!current() || this.destination !== destination) return;
       if (!missing) {
         if (!snapshot) throw new Error("Thread snapshot response is empty");
         const thread = deserializeThreadSnapshot(snapshot).thread;
         actions.ensureThread(thread);
         this.destination = "created";
+        this.creation = undefined;
         this.rebuild();
         return;
       }
@@ -361,7 +367,6 @@ export class ChatSubmissionOwner {
       removeChatRow(queryClient, projectId, threadId);
       this.options.dissolveChat();
     } catch (error) {
-      this.destination = destination;
       reportError(error);
     } finally {
       this.reconciling = false;
@@ -371,7 +376,10 @@ export class ChatSubmissionOwner {
   submit = async (envelope: ComposerSubmitEnvelope): Promise<boolean> => {
     const { accountId, threadId, projectId, actions, current } = this.options;
     if (!current()) return false;
-    const creation = this.entries().find((entry) => entry.creation)?.creation;
+    const creation =
+      this.destination === "created"
+        ? undefined
+        : (this.creation ?? this.entries().find((entry) => entry.creation)?.creation);
     const entry: ChatSubmission = {
       recordId: envelope.submissionId,
       submissionId: envelope.submissionId,

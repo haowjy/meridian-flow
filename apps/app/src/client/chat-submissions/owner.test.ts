@@ -4,6 +4,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { MeridianApiError } from "@/client/api/meridian-error";
+import * as projectsApi from "@/client/api/projects-api";
 import { getThreadSnapshot } from "@/client/api/threads-api";
 import {
   bindChatSubmissions,
@@ -26,6 +27,7 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
+import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import { ChatSubmissionOwner } from "./owner";
 
 vi.mock("@/client/api/threads-api", async (actual) => ({
@@ -100,7 +102,12 @@ beforeEach(() => {
   vi.mocked(getThreadSnapshot).mockReset();
   vi.mocked(getThreadSnapshot).mockRejectedValue(
     new MeridianApiError(
-      { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+      {
+        code: "thread_not_found",
+        message: "missing",
+        source: "system",
+        retryable: false,
+      },
       404,
     ),
   );
@@ -581,4 +588,160 @@ it("forgetting a created chat drops its shared writer rows and its tab draft", a
   expect(read().presentation.size).toBe(0);
   expect(scenario.store.getState().turns("thread_1")).toEqual([]);
   expect(draft.initialDraft).toBeNull();
+});
+
+it("keeps a new Send on a never-created destination after another tab edits away the last creation record", async () => {
+  const account = "o4-new-send";
+  const creation = {
+    title: "Opening",
+    workId: null,
+    agentName: "General",
+    agentSlug: "general",
+    agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+  };
+  const snapshot = scenarioGate<never>();
+  const admission = scenarioGate<never>();
+  vi.mocked(getThreadSnapshot).mockImplementation(() => snapshot.promise);
+  bindChatSubmissions(account);
+  recordChatSubmission(account, {
+    ...entry("original", "Original refused create"),
+    recordId: "original",
+    submissionId: "original",
+    threadId: "thread_1",
+    projectId: "project-1",
+    createdAt: "2026-10-11T00:00:00Z",
+    state: "rejected",
+    creation,
+  });
+  const scenario = new ThreadRunScenario({
+    append: () => admission.promise,
+    lookup: async () => {
+      throw new Error("lookup unavailable");
+    },
+  });
+  const life = new AbortController();
+  const client = new QueryClient();
+  const dissolved = vi.fn();
+  const owner = new ChatSubmissionOwner({
+    accountId: account,
+    threadId: "thread_1",
+    projectId: "project-1",
+    signal: life.signal,
+    current: () => !life.signal.aborted,
+    controller: scenario.controller,
+    actions: scenario.store.getState(),
+    queryClient: client,
+    changed: () => {},
+    failed: () => {},
+    clear: () => {},
+    focusComposer: () => {},
+    dissolveChat: dissolved,
+  });
+  owner.rebuild();
+  const unsubscribe = subscribeChatSubmissions(owner.rebuild);
+  try {
+    // Tab B Edit has durably transferred original words to B's session draft and retired its journal.
+    retireChatSubmission(account, "original");
+    expect(owner.isCreating).toBe(true);
+    expect(getThreadSnapshot).toHaveBeenCalledOnce();
+    const projection = serializeComposerDraft(plainComposerDoc("New words from tab A"));
+    const source = composerSessionDraft(account, { kind: "chat", id: "thread_1" });
+    source.prependSnapshots([projection.draft]);
+    expect(
+      await owner.submit({
+        ...projection,
+        submissionId: "new-send",
+        acceptedRevision: projection.draft.revision,
+      }),
+    ).toBe(true);
+    expect(readChatSubmissions(account)[0]?.creation).toEqual(creation);
+    expect(owner.isCreating).toBe(true);
+    source.prependSnapshots([
+      serializeComposerDraft(plainComposerDoc("More unsent words in tab A")).draft,
+    ]);
+    // An inconclusive create must preserve words.
+    await owner.driver.drive("thread_1");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    snapshot.reject(
+      new MeridianApiError(
+        {
+          code: "thread_not_found",
+          message: "missing",
+          source: "system",
+          retryable: false,
+        },
+        404,
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const target = composerSessionDraft(account, { kind: "new-chat", id: "project-1" });
+    const retained = [
+      ...readChatSubmissions(account).map((e) => e.text),
+      source.initialDraft && serializeComposerDraft(source.initialDraft.doc).text,
+      target.initialDraft && serializeComposerDraft(target.initialDraft.doc).text,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    expect(retained).toContain("New words from tab A");
+  } finally {
+    life.abort();
+    unsubscribe();
+    owner.dispose();
+    scenario.controller.dispose();
+    client.clear();
+  }
+});
+
+it("ignores an older O4 missing snapshot after create-or-get confirms the destination", async () => {
+  const original = {
+    ...entry(),
+    creation: {
+      title: "Opening",
+      workId: null,
+      agentName: "General",
+      agentSlug: "general",
+      agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+    },
+  };
+  recordChatSubmission(account, original);
+  const confirmation = scenarioGate<never>();
+  vi.mocked(getThreadSnapshot).mockImplementation(() => confirmation.promise);
+  const scenario = new ThreadRunScenario();
+  const mounted = await mount(scenario);
+  retireChatSubmission(account, original.recordId);
+  const create = vi.spyOn(projectsApi, "createProjectThread").mockResolvedValue(
+    makeOptimisticThread({
+      id: "thread_1",
+      projectId: "project-1",
+      title: "Opening",
+      timestamp: new Date().toISOString(),
+      workId: null,
+      agent: { name: "General", slug: "general", selection: original.creation.agentSelection },
+    }),
+  );
+  try {
+    expect(await mounted.read().submit(serializeComposerDraft(plainComposerDoc("New words")))).toBe(
+      true,
+    );
+    await mounted.read().driver.drive("thread_1");
+    expect(create).toHaveBeenCalledOnce();
+    expect(mounted.read().isCreating).toBe(false);
+    confirmation.reject(
+      new MeridianApiError(
+        {
+          code: "thread_not_found",
+          message: "missing",
+          source: "system",
+          retryable: false,
+          details: { authenticatedUserId: account },
+        },
+        404,
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(mounted.read().isCreating).toBe(false);
+    expect(mounted.dissolved).not.toHaveBeenCalled();
+  } finally {
+    create.mockRestore();
+  }
 });
