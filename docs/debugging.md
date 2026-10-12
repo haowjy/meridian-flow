@@ -58,9 +58,9 @@ Use it for setup and durable reads; check send/tail outcomes against the durable
 transcript or in the browser.
 
 ```bash
-./mf seed tools/dev/cli/fixtures/basic.json        # docs + thread + an opening message
+./mf seed tools/mf/fixtures/basic.json        # docs + thread + an opening message
 ./mf thread send <id> "Tighten the opening" --ref manuscript://mf-chapter-1.md
-./mf thread send <id> "go" --mock @tools/dev/cli/fixtures/mock-write.json --json | tail -1
+./mf thread send <id> "go" --mock @tools/mf/fixtures/mock-write.json --json | tail -1
 ./mf thread view c3                                # transcript (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
 ./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame

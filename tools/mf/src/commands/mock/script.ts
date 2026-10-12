@@ -11,7 +11,7 @@ export const mockScriptCommand: CommandSpec = {
   },
   examples: [
     `./mf mock script '[{"text":"Done."}]'`,
-    "./mf mock script @tools/dev/cli/fixtures/mock-write.json --match 'draft the scene'",
+    "./mf mock script @tools/mf/fixtures/mock-write.json --match 'draft the scene'",
   ],
   async run(ctx) {
     const raw = readJsonArg(requirePositional(ctx, 0, "<script>"), "<script>");

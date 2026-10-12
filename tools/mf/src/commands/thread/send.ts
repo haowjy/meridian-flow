@@ -328,7 +328,7 @@ export const threadSendCommand: CommandSpec = {
   examples: [
     `./mf thread send <id> "Summarize chapter 2"`,
     `./mf thread send <id> "Tighten this" --ref manuscript://chapter-2.md`,
-    `./mf thread send <id> "go" --mock @tools/dev/cli/fixtures/mock-write.json --json | tail -1`,
+    `./mf thread send <id> "go" --mock @tools/mf/fixtures/mock-write.json --json | tail -1`,
   ],
   async run(ctx) {
     const rawThread = requirePositional(ctx, 0, "<thread>");

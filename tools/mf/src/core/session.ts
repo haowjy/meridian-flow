@@ -7,9 +7,9 @@ import http, { type IncomingHttpHeaders } from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { deserializeTransport } from "@meridian/contracts/protocol";
-import { portlessCa } from "../../dev-readiness";
-import { branchToPortlessPrefix } from "../../portless-prefix";
-import { resolveExpectedRouteUrls } from "../../portless-routes";
+import { portlessCa } from "../../../dev/dev-readiness";
+import { branchToPortlessPrefix } from "../../../dev/portless-prefix";
+import { resolveExpectedRouteUrls } from "../../../dev/portless-routes";
 import { CliError } from "./cli-error";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
