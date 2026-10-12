@@ -7,8 +7,8 @@ import { escapeProseForMdxIngress } from "../escape.js";
 import { demoteAutolinks } from "../helpers.js";
 import { joinBreakLines } from "../markdown/blocks/hard-break.js";
 import { hardBreakCodec, imageCodec, tableCodec } from "../markdown/blocks/index.js";
-import { normalizeGfmTableHardBreaks } from "../markdown/blocks/table.js";
 import { markdownBlockCodecs, markdownMarkCodecs } from "../markdown/index.js";
+import { normalizeGfmTableHardBreaks } from "../markdown/table-ingress.js";
 import type { BlockCodec, MarkupPlugin } from "../types.js";
 import {
   createFigureCodec,

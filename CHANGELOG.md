@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Obsidian import and wikilink paste share one syntax scanner, with raw frontmatter splitting for browser manifests.
+
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
 - `.txt` files open as prose. Code, data and images keep their extensions.
 - Dotted names stay whole. Renames keep the file type unless a new extension is typed.
