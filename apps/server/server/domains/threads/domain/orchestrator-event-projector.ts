@@ -140,6 +140,7 @@ export function createOrchestratorEventProjector() {
               // Old journal payloads lack these; they read as unknown.
               executionId: event.turn.executionId ?? null,
               reservedForUserTurnIds: event.turn.reservedForUserTurnIds ?? [],
+              position: event.turn.position ?? null,
             } satisfies RunStartedMeta,
           }),
         ];
@@ -500,6 +501,8 @@ export function createOrchestratorEventProjector() {
             name: MESSAGES_DELIVERED_EVENT,
             value: {
               byTurnId: event.byTurnId,
+              // Old journal payloads lack it; it reads as unknown.
+              byTurnPosition: event.byTurnPosition ?? null,
               executionId: event.executionId,
               userTurnIds: event.userTurnIds,
             } satisfies MessagesDeliveredValue,

@@ -13,7 +13,6 @@ import {
   defineEventHandler,
   getRouterParam,
   readBody,
-  setResponseHeader,
   setResponseStatus,
 } from "nitro/h3";
 import {
@@ -43,10 +42,9 @@ export default defineEventHandler(async (event) => {
       turn: result.turn,
     } satisfies ReplyRetryResponse);
   } catch (error) {
-    if (error instanceof ReplyRetryPendingError) {
-      setResponseHeader(event, "Retry-After", "1");
-      throw createError({ statusCode: 503, message: error.code });
-    }
+    // A thrown error builds its own response: headers set on the event are dropped.
+    if (error instanceof ReplyRetryPendingError)
+      throw createError({ status: 503, message: error.code, headers: { "Retry-After": "1" } });
     if (error instanceof ReplyRetryUnavailableError)
       throw createError({ statusCode: 409, message: error.code });
     if (error instanceof RuntimeShuttingDownError)

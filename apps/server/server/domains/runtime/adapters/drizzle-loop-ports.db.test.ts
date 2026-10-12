@@ -377,13 +377,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .update(schema.turns)
             .set({ responseCount: 1 })
             .where(eq(schema.turns.id, turn.id));
-        await expect(failing.ackWithResponse(lease, [row.id], turn.id, response)).rejects.toThrow(
+        await expect(failing.ackWithResponse(lease, [row.id], turn, response)).rejects.toThrow(
           "projection unavailable",
         );
         expect((await repos.turns.findById(turn.id))?.responseCount).toBe(0);
         expect((await delivery.readPendingProjection(THREAD_A)).run?.messageIds).toEqual([row.id]);
         expect(await delivery.selectPending(THREAD_A)).toHaveLength(1);
-        await delivery.ackWithResponse(lease, [row.id], turn.id, response);
+        await delivery.ackWithResponse(lease, [row.id], turn, response);
         expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
         const terminal = {
           lease,
@@ -452,12 +452,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }));
           if (variant === "mismatch") {
             await expect(
-              delivery.ackWithResponse(
-                lease,
-                [crypto.randomUUID()],
-                turn.id,
-                async () => "response",
-              ),
+              delivery.ackWithResponse(lease, [crypto.randomUUID()], turn, async () => "response"),
             ).rejects.toThrow();
             expect((await delivery.readPendingProjection(THREAD_A)).run?.messageIds).toEqual([
               row.id,
@@ -468,7 +463,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               .set({ expiresAt: new Date(0) })
               .where(eq(schema.threadRunLeases.threadId, THREAD_A));
             await expect(
-              delivery.ackWithResponse(lease, [row.id], turn.id, async () => "paid response"),
+              delivery.ackWithResponse(lease, [row.id], turn, async () => "paid response"),
             ).resolves.toBe("paid response");
             expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
           }

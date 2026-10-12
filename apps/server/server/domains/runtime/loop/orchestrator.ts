@@ -893,7 +893,7 @@ async function persistModelResponse(input: {
   const persistedResponse = await deps.delivery.ackWithResponse(
     runInput.lease,
     input.inboxAckIds,
-    currentTurn.id as TurnId,
+    currentTurn,
     () =>
       persistAndAppendEvents(deps, runInput.threadId, async () => {
         const responseId = crypto.randomUUID();
@@ -1832,6 +1832,16 @@ async function executeLoop({
     if (result.terminal) {
       currentTurn = result.next;
       terminalControl = true;
+      // A compaction successor that failed preparation landed terminal and
+      // ended the execution in the same commit; nothing is left to throw to.
+      if (result.preparationFailure !== undefined)
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.orchestrator",
+          name: "execution.failed",
+          correlation: { threadId: input.threadId, turnId: result.next.id },
+          payload: unknownToEventPayload(result.preparationFailure),
+        });
       return result.drain;
     }
     if (result.yielded) {

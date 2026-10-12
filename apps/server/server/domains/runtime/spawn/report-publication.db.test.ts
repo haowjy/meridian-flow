@@ -794,7 +794,9 @@ else
         { id: message.id, role: "user", status: "complete" },
         { id: assistantId, role: "assistant", status: "streaming" },
       ]);
-      await runDelivery.ackWithResponse(lease, [message.id], assistantId, async () => true);
+      const assistant = await repos.turns.findById(assistantId);
+      if (!assistant) throw new Error("assistant turn missing");
+      await runDelivery.ackWithResponse(lease, [message.id], assistant, async () => true);
       await runDelivery.close({
         lease,
         turnId: assistantId,

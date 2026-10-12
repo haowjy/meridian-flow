@@ -92,9 +92,10 @@ describe("run identity", () => {
 
   it("names each split reply's execution and reservation, and ends the execution once", () => {
     const projector = createOrchestratorEventProjector();
-    const turn = (id: string, reservedForUserTurnIds: string[]) =>
+    const turn = (id: string, position: number, reservedForUserTurnIds: string[]) =>
       ({
         id,
+        position,
         threadId: "thread-1",
         role: "assistant",
         blocks: [],
@@ -102,12 +103,13 @@ describe("run identity", () => {
         executionId: "e1",
         reservedForUserTurnIds,
       }) as never;
-    projector.project({ type: "turn.created", turn: turn("a", ["m1"]) });
-    const finish = projector.project({ type: "turn.completed", turn: turn("a", ["m1"]) });
-    const start = projector.project({ type: "turn.created", turn: turn("b", ["m2"]) });
+    projector.project({ type: "turn.created", turn: turn("a", 2, ["m1"]) });
+    const finish = projector.project({ type: "turn.completed", turn: turn("a", 2, ["m1"]) });
+    const start = projector.project({ type: "turn.created", turn: turn("b", 4, ["m2"]) });
     const delivered = projector.project({
       type: "messages.delivered",
       byTurnId: "b",
+      byTurnPosition: 4,
       executionId: "e1",
       userTurnIds: ["m2"],
     });
@@ -123,14 +125,19 @@ describe("run identity", () => {
         type: EventType.RUN_STARTED,
         threadId: "thread-1",
         runId: "b",
-        rawEvent: { writeMode: "direct", executionId: "e1", reservedForUserTurnIds: ["m2"] },
+        rawEvent: {
+          writeMode: "direct",
+          executionId: "e1",
+          reservedForUserTurnIds: ["m2"],
+          position: 4,
+        },
       },
     ]);
     expect(delivered).toEqual([
       {
         type: EventType.CUSTOM,
         name: MESSAGES_DELIVERED_EVENT,
-        value: { byTurnId: "b", executionId: "e1", userTurnIds: ["m2"] },
+        value: { byTurnId: "b", byTurnPosition: 4, executionId: "e1", userTurnIds: ["m2"] },
       },
     ]);
     expect(ended).toEqual([
@@ -151,7 +158,14 @@ describe("run identity", () => {
       } as never,
     });
     expect(start).toMatchObject({
-      rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [] },
+      rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [], position: null },
     });
+    const [delivered] = projector.project({
+      type: "messages.delivered",
+      byTurnId: "old",
+      executionId: null,
+      userTurnIds: ["m1"],
+    } as never);
+    expect(delivered).toMatchObject({ value: { byTurnId: "old", byTurnPosition: null } });
   });
 });

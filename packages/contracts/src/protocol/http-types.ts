@@ -458,7 +458,8 @@ export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
  * on a cancelled compaction without ever reserving the new reply. `turn` is the
  * new reply when this request id names it, else null (a replay matched by the
  * request's first reserved turn, `metadata.retryReplyId`, before the reply was
- * reserved). `executionId` is null only for a reply reserved before run identity.
+ * reserved, or a started Retry whose answer couldn't read it). `executionId` is
+ * null only for a reply reserved before run identity.
  */
 export type ReplyRetryResponse = {
   executionId: string | null;

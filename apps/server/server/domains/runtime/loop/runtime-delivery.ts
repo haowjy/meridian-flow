@@ -83,6 +83,10 @@ export type AdoptedBatch<TCurrent = undefined> = {
   drain: InboxDrain;
   next: Turn;
   split: boolean;
+  /**
+   * The execution ended in this commit: a placeholder with nothing left, or a
+   * compaction successor whose preparation failed (`next` is that failed turn).
+   */
   terminal?: boolean;
   completed?: Turn;
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
@@ -164,11 +168,11 @@ export interface RuntimeDelivery
       signal?: AbortSignal;
     },
   ): Promise<T>;
-  /** Persists a response and delivers `ids` by `byTurnId`, the assistant it answers them with. */
+  /** Persists a response and delivers `ids` by `byTurn`, the assistant it answers them with. */
   ackWithResponse<T>(
     lease: Lease,
     ids: string[],
-    byTurnId: TurnId,
+    byTurn: Pick<Turn, "id" | "position">,
     persist: () => Promise<T>,
   ): Promise<T>;
   splitAndContinue<TCurrent = undefined>(
