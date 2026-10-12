@@ -391,3 +391,80 @@ describe("controller gap-result ownership", () => {
     await fresh.promise;
   });
 });
+
+describe("controller stream routing is fenced by seq", () => {
+  /** A snapshot read while unrelated A/E1 ran, before B started for M2. */
+  function preBSnapshot() {
+    return snapshotResponse({
+      turns: [
+        snapshotTurn("a", "assistant", {
+          executionId: "e1",
+          status: "streaming",
+          reservedFor: ["m1"],
+        }),
+        snapshotTurn("m2", "user"),
+      ],
+      openExecutionId: "e1",
+      runningTurnId: "a",
+      pendingWriterMessages: ["m2"],
+      resumeAfterSeq: "100",
+      nextSeq: "101",
+    });
+  }
+
+  function owedM2ThenBStarts(scenario: ThreadRunScenario) {
+    scenario.controller.observePending("thread_1", { items: [writerPendingItem("m2")] }, "100");
+    scenario.emit(executionEnded("e1"), "105");
+    scenario.emit(runStarted("b", "e2", ["m2"]), "110");
+  }
+
+  it("a delayed mounted snapshot does not move deltas off the newer B", () => {
+    const scenario = makeScenario();
+    owedM2ThenBStarts(scenario);
+    scenario.controller.observeSnapshot("thread_1", preBSnapshot());
+    scenario.emit(textStart("text-b"), "111");
+    scenario.emit(textDelta("text-b", "B output"), "112");
+    scenario.controller.flushPendingDeltas("thread_1");
+    expect(textOf(scenario, "b")).toBe("B output");
+  });
+
+  it("an explicit gap snapshot older than B's start does not move deltas off B", async () => {
+    const scenario = makeScenario({ snapshot: async () => preBSnapshot() });
+    owedM2ThenBStarts(scenario);
+    scenario.reportGap();
+    // The gap snapshot is applied (A appears) before B's text arrives.
+    await vi.waitFor(() => expect(scenario.turns().some((turn) => turn.id === "a")).toBe(true));
+    scenario.emit(textStart("text-b"), "111");
+    scenario.emit(textDelta("text-b", "B output"), "112");
+    scenario.controller.flushPendingDeltas("thread_1");
+    expect(textOf(scenario, "b")).toBe("B output");
+  });
+
+  it("a newer snapshot still routes deltas to the reply it shows running", () => {
+    const scenario = makeScenario();
+    scenario.controller.observePending("thread_1", { items: [writerPendingItem("m2")] }, "100");
+    scenario.emit(runStarted("a", "e1", ["m2"]), "101");
+    scenario.emit(runFinished("a"), "102");
+    scenario.controller.observeSnapshot(
+      "thread_1",
+      snapshotResponse({
+        turns: [
+          snapshotTurn("a", "assistant", { executionId: "e1", reservedFor: ["m2"] }),
+          snapshotTurn("b", "assistant", {
+            executionId: "e1",
+            status: "streaming",
+            reservedFor: ["m2"],
+          }),
+        ],
+        openExecutionId: "e1",
+        runningTurnId: "b",
+        pendingWriterMessages: ["m2"],
+        resumeAfterSeq: "120",
+      }),
+    );
+    scenario.emit(textStart("text-b"), "121");
+    scenario.emit(textDelta("text-b", "B output"), "122");
+    scenario.controller.flushPendingDeltas("thread_1");
+    expect(textOf(scenario, "b")).toBe("B output");
+  });
+});

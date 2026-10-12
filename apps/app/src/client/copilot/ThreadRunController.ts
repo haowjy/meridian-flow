@@ -116,6 +116,11 @@ type Subscription = {
   token: number;
   /** The reply un-addressed stream deltas belong to (one run claim per thread). */
   streamTurn?: string;
+  /**
+   * The seq `streamTurn` was observed at. A late HTTP snapshot is read before
+   * newer starts and ends this stream already applied, so it must not move it.
+   */
+  streamSeq: string | null;
   unsubscribe?: () => void;
   dispose: () => void;
   flush: () => void;
@@ -172,6 +177,23 @@ function isOlderSeq(seq: string | null, than: string | null): boolean {
   const a = parseSeq(seq);
   const b = parseSeq(than);
   return a !== null && b !== null && BigInt(a) < BigInt(b);
+}
+
+/**
+ * Point un-addressed deltas at `turnId` as of `seq`, unless this stream already
+ * observed a newer start or end. `onlyIfUnset` keeps a hint from replacing a
+ * known reply.
+ */
+function routeStream(
+  subscription: Subscription,
+  turnId: string | undefined,
+  seq: string | null,
+  onlyIfUnset = false,
+): void {
+  if (onlyIfUnset && subscription.streamTurn !== undefined) return;
+  if (isOlderSeq(seq, subscription.streamSeq)) return;
+  subscription.streamTurn = turnId;
+  if (seq !== null) subscription.streamSeq = seq;
 }
 
 export class ThreadRunController {
@@ -410,7 +432,7 @@ export class ThreadRunController {
     // The rule refuses the attach while unsettled; the step still reopens a lost stream.
     this.step(follow, { kind: "attach", executionId: options.executionId }, options.after);
     if (follow.subscription && options.runningTurnId)
-      follow.subscription.streamTurn ??= options.runningTurnId;
+      routeStream(follow.subscription, options.runningTurnId, options.after, true);
   }
 
   /** Merge a durable snapshot's facts and pending projection (the mounted snapshot owner's feed). */
@@ -513,7 +535,8 @@ export class ThreadRunController {
     }
     if (result.steersTurnId) {
       this.step(follow, { kind: "steer", turnId: result.steersTurnId }, result.resumeAfterSeq);
-      if (follow.subscription) follow.subscription.streamTurn ??= result.steersTurnId;
+      if (follow.subscription)
+        routeStream(follow.subscription, result.steersTurnId, result.resumeAfterSeq, true);
     }
   }
 
@@ -572,8 +595,10 @@ export class ThreadRunController {
       liveState.pending ?? EMPTY_THREAD_PENDING_INBOX,
       liveState.resumeAfterSeq,
     );
+    // The snapshot's facts merge whatever its age; its running reply routes
+    // deltas only when the stream has seen nothing newer.
     if (follow.subscription && liveState.runningTurnId)
-      follow.subscription.streamTurn = liveState.runningTurnId;
+      routeStream(follow.subscription, liveState.runningTurnId, liveState.resumeAfterSeq);
   }
 
   /**
@@ -612,6 +637,7 @@ export class ThreadRunController {
     let lastPushedTurn: string | undefined;
     const subscription: Subscription = {
       token,
+      streamSeq: after,
       dispose: () => {
         if (!this.accountSignal.aborted) coalescer.flush();
       },
@@ -652,7 +678,7 @@ export class ThreadRunController {
           if (effectiveEvent.type === EventType.RUN_STARTED) {
             this.step(follow, { kind: "event", event: effectiveEvent });
             if (!live()) return;
-            subscription.streamTurn = effectiveEvent.runId;
+            routeStream(subscription, effectiveEvent.runId, seq);
             if (isBound(follow.rule, effectiveEvent.runId, follow.view))
               push(effectiveEvent.runId, effectiveEvent);
             return;
@@ -670,7 +696,7 @@ export class ThreadRunController {
               effectiveEvent.type === EventType.RUN_ERROR) &&
             subscription.streamTurn === turnId
           )
-            subscription.streamTurn = undefined;
+            routeStream(subscription, undefined, seq);
         },
         onError: (error) => {
           if (!live()) return;
