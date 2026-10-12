@@ -1,9 +1,12 @@
 /** Work-draft listing, preview, Apply, and Discard orchestration. */
+
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
 } from "@meridian/contracts/drafts";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { CollabDrafts, DraftDiscardCommand } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
@@ -96,7 +99,7 @@ export function createWorkDraftReviewService(input: {
         })),
         updatedAt: branch.updatedAt,
         documentName: documentTitleFromUri(uri),
-        contextPath: manuscriptContextPath(uri),
+        contextLocation: reviewContextLocation(uri),
         ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
       });
     }
@@ -387,8 +390,10 @@ export function createWorkDraftReviewService(input: {
   };
 }
 
-function manuscriptContextPath(uri: string | null): string | null {
-  if (!uri?.startsWith("manuscript://")) return null;
-  const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
-  return path ? `/${path}` : null;
+function reviewContextLocation(uri: string | null): ReviewableDraft["contextLocation"] {
+  if (!uri) return null;
+  const parsed = parseUnifiedContextUri(uri);
+  return parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
+    ? { scheme: parsed.value.scheme, path: `/${parsed.value.path}` }
+    : null;
 }

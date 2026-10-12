@@ -66,7 +66,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         documentId: "document-b",
         draftId: "draft-b",
         documentName: "Foreign document",
-        contextPath: "/foreign.md",
+        contextLocation: { scheme: "manuscript", path: "/foreign.md" },
       },
     ],
   });

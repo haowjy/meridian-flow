@@ -60,7 +60,8 @@ vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: [], isError: false }),
 }));
 vi.mock("@/client/query/useContextCatalog", () => ({
-  useContextCatalogView: () => ({ catalog: null }),
+  useContextCatalogViews: (_projectId: string, schemes: readonly string[]) =>
+    Object.fromEntries(schemes.map((scheme) => [scheme, { catalog: null }])),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ status: "ready", groups: [], refetch: () => {} }),

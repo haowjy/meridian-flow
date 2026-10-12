@@ -14,6 +14,7 @@
 - Show each new draft document once in expanded chat and Work lists, with its review door and whole-document commands on one row.
 
 - Open each composer-strip document’s review from its name, without a duplicate summary Review button.
+- Open AI draft reviews in the document’s own section, including new Knowledge Base sheets, and keep independent Work draft tabs distinct.
 
 - Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
 

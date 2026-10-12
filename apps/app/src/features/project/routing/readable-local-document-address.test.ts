@@ -168,7 +168,7 @@ describe("gateLiveView", () => {
       isFetching: false,
       isError: false,
       ...state,
-    }) as unknown as Parameters<typeof gateLiveView>[2];
+    }) as unknown as Parameters<typeof gateLiveView>[1];
   const group = (isNewDocument: boolean) =>
     ({
       documentId: "document-id",
@@ -178,49 +178,50 @@ describe("gateLiveView", () => {
   const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });
   const noTab = () => false;
 
-  it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
-    expect(gateLiveView(resolved, "manuscript", manifest(["document-id"]), ready(), noTab)).toEqual(
-      { outcome: "ready", result: resolved },
-    );
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([]), ready(group(true)), noTab),
-    ).toMatchObject({
+  it("opens a document missing from the live manifest as its pending new-document draft, never live", () => {
+    expect(gateLiveView(resolved, manifest(["document-id"]), ready(), noTab)).toEqual({
+      outcome: "ready",
+      result: resolved,
+    });
+    expect(gateLiveView(resolved, manifest([]), ready(group(true)), noTab)).toMatchObject({
       outcome: "ready",
       result: resolved,
       draftOnly: { draft: { draftId: "draft-id" } },
     });
     // Discarded, or a draft of an existing document: no live view and no review.
-    expect(gateLiveView(resolved, "manuscript", manifest([]), ready(), noTab).result).toEqual({
+    expect(gateLiveView(resolved, manifest([]), ready(), noTab).result).toEqual({
       kind: "unavailable",
     });
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([]), ready(group(false)), noTab).result,
-    ).toEqual({ kind: "unavailable" });
+    expect(gateLiveView(resolved, manifest([]), ready(group(false)), noTab).result).toEqual({
+      kind: "unavailable",
+    });
   });
 
   it("calls absence unavailable only on an authoritative read, and keeps a promoted tab live", () => {
     // A stored checkpoint stays complete while its refresh is in flight: still pending.
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), noTab),
-    ).toEqual({ outcome: "pending", result: undefined });
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([]), { status: "loading", files: null }, noTab),
-    ).toEqual({ outcome: "pending", result: undefined });
+    expect(gateLiveView(resolved, manifest([], { isFetching: true }), ready(), noTab)).toEqual({
+      outcome: "pending",
+      result: undefined,
+    });
+    expect(gateLiveView(resolved, manifest([]), { status: "loading", files: null }, noTab)).toEqual(
+      { outcome: "pending", result: undefined },
+    );
     // Apply promoted the tab; the lagging catalog does not get to veto it.
     expect(
-      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), () => true)
-        .result,
+      gateLiveView(resolved, manifest([], { isFetching: true }), ready(), () => true).result,
     ).toBe(resolved);
   });
 
   it("reports a failed prerequisite as failed, distinct from one still loading", () => {
     // A failed read is not evidence of no draft, and it must not wait forever.
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([], { isError: true }), ready(), noTab),
-    ).toEqual({ outcome: "failed", result: undefined });
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([]), { status: "error", files: [] }, noTab),
-    ).toEqual({ outcome: "failed", result: undefined });
+    expect(gateLiveView(resolved, manifest([], { isError: true }), ready(), noTab)).toEqual({
+      outcome: "failed",
+      result: undefined,
+    });
+    expect(gateLiveView(resolved, manifest([]), { status: "error", files: [] }, noTab)).toEqual({
+      outcome: "failed",
+      result: undefined,
+    });
   });
 });
 

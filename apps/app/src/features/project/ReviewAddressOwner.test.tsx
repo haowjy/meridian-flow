@@ -23,7 +23,7 @@ const draft: AiDraftLaunchTarget = {
   workId: "work-1",
   documentId: "document-a",
   draftId: "draft-a",
-  contextPath: "chapters/a.md",
+  contextLocation: { scheme: "manuscript", path: "chapters/a.md" },
 };
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 type InlineReview = {
@@ -45,7 +45,7 @@ function Harness({
   requestedDraftId,
   activeScreen = "context",
   activeScheme = "manuscript",
-  activePath = draft.contextPath,
+  activePath = draft.contextLocation.path,
   activeDocumentId,
   onSetDraftId,
   exitInlineReview,
@@ -84,12 +84,12 @@ function Harness({
           {
             documentId: draft.documentId,
             documentName: "A",
-            contextPath: draft.contextPath,
+            contextLocation: draft.contextLocation,
             draft: {
               draftId: draft.draftId,
               documentId: draft.documentId,
               documentName: "A",
-              contextPath: draft.contextPath,
+              contextLocation: draft.contextLocation,
               status: "active",
               updatedAt: "2026-10-02T00:00:00.000Z",
             },
@@ -100,7 +100,7 @@ function Harness({
             ? {
                 documentId: draft.documentId,
                 documentName: "A",
-                contextPath: draft.contextPath,
+                contextLocation: draft.contextLocation,
                 draft: { draftId: draft.draftId },
               }
             : null,
@@ -253,7 +253,13 @@ describe("ReviewAddressOwner", () => {
     const fixture = createReviewScopeFixture();
     const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     fixture.network.listWorkDrafts.mockResolvedValue({
-      drafts: [{ ...listed, contextPath: "/chapter.md", isNewDocument: true }],
+      drafts: [
+        {
+          ...listed,
+          contextLocation: { scheme: "manuscript", path: "/chapter.md" },
+          isNewDocument: true,
+        },
+      ],
     });
     fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
     useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
@@ -263,7 +269,7 @@ describe("ReviewAddressOwner", () => {
         workId: "work-a",
         documentId: "document-a",
         draftId: "draft-a",
-        contextPath: "/chapter.md",
+        contextLocation: { scheme: "manuscript", path: "/chapter.md" },
         isNewDocument: true,
       })!,
     );
@@ -280,17 +286,16 @@ describe("ReviewAddressOwner", () => {
           kind: "current",
           document: { kind: "available", documentId: "document-a" },
         } as Parameters<typeof gateLiveView>[0],
-        "manuscript",
         {
           catalog: { normalized: { entries: new Map() } },
           isComplete: true,
           isFetching: fetching,
           isError: false,
-        } as unknown as Parameters<typeof gateLiveView>[2],
+        } as unknown as Parameters<typeof gateLiveView>[1],
         {
           status: "ready",
           files: [{ documentId: "document-a", isNewDocument: true, draft: { draftId: "draft-a" } }],
-        } as Parameters<typeof gateLiveView>[3],
+        } as Parameters<typeof gateLiveView>[2],
         () => false,
       );
       const documentId =

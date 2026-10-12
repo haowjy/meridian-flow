@@ -39,6 +39,10 @@ Paths outside this directory are relative to `apps/app/src`.
 
 ## Load-bearing rules
 
+- Review navigation consumes the row’s own `contextLocation`; file policy alone
+  decides which schemes can have drafts. Draft-only Editor overlays are keyed
+  by document, Work and draft, and visible only in their owning Work.
+
 - A slow or refused chapter never locks another chapter. Archived Works remain
   globally read-only; chat generation explicitly gates chat batch controls.
 - Never add a surface-local command lock, optimistic hide or completion store.

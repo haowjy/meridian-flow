@@ -1,4 +1,6 @@
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import { describe, expect, it, vi } from "vitest";
+import { isDrafted } from "../../file-policy/domain/policy.js";
 import { createWorkDraftReviewService } from "./work-draft-review-service.js";
 
 const command = { draftId: "draft", workId: "work", documentId: "doc", userId: "writer" };
@@ -42,4 +44,29 @@ describe("draft command boundary", () => {
     });
     expect(maintenanceFailed).toHaveBeenCalled();
   });
+});
+
+it("lists the document's own location, not a manuscript-only path", async () => {
+  const schemes = CONTEXT_URI_SCHEMES.filter(isDrafted);
+  const uris = schemes.map((scheme) => `${scheme}://sheets/one`);
+  const service = createWorkDraftReviewService({
+    workDraftPending: {
+      list: async () =>
+        uris.map((_, index) => ({
+          branch: {
+            documentId: String(index),
+            branchId: `draft-${index}`,
+            generation: 1,
+            updatedAt: new Date(0),
+          },
+          actorThreadIds: [],
+        })),
+    },
+    resolveDocumentUris: async () => new Map(uris.map((uri, index) => [String(index), uri])),
+    resolveThreadTitles: async () => new Map(),
+  } as unknown as Parameters<typeof createWorkDraftReviewService>[0]);
+  const rows = await service.draftReview.list({ workId: "work" } as never);
+  expect(rows.map((row) => row.contextLocation)).toEqual(
+    schemes.map((scheme) => ({ scheme, path: "/sheets/one" })),
+  );
 });

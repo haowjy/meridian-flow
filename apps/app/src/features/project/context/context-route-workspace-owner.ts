@@ -34,7 +34,12 @@ export function resolveWorkspaceRoute({
   // Identity before path (see route-document-owner): a bound document's tab owns the route
   // wherever the tab's path went, and no other tab may own it by holding the path.
   const server = boundDocumentId
-    ? tabs.find((tab) => tab.kind !== "new" && tab.documentId === boundDocumentId)
+    ? tabs.find(
+        (tab) =>
+          tab.kind !== "new" &&
+          tab.documentId === boundDocumentId &&
+          (!tab.draftOnly || tab.reviewWorkId === locator.workId),
+      )
     : tabs.find((tab) => tab.kind !== "new" && contextTabMatchesRoute(tab, locator));
   if (server) {
     return {

@@ -1,6 +1,7 @@
 /** Owns inline-review restoration and the draft/selected-change identity on the presenting container address. */
 import { useEffect, useRef } from "react";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
+import type { ContextUri } from "@/lib/context-uri";
 import {
   type AiDraftLaunchTarget,
   usePendingEditorReviewDraftId,
@@ -30,10 +31,13 @@ export function ReviewAddressOwner({
   };
   const addressNames = (
     documentId: string,
-    contextPath: string | null | undefined,
+    contextLocation: Pick<ContextUri, "scheme" | "path"> | null | undefined,
   ): "yes" | "no" | "pending" => {
     if (presented?.documentId) return presented.documentId === documentId ? "yes" : "no";
-    return contextPath === presented?.path ? "yes" : "pending";
+    return contextLocation?.scheme === presented?.scheme &&
+      contextLocation?.path === presented?.path
+      ? "yes"
+      : "pending";
   };
 
   useEffect(() => {
@@ -45,10 +49,10 @@ export function ReviewAddressOwner({
       // proposal must not end a review the reducer keeps.
       const match = addressNames(
         inline.documentId,
-        review.fileForDocument(inline.documentId)?.contextPath,
+        review.fileForDocument(inline.documentId)?.contextLocation,
       );
       if (
-        presented?.scheme !== "manuscript" ||
+        !presented ||
         match === "no" ||
         (presented.review &&
           (presented.review.workId !== review.controller.workId ||
@@ -95,7 +99,7 @@ export function ReviewAddressOwner({
       restoring.current = null;
       return;
     }
-    if (presented?.scheme !== "manuscript") {
+    if (!presented) {
       restoring.current = null;
       write(null);
       return;
@@ -104,6 +108,7 @@ export function ReviewAddressOwner({
       if (
         !presented.documentId ||
         !presented.path ||
+        !presented.scheme ||
         !presented.review ||
         review.controller.workId !== presented.review.workId ||
         restoring.current === requestedDraftId
@@ -114,7 +119,7 @@ export function ReviewAddressOwner({
         workId: presented.review.workId,
         documentId: presented.documentId,
         draftId: requestedDraftId,
-        contextPath: presented.path,
+        contextLocation: { scheme: presented.scheme, path: presented.path },
         isNewDocument: presented.draftOnly,
       });
       return;
@@ -124,13 +129,15 @@ export function ReviewAddressOwner({
     const group = review.files.find((candidate) => candidate.draft.draftId === requestedDraftId);
     const draft = group?.draft.draftId === requestedDraftId ? group.draft : null;
     const match =
-      group?.contextPath && draft ? addressNames(group.documentId, group.contextPath) : "no";
+      group?.contextLocation && draft
+        ? addressNames(group.documentId, group.contextLocation)
+        : "no";
     if (match === "no") {
       restoring.current = null;
       write(null);
       return;
     }
-    if (match === "pending" || !group?.contextPath || !draft) return;
+    if (match === "pending" || !group?.contextLocation || !draft) return;
     if (restoring.current === requestedDraftId) return;
     restoring.current = requestedDraftId;
     void Promise.resolve(
@@ -138,7 +145,7 @@ export function ReviewAddressOwner({
         workId: review.controller.workId,
         documentId: group.documentId,
         draftId: requestedDraftId,
-        contextPath: group.contextPath,
+        contextLocation: group.contextLocation,
         documentName: group.documentName ?? undefined,
         isNewDocument: draft.isNewDocument === true,
       }),

@@ -124,7 +124,13 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
     tabInstanceToken: "token",
   };
   fixture.network.listWorkDrafts.mockResolvedValue({
-    drafts: [{ ...listed, contextPath: tab.path, isNewDocument: draftOnly }],
+    drafts: [
+      {
+        ...listed,
+        contextLocation: { scheme: tab.scheme, path: tab.path },
+        isNewDocument: draftOnly,
+      },
+    ],
   });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
   let setEditorDraftId!: (draftId: string | undefined) => void;
