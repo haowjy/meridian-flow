@@ -401,6 +401,24 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "kb://vault/attachments/map (2).png",
     );
   });
+  it("a link whose selected target was deleted names its text and the selected file", async () => {
+    const selection = loose({ "Holder.md": "See [[Target|the target]].", "Target.md": "Gone" }),
+      service = createImportService(ports());
+    const plan = await service.plan(projectId, userId, selection.manifest);
+    await ok(
+      context().delete("kb://Target", {
+        expected: {
+          kind: "file",
+          documentId: plan.entries.find((entry) => entry.name === "Target")?.documentId ?? "",
+        },
+      }),
+    );
+    const holder = await service.land(projectId, plan.importId, 0, selection.bytes[0]);
+    expect(holder.findings).toContainEqual({
+      code: "link_target_unavailable",
+      params: { text: "the target", path: "Target.md" },
+    });
+  });
   it("routes a marked export to area roots, ignores invocation folder, skips Works and keeps the chosen sort", async () => {
     const selection = loose({
       "Manuscript/Chapter.md":

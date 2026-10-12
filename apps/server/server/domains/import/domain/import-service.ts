@@ -7,6 +7,7 @@ import type {
   ImportSummary,
 } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { walkLinkOccurrences } from "@meridian/markup/links";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { DocumentConverterPort } from "../ports/document-converter.js";
 import type { ImportDiagnostics } from "../ports/import-diagnostics.js";
@@ -18,6 +19,15 @@ import { allocateName, planSelection } from "./plan.js";
 import { prepareImportedNote } from "./prepare-note.js";
 import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
+/** Where the writer knows a link target from: its selected path, or an existing document's address. */
+function targetPath(record: ImportRecord, entries: readonly ImportEntry[], id: string): string {
+  const selected = entries.find((entry) => entry.id === id);
+  if (selected) {
+    const root = record.manifest.roots.find((root) => root.rootId === selected.rootId);
+    return root?.kind === "file" ? root.name : selected.path;
+  }
+  return record.manifest.existingLinks?.find((candidate) => candidate.id === id)?.uri ?? "";
+}
 export function createImportService(deps: {
   repository: ImportRepository;
   tree: ImportTreeWriter;
@@ -569,10 +579,16 @@ export function createImportService(deps: {
             const findings = [...current.findings, ...(converted?.findings ?? [])];
             if (settings.unreadable)
               findings.push({ code: "settings_unreadable", params: { name: root?.name ?? "" } });
+            const occurrences = bound.invalidTargets.length
+              ? walkLinkOccurrences(bound.blocks)
+              : [];
             for (const invalid of bound.invalidTargets)
               findings.push({
                 code: "link_target_unavailable",
-                params: { documentId: invalid.documentId },
+                params: {
+                  text: occurrences[invalid.occurrence]?.label ?? "",
+                  path: targetPath(record, entries, invalid.documentId),
+                },
               });
             for (const ref of ahead) {
               const target = await repo.lockEntry(ref.targetId);

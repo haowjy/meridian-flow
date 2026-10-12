@@ -56,7 +56,7 @@ export type ImportUnreadableReason =
   | "folder_unreadable";
 export interface ImportFindingParams {
   properties_unreadable: Record<string, never>;
-  link_target_unavailable: { documentId: string };
+  link_target_unavailable: { text: string; path: string };
   hidden_notes: { count: number };
   link_to_existing: { text: string; path: string };
   link_via_alias: { text: string; path: string };
