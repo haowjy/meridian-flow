@@ -368,9 +368,30 @@ document correlation and affected hunk count, never document content.
 
 `domain/draft-review-attribution.ts` owns replay, restoration aliases, range
 ownership and completeness. `domain/document-difference.ts` owns block alignment,
-identity-aware text gaps, clock ranges and anchors, without review authority.
-`domain/draft-review-hunks.ts` composes the raw difference with review attribution
-and restorative cancellation; publication consumes the raw difference directly.
+identity-aware semantic changes with complete effect evidence, text gaps and
+anchors, without review authority.
+`domain/document-content.ts` owns both equality scopes. `documentProseEqual`
+compares text, marks, node types, attributes and ordered children for review hunks
+and publication differences. `documentEffectsEqual` adds managed `documents` map
+membership for pending effects and terminal settlement; manifest changes have
+separate review operations and never become prose hunks.
+Yjs history and attribute-object prototypes do not change content. Alignment uses
+canonical block identities, not scope-dependent display hash widths. Rich-only
+changes are whole-block hunks attributed through changed format/attribute clocks;
+unchanged prose is not an inserted or removed text effect. Attribution intersects
+changed mark intervals and reads winning attribute items. Semantic no-op detection
+is not provenance: fresh formatting copies keep their supplying row unless
+certified restoration metadata proves correspondence. Nested paragraph boundaries are content too. Their formatting facts
+are localized by the client, in the same row as text changes.
+`domain/draft-review-hunks.ts` composes the raw difference with review attribution; publication consumes the raw difference directly. Recreated identical blocks
+and rich-equal ordered replacement runs are equal at that shared semantic boundary,
+not hidden by a review-only cancellation rule. Same-text replacements with different
+immutable identities retain both structural effects and supplying rows in one
+canonical change; only same-identity changes use rich-field-only evidence.
+Publication carries explicit before/after canonical block identities through to
+the durable trail; display hashes and serialized prose never supply identity.
+The model-undo engine still needs legacy text/tombstone restoration inference.
+That text inference cannot transfer novel format, attribute or node ownership.
 `domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
 
@@ -392,9 +413,11 @@ metadata enters cold attribution replay; the claims map itself remains untrusted
 
 No visible review operations is not permission to reset a draft. Empty settlement
 compares the visible ProseMirror tree (text deltas including marks, element types,
-attributes, and ordered children), ignoring Yjs identities/history. Unrepresented
-formatting remains pending for document-level Apply/Discard; cancelled history can
-still settle when its complete document effect equals live.
+attributes, and ordered children), ignoring Yjs identities/history. Review and publication use that same rich comparison. Cancelled history settles
+when its complete document effect equals live; incomplete attribution never makes
+a semantically changed draft empty. A semantically unchanged retype may recreate
+mark boundaries: replay carries that physical correspondence so a later formatting
+removal belongs to the row that actually removed it.
 
 ### Preview-scoped selective Discard
 

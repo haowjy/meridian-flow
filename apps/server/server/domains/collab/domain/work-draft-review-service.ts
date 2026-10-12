@@ -22,7 +22,7 @@ import type {
 import { DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
-import { documentEffectsEqual } from "./document-effect.js";
+import { documentEffectsEqual } from "./document-content.js";
 import { documentRevision } from "./document-revision.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type {

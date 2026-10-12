@@ -59,8 +59,10 @@ export function computeDraftReviewOperations(input: {
     const coverage = attribution.attributeRanges(hunk.raw);
     const complete =
       coverage.complete &&
-      (!hunk.raw.insertedText || hunk.raw.insertedRanges.length > 0) &&
-      (!hunk.raw.deletedText || hunk.raw.deletedRanges.length > 0);
+      (hunk.review.kind === "block"
+        ? hunk.raw.insertedRanges.length + hunk.raw.deletedRanges.length > 0
+        : (!hunk.raw.insertedText || hunk.raw.insertedRanges.length > 0) &&
+          (!hunk.raw.deletedText || hunk.raw.deletedRanges.length > 0));
     return { ...hunk, ...coverage, complete };
   });
   return groupOperationsForHunks(

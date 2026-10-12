@@ -203,6 +203,10 @@ msgstr "{0} 个子代理已完成（{1} 个已停止）"
 msgid "{0} tok/s"
 msgstr "{0} 词元/秒"
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "{before} → {after}"
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr ""
@@ -269,6 +273,18 @@ msgstr "{hours}小时"
 
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "{links, plural, one {Updated # link} other {Updated # links}}"
+msgstr ""
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "{mark} changed on “{text}”"
+msgstr ""
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "{mark} off “{text}”"
+msgstr ""
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "{mark} on “{text}”"
 msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -657,6 +673,10 @@ msgstr ""
 msgid "Billing"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "Block"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Block alignment"
 msgstr ""
@@ -665,6 +685,7 @@ msgstr ""
 msgid "blockquote"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
@@ -678,6 +699,7 @@ msgstr "一起头脑风暴吧"
 msgid "Breadcrumb"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
 msgstr ""
@@ -940,6 +962,10 @@ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Closed"
+msgstr ""
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "Code"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2018,6 +2044,14 @@ msgstr ""
 msgid "Form payload is malformed."
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "Formatting"
+msgstr ""
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "Formatting changed"
+msgstr ""
+
 #: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/project/work/WorkChangeFile.tsx
 msgid "Formatting changes remain"
@@ -2094,8 +2128,13 @@ msgstr ""
 msgid "Header row"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
+msgstr ""
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "Heading {before} → {after}"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2243,6 +2282,7 @@ msgstr ""
 msgid "It may have moved or been removed."
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
@@ -2307,6 +2347,7 @@ msgstr "我们开始吧"
 msgid "Light"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Link"
 msgstr ""
@@ -2793,6 +2834,7 @@ msgstr ""
 msgid "now"
 msgstr "刚刚"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
@@ -2947,6 +2989,7 @@ msgstr "输出词元"
 msgid "Over your monthly usage"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr ""
@@ -3721,8 +3764,13 @@ msgstr ""
 msgid "Stopping the handoff brief"
 msgstr ""
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
+msgstr ""
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "Structure changed"
 msgstr ""
 
 #: src/features/project/chat/SubagentPathRow.tsx

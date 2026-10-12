@@ -86,7 +86,9 @@ journal rows, never status reversal or row replacement. Only inverse policies
 acquire the outer transition lock. Model `write undo/redo` still uses the old
 engine until the next migration step.
 
-`hasEffect` compares a draft to its durable `liveCut` (the last pulled live state).
+`hasEffect` compares prose plus managed manifest membership to the draft's durable
+`liveCut` (the last pulled live state), using `documentEffectsEqual`. Prose review
+and publication use `documentProseEqual`; manifest review operations are separate.
 Pending lists and Work notifications read this flag or `blocking`; journal row
 count alone is not visible effect. A skip marks a holding draft blocking so its
 Apply/Discard remains reachable even when its prose equals live.

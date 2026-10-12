@@ -1,6 +1,7 @@
 /** Durable regressions for complete-effect settlement and preview-scoped Discard. */
 
 import { toDocHandle } from "@meridian/agent-edit/integration";
+import { documentBranches } from "@meridian/database";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
@@ -29,6 +30,29 @@ it.each([
     const f = harness.crossWorkProbeFixture();
     const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
+    // Manifest review is separate from prose, but both feed the durable pending effect.
+    await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+      doc.getMap("documents").set(ALPHA_ID, true);
+    });
+    const [pending] = await db
+      .select()
+      .from(documentBranches)
+      .where(eq(documentBranches.id, branch.branchId));
+    expect(pending.hasEffect).toBe(true);
+    expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
+    await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+      doc.getMap("documents").delete(ALPHA_ID);
+      const para = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0) as Y.XmlElement;
+      const text = para.get(0) as Y.XmlText;
+      text.format(0, 5, { strong: {} });
+      text.format(0, 5, { strong: null });
+    });
+    const [noop] = await db
+      .select()
+      .from(documentBranches)
+      .where(eq(documentBranches.id, branch.branchId));
+    expect(noop.hasEffect).toBe(false);
+    expect(await f.collab.draftReview.list({ workId: WORK_ID })).toEqual([]);
     for (const source of ["agent", "writer"] as const) {
       await commitBranchEdit(f, branch.branchId, { source }, (doc) => {
         if (source === "agent") {
@@ -55,7 +79,7 @@ it.each([
       fencedRequest(
         cmd,
         preview,
-        preview.operations.map((op) => op.operationId),
+        preview.operations.filter((op) => op.kind === "agent").map((op) => op.operationId),
       ),
     );
     const after = await f.collab.draftReview.preview(cmd);
@@ -67,6 +91,33 @@ it.each([
     expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("**Beta**");
     expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
+    const [formatted] = await db
+      .select()
+      .from(documentBranches)
+      .where(eq(documentBranches.id, branch.branchId));
+    expect(formatted.hasEffect).toBe(true);
+    expect(after.operations).toHaveLength(1);
+    expect(after.operations[0]?.kind).toBe("writer");
+    expect(after.hunks[0]).toMatchObject({
+      kind: "block",
+      formatting: [{ kind: "mark", mark: "strong", change: "added", text: "Beta" }],
+    });
+    const formattingResult = await (action === "apply"
+      ? f.collab.draftReview.applyWorkDraftChanges
+      : f.collab.draftReview.discardWorkDraft)(
+      fencedRequest(
+        cmd,
+        after,
+        after.operations.map((op) => op.operationId),
+      ),
+    );
+    expect(formattingResult).toMatchObject({
+      status: action === "apply" ? "applied" : "discarded",
+      draftClosed: true,
+    });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
+      action === "apply" ? "Alpha base. Agent\n\n**Beta** base.\n" : "Alpha base.\n\nBeta base.\n",
+    );
   } finally {
     harness.destroyWarmState();
   }
