@@ -64,6 +64,14 @@ reads return a typed `corrupt` refusal without resetting any state. The review
 error surface offers the addressed whole **Discard draft** command. Its existing
 fenced reset from live does not decode the old branch, and also recovers corrupt
 branches with no pending rows. Healthy rowless branches remain unchanged.
+Whole Discard closes only thread peers whose upstream is the addressed Work draft's
+per-document branch, in the reset transaction (`closeThreadPeersOf`). After commit,
+`peer-retirement.ts` closes their rooms and invalidates only their (document, thread)
+states, including response-pinned owners evicted from the resident cache. Other Works'
+peers and staged replies survive. Healthy rowless Discard still retires its own peers;
+corrupt rowless Discard also resets from live. Per-change Discard and generation
+replay retain their separate fences. Agent-edit offers `invalidateThreadDocument` for
+one pair and `evictThread` for runtime eviction, never an empty-ID wildcard.
 Thread cores are invalidated after Discard, never as a preview side effect.
 
 ## One save per reply

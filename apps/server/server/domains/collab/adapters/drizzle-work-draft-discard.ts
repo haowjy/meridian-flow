@@ -49,13 +49,13 @@ export function createDrizzleWorkDraftDiscard(
       : [];
     if (command.draftOnlyProjectId && !manifest)
       throw new Error("Draft discard manifest is unavailable");
-    await criticalSections.withBranches(
+    return criticalSections.withBranches(
       [...(manifest ? [manifest.branchId] : []), command.contentBranchId],
       (lease) =>
         liveCoordinator.withDocument(command.documentId, async (liveDoc) => {
           for (let attempt = 0; ; attempt += 1) {
             try {
-              await runInDrizzleSavepoint(db, async () => {
+              return await runInDrizzleSavepoint(db, async () => {
                 await requireLockedActiveWorks(db, [command.workId]);
                 const content = await branches.getBranch(command.contentBranchId);
                 if (
@@ -80,7 +80,8 @@ export function createDrizzleWorkDraftDiscard(
                   const probe = createCollabYDoc({ gc: false });
                   try {
                     Y.applyUpdate(probe, content.state);
-                    return;
+                    // Even a rowless draft can own an open reply's staged writes.
+                    return branches.closeThreadPeersOf([content.branchId]);
                   } catch {
                     // A rowless corrupt branch still needs the same fenced reset from live.
                   } finally {
@@ -110,8 +111,8 @@ export function createDrizzleWorkDraftDiscard(
                   schemaVersion: content.schemaVersion,
                 });
                 if (!reset) throw new BranchCasConflictError(content.branchId);
+                return branches.closeThreadPeersOf([content.branchId]);
               });
-              return;
             } catch (error) {
               if (!(error instanceof BranchCasConflictError) || attempt >= 3) throw error;
             }
