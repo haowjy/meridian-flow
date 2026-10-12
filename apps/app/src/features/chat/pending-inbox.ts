@@ -24,6 +24,17 @@ export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<st
   return ids;
 }
 
+/**
+ * The writer's messages the chat still owes an answer: writer-provenance
+ * message rows in either delivery state. A row leaves the projection in the
+ * commit that delivers it.
+ */
+export function owedWriterMessageIds(pending: ThreadPendingInbox): string[] {
+  return pending.items
+    .filter((item) => item.intent === "message" && item.provenance.kind === "writer")
+    .map((item) => item.id);
+}
+
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   return Array.isArray((value as ThreadPendingInbox).items);

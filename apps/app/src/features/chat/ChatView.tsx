@@ -16,10 +16,10 @@
  * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
-import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
+import type { SnapshotLiveState, Thread, Turn, Work } from "@meridian/contracts/protocol";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
+import { useMeridianAgent, useRunFollowStatus } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useIsThreadPendingCreation, useThreadActions, useThreadStore } from "@/client/stores";
 import {
@@ -74,6 +74,7 @@ import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
+import { useOwedMessagesBlocked } from "./useOwedMessagesBlocked";
 import { usePendingInbox } from "./usePendingInbox";
 import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
@@ -88,7 +89,7 @@ export type ChatViewProps = {
   projectId: string;
   activeThread?: Thread | null;
   activeWork?: Work | null;
-  snapshotLiveState?: ThreadLiveState | null;
+  snapshotLiveState?: SnapshotLiveState | null;
   snapshotNextSeq?: string | null;
   snapshotThreadUsage?: {
     inputTokens: number;
@@ -177,9 +178,16 @@ export function ChatView({
   const isStreaming = latestAssistantTurn?.status === "streaming";
   // Only what the server has can be stopped: a stand-in brief is not a run yet.
   const { canStop: canStopSeed } = brief;
+  const followStatus = useRunFollowStatus(threadId);
+  const owedMessagesBlocked = useOwedMessagesBlocked(followStatus.waiting);
+  const following = followStatus.following && !owedMessagesBlocked;
   const run = useMemo(
-    () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
-    [canStopSeed, turns],
+    () =>
+      composerRun(
+        turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn)),
+        following,
+      ),
+    [canStopSeed, following, turns],
   );
   const composerAgentName = activeThread?.agentName ?? "General";
 
@@ -341,6 +349,7 @@ export function ChatView({
   function handleStop() {
     // A compaction or brief has no reply stream for the run controller to
     // stop: cancel its turn, as the divider's and the card's own Stop do.
+    // A streaming reply, or followed work between replies, is the controller's.
     if (run?.kind === "placeholder") {
       if (run.turn.role === "compaction") controls.stop(run.turn.id);
       else brief.stop(run.turn.id);

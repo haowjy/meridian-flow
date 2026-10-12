@@ -206,14 +206,27 @@ for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
       }
       await scenario.mount(<Probe />);
 
-      controller.resume("thread-1", { expectedTurnId: "turn-1" });
+      controller.attach("thread-1", { executionId: "exec-1", after: "0", runningTurnId: "turn-1" });
       act(() => {
         bus.emit(
-          { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
+          {
+            type: EventType.RUN_STARTED,
+            threadId: "thread-1",
+            runId: "turn-1",
+            rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+          } as AGUIEvent,
           "1000",
         );
         bus.emit(card("running"), "2000");
         bus.emit({ type: terminal, threadId: "thread-1", runId: "turn-1" } as AGUIEvent, "3000");
+        bus.emit(
+          {
+            type: EventType.CUSTOM,
+            name: "meridian.execution.ended",
+            value: { executionId: "exec-1" },
+          } as AGUIEvent,
+          "3001",
+        );
       });
       await vi.advanceTimersByTimeAsync(260);
       expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
@@ -239,16 +252,31 @@ describe("current stream ordering", () => {
       vi.useFakeTimers();
       const scenario = mountThreadProjectionScenario();
       const { bus, controller, store } = scenario;
-      if (runFirst) controller.resume("thread-1", { expectedTurnId: "turn-1" });
+      if (runFirst)
+        controller.attach("thread-1", {
+          executionId: "exec-1",
+          after: "0",
+          runningTurnId: "turn-1",
+        });
       function Probe() {
         useThreadSnapshotSync("thread-1");
         return null;
       }
       await scenario.mount(<Probe />);
-      if (!runFirst) controller.resume("thread-1", { expectedTurnId: "turn-1" });
+      if (!runFirst)
+        controller.attach("thread-1", {
+          executionId: "exec-1",
+          after: "0",
+          runningTurnId: "turn-1",
+        });
       act(() => {
         bus.emit(
-          { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
+          {
+            type: EventType.RUN_STARTED,
+            threadId: "thread-1",
+            runId: "turn-1",
+            rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+          } as AGUIEvent,
           "1000",
         );
         bus.emit({ type: EventType.TEXT_MESSAGE_START, messageId: "text-1" } as AGUIEvent, "1100");
@@ -283,6 +311,14 @@ describe("current stream ordering", () => {
         bus.emit(
           { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
           "1500",
+        );
+        bus.emit(
+          {
+            type: EventType.CUSTOM,
+            name: "meridian.execution.ended",
+            value: { executionId: "exec-1" },
+          } as AGUIEvent,
+          "1501",
         );
       });
       await vi.advanceTimersByTimeAsync(260);
@@ -604,7 +640,12 @@ describe("projection lifetime fencing", () => {
     expect(callback).toBeDefined();
     act(() =>
       bus.emit(
-        { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
+        {
+          type: EventType.RUN_STARTED,
+          threadId: "thread-1",
+          runId: "turn-1",
+          rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+        } as AGUIEvent,
         "1000",
       ),
     );
