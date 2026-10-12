@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- A repeatable headless-Chrome benchmark for chat Markdown streaming and transcript mounting.
+
 ### Changed
 
 - Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
