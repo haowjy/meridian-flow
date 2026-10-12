@@ -109,7 +109,7 @@ it("publishes a usable controller after StrictMode replay and fences retired tra
   expect(closed.filter((row) => row.active)).toHaveLength(1);
   expect(closed).toHaveLength(2);
   expect(errors.filter((row) => row.active)).toHaveLength(1);
-  controller.current?.resume("thread-1");
+  controller.current?.attach("thread-1", { executionId: "exec-1", after: "0" });
   expect(runs.filter((row) => row.active)).toHaveLength(1);
   harness.append.mockResolvedValueOnce({
     threadId: "thread-1",
@@ -156,14 +156,14 @@ it("publishes a usable controller after StrictMode replay and fences retired tra
       </StrictMode>,
     ),
   );
-  controller.current?.resume("thread-1");
+  controller.current?.attach("thread-1", { executionId: "exec-1", after: "0" });
   const savedRun = runs.at(-1)?.handlers.onEvent;
   await act(async () => root.unmount());
   savedRun?.({
     seq: "1000",
     event: { type: "RUN_STARTED", threadId: "thread-1", runId: "run-1" } as never,
   });
-  controller.current?.resume("thread-1");
+  controller.current?.attach("thread-1", { executionId: "exec-1", after: "0" });
   expect(runs.filter((row) => row.active)).toHaveLength(0);
   expect((store.getState().turns("thread-1") ?? []).some((turn) => turn.id === "run-1")).toBe(
     false,

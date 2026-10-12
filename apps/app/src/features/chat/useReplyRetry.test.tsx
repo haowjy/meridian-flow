@@ -158,4 +158,26 @@ describe("useReplyRetry", () => {
     expect(latest.standIns).toHaveLength(1);
     expect(latest.standIns[0]).toMatchObject({ id: lost.id, status: "pending", error: null });
   });
+
+  it("treats a replay the server can't place yet as pending, and keeps the stand-in once it answers the execution", async () => {
+    vi.useFakeTimers();
+    try {
+      api.retryReply
+        .mockRejectedValueOnce(new HttpResponseError("retry_pending", 503, null))
+        .mockResolvedValueOnce({ executionId: "execution-r", turn: null });
+      await act(async () => latest.retry(failed));
+      const id = latest.standIns[0]?.id ?? "";
+      // Not a refusal and not lost: the same id goes again.
+      expect(latest.refused.has("f")).toBe(false);
+      expect(latest.requestOf(id)).toBe("sending");
+      await act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(api.retryReply).toHaveBeenCalledTimes(2);
+      expect(api.retryReply).toHaveBeenLastCalledWith("t", "f", { id });
+      // The replay found the execution before its reply: the stand-in waits for it.
+      expect(latest.requestOf(id)).toBe("sent");
+      expect(latest.standIns[0]).toMatchObject({ id, status: "pending" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
