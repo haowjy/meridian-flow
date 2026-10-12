@@ -1,4 +1,5 @@
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
+import { createPeerRetirement } from "./domain/peer-retirement.js";
 /** Production dependency graph for the server collab domain. */
 
 import type { Database } from "@meridian/database";
@@ -477,7 +478,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchReview,
     workDraftPending,
     model: runtime.model,
-    agentEdit,
+    deferUntilCommit: deferUntilDrizzleCommit,
+    retirePeers: createPeerRetirement({
+      closeBranchRoom: hocuspocusBinding.closeBranch,
+      agentEdit,
+    }),
     resolveDocumentUris: createDocumentUrisResolver(deps.db),
     resolveThreadTitles: lookups.resolveThreadTitles,
     readReviewCut: createDrizzleReviewCut({

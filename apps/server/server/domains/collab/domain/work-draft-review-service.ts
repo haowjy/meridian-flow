@@ -9,7 +9,6 @@ import type {
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { CollabDrafts, DraftDiscardCommand } from "../contracts.js";
-import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
   BranchJournalRow,
@@ -21,6 +20,7 @@ import { DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
 import { documentEffectsEqual } from "./document-content.js";
+import type { PeerRetirement } from "./peer-retirement.js";
 import type {
   ApplicationBranchStore,
   WorkDraftDiscard,
@@ -49,7 +49,9 @@ export function createWorkDraftReviewService(input: {
   branchReview: BranchReviewService;
   workDraftPending: WorkDraftPending;
   model: YProsemirrorDocumentModel;
-  agentEdit: ThreadPeerAgentEditCore;
+  retirePeers: PeerRetirement;
+  /** Enclosing command transactions defer process-local retirement until commit. */
+  deferUntilCommit(effect: () => Promise<void>): boolean;
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   resolveDocumentUris(documentIds: readonly string[]): Promise<ReadonlyMap<string, string | null>>;
   readReviewCut: ReadReviewCut;
@@ -360,13 +362,14 @@ export function createWorkDraftReviewService(input: {
           workId: command.workId,
           documentId: command.documentId,
         }));
-      await input.discardWorkDraft({
+      const retired = await input.discardWorkDraft({
         draftOnlyProjectId: draftOnly ? projectId : undefined,
         workId: command.workId,
         documentId: command.documentId,
         contentBranchId: branch.branchId,
       });
-      await input.agentEdit.invalidateThread(command.documentId, command.threadId ?? "");
+      if (!input.deferUntilCommit(() => input.retirePeers(retired)))
+        await input.retirePeers(retired);
     }
     return { status: "discarded" as const, draftId: command.draftId };
   }

@@ -37,7 +37,7 @@ export interface RuntimeStore {
     options?: RuntimeEvictOptions,
   ): Promise<void>;
   evictThreadRuntimes(
-    docId: string,
+    docId: string | null,
     threadId: string,
     options?: RuntimeEvictOptions,
   ): Promise<void>;
@@ -141,14 +141,14 @@ export function createRuntimeStore(deps: {
   }
 
   async function evictThreadRuntimes(
-    docId: string,
+    docId: string | null,
     threadId: string,
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
     for (const [key, runtime] of [...runtimeDocs]) {
-      if (threadId && runtime.threadId !== threadId) continue;
+      if (runtime.threadId !== threadId) continue;
       const runtimeDocId = docIdFromRuntimeKey(key);
-      if (docId && runtimeDocId !== docId) continue;
+      if (docId !== null && runtimeDocId !== docId) continue;
       runtimeDocs.delete(key);
       runtime.session.documents.delete(runtimeDocId);
     }
