@@ -95,7 +95,9 @@ A cohort carrying `creation` is exempt: its 404 still belongs to O4's New chat t
 Mounted owners also retain that provenance after another tab retires the cohort;
 a creation or stale-bind result prevents route repair ahead of O4's transfer.
 An unreadable journal leaves copies for the next reconciliation but never blocks
-missing-chat route repair. Mounted status comes from the account/thread row model's
+missing-chat route repair. The browser account bind and lifetime epoch exist
+independently of journal initialization: denied storage is unavailable, not a
+stale account. Mounted status comes from the account/thread row model's
 bindings, not a separate owner registry. Confirmed Delete starts cleanup without
 waiting for its lock before reporting the outcome.
 

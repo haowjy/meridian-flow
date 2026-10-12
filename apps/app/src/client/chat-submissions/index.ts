@@ -30,6 +30,8 @@ export {
 export { isThreadMissingForAccount } from "./thread-availability";
 
 let journal: DeviceChatSubmissionJournal | null = null;
+let boundAccountId: string | null = null;
+let bindEpoch = 0;
 
 function browserStorage(): ChatSubmissionStorage {
   return window.localStorage;
@@ -51,6 +53,10 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
 }
 
 export function bindChatSubmissions(accountId: string): void {
+  if (boundAccountId !== accountId) {
+    boundAccountId = accountId;
+    bindEpoch++;
+  }
   const current = browserJournal();
   if (!current || current.accountId === accountId) return;
   const ready = current.setUser(accountId);
@@ -70,11 +76,11 @@ export function bindChatSubmissions(accountId: string): void {
 }
 
 export function getChatSubmissionAccountId(): string | null {
-  return browserJournal()?.accountId ?? null;
+  return boundAccountId;
 }
 
 export function getChatSubmissionEpoch(): number {
-  return browserJournal()?.epoch ?? 0;
+  return bindEpoch;
 }
 
 export function readChatSubmissions(accountId: string): ChatSubmission[] {
@@ -98,7 +104,8 @@ export function retireChatSubmission(
   recordId: string,
   expectedEpoch?: number,
 ): boolean {
-  return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
+  if (expectedEpoch !== undefined && expectedEpoch !== bindEpoch) return false;
+  return browserJournal()?.retire(accountId, recordId) ?? false;
 }
 
 /** In-tab writes and cross-tab storage changes share the same subscription. */
