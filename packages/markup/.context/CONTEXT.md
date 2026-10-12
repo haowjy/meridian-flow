@@ -29,7 +29,9 @@ loads neither Yjs nor the schema builder):
   catalog)` over a `HolderCatalog`, `assignFreshLink` (pass 3),
   `classifyWrittenHref`, `writtenAddresses` and `writtenSourceUri`; and
   `walkLinkOccurrences(blocks)` / `spelledLinks(blocks, links)`
-  (`link-occurrences.ts`), see Link occurrences.
+  (`link-occurrences.ts`), see Link occurrences. Also exports
+  `formatMarkdownLink(label, href)` and `markdownLinkDestination(href)` for
+  non-editor messages and clipboard spelling without loading ProseMirror or Yjs.
 - `@meridian/markup/stored-links` (`stored-links.ts`): `extractStoredLinks(fragment)`
   and `storedLinkKeys(...)`, the Yjs twin of the occurrence walk. It takes the
   fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
