@@ -15,6 +15,7 @@ import type {
   PushToLiveResult,
 } from "./branch-push-contracts.js";
 import { DraftChangeRefusal } from "./branch-push-contracts.js";
+import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
 import { documentEffectsEqual } from "./document-content.js";
 import type {
@@ -118,9 +119,16 @@ export function createWorkDraftReviewService(input: {
   }) {
     const cut = await input.readReviewCut(command).catch((cause) => {
       if (cause instanceof DraftChangeRefusal && cause.status === "gone") return null;
+      if (cause instanceof BranchCorruptError && cause.generation !== undefined)
+        return {
+          status: "corrupt" as const,
+          draftId: cause.branchId,
+          draftGeneration: cause.generation,
+        };
       throw cause;
     });
     if (!cut) return { status: "gone" as const, draftId: command.draftId };
+    if ("status" in cut) return cut;
     const { preview, diagnostics } = deriveReviewCut(cut, input.model);
     if (diagnostics.length)
       input.diagnostics.unattributedHunks({

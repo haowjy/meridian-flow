@@ -176,7 +176,8 @@ export function useReviewRoomOwner({
         answer = await read();
       if (!current()) return;
       setEntryAnswered(target);
-      if (answer.status !== "gone")
+      if (answer.status === "corrupt") dispatch({ type: "roomFailed", documentId, draftId });
+      if (answer.status === "active")
         dispatch({
           type: "generationObserved",
           documentId,
@@ -344,7 +345,7 @@ export function reviewRoomObservations(
       : evidence;
   // A draft-only address belongs to lifecycle until catalog settlement. List
   // omission and an empty active/reset preview cannot close or fail it.
-  if (preview?.status === "gone" || (!draftOnly && rows && !row))
+  if (preview?.status === "gone" || (preview?.status !== "corrupt" && !draftOnly && rows && !row))
     actions.push({
       type: "reviewAbsent",
       ...draft,

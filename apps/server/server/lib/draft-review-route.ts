@@ -117,7 +117,7 @@ export async function handleWorkDraftPreviewRequest(
 ): Promise<DraftPreviewResponse> {
   await draftGrants(deps, input, "read");
   const preview = await callDraftReview(deps.documentSync.draftReview.preview(input));
-  if (preview.status === "gone") return preview;
+  if (preview.status !== "active") return preview;
 
   const base = {
     status: "active" as const,

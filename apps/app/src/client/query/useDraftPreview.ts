@@ -293,6 +293,7 @@ export function useDraftPreviews(
   return useMemo(() => {
     if (targets.length === 0) return NO_ENTRIES;
     return reads.map(({ data, failed, retry }, index): DraftPreviewEntry => {
+      if (data?.status === "corrupt") return { status: "error", retry };
       if (data) {
         const { hidden, hiddenKey, whole } = hiddenOf(records, targets[index], data);
         return { status: "ready", preview: previewWithoutHidden(data, hidden, hiddenKey, whole) };

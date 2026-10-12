@@ -178,9 +178,11 @@ export function useReviewChanges(
         })
         ? "loading"
         : "ready"
-      : preview?.status === "gone"
-        ? "gone"
-        : "loading";
+      : preview?.status === "corrupt"
+        ? "error"
+        : preview?.status === "gone"
+          ? "gone"
+          : "loading";
   const finished = completion?.phase === "closed";
   const unlisted =
     !finished && status === "ready" && completing === null && items.length === 0 && !hiding;

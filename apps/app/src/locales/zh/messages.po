@@ -1738,6 +1738,7 @@ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
+#: src/features/editor/EditorView.tsx
 msgid "Discard draft"
 msgstr ""
 

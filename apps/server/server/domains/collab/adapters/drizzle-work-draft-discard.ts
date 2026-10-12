@@ -76,7 +76,17 @@ export function createDrizzleWorkDraftDiscard(
                     ),
                   )
                   .limit(1);
-                if (!pending) return;
+                if (!pending) {
+                  const probe = createCollabYDoc({ gc: false });
+                  try {
+                    Y.applyUpdate(probe, content.state);
+                    return;
+                  } catch {
+                    // A rowless corrupt branch still needs the same fenced reset from live.
+                  } finally {
+                    probe.destroy();
+                  }
+                }
                 const liveMembership =
                   manifest && command.draftOnlyProjectId
                     ? await branches.resolveManifestMembership({

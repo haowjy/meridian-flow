@@ -1,6 +1,6 @@
 /** Pause after every awaited snapshot query, without production hooks or module mocks. */
 import type { Database } from "@meridian/database";
-import type { DrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import type { DrizzleTransaction } from "../shared/drizzle-transaction.js";
 
 export function observeReviewSnapshot(db: Database, boundary: () => Promise<void>): Database {
   function query<T extends object>(target: T): T {
