@@ -9,7 +9,8 @@
  * brings, so neither is creatable here.
  *
  * Built on the reservation and `setLocation` primitive, which commits locally
- * and syncs in the background; the server's move creates any missing folders.
+ * and syncs in the background. Missing folders are a suffix beneath the deepest
+ * existing identity anchor, created atomically by the server move.
  * A later sync failure lands on the document itself. Nothing about the link
  * changes on creation: the project now holds a document at that address, which
  * is a new catalog revision, and every resolution scope keyed on it asks again.
@@ -72,6 +73,21 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
       let documentId: string | null = null;
       let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
+        const folders = target.folderPath.split("/").filter(Boolean);
+        const createFolders: string[] = [];
+        let parent = null;
+        while (!parent) {
+          parent = await resources.findParentAtLocation(projectId, {
+            scheme: target.scheme,
+            path: folders.length ? `/${folders.join("/")}` : "",
+            name: "",
+            workId: null,
+          });
+          if (parent) break;
+          const segment = folders.pop();
+          if (!segment) throw new Error("Destination area is unavailable");
+          createFolders.unshift(segment);
+        }
         const reservation = await resources.reserveDocument(projectId);
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
@@ -79,10 +95,9 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
         documentId = reservation.content.handle.documentId;
         try {
           await resources.setLocation(projectId, reservation.key, {
-            scheme: target.scheme,
-            folderPath: target.folderPath,
+            parent,
+            ...(createFolders.length ? { createFolders } : {}),
             name: target.name,
-            workId: null,
           });
         } finally {
           reservation.content.handle.release();

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { planResourceDeletion } from "./resource-deletion";
 import {
   installCanonicalRefresh,
+  namespaceOutcomeMatches,
   prepareNamespaceAttempt,
   reconcileResourceNamespace,
   recordNamespaceOutcome,
@@ -11,6 +12,7 @@ import {
 } from "./resource-namespace";
 import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
 import type {
+  NamespaceAttempt,
   NamespaceOutcome,
   ResourceMetadataStore,
   ResourceNamespaceTransport,
@@ -107,6 +109,9 @@ function transport(input: {
 }): ResourceNamespaceTransport {
   return {
     accountId: "account",
+    lookupIdentity: async () => {
+      throw new Error("Unexpected availability lookup");
+    },
     readOutcome: input.read ?? (async () => null),
     submit: input.submit ?? (async () => createOutcome()),
   };
@@ -120,10 +125,14 @@ describe("namespace record transitions", () => {
     record.resource.obligations = obligations;
 
     expect(
-      prepareNamespaceAttempt(record, {
-        attemptId: "attempt",
-        operationId: "unused-create-operation",
-      }),
+      prepareNamespaceAttempt(
+        record,
+        {
+          attemptId: "attempt",
+          operationId: "unused-create-operation",
+        },
+        (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+      ),
     ).toBeNull();
   });
 
@@ -133,19 +142,27 @@ describe("namespace record transitions", () => {
     record.resource.content.initialization = "reserved";
 
     expect(
-      prepareNamespaceAttempt(record, {
-        attemptId: "attempt",
-        operationId: "unused-create-operation",
-      }),
+      prepareNamespaceAttempt(
+        record,
+        {
+          attemptId: "attempt",
+          operationId: "unused-create-operation",
+        },
+        (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+      ),
     ).toBeNull();
   });
 
   it("persists immutable create request bytes before an outcome can be recorded", () => {
     const before = local();
-    const submitted = prepareNamespaceAttempt(before, {
-      attemptId: "attempt",
-      operationId: "unused-create-operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      before,
+      {
+        attemptId: "attempt",
+        operationId: "unused-create-operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     expect(submitted?.next.intents[0]?.attempts[0]).toEqual({
       attemptId: "attempt",
       request: {
@@ -200,12 +217,17 @@ describe("namespace record transitions", () => {
         desired: { kind: "delete" },
       },
     ];
-    const submitted = prepareNamespaceAttempt(before, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      before,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing submitted write");
     const receipt: ContextOperationReceipt = {
+      observationVersion: "1",
       operationId: "operation",
       command: {
         kind: "delete",
@@ -217,7 +239,7 @@ describe("namespace record transitions", () => {
         value: {
           status: "deleted",
           deletedDocumentIds: ["document"],
-          availabilityGeneration: "new",
+          availabilityGeneration: "2",
         },
       },
     };
@@ -229,7 +251,7 @@ describe("namespace record transitions", () => {
     const settled = settleNamespaceOutcome(received.next);
     expect(settled?.next.resource.lifecycle).toEqual({
       kind: "terminal",
-      generation: "new",
+      generation: "2",
       transitionId: "operation",
     });
     expect(settled?.next.resource.content).toEqual(before.resource.content);
@@ -252,25 +274,26 @@ describe("namespace record transitions", () => {
         desired: {
           kind: "set-location",
           typedName: "after",
-          destination: {
-            scheme: "manuscript",
-            folderPath: "chapters",
-            name: "after",
-            workId: null,
-          },
+          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "after" },
         },
       },
     ];
-    const submitted = prepareNamespaceAttempt(before, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      before,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing submitted write");
     const received = recordNamespaceOutcome(submitted.next, "move", "attempt", {
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "operation",
         command: {
+          destinationParent: { kind: "folder" as const, folderId: "chapters" },
           kind: "move",
           sourceUri: "unfiled://before",
           destinationUri: "manuscript://chapters/after",
@@ -296,6 +319,7 @@ describe("namespace record transitions", () => {
     expect(settled?.next.resource.canonical).toEqual(received.next.resource.canonical);
     expect(settled?.next.intents[0]?.state).toBe("settled");
     expect(settled?.next.resource.obligations.canonicalRefresh).toEqual({
+      observationVersion: "1",
       operationId: "operation",
       identityRevision: 1,
     });
@@ -317,12 +341,7 @@ describe("namespace record transitions", () => {
         desired: {
           kind: "set-location",
           typedName: "after",
-          destination: {
-            scheme: "manuscript",
-            folderPath: "chapters",
-            name: "after",
-            workId: null,
-          },
+          destination: { parent: { kind: "folder", folderId: "chapters" }, name: "after" },
         },
       },
       {
@@ -332,16 +351,22 @@ describe("namespace record transitions", () => {
         desired: { kind: "delete" },
       },
     ];
-    const submitted = prepareNamespaceAttempt(before, {
-      attemptId: "move-attempt",
-      operationId: "move-operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      before,
+      {
+        attemptId: "move-attempt",
+        operationId: "move-operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing move attempt");
     const received = recordNamespaceOutcome(submitted.next, "move", "move-attempt", {
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "move-operation",
         command: {
+          destinationParent: { kind: "folder" as const, folderId: "chapters" },
           kind: "move",
           sourceUri: "unfiled://before",
           destinationUri: "manuscript://chapters/after",
@@ -357,14 +382,20 @@ describe("namespace record transitions", () => {
     const settled = settleNamespaceOutcome(received.next);
     if (!settled) throw new Error("missing move settlement");
     expect(
-      prepareNamespaceAttempt(settled.next, {
-        attemptId: "delete-attempt",
-        operationId: "delete-operation",
-      }),
+      prepareNamespaceAttempt(
+        settled.next,
+        {
+          attemptId: "delete-attempt",
+          operationId: "delete-operation",
+        },
+        (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+      ),
     ).toBeNull();
     const refreshed = installCanonicalRefresh({
+      observationVersion: "1",
       record: settled.next,
       operationId: "move-operation",
+      parent: { kind: "folder", folderId: "chapters" },
       location: {
         scheme: "manuscript",
         path: "/chapters/after",
@@ -374,10 +405,14 @@ describe("namespace record transitions", () => {
     });
     if (!refreshed) throw new Error("missing canonical refresh");
     expect(() => validateResourceRecordUpdate(settled.next, refreshed.next)).not.toThrow();
-    const deletion = prepareNamespaceAttempt(refreshed.next, {
-      attemptId: "delete-attempt",
-      operationId: "delete-operation",
-    });
+    const deletion = prepareNamespaceAttempt(
+      refreshed.next,
+      {
+        attemptId: "delete-attempt",
+        operationId: "delete-operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     expect(deletion?.next.intents[1]?.attempts[0]?.request).toMatchObject({
       kind: "delete",
       scheme: "manuscript",
@@ -401,15 +436,20 @@ describe("namespace record transitions", () => {
         desired: { kind: "delete" },
       },
     ];
-    const submitted = prepareNamespaceAttempt(before, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      before,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing submitted write");
     expect(() =>
       recordNamespaceOutcome(submitted.next, "delete", "attempt", {
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "operation",
           command: {
             kind: "delete",
@@ -446,15 +486,20 @@ describe("namespace record transitions", () => {
         desired: { kind: "delete" },
       },
     ];
-    const submitted = prepareNamespaceAttempt(before, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      before,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing submitted write");
     expect(() =>
       recordNamespaceOutcome(submitted.next, "delete", "attempt", {
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "operation",
           command: {
             kind: "delete",
@@ -499,14 +544,21 @@ describe("a chat's Scratch owner", () => {
         desired: {
           kind: "set-location",
           typedName: "beats",
-          destination: { scheme: "manuscript", folderPath: "", name: "beats", workId: null },
+          destination: {
+            parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+            name: "beats",
+          },
         },
       },
     ];
-    const submitted = prepareNamespaceAttempt(record, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      record,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     const request = submitted?.next.intents[0]?.attempts[0]?.request;
     expect(request).toMatchObject({
       kind: "move",
@@ -525,14 +577,19 @@ describe("a chat's Scratch owner", () => {
         desired: { kind: "delete" },
       },
     ];
-    const submitted = prepareNamespaceAttempt(record, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      record,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing submitted write");
     const receipt = (uri: string): NamespaceOutcome => ({
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "operation",
         command: { kind: "delete", uri, expected: { kind: "file", documentId: "document" } },
         result: {
@@ -587,10 +644,14 @@ describe("namespace reconciliation", () => {
 
   it("replays the exact stored create request when no historical receipt exists", async () => {
     const store = new MemoryStore();
-    const submitted = prepareNamespaceAttempt(store.record, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      store.record,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing submitted write");
     store.record = submitted.next;
     const read = vi.fn(async () => null);
@@ -636,10 +697,14 @@ describe("namespace reconciliation", () => {
 
   it("revalidates identity after receipt lookup before dispatch", async () => {
     const store = new MemoryStore();
-    const submitted = prepareNamespaceAttempt(store.record, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const submitted = prepareNamespaceAttempt(
+      store.record,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+    );
     if (!submitted) throw new Error("missing submitted write");
     store.record = submitted.next;
     let finishLookup!: () => void;
@@ -688,11 +753,8 @@ it.each([
         kind: "set-location",
         typedName: "after",
         destination: {
-          scheme: "scratch",
-          folderPath: "",
+          parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
           name: "after",
-          workId: "work",
-          workSlug: "notes",
         },
       },
     },
@@ -719,8 +781,14 @@ it.each([
           : {
               kind: "operation",
               receipt: {
+                observationVersion: "1",
                 operationId: "operation",
                 command: {
+                  destinationParent: {
+                    kind: "root" as const,
+                    scheme: "scratch" as const,
+                    owner: { workId: "work", workSlug: "notes" },
+                  },
                   kind: "move",
                   sourceUri: "scratch://@notes/before",
                   destinationUri: "scratch://@notes/after",
@@ -746,6 +814,10 @@ it.each([
     intentId: "move",
     kind: "set-location",
     name: "after",
+    destination: {
+      parent: { kind: "root", scheme: "scratch", owner: { workId: "work", workSlug: "notes" } },
+      name: "after",
+    },
   });
   const noReplay = vi.fn();
   await expect(
@@ -785,6 +857,7 @@ it.each([
         submit: async () => ({
           kind: "operation",
           receipt: {
+            observationVersion: "1",
             operationId: "delete-operation",
             command: {
               kind: "delete",
@@ -831,6 +904,7 @@ it("restores a rejected delete after retry and admits another delete", async () 
           submit: async () => ({
             kind: "operation",
             receipt: {
+              observationVersion: "1",
               operationId: `operation-${number}`,
               command: {
                 kind: "delete",
@@ -861,21 +935,34 @@ it("offers the latest queued file name after refusal and retries from accepted p
       intentId: name,
       operationId: name,
       eligibleAt: 1,
-      destination: { scheme: "manuscript", folderPath: "", name, workId: null },
+      destination: {
+        parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+        name: name,
+      },
     });
     if (!write) throw new Error("Missing location command");
     validateResourceRecordUpdate(record, write.next);
     return write.next;
   };
   const renamed = location(before, "B");
-  const submitted = prepareNamespaceAttempt(renamed, { attemptId: "attempt", operationId: "B" });
+  const submitted = prepareNamespaceAttempt(
+    renamed,
+    { attemptId: "attempt", operationId: "B" },
+    (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+  );
   if (!submitted) throw new Error("Missing submission");
   const queued = location(submitted.next, "C");
   const received = recordNamespaceOutcome(queued, "B", "attempt", {
     kind: "operation",
     receipt: {
+      observationVersion: "1",
       operationId: "B",
       command: {
+        destinationParent: {
+          kind: "root" as const,
+          scheme: "manuscript" as const,
+          owner: { workId: null },
+        },
         kind: "move",
         sourceUri: "manuscript://A",
         destinationUri: "manuscript://B",
@@ -896,6 +983,10 @@ it("offers the latest queued file name after refusal and retries from accepted p
     intentId: "B",
     kind: "set-location",
     name: "C",
+    destination: {
+      parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+      name: "C",
+    },
   });
   if (!offered) throw new Error("Missing offered repair");
   // The caller retries the offered destination, keeping the original receipt as evidence.
@@ -905,11 +996,18 @@ it("offers the latest queued file name after refusal and retries from accepted p
     intentId: "repair",
     operationId: "repair",
     eligibleAt: 1,
-    destination: { scheme: "manuscript", folderPath: "", name: offered.name, workId: null },
+    destination: {
+      parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+      name: offered.name,
+    },
   });
   if (!repair) throw new Error("Missing repair");
   validateResourceRecordUpdate(reopened, repair.next);
-  const retry = prepareNamespaceAttempt(repair.next, { attemptId: "retry", operationId: "repair" });
+  const retry = prepareNamespaceAttempt(
+    repair.next,
+    { attemptId: "retry", operationId: "repair" },
+    (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+  );
   if (!retry) throw new Error("Missing retry");
   expect(retry.next.intents.at(-1)?.attempts[0].request).toMatchObject({
     body: { path: "A", newName: "C" },
@@ -917,17 +1015,257 @@ it("offers the latest queued file name after refusal and retries from accepted p
   expect(projectResourceNeedsRepair("project", retry.next)).toBeNull();
 });
 
+it.each([
+  false,
+  true,
+])("deletes canonical file after an overlapping move refusal (%s)", (receiptless) => {
+  const before = local();
+  before.resource.canonical = { scheme: "manuscript", path: "/A", name: "A", workId: null };
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [];
+  const move = planResourceLocation({
+    record: before,
+    projectId: "project",
+    intentId: "move",
+    operationId: "move",
+    eligibleAt: 1,
+    destination: {
+      parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+      name: "B",
+    },
+  });
+  if (!move) throw new Error("Missing move");
+  const submitted = prepareNamespaceAttempt(
+    move.next,
+    {
+      attemptId: "attempt",
+      operationId: "move",
+    },
+    (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+  );
+  if (!submitted) throw new Error("Missing submission");
+  const deletion = planResourceDeletion(submitted.next, "project", "delete");
+  if (!deletion) throw new Error("Missing deletion");
+  validateResourceRecordUpdate(submitted.next, deletion.next);
+  const outcome: NamespaceOutcome = receiptless
+    ? {
+        kind: "refusal",
+        operationId: "move",
+        error: {
+          code: "work_missing",
+          message: "Work not found.",
+          source: "system",
+          retryable: false,
+        },
+      }
+    : {
+        kind: "operation",
+        receipt: {
+          observationVersion: "1",
+          operationId: "move",
+          command: {
+            destinationParent: {
+              kind: "root" as const,
+              scheme: "manuscript" as const,
+              owner: { workId: null },
+            },
+            kind: "move",
+            sourceUri: "manuscript://A",
+            destinationUri: "manuscript://B",
+            expected: { kind: "file", nodeId: "document" },
+          },
+          result: { ok: false, error: { code: "conflict", uri: "manuscript://B" } },
+        },
+      };
+  const received = recordNamespaceOutcome(deletion.next, "move", "attempt", outcome);
+  if (!received) throw new Error("Missing refusal");
+  const settled = settleNamespaceOutcome(received.next);
+  if (!settled) throw new Error("Missing settlement");
+  expect(settled.next.intents.map((i) => i.state)).toEqual(["superseded", "pending"]);
+  validateResourceRecordUpdate(received.next, settled.next);
+  expect(settled.next.intents[0]?.attempts[0]?.outcome).toEqual(outcome);
+  const reopened = structuredClone(settled.next);
+  expect(projectResourceNeedsRepair("project", reopened)).toBeNull();
+  const retry = prepareNamespaceAttempt(
+    reopened,
+    {
+      attemptId: "delete-attempt",
+      operationId: "delete",
+    },
+    (id) => ({ scheme: "manuscript", path: `/${id}`, name: id, workId: null }),
+  );
+  if (!retry) throw new Error("Missing delete dispatch");
+  expect(retry.next.intents.at(-1)?.attempts[0]?.request).toMatchObject({
+    kind: "delete",
+    body: { path: "A", expected: { kind: "file", documentId: "document" } },
+  });
+});
+
+it("refuses a move receipt for a different captured destination parent", () => {
+  const attempt: NamespaceAttempt = {
+    attemptId: "attempt",
+    request: {
+      kind: "move",
+      scheme: "manuscript",
+      sourceWorkSlug: null,
+      destinationWorkSlug: null,
+      body: {
+        operationId: "operation",
+        path: "A",
+        expected: { kind: "file", nodeId: "document" },
+        destinationScheme: "manuscript",
+        destinationFolderPath: "B",
+        destinationParent: { kind: "folder", folderId: "selected" },
+      },
+    },
+  };
+  const outcome: NamespaceOutcome = {
+    kind: "operation",
+    receipt: {
+      observationVersion: "1",
+      operationId: "operation",
+      command: {
+        kind: "move",
+        sourceUri: "manuscript://A",
+        destinationUri: "manuscript://B/A",
+        expected: { kind: "file", nodeId: "document" },
+        destinationParent: { kind: "folder", folderId: "replacement" },
+      },
+      result: { ok: true, value: { destinationPath: "B/A" } },
+    },
+  };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
+  if (outcome.receipt.command.kind !== "move") throw new Error("Expected move receipt");
+  outcome.receipt.command.destinationParent = { kind: "folder", folderId: "selected" };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(true);
+});
+
+it("matches immutable identity moves after the destination's path and owner change", () => {
+  const before = local();
+  before.resource.canonical = {
+    scheme: "unfiled",
+    path: "/before",
+    name: "before",
+    workId: null,
+  };
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.intents = [
+    {
+      ...before.intents[0],
+      intentId: "move",
+      desired: {
+        kind: "set-location",
+        typedName: "before",
+        destination: { parent: { kind: "folder", folderId: "parent" }, name: "before" },
+      },
+    },
+  ];
+  const submitted = prepareNamespaceAttempt(
+    before,
+    { attemptId: "attempt", operationId: "operation" },
+    () => ({ scheme: "scratch", path: "/B", name: "B", workId: "work", workSlug: "notes" }),
+  );
+  if (!submitted) throw new Error("Missing attempt");
+  expect(() =>
+    recordNamespaceOutcome(submitted.next, "move", "attempt", {
+      kind: "operation",
+      receipt: {
+        observationVersion: "1",
+        operationId: "operation",
+        command: {
+          kind: "move",
+          sourceUri: "unfiled://before",
+          destinationUri: "manuscript://Renamed/before",
+          destinationParent: { kind: "folder", folderId: "parent" },
+          expected: { kind: "file", nodeId: "document" },
+        },
+        result: { ok: true, value: { destinationPath: "Renamed/before" } },
+      },
+    }),
+  ).not.toThrow();
+});
+
+it("retains a missing-folder suffix in immutable transport and receipt matching", () => {
+  const record = local();
+  record.resource.canonical = { scheme: "unfiled", path: "/A", name: "A", workId: null };
+  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.intents = [
+    {
+      ...record.intents[0],
+      intentId: "move",
+      desired: {
+        kind: "set-location",
+        typedName: "A",
+        destination: {
+          parent: { kind: "folder", folderId: "anchor" },
+          createFolders: ["New Arc", "Part 1"],
+          name: "A",
+        },
+      },
+    },
+  ];
+  const submitted = prepareNamespaceAttempt(
+    record,
+    { attemptId: "attempt", operationId: "operation" },
+    () => ({ scheme: "manuscript", path: "/Act", name: "Act", workId: null }),
+  );
+  const attempt = submitted?.next.intents[0].attempts[0];
+  if (!attempt) throw new Error("Missing attempt");
+  expect(attempt.request).toMatchObject({
+    kind: "move",
+    body: {
+      destinationFolderPath: "Act/New Arc/Part 1",
+      destinationParent: {
+        kind: "folder",
+        folderId: "anchor",
+        createFolders: ["New Arc", "Part 1"],
+      },
+    },
+  });
+  const outcome: NamespaceOutcome = {
+    kind: "operation",
+    receipt: {
+      observationVersion: "1",
+      operationId: "operation",
+      command: {
+        kind: "move",
+        sourceUri: "unfiled://A",
+        destinationUri: "kb://Renamed/New Arc/Part 1/A",
+        expected: { kind: "file", nodeId: "document" },
+        destinationParent: {
+          kind: "folder",
+          folderId: "anchor",
+          createFolders: ["New Arc", "Part 1"],
+        },
+      },
+      result: { ok: true, value: { destinationPath: "Renamed/New Arc/Part 1/A" } },
+    },
+  };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(true);
+  if (outcome.receipt.command.kind !== "move") throw new Error("Not a move");
+  outcome.receipt.command.destinationParent = {
+    kind: "folder",
+    folderId: "anchor",
+    createFolders: ["Part 1"],
+  };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
+});
+
 describe("a name the writer typed with a prose suffix", () => {
   const moveReceipt = (operationId: string, sourceUri: string, destinationUri: string) =>
     ({
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId,
         command: {
           kind: "move",
           sourceUri,
           destinationUri,
           expected: { kind: "file", nodeId: "document" },
+          destinationParent: destinationUri.includes("/Book/")
+            ? { kind: "folder", folderId: "Book" }
+            : { kind: "root", scheme: "manuscript", owner: { workId: null } },
         },
         result: { ok: true, value: { movedNodeId: "document", destinationPath: "x" } },
       },
@@ -953,13 +1291,22 @@ describe("a name the writer typed with a prose suffix", () => {
       intentId: "intent",
       operationId: "operation",
       eligibleAt: 1,
-      destination: { scheme: "manuscript", folderPath, name: typed, workId: null },
+      destination: {
+        parent: folderPath
+          ? { kind: "folder", folderId: "Book" }
+          : { kind: "root", scheme: "manuscript", owner: { workId: null } },
+        name: typed,
+      },
     });
     if (!planned) throw new Error("Missing location command");
-    const prepared = prepareNamespaceAttempt(planned.next, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const prepared = prepareNamespaceAttempt(
+      planned.next,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      () => ({ scheme: "manuscript", path: "/Book", name: "Book", workId: null }),
+    );
     if (!prepared) throw new Error("Missing submission");
     return prepared.next;
   }
@@ -1016,7 +1363,10 @@ describe("a name the writer typed with a prose suffix", () => {
       intentId: "intent",
       operationId: "operation",
       eligibleAt: 1,
-      destination: { scheme: "manuscript", folderPath: "", name: "Chapter 13.md", workId: null },
+      destination: {
+        parent: { kind: "root", scheme: "manuscript", owner: { workId: null } },
+        name: "Chapter 13.md",
+      },
     });
     expect(planned?.next.intents[0]?.desired).toMatchObject({
       destination: { name: "Chapter 13" },

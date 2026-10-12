@@ -32,6 +32,8 @@ export type CatalogSourceEntry = {
 
 export type CatalogFolderEntry = {
   kind: "folder";
+  /** Globally ordered namespace observation, independent of catalog replay cursors. */
+  observationVersion: string;
   entryId: FolderId;
   scope: CatalogScope;
   sourceId: ContextSourceId;
@@ -40,10 +42,13 @@ export type CatalogFolderEntry = {
   path: readonly string[];
   uri: CanonicalContextUri;
   hasChildren: boolean;
+  /** Device-synthesized ancestry has no server folder identity or management actions. */
+  navigationOnly?: true;
 };
 
 type CatalogFileEntryBase = {
   kind: "file";
+  observationVersion: string;
   entryId: DocumentId;
   scope: CatalogScope;
   sourceId: ContextSourceId;

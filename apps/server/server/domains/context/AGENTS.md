@@ -66,10 +66,16 @@ reason-coded validators in `lib/context-mutation-validation.ts`.
 
 `move.post.ts` is intentionally a thinner shell over `lib/context-move-route.ts`:
 the route core resolves every requested locator to exact project/lineage/Work
-authority before it calls
-`ContextPort.commitWriterLocation`. Proven destination occupation returns a
-collision locator with that same authority; any port identity mismatch is an
-internal contract error. Stale source/target plans return a retry result instead.
+authority before it calls `ContextPort.commitWriterLocation`. Optional
+`destinationParent` binds a folder ID or area root; URI-addressed callers omit
+it. A folder destination resolves again under the move transaction's namespace
+locks. Only linked creation supplies `createFolders`, a validated name suffix
+ensured beneath the anchor's current home in that transaction; a missing anchor
+never recreates its old path. Missing, terminal or denied
+destinations return typed `destination_missing` repair evidence. Receipts retain
+the selected parent identity, creation suffix and original URI command. Proven occupation
+returns the current collision locator; path-only commands must match the
+requested locator. Stale source/target plans return a retry result instead.
 
 `create.post.ts` returns the shared `CreateContextEntryResult` for both files
 and folders. A namespace conflict is HTTP 409 with top-level `status`, `uri`
@@ -133,3 +139,10 @@ manifest members, for drafted sources) whose ref names a moved document
 Every arrival (tracked create, upload, move-in, Work restore, Apply) settles ahead
 refs once, against its final tree, through `DocumentArrivals`; see
 [`.context/CONTEXT.md`](.context/CONTEXT.md#ahead-refs-and-arrivals).
+
+Lineage source hiding is reversible authority loss (`lineage_hidden`), not document
+deletion. Project-final availability must preserve that distinction so cached
+Scratch resources can return on chat or Work restore. Independent document
+tombstones still report deletion while their lineage is hidden;
+`deletedByWorkId` identifies reversible cascade-owned tombstones. Folder delete
+commands validate the supplied folder node ID before recursive mutation.

@@ -1,4 +1,6 @@
-# Recently opened landing follow-up
+# Context browser FUTURE
+
+## Recently opened landing
 
 Code-local nice-to-haves for `RecentDocumentsLanding.tsx`, the recorder in
 `recent-documents-api.ts`, and the device record those surfaces read. Nothing
