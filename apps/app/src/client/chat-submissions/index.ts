@@ -27,7 +27,7 @@ export {
   type ChatSubmission,
   chatSubmissionStorageKey,
 } from "./store";
-export { isThreadNotFound } from "./thread-availability";
+export { isThreadMissingForAccount } from "./thread-availability";
 
 let journal: DeviceChatSubmissionJournal | null = null;
 
@@ -63,7 +63,7 @@ export function bindChatSubmissions(accountId: string): void {
         owner,
         (threadId) =>
           chatSubmissionMountState(accountId, threadId, getChatSubmissionEpoch()).mounted,
-        probeChatDestination,
+        (threadId, submissionId) => probeChatDestination(accountId, threadId, submissionId),
       ),
     )
     .catch((error) => reportError(error));

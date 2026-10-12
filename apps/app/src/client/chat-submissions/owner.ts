@@ -18,7 +18,7 @@ import { ChatSubmissionDriver } from "./driver";
 import {
   forgetCreatedChat,
   getChatSubmissionEpoch,
-  isThreadNotFound,
+  isThreadMissingForAccount,
   readChatSubmissionSnapshot,
   readChatSubmissions,
   recordChatSubmission,
@@ -337,7 +337,7 @@ export class ChatSubmissionOwner {
           requestSignal,
         );
       } catch (error) {
-        if (!current() || !isThreadNotFound(error)) return;
+        if (!current() || !isThreadMissingForAccount(error, accountId)) return;
         missing = true;
       }
       if (!current() || this.destination !== destination) return;

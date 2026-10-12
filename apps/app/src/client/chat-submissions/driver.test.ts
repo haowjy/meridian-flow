@@ -400,7 +400,13 @@ it.each([
   "retire",
 ] as const)("settles a created chat missing during %s through the disappearance operation", async (operation) => {
   const missing = new MeridianApiError(
-    { code: "thread_not_found", message: "Thread not found", retryable: false, source: "system" },
+    {
+      code: "thread_not_found",
+      details: { authenticatedUserId: "account-1" },
+      message: "Thread not found",
+      retryable: false,
+      source: "system",
+    },
     404,
   );
   const refuse = async () => {

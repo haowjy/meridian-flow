@@ -22,9 +22,15 @@ interface ProjectOwnerRepository {
 }
 
 /** Shared HTTP proof for both repository and runtime owner gates. */
-export function throwThreadNotFound(): never {
+export function throwThreadNotFound(userId: UserId): never {
   throwHttpInterrupt(
-    { code: "thread_not_found", message: "Thread not found", retryable: false, source: "system" },
+    {
+      code: "thread_not_found",
+      message: "Thread not found",
+      retryable: false,
+      source: "system",
+      details: { authenticatedUserId: userId },
+    },
     404,
   );
 }
@@ -41,14 +47,14 @@ export async function requireThreadOwner(
   }
   const thread = await repos.threads.findById(parsedThreadId);
   if (!thread || thread.deletedAt) {
-    throwThreadNotFound();
+    throwThreadNotFound(userId);
   }
   const project = await repos.projects.findById(thread.projectId);
   if (!project || project.deletedAt || project.userId !== userId) {
-    throwThreadNotFound();
+    throwThreadNotFound(userId);
   }
   if (thread.userId !== userId) {
-    throwThreadNotFound();
+    throwThreadNotFound(userId);
   }
   return thread;
 }
@@ -81,7 +87,7 @@ export async function setOwnedThreadTrashState(
     });
   } catch (cause) {
     if (cause instanceof ThreadTrashUnavailableError) {
-      throwThreadNotFound();
+      throwThreadNotFound(userId);
     }
     throw cause;
   }

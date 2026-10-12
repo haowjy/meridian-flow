@@ -59,7 +59,7 @@ export function createThreadRuntimeService(deps: {
       )
       .limit(1);
 
-    if (!thread) throwThreadNotFound();
+    if (!thread) throwThreadNotFound(userId);
     return thread as OwnedThread;
   }
 

@@ -16,7 +16,7 @@ import {
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
 import { abortable } from "@/client/chat-submissions/lock";
-import { isThreadNotFound } from "@/client/chat-submissions/thread-availability";
+import { isThreadMissingForAccount } from "@/client/chat-submissions/thread-availability";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
@@ -253,7 +253,7 @@ export class ThreadRunController {
         );
       } catch (error) {
         if (!current()) return outcome("abandoned");
-        if (isThreadNotFound(error)) return outcome("thread-missing");
+        if (isThreadMissingForAccount(error, this.accountId)) return outcome("thread-missing");
         if (classifyWriteFailure(error) === "rejected") {
           return outcome("rejected");
         }
@@ -317,7 +317,8 @@ export class ThreadRunController {
         signal,
       );
     } catch (error) {
-      if (current() && isThreadNotFound(error)) return outcome("thread-missing");
+      if (current() && isThreadMissingForAccount(error, this.accountId))
+        return outcome("thread-missing");
       return outcome(current() ? "ambiguous" : "abandoned");
     }
     if (!current()) return outcome("abandoned");

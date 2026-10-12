@@ -100,7 +100,9 @@ bindings, not a separate owner registry. Confirmed Delete starts cleanup without
 waiting for its lock before reporting the outcome.
 
 Only HTTP 404 with `thread_not_found` from either server thread owner gate is
-definitive. Generic `not_found`, submission not-seen, auth, transport, timeout,
+definitive when its `details.authenticatedUserId` matches the journal account
+(the internal user id, not the WorkOS external id). Missing or mismatched
+attestation is reported and preserves every copy. Generic `not_found`, submission not-seen, auth, transport, timeout,
 and server failure cannot discard browser copies.
 Once per account bind, after its locked v1 rewrite completes, a four-worker pass probes unique unmounted created chat
 ids in that account's readable journal. Read-only admission lookup with one of that chat's recorded

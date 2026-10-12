@@ -104,6 +104,7 @@ beforeEach(() => {
     new MeridianApiError(
       {
         code: "thread_not_found",
+        details: { authenticatedUserId: account },
         message: "missing",
         source: "system",
         retryable: false,
@@ -666,6 +667,7 @@ it("keeps a new Send on a never-created destination after another tab edits away
       new MeridianApiError(
         {
           code: "thread_not_found",
+          details: { authenticatedUserId: account },
           message: "missing",
           source: "system",
           retryable: false,

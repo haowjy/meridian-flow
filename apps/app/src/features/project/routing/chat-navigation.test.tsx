@@ -120,7 +120,13 @@ it("keeps a first send whose pre-creation 404 is still cached once it is acknowl
     snapshot.setState({
       status: "error",
       error: new MeridianApiError(
-        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        {
+          code: "thread_not_found",
+          details: { authenticatedUserId: ACCOUNT },
+          message: "missing",
+          source: "system",
+          retryable: false,
+        },
         404,
       ),
       errorUpdatedAt: Date.now() - 1000,
@@ -172,7 +178,13 @@ it("forgets browser copies before repairing a definitive missing-chat route", as
   await act(async () => {
     query.setState({
       error: new MeridianApiError(
-        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        {
+          code: "thread_not_found",
+          details: { authenticatedUserId: ACCOUNT },
+          message: "missing",
+          source: "system",
+          retryable: false,
+        },
         404,
       ),
       errorUpdatedAt: Date.now(),
@@ -229,7 +241,13 @@ it("repairs a missing-chat route even when the journal is unreadable", async () 
         status: "error",
         errorUpdatedAt: Date.now(),
         error: new MeridianApiError(
-          { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+          {
+            code: "thread_not_found",
+            details: { authenticatedUserId: ACCOUNT },
+            message: "missing",
+            source: "system",
+            retryable: false,
+          },
           404,
         ),
       });
@@ -255,7 +273,13 @@ it.each([
       status: "error",
       errorUpdatedAt: Date.now(),
       error: new MeridianApiError(
-        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        {
+          code: "thread_not_found",
+          details: { authenticatedUserId: ACCOUNT },
+          message: "missing",
+          source: "system",
+          retryable: false,
+        },
         404,
       ),
     });
@@ -298,7 +322,13 @@ it("leaves a creation-bearing cohort on its O4 destination", async () => {
       status: "error",
       errorUpdatedAt: Date.now(),
       error: new MeridianApiError(
-        { code: "thread_not_found", message: "missing", source: "system", retryable: false },
+        {
+          code: "thread_not_found",
+          details: { authenticatedUserId: ACCOUNT },
+          message: "missing",
+          source: "system",
+          retryable: false,
+        },
         404,
       ),
     });

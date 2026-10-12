@@ -20,7 +20,7 @@ import {
 import {
   forgetCreatedChat,
   isThreadAwaitingCreation,
-  isThreadNotFound,
+  isThreadMissingForAccount,
 } from "@/client/chat-submissions";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
@@ -231,7 +231,7 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
     ...threadSnapshotQueryOptions(threadId ?? ""),
     enabled: false,
   });
-  const notFound = isThreadNotFound(error);
+  const notFound = isThreadMissingForAccount(error, accountId);
   const pendingAt = useRef(0);
   const latest = useRef(onMissing);
   latest.current = onMissing;
