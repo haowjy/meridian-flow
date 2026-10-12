@@ -21,6 +21,7 @@ import type {
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
+import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 
@@ -80,7 +81,6 @@ export interface TurnInverseStore {
     part: StoredInversePart,
   ): { before: string; after: string };
 }
-const partKey = (part: { editId: string; ordinal: number }) => `${part.editId}:${part.ordinal}`;
 const eligiblePlacement = (part: StoredInversePart) =>
   part.placement.kind === "pending" || part.placement.kind === "live";
 const targetsTurn = (part: StoredInversePart, query: TurnInverseQuery) =>
@@ -105,64 +105,26 @@ function prepare(
   );
   const keys = new Set(originals.map(partKey));
   const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
-  const undoActions = [
-    ...new Set(
-      all
-        .filter(
-          (part) =>
-            part.kind === "undo" &&
-            part.actionId &&
-            eligiblePlacement(part) &&
-            part.targets.some((target) => keys.has(partKey(target))),
+  const selected =
+    direction === "redo"
+      ? effectiveActionIndex(all, keys, eligiblePlacement).actions.find((action) =>
+          action.parts.some(eligiblePlacement),
         )
-        .map((part) => part.actionId as string),
-    ),
-  ].reverse();
-  let selectedAction: string | undefined;
-  let accepted = new Set<string>();
-  if (direction === "redo") {
-    // A skipped residual stays on its own action. Fully consumed actions expose the previous one.
-    for (const action of undoActions) {
-      const consumed = new Set(
-        all
-          .filter(
-            (part) =>
-              part.kind === "redo" && part.consumes.includes(action) && eligiblePlacement(part),
-          )
-          .flatMap((part) => part.targets.map(partKey)),
-      );
-      const remaining = new Set(
-        all
-          .filter((part) => part.actionId === action)
-          .flatMap((part) =>
-            part.targets
-              .filter((target) => keys.has(partKey(target)) && !consumed.has(partKey(target)))
-              .map(partKey),
-          ),
-      );
-      if (remaining.size) {
-        selectedAction = action;
-        accepted = remaining;
-        break;
-      }
-    }
-  }
+      : undefined;
+  const selectedAction = selected?.id;
+  const accepted = selected?.targets ?? new Set<string>();
   return documents.map((document) => {
     const targets = document.history.filter(
       (part) => targetsTurn(part, query) && (direction === "undo" || accepted.has(partKey(part))),
     );
-    const rolledBack = (part: StoredInversePart) =>
-      document.history.some(
-        (entry) =>
-          entry.kind === "rollback" &&
-          entry.targets.some((target) => partKey(target) === partKey(part)),
-      );
+    const rolledBack = (part: StoredInversePart) => isRolledBack(document.history, part);
     const placements =
       direction === "undo"
         ? targets.filter((part) => !rolledBack(part))
         : document.history.filter(
             (part) =>
               part.actionId === selectedAction &&
+              !rolledBack(part) &&
               part.targets.some((target) => accepted.has(partKey(target))),
           );
     const pending = placements.find((part) => part.placement.kind === "pending");

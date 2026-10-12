@@ -263,20 +263,6 @@ class Lineage {
     this.identities.set(root, effective);
     return effective;
   }
-  related(owner: InversePart | undefined, target: InversePart, seen = new Set<number>()): boolean {
-    if (!owner || seen.has(owner.id)) return false;
-    if (owner.editId === target.editId && owner.ordinal === target.ordinal) return true;
-    if (owner.kind === "write") return false;
-    seen.add(owner.id);
-    return owner.targets.some((t) => {
-      if (t.editId === target.editId && t.ordinal === target.ordinal) return true;
-      return this.related(
-        this.ordered.find((p) => p.editId === t.editId && p.ordinal === t.ordinal),
-        target,
-        seen,
-      );
-    });
-  }
   restored(k: Key): boolean {
     return this.descendants(this.root(k)).some((source) => this.inverseRestorations.has(source));
   }
@@ -365,10 +351,16 @@ function classify(index: Lineage, part: InversePart): PartClassification {
       del.every((k) => isVisible(k) && index.restored(k));
     if (active) return { part, state: "active", reasons: [] };
     if (undone) {
-      const last = [...index.ordered]
-        .reverse()
-        .find((p) => p.kind !== "write" && index.related(p, part));
-      return { part, state: last?.kind === "rollback" ? "rolled_back" : "undone", reasons: [] };
+      // Only rollback of this selected part is terminal. Rolling back a later
+      // inverse restores this part's previous state, not its authorship lifetime.
+      const terminal = index.ordered.some(
+        (p) =>
+          p.kind === "rollback" &&
+          p.targets.some(
+            (target) => target.editId === part.editId && target.ordinal === part.ordinal,
+          ),
+      );
+      return { part, state: terminal ? "rolled_back" : "undone", reasons: [] };
     }
     return changed("items changed since");
   } catch (error) {

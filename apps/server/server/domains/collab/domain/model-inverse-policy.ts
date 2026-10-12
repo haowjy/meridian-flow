@@ -10,6 +10,11 @@ import {
 } from "@meridian/agent-edit/integration";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import {
+  effectiveActionIndex,
+  partKey as key,
+  isRolledBack as rolledBack,
+} from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import type {
   InverseDocument,
@@ -20,7 +25,6 @@ import type {
 
 type Query = TurnInverseQuery & { model: true; branchId: string | null };
 type Entry = { id: string; handle: string; parts: StoredInversePart[] };
-const key = (part: { editId: string; ordinal: number }) => `${part.editId}:${part.ordinal}`;
 const eligible = (part: StoredInversePart) =>
   part.placement.kind === "live" || part.placement.kind === "pending";
 function entries(document: InverseDocument, threadId: string): Entry[] {
@@ -40,60 +44,17 @@ function entries(document: InverseDocument, threadId: string): Entry[] {
   }
   return [...map.values()].sort((a, b) => Number(b.handle.slice(1)) - Number(a.handle.slice(1)));
 }
-function actions(history: StoredInversePart[], own: Entry[]) {
-  const keys = new Set(own.flatMap((entry) => entry.parts.map(key)));
-  const grouped = new Map<string, StoredInversePart[]>();
-  for (const part of history) {
-    if (
-      part.kind !== "undo" ||
-      rolledBack(history, part) ||
-      !part.actionId ||
-      !part.targets.some((target) => keys.has(key(target)))
-    )
-      continue;
-    const parts = grouped.get(part.actionId) ?? [];
-    parts.push(part);
-    grouped.set(part.actionId, parts);
-  }
-  return [...grouped]
-    .map(([id, parts]) => {
-      const consumed = new Set(
-        history
-          .filter(
-            (part) =>
-              part.kind === "redo" && !rolledBack(history, part) && part.consumes.includes(id),
-          )
-          .flatMap((part) => part.targets.map(key)),
-      );
-      const targets = new Set(
-        parts.flatMap((part) =>
-          part.targets
-            .filter((target) => keys.has(key(target)) && !consumed.has(key(target)))
-            .map(key),
-        ),
-      );
-      return { id, parts, targets, newest: Math.max(...parts.map((part) => part.id)) };
-    })
-    .filter((action) => action.targets.size)
-    .sort((a, b) => b.newest - a.newest);
-}
-function rolledBack(history: StoredInversePart[], part: StoredInversePart) {
-  return history.some(
-    (transition) =>
-      transition.kind === "rollback" &&
-      transition.targets.some((target) => key(target) === key(part)),
-  );
+function actionIndex(history: StoredInversePart[], own: Entry[]) {
+  return effectiveActionIndex(history, new Set(own.flatMap((entry) => entry.parts.map(key))));
 }
 function top(history: StoredInversePart[], own: Entry[]) {
-  const popped = new Set(actions(history, own).flatMap((action) => [...action.targets]));
+  const popped = actionIndex(history, own).byPart;
   return own.find(
-    (entry) =>
-      !entry.parts.some((part) => popped.has(key(part))) &&
-      !entry.parts.every((part) => rolledBack(history, part)),
+    (entry) => !entry.parts.every((part) => popped.has(key(part)) || rolledBack(history, part)),
   );
 }
 function candidate(history: StoredInversePart[], own: Entry[]) {
-  return actions(history, own).find(
+  return actionIndex(history, own).actions.find(
     (action) =>
       !own.some((entry) =>
         entry.parts.some((part) => part.id > action.newest && !rolledBack(history, part)),
@@ -452,10 +413,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               true,
             )
           : null;
+        const index = actionIndex(document.history, own);
         const lines = page.map((entry) => {
-          const undo = actions(document.history, own).find((action) =>
+          const undos = index.actions.filter((action) =>
             entry.parts.some((part) => action.targets.has(key(part))),
           );
+          const popped = index.byPart;
+          const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
+
           const states = entry.parts.map(
               (part) =>
                 classifyEditParts(
@@ -471,9 +436,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             ).length;
           const state = entry.parts.every((part) => rolledBack(document.history, part))
             ? "rolled back"
-            : undo
-              ? undo.parts.some(
-                  (part) => part.actor !== "agent" || part.threadId !== query.threadId,
+            : fullyUndone
+              ? undos.some((undo) =>
+                  undo.parts.some(
+                    (part) => part.actor !== "agent" || part.threadId !== query.threadId,
+                  ),
                 )
                 ? "undone by the user"
                 : "undone"
