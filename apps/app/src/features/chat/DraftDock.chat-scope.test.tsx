@@ -102,6 +102,20 @@ it.each([
   await fixture.render(
     async () => {
       await settleReact(() => expect(text()).toContain("1 change"));
+      expect(
+        [...document.querySelectorAll("[data-draft-dock] button")].some(
+          (button) => button.textContent === "Review",
+        ),
+      ).toBe(false);
+      await click("new-scene");
+      expect(navigate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workId: "work-a",
+          documentId: "new-scene",
+          draftId: file.draftId,
+        }),
+      );
+      expect(document.querySelector('[aria-label="Expand changes"]')).not.toBeNull();
       if (expanded) {
         await act(async () =>
           document.querySelector<HTMLButtonElement>('[aria-label="Expand changes"]')?.click(),
@@ -113,7 +127,7 @@ it.each([
           [...document.querySelectorAll("[data-draft-dock-file] button")].some(
             (button) => button.textContent === "new-scene",
           ),
-        ).toBe(false);
+        ).toBe(true);
         await act(async () =>
           document
             .querySelector<HTMLButtonElement>(
@@ -191,6 +205,13 @@ it.each([
         ),
       ).toHaveLength(1);
       expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(1);
+      if (code === "review-failed") {
+        await click("chapter-12");
+        expect(navigate).toHaveBeenCalledWith(
+          expect.objectContaining({ documentId: "chapter-12" }),
+        );
+        expect(document.querySelector('[aria-label="Collapse changes"]')).not.toBeNull();
+      }
       if (!isNewDocument) {
         expect(
           document
