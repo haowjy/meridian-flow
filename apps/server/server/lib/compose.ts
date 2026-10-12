@@ -43,6 +43,7 @@ import {
   createDrizzleDocumentArrivals,
   createDrizzleDocumentLinkHistory,
   createDrizzleDocumentLinkScopes,
+  createDrizzleDocumentPropertiesReader,
   createDrizzleFigureDocumentRepository,
   createDrizzleLineageScratchLifecycle,
   createDrizzleLinkAheadRegistry,
@@ -59,6 +60,7 @@ import {
   createUploadIntake,
   type DocumentAddressResolver,
   type DocumentLinkResolver,
+  type DocumentPropertiesReader,
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
@@ -321,6 +323,7 @@ export type AppServices = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
+  documentProperties: DocumentPropertiesReader;
   /** The file policy every route and model call asks (file-access §1). */
   fileAccess: FileAccess;
   /** Work lifecycle changes that re-decide live rooms' access, on every instance (§7). */
@@ -392,6 +395,7 @@ export type ProductionAppPorts = {
   uploadIntake: UploadIntake;
   uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
+  documentProperties: DocumentPropertiesReader;
   promotionService: PromotionService;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
@@ -727,6 +731,7 @@ export async function createProductionAppPorts(input: {
     uploadIntake,
     uploadIdentity,
     figureAssets,
+    documentProperties: createDrizzleDocumentPropertiesReader(db),
     promotionService,
     notices,
     activeDocuments,
@@ -1171,6 +1176,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     uploadIntake: ports.uploadIntake,
     uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
+    documentProperties: ports.documentProperties,
     fileAccess: ports.fileAccess,
     fileAccessChanges: ports.fileAccessChanges,
     notices: ports.notices,
@@ -1704,6 +1710,7 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory figure assets are not implemented");
       },
     },
+    documentProperties: { findStored: async () => null },
     fileAccess: createAllowAllFileAccess(),
     fileAccessChanges: createLocalFileAccessChanges(),
     notices,

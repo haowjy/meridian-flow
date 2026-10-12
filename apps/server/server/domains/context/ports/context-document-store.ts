@@ -38,6 +38,8 @@ export interface ContextDocument {
   sizeBytes: number | null;
   updatedAt: string;
   provisionalName: boolean;
+  /** `documents.metadata` as stored; read through `document-metadata.ts`. */
+  metadata: unknown;
 }
 
 export interface LocatedContextDocument {

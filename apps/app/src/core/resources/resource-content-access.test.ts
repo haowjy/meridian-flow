@@ -404,6 +404,7 @@ it("releases every project registry ownership after the final shared-content lea
       name: "shared.md",
       aliases: [],
       importPending: false,
+      hasProperties: false,
       path: ["shared.md"],
       uri: "user://shared.md" as const,
       provisionalName: false,

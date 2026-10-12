@@ -61,6 +61,8 @@ type CatalogFileEntryBase = {
   provisionalName: boolean;
   /** Text has not landed in this tracked import placeholder yet. */
   importPending: boolean;
+  /** The document has imported frontmatter to show; the properties themselves load by id. */
+  hasProperties: boolean;
 };
 
 /** Persisted viewer/storage classification. It is never reconstructed from a filename. */

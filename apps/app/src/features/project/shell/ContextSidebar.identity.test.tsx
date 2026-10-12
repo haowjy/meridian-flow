@@ -51,6 +51,7 @@ it("uses a renamed/moved catalog file and falls back only outside a loaded catal
             parentId: "kb",
             aliases: [],
             importPending: false,
+            hasProperties: false,
             provisionalName: false,
             name: "new.md",
             path: ["moved", "new.md"],

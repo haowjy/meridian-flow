@@ -40,6 +40,7 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
+import { documentMetadataFacts } from "../../document-metadata.js";
 import type {
   AdapterDeleteResult,
   AdapterFault,
@@ -417,6 +418,7 @@ export class ContextFS implements ContextSchemeAdapter {
       documentId: doc.id,
       sizeBytes: doc.sizeBytes ?? undefined,
       updatedAt: doc.updatedAt,
+      ...documentMetadataFacts(doc.metadata),
     };
     if (doc.fileType === null) {
       const filetype = doc.filetype ?? DEFAULT_EDITABLE_FILETYPE;

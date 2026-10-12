@@ -13,6 +13,7 @@ const file: CatalogFile = {
   path: "/notes/routed.md",
   uri: "scratch://project/work/notes/routed.md",
   provisionalName: false,
+  hasProperties: false,
   editable: true,
   filetype: "markdown",
   schemaType: "document",

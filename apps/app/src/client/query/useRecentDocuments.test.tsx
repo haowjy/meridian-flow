@@ -74,6 +74,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
             schemaType: "document",
             aliases: [],
             importPending: false,
+            hasProperties: false,
             provisionalName: false,
           },
         ],

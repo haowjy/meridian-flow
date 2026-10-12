@@ -33,6 +33,7 @@ const file: CatalogEntry = {
   name: "Chapter.md",
   aliases: [],
   importPending: false,
+  hasProperties: false,
   path: ["Arc", "Chapter.md"],
   uri: "manuscript://Arc/Chapter.md" as never,
   editable: true,
