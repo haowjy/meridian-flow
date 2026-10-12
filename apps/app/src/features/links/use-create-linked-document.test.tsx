@@ -10,6 +10,11 @@ import {
 } from "./use-create-linked-document";
 
 const resources = vi.hoisted(() => ({
+  parentAtLocation: vi.fn(async () => ({
+    kind: "root",
+    scheme: "manuscript",
+    owner: { workId: null },
+  })),
   reserveDocument: vi.fn(async () => ({
     key: { handle: "resource" },
     content: { kind: "opened", handle: { documentId: "document", release() {} } },
