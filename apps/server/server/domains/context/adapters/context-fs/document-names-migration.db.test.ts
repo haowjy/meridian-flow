@@ -177,6 +177,7 @@ else
         name: "chapter.md",
         aliases: [],
         importPending: false,
+        hasProperties: false,
         path: ["chapter.md"],
         uri: "manuscript://chapter.md" as never,
         provisionalName: false,

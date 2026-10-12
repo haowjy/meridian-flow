@@ -447,6 +447,7 @@ it.each([
       uri: "manuscript://A/Child/doc.md",
       aliases: [],
       importPending: false,
+      hasProperties: false,
       provisionalName: false,
       editable: true,
       filetype: "markdown",

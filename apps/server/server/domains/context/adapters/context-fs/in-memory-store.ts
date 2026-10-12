@@ -341,6 +341,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       sizeBytes,
       updatedAt: this.nextTimestamp(),
       provisionalName: input.provisionalName ?? false,
+      metadata: input.metadata ?? null,
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
@@ -393,6 +394,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       sizeBytes,
       updatedAt: this.nextTimestamp(),
       provisionalName: input.provisionalName ?? false,
+      metadata: input.metadata ?? null,
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
@@ -457,6 +459,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       sizeBytes: input.sizeBytes,
       updatedAt: this.nextTimestamp(),
       provisionalName: false,
+      metadata: input.metadata ?? null,
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);

@@ -109,7 +109,8 @@ Shared across both shells:
   `ContextEditorMountHost.tsx` (the Editor's warm-set LRU), `ContextDocumentHost.tsx`
   (one document's session and editor, rendered by the Editor's tabs and by the dock's
   document alike), `context-tab-session.tsx` (the session boundary beneath it),
-  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` +
+  `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentProperties.tsx` (its
+  read-only properties row, shared by the Editor and the dock; nothing in it edits), `DocumentIdentityBar.tsx` +
   `DocumentPath.tsx` (the path, whose crumbs open the drill-in menu and only navigate) +
   `IdentityPlacementField.tsx` (Choose a home for a document in Unfiled, and repair of its refused
   placement, committed through `use-identity-commit.ts`). Resource-backed tabs retain

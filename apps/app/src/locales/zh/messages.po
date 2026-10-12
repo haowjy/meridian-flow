@@ -1156,6 +1156,10 @@ msgstr ""
 msgid "Couldn't apply. Check your connection and try again."
 msgstr ""
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't be read"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
 msgstr ""
@@ -1257,6 +1261,10 @@ msgstr ""
 msgid "Couldn't finish that step"
 msgstr ""
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't load"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Couldn't load agents."
@@ -1272,6 +1280,10 @@ msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Couldn't load files."
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Couldn't load properties."
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -1873,6 +1885,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Embedded blocks take no links."
+msgstr ""
+
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "Empty"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -2668,6 +2684,10 @@ msgstr ""
 msgid "New Work"
 msgstr ""
 
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "No"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "No agents available."
 msgstr ""
@@ -3051,6 +3071,10 @@ msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Projects couldn’t refresh. Showing saved results."
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Properties"
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
@@ -3998,6 +4022,14 @@ msgstr "这些偏好设置会随账号同步到你登录的所有设备。"
 msgid "These preferences stay on this device to suit your screen."
 msgstr "这些偏好设置仅保存在此设备上，以适应当前屏幕。"
 
+#: src/features/project/context/DocumentProperties.tsx
+msgid "These properties are too large to show in full. The start is shown as written."
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "These properties couldn't be read, so they're shown as written."
+msgstr ""
+
 #: src/features/export/ExportProjectDialog.tsx
 #~ msgid "They stay as Meridian links and won't open in Obsidian."
 #~ msgstr ""
@@ -4309,6 +4341,10 @@ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens before"
+msgstr ""
+
+#: src/features/project/context/DocumentProperties.tsx
+msgid "Too large to show"
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -4630,6 +4666,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Wrote file"
+msgstr ""
+
+#: src/features/project/context/DocumentPropertyValue.tsx
+msgid "Yes"
 msgstr ""
 
 #: src/features/project/RecencyGroupedList.tsx

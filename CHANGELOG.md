@@ -6,6 +6,7 @@
 
 - Preview outside links and unapplied drafts before exporting, then stream Obsidian-ready ZIPs with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
 - Save binary API downloads with `./mf api GET <path> --output <file>`.
+- Documents with imported frontmatter show a read-only Properties row under the path, in the Editor and the dock. The model's `copy` carries a document's properties and aliases.
 - Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
 - Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
 

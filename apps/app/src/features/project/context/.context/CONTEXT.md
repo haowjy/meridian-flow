@@ -90,7 +90,10 @@ ContextPaneController
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
               │     ├─ PassageNotice, DraftReviewHeader, ArchivedWorkNotice
-              │     └─ DocumentIdentityBar (DocumentPath crumbs + chips, incl. DraftReviewChip)
+              │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips, incl. DraftReviewChip)
+              │     └─ DocumentProperties (read-only frontmatter; mounts when the catalog entry
+              │        has `hasProperties`, then fetches by document id; open/closed is one
+              │        device preference in the surface-prefs store)
               ├─ ContextEditorMountHost (warm-set LRU)
               │     └─ ContextDocumentHost per tab (session boundary + EditorView;
               │        the dock's document renders the same host)

@@ -3,7 +3,7 @@
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
-import type { LinkView } from "@meridian/contracts";
+import type { LinkView, StoredDocumentProperties } from "@meridian/contracts";
 import type {
   ContextUriScheme,
   ProjectScopedContextUriScheme,
@@ -155,6 +155,10 @@ interface BaseFileRef {
   updatedAt?: string;
   /** True when the file's scheme is read-only. */
   readonly?: boolean;
+  /** Imported frontmatter stored with the document; `copy` carries it to the copy. */
+  properties?: StoredDocumentProperties;
+  /** Alternate names stored with the document; `copy` carries them to the copy. */
+  aliases?: string[];
 }
 
 /** A Yjs/projected text file ref returned by {@link ContextPort.stat}. */

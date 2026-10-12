@@ -12,6 +12,7 @@ export {
   type LinkScopeMembership,
 } from "./adapters/document-link-scope.js";
 export { createDrizzleContextBulkCreation } from "./adapters/drizzle-context-bulk-creation.js";
+export { createDrizzleDocumentPropertiesReader } from "./adapters/drizzle-document-properties-reader.js";
 export { createDrizzleContextImportLocations } from "./adapters/drizzle-import-locations.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
@@ -46,6 +47,7 @@ export {
 } from "./context-source-provisioning.js";
 export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
+export { parseDocumentProperties } from "./document-properties.js";
 export { createDocumentRevisions } from "./document-revisions.js";
 export * from "./figures/index.js";
 export type {
@@ -116,6 +118,7 @@ export type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export type { DocumentPropertiesReader } from "./ports/document-properties-reader.js";
 export type { DocumentRevisions } from "./ports/document-revisions.js";
 export {
   type AheadRegistration,

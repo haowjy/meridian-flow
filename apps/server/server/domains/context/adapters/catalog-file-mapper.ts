@@ -1,4 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
+
+import { hasDisplayableProperties } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -93,6 +95,7 @@ export function mapAuthoritativeFile(input: {
     name: filename,
     aliases: documentAliases(document.metadata),
     importPending: documentImportPending(document.metadata),
+    hasProperties: hasDisplayableProperties(document.metadata),
     path,
     uri: canonicalContextUri(
       scheme,
