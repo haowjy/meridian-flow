@@ -110,6 +110,8 @@ export type ResourceDescriptor = ResourceKey & {
   /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
   classification: CatalogFileClassification;
   canonical: ResourceLocation | null;
+  /** Parent identity from the same canonical observation; absent until observed. */
+  canonicalParent?: ParentRef;
   lifecycle:
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
@@ -216,6 +218,8 @@ export type FolderNamespaceRecord = ResourceKey & {
   folderId: string;
   revision: number;
   canonical: ResourceLocation;
+  /** Parent identity installed atomically with the canonical location. */
+  canonicalParent?: ParentRef;
   canonicalRefresh?: { operationId: string };
   /** Exact-ID availability proves this folder is gone, never descendant document deletion. */
   terminal?: { generation: string };
@@ -282,7 +286,7 @@ export type NamespaceOutcome =
   | { kind: "refusal"; operationId: string; error: MeridianError };
 
 export type NamespaceIdentityAvailability =
-  | { kind: "available"; location: ResourceLocation }
+  | { kind: "available"; location: ResourceLocation; parent: ParentRef }
   | { kind: "deleted"; generation: string }
   | { kind: "unavailable" };
 

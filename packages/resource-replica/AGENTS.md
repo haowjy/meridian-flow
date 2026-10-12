@@ -16,9 +16,15 @@ UI projections require that context explicitly.
 
 Destinations are `{ parent: ParentRef, createFolders?: string[], name }`: a picked
 folder ID or qualified area root, with an optional missing-folder suffix only for
-linked creation. One canonical qualified-home index binds parent edges; memoized walks
-resolve folders and documents together. Cycle members revert their canonical
-parent edges, so an independent ancestor rename still applies. Missing or terminal
+linked creation. Canonical parents come only from server parent IDs, installed
+atomically with their location and guarded by observation revisions. Catalog installation retains folder observations even without local commands, so
+ancestry survives missing checkpoints in Recent. Exact-ID
+availability already carries the catalog entry (including parentId); never bind
+canonical identities through old or current paths. Iterative memoized walks resolve
+folders and documents together. Pending cycles revert canonical parent edges;
+canonical cycles root their members at their own absolute observations. Each
+cycle permanently removes a pending edge or roots canonical members, guaranteeing
+termination even for incoherent observations. Independent ancestor renames still apply. Missing or terminal
 destinations revert to canonical edges. Pending-deleted and terminal ancestors
 suppress their subtree in this same walk, including known Recent identities
 without catalog rows. Only unoccupied qualified homes receive navigation-only

@@ -83,7 +83,7 @@ export function move(
   const write = planFolderLocation({
     record,
     projectId: "p",
-    handle: id,
+    handle: record?.handle ?? id,
     folderId: id,
     source: loc(path),
     intentId: `i${++counter}`,
@@ -120,7 +120,7 @@ export function del(id: string, path: string, record: FolderNamespaceRecord | nu
   const write = planFolderDeletion({
     record,
     projectId: "p",
-    handle: id,
+    handle: record?.handle ?? id,
     folderId: id,
     source: loc(path),
     intentId: `i${++counter}`,

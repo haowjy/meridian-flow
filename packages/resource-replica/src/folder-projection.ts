@@ -1,6 +1,7 @@
 /** Shared identity placement over all installed catalogs and namespace journals. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { CatalogEntry } from "@meridian/contracts/protocol";
+import { catalogEntryParent } from "./catalog-installation";
 import { projectFolderNeedsRepair } from "./folder-namespace";
 import { folderPlacementGraph } from "./folder-placement";
 import { owningLocationIntent } from "./resource-intent-policy";
@@ -37,12 +38,26 @@ export function createResourcePlacement(
       ...catalogEntryOwner(entry.scope, parsed.value.authority),
     });
   }
+  const parents = new Map(
+    entries.flatMap((entry) =>
+      (entry.kind === "folder" || entry.kind === "file") && locations.has(entry.entryId)
+        ? [[entry.entryId, catalogEntryParent(entry, locations.get(entry.entryId)!)] as const]
+        : [],
+    ),
+  );
   const nodes = [
     ...new Map(
       entries
         .flatMap((entry) =>
           entry.kind === "folder" && locations.has(entry.entryId)
-            ? [{ id: entry.entryId, canonical: locations.get(entry.entryId)! }]
+            ? [
+                {
+                  id: entry.entryId,
+                  canonical: locations.get(entry.entryId)!,
+                  parent: parents.get(entry.entryId),
+                  ancestryOnly: false,
+                },
+              ]
             : [],
         )
         .map((node) => [node.id, node]),
@@ -55,7 +70,12 @@ export function createResourcePlacement(
       (folder.projectId === null || folder.projectId === projectId) &&
       !installedIds.has(folder.folderId)
     )
-      nodes.push({ id: folder.folderId, canonical: folder.canonical });
+      nodes.push({
+        id: folder.folderId,
+        canonical: folder.canonical,
+        parent: folder.canonicalParent,
+        ancestryOnly: folder.intents.length === 0,
+      });
   const sourceFor = (location: ResourceLocation) =>
     entries.find(
       (candidate) =>
@@ -83,8 +103,13 @@ export function createResourcePlacement(
       Boolean(record.resource.obligations.canonicalRefresh),
     )?.desired;
     const placed = graph.place(
-      record.resource.canonical ?? own,
+      (record.resource.canonicalParent
+        ? record.resource.canonical
+        : locations.get(record.resource.identity.documentId)) ??
+        record.resource.canonical ??
+        own,
       desired?.kind === "set-location" ? desired.destination : undefined,
+      record.resource.canonicalParent ?? parents.get(record.resource.identity.documentId),
     );
     const result = placed.hidden ? null : { ...placed.location, provisional: own.provisional };
     resourceLocations.set(record, result);
@@ -109,7 +134,7 @@ export function createResourcePlacement(
           ? (graph.locations.get(entry.entryId) ?? location)
           : record
             ? resourceLocation(record)
-            : location && graph.place(location).location;
+            : location && graph.place(location, undefined, parents.get(entry.entryId)).location;
       if (!next) return entry;
       const source = rows.find(
         (candidate) =>
@@ -183,7 +208,7 @@ export function createResourcePlacement(
       const location = locations.get(entry.entryId);
       return record
         ? Boolean(resourceLocation(record))
-        : !location || !graph.place(location).hidden;
+        : !location || !graph.place(location, undefined, parents.get(entry.entryId)).hidden;
     });
     // One qualified-home index installs real rows before navigation-only gaps.
     const homeKey = (sourceId: string, path: string) => JSON.stringify([sourceId, path]);
@@ -229,8 +254,39 @@ export function createResourcePlacement(
         parentId = row.entryId;
       }
     }
+    const projectedIds = new Set(projected.map((entry) => entry.entryId));
+    const foldersById = new Map(folders.map((folder) => [folder.folderId, folder]));
     return projected.map((entry): CatalogEntry => {
       if (entry.kind !== "file" && entry.kind !== "folder") return entry;
+      const record = byDocument.get(entry.entryId);
+      const folder = foldersById.get(entry.entryId);
+      const desired = record
+        ? owningLocationIntent(
+            projectId,
+            record.intents,
+            Boolean(record.resource.obligations.canonicalRefresh),
+          )?.desired
+        : folder &&
+          owningLocationIntent(folder.projectId, folder.intents, Boolean(folder.canonicalRefresh))
+            ?.desired;
+      const canonicalParent = record?.resource.canonicalParent ?? parents.get(entry.entryId);
+      const destination =
+        desired?.kind === "set-location" || desired?.kind === "set-folder-location"
+          ? desired.destination
+          : undefined;
+      const identityParent =
+        entry.kind === "folder"
+          ? graph.parentForFolder(entry.entryId)
+          : destination?.parent.kind === "folder" && !projectedIds.has(destination.parent.folderId)
+            ? canonicalParent
+            : (destination?.parent ?? canonicalParent);
+      // Identity edges own canonical ancestry. Homes only complete navigation gaps or creation suffixes.
+      if (
+        identityParent?.kind === "folder" &&
+        projectedIds.has(identityParent.folderId) &&
+        !destination?.createFolders?.length
+      )
+        return { ...entry, parentId: identityParent.folderId };
       const parent = homes.get(homeKey(entry.sourceId, entry.path.slice(0, -1).join("/")));
       return { ...entry, parentId: parent?.entryId ?? entry.sourceId };
     });
@@ -260,7 +316,6 @@ export function createResourcePlacement(
       );
     },
     folderLocation: (id: string) => graph.locations.get(id) ?? null,
-    parentForLocation: graph.canonicalParent,
     parentForFolder: graph.parentForFolder,
     parentForResource: (record: ResourceRecord) => {
       const desired = owningLocationIntent(
@@ -271,7 +326,9 @@ export function createResourcePlacement(
       return desired?.kind === "set-location"
         ? desired.destination.parent
         : record.resource.canonical
-          ? graph.canonicalParent(record.resource.canonical)
+          ? (record.resource.canonicalParent ??
+            parents.get(record.resource.identity.documentId) ??
+            null)
           : null;
     },
     projectCatalog,

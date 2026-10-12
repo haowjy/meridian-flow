@@ -7,7 +7,7 @@ import {
   type FolderNamespaceRecord,
   type FolderNamespaceWrite,
   folderNeedsBackgroundReconciliation,
-  installedFolderLocation,
+  installedFolderObservation,
   markResourceCreateEligible,
   ownerOf,
   type ParentRef,
@@ -660,8 +660,8 @@ export class AccountResourceReplica {
         this.metadata.readFolder(key),
         this.metadata.readProjection(projectId),
       ]);
-      const source =
-        current?.canonical ?? installedFolderLocation(projection.catalogs, projectId, folderId);
+      const observation = installedFolderObservation(projection.catalogs, projectId, folderId);
+      const source = current?.canonical ?? observation?.location;
       if (!source) throw new Error("Folder is unavailable");
       const write = plan({
         record: current,
@@ -669,6 +669,7 @@ export class AccountResourceReplica {
         handle: key.handle,
         folderId,
         source,
+        sourceParent: current?.canonicalParent ?? observation?.parent,
         intentId: crypto.randomUUID(),
         operationId,
       });

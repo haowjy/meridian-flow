@@ -516,6 +516,7 @@ export function installCanonicalRefresh(input: {
   record: ResourceRecord;
   operationId: string;
   location: ResourceLocation;
+  parent: import("./resource-records").ParentRef;
 }): ResourceWrite | null {
   const obligation = input.record.resource.obligations.canonicalRefresh;
   if (!obligation || obligation.operationId !== input.operationId) return null;
@@ -543,6 +544,7 @@ export function installCanonicalRefresh(input: {
         ...input.record.resource,
         revision: input.record.resource.revision + 1,
         canonical: input.location,
+        canonicalParent: input.parent,
         obligations,
       },
       intents: input.record.intents,
@@ -558,7 +560,12 @@ export function installNamespaceAvailability(
 ): ResourceWrite | null {
   if (record.resource.obligations.canonicalRefresh?.operationId !== operationId) return null;
   if (availability.kind === "available")
-    return installCanonicalRefresh({ record, operationId, location: availability.location });
+    return installCanonicalRefresh({
+      record,
+      operationId,
+      location: availability.location,
+      parent: availability.parent,
+    });
   const { canonicalRefresh: _completed, ...obligations } = record.resource.obligations;
   return {
     expectedRevision: record.resource.revision,

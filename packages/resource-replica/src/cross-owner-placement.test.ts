@@ -83,6 +83,7 @@ it("marks a document pending when its parent changes owner without changing path
         schemaType: "document" as const,
       },
       canonical: loc("alpha", "B/doc.md"),
+      canonicalParent: { kind: "folder" as const, folderId: "B" },
       lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "1" },
       aliases: {},
       obligations: {},
