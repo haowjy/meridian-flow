@@ -199,35 +199,45 @@ checkpoint selection, earliest retained-update selection, and replay to that ide
 and generation. Sequence bounds do not authorize retired-generation history; only
 explicit checkpoint lookup/listing and restore expose historical checkpoints.
 
-Live checkpoints use the opaque `CapturedCheckpointCut`, minted only by trusted
-journal capture adapters. Capture takes a generation-qualified checkpoint reference
-and closed suffix sequence range under the mutation lock, without reading large
-bytes or replaying journal history there. The database's single-statement `capture_document_checkpoint_range` function
-uses an exception subtransaction to release capture-acquired locks even in an
-ambient transaction. No JavaScript-managed savepoint spans awaits: rolling it
-back could undo concurrently queued sibling statements. Existing caller-owned
-locks remain the caller's responsibility.
-Persistence materializes the range before acquiring its own mutation lock, then
-revalidates generation and input retention under lock. The generation-local head
-`retired_through_seq` monotonically records every compacted prefix in the same
-transaction as deletion, including zero-fold compaction covered by an ordinary
-checkpoint. It resets on generation replacement. Materialization checks this
-boundary after fetching rows and on cached reads; persistence checks it even for
-already materialized cuts. A suffix cut whose floor predates retirement is rejected
-and must be recaptured. Document cascade deletion removes the head and invalidates
-its capabilities; other update foreign keys do not cascade. Never infer retention
-from checkpoint reason. Materialization uses immutable fetched inputs,
-yields between replay batches, and refuses ranges retired by compaction rather
-than advancing a floor over deleted history. Base hydration and final encoding
-remain synchronous Yjs operations. Explicit persistence still joins its caller's
-transaction, so it cannot wait on itself through a second connection. A writer
-row committed before room apply is included in the captured range. The public cut
-contract is nominal (spreading a cut loses its private member), and persistence
-resolves its payload through an adapter-private identity registry. Cloned or forged
-objects are rejected at runtime, even if a caller bypasses TypeScript. It exposes
-no raw state/watermark constructor. Agent-edit's generic journal
-port does not expose checkpoint production; initialize-only seeds and compaction
-remain host-owned.
+A checkpoint's state must contain every row at or below its `up_to_seq`; a cold
+load never replays those rows. Seed, room and explicit checkpoints therefore
+persist only a `CapturedCheckpointCut`, never a free state/watermark pair and
+never the warm room's bytes (a writer row can be durable before Hocuspocus applies
+it). See the [checkpoint capture decision][checkpoint-capture].
+
+- **Minting.** Only the journal adapters mint a cut
+  (`adapters/drizzle-checkpoint-capture.ts`, the in-memory journal). The type is
+  nominal, so a spread copy does not type-check, and persistence resolves the
+  payload through an adapter-private identity registry, so a forged or cloned
+  object fails at runtime too. Do not add a raw constructor. Agent-edit's generic
+  journal port does not produce checkpoints; compaction remains host-owned.
+- **Capture is short.** Under the mutation lock, the single-statement
+  `capture_document_checkpoint_range` SQL function records the generation's base
+  checkpoint ID and the closed suffix range, reading no bytes. Its exception
+  subtransaction releases the locks it took even inside an ambient transaction;
+  caller-owned locks stay with the caller. Keep it one statement: a client
+  savepoint spanning awaits can roll back sibling statements queued on the same
+  connection.
+- **Materialization is unlocked.** Persistence replays base plus suffix before
+  taking its own lock, yielding between replay batches. Base hydration and final
+  encoding remain synchronous Yjs work.
+- **Persistence revalidates under lock.** It rechecks authority generation and
+  input retention, even for an already materialized cut. Explicit persistence
+  joins its caller's transaction, so it never waits on itself through a second
+  connection.
+- **Retention is `retired_through_seq`.** Every compaction, including one that
+  folds nothing because an ordinary checkpoint already covers the prefix, raises
+  the head's generation-local `retired_through_seq` in its delete transaction.
+  Generation replacement resets it. A cut whose suffix floor is below it is
+  rejected; the room worker emits `checkpoint.failed` and the next store
+  recaptures. Never infer retention from checkpoint `reason`. Document cascade
+  removes the head and invalidates its cuts.
+- **Attribution is still slow.** Writing the checkpoint row rebuilds attribution
+  from all retained rows under the mutation lock, with quadratic range
+  accumulation ([#805][issue-805]).
+
+[checkpoint-capture]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/checkpoint-capture-from-journal.md
+[issue-805]: https://github.com/haowjy/meridian-flow/issues/805
 
 The derivation store captures checkpoint plus current-generation journal under the document
 mutation lock. Never substitute a warm room: a socket admission can already be
