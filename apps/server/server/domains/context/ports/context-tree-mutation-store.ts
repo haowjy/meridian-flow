@@ -42,6 +42,7 @@ interface PreparedContextMoveBase {
   linkNoteProjectId?: string;
   /** Destination context_sources.id selected by URI routing. */
   destinationSourceId: string;
+  destinationParentToken?: Extract<ContextLocationToken, { kind: "directory" }>;
   /** Final normalized target path after Unix mv basename/directory resolution. */
   destinationPath: string;
   /** Destination state inspected during preparation; commit must prove it has not changed. */
@@ -75,6 +76,7 @@ type PreparedDirectoryMoveCommand = PreparedDirectoryMove & {
 export type ContextTreeMoveCommand = PreparedFileMoveCommand | PreparedDirectoryMoveCommand;
 
 export type ContextTreeMutationError =
+  | { code: "destination_missing" }
   | { code: "stale_source" }
   | { code: "stale_target" }
   | { code: "conflict" }

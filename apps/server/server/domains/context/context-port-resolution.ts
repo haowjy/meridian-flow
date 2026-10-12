@@ -160,7 +160,14 @@ export async function contextPortForProjectAuthorities(input: {
   projectWorks?: Awaited<ReturnType<WorkRepository["listByProject"]>>;
 }): Promise<ContextPort | null> {
   if (input.workIds.size === 0) {
-    return input.deps.contextPorts.forProject(input.projectId, input.userId, new Map());
+    const works =
+      input.projectWorks ??
+      (await input.deps.works.listByProject(input.projectId, { lifecycle: "all" }));
+    return input.deps.contextPorts.forProject(
+      input.projectId,
+      input.userId,
+      await resolvedAuthorities(input.deps, input.projectId, works),
+    );
   }
   if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
   const resolved = await Promise.all(

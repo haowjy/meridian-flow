@@ -53,6 +53,7 @@ export interface ContextSourceBinding {
 }
 
 export interface ContextPortRouterDeps {
+  resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   rootForThreadRef?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
   listLineages?: () => Promise<import("../scratch-owner.js").ScratchLineage[]>;
@@ -601,14 +602,35 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!source.ok) return source;
       const destination = await resolveMutation(destinationUri);
       if (!destination.ok) return destination;
-      const creationDenied = moveCreationDenied(source.value, destination.value);
-      if (creationDenied) return creationDenied;
-      return treeMover.commitWriterLocation(
-        source.value,
-        destination.value,
-        options?.expected,
-        options?.operationId,
-      );
+      const destinationParent = options?.destinationParent;
+      if (
+        destinationParent?.kind === "root" &&
+        (destinationParent.scheme !== destination.value.scheme ||
+          (destinationParent.owner.workId !== null &&
+            destinationParent.owner.workId !== destination.value.workScopeId))
+      )
+        return Err({ code: "destination_missing", uri: destinationUri });
+      const name = destination.value.path.split("/").at(-1) ?? "";
+      const resolveDestination =
+        destinationParent?.kind === "folder"
+          ? async () => {
+              const uri = await deps.resolveDestinationFolder?.(destinationParent.folderId);
+              if (!uri) return Err({ code: "destination_missing", uri: destinationUri } as const);
+              const target = await resolveMutation(`${uri.replace(/\/$/, "")}/${name}`);
+              if (!target.ok)
+                return Err({ code: "destination_missing", uri: destinationUri } as const);
+              const denied = moveCreationDenied(source.value, target.value);
+              return denied ?? target;
+            }
+          : undefined;
+      if (!resolveDestination) {
+        const creationDenied = moveCreationDenied(source.value, destination.value);
+        if (creationDenied) return creationDenied;
+      }
+      return treeMover.commitWriterLocation(source.value, destination.value, {
+        ...options,
+        resolveDestination,
+      });
     },
 
     async delete(

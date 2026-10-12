@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Identity-addressed server moves follow a renamed destination folder and refuse a deleted destination without recreating its old path.
+
 - Recently opened and Chat Recent hide the same deleted documents and pending-deleted folder descendants.
 
 - Missing folder parents reuse real recovery identities; synthesized ancestors only navigate.

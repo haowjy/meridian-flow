@@ -66,10 +66,14 @@ reason-coded validators in `lib/context-mutation-validation.ts`.
 
 `move.post.ts` is intentionally a thinner shell over `lib/context-move-route.ts`:
 the route core resolves every requested locator to exact project/lineage/Work
-authority before it calls
-`ContextPort.commitWriterLocation`. Proven destination occupation returns a
-collision locator with that same authority; any port identity mismatch is an
-internal contract error. Stale source/target plans return a retry result instead.
+authority before it calls `ContextPort.commitWriterLocation`. Optional
+`destinationParent` binds a folder ID or area root; URI-addressed callers omit
+it. A folder destination resolves again under the move transaction's namespace
+locks and never creates a missing parent path. Missing, terminal or denied
+destinations return typed `destination_missing` repair evidence. Receipts retain
+the selected parent identity and the original URI command. Proven occupation
+returns the current collision locator; path-only commands must match the
+requested locator. Stale source/target plans return a retry result instead.
 
 `create-untitled.post.ts` accepts a client-minted document ID. Idempotent retries
 recover that ID across all project and authorized Work schemes, returning its

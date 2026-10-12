@@ -572,3 +572,59 @@ export function createDrizzleProjectContextAvailability(
     },
   };
 }
+
+/** Resolve an active folder inside the caller's namespace transaction, without a new snapshot. */
+export async function resolveActiveFolderUri(
+  db: Database,
+  projectId: string,
+  userId: string,
+  folderId: string,
+): Promise<string | null> {
+  const tx = currentDrizzleDb(db);
+  const [row] = await tx
+    .select({
+      folder: folders,
+      source: contextSources,
+      sourceProject: projects,
+      work: works,
+      rootThreadRef: threads.ref,
+    })
+    .from(folders)
+    .leftJoin(contextSources, eq(folders.contextSourceId, contextSources.id))
+    .leftJoin(projects, eq(contextSources.projectId, projects.id))
+    .leftJoin(works, eq(contextSources.workId, works.id))
+    .leftJoin(threads, eq(threads.id, contextSources.rootThreadId))
+    .where(eq(folders.id, folderId));
+  if (
+    !row?.source ||
+    row.folder.deletedAt ||
+    row.source.deletedAt ||
+    row.sourceProject?.deletedAt ||
+    row.work?.deletedAt ||
+    row.work?.archivedAt
+  )
+    return null;
+  const ancestors = await tx
+    .select()
+    .from(folders)
+    .where(eq(folders.contextSourceId, row.source.id));
+  const classification = classifySourceIdentity({
+    row: { ...row, node: { parentId: row.folder.parentId, deletedAt: row.folder.deletedAt } },
+    requestProjectId: projectId,
+    actorUserId: userId,
+    projectGeneration: "0",
+    checkedGeneration: "0",
+    foldersById: new Map(ancestors.map((folder) => [folder.id, folder])),
+  });
+  if (classification.kind !== "valid") return null;
+  return canonicalContextUri(
+    classification.identity.scheme,
+    [...classification.identity.parentPath, row.folder.name].join("/"),
+    catalogSourceAuthority(
+      classification.identity.scheme,
+      row.work?.id ?? null,
+      row.work && !row.work.isNoWork ? row.work.slug : null,
+      row.rootThreadRef,
+    ),
+  );
+}

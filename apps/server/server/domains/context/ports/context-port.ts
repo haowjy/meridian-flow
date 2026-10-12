@@ -243,6 +243,9 @@ export interface ContextWriteOptions {
 }
 
 export interface ContextLocationOptions extends ContextWriteOptions {
+  destinationParent?: MoveContextEntryRequest["destinationParent"];
+  /** Reconfirm the resolved destination's edit authority under its namespace locks. */
+  authorizeDestination?: (uri: string) => Promise<boolean>;
   operationId?: string;
   expected?: MoveContextEntryRequest["expected"];
 }

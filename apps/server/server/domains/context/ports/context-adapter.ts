@@ -52,6 +52,7 @@ export function schemeCapabilities(scheme: ContextScheme): SchemeCapabilities {
  */
 export type AdapterFault =
   | { code: "not_found" }
+  | { code: "destination_missing" }
   | { code: "permission_denied" }
   | { code: "conflict" }
   | { code: "stale_source" }

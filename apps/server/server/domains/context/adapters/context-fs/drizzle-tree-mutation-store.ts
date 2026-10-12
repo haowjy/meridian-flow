@@ -380,6 +380,15 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         return Err({ code: "stale_target" });
       }
 
+      if (
+        input.destinationParentToken &&
+        !sameLocation(
+          await this.inspect(input.destinationSourceId, treeDirname(destinationPath)),
+          input.destinationParentToken,
+        )
+      )
+        return Err({ code: "destination_missing" });
+
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
@@ -417,10 +426,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         ),
         ...(targetToken?.kind === "file" ? [targetToken.nodeId as DocumentId] : []),
       ]);
-      const destParentId = await this.ensureFolderPath(
-        input.destinationSourceId,
-        treePathSegments(targetParentPath),
-      );
+      const destParentId = input.destinationParentToken
+        ? input.destinationParentToken.nodeId === CONTEXT_ROOT_DIRECTORY_ID
+          ? null
+          : input.destinationParentToken.nodeId
+        : await this.ensureFolderPath(
+            input.destinationSourceId,
+            treePathSegments(targetParentPath),
+          );
       const now = new Date();
 
       if (input.source.kind === "file") {

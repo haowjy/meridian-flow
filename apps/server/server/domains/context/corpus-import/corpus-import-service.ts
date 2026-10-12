@@ -130,6 +130,7 @@ function contextErrorMessage(error: ContextError): string {
       return "Context access denied";
     case "context_unavailable":
       return "Context is unavailable";
+    case "destination_missing":
     case "not_found":
       return "Context path not found";
     case "conflict":

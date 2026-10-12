@@ -5,7 +5,7 @@ import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
-import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
@@ -17,7 +17,11 @@ import {
   type UnifiedContextPortFactory,
   type WorkScopedContextFsScheme,
 } from "../domains/context/index.js";
-import type { FileAccess, FileTarget } from "../domains/file-policy/index.js";
+import {
+  type FileAccess,
+  type FileTarget,
+  isFileAccessDenied,
+} from "../domains/file-policy/index.js";
 import {
   type ProjectRepository,
   type ProjectWorkAuthorityResolver,
@@ -65,6 +69,7 @@ export type ContextMoveLocator = ProjectLocator | NoWorkLocator | WorkLocator | 
 export interface ParsedContextMove {
   operationId: string;
   expected: MoveContextEntryRequest["expected"];
+  destinationParent?: MoveContextEntryRequest["destinationParent"];
   source: ContextMoveLocator;
   destination: ContextMoveLocator;
   name?: string;
@@ -81,6 +86,7 @@ export type ResolvedContextMoveLocator =
 export type ResolvedContextMove = {
   operationId: string;
   expected: MoveContextEntryRequest["expected"];
+  destinationParent?: MoveContextEntryRequest["destinationParent"];
   source: ResolvedContextMoveLocator;
   destination: ResolvedContextMoveLocator;
   name?: string;
@@ -151,6 +157,47 @@ export function parseContextMove(input: {
   ) {
     throw createError({ statusCode: 400, message: "Expected source identity is required" });
   }
+  let destinationParent: MoveContextEntryRequest["destinationParent"];
+  if (body.destinationParent !== undefined) {
+    const parent = body.destinationParent as Record<string, unknown> | null;
+    if (parent?.kind === "folder") {
+      destinationParent = {
+        kind: "folder",
+        folderId: requireRequestId(parent.folderId, "destinationParent.folderId"),
+      };
+    } else if (
+      parent?.kind === "root" &&
+      parent.scheme === body.destinationScheme &&
+      parent.owner &&
+      typeof parent.owner === "object"
+    ) {
+      const owner = parent.owner as Record<string, unknown>;
+      if (
+        (owner.workId ?? null) !== (body.destinationWorkId ?? null) ||
+        (owner.rootThreadId ?? null) !== (body.destinationRootThreadId ?? null)
+      )
+        throw createError({ statusCode: 400, message: "Destination root owner does not match" });
+      destinationParent = {
+        kind: "root",
+        scheme: parent.scheme as MoveContextEntryRequest["destinationScheme"],
+        owner: {
+          workId: parseWorkId(owner.workId, "destinationWorkId"),
+          ...(typeof owner.workSlug === "string" || owner.workSlug === null
+            ? { workSlug: owner.workSlug }
+            : {}),
+          ...(owner.rootThreadId != null
+            ? {
+                rootThreadId: requireRequestId(
+                  owner.rootThreadId,
+                  "destinationParent.owner.rootThreadId",
+                ),
+                rootThreadRef: typeof owner.rootThreadRef === "string" ? owner.rootThreadRef : null,
+              }
+            : {}),
+        },
+      };
+    } else throw createError({ statusCode: 400, message: "Destination parent is invalid" });
+  }
   const sourcePath = parseContextMutationPath(body.path, "path");
   const destinationFolderPath = parseContextMutationPath(
     body.destinationFolderPath,
@@ -164,6 +211,7 @@ export function parseContextMove(input: {
   return {
     operationId: requireRequestId(body.operationId, "operationId"),
     expected: { kind: expected.kind, nodeId: expected.nodeId },
+    ...(destinationParent ? { destinationParent } : {}),
     source: parseLocator({
       scheme: input.sourceScheme,
       path: sourcePath,
@@ -200,6 +248,8 @@ export async function commitContextMove(input: {
   port: ContextPort;
   userId: string;
   move: ResolvedContextMove;
+  resolveDestinationLocator?: (uri: string) => Promise<ResolvedContextMoveLocator>;
+  authorizeDestination?: (uri: string) => Promise<boolean>;
 }): Promise<MoveContextEntryResult> {
   const name = input.move.name ?? basename(input.move.source.path);
   const destinationPath = joinPath(input.move.destination.path, name);
@@ -209,6 +259,8 @@ export async function commitContextMove(input: {
     {
       origin: { type: "human", userId: input.userId },
       expected: input.move.expected,
+      destinationParent: input.move.destinationParent,
+      authorizeDestination: input.authorizeDestination,
       operationId: input.move.operationId,
     },
   );
@@ -222,7 +274,11 @@ export async function commitContextMove(input: {
     if (result.error.code === "conflict") {
       const collision = parseUnifiedContextUri(result.error.uri);
       if (!collision.ok) contextErrorToHttp(collision.error);
-      const destination = input.move.destination;
+      const identityDestination = input.move.destinationParent?.kind === "folder";
+      const destination =
+        identityDestination && input.resolveDestinationLocator
+          ? await input.resolveDestinationLocator(result.error.uri)
+          : input.move.destination;
       const authorityMatches =
         destination.scope === "project"
           ? collision.value.authority.kind === "contextual"
@@ -235,7 +291,7 @@ export async function commitContextMove(input: {
                 collision.value.authority.workSlug === destination.authority.workSlug;
       if (
         collision.value.scheme !== destination.scheme ||
-        collision.value.path !== destinationPath ||
+        (!identityDestination && collision.value.path !== destinationPath) ||
         !authorityMatches
       ) {
         throw createError({
@@ -274,10 +330,15 @@ export async function commitContextMove(input: {
     }
     contextErrorToHttp(result.error);
   }
+  const committedDestination = result.value.destinationUri
+    ? parseUnifiedContextUri(result.value.destinationUri)
+    : null;
   return {
     status: "moved",
     ...(result.value.linkUpdate ? { linkUpdate: result.value.linkUpdate } : {}),
-    scheme: input.move.destination.scheme,
+    scheme: committedDestination?.ok
+      ? (committedDestination.value.scheme as MoveContextEntryRequest["destinationScheme"])
+      : input.move.destination.scheme,
     path: result.value.destinationPath,
     name: basename(result.value.destinationPath),
   };
@@ -306,6 +367,7 @@ export async function handleContextMoveRequest(
   const resolvedMove: ResolvedContextMove = {
     operationId: move.operationId,
     expected: move.expected,
+    destinationParent: move.destinationParent,
     source: await resolveLocator(move.source),
     destination: await resolveLocator(move.destination),
     ...(move.name ? { name: move.name } : {}),
@@ -354,20 +416,76 @@ export async function handleContextMoveRequest(
             scheme: locator.scheme,
             owner: { scope: "work", workId: locator.authority.workId as WorkId },
           };
+  async function resolveDestinationLocator(uri: string): Promise<ResolvedContextMoveLocator> {
+    const parsed = parseUnifiedContextUri(uri);
+    if (!parsed.ok) contextErrorToHttp(parsed.error);
+    const { scheme, path, authority } = parsed.value;
+    if (authority.kind === "work" || authority.kind === "none") {
+      const resolved =
+        authority.kind === "none"
+          ? await deps.workAuthorityResolver.noWork(input.projectId)
+          : await deps.workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
+      if (!resolved) throwContextWorkUnavailableHttpError("work_missing");
+      return {
+        scope: "work",
+        scheme: scheme as WorkScopedContextFsScheme,
+        path,
+        authority: resolved,
+      };
+    }
+    if (authority.kind === "lineage") {
+      const lineage = await deps.contextPorts.lineages.byRef(
+        input.projectId,
+        authority.rootThreadRef,
+      );
+      if (!lineage) throw createError({ statusCode: 404, message: "Chat not found" });
+      return {
+        scope: "lineage",
+        scheme: "scratch",
+        path,
+        rootThreadId: lineage.rootThreadId,
+        authority: { kind: "lineage", rootThreadRef: authority.rootThreadRef },
+      };
+    }
+    return { scope: "project", scheme: scheme as ProjectContextFsScheme, path };
+  }
   const moved =
     resolvedMove.expected.kind === "file"
       ? documentTarget(resolvedMove.expected.nodeId)
       : containerOf(resolvedMove.source);
   const grants = [
     await requireFileGrant(deps.fileAccess, input.userId, moved, "edit"),
-    await requireFileGrant(
-      deps.fileAccess,
-      input.userId,
-      containerOf(resolvedMove.destination),
-      "edit",
-    ),
+    ...(resolvedMove.destinationParent?.kind === "folder"
+      ? []
+      : [
+          await requireFileGrant(
+            deps.fileAccess,
+            input.userId,
+            containerOf(resolvedMove.destination),
+            "edit",
+          ),
+        ]),
   ];
   return withEditGrants(deps.fileAccess, grants, () =>
-    commitContextMove({ port, userId: input.userId, move: resolvedMove }),
+    commitContextMove({
+      port,
+      userId: input.userId,
+      move: resolvedMove,
+      resolveDestinationLocator,
+      authorizeDestination: resolvedMove.destinationParent
+        ? async (uri) => {
+            const destination = await resolveDestinationLocator(uri);
+            const grant = await deps.fileAccess.authorize(
+              { accountId: input.userId as UserId },
+              containerOf(destination),
+              "edit",
+            );
+            return (
+              !isFileAccessDenied(grant) &&
+              (await deps.fileAccess.confirmEdit([grant])).length === 0
+            );
+          }
+        : undefined,
+    }),
   );
 }
