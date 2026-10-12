@@ -1,13 +1,18 @@
 /**
  * Fenced code blocks as Streamdown renders them: one slim header row, or none.
  *
- * Streamdown draws a language-label row above the code and, under it, a second
- * row for the block's actions (download, copy). Here the actions move onto the
- * label's row, label left and actions right, so a labelled block has a single
- * 24px header row. A block with no language has no row at all: its actions sit
- * in the top-right corner of the code card, and the card's top padding grows
- * from 16px to 28px so the 16px icons end 8px above the first line and never
- * sit over code.
+ * Streamdown draws a language-label row above the code, with the block's
+ * actions (download, copy) meant to ride that row. Its utilities for that
+ * (`-mt-10`, `top-2`) never reach the app's CSS, because Tailwind does not scan
+ * Streamdown (#776), so the actions land on a second row. These rules therefore
+ * set the layout explicitly: the actions sit on the label's row, label left and
+ * actions right, so a labelled block has a single 24px header row. A block with
+ * no language has no row at all: its actions sit in the top-right corner of the
+ * code card, and the card's top padding grows from 16px to 28px so the 16px
+ * icons end 8px above the first line and never sit over code.
+ *
+ * Once #776 adds `@source` for Streamdown, the labelled-block rules can go and
+ * only the no-language rules (plus the plain-icon reset) stay.
  *
  * Both blocks wear the same actions: plain, muted icons with no pill, always
  * shown on every device. The row is not sticky; stuck over a tall block,
