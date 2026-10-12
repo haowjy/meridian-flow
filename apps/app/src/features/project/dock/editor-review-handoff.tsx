@@ -1,3 +1,4 @@
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 /** Latest-wins command handoff from any project surface to the Editor review scope. */
 
 import type { EventRecord } from "@meridian/contracts/observability";
@@ -24,7 +25,7 @@ export type AiDraftLaunchTarget = {
   workId: string;
   documentId: string;
   draftId: string;
-  contextPath: string;
+  contextLocation: NonNullable<ThreadDraftListItem["contextLocation"]>;
   documentName?: string;
   isNewDocument?: boolean;
 };
@@ -104,8 +105,7 @@ export function EditorReviewHandoffProvider({
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const result = await openContextRoute(
             {
-              scheme: "manuscript",
-              path: target.contextPath,
+              ...target.contextLocation,
               workId: target.workId,
               documentId: target.documentId,
             },
@@ -198,7 +198,7 @@ export function EditorReviewIntentClaimant({
   useEffect(() => {
     if (!intent) return;
     if (editorWorkId !== intent.workId) return;
-    if (activeScheme !== "manuscript") return;
+    if (activeScheme !== intent.contextLocation.scheme) return;
     if (review.activeEditorDocumentId !== intent.documentId) return;
     const group = review.groupForDocument(intent.documentId);
     if (group?.draft.draftId !== intent.draftId) return;

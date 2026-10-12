@@ -20,11 +20,11 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { draftCommandFailure, useDraftCommandRecords } from "@/client/query/draft-command-record";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
-import { contextUriFromWritePath } from "@/lib/context-uri";
 import { cn } from "@/lib/utils";
 import { useChatContextNavigation } from "./ChatContextNavigation";
 import { useDraftReview } from "./DraftReviewProvider";
@@ -53,12 +53,12 @@ export function useDraftDock({ generating }: { generating: boolean }) {
 
   const reviewRow = useCallback(
     (row: DockRow) => {
-      if (!row.contextPath) return;
+      if (!row.contextLocation) return;
       openAiDraft({
         workId: controller.workId,
         documentId: row.documentId,
         draftId: row.draft.draftId,
-        contextPath: row.contextPath,
+        contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
         isNewDocument: row.isNewDocument,
       });
@@ -71,7 +71,9 @@ export function useDraftDock({ generating }: { generating: boolean }) {
   const openContextUri = useChatContextNavigation();
   const openRow = useCallback(
     (row: DockRow) => {
-      const uri = row.contextPath ? contextUriFromWritePath(row.contextPath) : null;
+      const uri = row.contextLocation
+        ? canonicalContextUri(row.contextLocation.scheme, row.contextLocation.path)
+        : null;
       if (!openContextUri || !uri) return;
       openContextUri(uri);
     },

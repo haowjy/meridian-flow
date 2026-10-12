@@ -380,10 +380,7 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorDrafts = useWorkDrafts(
-    projectId,
-    documentDestination?.scheme === "manuscript" ? workId : null,
-  );
+  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     documentLookup.data,

@@ -13,6 +13,7 @@ import type { ProjectContextIdentityResolution } from "@meridian/contracts/proto
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import type { ContextTab } from "@/client/stores";
+import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
 import type { ProjectDestination } from "./project-address";
@@ -49,9 +50,14 @@ export async function resolveLaunchLocator(input: {
   }
   if (input.draftOnly) return requested;
   const live = input.catalog?.findDocument(documentId);
-  if (live) return { ...requested, scheme: "manuscript", path: live.path };
+  if (live) {
+    const location = parseContextUri(live.uri);
+    if (location) return { ...requested, scheme: location.scheme, path: location.path };
+  }
   const resolution = await input.lookup(documentId);
-  if (resolution.kind !== "available" || !resolution.entry.uri.startsWith("manuscript://"))
+  if (resolution.kind !== "available")
     throw new Error("The reviewed document could not be located");
-  return { ...requested, scheme: "manuscript", path: projectCatalogFile(resolution.entry).path };
+  const location = parseContextUri(resolution.entry.uri);
+  if (!location) throw new Error("The reviewed document could not be located");
+  return { ...requested, scheme: location.scheme, path: projectCatalogFile(resolution.entry).path };
 }

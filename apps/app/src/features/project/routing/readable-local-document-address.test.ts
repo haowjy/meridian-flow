@@ -177,6 +177,12 @@ describe("gateLiveView", () => {
   const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
   const noTab = () => false;
 
+  it("keeps a hidden Knowledge Base document draft-only", () => {
+    expect(gateLiveView(resolved, "kb", manifest([]), ready(group(true)), noTab)).toMatchObject({
+      draftOnly: { draft: { draftId: "draft-id" } },
+    });
+  });
+
   it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
     expect(gateLiveView(resolved, "manuscript", manifest(["document-id"]), ready(), noTab)).toEqual(
       { outcome: "ready", result: resolved },

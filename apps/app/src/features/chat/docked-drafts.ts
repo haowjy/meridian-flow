@@ -7,7 +7,7 @@ import { pendingReviewDraft, type ThreadDraftGroup } from "@/client/query/useWor
 export type DockRow = {
   documentId: string;
   documentName: string | null;
-  contextPath: string | null;
+  contextLocation: ThreadDraftListItem["contextLocation"];
   /** The active draft the row's verbs act on. */
   draft: ThreadDraftListItem;
   /**
@@ -32,7 +32,7 @@ export function dockRows(groups: ThreadDraftGroup[] | null | undefined): DockRow
     rows.push({
       documentId: group.documentId,
       documentName: group.documentName,
-      contextPath: group.contextPath,
+      contextLocation: group.contextLocation,
       draft,
       isNewDocument: draft.isNewDocument === true,
     });

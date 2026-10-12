@@ -55,7 +55,13 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     });
     expect
       .soft(hidden.drafts, "the legacy list shows it too, as new (early probe 1, 4)")
-      .toMatchObject([{ documentId: kael, contextPath: "/characters/kael", isNewDocument: true }]);
+      .toMatchObject([
+        {
+          documentId: kael,
+          contextLocation: { scheme: "manuscript", path: "/characters/kael" },
+          isNewDocument: true,
+        },
+      ]);
 
     // The writer makes it live: one document, D's own.
     const made = await s.writer.create("characters/kael", { content: "Writer's Kael." });

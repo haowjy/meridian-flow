@@ -10,3 +10,7 @@ The list contains current reviewable work only; completed review is not retained
 as a draft-list receipt.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
+
+Review rows carry `contextLocation: { scheme, path } | null`, parsed from the
+item URI. The path has a leading slash; launchers and review tabs preserve its
+scheme, including draft-only documents outside Manuscript.

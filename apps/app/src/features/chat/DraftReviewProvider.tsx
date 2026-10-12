@@ -175,21 +175,26 @@ export function useDraftReviewScopeValue({
     const activeDrafts = drafts.drafts ?? groups.map((group) => group.draft);
     if (!getContextTabs(projectId).tabs.some((tab) => isOrphan(tab, activeDrafts))) return;
 
-    const scope = contextCatalogScope(projectId, "manuscript", { workId: null }) ?? {
-      kind: "project" as const,
-      projectId,
-    };
     const attempt = new AbortController();
-    // A catalog observation that starts now: joining an older in-flight one
-    // could report the pre-Apply tree and misread a remote Apply as a Discard.
-    void resources
-      .acquireCatalogAfter(projectId, scope)
-      .then(async (view) => {
+    const observations = new Map<string, ReturnType<typeof resources.acquireCatalogAfter>>();
+    // Refresh each owning catalog once; a pre-Apply observation cannot settle an orphan.
+    void Promise.all(
+      getContextTabs(projectId).tabs.map(async (tab) => {
+        if (tab.kind !== "tracked" || !isOrphan(tab, activeDrafts)) return;
+        const scope = contextCatalogScope(projectId, tab.scheme, { workId });
+        if (!scope) return;
+        const key = JSON.stringify(scope);
+        let observation = observations.get(key);
+        if (!observation) {
+          observation = resources.acquireCatalogAfter(projectId, scope);
+          observations.set(key, observation);
+        }
+        const view = await observation;
         if (attempt.signal.aborted) return;
         queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, scope), view);
         const catalog = projectCatalogView(
           projectId,
-          "manuscript",
+          tab.scheme,
           view,
           resourcePlacementForSnapshot(projectId, await resources.readProjection(projectId)),
         );
@@ -198,25 +203,21 @@ export function useDraftReviewScopeValue({
           queryClient.getQueryData<ThreadDraftListItem[]>(
             projectQueryKeys.workDrafts(projectId, workId),
           ) ?? [];
-        for (const tab of getContextTabs(projectId).tabs) {
-          if (tab.kind !== "tracked" || !isOrphan(tab, currentDrafts)) continue;
-          if (catalog.findDocument(tab.documentId)) {
-            void contextRemoval.promoteAppliedDraft(projectId, tab);
-            continue;
-          }
-          const draftId = tab.reviewDraftId;
-          if (!draftId) continue;
-          if (
-            controller.inlineReview?.documentId === tab.documentId &&
-            controller.inlineReview.draftId === draftId
-          )
-            controller.exitReview();
-          contextRemoval.discardDraft(projectId, workId, tab.documentId, draftId);
+        if (!isOrphan(tab, currentDrafts)) return;
+        if (catalog.findDocument(tab.documentId)) {
+          void contextRemoval.promoteAppliedDraft(projectId, tab);
+          return;
         }
-      })
-      // A failed membership check must leave the tab intact rather than guess
-      // that a remotely applied document was discarded.
-      .catch(() => undefined);
+        const draftId = tab.reviewDraftId;
+        if (!draftId) return;
+        if (
+          controller.inlineReview?.documentId === tab.documentId &&
+          controller.inlineReview.draftId === draftId
+        )
+          controller.exitReview();
+        contextRemoval.discardDraft(projectId, workId, tab.documentId, draftId);
+      }),
+    ).catch(() => undefined);
     return () => attempt.abort();
   }, [
     contextRemoval,

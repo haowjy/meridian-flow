@@ -5,7 +5,8 @@
  */
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
-import { branchRoomName } from "@meridian/contracts/protocol";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import { branchRoomName, isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -79,7 +80,7 @@ export function createWorkDraftReviewService(input: {
               wordsRemoved: null,
               updatedAt: item.updatedAt,
               documentName: item.documentName,
-              contextPath: manuscriptContextPath(item.path),
+              contextLocation: reviewContextLocation(item.path),
               ...(item.isNew ? { createdDocument: true } : {}),
             },
           ]
@@ -341,8 +342,10 @@ export function createWorkDraftReviewService(input: {
   };
 }
 
-function manuscriptContextPath(uri: string | null): string | null {
-  if (!uri?.startsWith("manuscript://")) return null;
-  const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
-  return path ? `/${path}` : null;
+function reviewContextLocation(uri: string | null): ReviewableDraft["contextLocation"] {
+  if (!uri) return null;
+  const parsed = parseUnifiedContextUri(uri);
+  return parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
+    ? { scheme: parsed.value.scheme, path: `/${parsed.value.path}` }
+    : null;
 }

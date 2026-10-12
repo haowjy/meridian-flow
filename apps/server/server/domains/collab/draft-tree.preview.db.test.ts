@@ -20,6 +20,40 @@ import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
 import { deleteWorkTransition, restoreWork } from "../projects/index.js";
 
 describeDraftTreeDb("deleted-live review preview", (start, db) => {
+  it("projects review addresses for KB, User and Scratch creates and a KB edit", async () => {
+    const { s } = await start();
+    const work = await s.work("review-sources", "draft");
+    const existing = await s.writer.createDocument("kb://characters/Existing", "Live words.");
+    const created = await s.model(work).create("kb://characters/New", "New words.");
+    await s.model(work).edit("kb://characters/Existing", "Live words.", "Edited words.");
+    const user = await s.model(work).create("user://Review User", "User draft.");
+    const scratch = await s
+      .model(work)
+      .create("scratch://@review-sources/Review Note", "Scratch draft.");
+    const review = await s.review(work);
+    expect(review.drafts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          documentId: created,
+          contextLocation: { scheme: "kb", path: "/characters/New" },
+          isNewDocument: true,
+        }),
+        expect.objectContaining({
+          documentId: existing,
+          contextLocation: { scheme: "kb", path: "/characters/Existing" },
+        }),
+        expect.objectContaining({
+          documentId: user,
+          contextLocation: { scheme: "user", path: "/Review User" },
+        }),
+        expect.objectContaining({
+          documentId: scratch,
+          contextLocation: { scheme: "scratch", path: "/Review Note" },
+        }),
+      ]),
+    );
+  });
+
   it("refuses a deleted Work's draft routes without provisioning, then restores its pending item", async () => {
     const { s, runtime } = await start();
     const work = await s.work("ascension", "draft");

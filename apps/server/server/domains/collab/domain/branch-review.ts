@@ -1,3 +1,4 @@
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 /** Branch-backed review wire types for work-draft cards. */
 
 import type { DocumentId, TurnId, WorkId } from "@meridian/contracts/runtime";
@@ -16,7 +17,7 @@ export type ReviewableDraft = {
   lastActorTurnId: TurnId | null;
   updatedAt: Date;
   documentName: string | null;
-  contextPath: string | null;
+  contextLocation: ThreadDraftListItem["contextLocation"];
   wordsAdded: number | null;
   wordsRemoved: number | null;
   createdDocument?: boolean;
