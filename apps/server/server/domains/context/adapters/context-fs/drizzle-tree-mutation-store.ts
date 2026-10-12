@@ -218,6 +218,18 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         return Err({ code: "stale_target" });
       }
 
+      // The writer's identity parent, still at its path under these locks: the path move
+      // below lands in that live folder, and `destinationCreateFolders` beneath it are a
+      // live create (revealing a hidden folder of the same name, §6.3).
+      if (
+        input.destinationParentToken &&
+        !sameLocation(
+          await this.inspect(input.destinationSourceId, input.destinationParentToken.path),
+          input.destinationParentToken,
+        )
+      )
+        return Err({ code: "destination_missing" });
+
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {

@@ -132,6 +132,9 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
   sources and Drizzle stores join those boundaries. Wake hints run only after
   commit and cannot fail a mutation.
+  Catalog publication deduplicates complete observations, including namespace
+  versions: a return to an earlier payload still publishes newer provenance,
+  even when deferred repair never saw the intermediate location.
   Catalog replay limits are positive safe integers at HTTP boundaries and are
   defensively capped by the shared domain policy. Work catalog IDs pass through
   the canonical request-ID parser before authority resolution.
@@ -152,8 +155,12 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   generation heads with mutations. A deleted request project or deleted backing
   source project returns `authority-unavailable/project_deleted`; restoring the
   backing project makes the same identity available again. Foreign identities
-  remain indistinguishable from missing IDs. The optional internal `view` reads
-  draft locations; omitted means live. Hidden rows outside the view are missing.
+  remain indistinguishable from missing IDs. The same lookup accepts exact folder
+  IDs, returning canonical folder entries or independent tombstones. Folder
+  tombstones retire namespace refresh work, never descendant document content;
+  reversible Work/lineage hiding remains authority unavailability. The optional
+  internal `view` reads draft locations; omitted means live. Hidden rows outside
+  the view are missing, documents and folders alike.
 
 - **Unified `ContextPort`** — single port interface (`ports/context-port.ts`)
   providing `stat`/`read`/`write`/`writeBinary`/`mkdir`/`list`/`search` for all
@@ -549,7 +556,20 @@ currently available to the request owner in the requested project.
   invalidating a location plan. `stale_source` and `stale_target` remain typed
   through store, adapter, port, and HTTP route; only proven occupation is a
   `conflict` with an Open-existing locator.
-- Successful HTTP deletion acknowledges `{ status: "deleted", deletedDocumentIds }`.
+- Writer moves may carry `destinationParent` (folder ID or qualified area root).
+  Folder identity is resolved in the move transaction before namespace lock
+  selection, then again under those locks. A change of namespace while locking
+  returns `stale_target` rather than acquiring locks in a new order. Parent
+  tokens fence the durable mutation; picked-parent moves never create folders. Absent, terminal and denied destinations return
+  `destination_missing`. Linked creation may carry `createFolders`, a validated name suffix beneath the
+  identity anchor. The move verifies the anchor before ensuring that suffix and
+  filing in the same transaction. A missing anchor creates nothing. Ordinary
+  picked-parent moves have no suffix. The receipt records both alongside the
+  original command, and successful identity moves return their committed URI.
+  HTTP confirms edit on the resolved destination under its namespace locks.
+  URI-addressed moves retain path-based folder creation.
+- Successful HTTP deletion acknowledges
+  `{ status: "deleted", deletedDocumentIds, availabilityGeneration }`.
   Every `ContextPort.delete` caller names the expected entry kind and, for a file,
   its initiating `documents.id`; mismatch or CAS replacement is `stale_target`
   and acknowledges nothing. This is the same CAS boundary for HTTP deletion and

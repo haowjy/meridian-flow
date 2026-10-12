@@ -52,6 +52,7 @@ export type { DocumentCoordinates, NodeAddress } from "./tree-addresses.js";
 export {
   identityDocumentFields,
   identityDocuments,
+  identityFolderFields,
   identityFolders,
   type VisibleDocumentsSubquery,
   type VisibleFoldersSubquery,

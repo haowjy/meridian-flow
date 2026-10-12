@@ -388,6 +388,23 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
             checkedGeneration: expect.any(String),
           },
         },
+        {
+          surface: "folder availability",
+          run: async () =>
+            (
+              await ports.projectContextAvailability.lookup(
+                { ...input, documentIds: [], folderIds: [s.relocatedFolder] },
+                actor,
+              )
+            ).folderResolutions,
+          expected: [
+            {
+              folderId: s.relocatedFolder,
+              kind: "not-visible",
+              checkedGeneration: expect.any(String),
+            },
+          ],
+        },
         { surface: "figure signed URL without workId", run: () => s.figure(), expected: denied() },
         {
           surface: "upload identity",
@@ -587,6 +604,19 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
             return result?.kind === "available" ? result.entry.uri : result?.kind;
           },
           expected: "manuscript://draft-location/relocated",
+        },
+        {
+          surface: "folder availability in D",
+          run: async () => {
+            const result = (
+              await ports.projectContextAvailability.lookup(
+                { ...input, documentIds: [], folderIds: [s.relocatedFolder] },
+                actor,
+              )
+            ).folderResolutions?.[0];
+            return result?.kind === "available" ? result.entry.uri : result?.kind;
+          },
+          expected: "manuscript://draft-location",
         },
         {
           surface: "figure other same-project Work's active draft",

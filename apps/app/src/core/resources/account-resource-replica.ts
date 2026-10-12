@@ -5,18 +5,22 @@ import {
   acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
   type FolderNamespaceRecord,
+  type FolderNamespaceWrite,
   folderNeedsBackgroundReconciliation,
-  installedFolderLocation,
+  installedFolderObservation,
   markResourceCreateEligible,
+  ownerOf,
+  type ParentRef,
   planCachedSessionAdoption,
+  planFolderDeletion,
   planFolderLocation,
   planResourceDeletion,
   planResourceLocation,
-  projectResourceLocation,
   publishResourceTerminal,
   ResourceCatalogAcquisition,
   type ResourceDestination,
   type ResourceKey,
+  type ResourceLocation,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
   reconcileFolderNamespace,
@@ -25,7 +29,9 @@ import {
   remintCreateConflict,
   reserveResourceDocument,
   resourceNeedsBackgroundReconciliation,
+  resourcePlacementForSnapshot,
   resourceVisibleInProject,
+  sameOwner,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { nativeLocks } from "@/core/cross-context-locks";
@@ -264,10 +270,11 @@ export class AccountResourceReplica {
     const key = { handle: crypto.randomUUID() };
     const documentId = crypto.randomUUID();
     const projection = await this.metadata.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, projection);
     const names = new Set(
       projection.records.flatMap((record) => {
         if (!resourceVisibleInProject(projectId, record, projection.catalogs)) return [];
-        const name = projectResourceLocation(projectId, record)?.name;
+        const name = placement.resourceLocation(record)?.name;
         return name ? [name] : [];
       }),
     );
@@ -397,7 +404,10 @@ export class AccountResourceReplica {
     return Boolean(
       known &&
         known.record.resource.lifecycle.kind === "acknowledged" &&
-        projectResourceLocation(projectId, known.record),
+        resourcePlacementForSnapshot(
+          projectId,
+          await this.readProjection(projectId),
+        ).resourceLocation(known.record),
     );
   }
 
@@ -560,7 +570,41 @@ export class AccountResourceReplica {
     return this.catalogs.hint(projectId, scope, headRevision);
   }
 
-  /** `operationId` names the move's receipt, for surfaces that show its outcome; absent when nothing changed. */
+  /** Capture a displayed row's identity before admitting a command. Never persist a path edge. */
+  async findParentAtLocation(
+    projectId: string,
+    location: ResourceLocation,
+  ): Promise<ParentRef | null> {
+    if (!location.path || location.path === "/")
+      return { kind: "root", scheme: location.scheme, owner: ownerOf(location) };
+    const snapshot = await this.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, snapshot);
+    for (const entry of snapshot.catalogs.flatMap((catalog) => catalog.entries)) {
+      if (entry.kind !== "folder" || entry.navigationOnly) continue;
+      const home = placement.folderLocation(entry.entryId);
+      if (
+        home &&
+        home.scheme === location.scheme &&
+        sameOwner(home, location) &&
+        home.path === location.path
+      )
+        return { kind: "folder", folderId: entry.entryId };
+    }
+    return null;
+  }
+
+  async parentForEntry(projectId: string, entryId: string): Promise<ParentRef> {
+    const snapshot = await this.readProjection(projectId);
+    const placement = resourcePlacementForSnapshot(projectId, snapshot);
+    const record = snapshot.records.find((r) => r.resource.identity.documentId === entryId);
+    const parent = record
+      ? placement.parentForResource(record)
+      : placement.parentForFolder(entryId);
+    if (!parent) throw new Error("Entry parent is unavailable");
+    return parent;
+  }
+
+  /** `operationId` names the move's receipt; absent when nothing changed. */
   async setLocation(
     projectId: string,
     key: ResourceKey,
@@ -594,36 +638,47 @@ export class AccountResourceReplica {
     folderId: string,
     destination: ResourceDestination,
   ): Promise<{ operationId?: string }> {
+    return this.commitFolderPlan(projectId, folderId, (input) =>
+      planFolderLocation({ ...input, destination }),
+    );
+  }
+
+  async deleteFolder(projectId: string, folderId: string): Promise<void> {
+    await this.commitFolderPlan(projectId, folderId, planFolderDeletion);
+  }
+
+  private async commitFolderPlan(
+    projectId: string,
+    folderId: string,
+    plan: (input: Parameters<typeof planFolderDeletion>[0]) => FolderNamespaceWrite | null,
+  ): Promise<{ operationId?: string }> {
     this.requireOpen();
     const key = folderKey(folderId);
     const operationId = crypto.randomUUID();
-    let admitted = false;
     for (;;) {
       const [current, projection] = await Promise.all([
         this.metadata.readFolder(key),
         this.metadata.readProjection(projectId),
       ]);
-      const source =
-        current?.canonical ?? installedFolderLocation(projection.catalogs, projectId, folderId);
+      const observation = installedFolderObservation(projection.catalogs, projectId, folderId);
+      const source = current?.canonical ?? observation?.location;
       if (!source) throw new Error("Folder is unavailable");
-      const write = planFolderLocation({
+      const write = plan({
         record: current,
         projectId,
         handle: key.handle,
         folderId,
         source,
-        destination,
+        sourceParent: current?.canonicalParent ?? observation?.parent,
+        sourceObservationVersion: current?.observationVersion ?? observation?.observationVersion,
         intentId: crypto.randomUUID(),
         operationId,
       });
-      if (!write) break;
-      if ((await this.metadata.commitFolder(write)) === "committed") {
-        admitted = true;
-        break;
-      }
+      if (!write) return {};
+      if ((await this.metadata.commitFolder(write)) !== "committed") continue;
+      this.scheduleFolder(key);
+      return { operationId };
     }
-    this.scheduleFolder(key);
-    return admitted ? { operationId } : {};
   }
 
   async deleteDocument(projectId: string, key: ResourceKey): Promise<void> {
@@ -728,29 +783,6 @@ export class AccountResourceReplica {
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
       if (result !== "progressed") return;
-      await this.observeSettledFolder(key);
-    }
-  }
-
-  /**
-   * A successful move blocks the folder's next dispatch until a catalog read begun after
-   * the receipt installs its location. A wake hint can land before the receipt does and
-   * leave the barrier waiting for the next poll, so ask again once it is up.
-   */
-  private async observeSettledFolder(key: ResourceKey): Promise<void> {
-    for (let pass = 0; pass < 3 && !this.closing; pass += 1) {
-      const folder = await this.metadata.readFolder(key);
-      if (!folder?.canonicalRefresh) return;
-      const projectId = folder.intents.find(
-        (intent) => intent.operationId === folder.canonicalRefresh?.operationId,
-      )?.projectId;
-      if (!projectId) return;
-      const { catalogs } = await this.metadata.readProjection(projectId);
-      await Promise.allSettled(
-        catalogs
-          .filter((catalog) => catalog.projectId === projectId)
-          .map((catalog) => this.catalogs.acquire(projectId, catalog.scope)),
-      );
     }
   }
 

@@ -1,5 +1,5 @@
 -- migration: no-transaction
--- Online half of 0040_d62_chat_write_mode: validate the CHECKs it added NOT VALID, and build the index
+-- Online half of 0042_d62_chat_write_mode: validate the CHECKs it added NOT VALID, and build the index
 -- that finds an execution's turns (its end and stale-row settlement read it). Re-runnable.
 ALTER TABLE "threads" VALIDATE CONSTRAINT "threads_ai_write_mode_valid";
 --> statement-breakpoint

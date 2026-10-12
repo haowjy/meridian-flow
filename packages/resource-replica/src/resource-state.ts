@@ -1,5 +1,6 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
 import { assertAvailabilityGeneration, storedFilename } from "@meridian/contracts/protocol";
+import { newerCanonicalObservation } from "./canonical-observation";
 import { owningLocationIntent, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type {
   NamespaceIntent,
@@ -332,6 +333,7 @@ export function recordAcquiredResourceContent(input: {
 }): ResourceWrite | null {
   assertAvailabilityGeneration(input.generation);
   const { record } = input;
+  if (supersededTerminal(record, input.generation)) return null;
   if (record.resource.identity.documentId !== input.documentId)
     throw new Error("Acquired content does not match the current resource identity");
   if (record.resource.lifecycle.kind !== "acknowledged") return null;
@@ -379,15 +381,51 @@ export function recordAcquiredResourceContent(input: {
   };
 }
 
+/**
+ * A newer server observation already restored this document past the deletion generation; the
+ * deleted lineage's purge still runs against its old exact database, but the descriptor stays.
+ */
+function supersededTerminal(record: ResourceRecord, generation: string): boolean {
+  const revived = record.resource.revivedFrom;
+  return (
+    record.resource.lifecycle.kind !== "terminal" &&
+    revived !== undefined &&
+    BigInt(generation) <= BigInt(revived.generation)
+  );
+}
+
+/** The highest server version known to prove this deletion; null leaves the terminal versionless. */
+function terminalDeletionVersion(
+  record: ResourceRecord,
+  deletionVersion: string | null,
+): string | undefined {
+  const lifecycle = record.resource.lifecycle;
+  const versions = [
+    deletionVersion,
+    lifecycle.kind === "terminal" ? lifecycle.deletionVersion : undefined,
+  ].filter((version): version is string => typeof version === "string");
+  if (versions.length === 0) return undefined;
+  return versions.reduce((highest, version) =>
+    newerCanonicalObservation(version, highest) ? version : highest,
+  );
+}
+
+/**
+ * The editor's exact-ID terminal. `deletionVersion` is the namespace version of the exact-ID
+ * deletion evidence; the terminal holds it so stale catalog history can never revive it.
+ */
 export function publishResourceTerminal(input: {
   record: ResourceRecord;
   documentId: string;
   generation: string;
   transitionId: string;
   exactDatabaseName: string;
+  deletionVersion: string | null;
 }): ResourceWrite | null {
   assertAvailabilityGeneration(input.generation);
   const { record } = input;
+  const deletionVersion = terminalDeletionVersion(record, input.deletionVersion);
+  if (supersededTerminal(record, input.generation)) return null;
   if (
     record.resource.identity.documentId !== input.documentId ||
     record.resource.content.kind !== "exact" ||
@@ -417,6 +455,7 @@ export function publishResourceTerminal(input: {
             kind: "terminal",
             generation: input.generation,
             transitionId: input.transitionId,
+            ...(deletionVersion === undefined ? {} : { deletionVersion }),
           },
           obligations: {
             ...record.resource.obligations,
@@ -441,6 +480,7 @@ export function publishResourceTerminal(input: {
           kind: "terminal",
           generation: input.generation,
           transitionId: input.transitionId,
+          ...(deletionVersion === undefined ? {} : { deletionVersion }),
         },
         obligations: {
           cleanup: {
@@ -461,6 +501,7 @@ export function acknowledgeResourceTerminalCleanup(input: {
   exactDatabaseName: string;
 }): ResourceWrite | null {
   const { record } = input;
+  if (supersededTerminal(record, input.generation)) return null;
   if (
     record.resource.lifecycle.kind !== "terminal" ||
     record.resource.lifecycle.generation !== input.generation ||

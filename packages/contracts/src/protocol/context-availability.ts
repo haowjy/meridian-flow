@@ -43,11 +43,13 @@ export interface LiveDocumentSessionAuthority {
     documentId: DocumentId,
     generation: AvailabilityGeneration,
   ): Promise<LiveDocumentSessionLease>;
+  /** `deletionVersion` is the namespace version that proved the deletion, kept by the terminal. */
   revokeDocument(
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     commandId: AvailabilityCommandId,
+    deletionVersion: string | null,
   ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }>;
   revokeAccess(
     projectId: ProjectId,
@@ -63,6 +65,7 @@ export interface LiveDocumentSessionAuthority {
 export type ProjectContextIdentityLookupRequest = {
   projectId: ProjectId;
   documentIds: readonly DocumentId[];
+  folderIds?: readonly string[];
 };
 
 export type ProjectContextAuthority =
@@ -81,6 +84,7 @@ export type ProjectContextIdentityResolution =
     }
   | {
       kind: "deleted";
+      observationVersion: string;
       documentId: DocumentId;
       generation: AvailabilityGeneration;
       lastAuthority: ProjectContextAuthority;
@@ -90,7 +94,7 @@ export type ProjectContextIdentityResolution =
       documentId: DocumentId;
       generation: AvailabilityGeneration;
       authority: ProjectContextAuthority;
-      reason: "work_deleted" | "project_deleted";
+      reason: "work_deleted" | "project_deleted" | "lineage_hidden";
     }
   | {
       kind: "not-visible";
@@ -104,10 +108,25 @@ export type ProjectContextIdentityResolution =
       reason: "identity_inconsistent";
     };
 
+/** Exact folder identity evidence; scoped catalog absence is deliberately not a tombstone. */
+export type ProjectContextFolderResolution = { folderId: string } & (
+  | {
+      kind: "available";
+      entry: import("./context-catalog.js").CatalogFolderEntry;
+      generation: AvailabilityGeneration;
+    }
+  | { kind: "deleted"; generation: AvailabilityGeneration; observationVersion: string }
+  | {
+      kind: "not-visible" | "indeterminate" | "authority-unavailable";
+      checkedGeneration: AvailabilityGeneration;
+    }
+);
+
 export type ProjectContextIdentityLookupResult = {
   projectId: ProjectId;
   resolutionId: string;
   resolutions: readonly ProjectContextIdentityResolution[];
+  folderResolutions?: readonly ProjectContextFolderResolution[];
 };
 
 export const PROJECT_CONTEXT_AVAILABILITY_MAX_IDS = 128;

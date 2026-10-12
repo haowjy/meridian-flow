@@ -108,12 +108,18 @@ it("publishes and acknowledges exact terminal cleanup without removing recovery 
     generation: "9",
     transitionId: "delete-9",
     exactDatabaseName: "database",
+    deletionVersion: "4",
   });
   if (!terminal) throw new Error("Expected terminal transition");
   validateResourceRecordUpdate(record, terminal.next);
   expect(terminal.next.resource).toMatchObject({
     canonical: null,
-    lifecycle: { kind: "terminal", generation: "9", transitionId: "delete-9" },
+    lifecycle: {
+      kind: "terminal",
+      generation: "9",
+      transitionId: "delete-9",
+      deletionVersion: "4",
+    },
     obligations: {
       cleanup: { obligationId: "delete-9", exactDatabaseName: "database" },
     },
@@ -137,6 +143,7 @@ it("hands same-generation namespace terminal evidence to the session cleanup tra
     kind: "terminal",
     generation: "9",
     transitionId: "namespace-operation",
+    deletionVersion: "6",
   };
 
   const handedOff = publishResourceTerminal({
@@ -145,10 +152,16 @@ it("hands same-generation namespace terminal evidence to the session cleanup tra
     generation: "9",
     transitionId: "session-drain",
     exactDatabaseName: "database",
+    deletionVersion: "5",
   });
 
   expect(handedOff?.next.resource).toMatchObject({
-    lifecycle: { kind: "terminal", generation: "9", transitionId: "session-drain" },
+    lifecycle: {
+      kind: "terminal",
+      generation: "9",
+      transitionId: "session-drain",
+      deletionVersion: "6",
+    },
     obligations: {
       cleanup: { obligationId: "session-drain", exactDatabaseName: "database" },
     },
@@ -165,12 +178,7 @@ it("preserves the first create-eligibility witness when filing later", () => {
     projectId: "project",
     intentId: "move",
     eligibleAt: 2,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
   });
   if (!placed) throw new Error("Expected placement");
 
@@ -235,12 +243,7 @@ it("rebases queued placement behind the retry when creation remints", () => {
     projectId: "project",
     intentId: "place-a",
     eligibleAt: 1,
-    destination: {
-      scheme: "manuscript",
-      folderPath: "chapters",
-      name: "opening.md",
-      workId: null,
-    },
+    destination: { parent: { kind: "folder", folderId: "chapters" }, name: "opening.md" },
   });
   if (!withPlacement) throw new Error("Expected placement");
   const received = recordNamespaceOutcome(withPlacement.next, "create-a", "attempt", {
@@ -355,26 +358,35 @@ it("keeps typed rename provenance through optimistic placement and transport", (
       projectId: "project",
       intentId: "rename",
       eligibleAt: 0,
-      destination: { scheme: "manuscript", folderPath: "Book", name: typed, workId: null },
+      destination: { parent: { kind: "folder", folderId: "Book" }, name: typed },
     });
     expect(planned?.next.intents[0]?.desired).toMatchObject({
       typedName: typed,
       destination: { name: typed === "Notes.md" ? "Notes" : "settings" },
     });
     if (!planned) throw new Error("Missing location plan");
-    expect(projectResourceLocation("project", planned.next)?.name).toBe(
-      typed === "Notes.md" ? "Notes" : "settings",
-    );
+    expect(
+      projectResourceLocation("project", planned.next, () => ({
+        scheme: "manuscript",
+        path: "/Book",
+        name: "Book",
+        workId: null,
+      }))?.name,
+    ).toBe(typed === "Notes.md" ? "Notes" : "settings");
     planned.next.intents = planned.next.intents.map((intent) => ({
       ...intent,
       state: "needs-repair",
     }));
     expect(projectResourceNeedsRepair("project", planned.next)?.name).toBe(typed);
     planned.next.intents = planned.next.intents.map((intent) => ({ ...intent, state: "pending" }));
-    const attempt = prepareNamespaceAttempt(planned.next, {
-      attemptId: "attempt",
-      operationId: "operation",
-    });
+    const attempt = prepareNamespaceAttempt(
+      planned.next,
+      {
+        attemptId: "attempt",
+        operationId: "operation",
+      },
+      () => ({ scheme: "manuscript", path: "/Book", name: "Book", workId: null }),
+    );
     expect(attempt?.next.intents[0]?.attempts[0]?.request).toMatchObject({
       kind: "move",
       scheme: "manuscript",
@@ -404,7 +416,10 @@ it("inherits from the locally visible name when a second rename precedes settlem
     projectId: "project",
     intentId: "prose",
     eligibleAt: 0,
-    destination: { scheme: "user", folderPath: "", name: "settings.md", workId: null },
+    destination: {
+      parent: { kind: "root", scheme: "user", owner: { workId: null } },
+      name: "settings.md",
+    },
   });
   if (!prose) throw new Error("Missing first rename");
   const next = planResourceLocation({
@@ -412,7 +427,10 @@ it("inherits from the locally visible name when a second rename precedes settlem
     projectId: "project",
     intentId: "next",
     eligibleAt: 0,
-    destination: { scheme: "user", folderPath: "", name: "Notes", workId: null },
+    destination: {
+      parent: { kind: "root", scheme: "user", owner: { workId: null } },
+      name: "Notes",
+    },
   });
   expect(next?.next.intents.at(-1)?.desired).toMatchObject({
     typedName: "Notes",

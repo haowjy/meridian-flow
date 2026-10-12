@@ -1,8 +1,8 @@
 /**
- * Populated upgrade contract for 0038/0039: the Work-branch foundation's data moves and
+ * Populated upgrade contract for 0040/0041: the Work-branch foundation's data moves and
  * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
- * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037) runs over
- * them first, as it does in a deploy.
+ * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037) and the
+ * namespace observation versions (0038/0039) run over them first, as they do in a deploy.
  */
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,8 +28,13 @@ const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 const id = (n: number) => `73600000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const NAMES = "0037_old_adam_destine";
-const FOUNDATION = "0038_work_branch_foundation";
-const ONLINE = "0039_work_branch_foundation_online";
+const OBSERVATIONS = [
+  "0038_namespace_observation_schema",
+  "0039_backfill_namespace_observation_versions",
+];
+const FOUNDATION = "0040_work_branch_foundation";
+const ONLINE = "0041_work_branch_foundation_online";
+const SCOPE_KEY = `project:${id(2)}`;
 
 /** Rows in `main`'s 0036 shape (prose stored as `.md`): every kind of row the foundation migration moves. */
 async function seedMainShape(sql: postgres.Sql) {
@@ -47,6 +52,7 @@ async function seedMainShape(sql: postgres.Sql) {
     (${id(11)}, ${id(6)}, 'trashed', 'content', 'Trashed projection', '2026-09-02T01:00:00Z', '2026-09-03T01:00:00Z'),
     (${id(12)}, ${id(6)}, 'second', 'content', 'Second projection', '2026-09-04T01:00:00Z', NULL),
     (${id(13)}, ${id(6)}, 'manifest', 'manifest', 'Manifest projection', '2026-09-05T01:00:00Z', NULL)`;
+
   await sql`INSERT INTO threads (id, project_id, root_thread_id, created_by_user_id, ref) VALUES
     (${id(20)}, ${id(2)}, ${id(20)}, ${id(1)}, 'c1')`;
   await sql`INSERT INTO document_branches (id, document_id, kind, upstream_branch_id, work_id, deleted_by_work_id, thread_id, status, state, state_vector) VALUES
@@ -63,6 +69,23 @@ async function seedMainShape(sql: postgres.Sql) {
     await sql`INSERT INTO branch_push_settlement_outbox (push_id, document_id, document_title, lock_cut_update, push_update, trail_seed, state, claim_token, claim_epoch, claim_kind, claimed_at, lease_expires_at, attempt_count, last_error_code, last_error, blocked_at, completed_at, join_version, classified_join_version, settled_join_version) VALUES
       (${n}, ${id(10)}, 'Title', ${bytes}, ${bytes}, '{}', ${state}, ${claimed ? id(30) : null}, ${n + 2}, ${claimed ? "warm" : null}, ${claimed ? "2026-09-01T00:00:00Z" : null}, ${claimed ? "2026-10-11T00:00:00Z" : null}, ${n}, ${n === 3 ? "probe_blocked" : null}, ${n === 3 ? "retained error" : null}, ${n === 3 ? "2026-09-04T00:00:00Z" : null}, ${n === 4 ? "2026-09-05T00:00:00Z" : null}, 10, 8, ${n === 4 ? 10 : null})`;
   }
+}
+
+/**
+ * Evidence #754's observation backfill (0039) versions: catalog rows (after 0037 resets the
+ * catalog), a move receipt, and an availability head.
+ */
+async function seedObservationEvidence(sql: postgres.Sql) {
+  const entry = { kind: "file", entryId: id(10), name: "live.md", path: ["live.md"] };
+  await sql`INSERT INTO context_catalog_scope_heads (scope_key, scope, head_revision) VALUES
+    (${SCOPE_KEY}, ${sql.json({ kind: "project", projectId: id(2) })}, 1)`;
+  await sql`INSERT INTO context_catalog_entries (scope_key, entry_id, entry) VALUES
+    (${SCOPE_KEY}, ${id(10)}, ${sql.json(entry)})`;
+  await sql`INSERT INTO context_catalog_commits (commit_id, scope_key, first_revision, last_revision, changes) VALUES
+    (${id(40)}, ${SCOPE_KEY}, 1, 1, ${sql.json([{ operation: "upsert", ordinal: 0, entry }])})`;
+  await sql`INSERT INTO context_operation_receipts (user_id, project_id, operation_id, receipt) VALUES
+    (${id(1)}, ${id(2)}, ${id(41)}, ${sql.json({ operationId: id(41), command: { kind: "move" }, result: { ok: true } })})`;
+  await sql`INSERT INTO context_availability_heads (authority_key, generation) VALUES (${SCOPE_KEY}, 7)`;
 }
 
 /** The repository's journal, where the foundation sits, and where the name migration does. */
@@ -83,7 +106,9 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
     const migrations = MIGRATIONS;
     const { journal, names, foundation } = await foundationJournal();
     expect(journal.entries[foundation + 1]?.tag).toBe(ONLINE);
-    expect(names).toBe(foundation - 1);
+    expect(journal.entries.slice(names + 1, foundation).map((entry) => entry.tag)).toEqual(
+      OBSERVATIONS,
+    );
     let isolated = false;
     try {
       await isolateSchemas(target);
@@ -96,7 +121,12 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         FROM documents WHERE kind = 'content' ORDER BY id`;
       const outbox = await target`SELECT * FROM branch_push_settlement_outbox ORDER BY push_id`;
 
-      // The document-name migration, then the foundation's transactional half.
+      // The document-name migration, the observation migrations over evidence it left, then
+      // the foundation's transactional half.
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(migrations, directory, journal, names + 1);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await seedObservationEvidence(target);
       await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, foundation + 1);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
@@ -141,6 +171,20 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         await target`SELECT conname FROM pg_constraint
           WHERE connamespace = 'public'::regnamespace AND NOT convalidated`,
       ).toEqual([]);
+
+      // main's observation backfill ran over the seeded evidence before the foundation.
+      expect(
+        await target`SELECT entry->>'observationVersion' AS version FROM context_catalog_entries`,
+      ).toEqual([{ version: "0" }]);
+      expect(
+        await target`SELECT changes->0->'entry'->>'observationVersion' AS version FROM context_catalog_commits`,
+      ).toEqual([{ version: "0" }]);
+      expect(
+        await target`SELECT receipt->>'observationVersion' AS version FROM context_operation_receipts`,
+      ).toEqual([{ version: "0" }]);
+      expect(
+        await target`SELECT generation::text, namespace_generation::text FROM context_availability_heads`,
+      ).toEqual([{ generation: "7", namespace_generation: "7" }]);
 
       // Projections leave the identity row; the retired manifest row goes, nothing else does.
       expect(

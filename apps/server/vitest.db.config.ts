@@ -62,6 +62,7 @@ const expectedSuites = [
   "apps/server/server/domains/context/document-link-resolution.db.test.ts",
   "apps/server/server/domains/context/tree/folder-normalization.db.test.ts",
   "apps/server/server/domains/context/tree/hidden-nodes.db.test.ts",
+  "apps/server/server/domains/context/tree/live-identity-observations.db.test.ts",
   "apps/server/server/domains/context/tree/live-surfaces.db.test.ts",
   "apps/server/server/domains/context/tree/tree-view.db.test.ts",
   "apps/server/server/domains/context/adapters/lineage-scratch-arrivals.db.test.ts",

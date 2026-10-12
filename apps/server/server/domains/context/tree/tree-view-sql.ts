@@ -542,6 +542,13 @@ export function identityDocumentFields(relation: ReturnType<typeof identityDocum
   ) as typeof columns;
 }
 
+export function identityFolderFields(relation: ReturnType<typeof identityFolders>) {
+  const columns = getTableColumns(folders);
+  return Object.fromEntries(
+    Object.keys(columns).map((key) => [key, relation[key as keyof typeof columns]]),
+  ) as typeof columns;
+}
+
 /** A hidden, live document matched at one location, with how many active drafts use it. */
 export type HiddenDocumentCandidate = {
   id: DocumentId;

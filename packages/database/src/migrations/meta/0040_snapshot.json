@@ -1,6 +1,6 @@
 {
-  "id": "508e11ad-d7ec-4a7b-91ed-7f9b9ea857de",
-  "prevId": "540e8197-1bb9-4383-9434-79323aa5e34a",
+  "id": "fd38e03f-5263-4b09-a2fb-97d4b460bde2",
+  "prevId": "a8274882-3bd2-48aa-9c7e-faefff000c54",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2018,12 +2018,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "delivered_by_turn_id": {
-          "name": "delivered_by_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -2088,7 +2082,7 @@
         },
         "thread_inbox_messages_body_valid": {
           "name": "thread_inbox_messages_body_valid",
-          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN (\"thread_inbox_messages\".\"body\"->>'kind' = 'compact' OR (\"thread_inbox_messages\".\"body\"->>'kind' = 'write_mode' AND \"thread_inbox_messages\".\"body\"->>'mode' IN ('direct','draft'))) ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
+          "value": "(CASE WHEN \"thread_inbox_messages\".\"intent\" = 'control' THEN \"thread_inbox_messages\".\"body\"->>'kind' IN ('compact') ELSE \"thread_inbox_messages\".\"body\"->>'kind' IN ('text','context','work_context_refresh') END) IS TRUE"
         }
       },
       "isRLSEnabled": false
@@ -2103,8 +2097,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "execution_id": {
-          "name": "execution_id",
+        "run_id": {
+          "name": "run_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -2659,13 +2653,6 @@
           "notNull": true,
           "default": "0"
         },
-        "ai_write_mode": {
-          "name": "ai_write_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'direct'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2943,10 +2930,6 @@
         "threads_next_seq_nonneg": {
           "name": "threads_next_seq_nonneg",
           "value": "\"threads\".\"next_seq\" >= 0"
-        },
-        "threads_ai_write_mode_valid": {
-          "name": "threads_ai_write_mode_valid",
-          "value": "\"threads\".\"ai_write_mode\" IN ('direct', 'draft')"
         },
         "threads_kind_valid": {
           "name": "threads_kind_valid",
@@ -3234,18 +3217,6 @@
           "notNull": true,
           "default": "'pending'"
         },
-        "execution_id": {
-          "name": "execution_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reserved_for_user_turn_ids": {
-          "name": "reserved_for_user_turn_ids",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": false
-        },
         "finish_reason": {
           "name": "finish_reason",
           "type": "text",
@@ -3416,28 +3387,6 @@
           ],
           "isUnique": false,
           "where": "\"turns\".\"status\" IN ('pending','streaming','waiting_interrupt')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "turns_execution": {
-          "name": "turns_execution",
-          "columns": [
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "execution_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"turns\".\"execution_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3615,8 +3564,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "steers_turn_id": {
-          "name": "steers_turn_id",
+        "assistant_turn_id": {
+          "name": "assistant_turn_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -5971,8 +5920,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "default_ai_write_mode": {
-          "name": "default_ai_write_mode",
+        "ai_write_mode": {
+          "name": "ai_write_mode",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -6167,9 +6116,9 @@
           "name": "works_status_length",
           "value": "\"works\".\"status\" IS NULL OR char_length(\"works\".\"status\") <= 32"
         },
-        "works_default_ai_write_mode_valid": {
-          "name": "works_default_ai_write_mode_valid",
-          "value": "\"works\".\"default_ai_write_mode\" IN ('direct', 'draft')"
+        "works_ai_write_mode_valid": {
+          "name": "works_ai_write_mode_valid",
+          "value": "\"works\".\"ai_write_mode\" IN ('direct', 'draft')"
         }
       },
       "isRLSEnabled": false
@@ -6189,6 +6138,13 @@
           "type": "bigint",
           "primaryKey": false,
           "notNull": true
+        },
+        "namespace_generation": {
+          "name": "namespace_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
         },
         "updated_at": {
           "name": "updated_at",
@@ -11192,6 +11148,16 @@
   "sequences": {
     "public.context_availability_generation_seq": {
       "name": "context_availability_generation_seq",
+      "schema": "public",
+      "increment": "1",
+      "startWith": "1",
+      "minValue": "1",
+      "maxValue": "9223372036854775807",
+      "cache": "1",
+      "cycle": false
+    },
+    "public.context_namespace_observation_version_seq": {
+      "name": "context_namespace_observation_version_seq",
       "schema": "public",
       "increment": "1",
       "startWith": "1",

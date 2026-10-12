@@ -54,12 +54,16 @@ function checkpointFor(
   );
 }
 
-function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservationFence {
+/** The canonical state a catalog request captures before HTTP; installation proves freshness against it. */
+export function catalogObservationFence(
+  snapshot: ResourceProjectionSnapshot,
+): CatalogObservationFence {
   const resources = new Map<
     string,
     {
       revision: number;
       canonical: ResourceRecord["resource"]["canonical"];
+      canonicalParent: ResourceRecord["resource"]["canonicalParent"];
       classification: ResourceRecord["resource"]["classification"];
     }
   >();
@@ -67,6 +71,7 @@ function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservat
     resources.set(resource.handle, {
       revision: resource.revision,
       canonical: structuredClone(resource.canonical),
+      canonicalParent: structuredClone(resource.canonicalParent),
       classification: structuredClone(resource.classification),
     });
   }
@@ -190,7 +195,7 @@ export class ResourceCatalogAcquisition {
     const before = observedBefore ?? (await this.metadata.readProjection(projectId));
     this.assertCurrent(epoch);
     const previous = checkpointFor(projectId, scope, before);
-    const fence = observationFence(before);
+    const fence = catalogObservationFence(before);
     const response = await this.transport.snapshot(projectId, scope, this.close.signal);
     this.assertCurrent(epoch);
     this.assertResponseScope(scope, response.scope);
@@ -223,7 +228,7 @@ export class ResourceCatalogAcquisition {
       }
 
       const current = catalogViewFromCheckpoint(previous);
-      const fence = observationFence(before);
+      const fence = catalogObservationFence(before);
       const changes = await this.transport.changes(
         projectId,
         scope,

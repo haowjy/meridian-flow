@@ -18,6 +18,7 @@ import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { decodeWorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
+  contextAvailabilityHeads,
   contextCatalogCommits,
   contextCatalogEntries,
   contextCatalogScopeHeads,
@@ -83,6 +84,13 @@ function stableJson(value: unknown): string {
       .join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+/** An entry without its namespace stamp: what a namespace change compares. */
+function unstamped(entry: CatalogEntry): unknown {
+  if (entry.kind !== "file" && entry.kind !== "folder") return entry;
+  const { observationVersion: _stamp, ...rest } = entry;
+  return rest;
 }
 
 function scopeForSource(row: {
@@ -199,6 +207,16 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!visibleWork) return [];
     }
   }
+  const [namespaceHead] = await db
+    .select({ version: contextAvailabilityHeads.namespaceGeneration })
+    .from(contextAvailabilityHeads)
+    .where(
+      eq(
+        contextAvailabilityHeads.authorityKey,
+        scope.kind === "user" ? `user:${scope.userId}` : `project:${scope.projectId}`,
+      ),
+    );
+  const observationVersion = String(namespaceHead?.version ?? 0n);
   const sourceRows = await sourcesForScope(db, scope);
   const sourceIds = sourceRows.map((row) => row.id as ContextSourceId);
   const vf = visibleFolders(LIVE_TREE);
@@ -283,6 +301,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!path) continue;
       entries.push({
         kind: "folder",
+        observationVersion,
         entryId: folder.id,
         scope,
         sourceId: source.id,
@@ -300,6 +319,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
         mapAuthoritativeFile({
           document,
           scope,
+          observationVersion,
           scheme,
           workId: source.workId,
           workSlug: source.workSlug,
@@ -377,105 +397,189 @@ export function createDrizzleContextCatalog(
     1,
     Math.floor(options.retainedCommitsPerScope ?? DEFAULT_RETAINED_COMMITS_PER_SCOPE),
   );
-  async function refreshScope(
+  type ScopePlan = {
+    scope: CatalogScope;
+    head: typeof contextCatalogScopeHeads.$inferSelect;
+    authoritative: CatalogEntry[];
+    oldById: Map<string, CatalogEntry>;
+    invalidatedRoots: string[];
+    namespaceChanged: boolean;
+  };
+
+  /** Lock the scope's head and read what it publishes now against what it last published. */
+  async function planScope(
+    tx: Database,
     scope: CatalogScope,
-    invalidatedRootIds: readonly string[] = [],
-    commitId = randomUUID(),
-  ) {
-    await runInDrizzleTransaction(db, async () => {
-      const tx = currentDrizzleDb(db) as Database;
-      const initialHead = await ensureHead(tx, scope);
-      await tx.execute(
-        sql`select 1 from ${contextCatalogScopeHeads} where ${contextCatalogScopeHeads.scopeKey} = ${initialHead.scopeKey} for update`,
+    invalidatedRootIds: readonly string[],
+  ): Promise<ScopePlan> {
+    const initialHead = await ensureHead(tx, scope);
+    await tx.execute(
+      sql`select 1 from ${contextCatalogScopeHeads} where ${contextCatalogScopeHeads.scopeKey} = ${initialHead.scopeKey} for update`,
+    );
+    const [head] = await tx
+      .select()
+      .from(contextCatalogScopeHeads)
+      .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
+      .limit(1);
+    if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
+    const authoritative = await buildScopeEntries(tx, scope);
+    const existing = await tx
+      .select()
+      .from(contextCatalogEntries)
+      .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
+    const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
+    const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
+    // Only roots this scope has published or publishes now: a hidden node a draft let go
+    // (Discard) was never in a live scope, and naming it would leak it.
+    const invalidatedRoots = [...new Set(invalidatedRootIds)].filter(
+      (id) => oldById.has(id) || nextById.has(id),
+    );
+    const isNamespace = (entry: CatalogEntry) => entry.kind !== "authority";
+    const namespaceChanged =
+      invalidatedRoots.length > 0 ||
+      authoritative.some((entry) => {
+        const old = oldById.get(entry.entryId);
+        return (
+          isNamespace(entry) &&
+          (!old || stableJson(unstamped(old)) !== stableJson(unstamped(entry)))
+        );
+      }) ||
+      [...oldById.values()].some((entry) => isNamespace(entry) && !nextById.has(entry.entryId));
+    return { scope, head, authoritative, oldById, invalidatedRoots, namespaceChanged };
+  }
+
+  /** Install one scope's plan as one catalog commit, or nothing when nothing changed. */
+  async function commitScope(tx: Database, plan: ScopePlan, commitId: string) {
+    const { scope, head, authoritative, oldById, invalidatedRoots } = plan;
+    const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
+    // Replay clears the old subtree before installing this commit. Restore every
+    // survivor, including entries already published by a separate repair and
+    // descendants that moved out of the root during this refresh.
+    const replacedIds = new Set(invalidatedRoots);
+    const children = new Map<string, Set<string>>();
+    for (const entry of [...oldById.values(), ...nextById.values()]) {
+      if (entry.kind !== "folder" && entry.kind !== "file") continue;
+      const ids = children.get(entry.parentId) ?? new Set<string>();
+      ids.add(entry.entryId);
+      children.set(entry.parentId, ids);
+    }
+    for (const entryId of replacedIds) {
+      for (const childId of children.get(entryId) ?? []) replacedIds.add(childId);
+    }
+    const changes: CatalogChange[] = [];
+    for (const rootEntryId of invalidatedRoots) {
+      changes.push({ operation: "invalidate-subtree", ordinal: changes.length, rootEntryId });
+    }
+    for (const [entryId, entry] of nextById) {
+      const old = oldById.get(entryId);
+      if (replacedIds.has(entryId) || !old || stableJson(old) !== stableJson(entry)) {
+        changes.push({ operation: "upsert", ordinal: changes.length, entry });
+      }
+    }
+    for (const entryId of oldById.keys()) {
+      if (!nextById.has(entryId)) {
+        changes.push({ operation: "delete", ordinal: changes.length, entryId });
+      }
+    }
+    if (changes.length === 0) return;
+    const revision = head.headRevision + 1;
+    await tx.delete(contextCatalogEntries).where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
+    if (authoritative.length > 0) {
+      await tx.insert(contextCatalogEntries).values(
+        authoritative.map((entry) => ({
+          scopeKey: head.scopeKey,
+          entryId: entry.entryId,
+          entry,
+        })),
       );
-      const [head] = await tx
-        .select()
-        .from(contextCatalogScopeHeads)
-        .where(eq(contextCatalogScopeHeads.scopeKey, initialHead.scopeKey))
-        .limit(1);
-      if (!head) throw new Error(`Catalog head disappeared: ${initialHead.scopeKey}`);
-      const authoritative = await buildScopeEntries(tx, scope);
-      const existing = await tx
-        .select()
-        .from(contextCatalogEntries)
-        .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
-      const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
-      const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
-      // Replay clears the old subtree before installing this commit. Restore every
-      // survivor, including entries already published by a separate repair and
-      // descendants that moved out of the root during this refresh.
-      const replacedIds = new Set(invalidatedRootIds);
-      const children = new Map<string, Set<string>>();
-      for (const entry of [...oldById.values(), ...nextById.values()]) {
-        if (entry.kind !== "folder" && entry.kind !== "file") continue;
-        const ids = children.get(entry.parentId) ?? new Set<string>();
-        ids.add(entry.entryId);
-        children.set(entry.parentId, ids);
+    }
+    await tx.insert(contextCatalogCommits).values({
+      commitId,
+      scopeKey: head.scopeKey,
+      firstRevision: revision,
+      lastRevision: revision,
+      changes,
+    });
+    const oldestRevision = Math.max(1, revision - retainedCommitsPerScope + 1);
+    await tx
+      .update(contextCatalogScopeHeads)
+      .set({ headRevision: revision, oldestRevision, updatedAt: new Date() })
+      .where(eq(contextCatalogScopeHeads.scopeKey, head.scopeKey));
+    await tx
+      .delete(contextCatalogCommits)
+      .where(
+        and(
+          eq(contextCatalogCommits.scopeKey, head.scopeKey),
+          lt(contextCatalogCommits.lastRevision, oldestRevision),
+        ),
+      );
+    runAfterDrizzleCommit(async () => {
+      if (!wakePort) return;
+      try {
+        await wakePort.publish({
+          type: "context-catalog-hint",
+          scope,
+          headRevision: String(revision),
+        });
+      } catch {
+        // Wake hints are explicitly lossy. Pull-on-focus/poll repairs delivery.
       }
-      for (const entryId of replacedIds) {
-        for (const childId of children.get(entryId) ?? []) replacedIds.add(childId);
+    });
+  }
+
+  /**
+   * Reconcile `scopes` against the authoritative tree. Only a namespace change (a live
+   * file, folder or source added, removed, changed or invalidated) allocates a namespace
+   * observation version, and it stamps only the scopes that changed. A scope without one,
+   * such as a draft's hidden-only lifecycle, keeps its published entries and stamps, so it
+   * publishes at most its authority entries.
+   */
+  async function reconcileScopes(
+    scopes: readonly CatalogScope[],
+    authorities: { projectIds: readonly string[]; userIds: readonly string[] },
+    invalidatedRootIds: readonly string[] = [],
+  ): Promise<string> {
+    return runInDrizzleTransaction(db, async () => {
+      const tx = currentDrizzleDb(db) as Database;
+      const commitId = randomUUID();
+      // Availability's publisher fence before any catalog head lock (lock order).
+      const availabilityGeneration = await availabilityMutations.advance(authorities);
+      const plans: ScopePlan[] = [];
+      for (const scope of [...scopes].sort((a, b) =>
+        catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
+      )) {
+        plans.push(await planScope(tx, scope, invalidatedRootIds));
       }
-      const changes: CatalogChange[] = [];
-      for (const rootEntryId of new Set(invalidatedRootIds)) {
-        changes.push({ operation: "invalidate-subtree", ordinal: changes.length, rootEntryId });
-      }
-      for (const [entryId, entry] of nextById) {
-        const old = oldById.get(entryId);
-        if (replacedIds.has(entryId) || !old || stableJson(old) !== stableJson(entry)) {
-          changes.push({ operation: "upsert", ordinal: changes.length, entry });
+      const changed = plans.filter((plan) => plan.namespaceChanged);
+      if (changed.length > 0) {
+        const userIds = new Set<string>();
+        const projectIds = new Set<string>();
+        for (const { scope } of changed) {
+          if (scope.kind === "user") userIds.add(scope.userId);
+          else projectIds.add(scope.projectId);
+        }
+        const version = await availabilityMutations.publishNamespace({
+          projectIds: [...projectIds],
+          userIds: [...userIds],
+        });
+        for (const plan of changed) {
+          plan.authoritative = plan.authoritative.map((entry) =>
+            entry.kind === "file" || entry.kind === "folder"
+              ? { ...entry, observationVersion: version }
+              : entry,
+          );
         }
       }
-      for (const entryId of oldById.keys()) {
-        if (!nextById.has(entryId)) {
-          changes.push({ operation: "delete", ordinal: changes.length, entryId });
+      for (const plan of plans) {
+        if (!plan.namespaceChanged) {
+          // Structurally equal: keep each published entry, stamp and all.
+          plan.authoritative = plan.authoritative.map((entry) =>
+            entry.kind === "authority" ? entry : (plan.oldById.get(entry.entryId) ?? entry),
+          );
         }
+        await commitScope(tx, plan, commitId);
       }
-      if (changes.length === 0) return;
-      const revision = head.headRevision + 1;
-      await tx
-        .delete(contextCatalogEntries)
-        .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
-      if (authoritative.length > 0) {
-        await tx.insert(contextCatalogEntries).values(
-          authoritative.map((entry) => ({
-            scopeKey: head.scopeKey,
-            entryId: entry.entryId,
-            entry,
-          })),
-        );
-      }
-      await tx.insert(contextCatalogCommits).values({
-        commitId,
-        scopeKey: head.scopeKey,
-        firstRevision: revision,
-        lastRevision: revision,
-        changes,
-      });
-      const oldestRevision = Math.max(1, revision - retainedCommitsPerScope + 1);
-      await tx
-        .update(contextCatalogScopeHeads)
-        .set({ headRevision: revision, oldestRevision, updatedAt: new Date() })
-        .where(eq(contextCatalogScopeHeads.scopeKey, head.scopeKey));
-      await tx
-        .delete(contextCatalogCommits)
-        .where(
-          and(
-            eq(contextCatalogCommits.scopeKey, head.scopeKey),
-            lt(contextCatalogCommits.lastRevision, oldestRevision),
-          ),
-        );
-      runAfterDrizzleCommit(async () => {
-        if (!wakePort) return;
-        try {
-          await wakePort.publish({
-            type: "context-catalog-hint",
-            scope,
-            headRevision: String(revision),
-          });
-        } catch {
-          // Wake hints are explicitly lossy. Pull-on-focus/poll repairs delivery.
-        }
-      });
+      return availabilityGeneration;
     });
   }
 
@@ -594,7 +698,6 @@ export function createDrizzleContextCatalog(
     async refreshSources(sourceIds, invalidatedRootIds = []) {
       const tx = currentDrizzleDb(db) as Database;
       const scopes = new Map<string, CatalogScope>();
-      const commitId = randomUUID();
       for (const sourceId of new Set(sourceIds)) {
         for (const scope of await sourceScopes(tx, sourceId)) {
           scopes.set(catalogScopeKey(scope), scope);
@@ -631,14 +734,7 @@ export function createDrizzleContextCatalog(
           ),
         ),
       ];
-      const orderedScopes = [...scopes.values()].sort((a, b) =>
-        catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
-      );
-      const availabilityGeneration = await availabilityMutations.advance({ projectIds, userIds });
-      for (const scope of orderedScopes) {
-        await refreshScope(scope, invalidatedRootIds, commitId);
-      }
-      return availabilityGeneration;
+      return reconcileScopes([...scopes.values()], { projectIds, userIds }, invalidatedRootIds);
     },
     async refreshProject(projectId) {
       const tx = currentDrizzleDb(db) as Database;
@@ -651,21 +747,15 @@ export function createDrizzleContextCatalog(
         .select({ id: works.id })
         .from(works)
         .where(eq(works.projectId, projectId));
-      await availabilityMutations.advance({
-        projectIds: [projectId],
-        userIds: project?.isPersonal ? [project.userId] : [],
-      });
       const scopes: CatalogScope[] = [
         { kind: "project", projectId },
         ...workRows.map(({ id }) => ({ kind: "work" as const, projectId, workId: id })),
         ...(project?.isPersonal ? [{ kind: "user" as const, userId: project.userId }] : []),
       ];
-      const commitId = randomUUID();
-      for (const scope of scopes.sort((a, b) =>
-        catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
-      )) {
-        await refreshScope(scope, [], commitId);
-      }
+      await reconcileScopes(scopes, {
+        projectIds: [projectId],
+        userIds: project?.isPersonal ? [project.userId] : [],
+      });
     },
     async upsertWorkAuthorities(workIds) {
       const unique = [...new Set(workIds)].sort();
