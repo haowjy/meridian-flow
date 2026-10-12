@@ -9,6 +9,7 @@
 - Documents with imported frontmatter show a read-only Properties row under the path, in the Editor and the dock. The model's `copy` carries a document's properties and aliases.
 - Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
 - Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
+- Import a folder or files into Manuscript, Knowledge Base or Unfiled from the area headers, folder menus, the phone's `+` menu, or by dropping them on the tree. New rows arrive in the tree at once with a status row, a report page holds failures, Retry, Continue import and Stop here, and a document whose text has not arrived says so above its page.
 
 ### Removed
 - The old corpus import service and Knowledge Base batch-import route.

@@ -108,7 +108,7 @@ export function ImportStatusRow({
           {line2 ? (
             <span
               className={cn(
-                "truncate text-caption",
+                "text-caption break-words",
                 state.dismissFailed ? "text-destructive" : "text-ink-muted",
               )}
             >
