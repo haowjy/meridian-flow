@@ -4,6 +4,7 @@
  * icon with a tooltip; the Work Files tab has room to say it in words.
  */
 import { t } from "@lingui/core/macro";
+import type { ImportEntryReason } from "@meridian/contracts";
 import { TriangleAlert } from "lucide-react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
 import { failureSentence } from "@/features/import/reason-copy";
@@ -16,7 +17,7 @@ function namespaceFailureMessage(
   failure: NamespaceFailure | "import",
   folder: boolean,
   move: boolean,
-  reason?: string | null,
+  reason?: ImportEntryReason | null,
 ): string {
   if (failure === "import") return t`Couldn't import this file. ${failureSentence(reason)}`;
   if (failure === "delete")
@@ -39,7 +40,7 @@ export function NamespaceFailureMark({
 }: {
   /** `import`: the row's file did not arrive; `reason` is the server's code for why. */
   failure: NamespaceFailure | "import";
-  reason?: string | null;
+  reason?: ImportEntryReason | null;
   /** The failed row is a folder, not a document. */
   folder?: boolean;
   /** The refused destination changed its parent or area, not only its name. */

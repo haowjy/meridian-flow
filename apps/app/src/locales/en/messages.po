@@ -661,8 +661,8 @@ msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
 
 #: src/features/import/finding-copy.ts
-msgid "A picture here shows a different {name}. Check that it's the right one."
-msgstr "A picture here shows a different {name}. Check that it's the right one."
+#~ msgid "A picture here shows a different {name}. Check that it's the right one."
+#~ msgstr "A picture here shows a different {name}. Check that it's the right one."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."

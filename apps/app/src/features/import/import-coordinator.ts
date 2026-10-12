@@ -246,8 +246,7 @@ export class ImportCoordinator {
         ...local,
         phase: {
           kind: "not-started",
-          code:
-            error instanceof ImportRequestError ? (error.code ?? `status:${error.status}`) : null,
+          code: error instanceof ImportRequestError ? error.code : null,
         },
       }));
       return;

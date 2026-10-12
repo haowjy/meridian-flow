@@ -2,7 +2,7 @@
  * The one display state every surface shows (status row, report header, pane
  * notice), derived from the server's summary and what this tab is doing.
  */
-import type { ImportCounts, ImportSummary } from "@meridian/contracts";
+import type { ImportCounts, ImportRefusalCode, ImportSummary } from "@meridian/contracts";
 import type { StopCommand } from "./import-state";
 
 export type ImportDisplayState =
@@ -21,7 +21,7 @@ export type LocalPhase =
   | { kind: "preparing"; totalBytes: number; planning: boolean }
   | { kind: "uploading" }
   | { kind: "idle" }
-  | { kind: "not-started"; code: string | null };
+  | { kind: "not-started"; code: ImportRefusalCode | null };
 
 /** A server that has not answered nor been heard from for this long is paused. */
 export const ACTIVITY_FRESH_MS = 60_000;

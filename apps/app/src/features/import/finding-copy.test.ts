@@ -33,11 +33,11 @@ describe("finding copy", () => {
     expect(others).toEqual(["Knowledge Base / v / Old / Magic"]);
   });
 
-  it("joins what was kept as written into one sentence and groups unknown codes under other", () => {
+  it("joins what was kept as written into one sentence and groups findings by section", () => {
     expect(keptAsTextSentence({ callouts: 2, tags: 5, highlights: 0, footnotes: 0 })).toBe(
       "2 callouts and 5 tags",
     );
-    expect(findingGroup("something_new")).toBe("other");
+    expect(findingGroup("properties_unreadable")).toBe("other");
     expect(findingGroup("folder_note")).toBe("renamed");
   });
 });
