@@ -42,6 +42,11 @@ export interface LinkAheadRegistry {
    * Inside the caller's transaction, which already holds each arrival's namespace key. Takes no
    * lock; skips deleted documents and draft-only membership. Returns rows settled.
    */
+  /** Settle by identity, never address; joins the caller transaction. Missing refs return null. */
+  settleRef(
+    aheadId: string,
+    documentId: DocumentId,
+  ): Promise<{ settled: boolean; documentId: DocumentId } | null>;
   settleArrivals(documentIds: readonly DocumentId[]): Promise<number>;
   /**
    * Client-minted refs (contract §11.3): registers one page of ahead ids the link index holds

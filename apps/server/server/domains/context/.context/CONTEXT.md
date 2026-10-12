@@ -554,3 +554,7 @@ durable Work-switch Notice names the previous canonical Scratch root.
 
 Creation conflicts carry `occupantKind` (`file` or `folder`) through ContextError
 and HTTP error data; it is absent when the failure cannot prove an occupant.
+
+`LinkAheadRegistry.settleRef` joins an ambient transaction and compares-and-sets a
+single registered ahead UUID by identity, without address lookup. A losing settler
+receives the existing document id; a missing registry row returns null.

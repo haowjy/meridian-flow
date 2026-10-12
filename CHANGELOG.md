@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Server ahead links can settle to a planned document identity without changing an existing settlement.
+
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
 - `.txt` files open as prose. Code, data and images keep their extensions.
 - Dotted names stay whole. Renames keep the file type unless a new extension is typed.
