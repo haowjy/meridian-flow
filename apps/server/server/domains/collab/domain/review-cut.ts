@@ -4,6 +4,7 @@ import { bytesEqual, type YProsemirrorDocumentModel } from "@meridian/agent-edit
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { ReviewSelectionCommand } from "../contracts.js";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
@@ -101,15 +102,7 @@ export function selectReviewCut(
   model: YProsemirrorDocumentModel,
   snapshot: BranchSnapshot,
   rows: readonly BranchJournalRow[],
-  command: {
-    operationIds?: string[];
-    liveRevisionToken?: string;
-    draftRevisionToken?: string;
-    closureClassIds?: string[];
-    admissionTokens?: string[];
-    memberPartKeys?: string[];
-  },
-  requireCompleteClass: boolean,
+  command: ReviewSelectionCommand,
 ) {
   // Selection must describe the exact basis the existing durability protocol
   // will admit, not a newer independently captured branch or row-status view.
@@ -118,58 +111,16 @@ export function selectReviewCut(
     !bytesEqual(cut.branch.state, snapshot.state) ||
     branchJournalRevision(reviewRows(cut)) !== branchJournalRevision(rows)
   )
-    throw requireCompleteClass
+    throw command.kind === "apply"
       ? new DraftChangeRefusal("stale")
       : new BranchPushCommitConflictError(snapshot.branchId);
   const { preview } = deriveReviewCut(cut, model);
-  if (
-    command.liveRevisionToken !== preview.liveRevisionToken ||
-    (requireCompleteClass && command.draftRevisionToken !== preview.draftRevisionToken)
-  )
+  if (command.liveRevisionToken !== preview.liveRevisionToken)
     throw new DraftChangeRefusal("stale");
-  if (requireCompleteClass && preview.isNewDocument) throw new DraftChangeRefusal("draft_only");
-  const requested = new Set(command.operationIds);
-  if (
-    requireCompleteClass &&
-    (!requested.size ||
-      [...requested].some((id) => !preview.operations.some((op) => op.operationId === id)))
-  )
-    throw new DraftChangeRefusal("gone");
-  const classes = requireCompleteClass
-    ? new Set(
-        preview.operations
-          .filter((op) => requested.has(op.operationId))
-          .map((op) => op.closureClassId),
-      )
-    : new Set(command.closureClassIds);
-  if (!classes.size) throw new DraftChangeRefusal("gone");
-  if ([...classes].some((id) => !preview.operations.some((op) => op.closureClassId === id))) {
-    // Immutable members only distinguish growth from disappearance. They never
-    // authorize a replacement class or widen the clicked class/token selection.
-    const clickedParts = new Set(command.memberPartKeys);
-    const survives =
-      !requireCompleteClass &&
-      preview.operations.some((op) => op.partKey !== undefined && clickedParts.has(op.partKey));
-    throw new DraftChangeRefusal(survives ? "stale" : "gone");
-  }
+  const classes =
+    command.kind === "apply" ? admitApply(preview, command) : admitDiscard(preview, command);
   const selected = preview.operations.filter((op) => classes.has(op.closureClassId));
-  if (!requireCompleteClass) {
-    // Clicked classes survive re-journaling; only their unchanged evidence admits.
-    const expectedTokens = new Set(command.admissionTokens);
-    const currentTokens = new Set(selected.map((op) => op.admissionToken));
-    if (
-      !expectedTokens.size ||
-      expectedTokens.size !== currentTokens.size ||
-      [...currentTokens].some((token) => !expectedTokens.has(token))
-    )
-      throw new DraftChangeRefusal("stale");
-  }
-  if (
-    selected.some(
-      (op) =>
-        op.canApplyOrDiscard === false || (requireCompleteClass && !requested.has(op.operationId)),
-    )
-  )
+  if (selected.some((op) => op.canApplyOrDiscard === false))
     throw new DraftChangeRefusal("incomplete_class");
   return {
     journalIds: [...new Set(selected.flatMap((op) => op.closureUpdateIds))],
@@ -177,6 +128,64 @@ export function selectReviewCut(
     operationIds: selected.map((op) => op.operationId),
     closureClassIds: [...classes],
   };
+}
+
+type SelectionPreview = ReturnType<typeof deriveReviewCut>["preview"];
+
+function admitApply(
+  preview: SelectionPreview,
+  command: Extract<ReviewSelectionCommand, { kind: "apply" }>,
+): Set<string> {
+  // Keep fence precedence: stale observations cannot be classified as gone or draft-only.
+  if (command.draftRevisionToken !== preview.draftRevisionToken)
+    throw new DraftChangeRefusal("stale");
+  if (preview.isNewDocument) throw new DraftChangeRefusal("draft_only");
+  const requested = new Set(command.operationIds);
+  if (
+    !requested.size ||
+    [...requested].some((id) => !preview.operations.some((op) => op.operationId === id))
+  )
+    throw new DraftChangeRefusal("gone");
+  const classes = new Set(
+    preview.operations.filter((op) => requested.has(op.operationId)).map((op) => op.closureClassId),
+  );
+  if (
+    preview.operations.some(
+      (op) => classes.has(op.closureClassId) && !requested.has(op.operationId),
+    )
+  )
+    throw new DraftChangeRefusal("incomplete_class");
+  return classes;
+}
+
+function admitDiscard(
+  preview: SelectionPreview,
+  command: Extract<ReviewSelectionCommand, { kind: "discard" }>,
+): Set<string> {
+  const classes = new Set(command.closureClassIds);
+  if (!classes.size) throw new DraftChangeRefusal("gone");
+  if ([...classes].some((id) => !preview.operations.some((op) => op.closureClassId === id))) {
+    // Immutable members classify growth versus disappearance only; they never
+    // authorize a replacement class or widen the clicked class/token selection.
+    const clickedParts = new Set(command.memberPartKeys);
+    const survives = preview.operations.some(
+      (op) => op.partKey !== undefined && clickedParts.has(op.partKey),
+    );
+    throw new DraftChangeRefusal(survives ? "stale" : "gone");
+  }
+  const expectedTokens = new Set(command.admissionTokens);
+  const currentTokens = new Set(
+    preview.operations
+      .filter((op) => classes.has(op.closureClassId))
+      .map((op) => op.admissionToken),
+  );
+  if (
+    !expectedTokens.size ||
+    expectedTokens.size !== currentTokens.size ||
+    [...currentTokens].some((token) => !expectedTokens.has(token))
+  )
+    throw new DraftChangeRefusal("stale");
+  return classes;
 }
 
 function reviewRows(cut: ReviewCut) {

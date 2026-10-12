@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
+
 - Keep a grown draft change focused after a refused Discard by distinguishing surviving immutable members from a disappeared change.
 
 - Admit selective Discard by the clicked class and unchanged evidence, even when another Discard re-journals its surviving operations.

@@ -1,6 +1,6 @@
 /** Discard request parsing keeps malformed or unfenced selections from becoming whole commands. */
 import { describe, expect, it } from "vitest";
-import { parseDraftDiscardSelection } from "./draft-review-route.js";
+import { parseDraftApplySelection, parseDraftDiscardSelection } from "./draft-review-route.js";
 
 describe("Discard request selection", () => {
   it.each([
@@ -37,7 +37,10 @@ describe("Discard request selection", () => {
       liveRevisionToken: "live",
       draftRevisionToken: "draft",
     };
-    expect(parseDraftDiscardSelection(command)).toEqual({ status: "ready", command });
+    expect(parseDraftDiscardSelection(command)).toEqual({
+      status: "ready",
+      command: { ...command, kind: "discard" },
+    });
   });
   it.each([
     undefined,
@@ -64,6 +67,24 @@ describe("Discard request selection", () => {
       draftRevisionToken: "draft",
       memberPartKeys: [],
     };
-    expect(parseDraftDiscardSelection(command)).toEqual({ status: "ready", command });
+    expect(parseDraftDiscardSelection(command)).toEqual({
+      status: "ready",
+      command: { ...command, kind: "discard" },
+    });
+  });
+});
+
+describe("Apply request selection", () => {
+  it("produces the required Apply identity and fences", () => {
+    const command = { operationIds: ["1"], liveRevisionToken: "live", draftRevisionToken: "draft" };
+    expect(parseDraftApplySelection(command)).toEqual({ ...command, kind: "apply" });
+  });
+  it.each([
+    {},
+    { operationIds: [] },
+    { operationIds: [123], liveRevisionToken: "live", draftRevisionToken: "draft" },
+    { operationIds: ["1"], liveRevisionToken: "live" },
+  ])("rejects malformed Apply %j at the route boundary", (command) => {
+    expect(() => parseDraftApplySelection(command)).toThrow();
   });
 });
