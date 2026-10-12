@@ -45,8 +45,8 @@ export type ContextViewerProps = {
   editorWork: Work | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
-  onSelectTab: (documentId: string) => void;
-  onCloseTab: (documentId: string) => void;
+  onSelectTab: (tab: ContextTab) => void;
+  onCloseTab: (tab: ContextTab) => void;
   sidebarToggle?: PaneHeaderRailToggle;
   /**
    * Project right-dock expand toggle (pinned at the tab strip's trailing
@@ -144,6 +144,7 @@ export function ContextViewer({
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
+        activeTabInstanceId={activeTab?.tabInstanceId}
         reviewingTabId={activeReviewDraftId ? activeTabId : null}
         optimisticTab={optimisticTab}
         onSelect={onSelectTab}

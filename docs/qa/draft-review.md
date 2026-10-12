@@ -70,7 +70,14 @@ draft-only (no live-file error), and admits inline review. Apply the new
 document and read it back from `kb://`; Discard the existing-document edit
 and verify its live text is unchanged. Review the Manuscript chapter too.
 Repeat with two Works drafting the same new document: each transient tab
-must retain its own Work and draft identity. File policy alone chooses where drafts can exist. The review path imposes
+must retain its own Work and draft identity. Open A before B, then Discard B:
+only B's tab closes. Reopen B and close its visible tab: A must remain. Apply B
+while A stays pending: B's Work shows the live document, while A still shows its
+own review. Rename the visible B representation and verify A is not selected or
+closed by the metadata update. Reload a dock review with multiple same-document
+draft-list rows: only the saved Work and draft may restore.
+
+File policy alone chooses where drafts can exist. The review path imposes
 no scheme whitelist; each row opens its own location.
 
 ## Rich-only paragraph changes (CLI and visual)

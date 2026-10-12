@@ -20,6 +20,7 @@ import {
   type ContextTab,
   getContextTabs,
   isEditorScheme,
+  matchesReviewDraft,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -475,7 +476,13 @@ function ReadableProjectDestination({
           (draftOnly
             ? // Review installs the tab; until it has, the address is still being repaired.
               address.draftId === draftOnly.draft.draftId &&
-              workspaceTabs.some((tab) => tab.documentId === draftOnly.documentId)
+              workspaceTabs.some((tab) =>
+                matchesReviewDraft(tab, {
+                  documentId: draftOnly.documentId,
+                  reviewWorkId: workId ?? "",
+                  reviewDraftId: draftOnly.draft.draftId,
+                }),
+              )
               ? undefined
               : "loading"
             : documentDestination

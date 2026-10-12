@@ -6,7 +6,11 @@ import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
   isEditorContextTab,
+  isEditorTab,
+  matchesReviewDraft,
+  matchesTabInstance,
   type ProjectTabsSlice,
+  type ReviewDraftTabIdentity,
   type TabOwner,
 } from "./editor-workspace-model";
 import {
@@ -18,16 +22,28 @@ import {
 
 /** A tracked tab's changed metadata; an owner in it replaces the old one whole. */
 export type TrackedTabPatch = Partial<
-  Omit<Extract<ContextTab, { kind: "tracked" }>, keyof TabOwner>
+  Omit<
+    Extract<ContextTab, { kind: "tracked" }>,
+    | keyof TabOwner
+    | "tabInstanceId"
+    | "draftOnly"
+    | "reviewWorkId"
+    | "reviewDraftId"
+    | "tabInstanceToken"
+  >
 > &
   TabOwner;
 
 export {
   type ContextTab,
+  editorTabsForWork,
   isEditorContextTab,
   isEditorScheme,
   isEditorTab,
+  matchesReviewDraft,
+  matchesTabInstance,
   type ProjectTabsSlice,
+  type ReviewDraftTabIdentity,
   replaceOwner,
   type ServerContextTab,
   type TabOwner,
@@ -48,7 +64,12 @@ export type OpenEditorTabResult =
   | { kind: "superseded" | "ineligible" | "not-opened" };
 
 type ContextTabsActions = {
-  openTab: (projectId: string, tab: ContextTab, isCurrent?: () => boolean) => OpenEditorTabResult;
+  openTab: (
+    projectId: string,
+    tab: ContextTab,
+    isCurrent?: () => boolean,
+    editorWorkId?: string,
+  ) => OpenEditorTabResult;
   reconcileResourceTab: (
     projectId: string,
     resourceHandle: string,
@@ -56,11 +77,16 @@ type ContextTabsActions = {
   ) => Promise<void>;
   updateTrackedTab: (
     projectId: string,
-    documentId: string,
+    addressed: ContextTab,
     metadata: TrackedTabPatch,
   ) => Promise<void>;
   reorderTabs: (projectId: string, fromIndex: number, toIndex: number) => Promise<void>;
-  selectTab: (projectId: string, workId: string, documentId: string | null) => Promise<void>;
+  selectTab: (
+    projectId: string,
+    workId: string,
+    documentId: string | null,
+    addressed?: ContextTab,
+  ) => Promise<void>;
   reconcileBootstrap: (
     projectId: string,
     changes: readonly { prior: ContextTab; next: ContextTab | null }[],
@@ -83,11 +109,8 @@ export type ReviewOverlayConsumeReceipt =
   | { kind: "consumed"; current: ProjectTabsSlice }
   | { kind: "not-consumed"; current: ProjectTabsSlice };
 
-export type ReviewOverlayTabIdentity = {
-  documentId: string;
+export type ReviewOverlayTabIdentity = ReviewDraftTabIdentity & {
   tabInstanceId: string;
-  reviewWorkId: string;
-  reviewDraftId: string;
   tabInstanceToken: string;
 };
 
@@ -105,12 +128,10 @@ function normalizeSelections(
   tabs: readonly ContextTab[],
   selections: Record<string, string>,
 ): Record<string, string> {
-  const byId = new Map(tabs.map((tab) => [tab.documentId, tab]));
   return Object.fromEntries(
-    Object.entries(selections).filter(([, documentId]) => {
-      const tab = byId.get(documentId);
-      return tab !== undefined && isEditorContextTab(tab);
-    }),
+    Object.entries(selections).filter(([workId, documentId]) =>
+      tabs.some((tab) => tab.documentId === documentId && isEditorTab(tab, workId)),
+    ),
   );
 }
 
@@ -141,19 +162,20 @@ function composeProjectSlice(state: ContextTabsState, projectId: string): Projec
 
 function sameReviewOverlay(left: ContextTab, right: ContextTab): boolean {
   return (
-    left.kind !== "new" &&
     right.kind !== "new" &&
-    left.documentId === right.documentId &&
-    left.reviewWorkId === right.reviewWorkId &&
-    left.reviewDraftId === right.reviewDraftId
+    matchesReviewDraft(left, {
+      documentId: right.documentId,
+      reviewWorkId: right.reviewWorkId ?? "",
+      reviewDraftId: right.reviewDraftId ?? "",
+    })
   );
 }
 
 function composeSlices(durable: ProjectTabsSlice, overlay?: ProjectTabsSlice): ProjectTabsSlice {
   if (!overlay) return durable;
-  const overlayIds = new Set(overlay.tabs.map((tab) => tab.documentId));
   return {
-    tabs: [...durable.tabs.filter((tab) => !overlayIds.has(tab.documentId)), ...overlay.tabs],
+    tabs: [...durable.tabs, ...overlay.tabs],
+    selectedTabInstanceIdByWork: overlay.selectedTabInstanceIdByWork,
     selectedTabIdByWork: {
       ...durable.selectedTabIdByWork,
       ...overlay.selectedTabIdByWork,
@@ -201,7 +223,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         _workspaceHydrated: false,
         _layoutPersistenceError: null,
 
-        openTab: (projectId, input, isCurrent) => {
+        openTab: (projectId, input, isCurrent, editorWorkId) => {
           if (isCurrent?.() === false) return { kind: "superseded" };
           if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
@@ -212,16 +234,6 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               (!tab.draftOnly || sameReviewOverlay(candidate, tab)),
           );
           if (tab.draftOnly) {
-            const durableMember = sliceFor(get(), projectId).tabs.find(
-              (candidate) => candidate.documentId === tab.documentId,
-            );
-            if (durableMember?.tabInstanceId) {
-              dispatchResult(() => ({
-                kind: "close",
-                projectId,
-                tabInstanceId: durableMember.tabInstanceId as string,
-              }));
-            }
             rawSet((base) => {
               const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
               const index = overlay.tabs.findIndex((candidate) =>
@@ -260,8 +272,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             });
           } else if (reviewOverlayTab) {
             // Readable-address resolution enriches the transient review tab
-            // with its live resource identity without admitting a durable
-            // shadow underneath it. Apply can then reopen that exact resource.
+            // with its live resource identity, not a durable shadow: a
+            // reserved draft document is not proof of live catalog membership.
             rawSet((base) => {
               const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
               return {
@@ -275,6 +287,13 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                             ...candidate,
                             ...tab,
                             tabInstanceId: candidate.tabInstanceId,
+                            draftOnly: candidate.draftOnly,
+                            reviewWorkId:
+                              candidate.kind !== "new" ? candidate.reviewWorkId : undefined,
+                            reviewDraftId:
+                              candidate.kind !== "new" ? candidate.reviewDraftId : undefined,
+                            tabInstanceToken:
+                              candidate.kind !== "new" ? candidate.tabInstanceToken : undefined,
                           } as ContextTab)
                         : candidate,
                     ),
@@ -285,28 +304,56 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           } else {
             dispatchResult(() => ({ kind: "open", projectId, tab }), isCurrent);
           }
-          const installed = composeProjectSlice(get(), projectId).tabs.find(
+          const candidates = composeProjectSlice(get(), projectId).tabs.filter(
             (member) =>
               member.documentId === tab.documentId &&
-              (!tab.draftOnly || sameReviewOverlay(member, tab)),
+              (tab.draftOnly
+                ? sameReviewOverlay(member, tab)
+                : !member.draftOnly ||
+                  editorWorkId === undefined ||
+                  (member.kind !== "new" && member.reviewWorkId === editorWorkId)),
           );
+          // A plain resource read may enrich several reviews; it cannot choose one.
+          const installed =
+            candidates.find((member) => !member.draftOnly) ??
+            (candidates.length === 1 ? candidates[0] : undefined);
           return installed ? { kind: "opened", tab: installed } : { kind: "not-opened" };
         },
 
         reconcileResourceTab: (projectId, resourceHandle, tab) =>
           dispatch(() => ({ kind: "reconcile-resource", projectId, resourceHandle, tab })),
 
-        updateTrackedTab: (projectId, documentId, metadata) =>
-          dispatch((base) => {
+        updateTrackedTab: async (projectId, addressed, metadata) => {
+          if (addressed.draftOnly) {
+            rawSet((base) => {
+              const overlay = base._reviewOverlayByProject[projectId];
+              if (!overlay) return {};
+              return {
+                _reviewOverlayByProject: {
+                  ...base._reviewOverlayByProject,
+                  [projectId]: {
+                    ...overlay,
+                    tabs: overlay.tabs.map((tab) =>
+                      tab.kind === "tracked" && matchesTabInstance(tab, addressed)
+                        ? ({ ...tab, ...metadata } as ContextTab)
+                        : tab,
+                    ),
+                  },
+                },
+              };
+            });
+            return;
+          }
+          await dispatch((base) => {
             const tab = sliceFor(base, projectId).tabs.find(
               (candidate): candidate is Extract<ContextTab, { kind: "tracked" }> =>
-                candidate.kind === "tracked" && candidate.documentId === documentId,
+                candidate.kind === "tracked" && matchesTabInstance(candidate, addressed),
             );
-            // A patch's owner replaces the old one whole (`replaceOwner`).
             return tab
               ? { kind: "open", projectId, tab: { ...tab, ...metadata } as typeof tab }
               : null;
-          }),
+          });
+        },
 
         reorderTabs: (projectId, fromIndex, toIndex) =>
           dispatch((base) => {
@@ -330,17 +377,31 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             };
           }),
 
-        selectTab: (projectId, workId, documentId) => {
+        selectTab: (projectId, workId, documentId, addressed) => {
           const overlay = get()._reviewOverlayByProject[projectId];
+          const selectedOverlay = overlay?.tabs.find(
+            (tab) =>
+              tab.documentId === documentId &&
+              isEditorTab(tab, workId) &&
+              (addressed ? matchesTabInstance(tab, addressed) : true),
+          );
           if (
-            documentId !== null &&
-            overlay?.tabs.some((tab) => tab.documentId === documentId && isEditorContextTab(tab))
-          ) {
+            addressed &&
+            !composeProjectSlice(get(), projectId).tabs.some((tab) =>
+              matchesTabInstance(tab, addressed),
+            )
+          )
+            return Promise.resolve();
+          if (documentId !== null && selectedOverlay) {
             rawSet((base) => ({
               _reviewOverlayByProject: {
                 ...base._reviewOverlayByProject,
                 [projectId]: {
                   ...(base._reviewOverlayByProject[projectId] ?? emptySlice()),
+                  selectedTabInstanceIdByWork: {
+                    ...overlay?.selectedTabInstanceIdByWork,
+                    [workId]: selectedOverlay.tabInstanceId as string,
+                  },
                   selectedTabIdByWork: {
                     ...(base._reviewOverlayByProject[projectId]?.selectedTabIdByWork ?? {}),
                     [workId]: documentId,
@@ -356,10 +417,12 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
               if (!current?.selectedTabIdByWork[workId]) return {};
               const selectedTabIdByWork = { ...current.selectedTabIdByWork };
               delete selectedTabIdByWork[workId];
+              const selectedTabInstanceIdByWork = { ...current.selectedTabInstanceIdByWork };
+              delete selectedTabInstanceIdByWork[workId];
               return {
                 _reviewOverlayByProject: {
                   ...base._reviewOverlayByProject,
-                  [projectId]: { ...current, selectedTabIdByWork },
+                  [projectId]: { ...current, selectedTabIdByWork, selectedTabInstanceIdByWork },
                 },
               };
             });
@@ -476,17 +539,21 @@ function planReviewOverlayClose(
   }
   const durableTabs = sliceFor(base, projectId).tabs;
   const selectedTabIdByWork = normalizeSelections(
-    [
-      ...durableTabs.filter(
-        (durable) => !tabs.some((tab) => tab.documentId === durable.documentId),
-      ),
-      ...tabs,
-    ],
+    [...durableTabs, ...tabs],
     overlay.selectedTabIdByWork,
   );
   const next = { ...base._reviewOverlayByProject };
   if (tabs.length === 0 && Object.keys(selectedTabIdByWork).length === 0) delete next[projectId];
-  else next[projectId] = { tabs, selectedTabIdByWork };
+  else
+    next[projectId] = {
+      tabs,
+      selectedTabIdByWork,
+      selectedTabInstanceIdByWork: Object.fromEntries(
+        Object.entries(overlay.selectedTabInstanceIdByWork ?? {}).filter(([workId, instanceId]) =>
+          tabs.some((tab) => tab.tabInstanceId === instanceId && isEditorTab(tab, workId)),
+        ),
+      ),
+    };
   const update = { _reviewOverlayByProject: next };
   current = composeSlices(sliceFor(base, projectId), next[projectId]);
   return { update, current, consumed };

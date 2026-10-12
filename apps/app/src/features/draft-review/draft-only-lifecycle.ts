@@ -2,7 +2,12 @@
 
 import { useMemo } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
-import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
+import {
+  type ContextTab,
+  getContextTabs,
+  matchesReviewDraft,
+  useContextTabsStore,
+} from "@/client/stores";
 import {
   useContextRemovalCoordinator,
   useOptionalAccountEpochSignal,
@@ -42,10 +47,11 @@ function presentation(projectId: string, tab: ContextTab, container: "editor" | 
 function matches(tab: ContextTab, draft: DraftRef) {
   return (
     tab.kind === "tracked" &&
-    tab.draftOnly &&
-    tab.documentId === draft.documentId &&
-    tab.reviewWorkId === draft.workId &&
-    tab.reviewDraftId === draft.draftId &&
+    matchesReviewDraft(tab, {
+      documentId: draft.documentId,
+      reviewWorkId: draft.workId,
+      reviewDraftId: draft.draftId,
+    }) &&
     Boolean(tab.tabInstanceToken)
   );
 }
