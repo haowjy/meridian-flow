@@ -177,7 +177,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       // This fixture freezes the archival migration chain. Supply the additive
       // prerequisite of today's snapshot reader without changing that history.
       await target.unsafe(
-        await readFile(path.join(migrations, "0038_perfect_excalibur.sql"), "utf8"),
+        await readFile(path.join(migrations, "0038_namespace_observation_schema.sql"), "utf8"),
       );
       const catalog = createDrizzleContextCatalog(db);
       const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });
