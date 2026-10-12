@@ -9,7 +9,6 @@ import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/c
 import {
   classifyFiletype,
   type Filetype,
-  filenameForBinary,
   filetypeForKnownPath,
   filetypeForPath,
   folderDocumentName,

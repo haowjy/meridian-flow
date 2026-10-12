@@ -35,7 +35,7 @@ import {
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
 import type { LiveCreateCandidate, RevealIdentity } from "../../tree/hidden-node-types.js";
-import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
+import type { TreeView } from "../../tree/tree-view.js";
 
 type FolderRow = ContextFolder & {
   contextSourceId: string;
