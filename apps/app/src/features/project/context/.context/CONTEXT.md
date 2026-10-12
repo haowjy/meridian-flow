@@ -142,8 +142,9 @@ Resting crumbs are passive: project-menu acquisition mounts only when a crumb
 opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
 an area not offered at the root; `own.openAt(path)` remains the full folder trail
 used by placement. The first menu mounts with its final trail and highlight IDs.
-Path fit is selected from intrinsic-width candidates rendered by the same
-`CrumbRow` as the visible path. A link-update note is a direct sibling of the
+`DocumentIdentityBar` measures one shared collapse priority list against its actual
+row width: parent crumbs, icon labels, stepper count, then Apply label. The
+filename keeps 64px and every command remains in the row. A link-update note is a direct sibling of the
 path, so an absent note occupies neither a flex item nor a gap.
 
 Link-update feedback derives its destination from the matched move receipt, not

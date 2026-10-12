@@ -4,7 +4,7 @@ import { createContext, useContext } from "react";
 import type { DockDocument } from "./dock/dock-document-store";
 import type { ScreenKey } from "./shell/screens";
 
-export type ReviewAddress = { workId: string; draftId: string };
+export type ReviewAddress = { workId: string; draftId: string; changeId?: string };
 export type PresentedDocument = {
   container: "editor" | "dock";
   documentId: string | null;
@@ -23,6 +23,7 @@ export function resolvePresentedDocument(input: {
     path: string | null;
     documentId?: string | null;
     draftId?: string;
+    changeId?: string;
     draftOnly: boolean;
   };
   dock: DockDocument | null;
@@ -36,7 +37,9 @@ export function resolvePresentedDocument(input: {
       path: editor.path,
       draftOnly: editor.draftOnly,
       review:
-        editor.workId && editor.draftId ? { workId: editor.workId, draftId: editor.draftId } : null,
+        editor.workId && editor.draftId
+          ? { workId: editor.workId, draftId: editor.draftId, changeId: editor.changeId }
+          : null,
     };
   }
   if (input.phone || !input.dock) return null;

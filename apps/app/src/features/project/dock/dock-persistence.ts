@@ -46,7 +46,9 @@ export function readDockSnapshot(
             typeof review.workId !== "string" ||
             !review.workId ||
             typeof review.draftId !== "string" ||
-            !review.draftId)
+            !review.draftId ||
+            (review.changeId !== undefined &&
+              (typeof review.changeId !== "string" || !review.changeId)))
         )
           return undefined;
         const tab = parseContextTab(occupant.tab);
@@ -61,7 +63,13 @@ export function readDockSnapshot(
                 review:
                   review === null
                     ? null
-                    : { workId: review.workId as string, draftId: review.draftId as string },
+                    : {
+                        workId: review.workId as string,
+                        draftId: review.draftId as string,
+                        ...(typeof review.changeId === "string"
+                          ? { changeId: review.changeId }
+                          : {}),
+                      },
               },
             }
           : undefined;

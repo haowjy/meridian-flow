@@ -11,15 +11,7 @@
  * visibility. Focusing a row closes it; dispositions leave it open until the
  * last change is handled. Completion stays in the identity row.
  *
- * Narrow rows give up room in a fixed order, always on one row (the container
- * is the identity bar's own `@container`, so a closed sidebar or open dock
- * counts): the breadcrumb's middle folders become `…` (in `IdentityPath`),
- * "Show changes" becomes an icon toggle with the same name, `4 of 4` becomes
- * `4/4` and Discard draft / Apply draft shorten to Discard / Apply, and the
- * file name truncates. The Draft chip, the list button (an icon from the
- * start), Discard and Apply never hide. Apply draft and Discard draft move straight to the next draft in the
- * menu, or back to live when none is left; the model is shared with the phone
- * header (`useReviewHeader`).
+ * Collapse priority and invisible phone hit boxes belong to the identity row.
  *
  * Refusals the review holds are not here: they need a line of their own and
  * sit under the row (`DraftReviewFailureNotices`).
@@ -27,7 +19,7 @@
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { Eye, EyeOff, List, Loader2 } from "lucide-react";
+import { Check, Eye, EyeOff, List, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { PaintCapture } from "@/components/app/PaintHold";
@@ -78,7 +70,7 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
         onShowLive={header.showLive}
         onRename={props.onRename}
       />
-      <span className="min-w-1 flex-1" />
+      <span className="identity-spacer min-w-0 flex-1" />
       <span
         className="flex shrink-0 items-center gap-1.5 font-sans text-xs"
         data-draft-review-controls
@@ -113,21 +105,22 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
             <Button
               variant="quiet"
               size="xs"
-              className="h-5.5"
+              className="identity-discard h-5.5"
               aria-label={t`Discard draft`}
               disabled={locked}
               onClick={header.discardDraft}
             >
-              <span className="@max-[36rem]:hidden">
+              <Trash2 aria-hidden className="identity-command-icon hidden size-3.5" />
+              <span className="identity-command-label">
                 <Trans>Discard draft</Trans>
               </span>
-              <span className="hidden @max-[36rem]:inline">
+              <span className="identity-command-short hidden">
                 <Trans>Discard</Trans>
               </span>
             </Button>
             <Button
               size="xs"
-              className="h-5.5"
+              className="identity-apply h-5.5"
               aria-label={t`Apply draft`}
               disabled={locked || !controller.canApplyReviewedDraft}
               onClick={header.applyDraft}
@@ -135,10 +128,13 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
               {controller.isApplying ? (
                 <Loader2 className="size-3 animate-spin" aria-hidden />
               ) : null}
-              <span className="@max-[36rem]:hidden">
+              {controller.isApplying ? null : (
+                <Check aria-hidden className="identity-command-icon hidden size-3.5" />
+              )}
+              <span className="identity-command-label">
                 <Trans>Apply draft</Trans>
               </span>
-              <span className="hidden @max-[36rem]:inline">
+              <span className="identity-command-short hidden">
                 <Trans>Apply</Trans>
               </span>
             </Button>
@@ -213,7 +209,7 @@ function ShowChangesToggle({
           )}
         >
           <Icon aria-hidden className="size-3.5" />
-          <span className="@max-[44rem]:hidden">
+          <span className="identity-show-label">
             <Trans>Show changes</Trans>
           </span>
         </button>

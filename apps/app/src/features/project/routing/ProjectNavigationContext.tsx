@@ -18,6 +18,7 @@ export type OpenContextOptions = {
   afterCommit?: () => void;
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   draftId?: string;
+  changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;
 };
