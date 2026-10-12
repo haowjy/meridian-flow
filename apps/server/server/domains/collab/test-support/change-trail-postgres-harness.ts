@@ -1896,7 +1896,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     pollTrails: () => trailDelivery.drain(),
     /** Stops debounced live pulls (scheduled by AI live commits) leaking into later tests. */
     cancelScheduledPulls: () => branchPulls.cancelScheduledPulls(),
-    workRows: () => db.select().from(schema.turnTrailWork),
     async branchGeneration(branchId: string) {
       const [branch] = await db
         .select({ generation: schema.documentBranches.generation })
@@ -2112,7 +2111,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .update(schema.branchWriteJournal)
         .set({ turnId: null })
         .where(eq(schema.branchWriteJournal.status, "active"));
-      await db.delete(schema.turnTrailWork);
     },
     hardDeleteDocument: (documentId: DocumentId) =>
       db.delete(schema.documents).where(eq(schema.documents.id, documentId)),

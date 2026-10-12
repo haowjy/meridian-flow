@@ -37,7 +37,7 @@
   push contribution. The aggregate counts inserted/deleted payloads and persists
   per-document word magnitudes; lightweight shells retain document ids/titles
   plus nullable totals so receipt headers never need manuscript-bearing detail.
-  Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
+  Dispatch and reconciliation do not duplicate aggregate SQL.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
@@ -89,12 +89,20 @@
   caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
-- **Trail work retries only an `auto` branch**: the trail-work claim
-  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` for a
-  `manual` branch or a turn that ended `error` or `cancelled`. No branch is
-  `auto` since D59, so every claim settles `no_op` and drafts wait for the
-  writer's Apply. This depends on the read model never rewriting a failed
-  turn's status (see the threads read-model projector).
+- **Durable trail signals**: receipt/part, journal disposition, publication,
+  settlement and turn-lifecycle row triggers append to `change_trail_dirty_log`
+  in the producer transaction. They never update owner rows or enroll commands
+  in another lock protocol. One SQL resolver follows immutable inverse targets;
+  both capture and readiness use its semantic owners. Writer inverses stay ownerless.
+  After sorted aggregate advisory locks, reconciliation deletes exactly the
+  snapshot-visible signals and reads readiness/terminality in one statement.
+  Shell transitions and versioned delivery events commit with that deletion;
+  failure restores all three. Sequence allocation is not commit order: never use
+  a sequence watermark. Unfinished shells keep polling after consumption. Active
+  drafts do not block, but rollback-pending journals and pending live settlements
+  do, including inverse-only publications. Shared signals never create shells;
+  active turns without shells retain their signals outside actionable paging.
+
 - **Apply settles ahead refs per completion because drafts cannot move documents**
   (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
   live and settles in the tree store's move transaction. So the only documents an
@@ -194,10 +202,6 @@
   also drive the real `createProductionAppPorts` + `composeAppServices` +
   Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
   updates, and release probes must verify writer-visible trail flows.
-- **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
-  use an injected schedule. Production obtains its time from PostgreSQL; tests
-  advance a controlled schedule. Do not reintroduce process-clock comparisons or
-  sleep-based lifecycle tests.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
@@ -241,10 +245,9 @@
 
 The process recovery scheduler invokes the change-trail worker as an independent
 lane. Each pass considers at most 100 recoverable live settlements, reconciles
-100 terminal-owner keys and 100 shell IDs, and dispatches at most 100 outbox
-rows. Reconciliation pages only actionable owners/shells (including shared reopen
-work while a turn is active), retaining separate wraparound keyset cursors and acquiring a
-sorted union of the selected trail locks; all updates are restricted to that
+100 owner keys, and dispatches at most 100 outbox rows. Reconciliation pages only actionable owners/shells (including shared reopen
+work while a turn is active), retaining one wraparound owner-key cursor and acquiring
+the selected trail locks in sorted order; all updates are restricted to that
 locked set. It keeps its own root transaction, not the runtime inbox owner.
 
 The change-trail scheduler count is dispatched outbox rows, not reconciliation
