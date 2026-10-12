@@ -51,7 +51,8 @@ prefixes. Agent-edit owns any hash-prefixed adapter layer.
 `parseWithSourceMap` returns the same blocks as `parse`, plus a transient sidecar
 for inline text and maximal link runs. Source ranges are exact original `[from,
 to)` offsets or null when provenance is unavailable (rewritten source, table
-conversion, code spans, or unrecognized conversion). Paths address a top-level
+conversion, inline normalization such as multiline container prefixes,
+code spans, or unrecognized conversion). Paths address a top-level
 block and descendant; `count` covers link siblings. Text `offset` addresses a
 subrun within a PM text node: equal marks can coalesce text whose original
 source had intervening delimiters. Those runs retain separate source authority.

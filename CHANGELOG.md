@@ -8,6 +8,9 @@
 
 ### Changed
 
+- User messages, document previews and compact chat text now use the manuscript renderer while preserving references, skill tokens and authored line breaks.
+- Chat draws Mermaid diagrams when their fences close, keeps open fences as code, and opens web links in a new tab.
+
 - Streaming chat now uses the manuscript renderer, repairs only the live Markdown tail, and keeps completed blocks in place when a reply settles.
 
 - Settled chat Markdown now shares the manuscript's document styles, with tight lists, syntax-highlighted code and a hover-only copy action at chat scale.

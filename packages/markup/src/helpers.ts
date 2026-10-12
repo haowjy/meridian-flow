@@ -24,7 +24,7 @@ import {
 } from "./components.js";
 import { HARD_BREAK_TAG } from "./markdown/blocks/hard-break.js";
 import { imageHtmlTag, imageWireAttributes } from "./markdown/blocks/image-html.js";
-import { sourceRange } from "./presentation-source-map.js";
+import { sourceRange, textSourceRange } from "./presentation-source-map.js";
 import { getRuntime } from "./runtime.js";
 import type { ParseContext, SerializeContext, SourceRange } from "./types.js";
 
@@ -236,7 +236,7 @@ export function parseInlineChildren(
           out.push(node);
           getRuntime(ctx).inlineOrigins?.push({
             node,
-            source: sourceRange(child),
+            source: textSourceRange(child, getRuntime(ctx).source, value),
             link: linkSource,
           });
         }

@@ -37,6 +37,8 @@ describe("presentation source map", () => {
   });
   it("excludes inline code and makes tables and rewritten documents unmappable", () => {
     expect(ranges("plain `code` tail")).toEqual(["plain ", null, " tail"]);
+    expect(ranges("> first\n> /outline tail")).toEqual([null]);
+    expect(ranges("first\r\n/outline")).toEqual(["first\r\n/outline"]);
     expect(
       parse("| A |\n| --- |\n| /outline |").sourceMap.every((run) => run.source === null),
     ).toBe(true);

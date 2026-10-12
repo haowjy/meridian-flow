@@ -42,6 +42,9 @@ Everything downstream is generated or provider-neutral:
   mode is a second lock, not this one. The allow-list is SVG: a label drawn as
   HTML inside `<foreignObject>` is dropped, which is why the mermaid config asks
   for SVG text labels (and why a raster export keeps its labels at all).
+- **Transcript fences reuse this render boundary.** Their open fence stays code;
+  a closed fence draws. The error-card action label is host-owned: the Editor
+  edits source, while the transcript only shows it.
 - **The render layer is keyed by provider** wherever it is mounted. Render state
   belongs to one provider, and a language change would otherwise hand the new
   one the old one's state. A language change is a document change, so remounting

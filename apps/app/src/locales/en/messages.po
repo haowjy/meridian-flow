@@ -1060,7 +1060,7 @@ msgstr "Conversation not compacted"
 #: src/components/app/CopyTextButton.tsx
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/chat/command-descriptor.ts
-#: src/rich-content/DocumentMarkdown.tsx
+#: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copied"
 msgstr "Copied"
 
@@ -1089,7 +1089,7 @@ msgstr "Copy {0} source"
 
 #: src/features/editor/surfaces/objects/CodeBlockChips.tsx
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
-#: src/rich-content/DocumentMarkdown.tsx
+#: src/rich-content/DocumentCodeBlock.tsx
 msgid "Copy code"
 msgstr "Copy code"
 
@@ -3500,6 +3500,10 @@ msgstr "Show less"
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Show more"
 msgstr "Show more"
+
+#: src/rich-content/DocumentCodeBlock.tsx
+msgid "Show source"
+msgstr "Show source"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Show the whole brief"
