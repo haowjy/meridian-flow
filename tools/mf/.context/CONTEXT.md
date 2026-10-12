@@ -68,8 +68,10 @@ One command-scoped subscription and event mapper remain alive through every
 confirmation. Checkpoints drain queued events, await the snapshot, then consume
 frames received during the request before confirming again. The result's
 `turns` lists the initially running turn and every stream-named turn, with
-snapshot statuses. Missing/non-terminal turns are 6 `unconfirmed`; otherwise
-any error is failed, any cancellation is cancelled, and all complete is complete.
+snapshot statuses. Any observed failure or covered turn error is failed; otherwise
+any cancellation is cancelled, missing/non-terminal turns are 6 `unconfirmed`,
+and all complete is complete. A replay gap without a proven failure or cancellation
+is 6 `replay_truncated`, preserving the idle evidence and covered turns.
 Already idle with no wait has an empty list. Snapshot requests are capped at the
 remaining deadline. A tail timeout uses the last snapshot with
 `snapshotStale: true`, or `snapshotUnavailable: true` if none succeeded,

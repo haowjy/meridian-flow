@@ -113,9 +113,11 @@ at its final snapshot; it does not attribute replies to messages.
   One subscription and event mapper stay alive through checkpoints, including
   frames queued during HTTP confirmation. Its `turns` list covers the initially
   running turn and every stream-named turn with their snapshot statuses.
-  Missing or non-terminal turns produce 6 `unconfirmed`; otherwise any error
-  produces failed, any cancellation produces cancelled, and all complete produces
-  complete. An initially idle chat returns complete with an empty list.
+  Any observed failure or covered turn error produces failed; otherwise any
+  cancellation produces cancelled, missing or non-terminal turns produce 6
+  `unconfirmed`, and all complete produces complete.
+  A replay gap without a proven failure or cancellation produces 6
+  `replay_truncated`, preserving the idle evidence and covered turns. An initially idle chat returns complete with an empty list.
   Snapshot requests use only the time remaining. At timeout, the last snapshot's
   activity is labeled `snapshotStale: true` (not a new current-state claim),
   or `snapshotUnavailable: true` if no snapshot succeeded. No post-deadline
