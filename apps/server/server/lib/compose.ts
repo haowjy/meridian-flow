@@ -1313,6 +1313,7 @@ export function createInMemoryAppServices(): AppServices {
   const linkAheadRegistry: LinkAheadRegistry = {
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
+    settleRef: async () => unsupported(),
     registerUnregistered: async () => unsupported(),
   };
 

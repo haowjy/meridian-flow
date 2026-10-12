@@ -260,6 +260,47 @@ if (!RUN) {
       }
     }
 
+    it("settles by ref identity once, and reports arrival's existing target", async () => {
+      const registry = newRegistry(database);
+      await registry.register([registration]);
+      await insertDocument(database, "manuscript", DOCUMENT);
+      await database.update(documents).set({ name: "moved" }).where(eq(documents.id, DOCUMENT));
+      await insertDocument(database, "manuscript", DOCUMENT_2);
+      expect(await registry.settleRef(AHEAD, DOCUMENT as never)).toEqual({
+        settled: true,
+        documentId: DOCUMENT,
+      });
+      expect(await registry.settleRef(AHEAD, DOCUMENT_2 as never)).toEqual({
+        settled: false,
+        documentId: DOCUMENT,
+      });
+      const arrived = "00000000-0000-4000-8000-000000000b06";
+      await registry.register([{ ...registration, aheadId: arrived }]);
+      expect(await registry.settleRef(arrived, DOCUMENT as never)).toEqual({
+        settled: false,
+        documentId: DOCUMENT_2,
+      });
+      expect(
+        await registry.settleRef("00000000-0000-4000-8000-000000000b07", DOCUMENT as never),
+      ).toBeNull();
+    });
+
+    it("identity settlement rolls back with its caller", async () => {
+      const registry = newRegistry(database);
+      await registry.register([registration]);
+      await insertDocument(database);
+      await expect(
+        runInDrizzleTransaction(database, async () => {
+          expect(await registry.settleRef(AHEAD, DOCUMENT as never)).toEqual({
+            settled: true,
+            documentId: DOCUMENT,
+          });
+          throw new Error("rollback");
+        }),
+      ).rejects.toThrow("rollback");
+      expect(await settledIds()).toEqual([null]);
+    });
+
     it("manuscript namespace race settles exactly once in both orders", async () => {
       await raceArrivalFirst("manuscript");
       await seed();

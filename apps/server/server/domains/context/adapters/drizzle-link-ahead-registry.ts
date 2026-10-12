@@ -119,6 +119,24 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     );
   }
 
+  async settleRef(aheadId: string, documentId: DocumentId) {
+    if (!parseRequestId(aheadId)) throw new RangeError(`Invalid ahead id: ${aheadId}`);
+    const tx = currentDrizzleDb(this.db);
+    const rows = await tx
+      .update(linkAheadRefs)
+      .set({ settledDocumentId: documentId, settledAt: new Date() })
+      .where(and(eq(linkAheadRefs.aheadId, aheadId), isNull(linkAheadRefs.settledDocumentId)))
+      .returning({ documentId: linkAheadRefs.settledDocumentId });
+    if (rows.length > 0) return { settled: true, documentId };
+    const [existing] = await tx
+      .select({ documentId: linkAheadRefs.settledDocumentId })
+      .from(linkAheadRefs)
+      .where(eq(linkAheadRefs.aheadId, aheadId));
+    return existing?.documentId
+      ? { settled: false, documentId: existing.documentId as DocumentId }
+      : null;
+  }
+
   async settleArrivals(documentIds: readonly DocumentId[]): Promise<number> {
     let settled = 0;
     for (const documentId of new Set(documentIds)) {

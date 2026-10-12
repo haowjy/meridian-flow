@@ -30,6 +30,7 @@ const file: CatalogEntry = {
   parentId: "folder-1",
   name: "Chapter.md",
   aliases: [],
+  importPending: false,
   path: ["Arc", "Chapter.md"],
   uri: "manuscript://Arc/Chapter.md" as never,
   editable: true,

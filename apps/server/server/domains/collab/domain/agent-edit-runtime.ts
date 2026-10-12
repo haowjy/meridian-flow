@@ -26,6 +26,7 @@ import {
   type MarkdownSerializationAnomalyObserver,
   type RuntimeOrigin,
 } from "./markdown-document.js";
+import type { DocumentLandingJournal } from "./ports/document-landing-journal.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import { createSemanticProvenanceWriter } from "./provenance.js";
@@ -45,6 +46,7 @@ type AgentEditObservability = Pick<
 
 export function createAgentEditRuntime(input: {
   journal: UpdateJournal & ReversalStore;
+  landingJournal?: DocumentLandingJournal;
   coordinator: DocumentCoordinator;
   /**
    * The live agent-edit core's coordinator when it differs from `coordinator`:
@@ -95,6 +97,7 @@ export function createAgentEditRuntime(input: {
       links: input.links,
       model,
       journal: input.journal,
+      landingJournal: input.landingJournal,
       coordinator: input.coordinator,
       lifecycle: input.lifecycle,
       initialDocumentSeeds: input.initialDocumentSeeds,

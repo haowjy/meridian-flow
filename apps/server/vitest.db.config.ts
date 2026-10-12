@@ -16,6 +16,8 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
   ? (JSON.parse(process.env.DB_TEST_DATABASE_URLS) as string[])
   : [];
 const expectedSuites = [
+  "apps/server/server/domains/context/adapters/drizzle-context-bulk-creation.db.test.ts",
+  "apps/server/server/domains/collab/document-landing.db.test.ts",
   "apps/server/server/domains/preferences/adapters/drizzle/account-settings-repository.db.test.ts",
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",

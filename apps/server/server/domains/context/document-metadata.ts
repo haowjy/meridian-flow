@@ -19,4 +19,15 @@ export interface CopiedFrom {
 /** Metadata a document is created with. */
 export interface DocumentCreationMetadata {
   copiedFrom?: CopiedFrom;
+  importPending?: boolean;
+}
+
+/** Only an explicit metadata boolean marks an arriving import. */
+export function documentImportPending(metadata: unknown): boolean {
+  return (
+    !!metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as { importPending?: unknown }).importPending === true
+  );
 }
