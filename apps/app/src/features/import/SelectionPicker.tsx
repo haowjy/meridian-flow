@@ -61,6 +61,8 @@ export function useSelectionPicker(reader: Reader) {
   const folderInput = useRef<HTMLInputElement>(null);
   const filesInput = useRef<HTMLInputElement>(null);
   const folderPicking = useMemo(canPickFolders, []);
+  // After Choose again the choices come back; the first takes focus from the button that left.
+  const [choosingAgain, setChoosingAgain] = useState(false);
   const drag = useFileDragOver((items) => void reader.drop(items));
   const inputs = (
     <>
@@ -97,8 +99,15 @@ export function useSelectionPicker(reader: Reader) {
     folderPicking,
     chooseFolder: () => folderInput.current?.click(),
     chooseFiles: () => filesInput.current?.click(),
-    /** "Choose again" opens the same kind of picker the writer used first. */
-    chooseAgain: () => (folderPicking ? folderInput : filesInput).current?.click(),
+    choosingAgain,
+    /**
+     * Back to the choices: folder, files or a drop. The first choice may have been
+     * any of them, and only the writer knows which shape this one should take.
+     */
+    chooseAgain: () => {
+      reader.reset();
+      setChoosingAgain(true);
+    },
   };
 }
 
@@ -138,7 +147,13 @@ export function PickZone({
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {picker.folderPicking ? (
-              <Button type="button" variant="outline" data-first onClick={picker.chooseFolder}>
+              <Button
+                type="button"
+                variant="outline"
+                data-first
+                autoFocus={picker.choosingAgain}
+                onClick={picker.chooseFolder}
+              >
                 <Trans>Choose folder…</Trans>
               </Button>
             ) : null}
@@ -146,6 +161,7 @@ export function PickZone({
               type="button"
               variant="outline"
               data-first={picker.folderPicking ? undefined : ""}
+              autoFocus={picker.choosingAgain && !picker.folderPicking}
               onClick={picker.chooseFiles}
             >
               <Trans>Choose files…</Trans>

@@ -80,7 +80,7 @@ export function ContinueImportDialog({
   // A new selection is checked as soon as it has been read.
   useEffect(() => {
     if (reader.state.status !== "ready") {
-      if (reader.state.status === "reading") setStep({ kind: "choose" });
+      setStep({ kind: "choose" });
       return;
     }
     const selection = reader.state.selection;
