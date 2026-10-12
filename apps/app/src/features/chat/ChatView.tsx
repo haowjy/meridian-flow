@@ -35,8 +35,11 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { useChatNavigation } from "@/features/project/routing/chat-navigation";
-import { displayThreadTitle } from "@/lib/thread-title";
+import {
+  displayedChatThreadId,
+  useChatNavigation,
+} from "@/features/project/routing/chat-navigation";
+import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
@@ -320,6 +323,19 @@ export function ChatView({
       navigation.forgetChat(threadId);
       void navigation.openNewChat(undefined, { replace: true });
     },
+    {
+      visible: active,
+      title:
+        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
+          ? null
+          : activeThread.title,
+      leave: (moved) => {
+        navigation.forgetChat(threadId);
+        if (moved) void navigation.openNewChat(undefined, { replace: true });
+        else if (displayedChatThreadId(navigation.display) === threadId)
+          void navigation.openNewChat(undefined, { replace: true });
+      },
+    },
   );
   useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
@@ -364,18 +380,6 @@ export function ChatView({
           surfaceRef={chatSurfaceRef}
           footer={
             <div data-debug-composer={threadId}>
-              {composerStrip ? (
-                // The composer's own border and radius, open at the bottom: the
-                // composer's top border is the strip's lower edge, so the two
-                // read as one unit. Inset like the draft dock below it.
-                <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                  {composerStrip}
-                </div>
-              ) : null}
-              {/* The dock strip sits BEHIND (below) the composer — narrower via
-              mx-2, top corners rounded, jade-tinted background. The composer
-              always keeps its own border and overlaps the strip's edge. */}
-              <DraftDock dock={dock} />
               <Composer
                 key={draft.key}
                 initialDraft={draft.initialDraft}
@@ -388,6 +392,22 @@ export function ChatView({
                 }}
                 ref={composerRef}
                 variant="pinned"
+                attached={
+                  <>
+                    {composerStrip ? (
+                      // The composer's own border and radius, open at the bottom: the
+                      // composer's top border is the strip's lower edge, so the two
+                      // read as one unit. Inset like the draft dock below it.
+                      <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                        {composerStrip}
+                      </div>
+                    ) : null}
+                    {/* The dock strip sits BEHIND (below) the composer — narrower via
+                        mx-2, top corners rounded, jade-tinted background. The composer
+                        always keeps its own border and overlaps the strip's edge. */}
+                    <DraftDock dock={dock} />
+                  </>
+                }
                 running={run !== null}
                 referenceCatalog={referenceCatalog}
                 availableSkills={availableSkills.skills}

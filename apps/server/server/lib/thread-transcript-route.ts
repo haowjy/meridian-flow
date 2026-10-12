@@ -3,7 +3,6 @@
 import type { TranscriptPageResponse } from "@meridian/contracts/protocol";
 import type { UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import type { ProjectRepository } from "../domains/projects/index.js";
 import {
   InvalidTranscriptCursorError,
   readTranscriptPage,
@@ -16,8 +15,7 @@ import { toClientSafeBlock } from "../domains/threads/thread-snapshot.js";
 
 export interface ThreadTranscriptRouteDeps {
   repos: Pick<ThreadRepositories, "readSnapshot" | "threads" | "turns" | "blocks">;
-  threads: Pick<ThreadRepository, "findById">;
-  projects: Pick<ProjectRepository, "findById">;
+  threads: Pick<ThreadRepository, "findByIdIncludingDeleted">;
 }
 
 function singleString(query: Record<string, unknown>, key: string): string | undefined {
@@ -59,11 +57,7 @@ export async function handleReadThreadTranscript(
   input: { threadId: string; userId: UserId; query: Record<string, unknown> },
 ): Promise<TranscriptPageResponse> {
   const pageInput = parseTranscriptPageQuery(input.query);
-  const thread = await requireThreadOwner(
-    { threads: deps.threads, projects: deps.projects },
-    input.threadId,
-    input.userId,
-  );
+  const thread = await requireThreadOwner({ threads: deps.threads }, input.threadId, input.userId);
   try {
     const page = await readTranscriptPage(deps.repos, thread, pageInput);
     return {

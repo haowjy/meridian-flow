@@ -20,6 +20,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   executableSql,
@@ -180,14 +181,22 @@ const RULES: Rule[] = [
     message: "A CONCURRENTLY statement must be alone in its --> statement-breakpoint chunk.",
   },
 ];
-interface Finding {
+export interface Finding {
   ruleId: string;
   severity: "error" | "warning";
   message: string;
   file: string;
   line: number;
 }
-function lintFile(filePath: string): Finding[] {
+
+/** Exit status the CLI uses: errors always fail, warnings fail only under --strict. */
+export function migrationLintStatus(findings: readonly Finding[], strict: boolean): 0 | 1 {
+  if (findings.some((finding) => finding.severity === "error")) return 1;
+  if (strict && findings.some((finding) => finding.severity === "warning")) return 1;
+  return 0;
+}
+
+export function lintMigrationFile(filePath: string): Finding[] {
   if (!existsSync(filePath) || path.basename(filePath).startsWith("0000_")) return [];
   const content = normalizeMigrationSql(readFileSync(filePath, "utf8"));
   const lines = content.split("\n");
@@ -293,6 +302,7 @@ function report(findings: Finding[], strict = false): void {
 
   const errorCount = findings.filter((finding) => finding.severity === "error").length;
   const warningCount = findings.filter((finding) => finding.severity === "warning").length;
+  if (migrationLintStatus(findings, strict) === 0) return;
 
   if (errorCount > 0) {
     console.log(
@@ -334,7 +344,7 @@ function main(): void {
       return;
     }
 
-    report(changed.flatMap(lintFile), strict);
+    report(changed.flatMap(lintMigrationFile), strict);
     return;
   }
 
@@ -343,10 +353,10 @@ function main(): void {
       execSync("git ls-tree -r --name-only origin/main", { encoding: "utf8" }).trim().split("\n"),
     );
     const files = MIGRATION_DIRS.flatMap(migrationFilesIn);
-    const historical = files.filter((file) => frozen.has(file)).flatMap(lintFile);
+    const historical = files.filter((file) => frozen.has(file)).flatMap(lintMigrationFile);
     if (historical.length)
       console.log(`Frozen migration findings (non-blocking):${formatFindings(historical)}`);
-    report(files.filter((file) => !frozen.has(file)).flatMap(lintFile), strict);
+    report(files.filter((file) => !frozen.has(file)).flatMap(lintMigrationFile), strict);
     return;
   }
 
@@ -361,7 +371,7 @@ function main(): void {
       return;
     }
 
-    report(staged.flatMap(lintFile), strict);
+    report(staged.flatMap(lintMigrationFile), strict);
     return;
   }
 
@@ -374,7 +384,7 @@ function main(): void {
     process.exit(1);
   }
 
-  report(files.flatMap(lintFile), strict);
+  report(files.flatMap(lintMigrationFile), strict);
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

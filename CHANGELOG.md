@@ -155,7 +155,14 @@
 - Undo and Redo in draft review keep the original author of the text they restore, including after reload and when the draft is applied. Retyping the same words by hand stays yours.
 - Independent AI replacements stay separate changes: each AI write records only its own edits, including when a chat's edit is published into the Work's draft. Discarding a draft's last change keeps it discarded when the same chat writes again.
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
+### Changed
+
+- Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
+- A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
+
 ### Fixed
+
+- Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
 

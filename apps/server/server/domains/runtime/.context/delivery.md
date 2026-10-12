@@ -124,6 +124,17 @@ Edit-intent notices, Work refreshes, and every other durable notice source
 (`NoticePort`, non-message inbox entries) split the same way at the adoption
 point. No notice source skips this split.
 
+### Empty and canceled notice batches
+
+Notice selection and acknowledgement do not imply a history turn. The shared
+inbox planner formats the batch first and appends a notices turn only for
+non-whitespace content; canceled or empty notices are still consumed in the
+adoption transaction and do not themselves split a running reply. Writer
+reversal notices must retain redo records: an undo/redo pair before delivery
+cancels for that document URI and write handle. An undo alone reports unwanted
+edits; a redo arriving after an earlier batch reports restored edits. Other
+notice sections survive reversal cancellation.
+
 ### Work context
 
 Renders only the bound Work: name, archive state, free-text status, and a goal

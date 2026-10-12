@@ -254,12 +254,30 @@ export function useRequestedReview(host: {
   const { controller } = useDraftReview();
   const intent = useContext(EditorReviewIntentContext)?.intent;
   const presented = usePresentedDocument();
+  return requestedReviewDraftId(host, { inlineReview: controller.inlineReview, intent, presented });
+}
+
+/** Pending intent hides warm live paint; an admitted review survives route failure. */
+export function requestedReviewDraftId(
+  host: {
+    container: PresentedDocument["container"];
+    editorWorkId: string | null;
+    activeScheme: string | null;
+    documentId: string | null;
+  },
+  state: {
+    inlineReview: { documentId: string; draftId: string } | null;
+    intent: EditorReviewIntent | null | undefined;
+    presented: PresentedDocument | null;
+  },
+): string | null {
+  const { inlineReview, intent, presented } = state;
   const presenting =
     presented?.container === host.container &&
     (presented.documentId === host.documentId ||
       (!presented.documentId && host.container === "editor"));
-  return presenting && controller.inlineReview?.documentId === host.documentId
-    ? controller.inlineReview.draftId
+  return presenting && inlineReview?.documentId === host.documentId
+    ? inlineReview.draftId
     : host.container === "editor" && intent && admissible(intent, host)
       ? intent.draftId
       : presenting && presented?.documentId === host.documentId

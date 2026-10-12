@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = (getRouterParam(event, "threadId") ?? "") as ThreadId;
   const thread = await requireThreadOwner(
-    { threads: app.threadRepos.threads, projects: app.projectRepo },
+    { threads: app.threadRepos.threads },
     threadId,
     user.userId,
   );
