@@ -5,7 +5,11 @@ The server collab domain supplies concrete Postgres/Hocuspocus adapters around
 and WebSocket callers.
 
 Model reads and writes go through `agentEdit()`, the thread-peer core pool,
-with a destination per document (below). A `live` destination selects the
+with a destination per document (below). Open response records own their pinned
+core participants independently of the resident-core cache. Invalidation visits
+the deduplicated resident and response-pinned owners; residency eviction never
+forgets an open reply. Idle-core protection derives from those response records,
+not a second active-response index. A `live` destination selects the
 live core and creates no Work draft or thread-peer branch: Auto-apply,
 Auto-apply on No Work, and `scratch://` and `uploads://` in every mode. A
 `draft` destination selects the thread-peer core; Draft on No Work owns a Work

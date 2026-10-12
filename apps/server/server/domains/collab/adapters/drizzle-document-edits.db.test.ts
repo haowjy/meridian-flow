@@ -79,7 +79,7 @@ async function stageDraft(
 
 // Whole Discard revokes Alpha's held commands/read even while Beta keeps the reply open.
 async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDatabase>) {
-  for (const pause of ["before", "after", "read"] as const) {
+  for (const pause of ["before", "after", "read", "repeat", "recreate"] as const) {
     await resetDatabase(db);
     const harness = createHarness(db);
     try {
@@ -153,11 +153,12 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
       fixture.branchCoordinator.readBranch = async (branch, fn) => {
         const targeted =
           pause !== "read" &&
+          pause !== "repeat" &&
           once &&
           branch === branchId &&
           String(fn).includes("listConcurrentJournalRows");
         if (targeted) once = false;
-        if (targeted && pause === "before") {
+        if (targeted && pause !== "after") {
           entered();
           await gate;
         }
@@ -177,25 +178,27 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
         return originalReplay(...args);
       };
       const pending =
-        pause === "read"
-          ? core.prepare(responseId, ALPHA_ID)
-          : core.write(
-              {
-                command: "replace",
-                file: "alpha.md",
-                documentId: ALPHA_ID,
-                find: "azure",
-                content: "cobalt",
-                tool_use_id: "held-alpha",
-              },
-              context,
-            );
+        pause === "repeat"
+          ? Promise.resolve(null)
+          : pause === "read"
+            ? core.prepare(responseId, ALPHA_ID)
+            : core.write(
+                {
+                  command: "replace",
+                  file: "alpha.md",
+                  documentId: ALPHA_ID,
+                  find: "azure",
+                  content: "cobalt",
+                  tool_use_id: "held-alpha",
+                },
+                context,
+              );
       // Observe rejection immediately, before releasing an orphaned read.
       const settled = pending.then(
         (value) => ({ value }),
         (error: unknown) => ({ error }),
       );
-      await waiting;
+      if (pause !== "repeat") await waiting;
       try {
         expect(
           await fixture.collab.draftReview.discardWorkDraft({
@@ -206,6 +209,30 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
             userId: USER_ID as never,
           }),
         ).toMatchObject({ status: "discarded" });
+        if (pause === "repeat" || pause === "recreate") {
+          expect(
+            await core.write(
+              {
+                command: "replace",
+                file: "alpha.md",
+                documentId: ALPHA_ID,
+                find: "green",
+                content: "olive",
+                tool_use_id: "recreated-alpha",
+              },
+              context,
+            ),
+          ).toMatchObject({ status: "success", phase: "staged" });
+          expect(
+            await fixture.collab.draftReview.discardWorkDraft({
+              projectId: PROJECT_ID as never,
+              workId: WORK_ID,
+              documentId: ALPHA_ID,
+              draftId: branchId,
+              userId: USER_ID as never,
+            }),
+          ).toMatchObject({ status: "discarded" });
+        }
       } finally {
         release();
       }
@@ -216,7 +243,7 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
         if ("value" in outcome && outcome.value && "dispose" in outcome.value)
           outcome.value.dispose();
         expect(outcome).toHaveProperty("error");
-      } else {
+      } else if (pause !== "repeat") {
         expect(outcome).toMatchObject({
           value: {
             status: "invalid_write",
@@ -228,6 +255,20 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
         });
       }
       expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+      if (pause === "repeat") {
+        const read = await core.read({ file: "alpha.md", documentId: ALPHA_ID }, context);
+        expect(read.status).toBe("success");
+        expect(
+          read.result.blocks?.flatMap((group) => group.items.map((item) => item.body)),
+        ).toEqual(["red", "blue", "green"]);
+        const saved = await harness.commit(responseId);
+        expect(saved).toMatchObject({ status: "committed" });
+        expect(saved.documents.filter((doc) => doc.updateCount > 0)).toEqual([
+          expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
+        ]);
+        expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
+        continue;
+      }
       // A new command has the new epoch; the revoked command cannot recreate its old base.
       expect(
         await core.write(
@@ -236,7 +277,7 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
             file: "alpha.md",
             documentId: ALPHA_ID,
             find: "green",
-            content: "olive",
+            content: pause === "recreate" ? "emerald" : "olive",
             tool_use_id: "fresh-alpha",
           },
           context,
@@ -249,7 +290,9 @@ async function wholeDiscardLeaseSchedules(db: ReturnType<typeof createTestDataba
           expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
         ]),
       });
-      expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
+      expect(await fixture.draftMarkdown(branchId)).toBe(
+        pause === "recreate" ? "red\n\nblue\n\nemerald\n" : "red\n\nblue\n\nolive\n",
+      );
       const beta = await fixture.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
       try {
         expect(await fixture.draftMarkdown(beta.branchId)).toBe("Beta staged.\n");
