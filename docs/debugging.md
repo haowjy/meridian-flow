@@ -10,7 +10,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | --- | --- | --- |
 | Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
 | `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
-| `./mf` | An agent needs to drive or inspect a thread, seed data, or script the mock model without a browser | [Drive the App from the CLI](#drive-the-app-from-the-cli) |
+| `./mf` | An agent needs setup, durable reads, or mock-model scripts; verify send/tail outcomes with the transcript or browser | [Drive the App from the CLI](#drive-the-app-from-the-cli) |
 | `./mf log` | An agent needs bounded JSON for one known event/trace/domain id | [Consume Server Events](#consume-server-events) |
 | `./mf thread context` | An agent needs the model's canonical request, digest, or tool-loop prefix | [Inspect Model Context](#inspect-model-context) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
@@ -35,7 +35,9 @@ Start from your symptom in [Strategies](#strategies), or scan the
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
 - **An LLM is debugging.** Reproduce with `./mf thread send` (pair
   `MODEL_PROVIDER=mock` with `--mock` for deterministic tool paths), read the
-  result with `./mf thread view`, then `./mf log --thread <id>` or
+  durable transcript with `./mf thread view` to check which reply answered
+  your message (send/tail outcomes are not proof until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands),
+  then `./mf log --thread <id>` or
   `./mf log --trace <id>`. Add `--full` only when compact metadata is
   insufficient. Use `./mf thread context` when the question is what the model
   received rather than what the runtime did.
@@ -52,7 +54,8 @@ Repeatable verification recipes live in the [runtime probe catalog](qa/README.md
 maps to an existing HTTP route or thread-socket message, authenticated exactly
 like the browser through dev login. Run `./mf` for the command tree with the
 route each command wraps, and `./mf <noun> <verb> --help` for flags and examples.
-Use it instead of the browser for anything that is not visual.
+Use it for setup and durable reads; check send/tail outcomes against the durable
+transcript or in the browser.
 
 ```bash
 ./mf seed tools/dev/cli/fixtures/basic.json        # docs + thread + an opening message
@@ -68,19 +71,26 @@ Use it instead of the browser for anything that is not visual.
 
 Contract:
 
+Until [#768](https://github.com/haowjy/meridian-flow/issues/768) lands,
+`./mf thread send` and `thread tail --until-idle` can report another message's
+reply or stop before the reply that answers yours. Check run outcomes against
+`./mf thread view` (the durable transcript) or in the browser; exit 0 does not
+prove your message was answered or the thread is idle.
+
 - Compact text by default; `--json` prints exactly one object, or NDJSON for
   streams (`send`, `tail`, `events`, `log --follow`) whose last `send` line is
   the terminal `{type: "result" | "error", status, finalText, ...}` envelope.
   `--fields a,b` trims JSON (each stream line keeps `type` plus the requested
   keys it has). Errors go to stderr (`{error, code, hint}` under
   `--json`).
-- `send` waits by default and its exit code is the outcome: 0 complete,
+- `send` waits by default and its exit code reports the observed outcome,
+  not necessarily the reply answering your message: 0 complete,
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
   `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
   not running or dev login failed. Every wait is bounded by `--timeout`.
   When a run splits across a compaction (for example overflow recovery), the
   result can name the run's first turn with a null `finalText` instead of the
-  reply that answered: read the answer with `./mf thread view`
+  reply that answered: inspect the durable transcript with `./mf thread view`
   ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
@@ -100,7 +110,8 @@ debug gate open, the in-process mock model accepts queued replies through the
 (`[{name, args}]`), or an `error` (`{status, message}`), plus optional
 `delayMs` and `times` (how many model calls it answers, default 1). An `error`
 step without `times` is sticky: it answers every matching call, so gateway
-retries cannot slip past it and the run fails (`send` exits 1). Use
+retries cannot slip past it and the matching run fails (verify with
+`./mf thread view`, not just a `send` exit code). Use
 `"times": 1` to test the gateway recovering on retry. `send --mock` scopes the
 script to that message, so concurrent threads cannot consume it, and removes
 it once the run settles; `./mf mock script|list|clear [--id]` manage the queue
@@ -111,7 +122,7 @@ Capture a run for later inspection. `--json` output is never truncated (only
 text mode shortens tool payloads), so redirect it and query with `jq`:
 
 ```bash
-./mf thread send <id> "…" --json > run.ndjson                     # every event, result last; exit code = outcome
+./mf thread send <id> "…" --json > run.ndjson                     # stream and reported result; verify with thread view
 ./mf thread tail <id> --json > live.ndjson &                       # record a run started in the browser
 ./mf thread context <id> --all --view raw --json > context.json   # what the model received: system, tools, messages, params
 ./mf thread view <id> --json > snapshot.json                      # persisted transcript

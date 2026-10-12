@@ -109,7 +109,11 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
 Driving or inspecting the running app (threads, docs, mock model, logs): use
-`./mf`, not the browser, unless it is visual. See
+`./mf` for setup and durable reads (`thread view`, `thread events`, `thread context`,
+`log`, `doc read`). Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
+lands, `./mf thread send` and `thread tail --until-idle` can report another message's
+reply or stop before the reply that answers yours: check run outcomes against
+`./mf thread view` (the durable transcript) or in the browser. See
 [docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
 
 ## Build and test
