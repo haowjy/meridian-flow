@@ -1,11 +1,15 @@
-/** Stored properties accept exactly the public YAML envelope, not arbitrary metadata. */
+/** Stored properties accept exactly the shared YAML envelope, not arbitrary metadata. */
 import { expect, it } from "vitest";
 import { readStoredDocumentProperties } from "./document-properties.js";
 
-it("returns the exact valid stored envelope", () => {
-  const properties = { format: "yaml", text: "aliases: [Gate]\n" };
+it.each([
+  { format: "yaml" as const, text: "aliases: [Gate]\n" },
+  { format: "yaml" as const, text: "# formatting\naliases: [Gate]\n" },
+  { format: "yaml" as const, text: "" },
+])("returns the exact valid stored envelope unchanged %#", (properties) => {
   expect(readStoredDocumentProperties({ properties })).toBe(properties);
 });
+
 it.each([
   null,
   undefined,

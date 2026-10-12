@@ -5,6 +5,7 @@ import type {
   ImportManifest,
   ImportState,
 } from "@meridian/contracts";
+import type { ImportArea } from "../domain/export-marker.js";
 import type { ImportLinkCandidate } from "../domain/link-index.js";
 import type { PlannedNode } from "../domain/plan.js";
 export interface ImportRecord {
@@ -24,6 +25,8 @@ export interface ImportEntry extends Omit<PlannedNode, "state"> {
   created: boolean;
   prepared: boolean;
   prependOnRetry: boolean;
+  /** Last observed presence of the created document or folder at `uri`. */
+  exists: boolean;
   pendingRefs: { holderId: string; ref: string }[];
   order: number;
   version: string;
@@ -31,6 +34,7 @@ export interface ImportEntry extends Omit<PlannedNode, "state"> {
   leaseUntil: Date | null;
   storageUrl: string | null;
   uri: string | null;
+  objectSweptAt: Date | null;
 }
 export interface ImportRepository {
   transaction<T>(run: () => Promise<T>): Promise<T>;
@@ -58,10 +62,27 @@ export interface ImportRepository {
   dismiss(id: string): Promise<void>;
   fileEntry(importId: string, entryId: number): Promise<ImportEntry | null>;
   hasUnfinished(importId: string): Promise<boolean>;
+  /** Whether any planned entry still awaits its planning chunk. */
+  hasUnprepared(importId: string): Promise<boolean>;
   lockEntry(id: string): Promise<ImportEntry>;
+  /** Row locks in ordinal order; skipLocked leaves rows another commit is publishing. */
+  lockEntries(ids: readonly string[], options?: { skipLocked?: boolean }): Promise<ImportEntry[]>;
+  /** The first unprepared parent's planned, uncreated entries: still pending, and reserved names. */
+  nextPlanningGroup(importId: string): Promise<{
+    parentId: string | null;
+    /** Set for an export's area-root group, whose null parent means that area's root. */
+    area?: ImportArea;
+    pending: ImportEntry[];
+    reserved: ImportEntry[];
+  } | null>;
+  /** Patch rows the caller already holds locked (or fences out by Finish's exclusive lock). */
   updateEntry(id: string, patch: Partial<ImportEntry>): Promise<void>;
+  updateEntries(patches: readonly { id: string; patch: Partial<ImportEntry> }[]): Promise<void>;
   setState(id: string, state: ImportState): Promise<void>;
+  /** Terminal claimed binaries whose object may still exist, oldest lease first. */
   sweepCandidates(
     now: Date,
-  ): Promise<{ id: string; importId: string; storageUrl: string | null; entryId: number | null }[]>;
+    scope: { importId?: string; limit: number; graceMs: number },
+  ): Promise<{ id: string; importId: string; entryId: number }[]>;
+  markSwept(ids: readonly string[], at: Date | null): Promise<void>;
 }

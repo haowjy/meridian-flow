@@ -17,7 +17,6 @@ export interface ImportTreeWriter {
     properties: StoredDocumentProperties | null,
     aliases: string[],
   ): Promise<void>;
-  preview(uri: string): Promise<ImportParent["children"]>;
   destination(uri: string): Promise<{ sourceId: string; folderId: string | null }>;
   /** Resolve, lock the current source, reread. Throw ParentMovedError to retry a fresh transaction. */
   parent(record: ImportRecord, folderId: string | null): Promise<ImportParent | null>;
@@ -48,4 +47,9 @@ export interface ImportTreeWriter {
   ): Promise<void>;
   clearPending(ids: readonly string[]): Promise<void>;
   currentUri(id: string, kind: "folder" | "file"): Promise<string | null>;
+  /** Batched current addresses; ids without a live address are absent. */
+  currentUris(ids: {
+    files: readonly string[];
+    folders: readonly string[];
+  }): Promise<Map<string, string>>;
 }

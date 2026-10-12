@@ -842,10 +842,15 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       return runInDrizzleTransaction(db as Database, async () => {
         const tx = await enterJournalSeam(db, [docId], []);
         const [head] = await tx
-          .select({ next: documentYjsHeads.nextAdmissionSequence })
+          .select({
+            next: documentYjsHeads.nextAdmissionSequence,
+            generation: documentYjsHeads.authorityGeneration,
+          })
           .from(documentYjsHeads)
           .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
-        if (onlySeed && head && head.next !== 1n) return null;
+        // Admission sequences restart on restore. A replaced authority can never
+        // prove pristine-since-initial-seed, even when its restored text is empty.
+        if (onlySeed && head && (head.next !== 1n || head.generation !== 1n)) return null;
         const prepared = await prepare(await journal.read(docId));
         const { seq } = await appendUpdate(tx, docId, prepared.update, prepared.meta);
         return { seq, update: prepared.update, meta: { ...prepared.meta, seq } };

@@ -17,6 +17,7 @@ import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } fro
 import { sweepImportObjects } from "./object-sweep.js";
 import { allocateName, planSelection } from "./plan.js";
 import { prepareImportedNote } from "./prepare-note.js";
+import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
 export function createImportService(deps: {
   repository: ImportRepository;
@@ -24,6 +25,7 @@ export function createImportService(deps: {
   converter: DocumentConverterPort;
   objects: ObjectStorePort;
   diagnostics: ImportDiagnostics;
+  admission: ImportAdmission;
   now?: () => Date;
 }) {
   const { repository: repo, tree } = deps;
@@ -78,6 +80,44 @@ export function createImportService(deps: {
       dismissedAt: record.dismissedAt?.toISOString() ?? null,
     };
   }
+  /**
+   * Publish created entries' live identity into the import's versioned cut. A move or
+   * delete becomes an ordinary entry change, so `since` cuts cannot miss it. Rows a
+   * landing commit holds are skipped: that commit publishes them, and the next
+   * observation compares again.
+   */
+  async function observe(id: string, projectId: string, entries: readonly ImportEntry[]) {
+    const observed = entries.filter(
+      (entry) => entry.created && (entry.entryId !== null || entry.path === ""),
+    );
+    if (!observed.length) return;
+    const live = await tree.currentUris({
+      files: observed.filter((entry) => entry.kind !== "folder").map((entry) => entry.id),
+      folders: observed.filter((entry) => entry.kind === "folder").map((entry) => entry.id),
+    });
+    const drifted = (entry: ImportEntry) => {
+      const uri = live.get(entry.id);
+      return uri === undefined ? entry.exists : !entry.exists || uri !== entry.uri;
+    };
+    const candidates = observed.filter(drifted);
+    if (!candidates.length) return;
+    await repo.transaction(async () => {
+      if (!(await repo.fence(id, projectId))) return;
+      const locked = await repo.lockEntries(
+        candidates.map((entry) => entry.id),
+        { skipLocked: true },
+      );
+      await repo.updateEntries(
+        locked.filter(drifted).map((entry) => {
+          const uri = live.get(entry.id);
+          return {
+            id: entry.id,
+            patch: uri === undefined ? { exists: false } : { exists: true, uri },
+          };
+        }),
+      );
+    });
+  }
   async function report(id: string, projectId: string): Promise<ImportReport>;
   async function report(id: string, projectId: string, since: string): Promise<ImportReportChanges>;
   async function report(
@@ -85,42 +125,38 @@ export function createImportService(deps: {
     projectId: string,
     since?: string,
   ): Promise<ImportReport | ImportReportChanges> {
+    await observe(id, projectId, await repo.entries(id));
     const cut = await repo.snapshot(id, projectId, since);
     if (!cut) throw new ImportError(404, "import_not_found");
     const { record, entries } = cut;
-    const reportedEntries = await Promise.all(
-      entries.filter((entry) => entry.entryId !== null).map((entry) => entryReport(entry)),
-    );
+    const reportedEntries = entries
+      .filter((entry) => entry.entryId !== null)
+      .map((entry) => entryReport(entry));
     if (since !== undefined) return { ...summary(cut), entries: reportedEntries };
     return {
       ...summary(cut),
-      roots: await Promise.all(
-        record.manifest.roots.map(async (root) => {
-          const node = entries.find(
-            (entry) =>
-              entry.rootId === root.rootId &&
-              (root.kind === "folder"
-                ? entry.kind === "folder" && entry.path === ""
-                : entry.entryId !== null),
-          );
-          return {
-            rootId: root.rootId,
-            kind: root.kind,
-            name: root.name,
-            id: node?.id ?? null,
-            uri: node
-              ? ((await tree.currentUri(node.id, root.kind === "folder" ? "folder" : "file")) ??
-                node.uri)
-              : null,
-          };
-        }),
-      ),
+      roots: record.manifest.roots.map((root) => {
+        const node = entries.find(
+          (entry) =>
+            entry.rootId === root.rootId &&
+            (root.kind === "folder"
+              ? entry.kind === "folder" && entry.path === ""
+              : entry.entryId !== null),
+        );
+        return {
+          rootId: root.rootId,
+          kind: root.kind,
+          name: root.name,
+          id: node?.id ?? null,
+          uri: node?.uri ?? null,
+        };
+      }),
       entries: reportedEntries,
     };
   }
-  async function entryReport(entry: ImportEntry) {
-    const actual = entry.created ? await tree.currentUri(entry.id, "file") : null;
-    const liveName = actual ? parseDocumentFilename(actual.split("/").at(-1) ?? "") : null;
+  function entryReport(entry: ImportEntry) {
+    const exists = entry.created && entry.exists;
+    const liveName = exists ? parseDocumentFilename(entry.uri?.split("/").at(-1) ?? "") : null;
     return {
       entryId: entry.entryId as number,
       rootId: entry.rootId,
@@ -131,92 +167,93 @@ export function createImportService(deps: {
       documentId: entry.id,
       kind: entry.kind as "note" | "docx" | "code" | "binary",
       state: entry.state,
-      uri: actual ?? entry.uri,
+      uri: entry.uri,
       name: liveName?.ok ? liveName.value.name : entry.name,
-      exists: actual !== null,
+      exists,
       reason: entry.reason,
       ...(entry.reasonParams ? { reasonParams: entry.reasonParams } : {}),
       findings: entry.findings,
     };
   }
-  async function entryOutcome(id: string, entryId: number) {
+  async function entryOutcome(id: string, projectId: string, entryId: number) {
     const entry = await repo.fileEntry(id, entryId);
     if (!entry) throw new ImportError(404, "entry_not_found");
-    return entryReport(entry);
+    await observe(id, projectId, [entry]);
+    return entryReport((await repo.fileEntry(id, entryId)) ?? entry);
+  }
+  /** Ready admission is its own exclusive transition: a shared fence never upgrades. */
+  async function admitReady(record: ImportRecord) {
+    return repo.transaction(async () => {
+      const locked = await repo.fence(record.id, record.projectId, true);
+      if (locked?.state !== "planning") return true;
+      if (await repo.hasUnprepared(record.id)) return false;
+      await repo.setState(record.id, "ready");
+      return true;
+    });
   }
   async function resume(record: ImportRecord) {
     while (true) {
       const changed = await retryMoved(async () => {
         const locked = await repo.fence(record.id, record.projectId);
-        if (locked?.state !== "planning") return false;
-        const entries = await repo.entries(record.id);
-        const pending = entries.filter((entry) => !entry.prepared && entry.state === "planned");
-        const first = pending[0];
-        if (!first) {
-          await repo.setState(record.id, "ready");
-          return false;
-        }
+        if (locked?.state !== "planning") return "done";
+        const group = await repo.nextPlanningGroup(record.id);
+        if (!group) return "admit";
         const parent = await tree.parent(
-          first.area && !first.parentId
-            ? { ...locked, ...(await tree.destination(`${first.area}://`)) }
+          group.area && !group.parentId
+            ? { ...locked, ...(await tree.destination(`${group.area}://`)) }
             : locked,
-          first.parentId,
+          group.parentId,
         );
         // One parent per chunk makes lock ordering stable even after cross-area moves.
-        const chunk = pending
-          .filter((entry) => entry.parentId === first.parentId && entry.area === first.area)
-          .slice(0, IMPORT_LIMITS.chunkSize);
-        if (parent)
-          parent.children.push(
-            ...entries
-              .filter(
-                (entry) =>
-                  entry.prepared &&
-                  !entry.created &&
-                  entry.parentId === first.parentId &&
-                  entry.area === first.area &&
-                  entry.state === "planned",
-              )
-              .map((entry) => ({
-                kind: "file" as const,
-                name: entry.name,
-                extension: entry.extension,
-              })),
+        const chunk = await repo.lockEntries(
+          group.pending.slice(0, IMPORT_LIMITS.chunkSize).map((entry) => entry.id),
+        );
+        const candidates = chunk.filter((entry) => !entry.prepared && entry.state === "planned");
+        if (!parent) {
+          await repo.updateEntries(
+            candidates.map((entry) => ({
+              id: entry.id,
+              patch: { state: "deleted", reason: "folder_deleted" },
+            })),
           );
-        const allocated: ImportEntry[] = [];
-        for (const candidate of chunk) {
-          const entry = await repo.lockEntry(candidate.id);
-          if (entry.prepared || entry.state !== "planned") continue;
-          if (!parent) {
-            await repo.updateEntry(entry.id, {
-              state: "deleted",
-              reason: "folder_deleted",
-            });
-            continue;
-          }
+          return "chunk";
+        }
+        parent.children.push(
+          ...group.reserved.map((entry) => ({
+            kind: "file" as const,
+            name: entry.name,
+            extension: entry.extension,
+          })),
+        );
+        const allocated = candidates.map((entry) => {
           const node = allocate(entry, parent);
           parent.children.push({
             kind: node.kind === "folder" ? "folder" : "file",
             name: node.name,
             extension: node.extension,
           });
-          allocated.push(node);
-        }
-        if (parent && allocated.length) {
-          await tree.create(
-            parent,
-            allocated.filter((entry) => ["folder", "note", "docx"].includes(entry.kind)),
+          return node;
+        });
+        const creates = (entry: ImportEntry) => ["folder", "note", "docx"].includes(entry.kind);
+        if (allocated.length) {
+          await tree.create(parent, allocated.filter(creates));
+          await repo.updateEntries(
+            allocated.map((entry) => ({
+              id: entry.id,
+              patch: {
+                name: entry.name,
+                findings: entry.findings,
+                uri: entry.uri,
+                prepared: true,
+                created: creates(entry),
+                exists: creates(entry),
+              },
+            })),
           );
-          for (const entry of allocated)
-            await repo.updateEntry(entry.id, {
-              ...entry,
-              prepared: true,
-              created: ["folder", "note", "docx"].includes(entry.kind),
-            });
         }
-        return true;
+        return "chunk";
       });
-      if (!changed) return;
+      if (changed === "done" || (changed === "admit" && (await admitReady(record)))) return;
     }
   }
   async function finish(id: string, projectId: string, automatic = false) {
@@ -243,13 +280,24 @@ export function createImportService(deps: {
           .filter((entry) => entry.created && entry.kind !== "folder")
           .map((entry) => entry.id),
       );
-      for (const entry of unfinished) await repo.updateEntry(entry.id, { state: "not_imported" });
+      await repo.updateEntries(
+        unfinished.map((entry) => ({ id: entry.id, patch: { state: "not_imported" } })),
+      );
       await repo.setState(id, "finished");
     });
-    await sweep();
+    await sweepFinished(id);
     return automatic ? undefined : report(id, projectId);
   }
-  const sweep = () => sweepImportObjects(repo, deps.objects, now());
+  /** Finish is already durable: its own cleanup can only be retried later, never fail it. */
+  async function sweepFinished(id: string) {
+    try {
+      const result = await sweepImportObjects(repo, deps.objects, { now: now(), importId: id });
+      for (const failure of result.failed) deps.diagnostics.sweepFailed(failure);
+    } catch (cause) {
+      deps.diagnostics.sweepFailed({ importId: id, entryId: -1, cause });
+    }
+  }
+  const sweep = () => sweepImportObjects(repo, deps.objects, { now: now() });
 
   function heartbeat(id: string, entryId: number, pulse: () => Promise<unknown>) {
     let renewal = Promise.resolve();
@@ -297,16 +345,53 @@ export function createImportService(deps: {
       return true;
     });
   }
-  return {
+  function checkParts(parts: readonly { entryId: number; bytes: Uint8Array }[]) {
+    if (!parts.length) throw new ImportError(400, "invalid_import_file_parts");
+    if (parts.length > IMPORT_LIMITS.partsPerRequest)
+      throw new ImportError(413, "too_many_parts", { limit: IMPORT_LIMITS.partsPerRequest });
+    if (new Set(parts.map((part) => part.entryId)).size !== parts.length)
+      throw new ImportError(400, "duplicate_import_entry_id");
+    const total = parts.reduce((sum, part) => sum + part.bytes.length, 0);
+    // A file larger than a batch travels alone, up to the per-file limit.
+    const limit = parts.length > 1 ? IMPORT_LIMITS.requestBytes : IMPORT_LIMITS.fileBytes;
+    if (total > limit) throw new ImportError(413, "import_request_too_large", { limit });
+  }
+  const api = {
     report,
     renewLease,
-    async receiving<T>(id: string, projectId: string, read: () => Promise<T>) {
-      await touchUpload(id, projectId);
-      const stop = heartbeat(id, -1, () => touchUpload(id, projectId));
+    /**
+     * One multipart request: admitted per import, read under a heartbeat, validated
+     * whole before any landing, then landed with bounded concurrency.
+     */
+    async receive(
+      id: string,
+      projectId: string,
+      read: () => Promise<{ entryId: number; bytes: Uint8Array }[]>,
+    ) {
+      const leave = deps.admission.enter(id);
+      if (!leave)
+        throw new ImportError(429, "import_busy", { limit: IMPORT_LIMITS.receivesPerImport });
       try {
-        return await read();
+        await touchUpload(id, projectId);
+        const stop = heartbeat(id, -1, () => touchUpload(id, projectId));
+        let parts: { entryId: number; bytes: Uint8Array }[];
+        try {
+          parts = await read();
+        } finally {
+          await stop();
+        }
+        checkParts(parts);
+        const record = await requireImport(id, projectId);
+        const known = new Set(record.manifest.entries.map((entry) => entry.entryId));
+        if (parts.some((part) => !known.has(part.entryId)))
+          throw new ImportError(404, "entry_not_found");
+        return {
+          entries: await mapBounded(parts, IMPORT_LIMITS.landingConcurrency, (part) =>
+            api.land(projectId, id, part.entryId, part.bytes),
+          ),
+        };
       } finally {
-        await stop();
+        leave();
       }
     },
     async listOpen(projectId: string) {
@@ -330,12 +415,7 @@ export function createImportService(deps: {
       let record = await repo.read(manifest.importId, projectId);
       if (!record) {
         const destination = await tree.destination(manifest.destination.folderUri);
-        const nodes = planSelection(
-          manifest,
-          randomUUID,
-          destination.folderId,
-          await tree.preview(manifest.destination.folderUri),
-        );
+        const nodes = planSelection(manifest, randomUUID, destination.folderId);
         const existingLinks = await tree.existingLinks();
         await repo.transaction(() =>
           repo.insert(
@@ -374,7 +454,7 @@ export function createImportService(deps: {
         await repo.updateEntry(entry.id, { state: "landing", attemptId, leaseUntil });
         return { record, entry: { ...entry, attemptId, leaseUntil }, prepend };
       });
-      if (!claimed) return await entryOutcome(id, entryId);
+      if (!claimed) return await entryOutcome(id, projectId, entryId);
       const { record, entry, prepend } = claimed;
       const stopHeartbeat = heartbeat(id, entryId, () =>
         renewLease(projectId, id, entryId, entry.attemptId as string),
@@ -447,7 +527,7 @@ export function createImportService(deps: {
             await repo.fence(id, projectId);
             const current = await repo.lockEntry(entry.id);
             if (current.attemptId === entry.attemptId)
-              await repo.updateEntry(entry.id, { storageUrl });
+              await repo.updateEntry(entry.id, { storageUrl, objectSweptAt: null });
           });
         }
         await retryMoved(async () => {
@@ -516,6 +596,7 @@ export function createImportService(deps: {
               findings,
               reason: null,
               uri: await tree.currentUri(entry.id, "file"),
+              exists: true,
             });
           } else if (!parent) {
             await repo.updateEntry(entry.id, {
@@ -541,6 +622,7 @@ export function createImportService(deps: {
               ...allocated,
               state: "landed",
               created: true,
+              exists: true,
               reason: null,
             });
           }
@@ -577,9 +659,10 @@ export function createImportService(deps: {
         await stopHeartbeat();
       }
       await finish(id, projectId, true);
-      return await entryOutcome(id, entryId);
+      return await entryOutcome(id, projectId, entryId);
     },
   };
+  return api;
 }
 
 class DeletedBeforeArrivalError extends Error {

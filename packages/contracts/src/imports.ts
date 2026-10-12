@@ -129,3 +129,37 @@ export interface ImportReport extends ImportSummary {
 }
 
 export type ImportReportChanges = ImportSummary & { entries: ImportEntryReport[] };
+
+/** Stable codes for refused import requests; bounded numeric params ride beside them. */
+export type ImportRefusalCode =
+  | "import_not_found"
+  | "entry_not_found"
+  | "import_not_ready"
+  | "import_not_finished"
+  | "import_busy"
+  | "selection_mismatch"
+  | "manifest_invalid"
+  | "manifest_too_large"
+  | "too_many_files"
+  | "too_many_nodes"
+  | "path_too_long"
+  | "path_too_deep"
+  | "duplicate_root_id"
+  | "duplicate_entry_id"
+  | "duplicate_selection_path"
+  | "invalid_root_path"
+  | "invalid_file_root"
+  | "unreadable_root_has_entries"
+  | "sniff_required"
+  | "sniff_length"
+  | "import_too_large"
+  | "destination_invalid"
+  | "destination_not_found"
+  | "invalid_import_file_parts"
+  | "duplicate_import_entry_id"
+  | "too_many_parts"
+  | "import_request_too_large"
+  | "invalid_import_version"
+  | "open_filter_required"
+  | "export_marker_root"
+  | "export_marker_invalid";

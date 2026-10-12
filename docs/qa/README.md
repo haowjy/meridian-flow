@@ -61,3 +61,37 @@ Two harness races have produced false defects. Rule them out first.
 ## Device reading memory
 
 [Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
+
+## Project export
+
+1. Start an owned worktree with `pnpm dev` and discover its HTTPS routes with
+   `pnpm portless:list`. Seed links across Manuscript and Knowledge Base, a
+   binary image, case-only siblings, two Works with Scratch and Uploads, and a
+   No Work chat with Scratch. Seed `documents.metadata.properties` directly
+   as `{ "format": "yaml", "text": "..." }`.
+2. Download a chapter with
+   `./mf api GET /api/documents/<id>/download --output /tmp/chapter.md`.
+   Check raw frontmatter, relative `.md` links, unescaped `[[text]]`, and
+   escaped `[ref]` and `[^1]`. Ordinary `./mf doc read` stays escaped.
+3. Preview with `./mf api GET '/api/projects/<id>/export/preview?scratch=0&uploads=0'
+   --json`. Check outside-link and pending-draft counts. Download directly with
+   `./mf api GET '/api/projects/<id>/export.zip?scratch=0&uploads=0' --output /tmp/project.zip`.
+   Repeat with both options 1. Each GET independently reauthorizes files and
+   Works; delete a disposable document or Work after preview and confirm it is
+   absent from the download. No ticket, expiry or server affinity exists.
+   Use `unzip -l` and extract to a temporary folder. Default exports omit Works;
+   opt-in exports group by Work and No Work Scratch by lineage chat. Compare
+   image SHA-256. The marker counts actual ZIP content, not the preview.
+4. The scripted relative-link check is in
+   `apps/server/server/domains/export/domain/project-export.test.ts`. It
+   verifies default and opt-in vaults and an in-flight move. The default
+   marker counts excluded Scratch/Uploads links; opt-in links resolve to
+   actual entries. Open the exported project folder in Obsidian for visual
+   review (not part of the automated check).
+5. In the project title menu, choose Export project. Both switches begin off.
+   A quiet preview loads beneath the switches, updates after a debounce and
+   hides zero counts. Preview failures offer Retry without blocking Export.
+   Export follows the native GET with the chosen options and closes the dialog.
+   Browser owns progress and failures; the app never buffers a ZIP or claims
+   download completion. Stop only
+   this stack with `pnpm dev --stop`.

@@ -232,17 +232,25 @@ belong to the [server transport boundary](../../../lib/.context/CONTEXT.md).
 join the caller's transaction through `DocumentLandingJournal`. They prepare a
 private Y.Doc from a durable cut under the document mutation advisory lock, the
 same lock socket journal admissions take. Fill returns null after any admission
-since the seed, using the head's monotonic counter rather than retained update
-rows or the holder's address. An empty fill still consumes an admission.
+since the seed, using the initial authority generation and its admission counter
+rather than retained update rows or the holder's address. Replaced generations
+are conservatively ineligible, including an empty checkpoint restored after edits. An empty fill still consumes an admission.
 Prepend inserts before existing blocks in one Yjs transaction without replacing
 existing nodes or refs; code documents prepend text within their single block.
 Recovery/publication and the write hook run only after the ambient commit.
+The Hocuspocus coordinator enforces this for every public caller, not only
+agent writes: ambient reads acquire a private committed journal cut without
+opening or hydrating a room. A transaction-created document may expose its
+private seed. Recovery requested inside a transaction runs after commit only.
+There is no separate agent-only projection coordinator.
 
 `createImportLinkBinder` vends a separate `ImportLinkBinder` capability with
 `targets: ReadonlyMap<occurrenceIndex, DocumentId>`. The ordinary binder has no
 such input and rejects it at runtime. Import binding is always fresh and needs no
 room/coordinator dependency, so the import composition can construct it directly
 from the codec and link-scope ports. Overrides validate through the prepared
-project/viewer's identity catalog, never the written address. Invalid targets
+project/viewer's identity catalog, requiring live presence in the holder's
+project (personal-project reachability is not enough), never the written
+address. Import binding rejects non-live views. Invalid targets
 are reported and store an empty destination with no ref (no address fallback).
 `BoundWrite.aheadRefs` lists freshly minted refs by original occurrence index.

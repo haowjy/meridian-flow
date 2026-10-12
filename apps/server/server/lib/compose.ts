@@ -71,6 +71,12 @@ import {
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import { createDrizzleExportSnapshotStore } from "../domains/export/adapters/drizzle-export-snapshot.js";
+import {
+  createProjectExport,
+  type ProjectExport,
+} from "../domains/export/domain/project-export.js";
+import type { ExportSnapshotStore } from "../domains/export/ports/export-snapshot.js";
 import {
   type AgentChain,
   createAllowAllFileAccess,
@@ -255,6 +261,7 @@ import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
+  projectExport: ProjectExport;
   imports(projectId: string, userId: string): ImportService;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
@@ -368,6 +375,7 @@ export type ProductionAppPorts = {
    * through them and the resolver endpoint answers ref links from one.
    */
   linkScopes: DocumentLinkScopes;
+  exportSnapshot: ExportSnapshotStore;
   linkAheadRegistry: LinkAheadRegistry;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
@@ -703,6 +711,7 @@ export async function createProductionAppPorts(input: {
       history: createDrizzleDocumentLinkHistory(db),
       lineages: createDrizzleScratchLineages(db),
     }),
+    exportSnapshot: createDrizzleExportSnapshotStore(db),
     linkScopes: documentLinks,
     projects,
     works: workRepo,
@@ -1089,6 +1098,23 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
 
   return {
+    projectExport: createProjectExport({
+      snapshot: ports.exportSnapshot,
+      pendingDrafts: {
+        async count(projectId) {
+          const works = await ports.workRepo.listByProject(projectId, { lifecycle: "all" });
+          const noWork = await ports.workRepo.findNoWork(projectId);
+          const counts = await ports.documentSync.countPendingByWorkIds([
+            ...works.map((work) => work.id),
+            ...(noWork ? [noWork.id] : []),
+          ]);
+          return [...counts.values()].reduce((sum, count) => sum + count, 0);
+        },
+      },
+      documents: ports.documentSync,
+      files: ports.fileAccess,
+      objects: ports.objectStore,
+    }),
     gateway: ports.gateway,
     threadRepos: ports.threadRepos,
     repos: ports.threadRepos,
@@ -1444,6 +1470,25 @@ export function createInMemoryAppServices(): AppServices {
     },
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
+    projectExport: createProjectExport({
+      pendingDrafts: {
+        async count() {
+          return 0;
+        },
+      },
+      snapshot: {
+        async read() {
+          return { documents: [], sources: [], settlements: new Map() };
+        },
+      },
+      documents: documentSync,
+      files: createAllowAllFileAccess(),
+      objects: {
+        async get() {
+          throw new Error("No export objects in memory");
+        },
+      },
+    }),
     linkScopes: createStaticDocumentLinkScopes(),
     projects: {
       async ensureDefaultBootstrapReady() {

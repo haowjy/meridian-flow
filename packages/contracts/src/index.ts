@@ -13,4 +13,9 @@ export * from "./enums";
 export * from "./ids";
 export * from "./imports.js";
 export * from "./jsonb";
+export type {
+  ExportOutsideArea,
+  ProjectExportOptions,
+  ProjectExportPreview,
+} from "./project-export.js";
 export * from "./usage";

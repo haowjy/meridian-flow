@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+
+- Preview outside links and unapplied drafts before exporting, then stream Obsidian-ready ZIPs with optional Work Scratch and Uploads. Document downloads preserve frontmatter and spell relative Markdown links.
+- Save binary API downloads with `./mf api GET <path> --output <file>`.
 - Import planning, leased per-file landing, Finish, resumable reports and API probes for folders or loose files.
 - Coded findings, incremental report versions, open-import summaries, dismissal and unreadable-file reporting.
 - Obsidian notes import as Meridian documents: frontmatter stored verbatim as properties with derived aliases, wikilinks, embeds and internal Markdown links bound to selected or existing documents by id, and kept-literal syntax reported.
@@ -10,6 +13,12 @@
 
 ### Removed
 - The old corpus import service and Knowledge Base batch-import route.
+
+### Fixed
+- Concurrent import resumes no longer deadlock at the ready transition.
+- Import reports publish moves and deletes of imported documents as versioned changes, so incremental reports never miss them.
+- Import intake refuses oversized or over-deep manifests and request bodies with stable codes, and bounds concurrent file receives per import.
+- Finish cleans up only its own import's binary objects and never fails on cleanup; periodic object cleanup is batched and retires abandoned keys.
 
 
 ### Added
@@ -23,6 +32,8 @@
 
 
 ### Fixed
+
+- Project ZIP downloads reauthorize current documents and Works on each request without process-local tickets; their marker counts describe the streamed content.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
 
@@ -65,7 +76,23 @@
 
 ### Changed
 
+- Pasted wikilinks retain comment context across formatting and paragraphs. HTML prose uses editor code semantics, not Markdown indentation.
+
+- Obsidian scanning reports highlights that surround wikilinks.
+
+- Obsidian scanning preserves literal table continuations inside comments.
+
+- Obsidian comments no longer hide following prose or leak links when their contents include code fences.
+
 - Wikilink paste uses the shared Obsidian syntax scanner. The upcoming vault importer can use the same scanner and raw frontmatter splitter.
+- Import-door regression checks cover simultaneous writer edits, ahead-link arrivals and Manuscript name collisions.
+
+- Reading an import landing inside its transaction never publishes uncommitted text to open editors.
+
+- Restoring a checkpoint never makes an edited import placeholder eligible for replacement again.
+
+- Planned import links reject personal-project targets and draft-only documents; import binding requires a live view.
+
 - Server imports can create folders and pending note placeholders in atomic chunks with one catalog refresh per chunk.
 
 - Server imports can fill an untouched placeholder by identity, or prepend text without replacing existing edits.

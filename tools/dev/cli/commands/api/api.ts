@@ -1,9 +1,11 @@
 /** `./mf api`: any authenticated request against this worktree's server (like `gh api`). */
+
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { usageError } from "../../core/cli-error";
 import { type CommandSpec, readJsonArg, requirePositional, stringOption } from "../../core/command";
+import { downloadApiFile } from "../../core/download";
 import type { HttpMethod } from "../../core/session";
 
 const METHODS = new Set<HttpMethod>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -14,6 +16,7 @@ export const apiCommand: CommandSpec = {
   args: "<METHOD> <path>",
   route: "any /api/* route",
   options: {
+    output: { type: "string", description: "Stream a GET response to this file (binary-safe)" },
     field: {
       type: "string",
       multiple: true,
@@ -41,6 +44,20 @@ export const apiCommand: CommandSpec = {
     const body = data === undefined ? undefined : readJsonArg(data, "--data");
     const files = ctx.values.file;
     const fields = ctx.values.field;
+    const output = stringOption(ctx, "output");
+    if (output) {
+      if (
+        method !== "GET" ||
+        data !== undefined ||
+        files !== undefined ||
+        fields !== undefined ||
+        ctx.values["timeout-ms"] !== undefined
+      )
+        throw usageError("--output requires GET without --data, --file, --field or --timeout-ms");
+      await downloadApiFile(await ctx.session(), path, output);
+      ctx.out.result({ output }, (value) => `Downloaded ${value.output}`);
+      return undefined;
+    }
     if ((files !== undefined || fields !== undefined) && data !== undefined)
       throw usageError("--file and --data cannot be combined");
     const timeout = stringOption(ctx, "timeout-ms");

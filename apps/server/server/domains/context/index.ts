@@ -77,6 +77,7 @@ export type {
 } from "./ports/context-document-store.js";
 export { ContextEntryConflictError } from "./ports/context-document-store.js";
 export {
+  ContextImportDestinationError,
   type ContextImportLocations,
   ContextImportParentMovedError,
 } from "./ports/context-import-locations.js";

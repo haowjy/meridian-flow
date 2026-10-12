@@ -1,6 +1,6 @@
 {
-  "id": "d6e97587-6118-4794-8b6b-2f850404130e",
-  "prevId": "e9efd9c0-e59a-4bea-bf65-71145388b840",
+  "id": "c98cc99a-2e08-4a23-b1d4-6162340f832b",
+  "prevId": "1a535bd9-195c-4705-bbd4-e53278cf8338",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -6394,6 +6394,19 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "object_swept_at": {
+          "name": "object_swept_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
         }
       },
       "indexes": {
@@ -6417,12 +6430,96 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "import_entries_import_version": {
+          "name": "import_entries_import_version",
+          "columns": [
+            {
+              "expression": "import_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "import_entries_object_sweep": {
+          "name": "import_entries_object_sweep",
+          "columns": [
+            {
+              "expression": "lease_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"import_entries\".\"attempt_id\" IS NOT NULL AND \"import_entries\".\"state\" IN ('deleted','not_imported') AND \"import_entries\".\"spec\"->>'kind' = 'binary'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "import_entries_import_id_imports_id_fk": {
           "name": "import_entries_import_id_imports_id_fk",
           "tableFrom": "import_entries",
+          "tableTo": "imports",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.import_progress": {
+      "name": "import_progress",
+      "schema": "",
+      "columns": {
+        "import_id": {
+          "name": "import_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "last_activity_at": {
+          "name": "last_activity_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "import_progress_import_id_imports_id_fk": {
+          "name": "import_progress_import_id_imports_id_fk",
+          "tableFrom": "import_progress",
           "tableTo": "imports",
           "columnsFrom": [
             "import_id"
@@ -6491,6 +6588,19 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "dismissed_at": {
+          "name": "dismissed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

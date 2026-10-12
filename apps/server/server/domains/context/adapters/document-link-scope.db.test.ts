@@ -161,6 +161,64 @@ if (!RUN) {
       expect(ahead.aheadRefs).toEqual([{ occurrence: 0, ref: expect.stringMatching(/^ahead:/) }]);
     });
 
+    it("planned binding refuses nameable personal-project identities", async () => {
+      await db.update(projects).set({ isPersonal: true }).where(eq(projects.id, OTHER_PROJECT));
+      await db
+        .update(contextSources)
+        .set({ slug: "user" })
+        .where(eq(contextSources.id, OTHER_SOURCE));
+      const deps = {
+        codec: mdxCodec({ schema }),
+        schema,
+        links: scopes,
+        registrar: { register: async () => {} },
+        resolveFiletype: async () => "md",
+        inTransaction: () => false,
+      };
+      // Ordinary reachability includes the reader's personal project.
+      const ordinary = createLinkBinder({
+        ...deps,
+        model: yProsemirrorModel(schema),
+        coordinator: {
+          withDocument: async () => {
+            throw new Error("unused");
+          },
+        },
+      });
+      const input = {
+        holder: { documentId: HOLDER as DocumentId },
+        markdown: "[x](user://foreign)",
+      };
+      expect(walkLinkOccurrences((await ordinary.bindMarkdown(input)).blocks)[0]?.attrs.ref).toBe(
+        `doc:${FOREIGN}`,
+      );
+      const bound = await createImportLinkBinder(deps).bindMarkdown({
+        ...input,
+        targets: new Map([[0, FOREIGN as DocumentId]]),
+      });
+      expect(bound.invalidTargets).toEqual([{ occurrence: 0, documentId: FOREIGN }]);
+      expect(walkLinkOccurrences(bound.blocks)[0]?.attrs).toMatchObject({ ref: null, href: "" });
+    });
+
+    it("planned binding refuses draft views and draft-only identities", async () => {
+      const binder = createImportLinkBinder({
+        codec: mdxCodec({ schema }),
+        schema,
+        links: scopes,
+        registrar: { register: async () => {} },
+        resolveFiletype: async () => "md",
+        inTransaction: () => false,
+      });
+      const input = {
+        holder: { documentId: HOLDER as DocumentId },
+        markdown: "[x](manuscript://drafted)",
+        targets: new Map([[0, DRAFTED as DocumentId]]),
+      };
+      await expect(binder.bindMarkdown({ ...input, view: DRAFT })).rejects.toThrow("live");
+      const bound = await binder.bindMarkdown(input);
+      expect(bound.invalidTargets).toEqual([{ occurrence: 0, documentId: DRAFTED }]);
+    });
+
     async function seed() {
       await deleteDrizzleRows(db, [users]);
       await db.insert(users).values(conformanceUserValues(USER, "document-link-scope"));

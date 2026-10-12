@@ -42,6 +42,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.readVersionedMarkdown(documentId)),
     restoreFromYDoc: (documentId, snapshot, origin) =>
       scopes.within(by(documentId), () => engine.restoreFromYDoc(documentId, snapshot, origin)),
+    readForExport: (documentId, scope) =>
+      scopes.within(by(documentId), () => engine.readForExport(documentId, scope)),
     readAsMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readAsMarkdown(documentId)),
     setMarkdown: (input) => scopes.within(by(input.documentId), () => engine.setMarkdown(input)),

@@ -87,6 +87,66 @@ describe("fixture vault", () => {
 });
 
 describe("syntax boundaries", () => {
+  it("scans a prose projection without reinterpreting Markdown code or frontmatter", () => {
+    const input =
+      "---\n[[Front]]\n---\n\n    [[Indented]] `[[Ticks]]` %% [[Hidden]] %% [[Visible]]";
+    const { source, findings } = scanObsidian(input, { context: "prose" });
+    expect(source).toBe(input);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "Front" },
+      { linkpath: "Indented" },
+      { linkpath: "Ticks" },
+      { linkpath: "Visible" },
+    ]);
+  });
+
+  it.each([
+    "[[A]]",
+    "[[A#Heading|#label]]",
+  ])("reports a highlight containing a wikilink without counting link target syntax: %s", (link) => {
+    const { findings } = scanObsidian(`==text ${link} text==`);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "A" },
+    ]);
+    expect(findings.filter((finding) => finding.kind === "highlight")).toMatchObject([
+      { text: `text ${link} text` },
+    ]);
+    expect(findings.filter((finding) => finding.kind === "tag")).toEqual([]);
+  });
+
+  it("preserves literal table continuations in comments while normalizing real tables", () => {
+    const comment = "%%\n| a |\n| - |\n| first\\\nsecond |\n%%";
+    const real = "| a |\n| - |\n| first\\\nsecond |";
+    const { source, findings } = scanObsidian(`${comment}\n\n${real}\n\n[[A]]`);
+    const found = findings.find((finding) => finding.kind === "comment");
+    expect(source.slice(found?.from, found?.to)).toBe(comment);
+    expect(source).toContain("first<br/>second");
+    const link = findings.find((finding) => finding.kind === "wikilink");
+    expect(source.slice(link?.from, link?.to)).toBe("[[A]]");
+  });
+
+  it.each([
+    "%% secret %%",
+    "<!-- secret -->",
+  ])("keeps prose following inline comment %s", (comment) => {
+    const { findings } = scanObsidian(`${comment} [[Visible]] #tag ==highlight==`);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "Visible" },
+    ]);
+    expect(findings.filter((finding) => finding.kind === "tag")).toMatchObject([{ tag: "tag" }]);
+    expect(findings.filter((finding) => finding.kind === "highlight")).toMatchObject([
+      { text: "highlight" },
+    ]);
+  });
+
+  it("does not let a fence inside a comment hide later comment delimiters", () => {
+    const { findings } = scanObsidian("%%\n```\n%%\n\n%% [[hidden]] %%\n\n[[real]]");
+    expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(2);
+    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
+      { linkpath: "real" },
+    ]);
+  });
+
   it("never links or counts special syntax inside code and comments", () => {
     const input =
       "`[[span]] #tag ==no== %% code %%`\n\n~~~md\n[[fence]]\n<!-- code -->\n~~~\n\n%% [[inline]] %%\n\n%%\n[[block]]\n%%\n\n<!-- [[html]] -->\n\n[[real]]";

@@ -16,6 +16,7 @@ import {
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import type { ImportArea } from "../domain/export-marker.js";
 import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
 
 function record(row: typeof imports.$inferSelect): ImportRecord {
@@ -32,11 +33,13 @@ function entry(row: typeof importEntries.$inferSelect): ImportEntry {
     created: row.created,
     prepared: !!spec.prepared,
     prependOnRetry: !!spec.prependOnRetry,
+    exists: spec.exists ?? row.created,
     pendingRefs: spec.pendingRefs ?? [],
     attemptId: row.attemptId,
     leaseUntil: row.leaseUntil,
     storageUrl: row.storageUrl,
     uri: row.uri,
+    objectSweptAt: row.objectSweptAt,
   };
 }
 export function createDrizzleImportRepository(db: Database): ImportRepository {
@@ -80,6 +83,39 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       ids = changes.get(importId) ?? new Set<string>();
     if (entryId) ids.add(entryId);
     changes.set(importId, ids);
+  }
+  /**
+   * Merge patches into spec and their mirrored columns in one statement. Callers
+   * already hold the rows' locks, so nothing is reread.
+   */
+  async function updateEntries(
+    patches: readonly { id: string; patch: Partial<ImportEntry> }[],
+  ): Promise<void> {
+    if (!patches.length) return;
+    const values = sql.join(
+      patches.map(({ id, patch }) => sql`(${id}::uuid, ${JSON.stringify(patch)}::jsonb)`),
+      sql`, `,
+    );
+    const column = (key: keyof ImportEntry, name: string, type: string) =>
+      sql.raw(
+        `${name} = CASE WHEN v.patch ? '${key}' THEN (v.patch->>'${key}')::${type} ELSE e.${name} END`,
+      );
+    const updated = await tx().execute<{ id: string; import_id: string }>(sql`
+      UPDATE import_entries AS e SET
+        spec = e.spec || v.patch,
+        ${column("state", "state", "text")},
+        ${column("created", "created", "boolean")},
+        ${column("attemptId", "attempt_id", "uuid")},
+        ${column("leaseUntil", "lease_until", "timestamptz")},
+        ${column("storageUrl", "storage_url", "text")},
+        ${column("uri", "uri", "text")},
+        ${column("objectSweptAt", "object_swept_at", "timestamptz")}
+      FROM (VALUES ${values}) AS v(id, patch)
+      WHERE e.id = v.id
+      RETURNING e.id::text AS id, e.import_id::text AS import_id
+    `);
+    if (updated.length !== patches.length) throw new Error("Import entry missing");
+    for (const row of updated) changed(row.import_id, row.id);
   }
   async function read(id: string, projectId: string) {
     const [row] = await tx()
@@ -245,6 +281,65 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         .limit(1);
       return !!row;
     },
+    async hasUnprepared(importId) {
+      const [row] = await tx()
+        .select({ id: importEntries.id })
+        .from(importEntries)
+        .where(
+          and(
+            eq(importEntries.importId, importId),
+            eq(importEntries.state, "planned"),
+            sql`coalesce((${importEntries.spec}->>'prepared')::boolean, false) = false`,
+          ),
+        )
+        .limit(1);
+      return !!row;
+    },
+    async lockEntries(ids, options) {
+      if (!ids.length) return [];
+      const rows = await tx()
+        .select()
+        .from(importEntries)
+        .where(inArray(importEntries.id, [...ids]))
+        .orderBy(importEntries.ordinal)
+        .for("update", options?.skipLocked ? { skipLocked: true } : {});
+      return rows.map(entry);
+    },
+    async nextPlanningGroup(importId) {
+      const unprepared = sql`coalesce((${importEntries.spec}->>'prepared')::boolean, false) = false`;
+      const [first] = await tx()
+        .select({
+          parentId: sql<string | null>`${importEntries.spec}->>'parentId'`,
+          area: sql<string | null>`${importEntries.spec}->>'area'`,
+        })
+        .from(importEntries)
+        .where(
+          and(eq(importEntries.importId, importId), eq(importEntries.state, "planned"), unprepared),
+        )
+        .orderBy(importEntries.ordinal)
+        .limit(1);
+      if (!first) return null;
+      const rows = await tx()
+        .select()
+        .from(importEntries)
+        .where(
+          and(
+            eq(importEntries.importId, importId),
+            eq(importEntries.state, "planned"),
+            eq(importEntries.created, false),
+            sql`${importEntries.spec}->>'parentId' IS NOT DISTINCT FROM ${first.parentId}`,
+            sql`${importEntries.spec}->>'area' IS NOT DISTINCT FROM ${first.area}`,
+          ),
+        )
+        .orderBy(importEntries.ordinal);
+      const group = rows.map(entry);
+      return {
+        parentId: first.parentId,
+        ...(first.area ? { area: first.area as ImportArea } : {}),
+        pending: group.filter((item) => !item.prepared),
+        reserved: group.filter((item) => item.prepared),
+      };
+    },
     async lockEntry(id) {
       const [row] = await tx()
         .select()
@@ -255,44 +350,48 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       return entry(row);
     },
     async updateEntry(id, patch) {
-      const [row] = await tx().select().from(importEntries).where(eq(importEntries.id, id));
-      if (!row) throw new Error("Import entry missing");
-      const merged = { ...entry(row), ...patch };
-      await tx()
-        .update(importEntries)
-        .set({
-          spec: merged,
-          state: merged.state,
-          created: merged.created,
-          attemptId: merged.attemptId,
-          leaseUntil: merged.leaseUntil,
-          storageUrl: merged.storageUrl,
-          uri: merged.uri,
-        })
-        .where(eq(importEntries.id, id));
-      changed(row.importId, id);
+      await updateEntries([{ id, patch }]);
     },
+    updateEntries,
     async setState(id, state) {
       await tx().update(imports).set({ state }).where(eq(imports.id, id));
       changed(id);
     },
-    async sweepCandidates(now) {
-      return (
-        await tx()
-          .select()
-          .from(importEntries)
-          .where(
-            and(
-              inArray(importEntries.state, ["deleted", "not_imported"]),
-              or(isNull(importEntries.leaseUntil), lte(importEntries.leaseUntil, now)),
+    async sweepCandidates(now, scope) {
+      const grace = sql`${importEntries.leaseUntil} + make_interval(secs => ${scope.graceMs / 1000})`;
+      const rows = await tx()
+        .select({
+          id: importEntries.id,
+          importId: importEntries.importId,
+          entryId: sql<string>`${importEntries.spec}->>'entryId'`,
+        })
+        .from(importEntries)
+        .where(
+          and(
+            scope.importId ? eq(importEntries.importId, scope.importId) : undefined,
+            sql`${importEntries.attemptId} IS NOT NULL`,
+            inArray(importEntries.state, ["deleted", "not_imported"]),
+            sql`${importEntries.spec}->>'kind' = 'binary'`,
+            or(isNull(importEntries.leaseUntil), lte(importEntries.leaseUntil, now)),
+            or(
+              isNull(importEntries.objectSweptAt),
+              and(
+                sql`${importEntries.objectSweptAt} < ${grace}`,
+                sql`${now.toISOString()}::timestamptz >= ${grace}`,
+              ),
             ),
-          )
-      ).map((row) => ({
-        id: row.id,
-        importId: row.importId,
-        storageUrl: row.storageUrl,
-        entryId: entry(row).entryId,
-      }));
+          ),
+        )
+        .orderBy(importEntries.leaseUntil)
+        .limit(scope.limit);
+      return rows.map((row) => ({ ...row, entryId: Number(row.entryId) }));
+    },
+    async markSwept(ids, at) {
+      if (!ids.length) return;
+      await tx()
+        .update(importEntries)
+        .set({ objectSweptAt: at })
+        .where(inArray(importEntries.id, [...ids]));
     },
   };
 }

@@ -6,7 +6,7 @@ export function readExportMarker(manifest: ImportManifest) {
   const roots = manifest.roots.filter((root) => root.meridianExport !== undefined);
   if (!roots.length) return null;
   if (manifest.roots.length !== 1 || roots[0].kind !== "folder")
-    throw new ImportError(400, "Export marker requires one project folder");
+    throw new ImportError(400, "export_marker_root");
   try {
     const marker = JSON.parse(roots[0].meridianExport ?? "");
     if (
@@ -32,6 +32,6 @@ export function readExportMarker(manifest: ImportManifest) {
     }
     return { rootId: roots[0].rootId, areas };
   } catch {
-    throw new ImportError(400, "Invalid Meridian export marker");
+    throw new ImportError(400, "export_marker_invalid");
   }
 }

@@ -1,6 +1,5 @@
 /** Context/collab import adapter using bulk creation, identity fill and the isolated binder. */
 import { parseLinkRef } from "@meridian/contracts";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
@@ -8,11 +7,13 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CollabDomain, ImportLinkBinder } from "../../collab/index.js";
 import {
   type ContextBulkCreation,
+  ContextImportDestinationError,
   type ContextImportLocations,
   ContextImportParentMovedError,
   type ContextPort,
   type LinkAheadRegistry,
 } from "../../context/index.js";
+import { ImportError } from "../domain/manifest.js";
 import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-writer.js";
 export function createContextImportTreeWriter(deps: {
   db: Database;
@@ -84,23 +85,15 @@ export function createContextImportTreeWriter(deps: {
         })
         .where(eq(documents.id, id));
     },
-    async preview(uri) {
-      const listing = await deps.context.list(uri);
-      if (!listing.ok) throw new Error(listing.error.code);
-      return listing.value.entries.map((entry) => {
-        const filename = entry.uri.split("/").filter(Boolean).at(-1) ?? "";
-        if (entry.kind === "directory")
-          return { kind: "folder" as const, name: filename, extension: "" };
-        const parsed = parseDocumentFilename(filename);
-        if (!parsed.ok) throw new Error("Invalid live filename");
-        return {
-          kind: "file" as const,
-          name: parsed.value.name,
-          extension: parsed.value.extension,
-        };
-      });
+    async destination(uri) {
+      try {
+        return await deps.locations.destination(uri);
+      } catch (error) {
+        if (error instanceof ContextImportDestinationError)
+          throw new ImportError(error.code === "destination_invalid" ? 400 : 404, error.code);
+        throw error;
+      }
     },
-    destination: (uri) => deps.locations.destination(uri),
     async parent(record, folderId) {
       try {
         return await deps.locations.lockParent(record.sourceId, folderId);
@@ -204,5 +197,6 @@ export function createContextImportTreeWriter(deps: {
       await deps.refreshFiles(ids);
     },
     currentUri: (id, kind) => deps.locations.currentUri(id, kind),
+    currentUris: (ids) => deps.locations.currentUris(ids),
   };
 }

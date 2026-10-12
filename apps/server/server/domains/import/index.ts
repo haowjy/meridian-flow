@@ -29,8 +29,12 @@ import { createMammothDocumentConverter } from "./adapters/mammoth-document-conv
 import { createImportService } from "./domain/import-service.js";
 
 import { sweepImportObjects } from "./domain/object-sweep.js";
+import { createImportAdmission } from "./domain/receive-admission.js";
 
-export { ImportError } from "./domain/manifest.js";
+export { IMPORT_LIMITS, ImportError } from "./domain/manifest.js";
+
+/** Receives are bounded per import across every request this process serves. */
+const processAdmission = createImportAdmission();
 export type ImportService = ReturnType<typeof createImportService>;
 export function createProductionImportPorts(
   deps: {
@@ -72,6 +76,7 @@ export function createProductionImportPorts(
   return {
     repository: createDrizzleImportRepository(deps.db),
     converter: createMammothDocumentConverter(),
+    admission: processAdmission,
     objects: deps.objects,
     diagnostics: {
       failed: ({ importId, entryId, code, cause }) =>
@@ -81,6 +86,14 @@ export function createProductionImportPorts(
           name: "file_failed",
           correlation: { projectId },
           payload: { importId, entryId, code, ...unknownToEventPayload(cause) },
+        }),
+      sweepFailed: ({ importId, entryId, cause }) =>
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "import.sweep",
+          name: "object_delete_failed",
+          correlation: { projectId },
+          payload: { importId, entryId, ...unknownToEventPayload(cause) },
         }),
     },
     tree: createContextImportTreeWriter({
@@ -106,7 +119,16 @@ export function createProductionImportService(
   return createImportService(createProductionImportPorts(deps, projectId, userId));
 }
 
+/** Periodic bounded reclamation; failed deletes stay candidates and surface to the scheduler. */
 export function createImportObjectSweeper(db: Database, objects: ObjectStorePort) {
   const repository = createDrizzleImportRepository(db);
-  return () => sweepImportObjects(repository, objects);
+  return async () => {
+    const result = await sweepImportObjects(repository, objects);
+    if (result.failed.length)
+      throw new AggregateError(
+        result.failed.map((failure) => failure.cause),
+        `Import object sweep failed for ${result.failed.length} object(s)`,
+      );
+    return result.swept;
+  };
 }

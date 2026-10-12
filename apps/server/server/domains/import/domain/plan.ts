@@ -20,7 +20,6 @@ export interface PlannedNode {
   path: string;
   filename: string;
   name: string;
-  previewName?: string;
   extension: string;
   kind: "folder" | "note" | "docx" | "code" | "binary";
   filetype: Filetype;
@@ -62,7 +61,6 @@ export function planSelection(
   manifest: ImportManifest,
   mintId: () => string,
   destinationId: string | null,
-  listing: readonly { kind: "folder" | "file"; name: string; extension: string }[] = [],
 ): PlannedNode[] {
   const marker = readExportMarker(manifest);
   const nodes: PlannedNode[] = [];
@@ -199,10 +197,11 @@ export function planSelection(
     });
   }
   // Parents precede children; the already-spelled canonical name wins among siblings.
+  // Names are allocated against the live listing only when a chunk locks the parent.
   const depths = new Map<string, number>();
   for (const node of nodes) depths.set(node.id, (depths.get(node.parentId ?? "") ?? -1) + 1);
   const depth = (node: PlannedNode) => depths.get(node.id) ?? 0;
-  const ordered = nodes.sort(
+  return nodes.sort(
     (a, b) =>
       depth(a) - depth(b) ||
       (a.kind === "folder" ? -1 : 1) - (b.kind === "folder" ? -1 : 1) ||
@@ -210,21 +209,4 @@ export function planSelection(
         Number(renderFilename(a.name, a.extension) === a.filename) ||
       codePointOrder(a.filename, b.filename),
   );
-  const occupied = new Map<
-    string | null,
-    { kind: "folder" | "file"; name: string; extension: string }[]
-  >([[destinationId, [...listing]]]);
-  for (const node of ordered) {
-    if (node.state !== "planned") continue;
-    const key = node.parentId ?? node.area ?? null;
-    const siblings = occupied.get(key) ?? [];
-    node.previewName = allocateName(node, siblings);
-    siblings.push({
-      kind: node.kind === "folder" ? "folder" : "file",
-      name: node.previewName,
-      extension: node.extension,
-    });
-    occupied.set(key, siblings);
-  }
-  return ordered;
 }

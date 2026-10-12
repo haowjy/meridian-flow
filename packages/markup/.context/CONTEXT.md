@@ -5,6 +5,9 @@
 The root `@meridian/markup` exports:
 
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
+  The separate `mdxCodec({ schema, export: true })` instance preserves literal
+  Obsidian-shaped `[[…]]`/`![[…]]` text spans, while escaping other bracket
+  constructs. Ordinary and model output keep the default configuration.
 - `DocumentLinkScope` and `UNSCOPED_DOCUMENT_LINKS` (no tree: every stored
   href and src spells as written, `asset:` refs stay refs). It is for
   comparing stored bytes and for tests; no reader is ever spelled through it. The fixed-table
@@ -38,12 +41,15 @@ loads neither Yjs nor the schema builder):
 Obsidian syntax ships at `@meridian/markup/obsidian`: `scanObsidian(text)`
 returns `{ source, findings }`. Findings are a discriminated
 `ObsidianFinding` union with half-open UTF-16 `from`/`to` ranges into the
-returned, table-preprocessed source. It uses the codec's positioned Markdown
-parser, masking frontmatter and comments without changing offsets; code,
+returned source. Table ingress leaves frontmatter and comment contents verbatim.
+It uses the codec's positioned Markdown parser, masking frontmatter and comments without changing offsets; code,
 comments and Markdown destinations never yield wikilinks. It reports only,
 without resolution or prose conversion. Paste retains its app-side ranking
-and display policy. Its parsed text nodes use `{ preprocessed: true }` so
-table ingress cannot shift offsets inside the existing ProseMirror text.
+and display policy. Its whole-slice text projection uses `{ context: "prose" }`: no
+ingress,
+frontmatter or Markdown AST interpretation; the host supplies code/link semantics.
+Comments still span formatting and paragraph boundaries. `{ preprocessed: true }`
+remains available for Markdown source whose ingress has already run.
 
 `splitObsidianFrontmatter(text)` also ships alone at
 `@meridian/markup/obsidian/frontmatter`, without parser or codec imports.

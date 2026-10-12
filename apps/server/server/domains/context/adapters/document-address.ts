@@ -181,6 +181,64 @@ export async function loadDocumentAddresses(
   });
 }
 
+/** A folder's canonical address: its chain spelled like a document's, with a trailing slash. */
+export type FolderAddress = {
+  folderId: string;
+  projectId: ProjectId;
+  scheme: ContextUriScheme;
+  uri: string;
+  deleted: boolean;
+};
+
+/** Project-scoped folders' canonical addresses, walked up to their source roots in one query. */
+export async function loadFolderAddresses(
+  db: Database,
+  folderIds: readonly string[],
+): Promise<FolderAddress[]> {
+  const ids = folderIds.filter(isUuid);
+  if (ids.length === 0) return [];
+  const rows = await currentDrizzleDb(db).execute<{
+    id: string;
+    project_id: string | null;
+    scheme: string;
+    path: string;
+    deleted: boolean;
+  }>(sql`
+    WITH RECURSIVE up AS (
+      SELECT f.id AS start_id, f.parent_id AS folder_id, f.context_source_id,
+        f.name || '/' AS path, f.deleted_at IS NOT NULL AS deleted
+      FROM folders f WHERE f.id IN (${uuidList(ids)})
+      UNION ALL
+      SELECT u.start_id, f.parent_id, u.context_source_id, f.name || '/' || u.path,
+        u.deleted OR f.deleted_at IS NOT NULL
+      FROM up u JOIN folders f ON f.id = u.folder_id
+    )
+    SELECT up.start_id::text AS id, cs.project_id::text AS project_id, cs.slug AS scheme,
+      up.path, up.deleted OR cs.deleted_at IS NOT NULL AS deleted
+    FROM up JOIN context_sources cs ON cs.id = up.context_source_id
+    WHERE up.folder_id IS NULL AND cs.work_id IS NULL
+  `);
+  return rows.flatMap((row): FolderAddress[] => {
+    if (!row.project_id || !isContextUriScheme(row.scheme) || !isProjectScopedScheme(row.scheme))
+      return [];
+    let uri: string;
+    try {
+      uri = `${canonicalContextUri(row.scheme, row.path)}/`;
+    } catch {
+      return [];
+    }
+    return [
+      {
+        folderId: row.id,
+        projectId: row.project_id as ProjectId,
+        scheme: row.scheme,
+        uri,
+        deleted: row.deleted,
+      },
+    ];
+  });
+}
+
 function selectionFilter(selection: DocumentAddressSelection): SQL | null {
   if ("ids" in selection) {
     const ids = selection.ids.filter(isUuid);

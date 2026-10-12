@@ -36,7 +36,9 @@ export type ObsidianFinding =
   | (ObsidianRange & { kind: "markdownLink"; url: string; image: boolean });
 
 export type ObsidianScanOptions = {
-  /** Skip ingress for already-parsed editor text; findings must index the existing text node. */
+  /** Prose projections use their host's node/mark semantics, not Markdown block or code syntax. */
+  context?: "markdown" | "prose";
+  /** Skip ingress for already-parsed source; findings index the supplied text. */
   preprocessed?: boolean;
 };
 
@@ -83,65 +85,101 @@ function mask(source: string, ranges: readonly ObsidianRange[]): string {
   for (const span of [...ranges].sort((a, b) => a.from - b.from)) {
     if (span.from < cursor) continue;
     result += source.slice(cursor, span.from);
-    result += source.slice(span.from, span.to).replace(/[^\r\n]/g, " ");
+    // Non-whitespace placeholders preserve offsets without manufacturing indented code.
+    result += source.slice(span.from, span.to).replace(/[^\r\n]/g, "x");
     cursor = span.to;
   }
   return result + source.slice(cursor);
 }
 
+type Comment = Extract<ObsidianFinding, { kind: "comment" }>;
+
+/** Earlier opaque comments take precedence over any Markdown syntax in their contents. */
+function discoverComments(
+  source: string,
+  excluded: readonly ObsidianRange[],
+  prose = false,
+): Comment[] {
+  const hidden = [...excluded];
+  const comments: Comment[] = [];
+  let code: ObsidianRange[] | null = null;
+  for (const match of source.matchAll(/%%|<!--/g)) {
+    const from = match.index;
+    const opener = { from, to: from + match[0].length };
+    if (escaped(source, from) || overlaps(opener, hidden)) continue;
+    if (!code && !prose) {
+      code = [];
+      walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
+        const span = range(node);
+        if (span && (node.type === "code" || node.type === "inlineCode")) code?.push(span);
+      });
+    }
+    if (overlaps(opener, code ?? [])) continue;
+    const syntax = match[0] === "%%" ? "obsidian" : "html";
+    const delimiter = syntax === "obsidian" ? "%%" : "-->";
+    const end = source.indexOf(delimiter, opener.to);
+    const comment: Comment = {
+      kind: "comment",
+      syntax,
+      from,
+      to: end < 0 ? source.length : end + delimiter.length,
+    };
+    comments.push(comment);
+    hidden.push(comment);
+    // Fences/backticks in this comment must not govern the next opener.
+    code = null;
+  }
+  return comments;
+}
+
 /** Reports syntax only: it never resolves targets, validates YAML, or rewrites prose. */
 export function scanObsidian(sourceText: string, options: ObsidianScanOptions = {}): ObsidianScan {
   // Split raw YAML first: table-looking properties must never enter the table preprocessor.
-  const rawFrontmatter = splitObsidianFrontmatter(sourceText).frontmatter;
-  const prefix = rawFrontmatter ? sourceText.slice(0, rawFrontmatter.to) : "";
-  const source = options.preprocessed
-    ? sourceText
-    : prefix + normalizeGfmTableHardBreaks(sourceText.slice(prefix.length));
-  const frontmatter = splitObsidianFrontmatter(source).frontmatter;
+  const prose = options.context === "prose";
+  let source = sourceText;
+  if (!options.preprocessed && !prose) {
+    const rawFrontmatter = splitObsidianFrontmatter(sourceText).frontmatter;
+    const protectedRanges: ObsidianRange[] = rawFrontmatter ? [rawFrontmatter] : [];
+    protectedRanges.push(...discoverComments(sourceText, protectedRanges));
+    let cursor = 0;
+    source = "";
+    for (const span of protectedRanges) {
+      source += normalizeGfmTableHardBreaks(sourceText.slice(cursor, span.from));
+      source += sourceText.slice(span.from, span.to);
+      cursor = span.to;
+    }
+    source += normalizeGfmTableHardBreaks(sourceText.slice(cursor));
+  }
+  const frontmatter = prose ? null : splitObsidianFrontmatter(source).frontmatter;
   const findings: ObsidianFinding[] = frontmatter ? [frontmatter] : [];
   const hidden: ObsidianRange[] = frontmatter ? [frontmatter] : [];
-  const code: ObsidianRange[] = [];
-  walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
-    const span = range(node);
-    if (span && (node.type === "code" || node.type === "inlineCode")) code.push(span);
-  });
-  for (const match of source.matchAll(/%%|<!--/g)) {
-    const from = match.index;
-    if (
-      escaped(source, from) ||
-      overlaps({ from, to: from + match[0].length }, [...hidden, ...code])
-    )
-      continue;
-    const syntax: "obsidian" | "html" = match[0] === "%%" ? "obsidian" : "html";
-    const delimiter = syntax === "obsidian" ? "%%" : "-->";
-    const end = source.indexOf(delimiter, from + match[0].length);
-    const to = end < 0 ? source.length : end + delimiter.length;
-    const comment = { kind: "comment" as const, syntax, from, to };
-    findings.push(comment);
-    hidden.push(comment);
-  }
+  const comments = discoverComments(source, hidden, prose);
+  findings.push(...comments);
+  hidden.push(...comments);
 
   // Comments may contain Markdown fences themselves. Mask them before the authoritative parse.
   const blocked = [...hidden];
   const quotes: ObsidianRange[] = [];
-  walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
-    const span = range(node);
-    if (!span) return;
-    if (["code", "inlineCode", "html", "link", "image", "definition"].includes(node.type))
-      blocked.push(span);
-    if (node.type === "blockquote") quotes.push(span);
-    if (node.type === "link" || node.type === "image")
-      findings.push({
-        ...span,
-        kind: "markdownLink",
-        url: node.url ?? "",
-        image: node.type === "image",
-      });
-    if (node.type === "footnoteDefinition") {
-      findings.push({ ...span, kind: "footnoteDefinition", identifier: node.identifier ?? "" });
-    }
-  });
+  if (!prose)
+    walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
+      const span = range(node);
+      if (!span) return;
+      if (["code", "inlineCode", "html", "link", "image", "definition"].includes(node.type))
+        blocked.push(span);
+      if (node.type === "blockquote") quotes.push(span);
+      if (node.type === "link" || node.type === "image")
+        findings.push({
+          ...span,
+          kind: "markdownLink",
+          url: node.url ?? "",
+          image: node.type === "image",
+        });
+      if (node.type === "footnoteDefinition") {
+        findings.push({ ...span, kind: "footnoteDefinition", identifier: node.identifier ?? "" });
+      }
+    });
 
+  const opaque = [...blocked];
   const accept = (from: number, to: number) =>
     !escaped(source, from) && !overlaps({ from, to }, blocked);
   for (const match of source.matchAll(/\\\[\\?\[/g)) {
@@ -202,7 +240,9 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
   for (const match of source.matchAll(/==([^=\r\n]+)==/g)) {
     const from = match.index;
     const to = from + match[0].length;
-    if (accept(from, to)) findings.push({ kind: "highlight", from, to, text: match[1] ?? "" });
+    const insideTarget = blocked.some((span) => from >= span.from && to <= span.to);
+    if (!escaped(source, from) && !overlaps({ from, to }, opaque) && !insideTarget)
+      findings.push({ kind: "highlight", from, to, text: match[1] ?? "" });
   }
   for (const match of source.matchAll(/(^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
     const from = match.index + (match[1]?.length ?? 0);
