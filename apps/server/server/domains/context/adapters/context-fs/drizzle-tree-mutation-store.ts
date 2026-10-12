@@ -1,7 +1,6 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
 
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
-import type { DocumentFileType } from "@meridian/contracts/protocol";
 import {
   parseDocumentFilename,
   renderFilename as renderDocumentFilename,
