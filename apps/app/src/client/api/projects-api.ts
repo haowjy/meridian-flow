@@ -274,10 +274,11 @@ export async function getProjectContextAvailability(
   projectId: string,
   documentIds: readonly string[],
   signal?: AbortSignal,
+  folderIds?: readonly string[],
 ): Promise<ProjectContextIdentityLookupResult> {
   return postJson<ProjectContextIdentityLookupResult>(
     `/api/projects/${encodeURIComponent(projectId)}/context/availability`,
-    { projectId, documentIds },
+    { projectId, documentIds, ...(folderIds ? { folderIds } : {}) },
     { signal },
   );
 }

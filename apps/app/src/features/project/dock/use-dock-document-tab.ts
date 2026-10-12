@@ -17,9 +17,9 @@ export function useDockDocumentTab(
   document: DockDocument | null,
 ): { tab: ContextTab | null; gone: boolean };
 export function useDockDocumentTab(projectId: string, document: DockDocument | null) {
-  const { records, folders } = useAccountResourceProjection(projectId);
+  const { records, placement } = useAccountResourceProjection(projectId);
   if (!document) return { tab: null, gone: false };
-  const projection = projectResourceTab(projectId, document.tab, records, folders);
+  const projection = projectResourceTab(projectId, document.tab, records, placement);
   if (projection.kind === "removed" || projection.kind === "terminal")
     return { tab: document.tab, gone: true };
   const tab: ContextTab = projection.kind === "projected" ? projection.tab : document.tab;

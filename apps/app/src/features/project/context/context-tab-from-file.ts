@@ -10,11 +10,9 @@ import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import {
-  type FolderNamespaceRecord,
-  projectResourceLocation,
   type ResourceOwner,
+  type ResourcePlacement,
   type ResourceRecord,
-  rebaseFolderResourceLocation,
   resourceForDocumentIdentity,
 } from "@meridian/resource-replica";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
@@ -113,28 +111,13 @@ export function serverTabFromFile(
   return tab.kind === "new" ? null : tab;
 }
 
-/** Where the writer sees a document: its own placement, then every folder move above it. */
-function resourcePlacement(
-  projectId: string,
-  record: ResourceRecord,
-  folders: readonly FolderNamespaceRecord[],
-) {
-  const location = projectResourceLocation(projectId, record);
-  return (
-    location && {
-      ...rebaseFolderResourceLocation(projectId, location, folders),
-      provisional: location.provisional,
-    }
-  );
-}
-
 /** One optimistic tab projection for a durable editable resource. */
 export function contextTabFromResource(
   projectId: string,
   record: ResourceRecord,
-  folders: readonly FolderNamespaceRecord[],
+  placement: ResourcePlacement,
 ): Extract<ContextTab, { kind: "new" | "tracked" }> | null {
-  const location = resourcePlacement(projectId, record, folders);
+  const location = placement.resourceLocation(record);
   if (!location) return null;
   const { resource } = record;
   if (!resource.classification.editable) return null;
@@ -174,6 +157,7 @@ export type ResourceTabProjection =
       kind: "terminal";
       documentIds: readonly string[];
       generation: string;
+      deletionVersion: string | null;
     }
   | {
       kind: "projected";
@@ -186,7 +170,7 @@ export function projectResourceTab(
   projectId: string,
   tab: ContextTab,
   records: readonly ResourceRecord[],
-  folders: readonly FolderNamespaceRecord[],
+  placement: ResourcePlacement,
 ): ResourceTabProjection {
   const record =
     (tab.resourceHandle
@@ -198,9 +182,10 @@ export function projectResourceTab(
       kind: "terminal",
       documentIds: [...new Set([tab.documentId, record.resource.identity.documentId])],
       generation: record.resource.lifecycle.generation,
+      deletionVersion: record.resource.lifecycle.deletionVersion ?? null,
     };
   if (record.resource.content.kind === "unacquired") {
-    const location = resourcePlacement(projectId, record, folders);
+    const location = placement.resourceLocation(record);
     if (!location || tab.kind === "new") return { kind: "removed" };
     const {
       resourceHandle: _resourceHandle,
@@ -220,7 +205,7 @@ export function projectResourceTab(
     } as Extract<ContextTab, { kind: "tracked" | "viewer" }>;
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
   }
-  const projected = contextTabFromResource(projectId, record, folders);
+  const projected = contextTabFromResource(projectId, record, placement);
   return projected
     ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
     : { kind: "removed" };

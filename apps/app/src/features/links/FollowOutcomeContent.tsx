@@ -161,8 +161,8 @@ export function FollowOutcomeContent({
             disabled={creating}
             onClick={async () => {
               if (creating) return;
-              // Both steps are local commits, so this resolves at once; the
-              // server catches up in the background.
+              // Existing homes commit locally. Missing address parents must be
+              // explicitly created before their identities can be captured.
               const documentId = await create(creation);
               if (!documentId) return;
               onClose();

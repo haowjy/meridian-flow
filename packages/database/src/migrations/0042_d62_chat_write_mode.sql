@@ -3,7 +3,7 @@
 -- Run identity: a turn records the execution (one run-lease hold) that reserved it and the messages
 -- it was reserved for; an inbox row records the turn that delivered it. Older rows keep null, which is
 -- the truthful value: nothing recorded them, so nothing is backfilled.
--- The new CHECKs are added NOT VALID and validated by 0041, which also builds the execution index.
+-- The new CHECKs are added NOT VALID and validated by 0043, which also builds the execution index.
 SET LOCAL lock_timeout = '2s';
 --> statement-breakpoint
 -- Metadata-only rename under the lock timeout; every reader is renamed in the same release.

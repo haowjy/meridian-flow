@@ -5,14 +5,14 @@ import type {
   ContextCommandContext,
   ContextCommandDraft,
   ContextCommandOptions,
-  ContextCommandScope,
+  ContextCommandScopes,
   ContextCommandTransaction,
 } from "../ports/context-command-transaction.js";
 
 export interface ResultAwareCommandExecutor<TError> {
   run<T>(
     operation: (command: ContextCommandContext) => Promise<Result<T, TError>>,
-    scopes?: readonly ContextCommandScope[],
+    scopes?: ContextCommandScopes,
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
   /** A command in a Work's draft, which the transaction makes (`ensure`) and locks. */
@@ -42,7 +42,7 @@ export function createResultAwareCommandExecutor<TError>(input: {
 
   const execute = async <T>(
     operation: (command: ContextCommandContext) => Promise<Result<T, TError>>,
-    scopes?: readonly ContextCommandScope[],
+    scopes?: ContextCommandScopes,
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>> => {
     try {
@@ -65,7 +65,7 @@ export function createResultAwareCommandExecutor<TError>(input: {
 
   function run<T>(
     operation: (command: ContextCommandContext) => Promise<Result<T, TError>>,
-    scopes?: readonly ContextCommandScope[],
+    scopes?: ContextCommandScopes,
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>> {
     if (!input.serializeThroughCallbacks) return execute(operation, scopes, options);

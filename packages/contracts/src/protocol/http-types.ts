@@ -143,10 +143,29 @@ export type DeleteContextEntryResult = {
 export type DeleteContextEntryRequest = {
   operationId: string;
   path: string;
-  expected: { kind: "file"; documentId: string } | { kind: "folder" };
+  expected: { kind: "file"; documentId: string } | { kind: "folder"; nodeId: string };
 };
 
+/** Stable writer-selected parent. URI callers may continue to omit this. */
+export type ContextDestinationParent = {
+  /** Missing address segments created beneath the identity anchor, only for linked creation. */
+  createFolders?: string[];
+} & (
+  | { kind: "folder"; folderId: string }
+  | {
+      kind: "root";
+      scheme: ProjectContextTreeScheme;
+      owner: {
+        workId: string | null;
+        workSlug?: string | null;
+        rootThreadId?: string | null;
+        rootThreadRef?: string | null;
+      };
+    }
+);
+
 export type MoveContextEntryRequest = {
+  destinationParent?: ContextDestinationParent;
   operationId: string;
   path: string;
   expected: { kind: "file" | "folder"; nodeId: string };

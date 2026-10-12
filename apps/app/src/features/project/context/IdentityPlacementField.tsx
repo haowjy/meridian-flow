@@ -84,6 +84,7 @@ export function IdentityPlacementField({
   const [destination, setDestination] = useState<{
     scheme: ProjectContextTreeScheme;
     folderPath: string;
+    parent?: import("@meridian/resource-replica").ParentRef;
   } | null>(null);
   const [value, setValue] = useState(
     () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
@@ -397,7 +398,13 @@ export function IdentityPlacementField({
           onSelect={(entry) => {
             clearFeedback();
             if (entry.kind === "dir") {
-              setDestination({ scheme: entry.scheme, folderPath: entry.path });
+              setDestination({
+                scheme: entry.scheme,
+                folderPath: entry.path,
+                ...(entry.path === "/"
+                  ? {}
+                  : { parent: { kind: "folder", folderId: entry.entryId } }),
+              });
               inputRef.current?.focus();
               return;
             }

@@ -1,6 +1,7 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
-import { intentOwnsDeletion, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { newerCanonicalObservation } from "./canonical-observation";
+import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
 
 export function planResourceDeletion(
@@ -8,7 +9,12 @@ export function planResourceDeletion(
   projectId: string,
   intentId: string,
 ): ResourceWrite | null {
-  if (record.resource.lifecycle.kind === "terminal" || record.intents.some(intentOwnsDeletion))
+  if (
+    record.resource.lifecycle.kind === "terminal" ||
+    record.intents.some((intent) =>
+      intentOwnsDeletionAt(intent, record.resource.observationVersion),
+    )
+  )
     return null;
   const neverSubmitted =
     record.resource.lifecycle.kind === "local" &&
@@ -54,5 +60,34 @@ export function planResourceDeletion(
         deletion,
       ],
     },
+  };
+}
+
+/** Server-proven deletion from namespace receipts, never availability observations. */
+export function committedResourceDeletion(
+  resource: ResourceRecord["resource"],
+  generation: string,
+  transitionId: string,
+  observationVersion: string,
+): ResourceRecord["resource"] {
+  if (!newerCanonicalObservation(observationVersion, resource.observationVersion)) return resource;
+  const {
+    sessionAdoption: _superseded,
+    canonicalRefresh: _unexecutable,
+    ...obligations
+  } = resource.obligations;
+  // An editor terminal may already hold newer exact-ID deletion evidence; keep the higher.
+  const held =
+    resource.lifecycle.kind === "terminal" ? resource.lifecycle.deletionVersion : undefined;
+  const deletionVersion =
+    held !== undefined && !newerCanonicalObservation(observationVersion, held)
+      ? held
+      : observationVersion;
+  return {
+    ...resource,
+    canonical: null,
+    observationVersion,
+    obligations,
+    lifecycle: { kind: "terminal", generation, transitionId, deletionVersion },
   };
 }

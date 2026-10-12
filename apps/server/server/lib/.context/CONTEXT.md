@@ -224,3 +224,21 @@ lib/*
   ▼
 domains/*  ←  MUST NOT import from lib/
 ```
+
+
+## Writer move destination identity
+
+`context-move-route.ts` parses the optional `destinationParent` wire contract.
+It passes that identity into the domain command and receipt, maps typed
+`destination_missing` to non-retryable repair, and uses the committed destination
+for successful location responses. Identity conflicts may name a renamed or
+relocated destination; URI-only conflicts still must match the requested home.
+Edit authority is rechecked on the resolved destination in the move transaction.
+If the immutable destination Work or lineage authority retired before intake,
+identity moves refuse as `destination_missing` (move repair), even when the
+folder has since relocated. Source authority errors retain their own meaning.
+
+Every app writer move sends `destinationParent`. A caller that addresses a
+location by URI omits it and keeps path semantics, including folder creation
+along the path. No model tool or `./mf` command moves files today; when one
+does, it is path-addressed.

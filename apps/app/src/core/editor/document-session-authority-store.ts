@@ -59,6 +59,8 @@ export type PersistenceAuthority =
       exactDatabaseName: string;
       terminalGeneration: AvailabilityGeneration;
       commandId: AvailabilityCommandId;
+      /** Namespace version of the exact-ID deletion; absent on records that never carried one. */
+      deletionVersion?: string;
     }
   | null;
 export type RoomOrderRecord = {
@@ -105,7 +107,26 @@ export type TerminalLineageReceipt = Readonly<{
   lineageHandle: string;
   exactDatabaseName: string;
   persistenceGeneration: AvailabilityGeneration | null;
+  /** Namespace version that proved the deletion; null leaves the resource terminal versionless. */
+  deletionVersion: string | null;
 }>;
+
+/** The terminal lineage a room's stored `terminal-local` authority still owes. */
+export function storedTerminalLineage(room: RoomOrderRecord): TerminalLineageReceipt | null {
+  const authority = room.persistence;
+  if (authority?.phase !== "terminal-local") return null;
+  return {
+    kind: "lineage-transition-required",
+    documentId: room.documentId,
+    generation: authority.terminalGeneration,
+    commandId: authority.commandId,
+    transitionId: authority.transitionId,
+    lineageHandle: authority.lineageHandle,
+    exactDatabaseName: authority.exactDatabaseName,
+    persistenceGeneration: room.pendingDrain?.incarnation?.generation ?? null,
+    deletionVersion: authority.deletionVersion ?? null,
+  };
+}
 
 export type TerminalLineageProgress = "pending" | "complete" | "superseded";
 
@@ -393,20 +414,8 @@ export class DocumentSessionAuthorityStore {
     )) as RoomOrderRecord[];
     await transactionDone(transaction);
     return rooms.flatMap((room) => {
-      const authority = room.persistence;
-      if (authority?.phase !== "terminal-local") return [];
-      return [
-        {
-          kind: "lineage-transition-required" as const,
-          documentId: room.documentId,
-          generation: authority.terminalGeneration,
-          commandId: authority.commandId,
-          transitionId: authority.transitionId,
-          lineageHandle: authority.lineageHandle,
-          exactDatabaseName: authority.exactDatabaseName,
-          persistenceGeneration: room.pendingDrain?.incarnation?.generation ?? null,
-        },
-      ];
+      const receipt = storedTerminalLineage(room);
+      return receipt ? [receipt] : [];
     });
   }
 
@@ -649,6 +658,7 @@ export class DocumentSessionAuthorityStore {
     documentId: DocumentId;
     generation: AvailabilityGeneration;
     commandId: AvailabilityCommandId;
+    deletionVersion: string | null;
   }): Promise<DrainStart> {
     return this.startDrain({ kind: "document", ...input });
   }
@@ -702,6 +712,7 @@ export class DocumentSessionAuthorityStore {
           documentId: DocumentId;
           generation: AvailabilityGeneration;
           commandId: AvailabilityCommandId;
+          deletionVersion: string | null;
         }
       | {
           kind: "access";
@@ -813,7 +824,9 @@ export class DocumentSessionAuthorityStore {
       : room.persistence?.phase === "bindable"
         ? room.persistence
         : null;
-    const pending: PendingDrain = { ...input, incarnation };
+    const { deletionVersion, ...drain } =
+      input.kind === "document" ? input : { ...input, deletionVersion: null };
+    const pending: PendingDrain = { ...drain, incarnation };
     room.pendingDrain = pending;
     let lineageReceipt: TerminalLineageReceipt | null = null;
     if (lineageAuthority) {
@@ -830,6 +843,7 @@ export class DocumentSessionAuthorityStore {
         lineageHandle,
         exactDatabaseName: lineageAuthority.exactDatabaseName,
         persistenceGeneration: incarnation?.generation ?? null,
+        deletionVersion,
       };
       room.persistence = {
         phase: "terminal-local",
@@ -838,6 +852,7 @@ export class DocumentSessionAuthorityStore {
         exactDatabaseName: lineageAuthority.exactDatabaseName,
         terminalGeneration: input.generation,
         commandId: input.commandId,
+        ...(deletionVersion === null ? {} : { deletionVersion }),
       };
     } else if (
       input.kind === "document" &&

@@ -41,7 +41,7 @@ the locked No Work row uses a null slug and URI authority `@/`.
 Works snapshot and its separate locked No Work id. Link Create, tree Create and
 Editor identity commits use this boundary. `resourceContextAuthority` is the
 single durable URI authority rule (`@/`, `@slug`, or a lineage's `@/c12/`) used by catalog projection,
-receipt matching and folder re-basing. Tab ownership does not use it: app tabs
+receipt matching and identity placement. Tab ownership does not use it: app tabs
 carry the location's Work row id, No Work's included, or a chat's lineage.
 
 A location's owner is `ResourceOwner`: a Work (`workId` and `workSlug`, null for
@@ -73,9 +73,19 @@ until an authorized terminal cleanup transition.
 
 `reconcileResourceNamespace` persists an immutable attempt before dispatch,
 records received evidence separately, and applies it through metadata CAS.
+App move attempts always carry the picked `destinationParent`. Preparation looks
+up the folder's server-canonical location; an absent or terminal destination enters
+move repair without a fabricated transport attempt. Folder receipt matching uses
+that parent identity, creation suffix and leaf name rather than the parent's potentially changed
+path or owner. Root moves still match qualified URI authority. Source identity
+and URI remain immutable evidence. File intents retain typed names for immutable
+transport while the contracts filename codec supplies canonical optimistic names.
+Folder suffix names stay literal and share main's document-alias collision checks.
 Receipt lookup and dispatch share a short account/resource lock with future
 identity and terminal transitions. Historical move receipts create a canonical
-refresh obligation; only a later catalog request may update and clear it. Missing
+refresh obligation; a post-receipt catalog or exact-ID availability lookup may
+update and clear it. Authoritative unavailability releases queued work into repair;
+scoped catalog absence cannot do so. Missing
 receipts, canonical authority or matching identity block replay instead of
 inventing success.
 
@@ -98,31 +108,81 @@ File and folder records share immutable journal validation, receipt matching,
 account-bound transport and the CAS replay loop. `owningLocationIntent` is the
 placement ownership rule for both projection and admission; superseded rejected
 receipts remain evidence but cannot reclaim a location. A successful folder
-receipt requires a post-receipt catalog observation before later dispatch.
-Install that observation and its catalog checkpoint together, with the captured
-folder revision fence.
+receipt requires post-receipt canonical observation before later dispatch.
+Catalog observations install atomically with their checkpoint; exact-ID availability
+observations use the same metadata CAS. Both journals share typed settlement policy,
+and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
 
-Folder overlays rebase paths, URI authority, source/scope and parent ids for the
-folder and every descendant. Supply the installed destination source and parent
-catalogs when projecting cross-area or cross-Work moves. Readable routes and tabs
-use the same `rebaseFolderResourceLocation` policy. Rejected moves project the
-old location and expose the latest requested name in the cancelled chain through
-`projectFolderNeedsRepair`, anchored to the refused intent for receipt feedback.
-File repair uses the same destination rule through `projectResourceNeedsRepair`.
+Terminal is not forever. Deletion ownership is versioned: `confirmedDeletionVersion`
+reads an accepted delete's receipt version, and every terminal document holds the
+namespace version that proved its deletion in `lifecycle.deletionVersion`. A delete
+receipt (`committedResourceDeletion`) stores the receipt's version. The editor's
+exact-ID terminal (`publishResourceTerminal`) stores the version that exact-ID
+availability reported with the deletion. It reaches the terminal through the
+`terminal-remove` command, the `revokeDocument` session effect, the stored
+`terminal-local` room authority and `TerminalLineageReceipt`. Either path keeps the
+higher version when both apply. Folders hold their tombstone's `observationVersion`.
+Catalog installation compares a present entry with the deletion version, never with a
+pre-deletion `observationVersion`. A request that starts after the terminal can still
+replay history from before the deletion, one page at a time. Only strictly newer
+evidence revives (`revivedResourceWrite`, folder installation dropping `terminal`). A
+terminal document without a deletion version never revives from a catalog. The
+validators admit exactly that transition: newer than the deletion version,
+acknowledged with a canonical location, unacquired content, no outstanding purge
+cleanup, `revivedFrom` naming the superseded transition. A terminal never loses or
+lowers its deletion version.
+`unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
+its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
+
+Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
+parent is a picked folder identity or qualified area root. Linked creation alone
+captures the deepest existing identity and missing folder names beneath it.
+Projection appends that suffix to the anchor's current home and reuses navigation-only
+ancestor completion until real catalog identities arrive. Preparation carries both
+in `destinationParent`; receipts must match both. Picker, rename and File it do
+not manufacture missing paths. Server catalog `parentId` supplies each canonical
+parent identity; the name and parent install atomically with the canonical location.
+The existing observation fence and metadata CAS revision prevent a late catalog
+response from overwriting a newer exact-ID observation. Availability already returns
+a full catalog entry, so its parentId travels through the namespace transport too.
+Catalog installation also discovers command-free folder records, retaining identity
+ancestry after a checkpoint disappears (including Recent). One retained observation
+per identity supersedes its earlier checkpoint; paths never
+establish identity dependencies. Children remain connected by their server parent IDs.
+Effective edges use the owning intent, otherwise the canonical parent. Memoized
+iterative walks produce location and ancestor suppression together. Pending cycles
+revert every member to canonical edges, including newly exposed cycles. Canonical
+cycles permanently root all members at their own absolute location observations;
+there is no folder edge to restore in that fallback. Missing parent IDs likewise
+retain the absolute location, completed by navigation-only ancestors built once
+per qualified home. No prefix search is repeated for sparse siblings; independently renamed ancestors still apply. Missing/terminal
+destinations use canonical edges. Pending-deleted or terminal ancestors suppress
+descendants, including known resources absent from catalogs in Recent.
+
+Synthetic ancestors fill only unoccupied qualified homes after all real identities
+are installed. There is no historical-path index, alias anchoring or path-prefix
+rebasing. Supply all destination sources and parent catalogs when projecting
+cross-area or cross-Work moves. Every surface shares `ResourcePlacement`.
+Rejected moves use the accepted home and expose the latest queued name/destination
+through `projectFolderNeedsRepair` or `projectResourceNeedsRepair`; retry pickers
+follow the captured parent ID, falling back to the current folder if unavailable.
+
 Shared namespace journal policy cancels unsubmitted queued placement commands
 for the refused identity revision and offers the newest cancelled destination,
-without changing immutable intentions or the failed receipt anchor.
+without changing immutable intentions or the failed receipt anchor. A later admitted
+delete of the same identity revision supersedes a subsequently refused placement,
+retaining its attempts and letting deletion dispatch from canonical identity.
 An explicit repair supersedes rejected history and starts from the last canonical
 location, even when the chosen destination matches the currently displayed location.
 Replay remains bound to stable folder identity, not a stale source-path comparison:
 the immutable request obtains a server outcome even after another client moves it.
 
-Catalog installation owns folder canonical state exactly as it owns files': the
+Catalog and exact-ID availability own folder canonical state just as for files. The
 acquisition fence captures each folder's canonical location and refresh barrier
 before HTTP, and `planFolderCatalogInstallation` clears a barrier only for the
 operation id the fence saw, or follows a canonical location that changed elsewhere
 (a parent moved by anyone). A settled move owns placement only while its refresh is
-outstanding (`owningLocationIntent`); after that the installed location is truth,
+outstanding (`owningLocationIntent`); after that the observed canonical location is truth,
 so a stale destination recorded by an old intention cannot override a later move of
 a parent.
 

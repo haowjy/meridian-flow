@@ -271,29 +271,43 @@
     {
       "idx": 38,
       "version": "7",
-      "when": 1791764518839,
-      "tag": "0038_work_branch_foundation",
+      "when": 1791774675720,
+      "tag": "0038_namespace_observation_schema",
       "breakpoints": true
     },
     {
       "idx": 39,
       "version": "7",
-      "when": 1791764551175,
-      "tag": "0039_work_branch_foundation_online",
+      "when": 1791774682076,
+      "tag": "0039_backfill_namespace_observation_versions",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "7",
-      "when": 1791767480690,
-      "tag": "0040_d62_chat_write_mode",
+      "when": 1791779517244,
+      "tag": "0040_work_branch_foundation",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1791767499233,
-      "tag": "0041_d62_chat_write_mode_online",
+      "when": 1791779526715,
+      "tag": "0041_work_branch_foundation_online",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791785814242,
+      "tag": "0042_d62_chat_write_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791785831914,
+      "tag": "0043_d62_chat_write_mode_online",
       "breakpoints": true
     }
   ]

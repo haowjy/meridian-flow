@@ -4,10 +4,15 @@ Verifies the project agent composer sends through `POST /api/threads/:id/message
 the copied runtime orchestrator streams over `/api/threads/ws`, and the turn rows
 settle in Postgres.
 
-For non-visual checks (admission, streaming, turn settlement, tool calls) prefer
-the CLI: `./mf thread send <id> "browser smoke $(date +%s)"` exits 0 only when
-the run completes, and `./mf thread view <id>` shows the settled turns. Use this
-runbook when the rendered composer and stream are what you are verifying.
+For non-visual checks (admission, streaming, turn settlement, tool calls), use
+`./mf` for setup and durable reads. Until
+[#768](https://github.com/haowjy/meridian-flow/issues/768) lands,
+`./mf thread send` and `thread tail --until-idle` can report another message's
+reply or stop before the reply that answers yours. After sending with
+`./mf thread send <id> "browser smoke $(date +%s)"`, check the run outcome with
+`./mf thread view <id>` (the durable transcript) or in the browser; exit 0 is not
+proof that your message was answered. Use this runbook when the rendered composer
+and stream are what you are verifying.
 
 ## Preconditions
 

@@ -161,11 +161,12 @@ export class DocumentSessionRegistry
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     commandId: AvailabilityCommandId,
+    deletionVersion: string | null,
   ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }> {
     compareAvailabilityGeneration(generation, generation);
     const coordination = await this.configuredCoordination();
     return this.translateCoordination(() =>
-      coordination.revokeDocument(_projectId, documentId, generation, commandId),
+      coordination.revokeDocument(_projectId, documentId, generation, commandId, deletionVersion),
     );
   }
 
