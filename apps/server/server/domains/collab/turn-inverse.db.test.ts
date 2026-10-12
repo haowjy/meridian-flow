@@ -216,6 +216,7 @@ it("Discard of the mixed document's Undo change reactivates its applied part", a
       await view.collab.draftReview.discardWorkDraft({
         ...scope,
         operationIds: [inverse.operations[0].operationId],
+        closureClassIds: [inverse.operations[0].closureClassId],
         liveRevisionToken: inverse.liveRevisionToken,
         draftRevisionToken: inverse.draftRevisionToken,
       }),

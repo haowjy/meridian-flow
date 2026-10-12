@@ -251,3 +251,61 @@ it("keeps incomplete attribution document-only and whole Apply still publishes i
     harness.destroyWarmState();
   }
 });
+
+it("accepts the clicked Discard class after repeated independent writer admissions", async () => {
+  const harness = createHarness(db);
+  try {
+    await harness.seedWriterDocument(
+      "Alpha sword waits.\n\nBeta shield waits.\n\nGamma waits.",
+      "discard-typing",
+    );
+    const f = harness.crossWorkProbeFixture();
+    const branch = await f.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
+    branch.doc.destroy();
+    await commitBranchEdit(f, branch.branchId, { source: "agent" }, (doc) => {
+      const block = f.model.getBlocks(toDocHandle(doc))[0];
+      f.model.applyTextEdit(toDocHandle(doc), block, { from: 6, to: 11 }, "sabre");
+    });
+    const command = {
+      workId: WORK_ID,
+      documentId: ALPHA_ID,
+      draftId: branch.branchId,
+      userId: USER_ID,
+    };
+    const preview = await f.collab.draftReview.preview(command);
+    if (preview.status !== "active") throw Error("missing preview");
+    const request = {
+      ...fencedRequest(
+        command,
+        preview,
+        preview.operations.map((op) => op.operationId),
+      ),
+      closureClassIds: [...new Set(preview.operations.map((op) => op.closureClassId))],
+    };
+    for (const words of [" Writer", " keeps typing"]) {
+      await commitBranchEdit(f, branch.branchId, { source: "writer" }, (doc) => {
+        const paragraph = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(2) as Y.XmlElement;
+        const text = paragraph.get(0) as Y.XmlText;
+        text.insert(text.length, words);
+      });
+    }
+    const arrived = await f.collab.draftReview.preview(command);
+    if (arrived.status !== "active") throw Error("missing arrival");
+    expect(arrived.draftRevisionToken).not.toBe(preview.draftRevisionToken);
+    expect(arrived.operations.find((op) => op.kind === "agent")?.closureClassId).toBe(
+      request.closureClassIds[0],
+    );
+    expect(await f.collab.draftReview.discardWorkDraft(request)).toMatchObject({
+      status: "discarded",
+      draftClosed: false,
+    });
+    expect(await f.draftMarkdown(branch.branchId)).toBe(
+      "Alpha sword waits.\n\nBeta shield waits.\n\nGamma waits. Writer keeps typing\n",
+    );
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
+      "Alpha sword waits.\n\nBeta shield waits.\n\nGamma waits.\n",
+    );
+  } finally {
+    harness.destroyWarmState();
+  }
+});

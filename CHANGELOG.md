@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Accept per-change Discard while the writer types elsewhere, keeping the clicked closed membership and refusing changes that gained dependencies.
+
 - Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
 
 - Keep draft review controls alongside navigable document paths and list-owned moves, with forward database upgrades from main.

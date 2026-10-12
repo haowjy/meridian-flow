@@ -252,6 +252,7 @@ export function createWorkDraftReviewService(input: {
 
   function reviewSelection(
     command: {
+      closureClassIds?: string[];
       operationIds: string[];
       liveRevisionToken?: string;
       draftRevisionToken?: string;
@@ -323,7 +324,11 @@ export function createWorkDraftReviewService(input: {
     if (command.operationIds !== undefined) {
       if (!command.operationIds.length)
         return { status: "gone" as const, draftId: command.draftId };
-      if (!command.liveRevisionToken || !command.draftRevisionToken)
+      if (
+        !command.liveRevisionToken ||
+        !command.draftRevisionToken ||
+        !command.closureClassIds?.length
+      )
         return { status: "stale" as const, draftId: command.draftId };
       try {
         const discarded = await input.branchReview.discardSelected({

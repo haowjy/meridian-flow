@@ -147,6 +147,7 @@ it.each([
         await f.collab.draftReview.discardWorkDraft({
           ...request,
           operationIds: [preview.operations[1].operationId],
+          closureClassIds: [preview.operations[1].closureClassId],
           liveRevisionToken: preview.liveRevisionToken,
           draftRevisionToken: preview.draftRevisionToken,
         }),
