@@ -532,3 +532,49 @@ describe("case 9: an ordinary steer, then Stop of the successor", () => {
     expect(textOf(scenario, "a")).toContain("ordinary boundary");
   });
 });
+
+describe("TL-D62-m: admission's obligation overlay", () => {
+  const FOLLOWING = { following: true, waiting: false };
+  const WAITING = { following: true, waiting: true };
+  const SETTLED = { following: false, waiting: false };
+
+  it("keeps an admitted message owed until its delayed inbox frame and delivery arrive", async () => {
+    const scenario = makeScenario({
+      append: async () =>
+        defaultSendResponse({ userTurnId: "m1", steersTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("M1");
+    // The replay from the admission cursor ends the previous execution before
+    // the frame that shows M1: the overlay keeps the chat waiting.
+    scenario.emit(executionEnded("e0"), "11");
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual(WAITING);
+    expect(scenario.activeSubscription()?.active).toBe(true);
+    scenario.emit(inbox("m1"), "12");
+    scenario.emit(runStarted("b", "e1", ["m1"], 2), "13");
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual(FOLLOWING);
+    scenario.emit(delivered("b", "e1", ["m1"]), "14");
+    scenario.emit(inbox(), "15");
+    scenario.emit(executionEnded("e1"), "16");
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual(SETTLED);
+  });
+
+  it("does not re-owe a message whose accepted answer is replayed after its delivery", async () => {
+    const append = scenarioGate<SendMessageResponse>();
+    const scenario = makeScenario({ append: () => append.promise });
+    const submitted = scenario.submit("M1");
+    // Another tab's projection shows M1, and its execution delivers and ends,
+    // before this tab's admission answer arrives.
+    scenario.controller.observePending("thread_1", { items: [writerPendingItem("m1")] }, "11");
+    scenario.emit(runStarted("b", "e1", ["m1"], 2), "12");
+    scenario.emit(delivered("b", "e1", ["m1"]), "13");
+    scenario.emit(inbox(), "14");
+    scenario.emit(executionEnded("e1"), "15");
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual(SETTLED);
+    append.resolve(
+      defaultSendResponse({ userTurnId: "m1", steersTurnId: null, resumeAfterSeq: "10" }),
+    );
+    await expect(submitted).resolves.toMatchObject({ kind: "accepted" });
+    expect(scenario.controller.runFollowStatus("thread_1")).toEqual(SETTLED);
+    expect(scenario.activeSubscription()).toBeUndefined();
+  });
+});
