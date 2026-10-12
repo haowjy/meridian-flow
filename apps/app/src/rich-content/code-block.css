@@ -1,0 +1,61 @@
+/**
+ * A fenced code block with no language, as Streamdown renders it.
+ *
+ * Streamdown always draws a 32px header row above the code to hold the
+ * language label; with no label it is an empty bar. Here that row goes away and
+ * the block's actions (download, copy) move into the top-right corner of the
+ * code card. The card's top padding grows from 16px to 20px to hold their 14px
+ * icons, so they never sit over a character of code. A block with a language
+ * is untouched.
+ *
+ * On a pointer device the actions appear while the block is hovered or holds
+ * focus (they stay in the tab order while hidden); touch has no hover, so they
+ * are always shown. The corner is deliberately not sticky: stuck over a tall
+ * block, chromeless icons would sit on top of code.
+ *
+ * Streamdown ships class strings only, so these rules are unlayered to beat its
+ * utilities. They key off its `data-streamdown` attributes and its spacing (an
+ * 8px frame, a 1px card border, 16px card padding); re-check them on a
+ * Streamdown upgrade.
+ */
+
+[data-streamdown="code-block"][data-language=""] {
+  position: relative;
+}
+
+[data-streamdown="code-block"][data-language=""] > [data-streamdown="code-block-header"] {
+  display: none;
+}
+
+[data-streamdown="code-block"][data-language=""] > [data-streamdown="code-block-body"] {
+  padding-top: 1.25rem;
+}
+
+/* The actions wrapper carries no attribute of its own, so it is found by its child. */
+[data-streamdown="code-block"][data-language=""] > :has(> [data-streamdown="code-block-actions"]) {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  margin: 0;
+  height: auto;
+}
+
+[data-streamdown="code-block"][data-language=""] [data-streamdown="code-block-actions"] {
+  gap: 0;
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+  padding: 0;
+  transition: opacity var(--default-transition-duration);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-streamdown="code-block"][data-language=""] [data-streamdown="code-block-actions"] {
+    opacity: 0;
+  }
+  [data-streamdown="code-block"][data-language=""]:hover [data-streamdown="code-block-actions"],
+  [data-streamdown="code-block"][data-language=""]:focus-within
+    [data-streamdown="code-block-actions"] {
+    opacity: 1;
+  }
+}
