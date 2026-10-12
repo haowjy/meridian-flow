@@ -38,7 +38,12 @@ the outside; review enforces the inside.
   stat, read, link resolution) never asks as a kind.
 - **Tree writes don't refresh the catalog.** They return what they placed or
   tombstoned; the caller reconciles in its own transaction (the store, the mover, the
-  Apply step's completion transaction, the Discard kernel).
+  Apply step's completion transaction, the Discard kernel). Every refresh advances
+  the namespace observation version, so a reveal or Apply move publishes a newer
+  observation; the catalog never names a hidden node, not even as an invalidated root.
+- **Identity destinations are live.** A writer's `{ parent, name }` move resolves the
+  folder id through the live view: a folder only a draft holds is `destination_missing`.
+  Its `createFolders` suffix is a live create, so it reveals a hidden folder there.
 
 The contract is `work/model-tool-surface/impl-foundation/contract.md` §3, §6–§8, §12
 and §14 in the [Meridian Flow docs repository][docs].
