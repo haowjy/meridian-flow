@@ -111,6 +111,10 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   Catalog replay limits are positive safe integers at HTTP boundaries and are
   defensively capped by the shared domain policy. Work catalog IDs pass through
   the canonical request-ID parser before authority resolution.
+  `adapters/context-catalog-authority.ts` builds authoritative entries for a
+  scope under an explicit `CatalogRefreshSelection` (whole scope, or selected
+  documents only). `adapters/context-catalog.ts` is the single publication
+  owner: head locking, cache rows, commit, head version, pruning, and wake.
 
 - **Namespace attempt settlement** — browser move/delete commands carry immutable
   operation IDs. `ContextOperationReceipts` locks the actor/project/operation key
