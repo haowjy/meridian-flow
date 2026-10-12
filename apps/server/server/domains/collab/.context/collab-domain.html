@@ -601,8 +601,8 @@ the thread's Work.
   <li><strong>Journal acceptance.</strong> Direct mode calls
     <code>appendBatch</code> on the live journal: one transaction that locks
     every touched document in sorted order, allocates one admission per
-    document, inserts the agent rows and their <code>agent_edit_mutations</code>
-    rows (which carry the <code>w&lt;N&gt;</code> handles). Draft mode's journal
+    document, inserts the agent journal rows and captures immutable edits and
+    parts with their placements and reserved <code>w&lt;N&gt;</code> handles. Draft mode's journal
     only stages the entries in memory; their durable home is the branch commit
     in phase C.</li>
   <li><strong>Apply.</strong> Under the coordinator lock,
@@ -683,18 +683,16 @@ completes with the same code path. Depth lives in
     written by push commit and settlement, and by offline reconciliation.
     A direct-mode AI write does not write a trail on this checkout.
     <span class="ref"><code>adapters/drizzle-branch-push.ts</code> <code>persistRequiredTrail</code>, <code>domain/offline-reconciliation.ts</code>, <code>adapters/drizzle-change-trail-aggregate.ts</code></span></li>
-  <li><strong>Turn trail work.</strong> A database trigger enlists every
-    turn-owned <code>branch_write_journal</code> row in
-    <code>turn_trail_work</code>. The change-trail worker retries auto-policy
-    pushes from it and marks work <code>no_op</code> when the push policy is
-    manual or the turn ended <code>error</code> or <code>cancelled</code>.
-    <span class="ref"><code>packages/database/src/migrations/0000_baseline.sql</code> <code>enlist_turn_trail_work</code>, <code>adapters/drizzle-turn-trail-work.ts</code>, <code>adapters/change-trail-worker.ts</code></span></li>
-  <li><strong>Receipts.</strong> A turn's receipt chip is server-derived:
-    for live writes from <code>agent_edit_mutations</code> plus agent-edit's
-    <code>planUndo</code>/<code>planRedo</code>; for draft writes from the
-    branch journal and the forward-turn inverse service. Receipt Undo/Redo is the
-    only reversal authority for AI changes; trail evidence is read-only.
-    <span class="ref"><code>adapters/drizzle-turn-receipt.ts</code>, <code>domain/turn-receipt.ts</code></span></li>
+  <li><strong>Trail dirty signals.</strong> Mutation transactions append to
+    <code>change_trail_dirty_log</code>. The change-trail worker reconciles
+    affected owners from durable journal cuts; its completion transaction
+    consumes the signals and publishes derived changes.
+    <span class="ref"><code>adapters/drizzle-change-trail-aggregate.ts</code>, <code>adapters/change-trail-worker.ts</code></span></li>
+  <li><strong>Receipts.</strong> Live and draft receipt actions use immutable
+    edits and parts with their current placements. Card Undo/Redo and
+    failed-response rollback compute forward inverse edits; trail evidence
+    remains read-only.
+    <span class="ref"><code>adapters/drizzle-document-edits.ts</code>, <code>domain/turn-inverse-service.ts</code>, <code>domain/turn-receipt.ts</code></span></li>
 </ul>
 
 <!-- ============================================================ -->
@@ -710,10 +708,10 @@ checkpoint plus every later row of the same generation".
   <tr><td><code>document_yjs_updates</code></td><td>One row per admitted update: bytes, authority ID, generation, admission sequence, batch ordinal, origin (<code>human</code>, <code>agent</code>, <code>system</code>, <code>reconcile</code>), actor user or turn, authoring response.</td></tr>
   <tr><td><code>document_yjs_checkpoints</code></td><td>Full encoded state at <code>up_to_seq</code>, its authority generation, and an attribution manifest that freezes first-birth attribution so compaction cannot lose it.</td></tr>
   <tr><td><code>document_yjs_heads</code></td><td>The authority head, plus the schema stamp and latest checkpoint and state vector.</td></tr>
-  <tr><td><code>agent_edit_mutations</code></td><td>Write provenance keyed to update row IDs; immutable edit parts own inverse state.</td></tr>
+  <tr><td><code>document_edits</code>, <code>document_edit_parts</code></td><td>Immutable edit identity and part bytes, with placement on each part; retained independently of journal compaction.</td></tr>
 </table>
 </div>
-<p class="ref"><code>packages/database/src/schema/yjs.ts</code></p>
+<p class="ref"><code>packages/database/src/schema/yjs.ts</code>, <code>packages/database/src/schema/document-edits.ts</code></p>
 <p>
 A writer's typing produces roughly one row per keystroke; row counts are not
 semantic edits. Reconnect frames the room already contains are acknowledged
