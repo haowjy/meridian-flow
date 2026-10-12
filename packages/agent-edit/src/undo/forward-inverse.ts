@@ -22,7 +22,7 @@ export interface EditTarget {
   ordinal: number;
   direction: "invert" | "reapply";
 }
-export type EditKind = "write" | "undo" | "redo" | "revert" | "rollback" | "discard";
+export type EditKind = "write" | "undo" | "redo" | "revert" | "rollback";
 export interface InversePart {
   id: number;
   editId: string;
@@ -504,24 +504,4 @@ export function computeInverse(
   } finally {
     scratch.destroy();
   }
-}
-
-/** Record a restoration performed by a server-owned operation, including cleanup deltas. */
-export function captureServerRestoration(doc: Y.Doc, restore: () => void): CapturedPart | null {
-  const frontier = captureEditFrontier(doc),
-    before = new Map(
-      allItems(doc).map((it) => [key(it.id), it.redone ? key(it.redone) : undefined]),
-    );
-  const updates: Uint8Array[] = [],
-    collect = (update: Uint8Array) => updates.push(update);
-  doc.on("update", collect);
-  try {
-    restore();
-  } finally {
-    doc.off("update", collect);
-  }
-  if (!updates.length) return null;
-  const receipt = captureEditParts(doc, [{ update: Y.mergeUpdates(updates), frontier }])[0];
-  receipt.aliases = captureAliases(doc, before);
-  return receipt;
 }

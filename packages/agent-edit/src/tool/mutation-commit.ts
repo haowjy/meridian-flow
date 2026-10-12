@@ -72,6 +72,8 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
   preOwnSnapshot?: Uint8Array;
+  /** Frozen host cut before checked publication, for terminal receipt reporting. */
+  reportingCut?: Uint8Array;
   turnId?: string;
   actor: MutationActor;
 }
@@ -103,6 +105,8 @@ export interface CommitPreflightInput {
   touchedHashes: ReadonlySet<string>;
   interactionContext?: InteractionContext;
   preOwnSnapshot?: Uint8Array;
+  /** Frozen host cut before checked publication, for terminal receipt reporting. */
+  reportingCut?: Uint8Array;
   ownTurnId?: string;
   actor: MutationActor;
   /**
@@ -171,6 +175,8 @@ export interface MutationCommit {
     agentUpdate: Uint8Array;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
+    /** Frozen host cut before checked publication, for terminal receipt reporting. */
+    reportingCut?: Uint8Array;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult>;
   captureCommitPreflight(
@@ -234,6 +240,8 @@ export function createMutationCommit(deps: {
     agentUpdate: Uint8Array;
     interactionContext?: InteractionContext;
     preOwnSnapshot?: Uint8Array;
+    /** Frozen host cut before checked publication, for terminal receipt reporting. */
+    reportingCut?: Uint8Array;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult> {
     const detectionDoc = input.preOwnSnapshot
@@ -251,6 +259,7 @@ export function createMutationCommit(deps: {
         input.interactionContext?.afterJournalId,
         input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
+        input.reportingCut,
       );
       return applyConcurrentOnDoc(
         detectionDoc,
@@ -456,6 +465,7 @@ export function createMutationCommit(deps: {
         input.interactionContext?.afterJournalId,
         input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
+        input.reportingCut,
       );
       const incremental = applyConcurrentUpdates(
         toDocHandle(detectionDoc),
@@ -598,6 +608,7 @@ async function concurrentUpdatesSince(
   afterJournalId?: number,
   liveJournalSeq?: number,
   attemptId?: string,
+  reportingCut?: Uint8Array,
 ): Promise<ConcurrentUpdate[]> {
   if (coordinator.concurrentUpdatesSince) {
     return coordinator.concurrentUpdatesSince({
@@ -608,6 +619,7 @@ async function concurrentUpdatesSince(
       afterJournalId,
       liveJournalSeq,
       attemptId,
+      reportingCut,
     });
   }
   const update = Y.encodeStateAsUpdate(doc, sinceStateVector);

@@ -49,9 +49,7 @@ export const documentEdits = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     wId: integer("w_id"),
-    kind: text("kind")
-      .$type<"write" | "undo" | "redo" | "revert" | "rollback" | "discard">()
-      .notNull(),
+    kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
     actionId: uuid("action_id"),
     consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     createdAt: createdAt(),
@@ -63,7 +61,7 @@ export const documentEdits = pgTable(
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
     check(
       "document_edits_kind_valid",
-      sql`${t.kind} IN ('write','undo','redo','revert','rollback','discard')`,
+      sql`${t.kind} IN ('write','undo','redo','revert','rollback')`,
     ),
   ],
 );

@@ -1,6 +1,5 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
-import { captureEditParts, type EditAlias } from "@meridian/agent-edit/integration";
 
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -10,9 +9,7 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
-import type { RestorationAlias } from "@meridian/prosemirror-schema";
 import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
-import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -23,6 +20,7 @@ import {
 import type { NoticePort } from "../../notices/index.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
+import { mergeStateVectors } from "../domain/branch-coordinator.js";
 import {
   type BranchJournalReadStore,
   type BranchJournalRow,
@@ -40,7 +38,7 @@ import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
-import { placeDraftRows, recordDocumentEdit } from "./drizzle-document-edits.js";
+import { placeDraftRows } from "./drizzle-document-edits.js";
 import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import type { StagePendingSettlementWithinTx } from "./drizzle-pending-settlement.js";
 
@@ -447,6 +445,14 @@ async function commitPreparedDiscard(
     .set({
       state: Buffer.from(input.state),
       stateVector: Buffer.from(input.stateVector),
+      ...(input.survivors
+        ? {
+            generation: input.branch.generation + 1,
+            discardedStateVector: Buffer.from(
+              mergeStateVectors(input.branch.discardedStateVector, input.branch.stateVector),
+            ),
+          }
+        : {}),
       updatedAt: now,
     })
     .where(
@@ -460,68 +466,6 @@ async function commitPreparedDiscard(
     .returning({ id: documentBranches.id });
   if (!casRow) throw new BranchPushCommitConflictError(input.branch.branchId);
 
-  const actionId = randomUUID();
-  const groups = new Map<string, import("./drizzle-document-edits.js").ReceiptWrite["receipts"]>();
-  for (const { receipt, rows } of input.restorations ?? []) {
-    const row = rows[0];
-    const meta = row.updateMeta as
-      | { documentEdit?: { editId: string; ordinal: number } }
-      | undefined;
-    const target = meta?.documentEdit;
-    const [restorationRow] = await db
-      .insert(branchWriteJournal)
-      .values({
-        branchId: input.branch.branchId,
-        generation: input.branch.generation,
-        updateData: Buffer.from(receipt.update),
-        draftBaseUpdateSeq: row.draftBaseUpdateSeq,
-        source: "writer",
-        actorUserId: input.reviewedByUserId ?? null,
-        updateMeta: {
-          restorationAliases: restorationMetadataAliases(receipt.aliases),
-          kind: "discard",
-        },
-      })
-      .returning({ id: branchWriteJournal.id });
-    if (!restorationRow) throw new Error("Discard restoration was not journaled");
-    const key = target?.editId ?? `legacy-row:${row.id}`;
-    const group = groups.get(key) ?? [];
-    group.push({
-      ...receipt,
-      targets: rows.flatMap((row) => {
-        const target = (
-          row.updateMeta as { documentEdit?: { editId: string; ordinal: number } } | undefined
-        )?.documentEdit;
-        return target ? [{ ...target, direction: "invert" as const }] : [];
-      }),
-      origin: {
-        kind: "pending",
-        branchId: input.branch.branchId,
-        generation: input.branch.generation,
-        rowId: restorationRow.id,
-      },
-    });
-    groups.set(key, group);
-  }
-  if (groups.size) {
-    const doc = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(doc, input.state);
-      for (const receipts of groups.values()) {
-        const normalized = captureEditParts(doc, receipts);
-        await recordDocumentEdit(db, {
-          documentId: input.branch.documentId,
-          actor: "human",
-          actorUserId: input.reviewedByUserId,
-          kind: "discard",
-          actionId,
-          receipts: receipts.map((p, i) => ({ ...p, effect: normalized[i].effect })),
-        });
-      }
-    } finally {
-      doc.destroy();
-    }
-  }
   const discardedRows = await db
     .update(branchWriteJournal)
     .set({
@@ -551,6 +495,50 @@ async function commitPreparedDiscard(
     input.journalRows.map((row) => row.id),
     { kind: "discarded" },
   );
+  if (input.survivors) {
+    for (const row of input.survivors) {
+      if (input.retireSurvivors) {
+        await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+          kind: "retired",
+        });
+        continue;
+      }
+      const [next] = await db
+        .insert(branchWriteJournal)
+        .values({
+          branchId: row.branchId,
+          generation: input.branch.generation + 1,
+          updateData: Buffer.from(row.updateData),
+          source: row.source,
+          actorUserId: row.actorUserId,
+          threadId: row.threadId,
+          turnId: row.turnId,
+          wId: row.wId,
+          toolCallId: row.toolCallId,
+          updateMeta: row.updateMeta,
+          status: row.status,
+          draftBaseUpdateSeq: row.draftBaseUpdateSeq,
+        })
+        .returning({ id: branchWriteJournal.id });
+      if (!next) throw new Error("Discard survivor was not journaled");
+      await placeDraftRows(db, row.branchId, input.branch.generation, [row.id], {
+        kind: "pending",
+        branchId: row.branchId,
+        generation: input.branch.generation + 1,
+        rowId: next.id,
+      });
+    }
+    await db
+      .update(branchWriteJournal)
+      .set({ status: "discarded" })
+      .where(
+        and(
+          eq(branchWriteJournal.branchId, input.branch.branchId),
+          eq(branchWriteJournal.generation, input.branch.generation),
+          inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
+        ),
+      );
+  }
 }
 
 async function commitPreparedRedo(
@@ -756,13 +744,4 @@ function mapLineage(row: typeof pushLineage.$inferSelect): PushLineageRow {
 
 function aiWriteModeProjection(policy: "manual" | "auto"): "draft" | "direct" {
   return policy === "manual" ? "draft" : "direct";
-}
-
-// Durable receipts share compact len ranges with effects; journal metadata uses
-// the existing browser/server restoration contract with lengths on both ends.
-function restorationMetadataAliases(aliases: readonly EditAlias[]): RestorationAlias[] {
-  return aliases.map(({ source, target, len }) => ({
-    source: { ...source, length: len },
-    target: { ...target, length: len },
-  }));
 }

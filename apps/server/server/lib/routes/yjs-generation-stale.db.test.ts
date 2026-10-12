@@ -1,9 +1,8 @@
-/** Real-provider signals distinguish generation reset from same-generation selective Discard. */
+/** Real-provider signals reject obsolete generations after whole and selective Discard. */
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { Server } from "@hocuspocus/server";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import * as decoding from "lib0/decoding";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import WebSocket from "ws";
 import * as Y from "yjs";
@@ -75,7 +74,7 @@ it.each([
       quiet: true,
       stopOnSignals: false,
       onConnect: async (data) => {
-        if (reset && kind === "generation") {
+        if (reset) {
           await onConnect({
             ...data,
             context: { userId: USER_ID },
@@ -104,20 +103,9 @@ it.each([
       const synced = deferred<void>();
       const closed = deferred<{ code: number; reason: string }>();
       const denied = deferred<string>();
-      // Hold SyncStep1 so the stale offline replay arrives before a passed handshake.
-      class HeldHandshakeWebSocket extends WebSocket {
-        override send(data: Parameters<WebSocket["send"]>[0]) {
-          if (data instanceof Uint8Array) {
-            const decoder = decoding.createDecoder(data);
-            decoding.readVarString(decoder);
-            if (decoding.readVarUint(decoder) === 0 && decoding.readVarUint(decoder) === 0) return;
-          }
-          super.send(data);
-        }
-      }
       const socket = new HocuspocusProviderWebsocket({
         url,
-        WebSocketPolyfill: kind === "selective" ? HeldHandshakeWebSocket : WebSocket,
+        WebSocketPolyfill: WebSocket,
         autoConnect: false,
       });
       sockets.push(socket);
@@ -163,13 +151,13 @@ it.each([
           draftRevisionToken: preview.draftRevisionToken,
         }),
       ).toMatchObject({ draftClosed: false });
-      expect((await f.branchStore.getBranch(branchId))?.generation).toBe(snapshot.generation);
+      expect((await f.branchStore.getBranch(branchId))?.generation).toBe(snapshot.generation + 1);
       const reconnect = createCollabYDoc({ gc: false });
       documents.push(reconnect);
+      reset = true;
       const stale = open(reconnect);
-      // An offline update queued before the handshake must rebuild this generation.
-      Y.applyUpdate(reconnect, Y.encodeStateAsUpdate(old), "offline");
-      expect(await stale.closed).toEqual({ code: 1000, reason: WS_CLOSE.BRANCH_STALE.reason });
+      // The old room is rejected before any obsolete update is admitted.
+      expect(await stale.denied).toBe(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
     }
   } finally {
     for (const provider of providers) provider.destroy();

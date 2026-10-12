@@ -76,7 +76,8 @@ Related boundaries: [`domains/notices`](../notices/AGENTS.md) and
 inside their existing mutation transactions and locks. Parts retain delta bytes
 independently of journal compaction. Apply moves placement at completed admission
 to the authored live row, not the reconcile row; Discard and empty-draft reset
-make discarded and retired placements terminal. Per-change Discard captures one
-inverse edit per target edit under a shared action ID. These tables have no
+make discarded and retired placements terminal. Per-change Discard re-forks from
+live and surviving journal rows with their immutable edit/part identity; it
+creates no inverse edit or restoration copy. These tables have no
 product read policies yet: existing reversal tables and readers remain authoritative
 until the later undo-stack migration steps.

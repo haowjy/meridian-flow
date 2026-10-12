@@ -172,6 +172,17 @@ export type BranchCoordinator = {
     actorUserId?: string;
     roomDocument: Y.Doc;
   }): Promise<{ admitted: boolean }>;
+  withStagedRows<T>(
+    branchId: string,
+    run: (
+      doc: Y.Doc,
+      snapshot: BranchSnapshot,
+    ) => Promise<{
+      result: T;
+      rows: readonly Omit<AppendBranchJournalInput, "generation">[];
+    }>,
+    commit: boolean,
+  ): Promise<T>;
   commitSegmentRows(input: {
     branchId: string;
     expectedGeneration: number;
@@ -179,6 +190,7 @@ export type BranchCoordinator = {
     rows: readonly Omit<AppendBranchJournalInput, "generation">[];
   }): Promise<boolean>;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
+  notifyReset(input: { branchId: string; generation: number }): void;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
 };
 
@@ -272,6 +284,51 @@ export function createBranchCoordinator(input: {
     }
   }
 
+  async function applySegmentRows(
+    doc: Y.Doc,
+    snapshot: BranchSnapshot,
+    journals: readonly AppendBranchJournalInput[],
+  ): Promise<void> {
+    // Admission remains per logical write; segment rows keep their own attribution.
+    for (let index = 0; index < journals.length; ) {
+      const first = journals[index];
+      const writeRows = [first];
+      index++;
+      while (
+        index < journals.length &&
+        first.semanticEditIr &&
+        journals[index].semanticEditIr === first.semanticEditIr
+      )
+        writeRows.push(journals[index++]);
+      const apply = () => {
+        for (const row of writeRows) {
+          assertFreshAgentClient(doc, row);
+          Y.applyUpdate(doc, row.updateData);
+        }
+      };
+      if (first.semanticEditIr) {
+        const ir = first.semanticEditIr;
+        await admitCertifiedMutation(
+          {
+            readMutationTarget: () => ({
+              documentId: snapshot.documentId,
+              generation: BigInt(snapshot.generation),
+              doc,
+            }),
+            readCurrentRevision: async () => ir.inputRevision,
+            lowerCertifiedMutation: async () =>
+              Y.mergeUpdates(writeRows.map((row) => row.updateData)),
+            admitImmediate: async () => {
+              apply();
+              return { sequence: 0n, joined: 0 };
+            },
+          },
+          { ir },
+        );
+      } else apply();
+    }
+  }
+
   async function persist(
     snapshot: BranchSnapshot,
     doc: Y.Doc,
@@ -317,6 +374,13 @@ export function createBranchCoordinator(input: {
     if (!input.store.deferUntilCommit(publish)) publish();
   }
 
+  function notifyReset(reset: { branchId: string; generation: number }): void {
+    dirtyTransientBranches.delete(reset.branchId);
+    cached.delete(reset.branchId);
+    const publish = () => input.onBranchReset?.(reset);
+    if (!input.store.deferUntilCommit(publish)) publish();
+  }
+
   async function persistReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
@@ -347,9 +411,7 @@ export function createBranchCoordinator(input: {
     dirtyTransientBranches.delete(snapshot.branchId);
     cached.delete(snapshot.branchId);
     resetDoc.destroy();
-    const publish = () =>
-      input.onBranchReset?.({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
-    if (!input.store.deferUntilCommit(publish)) publish();
+    notifyReset({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
   }
 
   async function runWithRetry<T>(
@@ -456,6 +518,7 @@ export function createBranchCoordinator(input: {
   }
 
   return {
+    notifyReset,
     withBranch(branchId, fn) {
       return runWithRetry(branchId, (snapshot, doc) => fn(doc, snapshot));
     },
@@ -606,6 +669,42 @@ export function createBranchCoordinator(input: {
       input.onBranchUpdate?.(update);
     },
 
+    async withStagedRows(branchId, run, commit) {
+      return criticalSections.withBranches([branchId], async () => {
+        const snapshot = await loadSnapshot(branchId);
+        assertWritableBranch(snapshot);
+        const doc = cloneDoc((await materialize(snapshot)).doc);
+        let published = false;
+        try {
+          const { result, rows } = await run(doc, snapshot);
+          if (commit && rows.length) {
+            const admitted = cloneDoc((await materialize(snapshot)).doc);
+            try {
+              await applySegmentRows(
+                admitted,
+                snapshot,
+                rows.map((row) => ({ ...row, generation: snapshot.generation })),
+              );
+              if (!bytesEqual(Y.encodeStateAsUpdate(admitted), Y.encodeStateAsUpdate(doc)))
+                throw new Error("Response replay differs from its admitted segment rows");
+            } finally {
+              admitted.destroy();
+            }
+            await persist(
+              snapshot,
+              doc,
+              rows.map((row) => ({ ...row, generation: snapshot.generation })),
+            );
+            published = true;
+          }
+          return result;
+        } finally {
+          // Persist owns the admitted document until its publication callback.
+          if (!published) doc.destroy();
+        }
+      });
+    },
+
     async commitSegmentRows(batch) {
       let attempt = 0;
       while (true) {
@@ -617,44 +716,7 @@ export function createBranchCoordinator(input: {
               throw new BranchStaleUpdateError(batch.branchId);
             const doc = cloneDoc((await materialize(snapshot)).doc);
             const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
-            // Admission remains per logical write; segment rows keep their own attribution.
-            for (let index = 0; index < journals.length; ) {
-              const first = journals[index];
-              const writeRows = [first];
-              index++;
-              while (
-                index < journals.length &&
-                first.semanticEditIr &&
-                journals[index].semanticEditIr === first.semanticEditIr
-              )
-                writeRows.push(journals[index++]);
-              const apply = () => {
-                for (const row of writeRows) {
-                  assertFreshAgentClient(doc, row);
-                  Y.applyUpdate(doc, row.updateData);
-                }
-              };
-              if (first.semanticEditIr) {
-                const ir = first.semanticEditIr;
-                await admitCertifiedMutation(
-                  {
-                    readMutationTarget: () => ({
-                      documentId: snapshot.documentId,
-                      generation: BigInt(snapshot.generation),
-                      doc,
-                    }),
-                    readCurrentRevision: async () => ir.inputRevision,
-                    lowerCertifiedMutation: async () =>
-                      Y.mergeUpdates(writeRows.map((row) => row.updateData)),
-                    admitImmediate: async () => {
-                      apply();
-                      return { sequence: 0n, joined: 0 };
-                    },
-                  },
-                  { ir },
-                );
-              } else apply();
-            }
+            await applySegmentRows(doc, snapshot, journals);
             if (journalSyncDelta(batch.sourceDoc, doc))
               throw new Error("Segment publication left an unjournaled residual");
             if (!journals.length) return false;
@@ -763,7 +825,10 @@ function cloneDoc(doc: Y.Doc): Y.Doc {
   return clone;
 }
 
-function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Array): Uint8Array {
+export function mergeStateVectors(
+  left: Uint8Array | null | undefined,
+  right: Uint8Array,
+): Uint8Array {
   if (!left) return right;
   const merged = new Map(Y.decodeStateVector(left));
   for (const [client, clock] of Y.decodeStateVector(right)) {

@@ -103,6 +103,30 @@ export function dependsOnRows(
   };
 }
 
+/** Later staged segments lost with a selected segment, including clock prefixes. */
+export function laterDependencyClosure<T extends JournalDependencyRow>(
+  rows: readonly T[],
+  seeds: ReadonlySet<T>,
+): Set<T> {
+  const closed = new Set(seeds);
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    if (closed.has(row)) continue;
+    const earlier = rows.slice(0, index).filter((candidate) => closed.has(candidate));
+    const supplied = suppliedRanges(decodeUpdateForDependencies(row.updateData));
+    if (
+      dependsOnRows(earlier)(row) ||
+      earlier.some((candidate) =>
+        suppliedRanges(decodeUpdateForDependencies(candidate.updateData)).some((prefix) =>
+          supplied.some((range) => prefix.client === range.client && prefix.clock < range.clock),
+        ),
+      )
+    )
+      closed.add(row);
+  }
+  return closed;
+}
+
 function isYId(value: unknown): value is YId {
   return (
     typeof value === "object" &&

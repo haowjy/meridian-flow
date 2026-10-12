@@ -129,7 +129,7 @@ function unionYjsDependencies(
   }
 }
 
-function subtractRanges(
+export function subtractRanges(
   ranges: readonly ClockRange[],
   excluded: readonly ClockRange[],
 ): ClockRange[] {

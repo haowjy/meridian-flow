@@ -299,3 +299,49 @@ it("rescues a writer-created rich container without copying its discarded AI dep
   discarded.destroy();
   server.destroy();
 });
+
+it("a selective Discard re-fork keeps anchored unsent typing and notices typing inside the discarded change", async () => {
+  const { source } = start();
+  runtime.wire(room(1)).ack();
+  const acknowledged = Y.encodeStateAsUpdate(source.document);
+  const gold = new Y.Doc({ gc: false }),
+    survivor = new Y.Doc({ gc: false });
+  try {
+    Y.applyUpdate(gold, acknowledged);
+    gold.clientID = 5001;
+    gold.getText("text").insert(2, "gold");
+    Y.applyUpdate(survivor, acknowledged);
+    survivor.clientID = 6001;
+    survivor.transact(() => {
+      survivor.getText("text").delete(6, 5);
+      survivor.getText("text").insert(6, "AZURE");
+    });
+    Y.applyUpdate(source.document, Y.encodeStateAsUpdate(gold), runtime.wire(room(1)));
+    Y.applyUpdate(source.document, Y.encodeStateAsUpdate(survivor), runtime.wire(room(1)));
+    source.document.getText("text").insert(4, "X");
+    source.document.getText("text").insert(source.document.getText("text").length, "!");
+    await flush();
+    reset(1);
+    await flush();
+    const wire = runtime.wire(room(2));
+    wire.sync(Y.encodeStateAsUpdate(survivor));
+    await flush();
+    expect(wire.document.getText("text").toString()).toBe("hello AZURE!");
+    expect(runtime.writerLoss).toHaveBeenCalledTimes(1);
+    expect(runtime.changed).not.toHaveBeenCalled();
+    wire.ack();
+    await flush();
+    expect(runtime.writerChanges).toHaveBeenLastCalledWith(null);
+    const admitted = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(admitted, Y.encodeStateAsUpdate(survivor));
+      for (const update of wire.sent) Y.applyUpdate(admitted, update);
+      expect(admitted.getText("text").toString()).toBe("hello AZURE!");
+    } finally {
+      admitted.destroy();
+    }
+  } finally {
+    gold.destroy();
+    survivor.destroy();
+  }
+});

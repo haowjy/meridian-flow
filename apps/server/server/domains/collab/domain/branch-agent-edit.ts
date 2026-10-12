@@ -24,6 +24,7 @@ import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js"
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
+import { reconcileStagedBranchWrites } from "./branch-response-replay.js";
 import {
   type BranchReversalScope,
   type BranchReversalState,
@@ -130,7 +131,8 @@ export function createBranchAgentEditCoordinator(input: {
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
+  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
+    Partial<Pick<BranchJournalReadStore, "listJournalRowsForBranch">>;
   liveJournal?: Pick<ReversalStore, "readForReconstruction">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
@@ -141,6 +143,31 @@ export function createBranchAgentEditCoordinator(input: {
 }): DocumentCoordinator {
   const concurrentJournalWatermarks =
     input.concurrentJournalWatermarks ?? createBranchConcurrentJournalWatermarks();
+  function branchRows(branchId: string, entries: readonly JournalBatchAppendEntry[]) {
+    return entries.map((entry) => {
+      const mutation = entry.mutation;
+      if (mutation?.mode !== "threadPeer")
+        throw new Error("thread_peer_commit_missing_branch_generation");
+      return {
+        branchId,
+        source: "agent" as const,
+        updateData: entry.update,
+        documentEditKey: mutation.writeId,
+        threadId: (mutation.threadId as ThreadId | undefined) ?? input.threadId,
+        turnId: mutation.turnId ?? null,
+        wId: mutation.wId ?? null,
+        toolCallId: mutation.toolCallId ?? null,
+        updateMeta: entry.meta ?? null,
+        ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
+        ...(mutation.branchJournalWatermark !== undefined
+          ? { expectedJournalWatermark: mutation.branchJournalWatermark }
+          : {}),
+        ...(mutation.branchJournalRevision !== undefined
+          ? { expectedJournalRevision: mutation.branchJournalRevision }
+          : {}),
+      };
+    });
+  }
   return {
     async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
       const branchId = await ensureThreadBranch(input, docId as DocumentId);
@@ -179,31 +206,7 @@ export function createBranchAgentEditCoordinator(input: {
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
                 expectedGeneration: mutation.branchGeneration,
-                rows: pendingBatch.map((pending) => {
-                  if (pending.mutation?.mode !== "threadPeer")
-                    throw new Error("thread_peer_commit_missing_branch_generation");
-                  return {
-                    branchId: workDraftBranchId,
-                    source: "agent",
-                    updateData: pending.update,
-                    wId: pending.mutation?.wId ?? null,
-                    toolCallId: pending.mutation?.toolCallId ?? null,
-                    threadId:
-                      (pending.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
-                    turnId: pending.mutation?.turnId ?? null,
-                    ...(pending.mutation?.branchJournalWatermark !== undefined
-                      ? { expectedJournalWatermark: pending.mutation.branchJournalWatermark }
-                      : {}),
-                    ...(pending.mutation?.branchJournalRevision !== undefined
-                      ? { expectedJournalRevision: pending.mutation.branchJournalRevision }
-                      : {}),
-                    documentEditKey: pending.mutation?.writeId,
-                    updateMeta: pending.meta ?? null,
-                    ...(pending.mutation?.semanticEditIr
-                      ? { semanticEditIr: pending.mutation.semanticEditIr }
-                      : {}),
-                  };
-                }),
+                rows: branchRows(workDraftBranchId, pendingBatch),
               });
               if (!committed) return result;
               advanceConcurrentJournalWatermark(
@@ -236,6 +239,72 @@ export function createBranchAgentEditCoordinator(input: {
       return result;
     },
 
+    async withStagedWrites(request, run) {
+      const peerId = await ensureThreadBranch(input, request.docId as DocumentId);
+      const peer = await input.branches.getBranch(peerId);
+      const branchId = peer?.upstreamBranchId;
+      if (!branchId) throw new Error("Response peer has no Work draft");
+      const result = await input.branchCoordinator.withStagedRows(
+        branchId,
+        async (doc, snapshot) => {
+          const plannedGenerations = [
+            ...new Set(
+              request.entries.map((entry) =>
+                entry.mutation?.mode === "threadPeer"
+                  ? entry.mutation.branchGeneration
+                  : snapshot.generation,
+              ),
+            ),
+          ];
+          if (plannedGenerations.some((generation) => generation > snapshot.generation))
+            throw new Error("Response planned in a future draft generation");
+          const retired: Uint8Array[] = [];
+          for (const generation of plannedGenerations) {
+            if (generation === snapshot.generation) continue;
+            if (!input.journalRows?.listJournalRowsForBranch)
+              throw new Error("Response generation history is unavailable");
+            const rows = await input.journalRows.listJournalRowsForBranch({ branchId, generation });
+            // Re-journaled survivors remain byte-identical; their bytes are already
+            // in the current cut. Residual subtraction below accounts for that.
+            retired.push(...rows.map((row) => row.updateData));
+          }
+          const kept = reconcileStagedBranchWrites(
+            doc,
+            request.sourceDoc,
+            request.entries,
+            retired,
+          );
+          const keptIds = new Set(
+            kept.map((entry) => {
+              if (!entry.mutation?.writeId)
+                throw new Error("Staged response has no write identity");
+              return entry.mutation.writeId;
+            }),
+          );
+          const result = await run(doc, keptIds, snapshot.state);
+          return {
+            result,
+            rows: branchRows(branchId, kept),
+          };
+        },
+        request.commit,
+      );
+      if (request.commit) {
+        const current = await input.branchCoordinator.readBranch(branchId, async (doc) =>
+          cloneYDoc(doc),
+        );
+        try {
+          await input.branchCoordinator.withBranchTransient(peerId, async (doc) => {
+            Y.applyUpdate(doc, Y.encodeStateAsUpdate(current));
+          });
+          await input.branchCoordinator.checkpointBranch(peerId);
+        } finally {
+          current.destroy();
+        }
+      }
+      return result;
+    },
+
     async recover(docId: string): Promise<void> {
       await ensureThreadBranch(input, docId as DocumentId);
     },
@@ -247,6 +316,7 @@ export function createBranchAgentEditCoordinator(input: {
       afterJournalId,
       liveJournalSeq,
       attemptId,
+      reportingCut,
     }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
       const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
@@ -255,6 +325,13 @@ export function createBranchAgentEditCoordinator(input: {
         docId as DocumentId,
         afterJournalId,
       );
+      if (reportingCut) {
+        const cut = Y.snapshot(doc);
+        concurrent.rows = concurrent.rows.filter((row) =>
+          Y.snapshotContainsUpdate(cut, row.updateData),
+        );
+        concurrent.upstreamState = reportingCut;
+      }
       // Durable upstream work-draft rows are never suppressed as "self" merely
       // because they came from this thread; the journal watermark is the fence.
       const liveRows = input.liveJournal
@@ -293,6 +370,15 @@ export function createBranchAgentEditCoordinator(input: {
           maxRowId,
           attemptId,
         );
+        if (reportingCut)
+          advanceConcurrentJournalWatermark(
+            concurrentJournalWatermarks,
+            input.threadId,
+            docId as DocumentId,
+            input.afterCommit,
+            input.enlistResponseParticipant,
+            attemptId,
+          );
         // Capture itself is provisional: failures before branch persistence must
         // clear the candidate even though no watermark-advance participant exists yet.
         input.enlistResponseParticipant({
@@ -689,7 +775,8 @@ async function concurrentUpstreamJournalRows(
     threadId: ThreadId;
     branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
-    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
+    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
+      Partial<Pick<BranchJournalReadStore, "listJournalRowsForBranch">>;
   },
   documentId: DocumentId,
   afterJournalId?: number,
