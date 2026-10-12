@@ -1,4 +1,5 @@
 /** Journal invariants shared by storage adapters; attempts are immutable once submitted. */
+import { newerCanonicalObservation } from "./canonical-observation";
 import { validateNamespaceJournal } from "./namespace-journal-policy";
 import type { ResourceRecord } from "./resource-records";
 
@@ -13,8 +14,25 @@ export function validateResourceRecordUpdate(
     throw new Error("Invalid resource revision");
   if (previous && previous.resource.handle !== resource.handle)
     throw new Error("Resource identity mismatch");
-  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal")
-    throw new Error("Terminal resources cannot be revived");
+  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal") {
+    // Only a strictly newer server observation of the document as present supersedes deletion,
+    // and never under an outstanding purge of the deleted lineage's content.
+    const restored =
+      resource.lifecycle.kind === "acknowledged" &&
+      resource.canonical !== null &&
+      resource.observationVersion !== undefined &&
+      newerCanonicalObservation(
+        resource.observationVersion,
+        previous.resource.observationVersion,
+      ) &&
+      !previous.resource.obligations.cleanup &&
+      resource.identity.documentId === previous.resource.identity.documentId &&
+      resource.identity.revision === previous.resource.identity.revision &&
+      resource.content.kind === "unacquired" &&
+      resource.revivedFrom?.generation === previous.resource.lifecycle.generation &&
+      resource.revivedFrom.transitionId === previous.resource.lifecycle.transitionId;
+    if (!restored) throw new Error("Terminal resources revive only from newer server observations");
+  }
   const nextInitializationReserved =
     resource.content.kind === "exact" && resource.content.initialization === "reserved";
   const previousInitializationReserved =

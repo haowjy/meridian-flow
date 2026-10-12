@@ -1,6 +1,6 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
 import { namespaceRepairDestination } from "./namespace-journal-policy";
-import { intentOwnsDeletion, owningLocationIntent } from "./resource-intent-policy";
+import { intentOwnsDeletionAt, owningLocationIntent } from "./resource-intent-policy";
 import {
   type DestinationParentLookup,
   destinationLocation,
@@ -59,7 +59,11 @@ export function projectResourceLocation(
 ): ProjectResourceLocation | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
-    record.intents.some((intent) => intent.projectId === projectId && intentOwnsDeletion(intent))
+    record.intents.some(
+      (intent) =>
+        intent.projectId === projectId &&
+        intentOwnsDeletionAt(intent, record.resource.observationVersion),
+    )
   )
     return null;
   const placement = owningLocationIntent(

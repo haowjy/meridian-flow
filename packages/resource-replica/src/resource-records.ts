@@ -119,6 +119,8 @@ export type ResourceDescriptor = ResourceKey & {
     | { kind: "acknowledged"; availabilityGeneration: string | null }
     | { kind: "terminal"; generation: string; transitionId: string };
   aliases: Record<string, { introducedAtIdentityRevision: number }>;
+  /** The terminal transition a newer server observation superseded; its late purge is stale. */
+  revivedFrom?: { generation: string; transitionId: string };
   obligations: {
     /** A new local document cannot dispatch Create until content exists or the writer files it. */
     createEligibility?: { eligibleAt: number | null };

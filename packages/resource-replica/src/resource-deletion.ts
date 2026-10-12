@@ -1,7 +1,7 @@
 /** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
 
 import { newerCanonicalObservation } from "./canonical-observation";
-import { intentOwnsDeletion, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
+import { intentOwnsDeletionAt, supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
 
 export function planResourceDeletion(
@@ -9,7 +9,12 @@ export function planResourceDeletion(
   projectId: string,
   intentId: string,
 ): ResourceWrite | null {
-  if (record.resource.lifecycle.kind === "terminal" || record.intents.some(intentOwnsDeletion))
+  if (
+    record.resource.lifecycle.kind === "terminal" ||
+    record.intents.some((intent) =>
+      intentOwnsDeletionAt(intent, record.resource.observationVersion),
+    )
+  )
     return null;
   const neverSubmitted =
     record.resource.lifecycle.kind === "local" &&

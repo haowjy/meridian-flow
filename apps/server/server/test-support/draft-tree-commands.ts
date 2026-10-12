@@ -85,8 +85,13 @@ export interface ScenarioWriter {
   mkdir(path: string): Promise<void>;
   /** The sidebar's rename or move: commits `from`'s exact identity at `to`. */
   move(from: string, to: string): ReturnType<ContextPort["commitWriterLocation"]>;
-  /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
-  delete(path: string): ReturnType<ContextPort["delete"]>;
+  /**
+   * The sidebar's delete of the file or folder at `path` (recursive for a folder). With an
+   * `operationId`, its receipt is durable for `operation`.
+   */
+  delete(path: string, operationId?: string): ReturnType<ContextPort["delete"]>;
+  /** The durable receipt of one namespace operation, as the replica's transport reads it. */
+  operation(operationId: string): ReturnType<ContextPort["lookupOperation"]>;
   /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
   /**
@@ -386,13 +391,14 @@ export function draftTreeCommands(
     async move(from, to) {
       return (await livePort()).commitWriterLocation(uri(from), uri(to), { origin: human() });
     },
-    async delete(path) {
+    async delete(path, operationId) {
       const port = await livePort();
       // stat answers files only; anything else at the path is the folder being deleted.
       const stat = await port.stat(uri(path));
       if (stat.ok) {
         return port.delete(uri(path), {
           origin: human(),
+          ...(operationId ? { operationId } : {}),
           expected: { kind: "file", documentId: stat.value.documentId ?? "" },
         });
       }
@@ -403,12 +409,16 @@ export function draftTreeCommands(
       });
       return port.delete(uri(path), {
         origin: human(),
+        ...(operationId ? { operationId } : {}),
         expected: {
           kind: "folder",
           nodeId:
             folder.kind === "found" && folder.node.kind === "folder" ? folder.node.folder.id : "",
         },
       });
+    },
+    async operation(operationId) {
+      return (await livePort()).lookupOperation(operationId);
     },
     async write(path, markdown) {
       const written = await (await livePort()).write(uri(path), markdown, {

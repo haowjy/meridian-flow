@@ -3,9 +3,11 @@
  * made live merges and a live rename is named back, a second draft sees only its part of a
  * shared create, a create applies at its path after a live folder rename absorbed its
  * hidden folder, and a document deleted live is restored with its folder unless another
- * document took its path. Driven through the review route cores.
+ * document took its path. Driven through the review route cores. The device that deleted the
+ * folder sees the restore: its replica installs the real receipt, catalog and availability.
  */
 import { folders } from "@meridian/database/schema";
+import { ReplicaHarness } from "@meridian/resource-replica/test-support";
 import { and, eq, sql } from "drizzle-orm";
 import { expect, it } from "vitest";
 import { itemFor } from "../../test-support/draft-tree-scenario.js";
@@ -253,5 +255,54 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(await live.text("lore/harbor")).toContain("The harbor, drafted.");
     expect.soft(await live.idAt("atlas/map"), "the new map stays").toBe(newMap);
     expect.soft(await live.locate(map), "the held one stays deleted").toBeNull();
+  });
+
+  it("projects the restore on the device that deleted the folder, from the server's own receipt, catalog and availability (E-8, F23)", async () => {
+    const { runtime, s } = await start();
+    const { contextCatalog, projectContextAvailability } = runtime.ports;
+    const scope = { kind: "project" as const, projectId: s.project.id };
+    const ascension = await s.work("Ascension", "draft");
+    const harbor = await s.writer.createDocument("lore/harbor", "The harbor.");
+    await s.model(ascension).edit("lore/harbor", "The harbor.", "The harbor, drafted.");
+
+    const device = new ReplicaHarness(s.project.id);
+    const beforeDeletion = await contextCatalog.snapshot(scope);
+    device.install(beforeDeletion);
+    const parent = device.document(harbor).resource.canonicalParent;
+    if (parent?.kind !== "folder") throw new Error("harbor should sit in the lore folder");
+    const lore = parent.folderId;
+    expect(device.projection().ids).toEqual(expect.arrayContaining([lore, harbor]));
+
+    const request = device.requestFolderDeletion(lore);
+    expect((await s.writer.delete("lore", request.body.operationId)).ok).toBe(true);
+    const receipt = await s.writer.operation(request.body.operationId);
+    if (!receipt) throw new Error("the folder delete has no receipt");
+    device.settleFolderDeletion(lore, receipt);
+    expect
+      .soft(device.document(harbor).resource.lifecycle.kind, "receipt's exact ids")
+      .toBe("terminal");
+    device.install(beforeDeletion);
+    expect(device.projection().ids, "a page from before the deletion").not.toContain(lore);
+    expect(device.projection().ids).not.toContain(harbor);
+
+    expect(await s.applyAll(ascension)).toMatchObject({ status: "completed" });
+    device.install(await contextCatalog.snapshot(scope));
+    expect(device.projection().ids, "Apply's restore").toEqual(
+      expect.arrayContaining([lore, harbor]),
+    );
+    expect(device.projection().location(harbor)).toMatchObject({ path: "/lore/harbor" });
+    expect(device.folder(lore).terminal).toBeUndefined();
+
+    // Exact-ID availability reports both present, strictly newer than the deletion.
+    const availability = await projectContextAvailability.lookup(
+      { projectId: s.project.id, documentIds: [harbor], folderIds: [lore] },
+      { userId: s.project.userId },
+    );
+    const folder = availability.folderResolutions?.[0];
+    const document = availability.resolutions[0];
+    if (folder?.kind !== "available" || document?.kind !== "available")
+      throw new Error(`restored identities should be available: ${JSON.stringify(availability)}`);
+    for (const version of [folder.entry.observationVersion, document.entry.observationVersion])
+      expect(BigInt(version) > BigInt(receipt.observationVersion)).toBe(true);
   });
 });

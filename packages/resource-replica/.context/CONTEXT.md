@@ -113,6 +113,16 @@ Catalog observations install atomically with their checkpoint; exact-ID availabi
 observations use the same metadata CAS. Both journals share typed settlement policy,
 and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
 
+Terminal is not forever. Deletion ownership is versioned: `confirmedDeletionVersion`
+reads an accepted delete's receipt version, and terminal records hold their deletion's
+`observationVersion`. Catalog installation compares a present entry with that held
+version; only strictly newer evidence revives (`revivedResourceWrite`, folder
+installation dropping `terminal`), and the validators admit exactly that transition:
+newer version, acknowledged with a canonical location, unacquired content, no
+outstanding purge cleanup, `revivedFrom` naming the superseded transition.
+`unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
+its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
+
 Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
 parent is a picked folder identity or qualified area root. Linked creation alone
 captures the deepest existing identity and missing folder names beneath it.
