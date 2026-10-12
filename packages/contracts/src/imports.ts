@@ -90,7 +90,11 @@ export interface ImportCounts {
 export interface ImportSummary {
   importId: string;
   state: ImportState;
-  destination: { folderUri: string };
+  /**
+   * Where the import was started. `folderId` is the destination folder's id (null
+   * at an area root), which keeps naming the folder after a move renames its URI.
+   */
+  destination: { folderUri: string; folderId: string | null };
   sort: boolean;
   counts: ImportCounts;
   lastActivityAt: string;

@@ -32,7 +32,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
   const report = (): ImportReport => ({
     importId: manifest?.importId ?? "",
     state: finished ? "finished" : "ready",
-    destination: manifest?.destination ?? { folderUri: "kb://" },
+    destination: { folderUri: manifest?.destination.folderUri ?? "kb://", folderId: null },
     sort: false,
     counts: counts(),
     lastActivityAt: new Date().toISOString(),

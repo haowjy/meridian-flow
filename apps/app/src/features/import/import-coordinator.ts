@@ -485,7 +485,7 @@ export function destinationFromSummary(summary: ImportSummary): ImportDestinatio
     path,
     uri,
     name: path === "/" ? areaLabel(scheme) : path.slice(path.lastIndexOf("/") + 1),
-    folderId: null,
+    folderId: summary.destination.folderId,
   };
 }
 

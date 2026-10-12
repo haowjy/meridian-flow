@@ -34,16 +34,23 @@ export function placementsOf(state: ImportState): Placement[] {
     }
     if (areas.size > 0) return [...areas].map((scheme) => ({ scheme, path: "/", folderId: null }));
   }
-  const uri = state.report?.summary.destination.folderUri;
-  const scheme = uri?.match(/^([a-z]+):\/\//)?.[1];
-  if (!uri || !scheme || !isImportScheme(scheme as ProjectContextTreeScheme)) return [];
-  return [{ scheme: scheme as ImportScheme, path: catalogPathOfUri(uri) ?? "/", folderId: null }];
+  const destination = state.report?.summary.destination;
+  const scheme = destination?.folderUri.match(/^([a-z]+):\/\//)?.[1];
+  if (!destination || !scheme || !isImportScheme(scheme as ProjectContextTreeScheme)) return [];
+  return [
+    {
+      scheme: scheme as ImportScheme,
+      path: catalogPathOfUri(destination.folderUri) ?? "/",
+      folderId: destination.folderId,
+    },
+  ];
 }
 
 /**
  * The tree folder (by catalog id) each import's status row belongs under in this
- * scheme: the folder it was invoked on, followed by id when this tab started it
- * and by path otherwise, falling back to the area root when it is gone.
+ * scheme: the folder it was invoked on, followed by id wherever it has moved,
+ * falling back to the area root when it is gone. A path can name another folder
+ * after a rename, so it never stands in for the id.
  */
 export function statusParents(
   catalog: CatalogContextView,
@@ -55,17 +62,11 @@ export function statusParents(
     if (state.dismissing || state.report?.summary.dismissedAt) continue;
     for (const placement of placementsOf(state)) {
       if (placement.scheme !== scheme) continue;
-      let parentId = catalog.root.entryId;
-      if (placement.path !== "/") {
-        const byId = placement.folderId
-          ? catalog.normalized.entries.get(placement.folderId)
-          : undefined;
-        if (byId?.kind === "folder") parentId = placement.folderId as string;
-        else {
-          const found = catalog.findPath(placement.path);
-          if (found?.kind === "dir") parentId = found.entryId;
-        }
-      }
+      const folder = placement.folderId
+        ? catalog.normalized.entries.get(placement.folderId)
+        : undefined;
+      const parentId =
+        placement.folderId && folder?.kind === "folder" ? placement.folderId : catalog.root.entryId;
       byParent.set(parentId, [...(byParent.get(parentId) ?? []), state.importId]);
     }
   }

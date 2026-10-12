@@ -81,7 +81,7 @@ export function createImportService(deps: {
     return {
       importId: record.id,
       state: record.state,
-      destination: record.manifest.destination,
+      destination: { folderUri: record.manifest.destination.folderUri, folderId: record.folderId },
       sort: record.manifest.sort,
       counts: cut.counts,
       lastActivityAt: cut.lastActivityAt,

@@ -82,7 +82,7 @@ function report(overrides: Partial<ImportReport> = {}): ImportReport {
   return {
     importId: "import-1",
     state: "ready",
-    destination: { folderUri: "kb://" },
+    destination: { folderUri: "kb://", folderId: null },
     sort: false,
     counts: {
       total: entries.length,
