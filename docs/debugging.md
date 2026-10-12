@@ -88,14 +88,15 @@ at its final snapshot; it does not attribute replies to messages.
 - Outcomes map to exits: **0 complete**, **1 failed**, **5 cancelled**,
   **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
   **3 not found**, **4 unavailable** (stack, login, terminal socket close).
-  `reason` is null for a proven outcome; timeout uses `running` or `owed`.
+  `reason` is null for a proven outcome; timeout uses `running` or `owed`
+  (`unconfirmed` when tail has no successful snapshot).
   Unproven reasons today are `admission_unknown`, `replay_truncated`, and
   `unconfirmed`, and `owed`. A complete send still does not prove which reply
   answered, as explained above.
 - In text mode, a final answer goes to stdout only for complete or failed.
   Stderr reports `<outcome> <turn> [reason]` and any follow-up commands.
   A failed or cancelled run is a `result`, never a terminal `error` record.
-- A send or `tail --until-idle` deadline reads one final snapshot. Its result
+- A send deadline reads one final snapshot. Its result
   reports `stillRunning` (turn id and status, or null), `owed` (pending writer
   messages), and `next` commands. The pending inbox is a mandatory live-state
   field. Text says when the server is
@@ -109,6 +110,16 @@ at its final snapshot; it does not attribute replies to messages.
   `liveState.pending.items`. A successor run or owed writer message keeps it
   following until a snapshot confirms idle or the deadline exits 124 with the
   timeout report. Durable `thread.status` alone is not evidence of idle.
+  One subscription and event mapper stay alive through checkpoints, including
+  frames queued during HTTP confirmation. Its `turns` list covers the initially
+  running turn and every stream-named turn with their snapshot statuses.
+  Missing or non-terminal turns produce 6 `unconfirmed`; otherwise any error
+  produces failed, any cancellation produces cancelled, and all complete produces
+  complete. An initially idle chat returns complete with an empty list.
+  Snapshot requests use only the time remaining. At timeout, the last snapshot's
+  activity is labeled `snapshotStale: true` (not a new current-state claim),
+  or `snapshotUnavailable: true` if no snapshot succeeded. No post-deadline
+  snapshot request extends the wait.
 - `cancel`'s complete envelope proves the server acknowledged cancellation
   or reported the target already finished, not that a particular reply was
   answered. Its `status` carries that acknowledgement. A missing target keeps

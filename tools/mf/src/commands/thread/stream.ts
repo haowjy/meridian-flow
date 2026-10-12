@@ -30,11 +30,12 @@ export type FollowOptions = {
   catchupOnly?: boolean;
   /** Replaces the default record and line per event; null drops the event from output. */
   present?: (event: CliEvent) => { value: Record<string, unknown>; line: string | null } | null;
-  /** Return true to stop following after this event has been emitted. */
+  /** Request a stop after emission; confirmStop turns it into a state checkpoint. */
   shouldStop?: (event: CliEvent) => boolean;
   /** Idle lease/pending updates can arrive after the final turn event. */
   shouldStopState?: (state: ThreadLiveState) => boolean;
-  drainCheckpoint?: boolean;
+  /** Confirm a requested checkpoint without disposing subscription/presentation state. */
+  confirmStop?: (turnIds: readonly string[]) => Promise<boolean>;
   transport?: ThreadTransport;
 };
 
@@ -51,6 +52,10 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
 
   const emit = (event: CliEvent): boolean => {
     if ("turnId" in event) turnIds.add(event.turnId);
+    if (event.type === "event" && event.name === "meridian.thread.status") {
+      const runningTurnId = (event.value as { runningTurnId?: unknown } | undefined)?.runningTurnId;
+      if (typeof runningTurnId === "string") turnIds.add(runningTurnId);
+    }
     const shown = options.present
       ? options.present(event)
       : { value: event, line: renderEventLine(event, options.full) };
@@ -78,6 +83,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
       switch (message.type) {
         case "live":
           state = message.state;
+          if (state.runningTurnId) turnIds.add(state.runningTurnId);
           if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;
         case "event": {
@@ -106,9 +112,17 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
           break;
         }
       }
-      // A checkpoint must not cut off an already queued catch-up/live batch.
-      if (stopRequested && (!options.drainCheckpoint || !subscription.hasQueued()))
+      if (stopRequested) {
+        if (options.confirmStop) {
+          if (subscription.hasQueued()) continue;
+          stopRequested = await options.confirmStop([...turnIds]);
+          // Frames queued during HTTP confirmation must be presented and their
+          // named turns reconciled before the command may finish.
+          if (subscription.hasQueued()) continue;
+          if (!stopRequested) continue;
+        }
         return { lastSeq, turnIds: [...turnIds], truncated, stoppedBy: requestedStop, state };
+      }
     }
   } finally {
     subscription.unsubscribe();
