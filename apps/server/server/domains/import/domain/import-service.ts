@@ -20,6 +20,15 @@ import { prepareImportedNote } from "./prepare-note.js";
 import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
 /** Where the writer knows a link target from: its selected path, or an existing document's address. */
+/**
+ * The one claim policy: an entry takes bytes when planned, failed, or landing under a
+ * lapsed lease. A live lease belongs to a running attempt; a lapsed one to a dead process.
+ */
+function wantsBytes(entry: ImportEntry, at: Date): boolean {
+  if (entry.state === "planned" || entry.state === "failed") return true;
+  return entry.state === "landing" && !(entry.leaseUntil && entry.leaseUntil > at);
+}
+
 function targetPath(record: ImportRecord, entries: readonly ImportEntry[], id: string): string {
   const selected = entries.find((entry) => entry.id === id);
   if (selected) {
@@ -179,6 +188,7 @@ export function createImportService(deps: {
       uri: entry.uri,
       name: liveName?.ok ? liveName.value.name : entry.name,
       exists,
+      wanted: wantsBytes(entry, now()),
       reason: entry.reason,
       ...(entry.reasonParams ? { reasonParams: entry.reasonParams } : {}),
       findings: entry.findings,
@@ -464,7 +474,7 @@ export function createImportService(deps: {
         const entry = await repo.lockEntry(candidate.id);
         if (["landed", "skipped", "deleted", "not_imported"].includes(entry.state)) return null;
         if (record.state !== "ready") throw new ImportError(409, "import_not_ready");
-        if (entry.state === "landing" && entry.leaseUntil && entry.leaseUntil > now()) return null;
+        if (!wantsBytes(entry, now())) return null;
         const attemptId = randomUUID(),
           leaseUntil = new Date(now().getTime() + IMPORT_LIMITS.leaseMs);
         const prepend = entry.prependOnRetry;

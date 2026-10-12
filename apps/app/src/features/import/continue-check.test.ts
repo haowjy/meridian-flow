@@ -19,6 +19,7 @@ const entry = (
     size,
     sha256,
     state,
+    wanted: state === "planned",
     reason: null,
   }) as ImportEntryReport;
 

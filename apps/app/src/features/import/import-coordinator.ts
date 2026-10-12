@@ -316,7 +316,7 @@ export class ImportCoordinator {
     const files: HeldFile[] = [];
     for (const entry of report.entries.values()) {
       if (only && !only.has(entry.entryId)) continue;
-      if (entry.state !== "planned" && entry.state !== "failed") continue;
+      if (!entry.wanted) continue;
       const file = matched.get(entry.entryId);
       if (file) files.push({ ...file, entryId: entry.entryId });
     }

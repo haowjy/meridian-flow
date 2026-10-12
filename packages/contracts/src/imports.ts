@@ -117,6 +117,11 @@ export interface ImportEntryReport {
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
   exists: boolean;
+  /**
+   * The server takes this file's bytes now: planned, failed, or a landing whose
+   * claim lapsed (its process died). Read at report time; senders trust it alone.
+   */
+  wanted: boolean;
   findings: ImportFinding[];
 }
 export interface ImportReport extends ImportSummary {

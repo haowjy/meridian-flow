@@ -21,6 +21,7 @@ const entry = (
   name: `n${entryId}`,
   reason: null,
   exists: true,
+  wanted: false,
   findings: [],
   ...patch,
 });

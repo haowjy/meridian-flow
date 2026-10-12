@@ -87,7 +87,8 @@ export function ContinueImportDialog({
     const control = new AbortController();
     (async () => {
       try {
-        if (!fullyRead(store.getSnapshot().report)) await store.refresh(true);
+        // Fresh, whole: what the server wants now decides what Continue sends.
+        await store.refresh(true);
         const report = store.getSnapshot().report;
         if (!fullyRead(report)) throw new Error("report");
         const stored = { roots: report.roots, entries: [...report.entries.values()] };

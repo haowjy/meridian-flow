@@ -261,7 +261,6 @@ export function matchHeld(
 /** Files the continued import will send: the ones the server still waits for. */
 export function outstanding(entries: Iterable<ImportEntryReport>): number {
   let count = 0;
-  for (const entry of entries)
-    if (entry.state === "planned" || entry.state === "failed") count += 1;
+  for (const entry of entries) if (entry.wanted) count += 1;
   return count;
 }

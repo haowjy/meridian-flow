@@ -5,6 +5,7 @@ import type { ImportDestination } from "./destination";
 import { fakeImportServer } from "./fake-import-server";
 import { ImportCoordinator } from "./import-coordinator";
 import { displayOf } from "./import-store";
+import { buildManifest } from "./manifest";
 import type { Selection } from "./selection";
 
 const announced = vi.hoisted(() => [] as string[]);
@@ -336,6 +337,33 @@ describe("ImportCoordinator.retry", () => {
     const sent = sends.length;
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(sends.length).toBe(sent);
+    coordinator.dispose();
+  });
+});
+
+describe("ImportCoordinator.continueImport", () => {
+  it("re-sends every file the server wants, including a landing whose claim has lapsed", async () => {
+    const server = fakeImportServer();
+    const selection = vault();
+    const built = await buildManifest(selection, { importId: "crashed", destinationUri: "kb://" });
+    await server.api.plan("p", built.manifest);
+    // A process crash left two files mid-landing: one claim lapsed, one is still live.
+    const [lapsed, live] = [...server.entries.values()].map((entry) => entry.entryId);
+    for (const [entryId, wanted] of [
+      [lapsed, true],
+      [live, false],
+    ] as const) {
+      const entry = server.entries.get(entryId);
+      if (entry) server.entries.set(entryId, { ...entry, state: "landing", wanted });
+    }
+
+    const coordinator = new ImportCoordinator("p", server.api);
+    const store = coordinator.store("crashed");
+    store.installReport(await server.api.report("p", "crashed"));
+    await coordinator.continueImport("crashed", built);
+    await settled(coordinator, "crashed");
+
+    expect(server.calls.send.flat().sort()).toEqual([lapsed, 2].sort());
     coordinator.dispose();
   });
 });

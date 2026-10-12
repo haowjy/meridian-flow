@@ -139,6 +139,7 @@ const entry = (
   name: path,
   reason: null,
   exists: true,
+  wanted: false,
   findings: [],
 });
 

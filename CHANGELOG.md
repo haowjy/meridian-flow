@@ -23,6 +23,7 @@
 - Import intake refuses oversized or over-deep manifests and request bodies with stable codes, and bounds concurrent file receives per import.
 - Finish cleans up only its own import's binary objects and never fails on cleanup; periodic object cleanup is batched and retires abandoned keys.
 - A path-qualified wikilink, pasted or imported, reaches an exact Unfiled path before suffix matches in other areas.
+- Continue import re-sends files whose landing was cut off by a crashed server once their claim lapses.
 
 
 ### Added

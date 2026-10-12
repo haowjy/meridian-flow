@@ -64,6 +64,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
           name: entry.path,
           reason: null,
           exists: true,
+          wanted: true,
           findings: [],
         });
       }
@@ -75,7 +76,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
         throw new ImportRequestError(500, null, undefined, "injected");
       for (const part of parts) {
         const entry = entries.get(part.entryId);
-        if (entry) entries.set(part.entryId, { ...entry, state: "landed" });
+        if (entry) entries.set(part.entryId, { ...entry, state: "landed", wanted: false });
       }
       version += 1;
       if (counts().arriving === 0 && counts().failed === 0) finished = true;
@@ -85,7 +86,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
       calls.finish += 1;
       for (const [id, entry] of entries)
         if (entry.state !== "landed" && entry.state !== "skipped")
-          entries.set(id, { ...entry, state: "not_imported" });
+          entries.set(id, { ...entry, state: "not_imported", wanted: false });
       finished = true;
       version += 1;
       return report();

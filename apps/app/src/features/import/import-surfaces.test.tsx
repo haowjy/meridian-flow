@@ -72,6 +72,7 @@ function entry(entryId: number, state: ImportEntryReport["state"]): ImportEntryR
     name: `Note ${entryId}`,
     reason: null,
     exists: true,
+    wanted: false,
     findings: [],
   };
 }

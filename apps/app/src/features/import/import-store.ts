@@ -183,7 +183,7 @@ export class ImportStore {
   private readonly wantsEntries = () =>
     [...this.watchers.values()].some((kind) => kind === "report" || kind === "notice");
 
-  /** One read: the whole report the first time, then only what changed. */
+  /** One read: the whole report the first time or when forced, else only what changed. */
   async refresh(forceFull = false): Promise<void> {
     if (this.polling || this.disposed) return;
     this.polling = true;
@@ -193,7 +193,8 @@ export class ImportStore {
       const phase = this.state.local?.phase.kind;
       if (!report && (phase === "preparing" || phase === "not-started")) return;
       if (!report && this.state.stop === "stopped") return;
-      if (fullyRead(report)) {
+      // A forced read is whole: roots and lapsed claims change without moving the version.
+      if (fullyRead(report) && !forceFull) {
         this.mergeChanges(await this.api.changes(this.projectId, this.importId, report.cursor));
       } else if (forceFull || this.wantsEntries() || this.state.local) {
         this.update((state) => ({ ...state, load: state.report ? state.load : "loading" }));
