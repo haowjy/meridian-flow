@@ -562,6 +562,7 @@ describe("thread", () => {
   ] as const)("tail --until-idle ends %s with a result", async (text, code, outcome) => {
     const isolated = await startFakeStack();
     try {
+      isolated.replyPolicy.holdUntilSubscribed = true;
       await isolated.mf(["thread", "send", THREAD_ID, text, "--no-wait"]);
       const result = await isolated.mf([
         "thread",
@@ -578,6 +579,7 @@ describe("thread", () => {
         command: "thread.tail",
         outcome,
         reason: null,
+        turns: [{ turnId: "turn-a1", status: outcome === "failed" ? "error" : outcome }],
       });
     } finally {
       await isolated.close();

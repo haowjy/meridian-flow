@@ -146,6 +146,8 @@ function createFake() {
     response: "resolved" as "resolved" | "unconfirmed" | "rejected" | "other",
   };
   const snapshotPolicy = { running: true, releaseDelayMs: 0, delayMs: 0 };
+  const replyPolicy = { holdUntilSubscribed: false };
+  const heldReplies: (() => void)[] = [];
   let leaseReleasePending = false;
   const admissions = new Map<string, unknown>();
   let runCounter = 0;
@@ -187,7 +189,7 @@ function createFake() {
       text: "",
     };
     turns.push(assistant);
-    setTimeout(() => {
+    const reply = () => {
       publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId } as AGUIEvent);
       if (text.includes("reconnect")) for (const socket of sockets) socket.close(1012, "restart");
       if (text.includes("fail")) {
@@ -295,7 +297,9 @@ function createFake() {
         }, snapshotPolicy.releaseDelayMs);
       }
       publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId } as AGUIEvent);
-    }, 10);
+    };
+    if (replyPolicy.holdUntilSubscribed) heldReplies.push(reply);
+    else setTimeout(reply, 10);
     return runId;
   };
 
@@ -662,6 +666,8 @@ function createFake() {
             state: currentLiveState() as never,
           };
           ws.send(JSON.stringify(frame));
+          // Tail has taken its start snapshot and subscribed before replies settle.
+          for (const reply of heldReplies.splice(0)) reply();
         }
       });
     });
@@ -677,6 +683,7 @@ function createFake() {
     admissionPolicy,
     interruptPolicy,
     snapshotPolicy,
+    replyPolicy,
     turns,
     publish,
     socketCount: () => socketCount,
