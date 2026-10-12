@@ -61,6 +61,7 @@ it("projects only the requesting project's durable location intention", () => {
   const received = recordNamespaceOutcome(submitted.next, "place", "file", {
     kind: "operation",
     receipt: {
+      observationVersion: "1",
       operationId: "file",
       command: {
         destinationParent: { kind: "folder" as const, folderId: "chapters" },

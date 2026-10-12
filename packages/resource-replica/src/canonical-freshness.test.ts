@@ -9,13 +9,20 @@ import {
   planFolderCatalogInstallation,
 } from "./folder-catalog-installation";
 import { installFolderNamespaceAvailability } from "./folder-namespace";
-import type { ResourceMetadataStore, ResourceProjectionSnapshot } from "./resource-records";
+import { committedResourceDeletion } from "./resource-deletion";
+import { installNamespaceAvailability } from "./resource-namespace";
+import type {
+  ResourceMetadataStore,
+  ResourceProjectionSnapshot,
+  ResourceRecord,
+} from "./resource-records";
 
 const projectId = "p";
 const scope = { kind: "project", projectId } as const;
 function folder(id: string, path: string, parentId: string, version: string): CatalogFolderEntry {
   return Object.assign(
     {
+      observationVersion: "1",
       kind: "folder" as const,
       entryId: id,
       scope,
@@ -63,6 +70,7 @@ it.each([
     "move",
     Object.assign(
       {
+        observationVersion: "1",
         kind: "available" as const,
         location: {
           scheme: "manuscript" as const,
@@ -168,8 +176,146 @@ it.each([
     planFolderCatalogInstallation({
       projectId,
       folders,
-      view,
+      view: { ...view, entries },
       fence: { folders: folderObservationFence(folders) },
     }),
   ).toEqual([]);
+});
+
+function document(): ResourceRecord {
+  return {
+    resource: {
+      handle: "document",
+      revision: 1,
+      identity: { documentId: "D", revision: 1 },
+      canonical: { scheme: "manuscript", workId: null, path: "/Q/Newest.md", name: "Newest.md" },
+      canonicalParent: { kind: "folder", folderId: "Q" },
+      observationVersion: "3",
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
+      content: { kind: "unacquired" },
+      lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+      aliases: {},
+      obligations: {},
+    },
+    intents: [],
+  };
+}
+
+it.each([
+  "2",
+  "3",
+  "4",
+])("documents install location, parent and classification only for newer versions (%s)", (version) => {
+  const record = document();
+  const view = catalogViewFromSnapshot(start);
+  const entries = new Map(view.entries);
+  entries.set("D", {
+    kind: "file",
+    entryId: "D",
+    scope,
+    sourceId: "source",
+    parentId: "P",
+    name: "Historical.bin",
+    path: ["P", "Historical.bin"],
+    uri: "manuscript://P/Historical.bin",
+    observationVersion: version,
+    aliases: [],
+    provisionalName: false,
+    editable: false,
+    disposition: "binary",
+    fileType: "binary",
+    mimeType: null,
+  });
+  const plan = planCatalogInstallation({
+    projectId,
+    records: [record],
+    view: { ...view, entries },
+    observedAfter: {
+      resources: new Map([
+        [
+          "document",
+          {
+            revision: 1,
+            canonical: record.resource.canonical,
+            canonicalParent: record.resource.canonicalParent,
+            classification: record.resource.classification,
+          },
+        ],
+      ]),
+    },
+  });
+  if (version === "4")
+    expect(plan.resources[0]?.next.resource).toMatchObject({
+      canonical: { path: "/P/Historical.bin" },
+      canonicalParent: { folderId: "P" },
+      classification: { editable: false },
+      observationVersion: "4",
+    });
+  else expect(plan.resources).toEqual([]);
+});
+
+it("equal evidence clears a matching refresh without replacing the held canonical observation", () => {
+  const record = document();
+  record.resource.obligations.canonicalRefresh = {
+    operationId: "move",
+    identityRevision: 1,
+    observationVersion: "3",
+  };
+  const available = {
+    kind: "available" as const,
+    observationVersion: "3",
+    location: {
+      scheme: "manuscript" as const,
+      workId: null,
+      path: "/P/Contradictory.md",
+      name: "Contradictory.md",
+    },
+    parent: { kind: "folder" as const, folderId: "P" },
+  };
+  const write = installNamespaceAvailability(record, "move", available);
+  expect(write?.next.resource.canonical).toEqual(record.resource.canonical);
+  expect(write?.next.resource.canonicalParent).toEqual(record.resource.canonicalParent);
+  expect(write?.next.resource.obligations.canonicalRefresh).toBeUndefined();
+  expect(
+    installNamespaceAvailability(record, "move", { ...available, observationVersion: "2" }),
+  ).toBeNull();
+  record.resource.obligations.canonicalRefresh.observationVersion = "4";
+  expect(installNamespaceAvailability(record, "move", available)).toBeNull();
+});
+
+it("historical delete receipts cannot terminalize a newer canonical observation", () => {
+  const record = document();
+  expect(committedResourceDeletion(record.resource, "2", "delete")).toEqual(record.resource);
+  expect(committedResourceDeletion(record.resource, "3", "delete")).toEqual(record.resource);
+  expect(committedResourceDeletion(record.resource, "4", "delete")).toMatchObject({
+    canonical: null,
+    observationVersion: "4",
+    lifecycle: { kind: "terminal", generation: "4" },
+  });
+});
+
+it("a newer intermediate observation updates canonical fields but cannot release a newer receipt fence", () => {
+  const record = document();
+  record.resource.observationVersion = "1";
+  record.resource.obligations.canonicalRefresh = {
+    operationId: "move",
+    identityRevision: 1,
+    observationVersion: "3",
+  };
+  const write = installNamespaceAvailability(record, "move", {
+    kind: "available",
+    observationVersion: "2",
+    location: {
+      scheme: "manuscript",
+      workId: null,
+      path: "/P/Intermediate.md",
+      name: "Intermediate.md",
+    },
+    parent: { kind: "folder", folderId: "P" },
+  });
+  expect(write?.next.resource).toMatchObject({
+    observationVersion: "2",
+    canonical: { path: "/P/Intermediate.md" },
+    obligations: { canonicalRefresh: { observationVersion: "3" } },
+  });
 });

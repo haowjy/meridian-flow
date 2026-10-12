@@ -1,6 +1,7 @@
 /** Folder placement and recursive deletion share the account namespace journal, without document content. */
 
 import type { ContextOperationReceipt } from "@meridian/contracts/protocol";
+import { canonicalRefreshObservation, newerCanonicalObservation } from "./canonical-observation";
 import {
   namespaceIntentOutcome,
   namespaceRepairDestination,
@@ -106,6 +107,7 @@ export function planFolderDeletion(input: {
   folderId: string;
   source: ResourceLocation;
   sourceParent?: ParentRef;
+  sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
 }): FolderNamespaceWrite | null {
@@ -124,6 +126,7 @@ export function planFolderDeletion(input: {
     revision: 0,
     canonical: input.source,
     canonicalParent: input.sourceParent,
+    observationVersion: input.sourceObservationVersion,
     intents: [],
   };
   if (folderOwnsDeletion(record)) return null;
@@ -164,6 +167,7 @@ export function planFolderLocation(input: {
   folderId: string;
   source: ResourceLocation;
   sourceParent?: ParentRef;
+  sourceObservationVersion?: string;
   intentId: string;
   operationId: string;
   destination: ResourceDestination;
@@ -184,6 +188,7 @@ export function planFolderLocation(input: {
     revision: 0,
     canonical: input.source,
     canonicalParent: input.sourceParent,
+    observationVersion: input.sourceObservationVersion,
     intents: [],
   };
   resourceContextAuthority(record.canonical.scheme, record.canonical);
@@ -442,7 +447,10 @@ export function settleFolderNamespaceOutcome(
     disposition === "accepted" &&
     outcome.receipt.command.kind === "move"
   )
-    write.next.canonicalRefresh = { operationId: outcome.receipt.operationId };
+    write.next.canonicalRefresh = {
+      operationId: outcome.receipt.operationId,
+      observationVersion: outcome.receipt.observationVersion,
+    };
   return write;
 }
 
@@ -495,6 +503,7 @@ export function planFolderDeletionResources(
               resource,
               result.availabilityGeneration,
               receipt.operationId,
+              receipt.observationVersion,
             ),
             revision: resource.revision + 1,
           },
@@ -510,13 +519,24 @@ export function installFolderCanonicalRefresh(
   operationId: string,
   location: ResourceLocation,
   parent: ParentRef,
+  observationVersion: string,
 ): FolderNamespaceWrite | null {
   if (record.canonicalRefresh?.operationId !== operationId) return null;
+  const { newer, completes } = canonicalRefreshObservation(
+    observationVersion,
+    record.observationVersion,
+    record.canonicalRefresh.observationVersion,
+  );
+  if (!newer && !completes) return null;
   resourceContextAuthority(location.scheme, location);
   const { canonicalRefresh: _completed, ...rest } = record;
   return {
     expectedRevision: record.revision,
-    next: { ...rest, revision: record.revision + 1, canonical: location, canonicalParent: parent },
+    next: {
+      ...(completes ? rest : record),
+      revision: record.revision + 1,
+      ...(newer ? { canonical: location, canonicalParent: parent, observationVersion } : {}),
+    },
   };
 }
 
@@ -533,8 +553,14 @@ export function installFolderNamespaceAvailability(
       operationId,
       availability.location,
       availability.parent,
+      availability.observationVersion,
     );
   const { canonicalRefresh: _completed, ...rest } = record;
+  if (
+    availability.kind === "deleted" &&
+    !newerCanonicalObservation(availability.observationVersion, record.observationVersion)
+  )
+    return null;
   const terminal =
     availability.kind === "deleted" ? { generation: availability.generation } : record.terminal;
   return {
@@ -543,6 +569,9 @@ export function installFolderNamespaceAvailability(
       ...rest,
       revision: record.revision + 1,
       ...(terminal ? { terminal } : {}),
+      ...(availability.kind === "deleted"
+        ? { observationVersion: availability.observationVersion }
+        : {}),
       intents: resolveUnavailableNamespace(record.intents, Boolean(terminal)),
     },
   };

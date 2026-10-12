@@ -17,6 +17,7 @@ import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { decodeWorkSlug } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
+  contextAvailabilityHeads,
   contextCatalogCommits,
   contextCatalogEntries,
   contextCatalogScopeHeads,
@@ -33,6 +34,7 @@ import {
   deferUntilDrizzleCommit,
   runAfterDrizzleCommit,
   runInDrizzleTransaction,
+  runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
@@ -218,6 +220,16 @@ async function buildScopeEntries(
       if (!visibleWork) return [];
     }
   }
+  const [namespaceHead] = await db
+    .select({ version: contextAvailabilityHeads.namespaceGeneration })
+    .from(contextAvailabilityHeads)
+    .where(
+      eq(
+        contextAvailabilityHeads.authorityKey,
+        scope.kind === "user" ? `user:${scope.userId}` : `project:${scope.projectId}`,
+      ),
+    );
+  const observationVersion = String(namespaceHead?.version ?? 0n);
   const sourceRows = await sourcesForScope(db, scope);
   const sourceIds = sourceRows.map((row) => row.id);
   const folderRows =
@@ -315,6 +327,7 @@ async function buildScopeEntries(
       if (!path) continue;
       entries.push({
         kind: "folder",
+        observationVersion,
         entryId: folder.id,
         scope,
         sourceId: source.id,
@@ -332,6 +345,7 @@ async function buildScopeEntries(
         mapAuthoritativeFile({
           document,
           scope,
+          observationVersion,
           scheme,
           workId: source.workId,
           workSlug: source.workSlug,
@@ -475,22 +489,26 @@ export function createDrizzleContextCatalog(
     const commitId = randomUUID();
     try {
       await retryRefresh(() =>
-        runInDrizzleTransaction(db, async () => {
-          await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
-          const reservedPublications = [];
-          for (const publication of publications.values()) {
-            reservedPublications.push({
-              ...publication,
-              generation: publication.generation ?? (await availabilityMutations.reserve()),
-            });
-          }
-          for (const [, { scope, roots }] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
-            await refreshScope(scope, [...roots], commitId);
-          }
-          for (const publication of reservedPublications) {
-            await availabilityMutations.publishReserved(publication);
-          }
-        }),
+        runInRootDrizzleTransaction(
+          db,
+          async () => {
+            await currentDrizzleDb(db).execute(sql`set local lock_timeout = '250ms'`);
+            const reservedPublications = [];
+            for (const publication of publications.values()) {
+              reservedPublications.push({
+                ...publication,
+                generation: publication.generation ?? (await availabilityMutations.reserve()),
+              });
+            }
+            for (const [, { scope, roots }] of [...scopes].sort(([a], [b]) => a.localeCompare(b))) {
+              await refreshScope(scope, [...roots], commitId);
+            }
+            for (const publication of reservedPublications) {
+              await availabilityMutations.publishReserved(publication);
+            }
+          },
+          { isolationLevel: "repeatable read" },
+        ),
       );
     } catch (cause) {
       if (options.eventSink) {
@@ -538,6 +556,15 @@ export function createDrizzleContextCatalog(
         .from(contextCatalogEntries)
         .where(eq(contextCatalogEntries.scopeKey, head.scopeKey));
       const oldById = new Map(existing.map((row) => [row.entryId, row.entry]));
+      for (let i = 0; i < authoritative.length; i++) {
+        const entry = authoritative[i]!;
+        const old = oldById.get(entry.entryId);
+        if ((entry.kind === "folder" || entry.kind === "file") && old?.kind === entry.kind) {
+          const { observationVersion: _new, ...value } = entry;
+          const { observationVersion: _old, ...previous } = old;
+          if (stableJson(value) === stableJson(previous)) authoritative[i] = old;
+        }
+      }
       const nextById = new Map(authoritative.map((entry) => [entry.entryId, entry]));
       // Replay clears the old subtree before installing this commit. Restore every
       // survivor, including entries already published by a separate repair and
@@ -780,7 +807,7 @@ export function createDrizzleContextCatalog(
         catalogScopeKey(a).localeCompare(catalogScopeKey(b)),
       );
       if (manifestBackedProjectIds.size > 0) {
-        const availabilityGeneration = await availabilityMutations.reserve();
+        const availabilityGeneration = await availabilityMutations.reserve({ projectIds, userIds });
         const request: CatalogRepairRequest = {
           scopes: orderedScopes,
           invalidatedRootIds,

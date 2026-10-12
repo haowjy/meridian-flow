@@ -1,4 +1,5 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
+
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogFileClassification,
@@ -6,6 +7,7 @@ import type {
   CatalogFolderEntry,
 } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import { newerCanonicalObservation } from "./canonical-observation";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
 import { installCanonicalRefresh } from "./resource-namespace";
@@ -185,10 +187,12 @@ function observedResourceWrite(input: {
   classification: CatalogFileClassification;
   parent: ParentRef;
   fence: CatalogObservationFence;
+  observationVersion: string;
 }): ResourceWrite | null {
   const { record, location, classification, parent, fence } = input;
   const current = record.resource;
   if (current.lifecycle.kind !== "acknowledged") return null;
+  const newer = newerCanonicalObservation(input.observationVersion, current.observationVersion);
   const observed = fence.resources?.get(current.handle);
   if (!observed) return null;
   if (
@@ -201,22 +205,24 @@ function observedResourceWrite(input: {
 
   const refresh = current.obligations.canonicalRefresh;
   const refreshed = refresh
-    ? installCanonicalRefresh({ record, operationId: refresh.operationId, location, parent })
+    ? installCanonicalRefresh({
+        record,
+        operationId: refresh.operationId,
+        location,
+        parent,
+        observationVersion: input.observationVersion,
+      })
     : null;
-  const changed =
-    refreshed !== null ||
-    !sameResourceLocation(current.canonical, location) ||
-    !sameClassification(current.classification, classification) ||
-    JSON.stringify(current.canonicalParent) !== JSON.stringify(parent);
+  if (!newer) return refreshed;
   const base = refreshed?.next.resource ?? current;
   const obligations = { ...base.obligations };
-  if (!changed) return null;
   const next: ResourceDescriptor = {
     ...base,
     revision: current.revision + 1,
     classification,
     canonical: location,
     canonicalParent: parent,
+    observationVersion: input.observationVersion,
     obligations,
   };
   return { expectedRevision: current.revision, next: { resource: next, intents: record.intents } };
@@ -232,6 +238,7 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     classification: classificationFor(entry),
     canonical: location,
     canonicalParent: catalogEntryParent(entry, location),
+    observationVersion: entry.observationVersion,
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     aliases: {},
     obligations: {},
@@ -268,6 +275,7 @@ export function planCatalogInstallation(input: {
         classification: classificationFor(entry),
         parent: catalogEntryParent(entry, location),
         fence,
+        observationVersion: entry.observationVersion,
       });
       if (write) resources.push(write);
       continue;

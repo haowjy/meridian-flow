@@ -17,6 +17,7 @@ import type { Database } from "@meridian/database";
 import {
   contextAvailabilityGeneration,
   contextAvailabilityHeads,
+  contextNamespaceObservationVersion,
   contextSources,
   documents,
   folders,
@@ -24,7 +25,7 @@ import {
   threads,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleTransactionParticipant,
@@ -228,12 +229,37 @@ function userKey(userId: string) {
   return `user:${userId}`;
 }
 
+/** The publisher fence is held by reserve/advance. Each state change needs its
+ * own stamp even when availability groups several changes in one transaction. */
+async function publishNamespaceVersion(tx: Database, authorityKeys: readonly string[]) {
+  const keys = [...new Set(authorityKeys)].sort();
+  if (!keys.length) return;
+  const [row] = await tx.execute<{ version: string }>(
+    sql`select nextval(${sql.raw(`'${contextNamespaceObservationVersion.seqName}'`)})::text as version`,
+  );
+  if (!row) throw new Error("Failed to allocate namespace observation version");
+  const version = BigInt(row.version);
+  await tx
+    .insert(contextAvailabilityHeads)
+    .values(
+      keys.map((authorityKey) => ({
+        authorityKey,
+        generation: 0n,
+        namespaceGeneration: version,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: contextAvailabilityHeads.authorityKey,
+      set: { namespaceGeneration: version },
+    });
+}
+
 export function createDrizzleProjectContextAvailability(
   db: Database,
   eventSink?: EventSink,
 ): ProjectContextAvailabilityPort & ProjectContextAvailabilityMutationPort {
   return {
-    async reserve() {
+    async reserve(input) {
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db) as Database;
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
@@ -249,6 +275,11 @@ export function createDrizzleProjectContextAvailability(
           if (!value) throw new Error("Failed to reserve availability generation");
           state.generation = BigInt(value);
         }
+        if (input)
+          await publishNamespaceVersion(tx, [
+            ...input.projectIds.map(projectKey),
+            ...input.userIds.map(userKey),
+          ]);
         return String(state.generation);
       });
     },
@@ -270,13 +301,11 @@ export function createDrizzleProjectContextAvailability(
         }
         await tx
           .update(contextAvailabilityHeads)
-          .set({ generation: BigInt(input.generation), updatedAt: new Date() })
-          .where(
-            and(
-              inArray(contextAvailabilityHeads.authorityKey, keys),
-              sql`${contextAvailabilityHeads.generation} < ${BigInt(input.generation)}`,
-            ),
-          );
+          .set({
+            generation: sql`greatest(${contextAvailabilityHeads.generation}, ${BigInt(input.generation)})`,
+            updatedAt: new Date(),
+          })
+          .where(inArray(contextAvailabilityHeads.authorityKey, keys));
       });
     },
 
@@ -289,9 +318,6 @@ export function createDrizzleProjectContextAvailability(
         ]);
         const state = enlistDrizzleTransactionParticipant(advanceParticipant);
         const missing = [...requested].filter((key) => !state.keys.has(key)).sort();
-        if (missing.length === 0 && state.generation !== undefined) {
-          return String(state.generation);
-        }
         if (!state.publisherFenceHeld) {
           // One transaction-scoped publisher fence makes sequence allocation order match
           // commit visibility even when later advance calls introduce previously unknown keys.
@@ -321,10 +347,14 @@ export function createDrizzleProjectContextAvailability(
         if (missing.length > 0) {
           await tx
             .update(contextAvailabilityHeads)
-            .set({ generation: state.generation, updatedAt: new Date() })
+            .set({
+              generation: state.generation,
+              updatedAt: new Date(),
+            })
             .where(inArray(contextAvailabilityHeads.authorityKey, missing));
           for (const key of missing) state.keys.add(key);
         }
+        await publishNamespaceVersion(tx, [...requested]);
         return String(state.generation);
       });
     },
@@ -356,6 +386,15 @@ export function createDrizzleProjectContextAvailability(
               ]),
             );
           const head = new Map(headRows.map((row) => [row.authorityKey, row.generation]));
+          const namespaceHead = new Map(
+            headRows.map((row) => [row.authorityKey, row.namespaceGeneration]),
+          );
+          const namespaceVersion = (scope: CatalogScope) =>
+            String(
+              namespaceHead.get(
+                scope.kind === "user" ? userKey(scope.userId) : projectKey(scope.projectId),
+              ) ?? 0n,
+            );
           const projectGeneration = head.get(projectKey(input.projectId)) ?? 0n;
           const checkedGeneration = String(
             [projectGeneration, head.get(userKey(actor.userId)) ?? 0n].reduce((a, b) =>
@@ -447,7 +486,13 @@ export function createDrizzleProjectContextAvailability(
             // Independent document deletion remains deletion even when its authority hides.
             // Work-cascade tombstones belong to the reversible authority lifecycle.
             if (document.deletedAt && !document.deletedByWorkId) {
-              return { kind: "deleted", documentId, generation, lastAuthority: authority };
+              return {
+                kind: "deleted",
+                documentId,
+                generation,
+                observationVersion: namespaceVersion(scope),
+                lastAuthority: authority,
+              };
             }
             if (requestProject.deletedAt || sourceProject?.deletedAt) {
               return {
@@ -479,7 +524,13 @@ export function createDrizzleProjectContextAvailability(
               };
             }
             if (document.deletedAt || source?.deletedAt) {
-              return { kind: "deleted", documentId, generation, lastAuthority: authority } as never;
+              return {
+                kind: "deleted",
+                documentId,
+                generation,
+                observationVersion: namespaceVersion(scope),
+                lastAuthority: authority,
+              } as never;
             }
             try {
               return {
@@ -490,6 +541,7 @@ export function createDrizzleProjectContextAvailability(
                 entry: mapAuthoritativeFile({
                   document,
                   scope,
+                  observationVersion: namespaceVersion(scope),
                   scheme,
                   workId: work?.id ?? null,
                   workSlug: work && !work.isNoWork ? work.slug : null,
@@ -525,7 +577,12 @@ export function createDrizzleProjectContextAvailability(
             const { scope, scheme, generation, parentPath } = classification.identity;
             // Independent tombstones are final; Work/lineage unavailability is not deletion.
             if (row.folder.deletedAt && !row.folder.deletedByWorkId)
-              return { folderId, kind: "deleted", generation };
+              return {
+                folderId,
+                kind: "deleted",
+                generation,
+                observationVersion: namespaceVersion(scope),
+              };
             if (
               requestProject.deletedAt ||
               row.sourceProject?.deletedAt ||
@@ -540,6 +597,7 @@ export function createDrizzleProjectContextAvailability(
               generation,
               entry: {
                 kind: "folder",
+                observationVersion: namespaceVersion(scope),
                 entryId: row.folder.id,
                 sourceId: row.folder.contextSourceId,
                 parentId: row.folder.parentId ?? row.folder.contextSourceId,

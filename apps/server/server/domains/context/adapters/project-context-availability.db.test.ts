@@ -292,6 +292,71 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(BigInt(next)).toBeGreaterThan(BigInt(first));
     });
 
+    it("publishes namespace evidence before deferred availability, without letting old repair regress it", async () => {
+      const db = await seed();
+      const availability = createDrizzleProjectContextAvailability(db);
+      const before = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+      const reserved = await availability.reserve({ projectIds: [PROJECT], userIds: [] });
+      const readHead = async () =>
+        (
+          await currentDrizzleDb(db)
+            .select()
+            .from(contextAvailabilityHeads)
+            .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
+        )[0];
+      expect(await readHead()).toMatchObject({
+        generation: BigInt(before),
+        namespaceGeneration: expect.any(BigInt),
+      });
+      const reservedHead = await readHead();
+      expect(reservedHead?.namespaceGeneration).toBeGreaterThan(0n);
+      const newer = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+      const newerHead = await readHead();
+      expect(newerHead?.namespaceGeneration).toBeGreaterThan(
+        reservedHead?.namespaceGeneration ?? 0n,
+      );
+      expect(BigInt(newer)).toBeGreaterThanOrEqual(BigInt(reserved));
+      await availability.publishReserved({
+        projectIds: [PROJECT],
+        userIds: [],
+        generation: reserved,
+      });
+      expect(await readHead()).toMatchObject({
+        generation: BigInt(newer),
+        namespaceGeneration: expect.any(BigInt),
+      });
+      expect((await readHead())?.namespaceGeneration).toBe(newerHead?.namespaceGeneration);
+      const captured = await readHead();
+      await expect(
+        runInDrizzleSavepoint(db, async () => {
+          await availability.reserve({ projectIds: [PROJECT], userIds: [] });
+          throw new Error("namespace rollback");
+        }),
+      ).rejects.toThrow("namespace rollback");
+      expect(await readHead()).toEqual(captured);
+    });
+
+    it("orders namespace observations within one transaction even though availability groups them", async () => {
+      const db = await seed();
+      const availability = createDrizzleProjectContextAvailability(db);
+      await runInDrizzleTransaction(db, async () => {
+        const first = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+        const readHead = async () =>
+          (
+            await currentDrizzleDb(db)
+              .select()
+              .from(contextAvailabilityHeads)
+              .where(eq(contextAvailabilityHeads.authorityKey, PROJECT_AUTHORITY_KEY))
+          )[0];
+        const firstHead = await readHead();
+        const second = await availability.advance({ projectIds: [PROJECT], userIds: [] });
+        expect(second).toBe(first);
+        expect((await readHead())?.namespaceGeneration).toBeGreaterThan(
+          firstHead?.namespaceGeneration ?? 0n,
+        );
+      });
+    });
+
     it("merges successful savepoint keys and discards failed savepoint keys", async () => {
       const db = await seed();
       const availability = createDrizzleProjectContextAvailability(db);
@@ -315,7 +380,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const heads = new Map(
         (
-          await db
+          await currentDrizzleDb(db)
             .select()
             .from(contextAvailabilityHeads)
             .where(
@@ -362,6 +427,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           return generation;
         });
         const firstGeneration = await firstAllocated;
+        const [allocatedBeforeSecond] = await controlDb.execute<{ lastValue: string }>(
+          sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
+        );
         const second = createDrizzleProjectContextAvailability(secondDb).advance({
           projectIds: [PROJECT],
           userIds: [],
@@ -382,7 +450,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const whileBlocked = await controlDb.execute<{ lastValue: string }>(
           sql`select last_value::text as "lastValue" from context_availability_generation_seq`,
         );
-        expect(whileBlocked[0]?.lastValue).toBe(firstGeneration);
+        expect(whileBlocked[0]?.lastValue).toBe(allocatedBeforeSecond?.lastValue);
+        expect(BigInt(whileBlocked[0]?.lastValue ?? "0")).toBeGreaterThanOrEqual(
+          BigInt(firstGeneration),
+        );
         releaseFirst?.();
         const [settledFirst, settledSecond] = await Promise.all([first, second]);
         expect(BigInt(settledSecond)).toBeGreaterThan(BigInt(settledFirst));

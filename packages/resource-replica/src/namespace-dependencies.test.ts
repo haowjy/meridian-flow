@@ -105,9 +105,10 @@ it("falls back for cyclic placement dependencies without choosing a record-order
 });
 
 it.each<NamespaceIdentityAvailability>([
-  { kind: "deleted", generation: "9" },
+  { observationVersion: "1", kind: "deleted", generation: "9" },
   { kind: "unavailable" },
   {
+    observationVersion: "1",
     kind: "available",
     location: loc("Elsewhere/A"),
     parent: { kind: "folder", folderId: "Elsewhere" },
@@ -185,9 +186,14 @@ it.each<NamespaceIdentityAvailability>([
 });
 
 it.each<NamespaceIdentityAvailability>([
-  { kind: "deleted", generation: "9" },
+  { observationVersion: "1", kind: "deleted", generation: "9" },
   { kind: "unavailable" },
-  { kind: "available", location: loc("B/doc.md"), parent: { kind: "folder", folderId: "B" } },
+  {
+    observationVersion: "1",
+    kind: "available",
+    location: loc("B/doc.md"),
+    parent: { kind: "folder", folderId: "B" },
+  },
 ])("releases file refresh into canonical progress or repair ($kind)", (availability) => {
   let record = acknowledgedFile();
   const apply = (write: { next: ResourceRecord } | null) => {
@@ -292,6 +298,7 @@ function acknowledgedFile(): ResourceRecord {
 it("keeps authoritative refreshed folder placement ahead of an older catalog checkpoint", () => {
   const moved = outcome(submit(move("A", "P/A", "B/A")), true);
   const refreshed = installFolderNamespaceAvailability(moved, moved.canonicalRefresh!.operationId, {
+    observationVersion: "1",
     kind: "available",
     location: loc("B/A"),
     parent: { kind: "folder", folderId: "B" },

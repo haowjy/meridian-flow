@@ -48,6 +48,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
             uri: "kb://",
           },
           {
+            observationVersion: "1",
             kind: "folder",
             entryId: "folder",
             sourceId: "source",
@@ -59,6 +60,7 @@ it("hides a pending folder descendant, restores refusal, and refetches after acc
             hasChildren: true,
           },
           {
+            observationVersion: "1",
             kind: "file",
             entryId: "doc",
             sourceId: "source",

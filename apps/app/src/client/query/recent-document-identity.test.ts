@@ -52,6 +52,7 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
             uri: "kb://",
           },
           {
+            observationVersion: "1",
             kind: "folder",
             entryId: "folder",
             sourceId: "source",
@@ -63,6 +64,7 @@ it("hides descendants of pending deletes and restores them after refusal", () =>
             hasChildren: true,
           },
           {
+            observationVersion: "1",
             kind: "file",
             entryId: "doc",
             sourceId: "source",

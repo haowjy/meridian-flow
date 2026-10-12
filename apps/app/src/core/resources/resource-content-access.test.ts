@@ -395,6 +395,7 @@ it("releases every project registry ownership after the final shared-content lea
       uri: "user://",
     },
     {
+      observationVersion: "1",
       kind: "file" as const,
       entryId: record.resource.identity.documentId,
       scope,

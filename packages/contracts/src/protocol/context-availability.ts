@@ -82,6 +82,7 @@ export type ProjectContextIdentityResolution =
     }
   | {
       kind: "deleted";
+      observationVersion: string;
       documentId: DocumentId;
       generation: AvailabilityGeneration;
       lastAuthority: ProjectContextAuthority;
@@ -112,7 +113,7 @@ export type ProjectContextFolderResolution = { folderId: string } & (
       entry: import("./context-catalog.js").CatalogFolderEntry;
       generation: AvailabilityGeneration;
     }
-  | { kind: "deleted"; generation: AvailabilityGeneration }
+  | { kind: "deleted"; generation: AvailabilityGeneration; observationVersion: string }
   | {
       kind: "not-visible" | "indeterminate" | "authority-unavailable";
       checkedGeneration: AvailabilityGeneration;

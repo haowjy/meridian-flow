@@ -26,6 +26,7 @@ function required<T>(value: T | null | undefined): T {
 
 const destination = { parent: { kind: "folder" as const, folderId: "Book" }, name: "new.md" };
 const receipt = {
+  observationVersion: "1",
   operationId: "move",
   command: {
     kind: "move" as const,

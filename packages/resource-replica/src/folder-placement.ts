@@ -42,7 +42,7 @@ export function folderPlacementGraph(
   const canonical = new Map<string, ResourceDestination>();
   for (const node of byId.values()) {
     const record = recordsById.get(node.id);
-    // Record observations are fenced by their CAS revision during installation. Local
+    // Record observations carry server freshness and local CAS fences during installation. Local
     // command admission without a parent observation does not supersede the catalog.
     const location = record?.canonicalParent ? record.canonical : node.canonical;
     const parent = record?.canonicalParent ?? node.parent;

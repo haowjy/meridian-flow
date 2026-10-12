@@ -136,6 +136,7 @@ it("retains exact-ID parent provenance after A is renamed and its old home is re
     queued,
     queued.canonicalRefresh!.operationId,
     {
+      observationVersion: "1",
       kind: "available",
       location: loc("A/B"),
       parent: { kind: "folder", folderId: "new-A" },

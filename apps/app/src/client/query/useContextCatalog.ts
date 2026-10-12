@@ -190,6 +190,7 @@ function overlayResourceCatalogView(
       const folderId = `local-folder:${sourceId}:${folderPath.join("/")}`;
       entries.set(folderId, {
         kind: "folder",
+        observationVersion: "0",
         entryId: folderId,
         scope,
         sourceId,
@@ -205,6 +206,7 @@ function overlayResourceCatalogView(
     const uri = catalogUri(location, path.join("/"));
     entries.set(documentId, {
       kind: "file",
+      observationVersion: record.resource.observationVersion ?? "0",
       entryId: documentId,
       scope,
       sourceId,

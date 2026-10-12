@@ -189,6 +189,7 @@ export function createResourcePlacement(
       }
       projected.push({
         kind: "folder",
+        observationVersion: folder.observationVersion ?? "0",
         entryId: folder.folderId,
         sourceId: source.entryId,
         parentId: source.entryId,
@@ -234,6 +235,7 @@ export function createResourcePlacement(
         }
         const row: Extract<CatalogEntry, { kind: "folder" }> = {
           kind: "folder",
+          observationVersion: "0",
           entryId: `repair-parent:${entry.sourceId}:${parts.join("/")}`,
           sourceId: entry.sourceId,
           parentId,

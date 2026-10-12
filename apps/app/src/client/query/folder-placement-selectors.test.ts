@@ -51,6 +51,7 @@ it.each([
     accepted,
     accepted.canonicalRefresh!.operationId,
     {
+      observationVersion: "1",
       kind: "available",
       location: loc(destination),
       parent: { kind: "folder", folderId: destination.startsWith("B/") ? "B" : "P" },

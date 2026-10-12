@@ -61,7 +61,7 @@ it("installs a newer server parent even when the absolute home has not changed",
   const entry = nextView.entries.get("A");
   if (entry?.kind !== "folder") throw new Error("Missing fixture folder");
   const updatedView = { ...nextView, entries: new Map(nextView.entries) };
-  updatedView.entries.set("A", { ...entry, parentId: "replacement-P" });
+  updatedView.entries.set("A", { ...entry, observationVersion: "2", parentId: "replacement-P" });
   const writes = planFolderCatalogInstallation({
     projectId: "p",
     folders,

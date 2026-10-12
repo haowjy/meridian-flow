@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Historical catalog replay no longer replaces newer exact-ID folder or document placement. Canonical observations share server-issued namespace versions across catalog pages, availability and receipts.
 - Canonical folder parents retain server identity across renamed and reused paths. Incoherent ancestry cannot freeze placement, and sparse folders no longer repeat ancestor searches.
 
 - Open linked documents immediately even when their folders do not exist yet. Missing folders are created atomically beneath the captured parent identity.

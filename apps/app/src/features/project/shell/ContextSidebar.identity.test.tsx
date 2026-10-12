@@ -43,6 +43,7 @@ it("uses a renamed/moved catalog file and falls back only outside a loaded catal
         cursor: "c",
         entries: [
           {
+            observationVersion: "1",
             kind: "file",
             entryId: "doc",
             scope,

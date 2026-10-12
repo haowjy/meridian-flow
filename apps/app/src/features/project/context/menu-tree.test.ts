@@ -19,6 +19,7 @@ function catalog(root: string, entries: Entry[]): CatalogContextView {
     entries.map((entry) => [
       entry.entryId,
       {
+        observationVersion: "1",
         ...entry,
         kind: entry.kind === "dir" ? "folder" : "file",
         path: entry.path.split("/").filter(Boolean),

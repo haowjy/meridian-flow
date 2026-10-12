@@ -120,6 +120,7 @@ function fileMachine(): Machine {
       if (barrier)
         apply(
           installCanonicalRefresh({
+            observationVersion: "1",
             record,
             operationId: barrier.operationId,
             location: loc("B/doc.md"),
@@ -189,10 +190,16 @@ function folderMachine(): Machine {
     refresh: () => {
       if (record.canonicalRefresh)
         apply(
-          installFolderCanonicalRefresh(record, record.canonicalRefresh.operationId, loc("B/A"), {
-            kind: "folder",
-            folderId: "B",
-          }),
+          installFolderCanonicalRefresh(
+            record,
+            record.canonicalRefresh.operationId,
+            loc("B/A"),
+            {
+              kind: "folder",
+              folderId: "B",
+            },
+            String(record.revision),
+          ),
         );
     },
   };

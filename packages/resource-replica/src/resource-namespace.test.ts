@@ -227,6 +227,7 @@ describe("namespace record transitions", () => {
     );
     if (!submitted) throw new Error("missing submitted write");
     const receipt: ContextOperationReceipt = {
+      observationVersion: "1",
       operationId: "operation",
       command: {
         kind: "delete",
@@ -238,7 +239,7 @@ describe("namespace record transitions", () => {
         value: {
           status: "deleted",
           deletedDocumentIds: ["document"],
-          availabilityGeneration: "new",
+          availabilityGeneration: "2",
         },
       },
     };
@@ -250,7 +251,7 @@ describe("namespace record transitions", () => {
     const settled = settleNamespaceOutcome(received.next);
     expect(settled?.next.resource.lifecycle).toEqual({
       kind: "terminal",
-      generation: "new",
+      generation: "2",
       transitionId: "operation",
     });
     expect(settled?.next.resource.content).toEqual(before.resource.content);
@@ -289,6 +290,7 @@ describe("namespace record transitions", () => {
     const received = recordNamespaceOutcome(submitted.next, "move", "attempt", {
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "operation",
         command: {
           destinationParent: { kind: "folder" as const, folderId: "chapters" },
@@ -317,6 +319,7 @@ describe("namespace record transitions", () => {
     expect(settled?.next.resource.canonical).toEqual(received.next.resource.canonical);
     expect(settled?.next.intents[0]?.state).toBe("settled");
     expect(settled?.next.resource.obligations.canonicalRefresh).toEqual({
+      observationVersion: "1",
       operationId: "operation",
       identityRevision: 1,
     });
@@ -360,6 +363,7 @@ describe("namespace record transitions", () => {
     const received = recordNamespaceOutcome(submitted.next, "move", "move-attempt", {
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "move-operation",
         command: {
           destinationParent: { kind: "folder" as const, folderId: "chapters" },
@@ -388,6 +392,7 @@ describe("namespace record transitions", () => {
       ),
     ).toBeNull();
     const refreshed = installCanonicalRefresh({
+      observationVersion: "1",
       record: settled.next,
       operationId: "move-operation",
       parent: { kind: "folder", folderId: "chapters" },
@@ -444,6 +449,7 @@ describe("namespace record transitions", () => {
       recordNamespaceOutcome(submitted.next, "delete", "attempt", {
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "operation",
           command: {
             kind: "delete",
@@ -493,6 +499,7 @@ describe("namespace record transitions", () => {
       recordNamespaceOutcome(submitted.next, "delete", "attempt", {
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "operation",
           command: {
             kind: "delete",
@@ -582,6 +589,7 @@ describe("a chat's Scratch owner", () => {
     const receipt = (uri: string): NamespaceOutcome => ({
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "operation",
         command: { kind: "delete", uri, expected: { kind: "file", documentId: "document" } },
         result: {
@@ -773,6 +781,7 @@ it.each([
           : {
               kind: "operation",
               receipt: {
+                observationVersion: "1",
                 operationId: "operation",
                 command: {
                   destinationParent: {
@@ -848,6 +857,7 @@ it.each([
         submit: async () => ({
           kind: "operation",
           receipt: {
+            observationVersion: "1",
             operationId: "delete-operation",
             command: {
               kind: "delete",
@@ -894,6 +904,7 @@ it("restores a rejected delete after retry and admits another delete", async () 
           submit: async () => ({
             kind: "operation",
             receipt: {
+              observationVersion: "1",
               operationId: `operation-${number}`,
               command: {
                 kind: "delete",
@@ -944,6 +955,7 @@ it("offers the latest queued file name after refusal and retries from accepted p
   const received = recordNamespaceOutcome(queued, "B", "attempt", {
     kind: "operation",
     receipt: {
+      observationVersion: "1",
       operationId: "B",
       command: {
         destinationParent: {
@@ -1049,6 +1061,7 @@ it.each([
     : {
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "move",
           command: {
             destinationParent: {
@@ -1109,6 +1122,7 @@ it("refuses a move receipt for a different captured destination parent", () => {
   const outcome: NamespaceOutcome = {
     kind: "operation",
     receipt: {
+      observationVersion: "1",
       operationId: "operation",
       command: {
         kind: "move",
@@ -1156,6 +1170,7 @@ it("matches immutable identity moves after the destination's path and owner chan
     recordNamespaceOutcome(submitted.next, "move", "attempt", {
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: "operation",
         command: {
           kind: "move",
@@ -1210,6 +1225,7 @@ it("retains a missing-folder suffix in immutable transport and receipt matching"
   const outcome: NamespaceOutcome = {
     kind: "operation",
     receipt: {
+      observationVersion: "1",
       operationId: "operation",
       command: {
         kind: "move",
@@ -1240,6 +1256,7 @@ describe("a name the writer typed with a prose suffix", () => {
     ({
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId,
         command: {
           kind: "move",

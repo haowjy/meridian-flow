@@ -61,6 +61,7 @@ function command(store: MemoryFolders, name: string, operationId = name) {
 }
 function receipt(name: string, ok: boolean, operationId = name): ContextOperationReceipt {
   return {
+    observationVersion: "1",
     operationId,
     command: {
       destinationParent: {
@@ -108,6 +109,7 @@ function install(store: MemoryFolders, name: string, fenced = store.current()) {
   const entries: CatalogEntry[] = [
     { kind: "source", entryId: "source", name: "Files", scheme, scope, uri: `${scheme}://` },
     {
+      observationVersion: String(store.current().revision),
       kind: "folder",
       entryId: "folder",
       sourceId: "source",
@@ -265,6 +267,7 @@ it("admits recursive deletion in the folder journal and settles a delete receipt
       return {
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "delete-folder",
           command: {
             kind: "delete",
@@ -347,6 +350,7 @@ it.each([
       return {
         kind: "operation",
         receipt: {
+          observationVersion: "1",
           operationId: "delete",
           command: {
             kind: "delete",
@@ -408,6 +412,7 @@ it.each([
       ["folder", "A"],
       ["destination", "B"],
     ].map(([entryId, name]) => ({
+      observationVersion: "1",
       kind: "folder" as const,
       entryId,
       name,
@@ -419,6 +424,7 @@ it.each([
       hasChildren: true,
     })),
     {
+      observationVersion: "1",
       kind: "folder",
       entryId: "child",
       name: "Child",
@@ -430,6 +436,7 @@ it.each([
       hasChildren: false,
     },
     {
+      observationVersion: "1",
       kind: "file",
       entryId: "document",
       name: "doc.md",

@@ -30,6 +30,7 @@ export function node(
   kind: "folder" | "file" = "folder",
 ): CatalogEntry {
   const shared = {
+    observationVersion: "1",
     entryId: id,
     sourceId: "s",
     parentId: parent,
@@ -164,6 +165,7 @@ export function evidence(
     return {
       kind: "operation",
       receipt: {
+        observationVersion: "1",
         operationId: request.body.operationId,
         command: {
           kind: "delete",
@@ -192,6 +194,7 @@ export function evidence(
   return {
     kind: "operation",
     receipt: {
+      observationVersion: "1",
       operationId: request.body.operationId,
       command: {
         kind: "move",

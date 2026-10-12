@@ -5,6 +5,7 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import { canonicalRefreshObservation } from "./canonical-observation";
 import {
   namespaceIntentOutcome,
   resolveUnavailableNamespace,
@@ -471,6 +472,7 @@ export function settleNamespaceOutcome(
           canonicalRefresh: {
             operationId: receipt.operationId,
             identityRevision: intent.identityRevision,
+            observationVersion: receipt.observationVersion,
           },
         },
       };
@@ -491,6 +493,7 @@ export function settleNamespaceOutcome(
           resource,
           result.value.availabilityGeneration,
           receipt.operationId,
+          receipt.observationVersion,
         );
       }
     }
@@ -517,6 +520,7 @@ export function installCanonicalRefresh(input: {
   operationId: string;
   location: ResourceLocation;
   parent: import("./resource-records").ParentRef;
+  observationVersion: string;
 }): ResourceWrite | null {
   const obligation = input.record.resource.obligations.canonicalRefresh;
   if (!obligation || obligation.operationId !== input.operationId) return null;
@@ -525,6 +529,12 @@ export function installCanonicalRefresh(input: {
     obligation.identityRevision !== input.record.resource.identity.revision
   )
     return null;
+  const { newer, completes } = canonicalRefreshObservation(
+    input.observationVersion,
+    input.record.resource.observationVersion,
+    obligation.observationVersion,
+  );
+  if (!newer && !completes) return null;
   const workScoped = isWorkScopedProjectContextScheme(input.location.scheme);
   // A catalog observation names its Work by id with its slug, null for No Work
   // (`@/`), exactly as catalog installation derives it from the entry's URI.
@@ -543,9 +553,14 @@ export function installCanonicalRefresh(input: {
       resource: {
         ...input.record.resource,
         revision: input.record.resource.revision + 1,
-        canonical: input.location,
-        canonicalParent: input.parent,
-        obligations,
+        ...(newer
+          ? {
+              canonical: input.location,
+              canonicalParent: input.parent,
+              observationVersion: input.observationVersion,
+            }
+          : {}),
+        obligations: completes ? obligations : input.record.resource.obligations,
       },
       intents: input.record.intents,
     },
@@ -565,6 +580,7 @@ export function installNamespaceAvailability(
       operationId,
       location: availability.location,
       parent: availability.parent,
+      observationVersion: availability.observationVersion,
     });
   const { canonicalRefresh: _completed, ...obligations } = record.resource.obligations;
   return {
