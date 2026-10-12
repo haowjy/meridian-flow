@@ -131,6 +131,8 @@ function createFake() {
     enqueuedAt: string;
   }[] = [];
   const sockets = new Set<WebSocket>();
+  const subscribedSockets = new Set<WebSocket>();
+  let subscribedSocketDrops = 0;
   let socketCount = 0;
   let snapshotReads = 0;
   const mockScripts: unknown[] = [];
@@ -191,7 +193,12 @@ function createFake() {
     turns.push(assistant);
     const reply = () => {
       publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId } as AGUIEvent);
-      if (text.includes("reconnect")) for (const socket of sockets) socket.close(1012, "restart");
+      if (text.includes("reconnect")) {
+        for (const socket of sockets) {
+          if (socket.readyState === 1 && subscribedSockets.has(socket)) subscribedSocketDrops += 1;
+          socket.close(1012, "restart");
+        }
+      }
       if (text.includes("fail")) {
         assistant.status = "error";
         assistant.error = "boom";
@@ -298,7 +305,7 @@ function createFake() {
       }
       publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId } as AGUIEvent);
     };
-    if (replyPolicy.holdUntilSubscribed) heldReplies.push(reply);
+    if (replyPolicy.holdUntilSubscribed || text.includes("reconnect")) heldReplies.push(reply);
     else setTimeout(reply, 10);
     return runId;
   };
@@ -588,7 +595,10 @@ function createFake() {
       }
       socketCount += 1;
       sockets.add(ws);
-      ws.on("close", () => sockets.delete(ws));
+      ws.on("close", () => {
+        sockets.delete(ws);
+        subscribedSockets.delete(ws);
+      });
       ws.send(
         JSON.stringify({
           type: "connected",
@@ -666,7 +676,8 @@ function createFake() {
             state: currentLiveState() as never,
           };
           ws.send(JSON.stringify(frame));
-          // Tail has taken its start snapshot and subscribed before replies settle.
+          subscribedSockets.add(ws);
+          // The follower receives its subscribed state before held replies settle.
           for (const reply of heldReplies.splice(0)) reply();
         }
       });
@@ -687,6 +698,7 @@ function createFake() {
     turns,
     publish,
     socketCount: () => socketCount,
+    subscribedSocketDrops: () => subscribedSocketDrops,
     snapshotReads: () => snapshotReads,
   };
 }

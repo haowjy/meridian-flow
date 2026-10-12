@@ -84,6 +84,7 @@ describe("thread", () => {
 
   it("resumes after a socket drop mid-run without duplicating the replay", async () => {
     const before = stack.resumeCursors.length;
+    const dropsBefore = stack.subscribedSocketDrops();
     const result = await mf([
       "thread",
       "send",
@@ -110,6 +111,7 @@ describe("thread", () => {
       expect.any(String),
       records.find((record) => record.type === "turn.started").seq,
     ]);
+    expect(stack.subscribedSocketDrops() - dropsBefore).toBe(1);
   });
 
   it("admits a composer-shaped multiline message with a skill and multiple references", async () => {
