@@ -611,12 +611,9 @@ export function createThreadPeerCorePool(input: {
       const pinned = responses.get(responseId)?.documents.get(docId as DocumentId);
       return pinned?.core.hasResponseDocument(responseId, docId) ?? false;
     },
-    withResponseDocument(responseId, docId, base, readDocument) {
+    prepare(responseId, docId) {
       const pinned = responses.get(responseId)?.documents.get(docId as DocumentId);
-      return (
-        pinned?.core.withResponseDocument(responseId, docId, base, readDocument) ??
-        Promise.resolve(null)
-      );
+      return pinned?.core.prepare(responseId, docId) ?? Promise.resolve(null);
     },
     responseDocuments(responseId, threadId) {
       const record = responses.get(responseId);

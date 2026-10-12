@@ -74,7 +74,7 @@ export function scopeAgentEdit(
     rollbackResponse: core.rollbackResponse,
     commitResponse: core.commitResponse,
     hasResponseDocument: core.hasResponseDocument,
-    withResponseDocument: core.withResponseDocument,
+    prepare: core.prepare,
     responseDocuments: core.responseDocuments,
     responseDestination: core.responseDestination,
     getAvailability: core.getAvailability,

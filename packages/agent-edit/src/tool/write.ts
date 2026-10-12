@@ -63,7 +63,7 @@ export interface WriteTool {
     options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
-  withResponseDocument: ResponseCommitter["withResponseDocument"];
+  prepare: ResponseCommitter["prepare"];
   responseDocuments: ResponseCommitter["responseDocuments"];
   getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
   /** `linkView`: the view of the destination whose history the host routed this to. */
@@ -192,14 +192,12 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         responseScopedStagedCacheStillValid(cached, context, session, toolUseId, responseCommitter)
       ) {
         idempotencyCache.notifyHit(session, context, toolUseId, cached);
-        return cached;
+        return withNotices(cached, context);
       }
     }
 
     let result: InternalWriteResult;
-    let dropped: string[] = [];
     try {
-      if (context.responseId) dropped = await responseCommitter.refreshResponse(context.responseId);
       result = await run(validCommand, session);
     } catch (cause) {
       try {
@@ -218,18 +216,23 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       }
       result = writeError(cause);
     }
-    if (dropped.length)
-      result = {
-        ...result,
-        model: {
-          ...result.model,
-          message: [result.model?.message, ...dropped].filter(Boolean).join("\n"),
-        },
-      };
     const outcome = toOutcome(commandName, result, validCommand.file);
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);
-    return outcome;
+    return withNotices(outcome, context);
+  }
+
+  function withNotices(outcome: WriteOutcome, context: WriteContext): WriteOutcome {
+    const notices = context.responseId ? responseCommitter.drainNotices(context.responseId) : [];
+    return notices.length
+      ? {
+          ...outcome,
+          result: {
+            ...outcome.result,
+            message: [outcome.result.message, ...notices].filter(Boolean).join("\n"),
+          },
+        }
+      : outcome;
   }
 
   async function resolveSession(context: WriteContext): Promise<ActorSession> {
@@ -257,7 +260,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     commitResponse: responseCommitter.commitResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
     hasResponseDocument: responseCommitter.hasResponseDocument,
-    withResponseDocument: responseCommitter.withResponseDocument,
+    prepare: responseCommitter.prepare,
     responseDocuments: responseCommitter.responseDocuments,
     getAvailability: writeReversal.getAvailability,
     undo: (docId, threadId, linkView) =>
