@@ -519,6 +519,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )}
       aria-busy={busy || pending > 0 || undefined}
     >
+      {submitFailure ? (
+        // Inside the frame, above the words: the Composer owns it, so every host draws it the same
+        // and it never stacks against the strips above the box. No buttons: Send is the retry.
+        <div className="mb-[var(--chat-space-inline)] flex px-[var(--chat-space-inline)]">
+          <ErrorCard inline>
+            <p className="whitespace-normal">{t`Couldn't send. Nothing was lost.`}</p>
+          </ErrorCard>
+        </div>
+      ) : null}
       <EditorContent
         editor={editor}
         data-placeholder={placeholder ?? rotatingPlaceholder}
@@ -579,14 +588,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </span>
         ) : null}
       </div>
-      {submitFailure ? (
-        <div className="mt-[var(--chat-space-inline)] flex justify-end">
-          <ErrorCard inline>
-            {/* No buttons: pressing Send again is the retry. The sentence may wrap in a very narrow dock. */}
-            <p className="whitespace-normal">{t`Couldn't send. Nothing was lost.`}</p>
-          </ErrorCard>
-        </div>
-      ) : null}
     </div>
   );
 });

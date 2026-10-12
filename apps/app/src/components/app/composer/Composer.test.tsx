@@ -168,10 +168,18 @@ it("draws a refused recording as the failure card and clears it once a send is r
   expect(alert?.textContent).toBe("Couldn't send. Nothing was lost.");
   expect(alert?.querySelector("button")).toBeNull();
   expect(editorElement()?.textContent).toBe("Keep these words");
+  // Inside the composer frame, above the words, and the editor is the same node afterwards.
+  const frame = host.querySelector("[data-composer]");
+  const editorBefore = editorElement();
+  expect(alert && frame?.contains(alert)).toBe(true);
+  expect(alert?.compareDocumentPosition(editorBefore as Node)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
 
   onSubmit.mockResolvedValueOnce(true);
   await pressEnter();
   expect(host.querySelector("[role='alert']")).toBeNull();
+  expect(editorElement()).toBe(editorBefore);
   expect(editorElement()?.textContent).toBe("");
 });
 
