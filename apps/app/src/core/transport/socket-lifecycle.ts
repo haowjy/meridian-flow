@@ -1,4 +1,4 @@
-/** Manages WebSocket reconnects and current-generation callbacks. */
+/** Owns thread handshake phases, reconnects, and current-generation callbacks. */
 
 import { DEBUG_FEATURE_ALLOWED } from "../debug-gate";
 import type { ConnectivityHintsPort } from "./connectivity-hints";
@@ -15,7 +15,12 @@ import {
   isTerminalWsClose,
 } from "./ws-thread-socket-utils";
 
+export const DEFAULT_WS_HANDSHAKE_TIMEOUT_MS = 10_000;
+
+type SocketPhase = "idle" | "connecting" | "awaiting-connected" | "connected";
+
 export type SocketLifecycleOptions = {
+  handshakeTimeoutMs?: number;
   connectivityHints?: ConnectivityHintsPort;
   webSocketFactory?: (url: string) => WebSocket;
 };
@@ -29,8 +34,6 @@ export type SocketLifecycleConsumer = {
   buildUrl: () => string;
   /** True while the consumer still wants the socket up (drives reconnect). */
   wantsConnection: () => boolean;
-  /** Socket just opened. Ping timer is already armed. */
-  onOpen: () => void;
   /** Inbound frame (string control or binary). */
   onMessage: (data: unknown) => void;
   /** Socket closed for a non-terminal reason; reconnect is being scheduled. */
@@ -46,12 +49,15 @@ export type SocketLifecycleConsumer = {
 export class SocketLifecycleController {
   private readonly webSocketFactory: (url: string) => WebSocket;
   private readonly consumer: SocketLifecycleConsumer;
+  private readonly handshakeTimeoutMs: number;
 
   private readonly connectivityHints?: ConnectivityHintsPort;
   private stopHints: (() => void) | null = null;
 
   private socket: WebSocket | null = null;
   private socketGeneration = 0;
+  private phase: SocketPhase = "idle";
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -59,6 +65,7 @@ export class SocketLifecycleController {
 
   constructor(consumer: SocketLifecycleConsumer, options: SocketLifecycleOptions = {}) {
     this.consumer = consumer;
+    this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? DEFAULT_WS_HANDSHAKE_TIMEOUT_MS;
     this.connectivityHints = options.connectivityHints;
     this.webSocketFactory = options.webSocketFactory ?? ((url) => new WebSocket(url));
   }
@@ -72,18 +79,34 @@ export class SocketLifecycleController {
   }
 
   isSocketOpen(): boolean {
-    return !!this.socket && this.socket.readyState === WebSocket.OPEN;
+    return (
+      (this.phase === "awaiting-connected" || this.phase === "connected") &&
+      this.socket?.readyState === WebSocket.OPEN
+    );
   }
 
   isSocketLive(): boolean {
     return (
+      this.phase !== "idle" &&
       !!this.socket &&
       (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
     );
   }
 
-  /** Reset backoff to the aggressive phase (e.g. after a successful sync). */
-  resetBackoff(): void {
+  isServerConnected(): boolean {
+    return this.phase === "connected" && this.isSocketOpen();
+  }
+
+  /** Complete the current protocol handshake after a parsed `connected` frame. */
+  markConnected(): void {
+    if (!this.isSocketOpen()) return;
+    this.phase = "connected";
+    this.clearHandshakeTimer();
+    this.resetBackoff();
+    this.publishConnectionState({ kind: "connected" });
+  }
+
+  private resetBackoff(): void {
     this.reconnectAttempt = 0;
   }
 
@@ -112,6 +135,8 @@ export class SocketLifecycleController {
     this.stopHints = null;
     this.clearReconnectTimer();
     this.clearPingTimer();
+    this.clearHandshakeTimer();
+    this.phase = "idle";
     this.reconnectAttempt = 0;
     const socket = this.socket;
     this.socket = null;
@@ -150,7 +175,7 @@ export class SocketLifecycleController {
     }, DEFAULT_WS_PING_TIMEOUT_MS);
   }
 
-  publishConnectionState(state: ConnectionState): void {
+  private publishConnectionState(state: ConnectionState): void {
     if (state.kind === "connected") this.connectivityHints?.reportConnected(this);
     else this.connectivityHints?.reportDisconnected(this);
     this.connectionState = state;
@@ -173,6 +198,8 @@ export class SocketLifecycleController {
   private startSocket(): void {
     if (this.connectionState.kind === "terminal") return;
     this.clearReconnectTimer();
+    this.clearHandshakeTimer();
+    this.clearPingTimer();
 
     const generation = this.socketGeneration + 1;
     this.socketGeneration = generation;
@@ -182,12 +209,18 @@ export class SocketLifecycleController {
 
     const socket = this.webSocketFactory(this.consumer.buildUrl());
     this.socket = socket;
+    this.phase = "connecting";
+    this.handshakeTimer = setTimeout(() => {
+      this.handshakeTimer = null;
+      if (!this.isCurrentSocket(generation, socket)) return;
+      this.closeCurrentSocket("handshake_timeout");
+    }, this.handshakeTimeoutMs);
 
     socket.addEventListener("open", () => {
       if (!this.isCurrentSocket(generation, socket)) return;
+      this.phase = "awaiting-connected";
       if (DEBUG_FEATURE_ALLOWED) notifyThreadSocketOpen(generation);
       this.resetPingTimer();
-      this.consumer.onOpen();
     });
 
     socket.addEventListener("message", (event) => {
@@ -218,16 +251,19 @@ export class SocketLifecycleController {
   private closeCurrentSocket(reason: string): void {
     const socket = this.socket;
     if (!socket) return;
-    const generation = this.socketGeneration;
-    socket.close(4000, reason);
-    // Native close may await a handshake that an offline network cannot finish.
-    if (this.isCurrentSocket(generation, socket)) {
-      this.handleSocketClose({ code: 4000, reason, wasClean: false } as CloseEvent);
+    // Retire before native close: an incomplete upgrade may never acknowledge it.
+    this.handleSocketClose({ code: 4000, reason, wasClean: false } as CloseEvent);
+    try {
+      socket.close(4000, reason);
+    } catch {
+      // Some adapters cannot close an upgrade that has not completed.
     }
   }
 
   private handleSocketClose(event: CloseEvent): void {
     this.socket = null;
+    this.phase = "idle";
+    this.clearHandshakeTimer();
     this.clearPingTimer();
     this.consumer.onClose?.(event);
 
@@ -281,6 +317,12 @@ export class SocketLifecycleController {
     if (!this.reconnectTimer) return;
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+  }
+
+  private clearHandshakeTimer(): void {
+    if (!this.handshakeTimer) return;
+    clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
   }
 
   private clearPingTimer(): void {
