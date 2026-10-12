@@ -10,9 +10,9 @@
  * cannot select anything. The left slot truncates before the switch or close
  * ever compress.
  *
- * While the dock holds a document, the header is the document's: its title
- * chip and menu take the left slot, the view switch steps aside, and a Close
- * document button sits before the collapse toggle. Closing returns to the view
+ * While the dock holds a document, the header is the document's: its path and
+ * chips take the left slot, the view switch steps aside, and Open in Editor
+ * sits before the collapse toggle. Closing returns to the view
  * the writer last chose.
  *
  * Desktop-only: the phone chat sheet supplies its own header
@@ -31,9 +31,10 @@ import type { ReactNode } from "react";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
+import { PaneTitle } from "../PaneTitle";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
-import { DockDocumentTitle, DockTitleMenu } from "./DockDocumentTitle";
+import { DockDocumentIdentity } from "./DockDocumentIdentity";
 import type { DockDocument } from "./dock-view-store";
 import type { DockView } from "./dock-views";
 
@@ -77,13 +78,22 @@ export function DockHeader({
       <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {dockDocument ? (
           <>
-            <DockDocumentClose />
-            <DockDocumentTitle projectId={projectId} document={dockDocument} />
+            {/* Close and Open in Editor sit together before the path: both act on the
+                document as a whole, and the path stays one unbroken run. */}
+            <span className="flex shrink-0 items-center gap-0.5">
+              <DockDocumentClose />
+              <DockOpenInEditor projectId={projectId} document={dockDocument} />
+            </span>
+            <DockDocumentIdentity projectId={projectId} document={dockDocument} />
           </>
         ) : (
           <>
-            {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
-            {view === "context" ? <DockTitleMenu projectId={projectId} tab={null} /> : null}
+            {/* The Chat screen's rail is the chat's Recent documents; the switch names it when Changes is offered too. */}
+            {view === "context" && views.length <= 1 ? (
+              <PaneTitle>
+                <Trans>Recent</Trans>
+              </PaneTitle>
+            ) : null}
             {view === "chat" ? threadSelect : null}
             {view === "chat" && threadId ? (
               <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
@@ -99,7 +109,6 @@ export function DockHeader({
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.
         <div className="flex shrink-0 items-center gap-0.5 px-2">
-          {dockDocument ? <DockOpenInEditor projectId={projectId} document={dockDocument} /> : null}
           {onClose ? (
             <PanelToggleButton icon={PanelRightClose} label={t`Collapse dock`} onClick={onClose} />
           ) : null}
@@ -130,7 +139,7 @@ function DockViewLabel({ view }: { view: DockView }) {
     case "chat":
       return <Trans>Chat</Trans>;
     case "context":
-      return <Trans>Context</Trans>;
+      return <Trans>Recent</Trans>;
     case "changes":
       return <Trans>Changes</Trans>;
   }

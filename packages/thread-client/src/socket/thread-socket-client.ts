@@ -2,8 +2,8 @@
  * ThreadSocketClient — the production `ThreadTransport` over `/api/threads/ws`.
  *
  * Owns the thread-domain control plane: per-thread subscribe/resume, gap
- * detection, server-"connected" gating, and connection-state fan-out to
- * subscribers. The socket lifecycle (connect/reconnect/backoff, ping-timeout,
+ * detection, and connection-state fan-out to subscribers. The socket lifecycle
+ * (handshake readiness/deadline, connect/reconnect/backoff, ping-timeout,
  * generation tracking, terminal-close policy) lives in `SocketLifecycleController`;
  * message routing in `dispatch-ws-server-message`; subscription bookkeeping in
  * `ws-thread-subscription`. The single live agent-event transport.
@@ -54,19 +54,14 @@ export class ThreadSocketClient implements ThreadTransport {
   >();
   private readonly socketGenerationClosedListeners = new Set<(generation: number) => void>();
   private wantsConnection = false;
-  private serverConnected = false;
 
   constructor(private readonly options: ThreadSocketClientOptions) {
     this.socket = new SocketLifecycleController(
       {
         buildUrl: options.url,
         wantsConnection: () => this.wantsConnection,
-        onOpen: () => {
-          this.serverConnected = false;
-        },
         onMessage: (data) => this.handleMessage(data),
         onClose: (event) => {
-          this.serverConnected = false;
           // The generation that just closed is still `currentGeneration` here
           // (it only advances on the next `startSocket`/`teardown`), so a send
           // tagged with it can be recognized as unconfirmed.
@@ -96,7 +91,6 @@ export class ThreadSocketClient implements ThreadTransport {
 
   disconnect(_reason?: "logout" | "app_unmount"): void {
     this.wantsConnection = false;
-    this.serverConnected = false;
     this.socket.teardown();
     this.subscriptions.clearServerSubscribed();
   }
@@ -131,7 +125,7 @@ export class ThreadSocketClient implements ThreadTransport {
     }
 
     this.ensureConnected();
-    if (sendSubscribe && this.socket.isSocketOpen() && this.serverConnected) {
+    if (sendSubscribe && this.socket.isServerConnected()) {
       this.sendSubscribe(threadId, subscription, forceSubscribe);
     }
 
@@ -173,7 +167,7 @@ export class ThreadSocketClient implements ThreadTransport {
     listeners.add(listener);
     this.catalogSubscriptions.set(projectId, listeners);
     this.ensureConnected();
-    if (first && this.socket.isSocketOpen() && this.serverConnected) {
+    if (first && this.socket.isServerConnected()) {
       this.send({ type: "catalog.subscribe", projectId });
     }
     return () => {
@@ -181,7 +175,7 @@ export class ThreadSocketClient implements ThreadTransport {
       current?.delete(listener);
       if (current?.size) return;
       this.catalogSubscriptions.delete(projectId);
-      if (this.socket.isSocketOpen() && this.serverConnected) {
+      if (this.socket.isServerConnected()) {
         this.send({ type: "catalog.unsubscribe", projectId });
       }
     };
@@ -218,9 +212,7 @@ export class ThreadSocketClient implements ThreadTransport {
       handleGap: (gap) => this.handleGap(gap),
       send: (payload) => this.send(payload),
       onConnected: () => {
-        this.socket.resetBackoff();
-        this.serverConnected = true;
-        this.socket.publishConnectionState({ kind: "connected" });
+        this.socket.markConnected();
         this.sendResume();
         for (const projectId of this.catalogSubscriptions.keys()) {
           this.send({ type: "catalog.subscribe", projectId });

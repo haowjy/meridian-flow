@@ -142,7 +142,9 @@ it("a pick during replica hydration wins without the restore cancelling its clai
   expect(second.getState().occupant).toEqual(picked);
 });
 it("a removed document restores as nothing", async () => {
-  availability.mockResolvedValue({ resolutions: [{ kind: "deleted", documentId: "doc" }] });
+  availability.mockResolvedValue({
+    resolutions: [{ observationVersion: "1", kind: "deleted", documentId: "doc" }],
+  });
   const second = reload();
   const restored = second.getState().restoring;
   if (!restored) throw new Error("Expected a restore candidate");
