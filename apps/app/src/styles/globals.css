@@ -9,7 +9,6 @@
 @import "@meridian/design-tokens/themes.css";
 @import "tw-animate-css";
 @import "../components/app/link-chip/link-chip.css";
-@import "../rich-content/code-block.css";
 @import "./document.css";
 
 /* Components' `dark:` utilities key off the UI-theme attribute the boot

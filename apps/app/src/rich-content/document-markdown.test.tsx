@@ -45,7 +45,6 @@ describe("settled document rendering", () => {
       render("[**chapter** one](manuscript://chapter.md)").match(/data-link-chip=/g),
     ).toHaveLength(1);
     expect(render("[**web** link](https://example.com)").match(/data-link-kind=/g)).toHaveLength(1);
-    expect(html).not.toContain("data-streamdown");
   });
 
   it("highlights fences with editor token classes and only a copy action", () => {

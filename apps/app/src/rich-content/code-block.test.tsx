@@ -99,7 +99,6 @@ it("shows every code append immediately and preserves blocks when the turn settl
   expect(host.querySelector("h1")).toBe(heading);
   expect(host.querySelector("pre")).toBe(pre);
   expect(host.querySelector(".document-prose")?.innerHTML).toBe(html);
-  expect(host.querySelector('[data-streamdown="code-block"]')).toBeNull();
   expect(host.querySelector('button[aria-label="Copy code"]')).not.toBeNull();
   await render(<StreamingText text={"```ts\nconst reset = 7;"} />);
   expect(host.querySelector("code")?.textContent).toBe("const reset = 7;");

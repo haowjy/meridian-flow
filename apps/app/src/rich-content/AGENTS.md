@@ -1,7 +1,6 @@
 # rich-content
 
-`Markdown` selects the presentation path. Markdown without reference or skill
-occurrences uses `DocumentMarkdown`: the shared markup codec and a React
+`Markdown` uses `DocumentMarkdown`: the shared markup codec and a React
 walker, with no editor instance. `styles/document.css` owns document typography,
 block surfaces and lowlight colors for both chat and the manuscript. Chat retains
 its smaller reading tier, with 8px between all top-level blocks (including headings)
@@ -16,11 +15,17 @@ at 50ms; fresh text is always visible immediately. Settlement keeps the same DOM
 Bounded source caches retain settled PM trees and code colors across virtual-row
 remounts (256 entries and 250,000 key characters each); live tails are not retained.
 
-Source-authoritative reference/skill turns temporarily remain on Streamdown. Do not
-approximate occurrence ranges with displayed-text matching or
-add schema attributes for transcript-only presentation. Their migration needs the
-codec source-position contract recorded in work item `thread-ux-2`.
+Static user turns with occurrences parse once with the canonical codec's opt-in
+presentation source map. Exact complete link ranges grant reference identity;
+skills must fit entirely inside one mapped text run outside code. Invalid,
+rewritten, cross-run, or mismatched ranges stay ordinary Markdown. Projection
+is app-owned: never match displayed labels or store presentation schema attrs.
+No source map enters the streaming path.
 
 The walker handles the Markdown codec's nodes, not MDX figure/JSX editing views.
-Diagram fences remain source until the diagram integration phase. Copy-as-HTML
-still has its existing pipeline in `features/chat/assistant-turn-copy.ts`.
+Closed diagram fences use the Editor's provider catalog, render hook and sanitized
+SVG faces (Mermaid loads lazily). An open fence stays code, even at settlement.
+Code copy is visible only on hover or focus within the block. External links
+open in a new tab and share the Editor's outbound marker; internal chips stay
+unchanged. Copy-as-HTML keeps its separate sanitized clipboard pipeline in
+`features/chat/assistant-turn-copy.ts`; its characterization tests pin the output.

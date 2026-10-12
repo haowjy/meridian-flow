@@ -123,6 +123,7 @@ export interface SourceRange {
 }
 export interface PresentationSourceRun {
   kind: "text" | "link";
+  /** Text offset is within the addressed PM text node; links count sibling nodes. */
   at: { block: number; path: number[]; count: number; offset?: number };
   source: SourceRange | null;
 }

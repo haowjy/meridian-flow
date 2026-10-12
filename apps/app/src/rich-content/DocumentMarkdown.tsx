@@ -1,119 +1,34 @@
 /** Static and streaming Markdown: the canonical codec's document nodes rendered without an editor. */
-import { t } from "@lingui/core/macro";
-import { markdownCodec } from "@meridian/markup";
+import { markdownCodec, type PresentationSourceRun } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
-import { common, createLowlight } from "lowlight";
-import { Check, Copy } from "lucide-react";
-import {
-  createElement,
-  Fragment,
-  memo,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createElement, Fragment, memo, type ReactNode, useMemo } from "react";
 import remend from "remend";
 
 import { classifyLinkTarget } from "@/core/editor/links";
+import { DocumentCodeBlock } from "./DocumentCodeBlock";
 import { createDocumentCache } from "./document-cache";
 import { splitMarkdownBlocks } from "./markdown-blocks";
+import {
+  boundedRanges,
+  type MarkdownReferenceOccurrence,
+  type MarkdownSkillOccurrence,
+  referenceForRun,
+  skillsForRuns,
+} from "./reference-occurrences";
+import { SkillToken } from "./SkillToken";
 import { TranscriptReference } from "./TranscriptReference";
 
 const codec = markdownCodec({ schema: buildDocumentSchema() });
-const lowlight = createLowlight(common);
 const settledBlocks = createDocumentCache<PMNode[]>();
-const settledCode = createDocumentCache<ReactNode>();
 
-type HighlightRoot = ReturnType<typeof lowlight.highlight>;
-type HighlightNode = HighlightRoot | HighlightRoot["children"][number];
-
-function highlighted(node: HighlightNode, key: number): ReactNode {
-  if (node.type === "text") return node.value;
-  if (node.type === "root") return node.children.map(highlighted);
-  if (node.type !== "element") return null;
-  const element = node;
-  return createElement(
-    element.tagName,
-    {
-      key,
-      className: Array.isArray(element.properties.className)
-        ? element.properties.className.join(" ")
-        : undefined,
-    },
-    element.children.map(highlighted),
-  );
-}
-
-function CodeBlock({ node, throttle = false }: { node: PMNode; throttle?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  const source = node.textContent;
-  const language = node.attrs.language as string | null;
-  const [snapshot, setSnapshot] = useState({ source, language });
-  const lastHighlight = useRef(0);
-  useEffect(() => {
-    if (!throttle || (snapshot.source === source && snapshot.language === language)) return;
-    if (!lastHighlight.current) lastHighlight.current = performance.now();
-    const timer = setTimeout(
-      () => {
-        lastHighlight.current = performance.now();
-        setSnapshot({ source, language });
-      },
-      Math.max(0, 50 - (performance.now() - lastHighlight.current)),
-    );
-    return () => clearTimeout(timer);
-  }, [source, language, throttle, snapshot]);
-  const highlightSource = throttle ? snapshot.source : source;
-  const highlightLanguage = throttle ? snapshot.language : language;
-  const code = useMemo(() => {
-    const compute = () => {
-      const language = highlightLanguage;
-      if (language && !lowlight.registered(language)) return highlightSource;
-      const tree = language
-        ? lowlight.highlight(language, highlightSource)
-        : lowlight.highlightAuto(highlightSource);
-      return highlighted(tree, 0);
-    };
-    return throttle
-      ? compute()
-      : settledCode(JSON.stringify([highlightLanguage, highlightSource]), compute);
-  }, [highlightSource, highlightLanguage, throttle]);
-  return (
-    <div className="document-code-block">
-      <pre>
-        <code className={node.attrs.language ? `language-${node.attrs.language}` : undefined}>
-          {source.startsWith(highlightSource) && language === highlightLanguage ? (
-            <>
-              {code}
-              {source.slice(highlightSource.length)}
-            </>
-          ) : (
-            source
-          )}
-        </code>
-      </pre>
-      <button
-        type="button"
-        className="document-code-copy focus-ring"
-        aria-label={copied ? t`Copied` : t`Copy code`}
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(node.textContent);
-            setCopied(true);
-          } catch {
-            setCopied(false);
-          }
-        }}
-        onBlur={() => setCopied(false)}
-        onMouseLeave={() => setCopied(false)}
-      >
-        {copied ? <Check size={16} /> : <Copy size={16} />}
-      </button>
-    </div>
-  );
-}
+type Presentation = {
+  source: string;
+  runs: ReadonlyMap<string, PresentationSourceRun[]>;
+  references: readonly MarkdownReferenceOccurrence[];
+  skills: readonly MarkdownSkillOccurrence[];
+};
+const runKey = (kind: string, path: readonly number[]) => `${kind}:${path.join("/")}`;
 
 function renderLink(mark: PMMark, content: ReactNode): ReactNode {
   const target = classifyLinkTarget(String(mark.attrs.href));
@@ -136,16 +51,31 @@ function renderLink(mark: PMMark, content: ReactNode): ReactNode {
   return content;
 }
 
-function children(node: PMNode, breaks: boolean, throttle: boolean): ReactNode[] {
+function children(
+  node: PMNode,
+  breaks: boolean,
+  throttle: boolean,
+  presentation?: Presentation,
+  path: number[] = [],
+  openCode: PMNode | null = null,
+): ReactNode[] {
   const result: ReactNode[] = [];
   for (let index = 0; index < node.childCount; index++) {
     const child = node.child(index);
     const link = child.marks.find((mark) => mark.type.name === "link");
     if (!link) {
-      result.push(<Fragment key={index}>{renderDocumentNode(child, breaks, throttle)}</Fragment>);
+      result.push(
+        <Fragment key={index}>
+          {renderDocumentNode(child, breaks, throttle, presentation, [...path, index], openCode)}
+        </Fragment>,
+      );
       continue;
     }
     const key = index;
+    const run = presentation?.runs.get(runKey("link", [...path, key]));
+    const reference = presentation && referenceForRun(run?.[0], presentation.references);
+    const labelPresentation =
+      reference && presentation ? { ...presentation, skills: [] } : presentation;
     const label: ReactNode[] = [];
     // A mixed-format label is one chip (and one outbound arrow), like the Editor.
     for (; index < node.childCount; index++) {
@@ -157,27 +87,84 @@ function children(node: PMNode, breaks: boolean, throttle: boolean): ReactNode[]
             part.mark(part.marks.filter((mark) => mark.type.name !== "link")),
             breaks,
             throttle,
+            labelPresentation,
+            [...path, index],
+            openCode,
           )}
         </Fragment>,
       );
     }
     index--;
-    result.push(<Fragment key={key}>{renderLink(link, label)}</Fragment>);
+    const hasSkills =
+      presentation &&
+      Array.from(
+        { length: index - key + 1 },
+        (_, offset) =>
+          skillsForRuns(
+            presentation.runs.get(runKey("text", [...path, key + offset])),
+            presentation.source,
+            presentation.skills,
+          ).length > 0,
+      ).some(Boolean);
+    result.push(
+      <Fragment key={key}>
+        {reference ? (
+          <TranscriptReference
+            data-document-id={reference.documentId}
+            data-uri={reference.uri}
+            data-authored-label="true"
+          >
+            {label}
+          </TranscriptReference>
+        ) : hasSkills ? (
+          label
+        ) : (
+          renderLink(link, label)
+        )}
+      </Fragment>,
+    );
   }
   return result;
 }
 
 /** Markdown nodes only; MDX's figure/JSX nodes belong to its separate codec. */
-function renderDocumentNode(node: PMNode, breaks = false, throttle = false): ReactNode {
+function renderDocumentNode(
+  node: PMNode,
+  breaks = false,
+  throttle = false,
+  presentation?: Presentation,
+  path: number[] = [],
+  openCode: PMNode | null = null,
+): ReactNode {
   if (node.isText) {
-    let content: ReactNode = breaks
-      ? node.text?.split("\n").map((line, index) => (
-          <Fragment key={index}>
-            {index > 0 && <br />}
-            {line}
-          </Fragment>
-        ))
-      : node.text;
+    const skills =
+      presentation && !node.marks.some((mark) => mark.type.name === "code")
+        ? skillsForRuns(
+            presentation.runs.get(runKey("text", path)),
+            presentation.source,
+            presentation.skills,
+          )
+        : [];
+    const text = (value: string): ReactNode =>
+      breaks
+        ? value.split(/\r?\n|\r/).map((line, index) => (
+            <Fragment key={index}>
+              {index > 0 && <br />}
+              {line}
+            </Fragment>
+          ))
+        : value;
+    let cursor = 0;
+    const parts: ReactNode[] = [];
+    for (const { from, to, skill } of skills) {
+      parts.push(
+        <Fragment key={`text-${from}`}>{text((node.text ?? "").slice(cursor, from))}</Fragment>,
+      );
+      parts.push(<SkillToken key={`skill-${from}`} {...skill} />);
+      cursor = to;
+    }
+    parts.push(<Fragment key="tail">{text((node.text ?? "").slice(cursor))}</Fragment>);
+    let content: ReactNode = parts;
     for (const mark of node.marks) {
       const tags: Record<string, string> = {
         strong: "strong",
@@ -191,7 +178,7 @@ function renderDocumentNode(node: PMNode, breaks = false, throttle = false): Rea
     }
     return content;
   }
-  const content = children(node, breaks, throttle);
+  const content = children(node, breaks, throttle, presentation, path, openCode);
   const alignment = node.attrs.align ? { textAlign: node.attrs.align } : undefined;
   switch (node.type.name) {
     case "doc":
@@ -217,7 +204,7 @@ function renderDocumentNode(node: PMNode, breaks = false, throttle = false): Rea
     case "horizontal_rule":
       return <hr />;
     case "code_block":
-      return <CodeBlock node={node} throttle={throttle} />;
+      return <DocumentCodeBlock node={node} throttle={throttle} diagrams={node !== openCode} />;
     case "image":
       return (
         <img
@@ -260,6 +247,18 @@ function renderDocumentNode(node: PMNode, breaks = false, throttle = false): Rea
   }
 }
 
+function lastCodeBlock(blocks: readonly PMNode[]): PMNode | null {
+  let last: PMNode | null = null;
+  for (const block of blocks) {
+    if (block.type.name === "code_block") last = block;
+    block.descendants((node) => {
+      if (node.type.name === "code_block") last = node;
+      return node.type.name !== "code_block";
+    });
+  }
+  return last;
+}
+
 // Source strings, not PM nodes, are the memo boundary: settled blocks never parse
 // or highlight again as their tail grows. Fragments keep all DOM blocks siblings.
 const MarkdownBlock = memo(function MarkdownBlock({
@@ -267,11 +266,13 @@ const MarkdownBlock = memo(function MarkdownBlock({
   breaks,
   repair,
   throttle,
+  openFence,
 }: {
   source: string;
   breaks: boolean;
   repair: boolean;
   throttle: boolean;
+  openFence: boolean;
 }) {
   const blocks = useMemo(
     () =>
@@ -280,34 +281,87 @@ const MarkdownBlock = memo(function MarkdownBlock({
         : settledBlocks(source, () => codec.parse(source).blocks),
     [source, repair],
   );
+  const openCode = openFence ? lastCodeBlock(blocks) : null;
   return blocks.map((node, index) => (
-    <Fragment key={index}>{renderDocumentNode(node, breaks, throttle)}</Fragment>
+    <Fragment key={index}>
+      {renderDocumentNode(node, breaks, throttle, undefined, [], openCode)}
+    </Fragment>
   ));
 });
+
+function StaticTranscript({
+  source,
+  breaks,
+  openFence,
+  references,
+  skills,
+}: {
+  source: string;
+  breaks: boolean;
+  references: readonly MarkdownReferenceOccurrence[];
+  skills: readonly MarkdownSkillOccurrence[];
+  openFence: boolean;
+}) {
+  const { blocks, sourceMap } = useMemo(() => codec.parseWithSourceMap(source), [source]);
+  const presentation = useMemo(() => {
+    const runs = new Map<string, PresentationSourceRun[]>();
+    for (const run of sourceMap) {
+      const key = runKey(run.kind, [run.at.block, ...run.at.path]);
+      runs.set(key, [...(runs.get(key) ?? []), run]);
+    }
+    return {
+      source,
+      runs,
+      references: boundedRanges(references, source.length),
+      skills: boundedRanges(skills, source.length),
+    };
+  }, [source, sourceMap, references, skills]);
+  const openCode = openFence ? lastCodeBlock(blocks) : null;
+  return blocks.map((node, index) => (
+    <Fragment key={index}>
+      {renderDocumentNode(node, breaks, false, presentation, [index], openCode)}
+    </Fragment>
+  ));
+}
 
 export function DocumentMarkdown({
   source,
   breaks = false,
   streaming = false,
   className,
+  references = [],
+  skills = [],
 }: {
   source: string;
   breaks?: boolean;
   streaming?: boolean;
   className?: string;
+  references?: readonly MarkdownReferenceOccurrence[];
+  skills?: readonly MarkdownSkillOccurrence[];
 }) {
   const { blocks, openFence } = useMemo(() => splitMarkdownBlocks(source), [source]);
   return (
     <div className={className}>
-      {blocks.map((block, index) => (
-        <MarkdownBlock
-          key={index}
-          source={block}
+      {!streaming && (references.length > 0 || skills.length > 0) ? (
+        <StaticTranscript
+          openFence={openFence}
+          source={source}
           breaks={breaks}
-          repair={streaming && index === blocks.length - 1}
-          throttle={streaming && openFence && index === blocks.length - 1}
+          references={references}
+          skills={skills}
         />
-      ))}
+      ) : (
+        blocks.map((block, index) => (
+          <MarkdownBlock
+            key={index}
+            source={block}
+            breaks={breaks}
+            repair={streaming && index === blocks.length - 1}
+            throttle={streaming && openFence && index === blocks.length - 1}
+            openFence={openFence && index === blocks.length - 1}
+          />
+        ))
+      )}
     </div>
   );
 }

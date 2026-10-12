@@ -1,4 +1,5 @@
 /** Opt-in parse provenance, projected onto final PM paths after text coalescing. */
+import { decodeString } from "micromark-util-decode-string";
 import type { Node as PMNode } from "prosemirror-model";
 import type { PresentationSourceRun, SourceRange } from "./types.js";
 
@@ -10,6 +11,12 @@ export function sourceRange(ast: unknown): SourceRange | null {
   const from = position?.start?.offset;
   const to = position?.end?.offset;
   return typeof from === "number" && typeof to === "number" ? { from, to } : null;
+}
+
+/** Container prefixes and newline normalization can rewrite an AST text leaf. */
+export function textSourceRange(ast: unknown, source: string, value: string): SourceRange | null {
+  const range = sourceRange(ast);
+  return range && decodeString(source.slice(range.from, range.to)) === value ? range : null;
 }
 
 export function blockSourceMap(
@@ -53,7 +60,7 @@ export function blockSourceMap(
       if (
         remaining !== 0 ||
         parts.map((part) => part.node.text).join("") !== child.text ||
-        parts.some((part) => !PMNodeMarksEqual(part.node, child))
+        parts.some((part) => !pmNodeMarksEqual(part.node, child))
       )
         valid = false;
       // PM coalesces adjacent equally marked text. Keep the original runs as
@@ -93,7 +100,7 @@ export function blockSourceMap(
   return runs;
 }
 
-function PMNodeMarksEqual(a: PMNode, b: PMNode): boolean {
+function pmNodeMarksEqual(a: PMNode, b: PMNode): boolean {
   return (
     a.marks.length === b.marks.length && a.marks.every((mark, index) => mark.eq(b.marks[index]))
   );

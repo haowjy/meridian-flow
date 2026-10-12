@@ -92,33 +92,22 @@
     @apply border-0 border-t border-border-subtle;
     margin-block: var(--prose-space-rule);
   }
-  /* Streamdown draws a transcript's external link as a button (it asks before
-     leaving), so the anchor look is applied to it too. */
-  & :is(a, [data-streamdown="link"]) {
+  & a {
     @apply focus-ring rounded-sm text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary;
     font-weight: inherit;
   }
 
-  /* Streamdown ships className strings only (its styles.css is keyframes we
-     don't import), so its baked utilities land in OUR utilities layer and the
-     descendant selectors below (0-2-0) reliably beat them (0-1-0). If a future
-     Streamdown ever ships its own UNLAYERED stylesheet, it would win back —
-     re-verify on upgrade. */
   & pre {
     max-width: 100%;
     overflow-x: auto;
-    /* em (not rem): block code rides the reading scale. Overrides Streamdown's
-       baked fixed-size utility. */
+    /* em (not rem): block code rides the reading scale. */
     font-size: 0.8125em;
     line-height: 1.6;
   }
 
   & code {
     overflow-wrap: anywhere;
-    /* The one canonical code-chip: code-surface ladder + hairline border,
-       em-sized so it rides the scale — the editor shares it via prose-tokens
-       on the ProseMirror root. Overrides Streamdown's baked `bg-muted text-sm`
-       (fixed rem, off-scale). */
+    /* Inline code rides the inherited reading scale. */
     border: 1px solid var(--color-code-border);
     border-radius: var(--radius-sm);
     background: var(--color-code-surface);
@@ -139,10 +128,6 @@
     font-size: inherit;
   }
 
-  & [data-streamdown="table-wrapper"] {
-    @apply max-w-full overflow-x-auto rounded-md border border-border-subtle;
-    margin-block: var(--prose-space-table);
-  }
   & > :first-child {
     margin-top: 0;
   }
@@ -169,9 +154,6 @@
     @apply border-b border-border-subtle px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] font-semibold tracking-table-heading uppercase;
   }
   & td {
-    /* 1em: cells inherit the table's em ladder. Without an explicit size,
-       Streamdown's baked `text-sm` on the td wins and pins cells to a fixed
-       rem while headers (which declare a size here) ride the scale. */
     font-size: 1em;
     @apply px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] align-top text-foreground;
   }
