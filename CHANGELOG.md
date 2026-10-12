@@ -54,6 +54,14 @@
 - Obsidian comments no longer hide following prose or leak links when their contents include code fences.
 
 - Wikilink paste uses the shared Obsidian syntax scanner. The upcoming vault importer can use the same scanner and raw frontmatter splitter.
+- Import-door regression checks cover simultaneous writer edits, ahead-link arrivals and Manuscript name collisions.
+
+- Reading an import landing inside its transaction never publishes uncommitted text to open editors.
+
+- Restoring a checkpoint never makes an edited import placeholder eligible for replacement again.
+
+- Planned import links reject personal-project targets and draft-only documents; import binding requires a live view.
+
 - Server imports can create folders and pending note placeholders in atomic chunks with one catalog refresh per chunk.
 
 - Server imports can fill an untouched placeholder by identity, or prepend text without replacing existing edits.

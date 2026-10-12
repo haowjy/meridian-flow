@@ -68,9 +68,7 @@ const { ensureAndReadDocumentAuthorityHead, replaceDocumentAuthorityHeadGenerati
 );
 const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
-const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
-  "../adapters/hocuspocus-coordinator.js"
-);
+const { createHocuspocusCoordinator } = await import("../adapters/hocuspocus-coordinator.js");
 const {
   createAgentEditObservabilityOptions,
   createBranchAgentEditDiagnostics,
@@ -518,16 +516,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     aheadRefs: UNSUPPORTED_AHEAD_REFS,
     journal: persistence.journal,
     coordinator: liveCoordinator,
-    agentCoordinator: createDeferredLiveProjectionCoordinator({
-      hocuspocus: () => hocuspocus as never,
-      journal: persistence.journal,
-      live: liveCoordinator,
-      transactions: {
-        inTransaction: isInDrizzleTransaction,
-        outsideTransaction: runOutsideDrizzleTransaction,
-        afterCommit: deferUntilDrizzleCommit,
-      },
-    }),
     lifecycle: persistence.lifecycle,
     initialDocumentSeeds: persistence.lifecycle,
     runDocumentWriteHook,

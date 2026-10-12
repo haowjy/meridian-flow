@@ -48,11 +48,6 @@ export function createAgentEditRuntime(input: {
   journal: UpdateJournal & ReversalStore;
   landingJournal?: DocumentLandingJournal;
   coordinator: DocumentCoordinator;
-  /**
-   * The live agent-edit core's coordinator when it differs from `coordinator`:
-   * production defers live projection until a reply's transaction commits.
-   */
-  agentCoordinator?: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
   deferUntilCommit?(callback: () => void | Promise<void>): boolean;
@@ -80,7 +75,7 @@ export function createAgentEditRuntime(input: {
         viewFor: liveViewFor,
       }),
       journal: input.journal,
-      coordinator: input.agentCoordinator ?? input.coordinator,
+      coordinator: input.coordinator,
       lifecycle: input.lifecycle,
       codec,
       model,
