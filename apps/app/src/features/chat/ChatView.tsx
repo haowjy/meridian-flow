@@ -143,7 +143,8 @@ export function ChatView({
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
   const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const brief = useHandoffBrief({ threadId, storedTurns });
-  const replyRetry = useReplyRetry({ threadId, storedTurns });
+  const runFacts = useCallback(() => controller.runFacts(threadId), [controller, threadId]);
+  const replyRetry = useReplyRetry({ threadId, storedTurns, runFacts });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
   // yet). A Retry's new card, or a failed reply's new reply, stands after the

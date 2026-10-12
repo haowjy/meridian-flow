@@ -17,8 +17,10 @@ export class MeridianApiError extends Error {
   readonly details: MeridianError["details"];
   readonly envelope: MeridianError;
   readonly status: number | undefined;
+  /** The HTTP response's headers; undefined on the WS path. */
+  readonly headers: Headers | undefined;
 
-  constructor(envelope: MeridianError, status?: number) {
+  constructor(envelope: MeridianError, status?: number, headers?: Headers) {
     super(envelope.message);
     this.name = "MeridianApiError";
     this.code = envelope.code;
@@ -27,6 +29,7 @@ export class MeridianApiError extends Error {
     this.details = envelope.details;
     this.envelope = envelope;
     this.status = status;
+    this.headers = headers;
   }
 }
 
@@ -45,23 +48,24 @@ export function isMeridianApiError(value: unknown): value is MeridianApiError {
 export function meridianApiErrorFromPayload(
   payload: unknown,
   status?: number,
+  headers?: Headers,
 ): MeridianApiError | null {
   if (!payload || typeof payload !== "object") return null;
 
   if (isMeridianError(payload)) {
-    return new MeridianApiError(payload, status);
+    return new MeridianApiError(payload, status, headers);
   }
 
   const wrapped = payload as { kind?: unknown; error?: unknown };
   if (wrapped.kind === "error" && isMeridianError(wrapped.error)) {
-    return new MeridianApiError(wrapped.error, status);
+    return new MeridianApiError(wrapped.error, status, headers);
   }
 
   // Nitro/H3 serializes `createError({ data: envelope })` under `data` while
   // retaining its own status/message fields at the top level.
   const h3 = payload as { data?: unknown };
   if (isMeridianError(h3.data)) {
-    return new MeridianApiError(h3.data, status);
+    return new MeridianApiError(h3.data, status, headers);
   }
 
   return null;

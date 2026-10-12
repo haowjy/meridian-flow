@@ -22,9 +22,28 @@ export class HttpResponseError extends Error {
     message: string,
     readonly status: number,
     readonly payload: unknown,
+    readonly headers?: Headers,
   ) {
     super(message);
   }
+}
+
+/** The headers of the response a request failed with; undefined when it got none. */
+export function httpErrorHeaders(error: unknown): Headers | undefined {
+  if (error instanceof HttpResponseError) return error.headers;
+  return isMeridianApiError(error) ? error.headers : undefined;
+}
+
+/**
+ * The response's `Retry-After` in milliseconds (delta-seconds or an HTTP date),
+ * or null when it sent none or an unreadable one.
+ */
+export function retryAfterMs(error: unknown, now = Date.now()): number | null {
+  const value = httpErrorHeaders(error)?.get("Retry-After")?.trim();
+  if (!value) return null;
+  if (/^\d+$/.test(value)) return Number(value) * 1000;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : Math.max(0, at - now);
 }
 
 /** The status a request failed with; undefined when it got no HTTP answer (a lost request). */
@@ -39,10 +58,11 @@ export function httpErrorStatus(error: unknown): number | undefined {
  * `{ kind: "error", error }`), so consumers can read `code`/`retryable`/
  * `source`. Plain Nitro error bodies still become a typed status-bearing error.
  */
-function errorFromResponse(payload: unknown, status: number): Error {
-  const structured = meridianApiErrorFromPayload(payload, status);
+function errorFromResponse(payload: unknown, response: Response): Error {
+  const { status, headers } = response;
+  const structured = meridianApiErrorFromPayload(payload, status, headers);
   if (structured) return structured;
-  return new HttpResponseError(errorMessageFromPayload(payload, status), status, payload);
+  return new HttpResponseError(errorMessageFromPayload(payload, status), status, payload, headers);
 }
 
 export async function readResponsePayload(response: Response): Promise<unknown> {
@@ -80,7 +100,7 @@ export async function getJson<T>(
   const payload = await readResponsePayload(response);
 
   if (!response.ok) {
-    throw errorFromResponse(payload, response.status);
+    throw errorFromResponse(payload, response);
   }
 
   return deserializeTransport<T>(payload as T);
@@ -114,7 +134,7 @@ export async function postJson<T>(
     response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
   if (!accepted) {
-    throw errorFromResponse(payload, response.status);
+    throw errorFromResponse(payload, response);
   }
 
   return deserializeTransport<T>(payload as T);
@@ -137,7 +157,7 @@ export async function putJson<T>(
     response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
   if (!accepted) {
-    throw errorFromResponse(payload, response.status);
+    throw errorFromResponse(payload, response);
   }
 
   return deserializeTransport<T>(payload as T);
@@ -160,7 +180,7 @@ export async function patchJson<T>(
     response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
   if (!accepted) {
-    throw errorFromResponse(payload, response.status);
+    throw errorFromResponse(payload, response);
   }
 
   return deserializeTransport<T>(payload as T);
@@ -172,13 +192,13 @@ export async function deleteRequest(url: string, init?: { signal?: AbortSignal }
 
   const payload = await readResponsePayload(response);
   if (!response.ok) {
-    throw errorFromResponse(payload, response.status);
+    throw errorFromResponse(payload, response);
   }
 }
 
 export async function deleteJson<T>(url: string, options?: { signal?: AbortSignal }): Promise<T> {
   const response = await fetch(url, { method: "DELETE", signal: options?.signal });
   const payload = await readResponsePayload(response);
-  if (!response.ok) throw errorFromResponse(payload, response.status);
+  if (!response.ok) throw errorFromResponse(payload, response);
   return deserializeTransport<T>(payload as T);
 }

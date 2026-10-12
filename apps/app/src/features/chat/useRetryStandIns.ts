@@ -9,21 +9,23 @@
  * and the snapshot refreshes to show the true state. A lost
  * request keeps the stand-in, failed, and its Retry re-sends under the same
  * id: the lost request may have arrived. The server answers that replay with
- * the execution the first request started, or
- * `retry_pending` (503) while it can't tell yet, which repeats the same id.
+ * the execution the first request started, or `retry_pending` (503) while it
+ * can't tell yet: the same id goes again after the server's `Retry-After`, a
+ * bounded number of times, then waits for the writer's Retry like a lost request.
+ *
+ * A stand-in whose request's reservation ended without creating its turn (a
+ * Retry whose compaction was stopped) is retired: the caller's `retired` reads
+ * that from run identity, by execution or by the request id the reservation
+ * records.
  *
  * The handoff brief's Retry (`useHandoffBrief`) and a failed reply's Retry
  * (`useReplyRetry`) supply what to post and how the stand-in looks.
  */
 import { t } from "@lingui/core/macro";
-import {
-  isTerminalTurnStatus,
-  REPLY_RETRY_PENDING_CODE,
-  type Turn,
-} from "@meridian/contracts/protocol";
+import { REPLY_RETRY_PENDING_CODE, type Turn } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HttpResponseError, httpErrorStatus } from "@/client/api/http-client";
+import { HttpResponseError, httpErrorStatus, retryAfterMs } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
@@ -38,7 +40,15 @@ type StandIn = {
   request: StandInRequest;
   /** The turn whose Retry the writer pressed. */
   from: string;
+  /** The execution the server answered the request with; null until it does (or for no execution). */
+  executionId: string | null;
 };
+
+/** What a stand-in's request is known by: its id and the execution answering it. */
+export type StandInIdentity = { id: string; executionId: string | null };
+
+/** What the server answered: the new turn when it has one, and the execution answering it. */
+export type StandInAnswer = { turn: Turn | null; executionId: string | null };
 
 export type RetryStandIns = {
   /** Stand-ins the store does not have yet, in the order they were asked for. */
@@ -71,20 +81,25 @@ function isRetryPending(error: unknown): boolean {
   return error instanceof HttpResponseError && error.message === REPLY_RETRY_PENDING_CODE;
 }
 
-/** The server's Retry-After for `retry_pending`. */
+/** The wait when a `retry_pending` answer carries no usable `Retry-After`. */
 const RETRY_PENDING_DELAY_MS = 1000;
+/** Automatic sends per writer press while the server answers `retry_pending`. */
+export const RETRY_PENDING_ATTEMPTS = 8;
 
 export function useRetryStandIns(input: {
   threadId: string;
   storedTurns: readonly Turn[];
   /**
    * Ask the server for turn `id`, retrying `from` (the turn first pressed).
-   * Null: accepted, but the server has no turn to show yet.
+   * A null turn: accepted, but the server has no turn to show yet.
    */
-  post: (id: string, from: string) => Promise<Turn | null>;
+  post: (id: string, from: string) => Promise<StandInAnswer>;
   /** On the failed stand-in and announced, when the request never answered. */
   lostCopy: string;
+  /** Whether a stand-in's reservation ended without creating its turn: nothing will now. */
+  retired?: (standIn: StandInIdentity) => boolean;
 }): RetryStandIns {
+  const { retired } = input;
   const { threadId, storedTurns } = input;
   const [local, setLocal] = useState<readonly StandIn[]>([]);
   const [refused, setRefused] = useState(NO_REFUSALS);
@@ -105,37 +120,20 @@ export function useRetryStandIns(input: {
   }, []);
 
   const storedIds = useMemo(() => new Set(storedTurns.map((turn) => turn.id)), [storedTurns]);
-  // Once the snapshot has the turn, it is the authority. A failed or stopped
-  // compaction also settles the Retry chain that started from its predecessor.
+  // Once the snapshot has the turn, it is the authority. A request whose
+  // reservation ended without the turn is over: nothing will create it now.
+  const settles = useCallback(
+    (entry: StandIn) =>
+      storedIds.has(entry.turn.id) ||
+      (retired?.({ id: entry.turn.id, executionId: entry.executionId }) ?? false),
+    [retired, storedIds],
+  );
   useEffect(() => {
     setLocal((current) => {
-      const storedById = new Map(storedTurns.map((turn) => [turn.id, turn]));
-      const failedCompactionSources = new Set(
-        storedTurns
-          .filter(
-            (turn) =>
-              turn.role === "compaction" &&
-              turn.prevTurnId &&
-              turn.status !== "complete" &&
-              isTerminalTurnStatus(turn.status),
-          )
-          .map((turn) => turn.prevTurnId as string),
-      );
-      const next = current.filter((entry) => {
-        if (storedIds.has(entry.turn.id)) return false;
-        const predecessor = entry.turn.prevTurnId
-          ? storedById.get(entry.turn.prevTurnId)
-          : undefined;
-        return !(
-          (predecessor?.role === "compaction" &&
-            predecessor.status !== "complete" &&
-            isTerminalTurnStatus(predecessor.status)) ||
-          failedCompactionSources.has(entry.from)
-        );
-      });
+      const next = current.filter((entry) => !settles(entry));
       return next.length === current.length ? current : next;
     });
-  }, [storedIds, storedTurns]);
+  }, [settles]);
 
   const patch = useCallback((id: string, change: (entry: StandIn) => StandIn) => {
     setLocal((current) => current.map((entry) => (entry.turn.id === id ? change(entry) : entry)));
@@ -146,18 +144,25 @@ export function useRetryStandIns(input: {
   }, [queryClient, threadId]);
 
   const send = useCallback(
-    (id: string, from: string) => {
+    (id: string, from: string, attempt = 1) => {
       optionsRef.current.post(id, from).then(
-        (serverTurn) => {
-          patch(id, (entry) => ({ ...entry, turn: serverTurn ?? entry.turn, request: "sent" }));
+        (answer) => {
+          patch(id, (entry) => ({
+            ...entry,
+            turn: answer.turn ?? entry.turn,
+            executionId: answer.executionId ?? entry.executionId,
+            request: "sent",
+          }));
           refresh();
         },
         (error: unknown) => {
-          if (isRetryPending(error)) {
+          // Still undecided: the same id again after the server's wait, while
+          // the budget lasts. Past it the request stays unresolved, never refused.
+          if (isRetryPending(error) && attempt < RETRY_PENDING_ATTEMPTS) {
             setTimeout(() => {
               if (mounted.current && localRef.current.some((entry) => entry.turn.id === id))
-                sendRef.current(id, from);
-            }, RETRY_PENDING_DELAY_MS);
+                sendRef.current(id, from, attempt + 1);
+            }, retryAfterMs(error) ?? RETRY_PENDING_DELAY_MS);
             return;
           }
           // A refusal (409: the chat moved on first; or the server is shutting
@@ -216,16 +221,16 @@ export function useRetryStandIns(input: {
         ).at(-1) ?? null;
       const standIn = build({ id, leaf });
       if (!standIn) return;
-      setLocal((current) => [...current, { turn: standIn, request: "sending", from: from.id }]);
+      setLocal((current) => [
+        ...current,
+        { turn: standIn, request: "sending", from: from.id, executionId: null },
+      ]);
       send(id, from.id);
     },
     [patch, send],
   );
 
-  const unstored = useMemo(
-    () => local.filter((entry) => !storedIds.has(entry.turn.id)),
-    [local, storedIds],
-  );
+  const unstored = useMemo(() => local.filter((entry) => !settles(entry)), [local, settles]);
   const standIns = useMemo(() => unstored.map((entry) => entry.turn), [unstored]);
   const requestOf = useCallback(
     (turnId: string) => unstored.find((entry) => entry.turn.id === turnId)?.request ?? null,
