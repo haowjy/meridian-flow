@@ -160,3 +160,13 @@ export function humanizeSkillSlug(slug: string): string {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
+
+/** Domain refusals are failed document operations even when transport succeeded. */
+export function documentToolFailed(tool: ToolView): boolean {
+  if (tool.isError) return true;
+  if (tool.status !== "complete" || (tool.toolName !== "write" && tool.toolName !== "read"))
+    return false;
+  const result = tool.result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return false;
+  return typeof result.status === "string" && result.status !== "success";
+}

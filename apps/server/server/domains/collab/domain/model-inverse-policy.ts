@@ -195,14 +195,15 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         kind: "undo" | "redo" | "revert",
         consumed: string[],
       ) => {
+        const stepActionId = kind === "undo" && computed.edits.length ? randomUUID() : actionId;
         const result = computeInverse(scratch, history, selection, {
-          actionId,
+          actionId: stepActionId,
           allocateClient: allocateDocumentClient,
         });
         if (result.skipped.length)
           throw new Error("Inverse classification changed within the scratch plan");
         for (const edit of result.edits) {
-          computed.edits.push(edit);
+          computed.edits.push({ ...edit, actionId: stepActionId });
           const id = randomUUID();
           for (const [ordinal, part] of edit.parts.entries()) {
             Y.applyUpdate(scratch, part.update);
@@ -212,7 +213,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               editId: id,
               ordinal,
               kind,
-              actionId,
+              actionId: stepActionId,
               consumes: consumed,
               documentId: document.documentId,
               threadId: query.threadId,
@@ -261,6 +262,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         for (let n = 0; n < (command.count ?? 1); n++) {
           if (command.command === "undo") {
             const entry = top(history, own);
+            if (!entry && n > 0)
+              return {
+                status: "insufficient_undo",
+                message: `Only ${n} ${n === 1 ? "edit" : "edits"} to undo in ${document.uri}; requested ${command.count}. Nothing was changed.`,
+              };
             if (!entry)
               return {
                 status: "nothing_to_undo",
@@ -280,6 +286,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             );
           } else {
             const action = candidate(history, own);
+            if (!action && n > 0)
+              return {
+                status: "insufficient_redo",
+                message: `Only ${n} ${n === 1 ? "edit" : "edits"} to redo in ${document.uri}; requested ${command.count}. Nothing was changed.`,
+              };
             if (!action)
               return {
                 status: "nothing_to_redo",
@@ -299,8 +310,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 status: "cant_redo_users_undo",
                 message: `The user undid ${[...new Set(targets.map((target) => target.handle))].join(", ")}. Only they can redo it. Read ${document.uri} and make a new replace if needed.`,
               };
-            // A grouped undo is redone oldest edit first. Later originals
-            // only become undone again after the earlier ones are restored.
+            // Card actions may span edits; model undo actions each target one edit.
+            // Restore overlapping originals oldest first within an action.
             const restoring = own
               .map((entry) => ({
                 ...entry,

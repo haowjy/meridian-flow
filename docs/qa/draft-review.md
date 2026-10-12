@@ -702,3 +702,25 @@ sequence committed after consumption must remain discoverable, and failed
 consumption must restore the signals with the shell and outbox. Pending
 live publication must delay settlement. These are DB integration checks, not a
 claim that this manual writer workflow passed.
+
+## Model Undo and Redo counts
+
+On an owned mock-model stack, seed `manuscript://CountTwo` with two paragraphs:
+`Alpha sword waits.` and `Beta shield gleams.` Use `./mf thread send --mock`
+to read the file and issue two independent `write replace` calls, changing
+`sword` to `blade` and `shield` to `buckler`. Verify each completed reply with
+`./mf thread view --full`, not only the send command's streamed result.
+
+1. Send `write` with `command: "undo", count: 2`. Both original paragraphs
+   return, and the result names `undone: w2, w1`.
+2. Send `write` with `command: "redo", count: 3`. It refuses with
+   `insufficient_redo`, names the two available edits, and leaves text unchanged.
+   In Chat, this row says **Couldn't redo**, not **Redid**.
+3. Send `write` with `command: "redo", count: 2`. Both replacements return,
+   with `redone: w1, w2`. The successful Chat row says **Redid**.
+4. Undo both again, then send two individual Redo calls. The first restores
+   `blade` only; the second restores `buckler`. Check exact paragraphs with
+   `./mf doc read` after every call. Repeat in Draft mode using its draft read.
+
+The DB model-inverse matrix also checks all-or-nothing shortage for Undo and
+failed-scope rollback of both single-edit Undo actions, in Live and Draft.

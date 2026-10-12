@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Make model Undo and Redo counts mean edits, with atomic refusal when too few remain and accurate chat labels for refused writes.
+
 - Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
 
 - Keep draft review controls alongside navigable document paths and list-owned moves, with forward database upgrades from main.
