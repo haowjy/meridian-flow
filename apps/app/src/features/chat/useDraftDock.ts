@@ -114,8 +114,6 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
-    /** Review is held while a whole-draft command is running in this Work. */
-    reviewBusy: controller.isDisposing,
     reviewable: reviewable !== null,
     projectId,
     workId,

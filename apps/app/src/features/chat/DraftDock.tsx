@@ -65,7 +65,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               </QuietButton>
             </>
           ) : null}
-          <ReviewPill onClick={dock.reviewFirst} disabled={dock.reviewBusy || !dock.reviewable} />
+          <ReviewPill onClick={dock.reviewFirst} disabled={!dock.reviewable} />
         </>
       )}
     </div>

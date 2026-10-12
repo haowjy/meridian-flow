@@ -1,4 +1,4 @@
-/** Shared draft commands, selection outcomes, batch leases and distinct list/preview read fences. */
+/** Shared draft commands, selection outcomes, distinct list/preview read fences. */
 import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -99,14 +99,12 @@ export type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
 const useDraftCommandStore = create<{
   records: DraftCommandRecords;
   queued: QueuedSelections;
-  batches: Readonly<Record<string, symbol>>;
   /** The loop sending each draft's queued clicks; a reset retires it with the queue. */
   drains: Readonly<Record<string, symbol>>;
   clock: number;
 }>(() => ({
   records: {},
   queued: {},
-  batches: {},
   drains: {},
   clock: 0,
 }));
@@ -151,8 +149,8 @@ function mayPublish(by: Publisher): boolean {
 function draftOf(by: Publisher): DraftRef {
   return "token" in by ? by.draft : by;
 }
-/** List and preview reads retain only their own pre-confirmation masks. */
-const readsInFlight = new Set<{ fence: number; kind: "list" | "preview" }>();
+/** Whole Apply retains its generation fence until all earlier list reads finish. */
+const readsInFlight = new Set<{ fence: number }>();
 
 function scopePrefix({ projectId, workId }: DraftScope): string {
   return `${projectId}\u0000${workId}\u0000`;
@@ -304,13 +302,7 @@ export function confirmDraftCommand(by: DraftClaim | DraftRef): void {
 
 /** List confirmations retire after older reads; selection intents outlive retained observations. */
 function retireConfirmations(): void {
-  const oldest = (kind: "list" | "preview") =>
-    Math.min(
-      ...Array.from(readsInFlight)
-        .filter((read) => read.kind === kind)
-        .map((read) => read.fence),
-    );
-  const listFence = oldest("list");
+  const listFence = Math.min(...Array.from(readsInFlight, (read) => read.fence));
   useDraftCommandStore.setState((state) => ({
     records: Object.fromEntries(
       Object.entries(state.records).flatMap(([key, record]) => {
@@ -341,7 +333,7 @@ export async function readDraftsAfterCommands<T extends ListedDraft>(
   scope: DraftScope,
   read: () => Promise<T[]>,
 ): Promise<T[]> {
-  const inFlight = { fence: useDraftCommandStore.getState().clock, kind: "list" as const };
+  const inFlight = { fence: useDraftCommandStore.getState().clock };
   readsInFlight.add(inFlight);
   try {
     const listed = await read();
@@ -421,38 +413,6 @@ export function changedDrafts(
     });
 }
 
-/** A command is in flight on any draft of this project's Work. */
-export function draftCommandPendingIn(records: DraftCommandRecords, scope: DraftScope): boolean {
-  const prefix = scopePrefix(scope);
-  return (
-    Boolean(useDraftCommandStore.getState().batches[scopePrefix(scope)]) ||
-    Object.entries(records).some(
-      ([key, record]) => record.claim?.phase === "pending" && key.startsWith(prefix),
-    )
-  );
-}
-
-/**
- * A whole-draft command or a batch holds this Work: per-change commands wait
- * for it. A per-change command in flight never does; further ones queue
- * behind it (`runDraftSelection`).
- */
-export function wholeDraftCommandPendingIn(
-  records: DraftCommandRecords,
-  scope: DraftScope,
-): boolean {
-  const prefix = scopePrefix(scope);
-  return (
-    Boolean(useDraftCommandStore.getState().batches[prefix]) ||
-    Object.entries(records).some(
-      ([key, record]) =>
-        key.startsWith(prefix) &&
-        record.claim?.phase === "pending" &&
-        record.claim.command.target === "all",
-    )
-  );
-}
-
 /** Empty the store when a different account signs in; a no-op for the same one. */
 export function bindDraftCommandAccount(accountId: string): void {
   if (boundAccountId === accountId) return;
@@ -464,24 +424,9 @@ export function bindDraftCommandAccount(accountId: string): void {
 export function resetDraftCommandRecords(): void {
   accountEpoch += 1;
   const unsent = Object.values(useDraftCommandStore.getState().queued);
-  useDraftCommandStore.setState({ records: {}, queued: {}, batches: {}, drains: {} });
+  useDraftCommandStore.setState({ records: {}, queued: {}, drains: {} });
   // A click that never got its turn is answered, not left waiting on a queue that is gone.
-  for (const entry of unsent) entry.settle?.({ kind: "blocked" });
-}
-
-/** A Work-wide batch lease lives beside its addressed commands, including request gaps. */
-export function beginDraftBatch(scope: DraftScope): (() => void) | null {
-  const key = scopePrefix(scope);
-  if (useDraftCommandStore.getState().batches[key]) return null;
-  const token = Symbol(key);
-  useDraftCommandStore.setState((state) => ({ batches: { ...state.batches, [key]: token } }));
-  return () => {
-    if (useDraftCommandStore.getState().batches[key] !== token) return;
-    useDraftCommandStore.setState((state) => {
-      const { [key]: _done, ...batches } = state.batches;
-      return { batches };
-    });
-  };
+  for (const entry of unsent) entry.settle({ kind: "blocked" });
 }
 
 /**
@@ -542,20 +487,16 @@ export type ChangeCommandRecords = {
   drafts: DraftCommandRecords;
 };
 
-/**
- * A selection that has not had its turn: hidden, not claimed. One with `settle`
- * is a click the writer made (sent in order by `runDraftSelection`, which owns
- * its drain and its caller's promise here); the others belong to a batch, which
- * sends them itself.
- */
-type QueuedSelection = ChangeSelection & {
+/** Every queued intent owns its addressed account capability and caller's promise. */
+type QueuedSelection = {
   prefix: string;
   mode: ChangeCommandMode;
-  /** The account epoch this click was admitted in. */
   epoch: number;
-  /** Set for a click `runDraftSelection` sends; settles the caller's promise. */
-  settle?: (outcome: DraftCommandOutcome) => void;
-};
+  settle: (outcome: DraftCommandOutcome) => void;
+} & (
+  | ({ target: "selection" } & ChangeSelection)
+  | { target: "all"; send: () => Promise<DraftCommandOutcome>; reject: (error: unknown) => void }
+);
 type QueuedSelections = Readonly<Record<number, QueuedSelection>>;
 
 let nextQueued = 0;
@@ -608,15 +549,16 @@ export function queueChangeSelection(
   draft: DraftRef,
   selection: ChangeSelection,
   mode: ChangeCommandMode,
-  settle?: (outcome: DraftCommandOutcome) => void,
+  settle: (outcome: DraftCommandOutcome) => void,
 ): QueuedChange {
   const id = nextQueued++;
   const entry: QueuedSelection = {
     ...selection,
+    target: "selection",
     prefix: draftCommandKey(draft),
     mode,
     epoch: accountEpoch,
-    ...(settle ? { settle } : {}),
+    settle,
   };
   useDraftCommandStore.setState((state) => ({ queued: { ...state.queued, [id]: entry } }));
   return { id, epoch: accountEpoch, retire: () => retireQueuedSelection(id) };
@@ -658,32 +600,58 @@ export function endIntentDrain(draft: DraftRef, token: symbol): void {
   });
 }
 
-/** The writer's oldest click on this draft that has not been sent yet. */
-export function nextQueuedClick(draft: DraftRef): {
-  change: QueuedChange;
-  selection: ChangeSelection;
-  mode: ChangeCommandMode;
-  settle: (outcome: DraftCommandOutcome) => void;
-} | null {
+/** Submit a whole-draft intent to the same queue as selective clicks. */
+export function queueWholeDraft(
+  draft: DraftRef,
+  mode: ChangeCommandMode,
+  send: () => Promise<DraftCommandOutcome>,
+  settle: (outcome: DraftCommandOutcome) => void,
+  reject: (error: unknown) => void,
+): void {
+  const id = nextQueued++;
+  useDraftCommandStore.setState((state) => ({
+    queued: {
+      ...state.queued,
+      [id]: {
+        target: "all",
+        prefix: draftCommandKey(draft),
+        mode,
+        epoch: accountEpoch,
+        send,
+        settle,
+        reject,
+      },
+    },
+  }));
+}
+
+/** The writer's oldest intent on this draft that has not been sent yet. */
+export function nextQueuedClick(
+  draft: DraftRef,
+): (QueuedSelection & { change: QueuedChange }) | null {
   const prefix = draftCommandKey(draft);
   for (const [id, entry] of Object.entries(useDraftCommandStore.getState().queued)) {
-    if (entry.settle && entry.prefix === prefix)
+    if (entry.prefix === prefix)
       return {
+        ...entry,
         change: {
           id: Number(id),
           epoch: entry.epoch,
           retire: () => retireQueuedSelection(Number(id)),
         },
-        selection: {
-          classIds: entry.classIds,
-          operationIds: entry.operationIds,
-          ...(entry.keys ? { keys: entry.keys } : {}),
-        },
-        mode: entry.mode,
-        settle: entry.settle,
       };
   }
   return null;
+}
+
+/** Only a whole intent on this draft holds its selective controls. */
+export function wholeDraftPending(records: ChangeCommandRecords, draft: DraftRef): boolean {
+  return (
+    pendingDraftCommand(records.drafts, draft)?.target === "all" ||
+    Object.values(records.queued).some(
+      (entry) => entry.prefix === draftCommandKey(draft) && entry.target === "all",
+    )
+  );
 }
 
 export function failChangeCommand(
@@ -766,18 +734,11 @@ export async function readPreviewAfterChangeCommands(
   draft: DraftRef,
   read: () => Promise<DraftPreviewResponse>,
 ): Promise<DraftPreviewResponse> {
-  const inFlight = { fence: useDraftCommandStore.getState().clock, kind: "preview" as const };
-  readsInFlight.add(inFlight);
-  try {
-    const preview = await read();
-    const prefix = draftCommandKey(draft);
-    // A failure held for a change the preview no longer lists describes nothing.
-    if (preview.status === "active") dropFailuresWithoutOperations(prefix, preview, inFlight.fence);
-    return preview;
-  } finally {
-    readsInFlight.delete(inFlight);
-    retireConfirmations();
-  }
+  const fence = useDraftCommandStore.getState().clock;
+  const preview = await read();
+  if (preview.status === "active")
+    dropFailuresWithoutOperations(draftCommandKey(draft), preview, fence);
+  return preview;
 }
 
 function dropFailuresWithoutOperations(key: string, preview: ActivePreview, fence: number): void {
@@ -814,7 +775,11 @@ export function currentChangeCommandRecords(): ChangeCommandRecords {
  * pending or confirmed are `hidden`, and of them the Discards are `restoring`
  * (the editor draws their original text until the next generation paints).
  */
-export function intentKeys(records: ChangeCommandRecords, draft: DraftRef): DraftIntentKeys {
+export function intentKeys(
+  records: ChangeCommandRecords,
+  draft: DraftRef,
+  confirmedOnly = false,
+): DraftIntentKeys {
   const key = draftCommandKey(draft);
   const hidden = new Set<string>();
   const restoring = new Set<string>();
@@ -826,8 +791,9 @@ export function intentKeys(records: ChangeCommandRecords, draft: DraftRef): Draf
   };
   for (const record of Object.values(records.drafts[key]?.outcomes ?? {}))
     if (record.phase !== "failed") add(record, record.mode);
+  if (confirmedOnly) return { hidden, restoring };
   for (const queued of Object.values(records.queued))
-    if (queued.prefix === key) add(queued, queued.mode);
+    if (queued.prefix === key && queued.target === "selection") add(queued, queued.mode);
   const pending = pendingChangeCommand(records.drafts, draft);
   if (pending) add(pending, pending.mode);
   return { hidden, restoring };

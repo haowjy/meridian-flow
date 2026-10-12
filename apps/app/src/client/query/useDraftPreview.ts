@@ -25,6 +25,7 @@ import {
   pendingDraftCommand,
   readPreviewAfterChangeCommands,
   useChangeCommandRecords,
+  wholeDraftPending,
 } from "./draft-command-record";
 import { type DraftProjection, projectDraft } from "./draft-projection";
 import { projectQueryKeys } from "./project-query-keys";
@@ -127,9 +128,9 @@ function projectionOf(
 ): Projected {
   const claim = pendingDraftCommand(records.drafts, draft);
   const whole =
-    claim?.target === "all" &&
+    wholeDraftPending(records, draft) &&
     data.status === "active" &&
-    claim.draftGeneration === data.draftGeneration;
+    (claim?.target !== "all" || claim.draftGeneration === data.draftGeneration);
   const intents = intentKeys(records, draft);
   const sorted = (keys: ReadonlySet<string>) => [...keys].sort().join(",");
   const key = whole ? "all" : `${sorted(intents.hidden)}|${sorted(intents.restoring)}`;
