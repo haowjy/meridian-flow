@@ -570,9 +570,11 @@ export class AccountResourceReplica {
     return this.catalogs.hint(projectId, scope, headRevision);
   }
 
-  /** `operationId` names the move's receipt, for surfaces that show its outcome; absent when nothing changed. */
   /** Capture a displayed row's identity before admitting a command. Never persist a path edge. */
-  async parentAtLocation(projectId: string, location: ResourceLocation): Promise<ParentRef> {
+  async findParentAtLocation(
+    projectId: string,
+    location: ResourceLocation,
+  ): Promise<ParentRef | null> {
     if (!location.path || location.path === "/")
       return { kind: "root", scheme: location.scheme, owner: ownerOf(location) };
     const snapshot = await this.readProjection(projectId);
@@ -588,7 +590,7 @@ export class AccountResourceReplica {
       )
         return { kind: "folder", folderId: entry.entryId };
     }
-    throw new Error("Destination folder is unavailable");
+    return null;
   }
 
   async parentForEntry(projectId: string, entryId: string): Promise<ParentRef> {
@@ -602,6 +604,7 @@ export class AccountResourceReplica {
     return parent;
   }
 
+  /** `operationId` names the move's receipt; absent when nothing changed. */
   async setLocation(
     projectId: string,
     key: ResourceKey,

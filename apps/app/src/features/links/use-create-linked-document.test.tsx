@@ -1,5 +1,6 @@
 /** What a link can create, and that Create commits locally without waiting on the server. */
 
+import type { ParentRef } from "@meridian/resource-replica";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -9,12 +10,16 @@ import {
   useCreateLinkedDocument,
 } from "./use-create-linked-document";
 
+const createFolder = vi.hoisted(() => vi.fn());
+vi.mock("@/client/api/projects-api", () => ({ createContextEntry: createFolder }));
 const resources = vi.hoisted(() => ({
-  parentAtLocation: vi.fn(async () => ({
-    kind: "root",
-    scheme: "manuscript",
-    owner: { workId: null },
-  })),
+  findParentAtLocation: vi.fn(
+    async (): Promise<ParentRef | null> => ({
+      kind: "root",
+      scheme: "manuscript",
+      owner: { workId: null },
+    }),
+  ),
   reserveDocument: vi.fn(async () => ({
     key: { handle: "resource" },
     content: { kind: "opened", handle: { documentId: "document", release() {} } },
@@ -44,5 +49,34 @@ it("discards a reservation that never reached its address and reports the failur
     expect(documentId).toBeNull();
     expect(resources.deleteDocument).toHaveBeenCalledWith("project", { handle: "resource" });
     expect(creation.failed).toBe(true);
+  });
+});
+
+it("captures an existing nested home without contacting the server before opening", async () => {
+  let creation!: CreateLinkedDocument;
+  function Probe() {
+    creation = useCreateLinkedDocument("project");
+    return null;
+  }
+  resources.findParentAtLocation.mockResolvedValueOnce({
+    kind: "folder",
+    folderId: "picked-folder",
+  });
+  const target = linkCreationTarget("manuscript://Act/scene.md");
+  if (!target) throw new Error("Missing target");
+  createFolder.mockClear();
+  resources.setLocation.mockClear();
+  await withReactRoot(<Probe />, async () => {
+    let id: string | null = null;
+    await act(async () => {
+      id = await creation.create(target);
+    });
+    expect(id).toBe("document");
+    expect(createFolder).not.toHaveBeenCalled();
+    expect(resources.setLocation).toHaveBeenCalledWith(
+      "project",
+      { handle: "resource" },
+      { parent: { kind: "folder", folderId: "picked-folder" }, name: "scene.md" },
+    );
   });
 });
