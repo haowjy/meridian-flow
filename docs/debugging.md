@@ -72,13 +72,14 @@ transcript or in the browser.
 Contract:
 
 Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands,
-`./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours. Check run outcomes against
-`./mf thread view` (the durable transcript) or in the browser; exit 0 does not
-prove your message was answered or the thread is idle.
+`./mf thread send` cannot prove which reply answered its message. It no longer
+reports complete while its own message remains pending, but absence from pending
+alone is not reply binding. Check the reported reply against `./mf thread view`
+(the durable transcript) or in the browser. `tail --until-idle` now confirms idle
+at its final snapshot; it does not attribute replies to messages.
 
 - Compact text by default. `--json` prints one object, or NDJSON for streams.
-  Every live claim (`send`, `tail --until-idle`, `respond`, and each seed send)
+  Every live claim (`send`, `tail --until-idle`, `respond`, `cancel`, and each seed send)
   and `events` ends in a `result` envelope. Seed embeds its sends' envelopes in
   `messages` and reports the worst exit among all sends in its final result.
   `--fields a,b` keeps `type` on every stream line and always keeps `type`,
@@ -89,8 +90,8 @@ prove your message was answered or the thread is idle.
   **3 not found**, **4 unavailable** (stack, login, terminal socket close).
   `reason` is null for a proven outcome; timeout uses `running` or `owed`.
   Unproven reasons today are `admission_unknown`, `replay_truncated`, and
-  `unconfirmed`. Send and tail still use the interim follow predicates above:
-  their complete results are not yet proof of your reply or chat idle.
+  `unconfirmed`, and `owed`. A complete send still does not prove which reply
+  answered, as explained above.
 - In text mode, a final answer goes to stdout only for complete or failed.
   Stderr reports `<outcome> <turn> [reason]` and any follow-up commands.
   A failed or cancelled run is a `result`, never a terminal `error` record.
@@ -100,9 +101,18 @@ prove your message was answered or the thread is idle.
   field. Text says when the server is
   still running and how to stop it. **Timeout never cancels a run.** Plain
   `tail` remains a bounded live view and exits 0 when its wait expires.
-- `tail --until-idle` currently waits for the next `turn.finished` or
-  `turn.failed` event. It does not confirm chat idle and does not return
-  immediately when attached to an already-idle thread.
+- `tail --until-idle` returns immediately if the initial snapshot is idle.
+  Otherwise it follows from the last sequence and checks a snapshot after each
+  turn finish/failure, journaled lease/pending update or idle subscription state. Idle means
+  `liveState.runningTurnId` is null, `liveState.status.kind` is `asleep`
+  (no awake lease), and no writer-provenance message remains in
+  `liveState.pending.items`. A successor run or owed writer message keeps it
+  following until a snapshot confirms idle or the deadline exits 124 with the
+  timeout report. Durable `thread.status` alone is not evidence of idle.
+- `cancel`'s complete envelope proves the server acknowledged cancellation
+  or reported the target already finished, not that a particular reply was
+  answered. Its `status` carries that acknowledgement. A missing target keeps
+  exit 3; the target-selection logic is unchanged.
 - `respond` exits 0 only after the journal records `meridian.interrupt`
   resolved for that interrupt id. A rejecting error frame exits 1; its
   confirmation deadline (`--timeout`, default 15s) exits 6 `unconfirmed`.

@@ -143,7 +143,8 @@ function createFake() {
   const interruptPolicy = {
     response: "resolved" as "resolved" | "unconfirmed" | "rejected" | "other",
   };
-  const snapshotPolicy = { running: true };
+  const snapshotPolicy = { running: true, releaseDelayMs: 0 };
+  let leaseReleasePending = false;
   const admissions = new Map<string, unknown>();
   let runCounter = 0;
   const nextSeq = () => String(journal.length + 1);
@@ -153,6 +154,23 @@ function createFake() {
     journal.push({ seq, event });
     const frame: WsServerMessage = { type: "event", threadId: THREAD_ID, seq, event };
     for (const socket of sockets) if (socket.readyState === 1) socket.send(JSON.stringify(frame));
+  };
+
+  const currentLiveState = () => {
+    const runningTurnId = !snapshotPolicy.running
+      ? null
+      : (turns
+          .slice()
+          .reverse()
+          .find((turn) => ["streaming", "waiting_interrupt"].includes(turn.status))?.id ?? null);
+    return {
+      ...liveState(String(journal.length), pendingItems),
+      runningTurnId,
+      status:
+        runningTurnId || leaseReleasePending
+          ? { kind: "awake", phase: "generating", cancelRequested: false }
+          : { kind: "asleep" },
+    };
   };
 
   const runScenario = (text: string) => {
@@ -263,6 +281,17 @@ function createFake() {
       publish({ type: "TEXT_MESSAGE_END", messageId } as AGUIEvent);
       assistant.status = "complete";
       assistant.text = "Hello there";
+      if (snapshotPolicy.releaseDelayMs) {
+        leaseReleasePending = true;
+        setTimeout(() => {
+          leaseReleasePending = false;
+          publish({
+            type: "CUSTOM",
+            name: "meridian.thread.status",
+            value: { status: { kind: "asleep" }, runningTurnId: null },
+          } as AGUIEvent);
+        }, snapshotPolicy.releaseDelayMs);
+      }
       publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId } as AGUIEvent);
     }, 10);
     return runId;
@@ -513,16 +542,7 @@ function createFake() {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),
-        liveState: {
-          ...liveState(String(journal.length), pendingItems),
-          runningTurnId: !snapshotPolicy.running
-            ? null
-            : (turns
-                .slice()
-                .reverse()
-                .find((turn) => ["streaming", "waiting_interrupt"].includes(turn.status))?.id ??
-              null),
-        },
+        liveState: currentLiveState(),
         actionRequired: false,
         nextSeq: String(journal.length + 1),
       });
@@ -633,7 +653,7 @@ function createFake() {
             type: "subscribed",
             threadId: cursor.threadId,
             catchup: journal.filter((entry) => BigInt(entry.seq) > after),
-            state: liveState(String(journal.length), pendingItems) as never,
+            state: currentLiveState() as never,
           };
           ws.send(JSON.stringify(frame));
         }
