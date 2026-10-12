@@ -19,7 +19,11 @@ import { t } from "@lingui/core/macro";
 import type { SnapshotLiveState, Thread, Turn, Work } from "@meridian/contracts/protocol";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import { useMeridianAgent, useRunFollowStatus } from "@/client/copilot/MeridianCopilotProvider";
+import {
+  useMeridianAgent,
+  useRunFacts,
+  useRunFollowStatus,
+} from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useIsThreadPendingCreation, useThreadActions, useThreadStore } from "@/client/stores";
 import {
@@ -143,7 +147,7 @@ export function ChatView({
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
   const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const brief = useHandoffBrief({ threadId, storedTurns });
-  const runFacts = useCallback(() => controller.runFacts(threadId), [controller, threadId]);
+  const runFacts = useRunFacts(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns, runFacts });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop

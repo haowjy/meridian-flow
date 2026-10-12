@@ -75,12 +75,11 @@ let facts: RunFacts = EMPTY_RUN_FACTS;
 function endExecution(executionId: string) {
   facts = { ...facts, ended: new Set(facts.ended).add(executionId) };
 }
-const runFacts = () => facts;
 
 let root: Root;
 let latest: ReplyRetry;
 function Probe({ turns }: { turns: readonly Turn[] }) {
-  latest = useReplyRetry({ threadId: "t", storedTurns: turns, runFacts });
+  latest = useReplyRetry({ threadId: "t", storedTurns: turns, runFacts: facts });
   return null;
 }
 
@@ -137,6 +136,21 @@ describe("useReplyRetry", () => {
     await act(async () =>
       root.render(<Probe turns={[message, failed, modeSwitch, compaction("cancelled", null)]} />),
     );
+    expect(latest.standIns).toEqual([]);
+    expect(latest.requestOf(id)).toBeNull();
+  });
+
+  it("retires a stand-in when only an end is learned, before any snapshot refresh", async () => {
+    api.retryReply.mockResolvedValueOnce({ executionId: "e-r", turn: null });
+    await act(async () => latest.retry(failed));
+    const id = latest.standIns[0]?.id ?? "";
+    const turns = [message, failed, modeSwitch, compaction("streaming", id)];
+    await act(async () => root.render(<Probe turns={turns} />));
+    expect(latest.standIns).toHaveLength(1);
+
+    // The controller records the end; the stored turns are the same array.
+    endExecution("e-r");
+    await act(async () => root.render(<Probe turns={turns} />));
     expect(latest.standIns).toEqual([]);
     expect(latest.requestOf(id)).toBeNull();
   });

@@ -59,9 +59,10 @@ snapshot) replaces that.
   Retry answered. When the response was lost it reads that execution off the
   turn whose `metadata.retryReplyId` is the stand-in's id (the request's first
   reserved turn, often a compaction). Once the controller's run facts
-  (`ThreadRunController.runFacts`) show that execution ended and none of its
-  turns is the requested reply (a stopped compaction), nothing will create it
-  and the stand-in goes. Placement next to a compaction is never evidence: a
+  (`useRunFacts`, which renders whenever the controller's facts change) show
+  that execution ended and none of its turns is the requested reply (a stopped
+  compaction), nothing will create it and the stand-in goes. An end on the
+  stream is enough; it does not wait for a snapshot refresh. Placement next to a compaction is never evidence: a
   mode switch can sit between the failed reply and its compaction.
 
 Pressing Retry moves focus to the transcript (the button leaves with the error

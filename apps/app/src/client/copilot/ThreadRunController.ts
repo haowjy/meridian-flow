@@ -211,7 +211,7 @@ export class ThreadRunController {
   private activationGeneration = 0;
 
   private readonly follows = new Map<string, Follow>();
-  private readonly statusListeners = new Set<() => void>();
+  private readonly listeners = new Set<() => void>();
   private leaseTail: Promise<void> = Promise.resolve();
   private recoverySessions = new Set<object>();
   private subscriptionToken = 0;
@@ -450,7 +450,10 @@ export class ThreadRunController {
     this.mergePending(this.followFor(threadId), pending, seq);
   }
 
-  /** The run identity facts this controller has merged for a thread (stream and snapshots). */
+  /**
+   * The run identity facts this controller has merged for a thread (stream and
+   * snapshots); a new value only when they change, for `useSyncExternalStore`.
+   */
   runFacts(threadId: string): RunFacts {
     return this.follows.get(threadId)?.rule.facts ?? EMPTY_RUN_FACTS;
   }
@@ -460,10 +463,11 @@ export class ThreadRunController {
     return this.follows.get(threadId)?.status ?? SETTLED;
   }
 
-  subscribeRunFollowStatus(listener: () => void): () => void {
-    this.statusListeners.add(listener);
+  /** Called when any thread's follow status or run facts change. */
+  subscribeRunFollow(listener: () => void): () => void {
+    this.listeners.add(listener);
     return () => {
-      this.statusListeners.delete(listener);
+      this.listeners.delete(listener);
     };
   }
 
@@ -517,7 +521,8 @@ export class ThreadRunController {
       if (threadId && follow.threadId !== threadId) continue;
       this.closeSubscription(follow);
       this.follows.delete(follow.threadId);
-      this.setStatus(follow, SETTLED);
+      // Its status reads as settled and its facts as empty from here.
+      this.notify();
     }
   }
 
@@ -614,6 +619,7 @@ export class ThreadRunController {
    */
   private step(follow: Follow, input: RunFollowInput, after?: string): void {
     const { follow: rule, cancel } = stepRunFollow(follow.rule, input);
+    const factsChanged = rule.facts !== follow.rule.facts;
     if (rule !== follow.rule) {
       follow.rule = rule;
       follow.view = viewRunFollow(rule);
@@ -622,13 +628,14 @@ export class ThreadRunController {
     if (cancel) this.requestCancel(follow, cancel);
     if (view.settled) this.closeSubscription(follow);
     else if (!follow.subscription && after !== undefined) this.openSubscription(follow, after);
-    this.setStatus(follow, view.settled ? SETTLED : view.running.size > 0 ? RUNNING : WAITING);
+    const status = view.settled ? SETTLED : view.running.size > 0 ? RUNNING : WAITING;
+    const statusChanged = follow.status !== status;
+    follow.status = status;
+    if (statusChanged || factsChanged) this.notify();
   }
 
-  private setStatus(follow: Follow, status: RunFollowStatus): void {
-    if (follow.status === status) return;
-    follow.status = status;
-    for (const listener of [...this.statusListeners]) listener();
+  private notify(): void {
+    for (const listener of [...this.listeners]) listener();
   }
 
   private openSubscription(follow: Follow, after: string): void {
