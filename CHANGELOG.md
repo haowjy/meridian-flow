@@ -17,6 +17,8 @@
 
 ### Fixed
 
+- Unaligned table headers now line up with their cells in chat and the Editor. Explicit column alignment is unchanged.
+
 - Chat separates every document block and restores the manuscript’s outbound link markers and internal link chips.
 
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
