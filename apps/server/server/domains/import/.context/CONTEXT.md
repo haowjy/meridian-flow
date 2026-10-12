@@ -35,6 +35,33 @@ write only when creation uses exactly that id. Recorded ahead refs and binary
 receipts serialize on the target entry row. Settlement is compare-and-set;
 captured addresses are findings, never reassigned.
 
+## Obsidian conversion
+
+Conversion runs per landing note, outside transactions, over a link index built
+once per note: selected paths, basenames and aliases, then the project's
+existing Manuscript, Knowledge Base and Unfiled documents. Existing names and
+aliases are frozen into the record at plan time (manifest.existingLinks), so
+their ranking locations never move; only the written addresses are respelled
+from current locations. Project fallback uses markup's shared wikilink
+ranking, the same one paste uses. Frontmatter is stored verbatim in
+metadata.properties with derived metadata.aliases.
+
+Conversion edits only Markdown destination spans the scanner reports, and
+writes every converted destination as a placeholder until the codec walk has
+numbered occurrences. Target ids therefore travel by occurrence; two targets
+sharing a current address, or a hand-written link to it, never swap identity.
+
+Binaries and code have no row until they land. The binder receives them as
+pending ids: one already live binds to itself, otherwise it mints an ahead ref
+registered as awaiting identity, which the registry never settles to a
+document already at that address. The target's landing settles it by id. A
+competitor that arrives first and captures it is reported as picture_elsewhere.
+
+A single selected folder with a valid meridian-export.json routes Manuscript/,
+Knowledge Base/ and Unfiled/ to their area roots; planning chunks group by
+area as well as parent, and Works/ is skipped as export_works. The sort is
+the manifest's choice; the dialog defaults it off for an export.
+
 Finish clears pending flags on unfinished placeholders, leaves ordinary empty
 documents, and marks unfinished entries not imported. There is no Remove,
 Restore, staging tree, ZIP extraction or automatic model sort in this domain.
