@@ -285,12 +285,12 @@ it("equal evidence clears a matching refresh without replacing the held canonica
 
 it("historical delete receipts cannot terminalize a newer canonical observation", () => {
   const record = document();
-  expect(committedResourceDeletion(record.resource, "2", "delete")).toEqual(record.resource);
-  expect(committedResourceDeletion(record.resource, "3", "delete")).toEqual(record.resource);
-  expect(committedResourceDeletion(record.resource, "4", "delete")).toMatchObject({
+  expect(committedResourceDeletion(record.resource, "100", "delete", "2")).toEqual(record.resource);
+  expect(committedResourceDeletion(record.resource, "100", "delete", "3")).toEqual(record.resource);
+  expect(committedResourceDeletion(record.resource, "1", "delete", "4")).toMatchObject({
     canonical: null,
     observationVersion: "4",
-    lifecycle: { kind: "terminal", generation: "4" },
+    lifecycle: { kind: "terminal", generation: "1" },
   });
 });
 

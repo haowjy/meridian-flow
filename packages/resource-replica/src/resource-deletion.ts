@@ -63,7 +63,7 @@ export function committedResourceDeletion(
   resource: ResourceRecord["resource"],
   generation: string,
   transitionId: string,
-  observationVersion = generation,
+  observationVersion: string,
 ): ResourceRecord["resource"] {
   if (!newerCanonicalObservation(observationVersion, resource.observationVersion)) return resource;
   const {

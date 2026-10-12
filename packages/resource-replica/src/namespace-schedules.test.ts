@@ -89,7 +89,7 @@ function fileMachine(): Machine {
         next: {
           ...record,
           resource: {
-            ...committedResourceDeletion(record.resource, "9", "remote"),
+            ...committedResourceDeletion(record.resource, "9", "remote", "9"),
             revision: record.resource.revision + 1,
           },
         },
