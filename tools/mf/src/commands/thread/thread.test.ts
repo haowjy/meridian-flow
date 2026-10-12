@@ -14,6 +14,7 @@ import {
 let stack: FakeStack;
 beforeAll(async () => {
   stack = await startFakeStack();
+  stack.replyPolicy.holdUntilSubscribed = true;
 });
 afterAll(() => stack.close());
 const mf: FakeStack["mf"] = (argv, env) => stack.mf(argv, env);
@@ -235,6 +236,7 @@ describe("thread", () => {
   it("send refuses complete while its steered message is still owed", async () => {
     const isolated = await startFakeStack();
     try {
+      isolated.replyPolicy.holdUntilSubscribed = true;
       const result = await isolated.mf([
         "thread",
         "send",
@@ -390,6 +392,7 @@ describe("thread", () => {
   ] as const)("recovers a lost admission answer: %s", async (lookup, code, outcome, reason) => {
     const isolated = await startFakeStack();
     try {
+      isolated.replyPolicy.holdUntilSubscribed = lookup === "accepted";
       isolated.admissionPolicy.loseAnswer = true;
       isolated.admissionPolicy.lookup = lookup;
       const result = await isolated.mf(["thread", "send", THREAD_ID, "recover me", "--json"]);
@@ -409,6 +412,7 @@ describe("thread", () => {
   it("tail --until-idle follows both consecutive replies before confirming idle", async () => {
     const isolated = await startFakeStack();
     try {
+      isolated.replyPolicy.holdUntilSubscribed = true;
       await isolated.mf(["thread", "send", THREAD_ID, "steer behind completed run", "--no-wait"]);
       const result = await isolated.mf([
         "thread",
@@ -444,6 +448,7 @@ describe("thread", () => {
   it("tail confirms the lease release after a turn finishes, not the turn alone", async () => {
     const isolated = await startFakeStack();
     try {
+      isolated.replyPolicy.holdUntilSubscribed = true;
       isolated.snapshotPolicy.releaseDelayMs = 40;
       await isolated.mf(["thread", "send", THREAD_ID, "hi", "--no-wait"]);
       const result = await isolated.mf([

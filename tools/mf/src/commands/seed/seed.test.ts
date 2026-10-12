@@ -8,6 +8,7 @@ import { startFakeStack } from "../../test-support/fake-stack";
 
 it("does not let a later complete send hide an earlier failed send", async () => {
   const stack = await startFakeStack();
+  stack.replyPolicy.holdUntilSubscribed = true;
   const dir = mkdtempSync(path.join(tmpdir(), "mf-seed-"));
   const fixture = path.join(dir, "scenario.json");
   writeFileSync(
