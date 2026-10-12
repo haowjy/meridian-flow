@@ -112,7 +112,7 @@ function fixture() {
   const blocks = [
     schema.node("paragraph", null, [
       schema.text(
-        "[[Not a link]] ![[Not an embed]] [ref] [^1] [[nested [trap](https://example.com)]] [[plain]](https://example.com) ",
+        "[[Not a link]] ![[Not an embed]] [ref] [^1] [^2](https://example.com) [[nested [trap](https://example.com)]] [[plain]](https://example.com) ",
       ),
       ...["lore", "x", "X", "upload1", "scratch1"].map((id) =>
         schema.text(id, [
@@ -124,6 +124,12 @@ function fixture() {
       ),
     ]),
     schema.node("image", { src: `asset:${uuid("image")}`, alt: "map" }),
+    schema.node("blockquote", null, [
+      schema.node("paragraph", null, schema.text("[!warning]- A costly breakthrough\nNot [!note]")),
+      schema.node("paragraph", null, schema.text("[!tip] second paragraph")),
+    ]),
+    schema.node("paragraph", null, schema.text("[!note] outside a quote")),
+    schema.node("paragraph", null, schema.text("[^1]: The ledger outlives the sect.")),
   ];
   const bytes = new Uint8Array(2 * 1024 * 1024);
   bytes.set([137, 80, 78, 71, 255]);
@@ -350,12 +356,23 @@ describe("project exports", () => {
     expect(text).toContain("---\naliases: [Gate]\n# kept\n---\n");
     expect(text).toContain("[lore](../Knowledge%20Base/Lore/Sects.md)");
     expect(text).toContain("[[Not a link]] ![[Not an embed]]");
-    expect(text).toContain("\\[ref]");
-    expect(text).toContain("\\[^1]");
+    expect(text).toContain("\\[ref] [^1] \\[^2]\\(https");
+    expect(text).toContain("> [!warning]- A costly breakthrough\n> Not \\[!note]");
+    expect(text).toContain("> \\[!tip] second paragraph");
+    expect(text).toContain("\n\\[!note] outside a quote\n");
+    expect(text).toContain("\n[^1]: The ledger outlives the sect.\n");
     expect(ordinary.serialize(blocks, UNSCOPED_DOCUMENT_LINKS)).not.toContain("[[Not a link]]");
     const parsed = ordinary.parse(splitObsidianFrontmatter(text).body).blocks;
-    const links = walkLinkOccurrences(parsed).filter((link) => link.kind === "link");
-    expect(links).toHaveLength(5);
+    const labels = (nodes: typeof blocks) =>
+      walkLinkOccurrences(nodes)
+        .filter((link) => link.kind === "link")
+        .map((link) => link.label);
+    expect(labels(parsed)).toEqual(labels(blocks));
+    expect(labels(parsed)).toHaveLength(5);
+    // Callouts and footnotes come back as the same literal prose, not as syntax.
+    expect(parsed.slice(-3).map((node) => node.toJSON())).toEqual(
+      blocks.slice(-3).map((node) => node.toJSON()),
+    );
   });
   it("streams default and optional vaults with binary integrity and all relative links resolving", async () => {
     const { service, bytes } = fixture();

@@ -327,7 +327,7 @@ describe("live export read door", () => {
     }));
     expect(exported).toEqual({
       ok: true,
-      value: "[[Not a link]] \\[ref] \\[^1] [target](../Knowledge%20Base/Target.md)\n",
+      value: "[[Not a link]] \\[ref] [^1] [target](../Knowledge%20Base/Target.md)\n",
     });
     const ordinary = await subject.engine.readAsMarkdown(DOCUMENT_ID);
     expect(ordinary.ok && ordinary.value).toContain("\\[\\[Not a link]]");

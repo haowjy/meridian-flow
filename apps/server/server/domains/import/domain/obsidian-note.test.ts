@@ -1,7 +1,7 @@
 /** Conversion contracts without storage, using the main vault and adversarial syntax. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { mdxCodec } from "@meridian/markup";
+import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -87,6 +87,24 @@ describe("Obsidian conversion", () => {
     expect(converted.findings.map((finding) => finding.code)).toContain("heading_not_followed");
     expect(converted.markdown).toContain("%%");
     expect(converted.markdown).toContain("==");
+  });
+  it("exports Chapter 1's callout and footnote lines byte-identical to the vault source", () => {
+    const text = readFileSync(join(root, paths[0]), "utf8");
+    const exportCodec = mdxCodec({ schema: buildDocumentSchema(), export: true });
+    const blocks = codec.parse(convert(text).markdown).blocks;
+    const exported = exportCodec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS).split("\n");
+    for (const line of [
+      "> [!warning] A costly breakthrough",
+      "> A cracked core cannot hold a second spirit.",
+      "A debt can outlive a dynasty.[^debt]",
+      "[^debt]: The Jade Crane Sect keeps its ledgers for seven generations.",
+    ]) {
+      expect(text.split("\n")).toContain(line);
+      expect(exported).toContain(line);
+    }
+    expect(walkLinkOccurrences(codec.parse(exported.join("\n")).blocks)).toHaveLength(
+      walkLinkOccurrences(blocks).length,
+    );
   });
   it("converts relative Markdown destinations without losing labels, title or external links", () => {
     const result = convert(readFileSync(join(root, "Chapters/Ch 2.md"), "utf8"), selected[1]);
