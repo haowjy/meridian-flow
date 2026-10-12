@@ -262,8 +262,8 @@ describe("document revisions (postgres and collab)", () => {
     const hashlines = await f.effective.readEffectiveHashlines(view);
     const revision = await f.effective.readEffectiveRevision(view);
     if (!markdown.ok || !hashlines.ok) throw new Error(JSON.stringify({ markdown, hashlines }));
-    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](gamma.md)");
-    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](gamma.md)");
+    expect.soft(hashlines.value.content.join("\n"), "hashlines").toContain("[Beta](gamma)");
+    expect.soft(markdown.value.content, "Markdown").toContain("[Beta](gamma)");
     expect
       .soft([markdown.value.revision, revision], "one view")
       .toEqual([hashlines.value.revision, hashlines.value.revision]);
