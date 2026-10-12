@@ -1,4 +1,6 @@
 import { expect, it } from "vitest";
+import { createResourcePlacement } from "./folder-projection";
+import { entries, move, node } from "./namespace-schedule-fixtures";
 import { prepareNamespaceAttempt, recordNamespaceOutcome } from "./resource-namespace";
 import { projectResourceLocation, resourceForDocumentIdentity } from "./resource-projection";
 import { planResourceLocation, reserveResourceDocument } from "./resource-state";
@@ -114,4 +116,59 @@ it("prefers a current server identity over another resource's obsolete remint al
   expect(resourceForDocumentIdentity([local], "conflicting-document")?.resource.handle).toBe(
     "local-resource",
   );
+});
+
+it("projects link-created suffix folders once per home, following the anchor until real identities arrive", () => {
+  const anchor = node("anchor", "Act");
+  const anchorMove = move("anchor", "Act", "Renamed");
+  const records = ["first", "second"].map((id) => {
+    const reserved = reserveResourceDocument({
+      projectId: "p",
+      handle: id,
+      documentId: id,
+      databaseName: id,
+      schema: "schema",
+      intentId: "create",
+    }).next;
+    const planned = planResourceLocation({
+      record: reserved,
+      projectId: "p",
+      intentId: "file",
+      eligibleAt: 1,
+      destination: {
+        parent: { kind: "folder", folderId: "anchor" },
+        createFolders: ["New Arc", "Part 1"],
+        name: `${id}.md`,
+      },
+    });
+    if (!planned) throw new Error("Missing filing");
+    return planned.next;
+  });
+  const catalog = [
+    entries[0],
+    anchor,
+    node("first", "first.md", "s", "file"),
+    node("second", "second.md", "s", "file"),
+  ];
+  const rows = createResourcePlacement("p", catalog, [anchorMove]).projectCatalog(catalog, records);
+  expect(
+    rows.flatMap((row) =>
+      row.kind === "folder" && row.navigationOnly ? [row.path.join("/")] : [],
+    ),
+  ).toEqual(["Renamed/New Arc", "Renamed/New Arc/Part 1"]);
+  expect(rows.filter((row) => row.kind === "file").map((row) => row.path.join("/"))).toEqual([
+    "Renamed/New Arc/Part 1/first.md",
+    "Renamed/New Arc/Part 1/second.md",
+  ]);
+  const real = [
+    ...catalog,
+    node("arc", "Act/New Arc", "anchor"),
+    node("part", "Act/New Arc/Part 1", "arc"),
+  ];
+  const acquired = createResourcePlacement("p", real, [anchorMove]).projectCatalog(real, records);
+  expect(acquired.filter((row) => row.kind === "folder" && row.navigationOnly)).toEqual([]);
+  expect(acquired.filter((row) => row.kind === "file").map((row) => row.parentId)).toEqual([
+    "part",
+    "part",
+  ]);
 });

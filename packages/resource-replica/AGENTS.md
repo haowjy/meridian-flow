@@ -14,8 +14,9 @@ catalogs, resource locations, Editor tabs, the dock and Recent. Build it from al
 known project catalogs and all project journals, not from journal folders alone.
 UI projections require that context explicitly.
 
-Destinations are `{ parent: ParentRef, name }`: a picked folder ID or qualified
-area root. One canonical qualified-home index binds parent edges; memoized walks
+Destinations are `{ parent: ParentRef, createFolders?: string[], name }`: a picked
+folder ID or qualified area root, with an optional missing-folder suffix only for
+linked creation. One canonical qualified-home index binds parent edges; memoized walks
 resolve folders and documents together. Cycle members revert their canonical
 parent edges, so an independent ancestor rename still applies. Missing or terminal
 destinations revert to canonical edges. Pending-deleted and terminal ancestors
@@ -30,7 +31,7 @@ placement/deletion ownership.
 
 App moves always carry `destinationParent`. Preparation observes the parent's
 server-canonical location, not its optimistic projection; unavailable parents
-enter move repair. Immutable receipts match the captured folder identity, not
+enter move repair. Immutable receipts match the captured folder identity and creation suffix, not
 its possibly renamed or relocated path. Root destinations still match qualified
 URI authority. Requests and attempts never retarget after submission.
 

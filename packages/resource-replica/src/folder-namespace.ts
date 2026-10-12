@@ -365,9 +365,14 @@ export function prepareFolderNamespaceAttempt(
       operationId: intent.operationId ?? ids.operationId,
       path: pathParts(source.path).join("/"),
       expected: { kind: "folder", nodeId: record.folderId },
-      destinationParent: destination.parent,
+      destinationParent: {
+        ...destination.parent,
+        ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
+      },
       destinationScheme: parent.scheme,
-      destinationFolderPath: pathParts(parent.path).join("/"),
+      destinationFolderPath: [...pathParts(parent.path), ...(destination.createFolders ?? [])].join(
+        "/",
+      ),
       ...owners.body,
       ...(destination.name !== source.name ? { newName: destination.name } : {}),
     },

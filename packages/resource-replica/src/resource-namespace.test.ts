@@ -1163,3 +1163,67 @@ it("matches immutable identity moves after the destination's path and owner chan
     }),
   ).not.toThrow();
 });
+
+it("retains a missing-folder suffix in immutable transport and receipt matching", () => {
+  const record = local();
+  record.resource.canonical = { scheme: "unfiled", path: "/A.md", name: "A.md", workId: null };
+  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  record.intents = [
+    {
+      ...record.intents[0],
+      intentId: "move",
+      desired: {
+        kind: "set-location",
+        destination: {
+          parent: { kind: "folder", folderId: "anchor" },
+          createFolders: ["New Arc", "Part 1"],
+          name: "A.md",
+        },
+      },
+    },
+  ];
+  const submitted = prepareNamespaceAttempt(
+    record,
+    { attemptId: "attempt", operationId: "operation" },
+    () => ({ scheme: "manuscript", path: "/Act", name: "Act", workId: null }),
+  );
+  const attempt = submitted?.next.intents[0].attempts[0];
+  if (!attempt) throw new Error("Missing attempt");
+  expect(attempt.request).toMatchObject({
+    kind: "move",
+    body: {
+      destinationFolderPath: "Act/New Arc/Part 1",
+      destinationParent: {
+        kind: "folder",
+        folderId: "anchor",
+        createFolders: ["New Arc", "Part 1"],
+      },
+    },
+  });
+  const outcome: NamespaceOutcome = {
+    kind: "operation",
+    receipt: {
+      operationId: "operation",
+      command: {
+        kind: "move",
+        sourceUri: "unfiled://A.md",
+        destinationUri: "kb://Renamed/New Arc/Part 1/A.md",
+        expected: { kind: "file", nodeId: "document" },
+        destinationParent: {
+          kind: "folder",
+          folderId: "anchor",
+          createFolders: ["New Arc", "Part 1"],
+        },
+      },
+      result: { ok: true, value: { destinationPath: "Renamed/New Arc/Part 1/A.md" } },
+    },
+  };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(true);
+  if (outcome.receipt.command.kind !== "move") throw new Error("Not a move");
+  outcome.receipt.command.destinationParent = {
+    kind: "folder",
+    folderId: "anchor",
+    createFolders: ["Part 1"],
+  };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
+});

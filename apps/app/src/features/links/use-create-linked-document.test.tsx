@@ -80,3 +80,40 @@ it("captures an existing nested home without contacting the server before openin
     );
   });
 });
+
+it("opens a missing-folder link from local persistence before any network completes", async () => {
+  let creation!: CreateLinkedDocument;
+  function Probe() {
+    creation = useCreateLinkedDocument("project");
+    return null;
+  }
+  resources.findParentAtLocation
+    .mockResolvedValueOnce(null)
+    .mockResolvedValueOnce(null)
+    .mockResolvedValueOnce({ kind: "folder", folderId: "anchor" });
+  createFolder.mockClear();
+  createFolder.mockImplementation(() => new Promise(() => {}));
+  resources.setLocation.mockClear();
+  await withReactRoot(<Probe />, async () => {
+    const target = linkCreationTarget("manuscript://Act/New Arc/Part 1/Chapter 1");
+    if (!target) throw new Error("Missing target");
+    let id: string | null = null;
+    await act(async () => {
+      id = await Promise.race([
+        creation.create(target),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 100)),
+      ]);
+    });
+    expect(id).toBe("document");
+    expect(createFolder).not.toHaveBeenCalled();
+    expect(resources.setLocation).toHaveBeenCalledWith(
+      "project",
+      { handle: "resource" },
+      {
+        parent: { kind: "folder", folderId: "anchor" },
+        createFolders: ["New Arc", "Part 1"],
+        name: "Chapter 1.md",
+      },
+    );
+  });
+});
