@@ -57,6 +57,23 @@ started for this run. The command-record regression complements this runtime
 check by returning a generation-5 server row after Apply confirmation: the raw
 list remains identical, the projected list is empty, and generation 6 reappears.
 
+## Continued typing through per-change Discard
+
+Stage two independent changes in an owned draft Work. Intercept its exact
+per-change `/draft/discard` POST before clicking Discard. In the same browser
+callback, focus another paragraph, move the native DOM selection there, and
+insert text using native browser input. Do not set a ProseMirror selection to
+hide a native-input race. While the request is held, check that both the DOM and
+PM selection are at the end of the typed text, and read the draft with `./mf`.
+Release the request; wait for its accepted response and the distinct successor
+editor to be visible (not the inert paint copy), then wait 700 ms and insert
+again without clicking or focusing. PASS: both insertions are contiguous in the
+chosen paragraph, focus and selection remain there, the discarded change is
+gone, the other proposal remains, and the live manuscript is unchanged.
+Capture request/click/input/response times, pre/post selection and block text,
+a screenshot and independent draft/live readbacks. An insertion sent while a
+paint cover still holds the page is not evidence about the successor's caret.
+
 ## Review across document schemes
 
 In a named draft-mode Work, use the mock model to create `kb://Place`,

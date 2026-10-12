@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep typing in the writer’s paragraph after per-change Discard, preserving native input before review repaint and restoring the latest caret by text and block identity.
+
 - Keep other Works' in-flight AI writes when discarding a document draft; retire only the discarded Work's thread peers after commit.
 
 - Merge concurrent AI replacements and writer deletions as Yjs peers. Refuse staged draft writes only on explicit Discard or inverse evidence, and explain that evidence in their receipts.

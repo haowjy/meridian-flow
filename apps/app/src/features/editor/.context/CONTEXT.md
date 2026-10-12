@@ -129,7 +129,14 @@ cover is its capture plus the current projection of the intents
 flag and the change returns with its marks. (2) *Place:* `ReviewPlaceCapture`
 takes the first visible block (Yjs anchor, stable block index, pixel offset), the
 caret and focus ownership in the commit that removes the review editor
-(`core/editor/review-place.ts`, memory only, keyed by draft). The successor
+(`core/editor/review-place.ts`, memory only, keyed by draft). Native review input
+is consumed synchronously by ProseMirror's own DOM observer before a projection
+can repaint its selection. The caret's exact relative identity includes typing
+after the command click. If that identity is absent in the successor, captured
+text-item edges are tried nearest-first within the same identified block; a block
+inserted above or text inserted inside it cannot redirect the fallback. No source
+caret offsets are carried. If no old text survives, restore inside the surviving
+block. The successor
 shows only once it has synced, carried the writer's unsent edits and projected
 the review; `PaintHold.afterRelease` then restores selection (never scrolled to),
 the viewport and focus in the task that lifts the cover. A writer's explicit
