@@ -373,34 +373,44 @@ function formatUndoNotices(notices: readonly Notice[]): string {
       direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
     }));
   });
+  const first = new Map<string, (typeof notifications)[number]>();
   const latest = new Map<string, (typeof notifications)[number]>();
   for (const notification of notifications) {
-    latest.set(`${notification.uri}::${notification.writeHandle}`, notification);
+    const key = `${notification.uri}::${notification.writeHandle}`;
+    if (!first.has(key)) first.set(key, notification);
+    latest.set(key, notification);
   }
-  const reversals = [...latest.values()].filter(
-    (notification) => notification.direction === "undo",
-  );
-  // URI, not basename, identifies a document; distinct documents can share a name.
-  const grouped = new Map<string, { label: string; handles: string[] }>();
-  for (const notification of reversals) {
-    const key = notification.uri || notification.writeHandle;
-    const label = filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
-    const entry = grouped.get(key) ?? { label, handles: [] };
-    entry.handles.push(notification.writeHandle);
-    grouped.set(key, entry);
-  }
-
-  const lines = Array.from(
-    grouped.values(),
-    ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
-  );
-  return lines.length > 0
-    ? [
-        "The user reversed the following edits before this message:",
+  // Reversals in one undelivered batch cancel in pairs. A standalone redo
+  // restores an edit whose undo the model already saw in an earlier batch.
+  const changes = [...latest.entries()]
+    .filter(([key, notification]) => first.get(key)?.direction === notification.direction)
+    .map(([, notification]) => notification);
+  const sections: string[] = [];
+  for (const direction of ["undo", "redo"] as const) {
+    // URI, not basename, identifies a document; distinct documents can share a name.
+    const grouped = new Map<string, { label: string; handles: string[] }>();
+    for (const notification of changes.filter((change) => change.direction === direction)) {
+      const key = notification.uri || notification.writeHandle;
+      const label =
+        filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
+      const entry = grouped.get(key) ?? { label, handles: [] };
+      entry.handles.push(notification.writeHandle);
+      grouped.set(key, entry);
+    }
+    const lines = Array.from(
+      grouped.values(),
+      ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
+    );
+    if (lines.length === 0) continue;
+    sections.push(
+      [
+        `The user ${direction === "undo" ? "reversed" : "restored"} the following edits before this message:`,
         ...lines,
-        "They are signaling these changes were unwanted.",
-      ].join("\n")
-    : "";
+        ...(direction === "undo" ? ["They are signaling these changes were unwanted."] : []),
+      ].join("\n"),
+    );
+  }
+  return sections.join("\n\n");
 }
 
 function stringData(notice: Notice, key: string): string | null {

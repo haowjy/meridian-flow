@@ -5,6 +5,8 @@
  */
 import type { QueryClient } from "@tanstack/react-query";
 import { deleteThread } from "@/client/api/threads-api";
+import { getChatSubmissionAccountId, getChatSubmissionEpoch } from "@/client/chat-submissions";
+import { beginOwnChatDelete, cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
 import { removeChatRow, restoreChatRow, snapshotChatRow } from "./chat-projections";
 import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
@@ -21,16 +23,27 @@ export async function deleteProjectChat(
   projectId: string,
   threadId: string,
 ): Promise<DeleteProjectChatOutcome> {
+  const accountId = getChatSubmissionAccountId();
+  const epoch = getChatSubmissionEpoch();
+  const ownDelete = accountId ? beginOwnChatDelete(accountId, threadId) : null;
   const snapshot = snapshotChatRow(client, projectId, threadId);
   const userState = client.getQueryData(projectQueryKeys.threadUserState(projectId, threadId));
   removeChatRow(client, projectId, threadId);
   client.removeQueries({ queryKey: projectQueryKeys.threadUserState(projectId, threadId) });
   try {
     await deleteThread({ data: { threadId } });
+    ownDelete?.confirmed();
+    if (
+      accountId &&
+      getChatSubmissionAccountId() === accountId &&
+      getChatSubmissionEpoch() === epoch
+    )
+      void cleanDeletedChat(accountId, threadId, projectId, "own-delete").catch(reportError);
     void invalidateProjectThreadData(client, projectId);
     void invalidateWorkThreads(client, projectId);
     return { status: "success" };
   } catch (cause) {
+    ownDelete?.cancel();
     restoreChatRow(client, projectId, threadId, snapshot);
     if (userState !== undefined) {
       client.setQueryData(projectQueryKeys.threadUserState(projectId, threadId), userState);

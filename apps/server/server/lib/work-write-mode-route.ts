@@ -12,10 +12,10 @@ import {
   type WorkContextNotices,
   WorkLifecycleUnavailableError,
 } from "../domains/projects/index.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
 import { draftPublicationHttpAnswer } from "./draft-publication-http.js";
 import { requireDraftWorkAccess } from "./draft-review-route.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
 type WorkWriteModeServices = {
   projects: Pick<AppServices["projectRepo"], "findById">;
