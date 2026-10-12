@@ -91,8 +91,13 @@ at its final snapshot; it does not attribute replies to messages.
 - Outcomes map to exits: **0 complete**, **1 failed**, **5 cancelled**,
   **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
   **3 not found**, **4 unavailable** (stack, login, terminal socket close).
-  `reason` is null for a proven outcome; timeout uses `running` or `owed`
-  (`unconfirmed` when tail has no successful snapshot).
+  `reason` is null for a proven outcome. A timeout's reason names the first
+  thing its last snapshot still showed: `running` (a running turn), `owed` (a
+  pending writer message), `lease_awake` (the chat still awake with neither,
+  as when a restart orphans a reply and the server keeps its run lease until
+  expiry, [#799](https://github.com/haowjy/meridian-flow/issues/799)), else
+  `unconfirmed` (no snapshot, or one that looked idle but proved nothing).
+  `send` and `tail --until-idle` share this rule.
   Unproven reasons today are `admission_unknown`, `replay_truncated`,
   `unconfirmed`, and `owed`. A complete send still does not prove which reply
   answered, as explained above.
@@ -123,8 +128,9 @@ at its final snapshot; it does not attribute replies to messages.
   `replay_truncated`, preserving the idle evidence and covered turns. An initially idle chat returns complete with an empty list.
   Snapshot requests use only the time remaining. At timeout, the last snapshot's
   activity is labeled `snapshotStale: true` (not a new current-state claim),
-  or `snapshotUnavailable: true` if no snapshot succeeded. No post-deadline
-  snapshot request extends the wait.
+  or `snapshotUnavailable: true` if no snapshot succeeded. Without a snapshot
+  the result carries no `stillRunning` or `owed`: absent means unknown, never
+  none. No post-deadline snapshot request extends the wait.
 - `cancel`'s complete envelope proves the server acknowledged cancellation
   or reported the target already finished, not that a particular reply was
   answered. Its `status` carries that acknowledgement. A missing target keeps
