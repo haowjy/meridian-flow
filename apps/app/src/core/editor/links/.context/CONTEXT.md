@@ -455,13 +455,16 @@ writes, and text already stored stay text; so does a drag inside the editor.
   across Manuscript, KB, User, and this Work's Scratch, and the same
   `linkAhead` the `@` menu's link-ahead row uses. While the index loads the
   catalog is null and the brackets stay text rather than all turning dashed.
-- **Syntax** (`scanWikilinks`): `[[target]]`, `[[target|label]]` (also the
+- **Syntax** (`scanObsidian` from `@meridian/markup/obsidian`): `[[target]]`, `[[target|label]]` (also the
   table's `\|`), `[[target#Heading]]`, `[[target#^block]]`, folders in the
-  target. Extensionless prose targets stay extensionless. Generated labels
+  target. The app scans already-parsed text with `{ preprocessed: true }`,
+  so shared Markdown table ingress cannot shift offsets inside a text node.
+  Extensionless prose targets stay extensionless. Generated labels
   use the codec's name; writer-typed aliases stay as typed. Queries and sections
   stay on the destination. `![[…]]` (no
   transclusion) and anything in code (a fence, a code mark, or a backtick span
-  still spelled out) stay text; so does a link inside a link.
+  still spelled out) stay text; so do links inside `%%` or HTML comments, and a
+  link inside a link.
 - **Escapes.** On every paste the policy transforms, each escaped opening
   outside code, `\[[` or `\[\[` (as Meridian's own Markdown writes literal
   brackets), becomes the literal `[[`, closed or not and with the catalog

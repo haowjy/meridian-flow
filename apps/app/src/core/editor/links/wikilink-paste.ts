@@ -28,6 +28,7 @@ import {
   storedHref,
 } from "@meridian/contracts";
 import { parseDocumentFilename, renderFilename } from "@meridian/contracts/protocol";
+import { type ObsidianFinding, scanObsidian } from "@meridian/markup/obsidian";
 import { Fragment, type MarkType, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 
 import type { AssignedLink, LinkAssignmentDocument } from "./link-assignment";
@@ -59,59 +60,31 @@ export type WikilinkPasteCatalog = {
   linkAhead: (name: string, folders: readonly string[]) => { uri: string } | null;
 };
 
-// An optional `\` or `!` before `[[` is captured so an escape or an embed can
-// be told apart; `\[\[` (how Meridian's own Markdown escapes brackets) is an
-// escape too. The brackets hold no bracket and no line break.
-const WIKILINK = /(\\|!)?\[(\\)?\[([^[\]\n]+)\]\]/g;
-// Every escaped opening, closed or not: `\[[` and `\[\[`.
-const ESCAPE = /\\\[\\?\[/g;
+type PastedWikilink = WikilinkOccurrence | Extract<ObsidianFinding, { kind: "escape" }>;
 
-/** An escaped opening: text, spelled as the literal brackets without the backslash. */
-type EscapedWikilink = { from: number; to: number; literal: "[[" };
-
-/**
- * Links and escaped openings, in order; embeds and code are neither. Every
- * escaped opening outside code is found, closed or not, so the backslash the
- * Markdown door kept never reaches the document.
- */
-function scanWikilinks(text: string): (WikilinkOccurrence | EscapedWikilink)[] {
-  const code = codeSpans(text);
-  const inCode = (at: number) => code.some(([from, to]) => at >= from && at < to);
-  const found: (WikilinkOccurrence | EscapedWikilink)[] = [];
-  for (const match of text.matchAll(ESCAPE)) {
-    const start = match.index ?? 0;
-    if (!inCode(start)) found.push({ from: start, to: start + match[0].length, literal: "[[" });
-  }
-  for (const match of text.matchAll(WIKILINK)) {
-    const start = match.index ?? 0;
-    // An escape (or `[\[`) is no link; an embed stays text.
-    if (inCode(start) || match[1] || match[2]) continue;
-    const inner = match[3] ?? "";
-    // Inside a table Obsidian escapes the alias bar as `\|`.
-    const bar = inner.search(/\\?\|/);
-    const destination = bar < 0 ? inner : inner.slice(0, bar);
-    const alias =
-      bar < 0
-        ? ""
-        : inner
-            .slice(bar)
-            .replace(/^\\?\|/, "")
-            .trim();
-    const hash = destination.indexOf("#");
-    const path = (hash < 0 ? destination : destination.slice(0, hash)).trim();
-    const suffix = hash < 0 ? "" : destination.slice(hash).trim();
-    const segments = path.split("/").map((segment) => segment.trim());
+/** App resolution keeps its own filename/display policy; syntax belongs to markup. */
+function pastedWikilinks(text: string): PastedWikilink[] {
+  return scanObsidian(text, { preprocessed: true }).findings.flatMap<PastedWikilink>((finding) => {
+    if (finding.kind === "escape") return [finding];
+    if (finding.kind !== "wikilink" || finding.embed) return [];
+    const segments = finding.linkpath.split("/").map((segment) => segment.trim());
     const name = segments.pop() ?? "";
-    if (!name || segments.some((segment) => !segment)) continue;
-    found.push({
-      from: start,
-      to: start + match[0].length,
-      target: { folders: segments, name },
-      suffix,
-      label: alias || storedName(name),
-    });
-  }
-  return found.sort((left, right) => left.from - right.from);
+    if (!name || segments.some((segment) => !segment)) return [];
+    return [
+      {
+        from: finding.from,
+        to: finding.to,
+        target: { folders: segments, name },
+        suffix:
+          finding.block !== null
+            ? `#^${finding.block}`
+            : finding.heading !== null
+              ? `#${finding.heading}`
+              : "",
+        label: finding.label || storedName(name),
+      },
+    ];
+  });
 }
 
 type Located = {
@@ -279,7 +252,7 @@ function linkText(
   const pieces: PMNode[] = [];
   let cursor = 0;
   const { schema } = node.type;
-  for (const occurrence of scanWikilinks(text)) {
+  for (const occurrence of pastedWikilinks(text)) {
     let piece: PMNode | null;
     if ("literal" in occurrence) piece = schema.text(occurrence.literal, node.marks);
     else {
@@ -300,24 +273,6 @@ function linkText(
   if (!pieces.length) return [node];
   if (cursor < text.length) pieces.push(schema.text(text.slice(cursor), node.marks));
   return pieces;
-}
-
-/** Markdown code spans: a backtick run up to the next run of the same length. */
-function codeSpans(text: string): [number, number][] {
-  const spans: [number, number][] = [];
-  const runs = [...text.matchAll(/`+/g)];
-  for (let index = 0; index < runs.length; index += 1) {
-    const open = runs[index];
-    if (!open) continue;
-    const closeIndex = runs.findIndex(
-      (run, candidate) => candidate > index && run[0].length === open[0].length,
-    );
-    const close = runs[closeIndex];
-    if (!close) continue;
-    spans.push([open.index ?? 0, (close.index ?? 0) + close[0].length]);
-    index = closeIndex;
-  }
-  return spans;
 }
 
 function locate(uri: string, documentId: string | null): Located | null {

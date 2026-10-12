@@ -35,6 +35,23 @@ loads neither Yjs nor the schema builder):
   fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
   builder.
 
+Obsidian syntax ships at `@meridian/markup/obsidian`: `scanObsidian(text)`
+returns `{ source, findings }`. Findings are a discriminated
+`ObsidianFinding` union with half-open UTF-16 `from`/`to` ranges into the
+returned, table-preprocessed source. It uses the codec's positioned Markdown
+parser, masking frontmatter and comments without changing offsets; code,
+comments and Markdown destinations never yield wikilinks. It reports only,
+without resolution or prose conversion. Paste retains its app-side ranking
+and display policy. Its parsed text nodes use `{ preprocessed: true }` so
+table ingress cannot shift offsets inside the existing ProseMirror text.
+
+`splitObsidianFrontmatter(text)` also ships alone at
+`@meridian/markup/obsidian/frontmatter`, without parser or codec imports.
+It returns `{ frontmatter, body }`; the frontmatter range includes both
+delimiters and the closing line ending, while `text` contains only the YAML
+between them, verbatim. It accepts a leading BOM and CRLF; an unclosed or
+non-leading block is body, and YAML validity is left to the consumer.
+
 Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 `mdxBlockCodecs`, and required-block-name lists) are not exported from the
 package root. Tests or preset internals that need them import from sibling

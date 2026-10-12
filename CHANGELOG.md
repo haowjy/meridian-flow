@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Wikilink paste uses the shared Obsidian syntax scanner. The upcoming vault importer can use the same scanner and raw frontmatter splitter.
+
 - Prose has one name in the tree, chat, links and model tools. Typed `.md`, `.markdown`, `.mdx` and `.txt` name the same document.
 - `.txt` files open as prose. Code, data and images keep their extensions.
 - Dotted names stay whole. Renames keep the file type unless a new extension is typed.
