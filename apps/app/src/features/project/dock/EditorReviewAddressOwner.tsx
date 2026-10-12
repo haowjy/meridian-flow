@@ -32,7 +32,7 @@ export function EditorReviewAddressOwner({
   const openReview = useOpenEditorReview();
   const pendingDraftId = usePendingEditorReviewDraftId();
   const restoring = useRef<string | null>(null);
-  const ownedReview = useRef(false);
+  const ownedReview = useRef<{ workId: string; documentId: string; draftId: string } | null>(null);
   const addressNames = (
     documentId: string,
     contextLocation: ThreadDraftGroup["contextLocation"] | undefined,
@@ -46,7 +46,6 @@ export function EditorReviewAddressOwner({
   useEffect(() => {
     const inline = review.controller.inlineReview;
     if (inline) {
-      ownedReview.current = true;
       restoring.current = null;
       const group = review.groupForDocument(inline.documentId);
       const match = group ? addressNames(inline.documentId, group.contextLocation) : "no";
@@ -62,15 +61,25 @@ export function EditorReviewAddressOwner({
       if (match === "pending") return;
       // The route command already carries this identity. Let it settle instead
       // of competing with itself through an address-owner replacement.
+      ownedReview.current = { workId: review.controller.workId, ...inline };
       if (pendingDraftId === inline.draftId) return;
       if (requestedDraftId !== inline.draftId) onSetDraftId(inline.draftId);
       return;
     }
     if (ownedReview.current) {
-      ownedReview.current = false;
+      const owned = ownedReview.current;
+      ownedReview.current = null;
       restoring.current = null;
-      if (requestedDraftId) onSetDraftId(null);
-      return;
+      // Exiting the previous review cannot consume a different destination's request.
+      if (
+        requestedDraftId &&
+        owned.workId === review.controller.workId &&
+        owned.documentId === activeDocumentId &&
+        owned.draftId === requestedDraftId
+      ) {
+        onSetDraftId(null);
+        return;
+      }
     }
     if (!requestedDraftId) {
       restoring.current = null;
@@ -89,7 +98,10 @@ export function EditorReviewAddressOwner({
       group?.contextLocation && draft
         ? addressNames(group.documentId, group.contextLocation)
         : "no";
-    if (match === "no") {
+    if (
+      match === "no" ||
+      (group?.contextLocation && group.contextLocation.scheme !== activeScheme)
+    ) {
       restoring.current = null;
       onSetDraftId(null);
       return;
