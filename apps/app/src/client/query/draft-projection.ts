@@ -6,8 +6,7 @@
  * `operationKey`, which survives a re-fork, so one projection serves every
  * generation of the draft.
  */
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
-import { operationKey } from "@/core/editor/extensions/inline-review";
+import { type DraftPreviewResponse, operationKey } from "@meridian/contracts/drafts";
 
 export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 

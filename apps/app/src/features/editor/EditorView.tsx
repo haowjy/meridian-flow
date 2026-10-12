@@ -1,10 +1,15 @@
 /** Review composition over a warm live editor and the scope owner's addressed branch binding. */
 import { Trans } from "@lingui/react/macro";
-import type { ReviewOperation } from "@meridian/contracts/drafts";
+import { operationKey, type ReviewOperation } from "@meridian/contracts/drafts";
 import { WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { intentKeys, useChangeCommandRecords } from "@/client/query/draft-command-record";
+import {
+  draftCommandKey,
+  intentKeys,
+  selectionKeys,
+  useChangeCommandRecords,
+} from "@/client/query/draft-command-record";
 import {
   PaintCapture,
   PaintScope,
@@ -13,7 +18,7 @@ import {
 } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
-import { operationKey, restoreRenderedChanges } from "@/core/editor/extensions/inline-review";
+import { projectRestoring } from "@/core/editor/extensions/inline-review";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import {
   type CoverView,
@@ -206,30 +211,51 @@ export function EditorView(props: EditorViewProps) {
   const lastShownKey = useRef<string | null>(null);
   if (reviewOnScreen) lastShownKey.current = reviewKey;
   const commandRecords = useChangeCommandRecords();
-  const restoring = review
-    ? intentKeys(commandRecords, {
+  const draftRef = review
+    ? {
         projectId: controller.projectId,
         workId: controller.workId,
         documentId: review.documentId,
         draftId: review.draftId,
-      }).restoring
+      }
     : null;
-  const restoringRef = useRef(restoring);
-  restoringRef.current = restoring;
-  const restoringKey = restoring ? [...restoring].sort().join("|") : "";
+  // The Discards this cover's review has had since it was on screen. A Discard
+  // that went through leaves the intents once the server has answered, but the
+  // review it was made in is still what the cover shows until the next generation
+  // paints; one the server refused is withdrawn.
+  const discarded = useRef<{ review: string | null; keys: Set<string> }>({
+    review: null,
+    keys: new Set(),
+  });
+  if (discarded.current.review !== lastShownKey.current)
+    discarded.current = { review: lastShownKey.current, keys: new Set() };
+  if (draftRef) {
+    const { restoring } = intentKeys(commandRecords, draftRef);
+    for (const key of restoring) discarded.current.keys.add(key);
+    for (const record of Object.values(
+      commandRecords.drafts[draftCommandKey(draftRef)]?.outcomes ?? {},
+    ))
+      if (record.phase === "failed")
+        for (const key of selectionKeys(record))
+          if (!restoring.has(key)) discarded.current.keys.delete(key);
+  }
+  const discardedKey = [...discarded.current.keys].sort().join("|");
   const projectCover = usePaintCoverProjection();
   const projectIntents = useCallback((cover: HTMLElement) => {
-    const keys = restoringRef.current;
     const operations = shownModels.current.get(lastShownKey.current ?? "") ?? [];
-    const ids = new Set(
-      operations.filter((op) => keys?.has(operationKey(op))).map((op) => op.operationId),
+    projectRestoring(
+      cover,
+      new Set(
+        operations
+          .filter((op) => discarded.current.keys.has(operationKey(op)))
+          .map((op) => op.operationId),
+      ),
     );
-    if (ids.size) restoreRenderedChanges(cover, ids);
   }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: the intents moving is what rebuilds a cover.
   useLayoutEffect(
     () => projectCover(projectIntents, readCoverView),
-    [projectCover, projectIntents, restoringKey],
+    [projectCover, projectIntents, discardedKey],
   );
   useEffect(() => () => projectCover(null), [projectCover]);
   return (

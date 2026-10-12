@@ -10,12 +10,12 @@
  * The companion to `useInlineReviewSync`, which pushes the server model. Only
  * the review editor mounts it; the plugin state is the guard.
  */
+import { operationKey } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 import {
   getInlineReviewPluginState,
   isUnattributedHunkKey,
-  operationKey,
 } from "@/core/editor/extensions/inline-review";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";

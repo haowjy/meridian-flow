@@ -125,7 +125,7 @@ hidden (`meridian-review-restoring`, whole paragraphs it fills included) and its
 removed text is drawn as plain prose (`meridian-review-restored`). A Discard
 accepted while a cover already holds the old review shows on the cover too: the
 cover is its capture plus the current projection of the intents
-(`PaintHold.projectCover`, `restoreRenderedChanges`), rebuilt when they move. A refusal drops the
+(`PaintHold.projectCover`, `projectRestoring`), rebuilt when they move. The marks and removals a Discard hides keep their markup under a class (`meridian-review-restoring` / `-restored`), so the cover toggles them both ways and a Discard refused under it comes back; the review keeps the Discards made since its cover's review was on screen. The cover reports its reader's first visible block (`readCoverView`: restored widgets count as the paragraphs they hold, hidden insertions as none, and the beginning of the block checks the count). A refusal drops the
 flag and the change returns with its marks. (2) *Place:* `ReviewPlaceCapture`
 takes the first visible block (Yjs anchor, stable block index, pixel offset), the
 caret and focus ownership in the commit that removes the review editor

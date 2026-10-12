@@ -450,14 +450,13 @@ async function sendClick(
   }
   if (!preview) return { kind: "change-refused", mode, code: "gone" };
   const changes = reviewChangesOfPreview(preview);
-  // The change is found again in this draft by what it is (its keys), and sent
-  // as the rows this generation names. The first click may name a change the
-  // viewed preview no longer lists; the server answers for that. A later one
-  // that matches nothing is gone.
+  // The change is found again in this draft by what it is (its keys) and sent as
+  // the rows this generation names. A draft that holds nothing of it is gone:
+  // no row of another generation is ever sent in its place.
   const wanted = new Set(selectionKeys(click.selection));
   const current = changes.filter((change) => change.keys.some((key) => wanted.has(key)));
-  if (current.length === 0 && afterAnother) return { kind: "change-refused", mode, code: "gone" };
-  const selection = current.length ? selectionOf(current) : click.selection;
+  if (current.length === 0) return { kind: "change-refused", mode, code: "gone" };
+  const selection = selectionOf(current);
   const start = startDraftCommand(
     queryClient,
     {

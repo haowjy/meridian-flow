@@ -11,10 +11,12 @@
  * restores the selection without scrolling it into view, then the viewport
  * from the block anchor, then focus without scrolling.
  */
+
+import { operationKey } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import * as Y from "yjs";
-import { getInlineReviewPluginState, operationKey } from "./extensions/inline-review";
+import { getInlineReviewPluginState } from "./extensions/inline-review";
 import {
   type RelativePositionRuntime,
   relativePositionForIndex,
@@ -83,6 +85,20 @@ function stableIndex(editor: Editor, index: number): number {
     position += doc.child(i).nodeSize;
   }
   return counted;
+}
+
+/** The successor's blocks as a reader counts them: those not hidden for a Discard, with where each begins. */
+function visibleBlocks(editor: Editor): { position: number; text: string }[] {
+  const { doc } = editor.state;
+  const blocks: { position: number; text: string }[] = [];
+  let position = 0;
+  for (let i = 0; i < doc.childCount; i += 1) {
+    const dom = editor.view.nodeDOM(position);
+    const hidden = dom instanceof HTMLElement && dom.classList.contains(RESTORING_CLASS);
+    if (!hidden) blocks.push({ position, text: beginning(doc.child(i).textContent) });
+    position += doc.child(i).nodeSize;
+  }
+  return blocks;
 }
 
 /** Position of the `block`th top-level block that is not hidden, counting as `stableIndex` does. */
@@ -241,8 +257,11 @@ export function restoreReviewPlace(
     }
     const destination = place.navigateTo && operationOfChange(editor, place.navigateTo);
     if (destination) editor.commands.scrollInlineReviewOperationIntoView(destination);
-    else if (coverView) restoreViewport(editor, pane, runtime, { ...coverView, rel: null });
-    else if (place.viewport) restoreViewport(editor, pane, runtime, place.viewport);
+    else if (coverView) {
+      const block = blockForCoverView(editor, coverView);
+      if (block !== null)
+        restoreViewport(editor, pane, runtime, { block, offset: coverView.offset, rel: null });
+    } else if (place.viewport) restoreViewport(editor, pane, runtime, place.viewport);
     if (place.focus && editor.isEditable && focusIsFree()) editor.view.focus();
     // The live editor of a finished review is inert until the server answers: focus waits for it.
     else if (place.focus && !editor.isEditable)
@@ -253,11 +272,19 @@ export function restoreReviewPlace(
   return true;
 }
 
-/** Where a reader of a paint cover is: its first visible block, counted as the editor that replaces it will have it. */
-export type CoverView = { block: number; offset: number };
+/**
+ * Where a reader of a paint cover is: the first block they can see, as the
+ * editor that replaces the cover will count its blocks, and how that block
+ * begins (to tell it from a neighbour if the count is off).
+ */
+export type CoverView = { block: number; offset: number; text: string };
 
-const NOT_A_BLOCK =
+const WIDGET_OR_HIDDEN =
   ".meridian-review-bar-slot,.meridian-review-removal-block,.meridian-review-restoring";
+const PREFIX = 48;
+
+const beginning = (text: string | null | undefined) =>
+  (text ?? "").replace(/\s+/g, " ").trim().slice(0, PREFIX);
 
 export function readCoverView(cover: HTMLElement): CoverView | null {
   const pane = cover.querySelector<HTMLElement>(".meridian-editor");
@@ -265,14 +292,50 @@ export function readCoverView(cover: HTMLElement): CoverView | null {
   if (!pane || !prose) return null;
   const top = paneTop(pane);
   let block = 0;
-  for (const element of Array.from(prose.children)) {
-    // Widgets and hidden insertions are drawn here and not blocks of the successor.
-    if (element.matches(NOT_A_BLOCK)) continue;
+  const seen = (element: HTMLElement): CoverView | null => {
     const rect = element.getBoundingClientRect();
-    if (rect.height > 0 && rect.bottom > top) return { block, offset: rect.top - top };
+    return rect.height > 0 && rect.bottom > top
+      ? { block, offset: rect.top - top, text: beginning(element.innerText) }
+      : null;
+  };
+  for (const element of Array.from(prose.children)) {
+    if (!(element instanceof HTMLElement)) continue;
+    // Original paragraphs drawn as a widget are blocks of the successor, as many as it holds.
+    if (element.classList.contains("meridian-review-restored")) {
+      for (const paragraph of Array.from(element.children)) {
+        if (!(paragraph instanceof HTMLElement)) continue;
+        const found = seen(paragraph);
+        if (found) return found;
+        block += 1;
+      }
+      continue;
+    }
+    // Other widgets, and insertions hidden for a Discard, are not blocks of the successor.
+    if (element.matches(WIDGET_OR_HIDDEN)) continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.height === 0) continue;
+    const found = seen(element);
+    if (found) return found;
     block += 1;
   }
   return null;
+}
+
+/**
+ * The successor's block for what the cover's reader saw: the counted one, unless
+ * a nearby block is the one that begins as it did (a count can be off by a block
+ * the cover drew differently).
+ */
+function blockForCoverView(editor: Editor, view: CoverView): number | null {
+  const blocks = visibleBlocks(editor);
+  if (blocks.length === 0) return null;
+  const counted = Math.min(view.block, blocks.length - 1);
+  if (view.text.length < 12 || blocks[counted]?.text.startsWith(view.text)) return counted;
+  for (let distance = 1; distance <= 8; distance += 1) {
+    for (const index of [counted - distance, counted + distance])
+      if (blocks[index]?.text.startsWith(view.text)) return index;
+  }
+  return counted;
 }
 
 /** The successor's operation for a change the writer chose, found by what it is. */

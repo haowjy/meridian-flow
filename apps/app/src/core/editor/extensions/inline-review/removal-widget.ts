@@ -25,7 +25,7 @@ export const REMOVAL_TIGHT_CLASS = "meridian-review-removal-tight";
 export const REMOVAL_TEXT_CLASS = "meridian-review-removal-text";
 export const REMOVAL_TEXT_WRITER_CLASS = "meridian-review-removal-text-writer";
 export const REMOVAL_TEXT_UNATTRIBUTED_CLASS = "meridian-review-removal-text-unattributed";
-/** A Discard in flight: the original text, drawn as the plain prose it is about to become. */
+/** On a removal whose change is being discarded: drawn as the plain prose it is about to become (the markup under it stays, so a withdrawn Discard can show it struck again). */
 export const RESTORED_CLASS = "meridian-review-restored";
 
 /** A stretch of removed text and who took it out; `unattributed` when the server could not say. */
@@ -183,36 +183,20 @@ export interface RemovalRenderOptions {
   operationAttr: string;
 }
 
-/** The original text of a change being discarded, in the manuscript's own typography. */
-function createRestoredElement(doc: Document, plan: RemovalPlan): HTMLElement {
-  const root: HTMLElement = doc.createElement(plan.block ? "div" : "span");
-  root.className = RESTORED_CLASS;
-  root.setAttribute("contenteditable", "false");
-  for (const segments of plan.paragraphs) {
-    const text = segments.map((segment) => segment.text).join("");
-    if (plan.block) {
-      const paragraph = doc.createElement("p");
-      paragraph.textContent = text;
-      root.append(paragraph);
-    } else root.append(text);
-  }
-  root.addEventListener("mousedown", (event) => event.preventDefault());
-  return root;
-}
-
 /** Build the widget DOM. Non-editable and unselectable; clicking focuses the change or toggles a fold. */
 export function createRemovalElement(
   doc: Document,
   plan: RemovalPlan,
   options: RemovalRenderOptions,
 ): HTMLElement {
-  if (plan.restored) return createRestoredElement(doc, plan);
-  const collapsible = isCollapsible(plan);
+  // A Discard in flight shows the whole original: nothing is folded.
+  const collapsible = isCollapsible(plan) && !plan.restored;
   const folded = collapsible && !options.expanded;
   const root: HTMLElement = doc.createElement(plan.block ? "div" : "span");
   root.className = [
     REMOVAL_CLASS,
     plan.block ? REMOVAL_BLOCK_CLASS : "",
+    plan.restored ? RESTORED_CLASS : "",
     plan.tight && !plan.block ? REMOVAL_TIGHT_CLASS : "",
     plan.kind === "writer" ? REMOVAL_WRITER_CLASS : "",
     plan.kind === "unattributed" ? REMOVAL_UNATTRIBUTED_CLASS : "",

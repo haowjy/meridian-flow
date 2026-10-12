@@ -94,7 +94,7 @@ the re-fork and vends it as `ReviewOperation.partKey`; class ids hash the member
 part keys, so an unchanged class keeps its id. Anything on the client that must
 outlive a generation (queued clicks, held failures, hidden sets, the focus, the
 "arrived" pulse, the navigation a writer made under a cover) carries
-`operationKey` (the part key; `row:<id>` for a row that records no edit part, which
+`operationKey` (in `@meridian/contracts/drafts`: the part key; `row:<id>` for a row that records no edit part, which
 therefore only matches itself). Text excerpts are display, never identity.
 
 **One projection.** `draft-projection.ts` is the only place intents are applied to

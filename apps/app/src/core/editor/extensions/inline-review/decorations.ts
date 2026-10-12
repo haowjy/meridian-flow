@@ -56,6 +56,8 @@ const BLOCK_CLASS = "meridian-review-block";
 /** A change being discarded: its insertion is hidden until the next generation paints without it. */
 const RESTORING_CLASS = "meridian-review-restoring";
 const HUNK_ATTR = "data-review-hunk";
+/** On a paragraph hidden whole for a Discard: the operations whose restoring hides it. */
+const RESTORES_ATTR = "data-review-restores";
 const OPERATION_ATTR = "data-review-operations";
 
 /** What the painter needs besides the model: which change is selected and which folds are open. */
@@ -83,6 +85,8 @@ interface MarkGeometry {
   spanOperationId: string | null;
   /** Hidden rather than tinted: the insertion of a change being discarded. */
   hide?: true;
+  /** A whole paragraph the hidden insertion fills: hidden for the same reason, but not itself a mark. */
+  filled?: true;
 }
 
 interface HunkGeometry {
@@ -185,21 +189,17 @@ export function paintDecorations(
     const pulsed = isPulsed(hunk.operationIds);
     if (hunkFocused) focusedEnd = Math.max(focusedEnd ?? hunk.end, hunk.end);
     for (const mark of hunk.marks) {
-      if (mark.hide) {
-        decorations.push(
-          mark.node
-            ? Decoration.node(mark.from, mark.to, { class: RESTORING_CLASS })
-            : Decoration.inline(mark.from, mark.to, { class: RESTORING_CLASS }),
-        );
-        continue;
-      }
       const focused =
         hunkFocused || (mark.spanOperationId !== null && focusedIds.has(mark.spanOperationId));
-      const attrs = {
-        class: markClassName(mark, focused, pulsed),
-        [HUNK_ATTR]: hunk.hunkId,
-        [OPERATION_ATTR]: mark.operationAttr,
-      };
+      // A mark hidden for a Discard in flight keeps everything else it was, so a
+      // paint of it (the cover's) can show it again if the Discard is withdrawn.
+      const attrs = mark.filled
+        ? { class: RESTORING_CLASS, [RESTORES_ATTR]: mark.operationAttr }
+        : {
+            class: classNames(markClassName(mark, focused, pulsed), mark.hide && RESTORING_CLASS),
+            [HUNK_ATTR]: hunk.hunkId,
+            [OPERATION_ATTR]: mark.operationAttr,
+          };
       const spec = { [HUNK_ATTR]: hunk.hunkId, [OPERATION_ATTR]: mark.operationAttr };
       decorations.push(
         mark.node
@@ -332,10 +332,11 @@ function blockMarks(
 }
 
 /**
- * What a change being discarded leaves of its insertion: nothing. The range is
- * hidden, and a paragraph the insertion fills entirely is hidden whole, so no
- * empty block or gap stands where the next generation has none. The paragraph
- * holding the removal's widget stays: the widget is the original text there.
+ * What a change being discarded leaves of its insertion: nothing shown. Its
+ * marks are hidden (but stay what they were, see the paint loop), and a paragraph
+ * the insertion fills entirely is hidden whole, so no empty block or gap stands
+ * where the next generation has none. The paragraph holding the removal's widget
+ * stays: the widget is the original text there.
  */
 function hiddenMarks(
   hunk: ResolvedReviewHunk,
@@ -345,26 +346,30 @@ function hiddenMarks(
   operationsById: ReadonlyMap<string, ReviewOperation>,
   resolver: RelativePositionRuntime,
 ): MarkGeometry[] {
-  const hide = (from: number, to: number, node: boolean): MarkGeometry => ({
-    from,
-    to,
-    tone: "agent",
-    node,
-    operationAttr: "",
-    spanOperationId: null,
-    hide: true,
-  });
-  if (hunk.kind === "block") {
-    return blockMarks(hunk, startPos, endPos, operationsById, resolver).map((mark) =>
-      hide(mark.from, mark.to, mark.node),
-    );
-  }
-  const marks = [hide(startPos, endPos, false)];
+  if (hunk.kind === "block")
+    return blockMarks(hunk, startPos, endPos, operationsById, resolver).map((mark) => ({
+      ...mark,
+      hide: true as const,
+    }));
+  const marks = textMarks(hunk, startPos, endPos, operationsById, resolver).map((mark) => ({
+    ...mark,
+    hide: true as const,
+  }));
   resolver.doc.nodesBetween(startPos, endPos, (node, pos) => {
     if (!node.isTextblock) return true;
     const filled = pos + 1 >= startPos && pos + node.nodeSize - 1 <= endPos;
     const holdsRemoval = hasRemoval && pos < startPos && startPos < pos + node.nodeSize;
-    if (filled && !holdsRemoval) marks.push(hide(pos, pos + node.nodeSize, true));
+    if (filled && !holdsRemoval)
+      marks.push({
+        from: pos,
+        to: pos + node.nodeSize,
+        tone: "agent",
+        node: true,
+        operationAttr: hunk.operationIds.join(" "),
+        spanOperationId: null,
+        hide: true,
+        filled: true,
+      });
     return false;
   });
   return marks;
@@ -461,24 +466,26 @@ function classNames(...values: Array<string | false | undefined>): string {
 }
 
 /**
- * Make the DOM of an already-rendered review (a clone the paint cover holds,
- * which no editor is drawing any more) show the change that `operationIds`
- * name as a Discard in flight does: its insertion hidden, its removal plain
- * prose. A removal folded to a label has no text to show and stays.
+ * Show an already-rendered review (a clone the paint cover holds, which no editor
+ * is drawing any more) as a Discard in flight would: for each change in
+ * `restoring`, its insertion hidden and its removal drawn as plain prose; for
+ * every other, as marked. Both directions work on what the review rendered,
+ * which keeps the evidence for each (hidden marks and plain removals are
+ * the marks and removals under a class), so a withdrawn Discard comes back.
  */
-export function restoreRenderedChanges(root: ParentNode, operationIds: ReadonlySet<string>): void {
-  for (const element of root.querySelectorAll<HTMLElement>(`[${OPERATION_ATTR}]`)) {
-    const ids = (element.getAttribute(OPERATION_ATTR) ?? "").split(" ");
-    if (!ids.some((id) => operationIds.has(id))) continue;
-    if (!element.classList.contains(REMOVAL_CLASS)) {
-      element.classList.add(RESTORING_CLASS);
-      continue;
-    }
-    const struck = element.querySelectorAll("del");
-    if (struck.length === 0) continue;
-    for (const del of struck) del.replaceWith(del.textContent ?? "");
-    element.className = RESTORED_CLASS;
-    element.removeAttribute(OPERATION_ATTR);
+export function projectRestoring(root: ParentNode, restoring: ReadonlySet<string>): void {
+  for (const element of root.querySelectorAll<HTMLElement>(
+    `[${OPERATION_ATTR}],[${RESTORES_ATTR}]`,
+  )) {
+    const ids = (
+      element.getAttribute(RESTORES_ATTR) ??
+      element.getAttribute(OPERATION_ATTR) ??
+      ""
+    ).split(" ");
+    element.classList.toggle(
+      element.classList.contains(REMOVAL_CLASS) ? RESTORED_CLASS : RESTORING_CLASS,
+      ids.some((id) => restoring.has(id)),
+    );
   }
 }
 

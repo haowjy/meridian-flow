@@ -19,6 +19,7 @@ import {
 } from "../../../../test-support/inline-review-editor";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../../schema";
 import { getInlineReviewPluginState } from "./DraftInlineReviewExtension";
+import { projectRestoring } from "./decorations";
 import { type InlineReviewModel, unattributedHunkKey } from "./model";
 import { REMOVAL_COLLAPSE_CHARS } from "./removal-widget";
 
@@ -246,7 +247,7 @@ describe("removals", () => {
     expect(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toString()).not.toContain("his");
   });
 
-  it("shows the original of a change being discarded as plain prose, with its insertion hidden", () => {
+  it("shows the original of a change being discarded as plain prose, with its insertion hidden, and can show it as marked again", () => {
     const { editor } = createReviewEditor(["Elder Mo raised one withered hand."]);
     const withered = posOf(editor, "one withered");
     const hunk = textHunk(
@@ -260,13 +261,19 @@ describe("removals", () => {
       ...model([operation("a1", "agent")], [hunk]),
       restoring: new Set(["a1"]),
     });
-    expect(removals(editor)).toEqual([]);
-    expect(marked(editor, "meridian-review-added")).toEqual([]);
     expect(marked(editor, "meridian-review-restoring")).toEqual(["one withered"]);
     const [restored] = editor.view.dom.querySelectorAll(".meridian-review-restored");
     expect(restored?.textContent).toBe("his");
-    expect(restored?.querySelector("del")).toBeNull();
     expect(editor.getText()).toBe("Elder Mo raised one withered hand.");
+    // A copy of what was drawn (the paint cover's) is reversible: nothing was thrown away.
+    const copy = editor.view.dom.cloneNode(true) as HTMLElement;
+    projectRestoring(copy, new Set());
+    expect(copy.querySelector(".meridian-review-restoring")).toBeNull();
+    expect(copy.querySelector(".meridian-review-restored")).toBeNull();
+    expect(copy.querySelector(".meridian-review-removal del")?.textContent).toBe("his");
+    projectRestoring(copy, new Set(["a1"]));
+    expect(copy.querySelector(".meridian-review-restoring")?.textContent).toBe("one withered");
+    expect(copy.querySelector(".meridian-review-restored")).not.toBeNull();
   });
 
   it("paints unclassified insertion and removal in no author's colour", () => {
