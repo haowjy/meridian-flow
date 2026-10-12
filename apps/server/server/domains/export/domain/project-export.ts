@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import {
   type DocumentId,
   type ExportOutsideArea,
+  type ProjectExportOptions,
   type ProjectExportPreview,
   parseContextUri,
   readStoredDocumentProperties,
@@ -15,7 +16,7 @@ import { exportFilename } from "../../context/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
 import type { ExportDocument, ExportSnapshotStore } from "../ports/export-snapshot.js";
-import { buildExportLayout, type ExportOptions, portableName } from "./export-layout.js";
+import { buildExportLayout, portableName } from "./export-layout.js";
 
 export class ExportReadError extends Error {
   constructor(
@@ -34,7 +35,7 @@ export function createProjectExport(deps: {
   files: Pick<FileAccess, "listAccess">;
   objects: Pick<ObjectStorePort, "get">;
 }) {
-  async function createScope(projectId: string, accountId: string, options: ExportOptions) {
+  async function createScope(projectId: string, accountId: string, options: ProjectExportOptions) {
     const { documents: inventory, sources, settlements } = await deps.snapshot.read(projectId);
     const membership = new Set(
       (await deps.documents.resolveManifestMembership({ projectId })).members,
@@ -203,7 +204,7 @@ export function createProjectExport(deps: {
     async preview(
       projectId: string,
       accountId: string,
-      options: ExportOptions,
+      options: ProjectExportOptions,
       signal?: AbortSignal,
     ): Promise<ProjectExportPreview> {
       const scope = await createScope(projectId, accountId, options);
@@ -218,7 +219,7 @@ export function createProjectExport(deps: {
       projectId: string,
       accountId: string,
       projectName: string,
-      options: ExportOptions,
+      options: ProjectExportOptions,
     ) {
       const scope = await createScope(projectId, accountId, options);
       return scope.stream(projectName);
