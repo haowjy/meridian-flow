@@ -140,9 +140,11 @@ routes un-addressed deltas (a snapshot older than the stream's last start or
 end merges its facts but does not move it). A writer message in the chat's
 pending inbox, or just admitted by this tab, is owed until delivered, so every
 tab keeps Stop while one is undelivered. A Stop waiting for work lands only on
-an execution that takes on or delivers a message owed at the press, and a
-message owed after the press retires it. Retry stand-ins reconcile by their
-request's execution or `metadata.retryReplyId`, read from the same facts.
+an execution that takes on or delivers a message owed at the press, and never
+on one that serves a message owed after the press; later sends don't retire
+it, so separate press-time work is still stopped. Retry stand-ins reconcile by
+their request's execution or `metadata.retryReplyId`, read from the same facts
+(`useRunFacts`, reactive to the controller).
 `useThreadRunResume` attaches the snapshot's open execution only while settled.
 The composer shows Stop while a reply streams, a placeholder is pending, or the
 controller is unsettled, except while owed messages wait on an account that
