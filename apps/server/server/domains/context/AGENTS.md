@@ -69,10 +69,12 @@ the route core resolves every requested locator to exact project/lineage/Work
 authority before it calls `ContextPort.commitWriterLocation`. Optional
 `destinationParent` binds a folder ID or area root; URI-addressed callers omit
 it. A folder destination resolves again under the move transaction's namespace
-locks. Only linked creation supplies `createFolders`, a validated name suffix
-ensured beneath the anchor's current home in that transaction; a missing anchor
-never recreates its old path. Missing, terminal or denied
-destinations return typed `destination_missing` repair evidence. Receipts retain
+locks. `createFolders` is a validated name suffix ensured beneath the anchor's
+current home in that transaction; the route accepts it on any identity move,
+and by convention only the app's linked creation sends it. A missing anchor
+never recreates its old path. Missing, terminal or denied identity
+destinations return typed `destination_missing` repair evidence; a
+URI-addressed move keeps path resolution and its ordinary errors. Receipts retain
 the selected parent identity, creation suffix and original URI command. Proven occupation
 returns the current collision locator; path-only commands must match the
 requested locator. Stale source/target plans return a retry result instead.
