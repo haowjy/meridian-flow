@@ -73,7 +73,9 @@ export function ItemRow({
           <span className="truncate text-sm font-medium text-foreground">{name}</span>
           {folder ? <span className="truncate text-xs text-ink-muted">{folder}</span> : null}
         </span>
-        {sentence ? <span className="block text-sm text-ink-muted">{sentence}</span> : null}
+        {sentence ? (
+          <span className="block whitespace-pre-line text-sm text-ink-muted">{sentence}</span>
+        ) : null}
       </span>
       {openable ? (
         <ChevronRight aria-hidden className="mt-1 size-3.5 shrink-0 text-ink-subtle" />

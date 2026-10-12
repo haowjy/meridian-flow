@@ -2,6 +2,7 @@
 import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import type { ImportFinding } from "@meridian/contracts";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 
 export type FindingGroup =
   | "hidden"
@@ -14,6 +15,22 @@ export type FindingGroup =
 
 type Params = Record<string, unknown>;
 const str = (value: unknown, fallback = "") => (typeof value === "string" ? value : fallback);
+
+const AREAS: Record<string, () => string> = {
+  manuscript: () => t`Manuscript`,
+  kb: () => t`Knowledge Base`,
+  unfiled: () => t`Unfiled`,
+  user: () => t`User`,
+};
+
+/** A context URI as the writer reads a location: "Knowledge Base / Characters / Lin Feng". */
+export function readableLocation(value: string): string {
+  if (!value.includes("://")) return value;
+  const parsed = parseContextUri(value);
+  if (!parsed.ok) return value;
+  const area = AREAS[parsed.value.scheme]?.() ?? parsed.value.scheme;
+  return [area, ...parsed.value.path.split("/").filter(Boolean)].join(" / ");
+}
 const num = (value: unknown) => (typeof value === "number" ? value : 0);
 
 /** Which report section a finding belongs to. Unknown codes land in "other" so nothing is lost. */
@@ -59,23 +76,30 @@ export function findingSentence(finding: ImportFinding): string {
     }
     case "link_to_existing": {
       const text = str(params.text);
-      const path = str(params.path);
+      const path = readableLocation(str(params.path));
       return t`"${text}" opens ${path}, which was already in your project.`;
     }
     case "link_via_alias": {
       const text = str(params.text);
-      const path = str(params.path);
+      const path = readableLocation(str(params.path));
       return t`"${text}" opens ${path} through one of its aliases.`;
     }
     case "link_ambiguous": {
       const text = str(params.text);
-      const path = str(params.path);
+      const chosen = str(params.path);
+      const path = readableLocation(chosen);
       const count = i18n.number(num(params.count));
-      return t`"${text}" matched ${count} files. It opens ${path}.`;
+      const others = (Array.isArray(params.candidates) ? params.candidates : [])
+        .filter(
+          (candidate): candidate is string => typeof candidate === "string" && candidate !== chosen,
+        )
+        .map(readableLocation);
+      // The files it did not pick follow, one per line.
+      return [t`"${text}" matched ${count} files. It opens ${path}.`, ...others].join("\n");
     }
     case "link_unresolved": {
       const text = str(params.text);
-      const folder = str(params.folder);
+      const folder = readableLocation(str(params.folder));
       return t`"${text}" doesn't match any file yet. Opening it offers to create it in ${folder}.`;
     }
     case "heading_not_followed": {
@@ -91,7 +115,7 @@ export function findingSentence(finding: ImportFinding): string {
     }
     case "link_target_unavailable": {
       const text = str(params.text);
-      const path = str(params.path);
+      const path = readableLocation(str(params.path));
       return text
         ? t`"${text}" points to ${path}, which isn't available.`
         : t`A link here points to a file that isn't available.`;
