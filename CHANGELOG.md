@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Capture draft previews and per-change selections from one coherent authority snapshot, refusing stale review tokens without repairing or provisioning on reads.
+
 - Keep manifest-only drafts pending while settling semantically unchanged rich prose through one complete-effect comparison.
 
 - Settle chat change trails from transactional dirty signals instead of a no-op work queue. Late Apply, Discard and writer inverses reopen their producing trails after restart without adding a cross-domain owner-lock protocol.
