@@ -254,8 +254,23 @@ async function followToOutcome(
           return false;
         },
       });
-      if (blocked) return blocked;
       lastSeq = followed.lastSeq;
+      if (blocked) {
+        // A replayed refusal is state, not a terminal outcome. Recovery may already
+        // have completed beyond this event; reconcile before deciding or resuming.
+        const snapshot = await session.request<ThreadSnapshotResponse>(
+          "GET",
+          apiThreadSnapshotPath(threadId),
+        );
+        blocked = blockedOutcome(snapshot.liveState.pending);
+        if (blocked) return blocked;
+        const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
+        if (answer) {
+          ourTurn = answer.id;
+          if (["complete", "cancelled", "error"].includes(answer.status)) break;
+        }
+        continue;
+      }
       if (followed.stoppedBy?.type !== "turn.failed") break;
 
       // A previous run can fail while this send's user turn is still queued.

@@ -93,6 +93,18 @@ export function createDeliveryAdapter(
     deps.schedulePostCommit(() =>
       backgroundTasks.track(Promise.resolve().then(task), "runtime delivery callback"),
     );
+  // All retirement paths share this invariant, under the caller's thread lock/transaction.
+  const acknowledge = async (threadId: ThreadId, ids: string[]) => {
+    await inbox.ack(threadId, ids);
+    const projection = await inbox.readPendingProjection(threadId);
+    if (
+      !projection.messages.some(
+        (message) => message.intent === "message" || message.intent === "control",
+      )
+    ) {
+      await inbox.setBlockedReason(threadId, null);
+    }
+  };
   const appendPending = async (threadId: ThreadId) => {
     await deps.eventWriter.appendEvent(threadId, {
       type: "inbox.changed",
@@ -111,7 +123,7 @@ export function createDeliveryAdapter(
   const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
     const ids = await clearOrphanedTurn(threadId, turnId);
     if (!ids) return;
-    await inbox.ack(threadId, ids);
+    await acknowledge(threadId, ids);
     await appendPending(threadId);
   };
   const clearOrphanedTurnForRepair = async (threadId: ThreadId, turnId: TurnId) => {
@@ -285,7 +297,7 @@ export function createDeliveryAdapter(
       result: undefined,
       events: plan.events,
     }));
-    await inbox.ack(threadId, work.ids);
+    await acknowledge(threadId, work.ids);
     await appendPending(threadId);
   }
   async function materializeIdle(threadId: ThreadId) {
@@ -510,7 +522,7 @@ export function createDeliveryAdapter(
           }),
           { afterEvents: () => recordShown(currentTurn.id) },
         );
-        await inbox.ack(threadId, drain.ackIds);
+        await acknowledge(threadId, drain.ackIds);
         drain.ackIds = [];
         await deps.runClaim.release(lease);
         next = completed;
@@ -564,7 +576,7 @@ export function createDeliveryAdapter(
       });
     }
 
-    await inbox.ack(threadId, work.ids);
+    await acknowledge(threadId, work.ids);
     if (
       !split &&
       batch.length > 0 &&
@@ -588,7 +600,7 @@ export function createDeliveryAdapter(
         },
       });
       next = completion.turn;
-      await inbox.ack(threadId, drain.ackIds);
+      await acknowledge(threadId, drain.ackIds);
     }
     if (batch.length > 0 || input.current.kind === "placeholder" || compaction)
       await appendPending(threadId);
@@ -655,7 +667,7 @@ export function createDeliveryAdapter(
     messageIds: readonly string[],
   ) {
     if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
-      await inbox.ack(threadId, [...messageIds]);
+      await acknowledge(threadId, [...messageIds]);
   }
 
   return {
@@ -666,7 +678,7 @@ export function createDeliveryAdapter(
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       pending: (id) => readPendingInbox(inbox, id),
       acknowledge: async (id, controlId) => {
-        await inbox.ack(id, [controlId]);
+        await acknowledge(id, [controlId]);
         await appendPending(id);
       },
       hasCompletedReply: hasCompletedReplyInLineage,
@@ -716,6 +728,9 @@ export function createDeliveryAdapter(
         const projection = await inbox.readPendingProjection(lease.threadId);
         if (
           !receipt ||
+          !projection.messages.some(
+            (message) => message.intent === "message" || message.intent === "control",
+          ) ||
           projection.run?.turnId ||
           projection.blocked?.reason === "credits_exhausted"
         )
@@ -734,7 +749,7 @@ export function createDeliveryAdapter(
         operation({
           materializePrefix: () => materializePrefix(threadId),
           async acknowledge(ids) {
-            await inbox.ack(threadId, [...ids]);
+            await acknowledge(threadId, [...ids]);
             await appendPending(threadId);
           },
           enqueue(draft) {
@@ -758,8 +773,8 @@ export function createDeliveryAdapter(
         commit: async (_selection, work, prepared) => {
           if (!prepared) return null;
           await prepared.persist?.();
-          await inbox.ack(lease.threadId, work.ids);
-          await inbox.ack(lease.threadId, prepared.completedControlIds ?? []);
+          await acknowledge(lease.threadId, work.ids);
+          await acknowledge(lease.threadId, prepared.completedControlIds ?? []);
           await leaseStore.bindTurn(
             lease,
             prepared.turnId,
@@ -782,7 +797,7 @@ export function createDeliveryAdapter(
         if (ids.length > 0) {
           if (!(await leaseStore.clearReceipt(lease, ids)))
             throw new Error("Cannot ack after losing live run lease");
-          await inbox.ack(lease.threadId, ids);
+          await acknowledge(lease.threadId, ids);
           await appendPending(lease.threadId);
         }
         return result;
