@@ -97,14 +97,18 @@ export function CreationComposer({
   const choicesReady = worksReady && agentsReady && !unavailableChoice;
   return (
     <>
-      {creation.draft.notices.map((notice) => (
-        <DeletedChatNotice
-          key={notice.threadId}
-          notice={notice}
-          onDismiss={() => creation.draft.dismissNotice(notice.threadId)}
-        />
-      ))}
       <Composer
+        notices={
+          creation.draft.notices.length > 0
+            ? creation.draft.notices.map((notice) => (
+                <DeletedChatNotice
+                  key={notice.threadId}
+                  notice={notice}
+                  onDismiss={() => creation.draft.dismissNotice(notice.threadId)}
+                />
+              ))
+            : undefined
+        }
         key={creation.draft.key}
         initialDraft={creation.draft.initialDraft}
         ref={composerRef}
