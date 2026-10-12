@@ -7,13 +7,19 @@ import {
   type InverseSelection,
   inspectEditRoots,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type {
+  DocumentId,
+  EditOrigin,
+  EditPlacement,
+  ThreadId,
+  TurnId,
+  UserId,
+} from "@meridian/contracts";
 import type {
   ReversalOutcome,
   TurnInverseSkip,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import type { EditOrigin, EditPlacement } from "@meridian/database";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
