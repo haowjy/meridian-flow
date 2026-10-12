@@ -82,7 +82,9 @@ to the authored live row, not the reconcile row; Discard and empty-draft reset
 make discarded and retired placements terminal. Per-change Discard re-forks from
 live and surviving journal rows with their immutable edit/part identity; it
 creates no inverse edit or restoration copy. Card Undo/Redo and failed-response rollback use these immutable parts and the
-forward inverse primitive. The card's control is a dry run of that same policy,
+forward inverse primitive. Card authorization and change-viewer discovery share immutable edit/placement
+targets with inverse admission; mutation and branch transport journals are not
+authorization lineage. The card's control is a dry run of that same policy,
 Redo first; one action lands in one view per document. Pending inverses in a
 draft hold root identities against inverses elsewhere. Their writes use ordinary
 journal rows, never status reversal or row replacement. Only inverse policies

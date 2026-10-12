@@ -46,8 +46,8 @@ export function scopeMarkdownEngine(
 
 /**
  * A model call is scoped by its grant's project, which exists even for a
- * chapter the call is creating, and read as the account it acts for; a
- * reversal by the document it reverses, read in its thread.
+ * chapter the call is creating, and read as the account it acts for.
+ * Each command binds its codec through DocumentLinksPort.
  */
 export function scopeAgentEdit(
   core: ThreadPeerAgentEditCore,

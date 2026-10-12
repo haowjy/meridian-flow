@@ -35,6 +35,7 @@ import {
 } from "../domain/turn-inverse-service.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import { refreshDraftEffect } from "./drizzle-draft-effect.js";
+import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 
 type Dependencies = {
   db: Database;
@@ -53,24 +54,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
   async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
     if (query.model) return [...new Set(query.documentIds ?? [])].sort();
-    const rows = await db()
-      .selectDistinct({ documentId: documentEdits.documentId })
-      .from(documentEdits)
-      .where(
-        and(
-          eq(documentEdits.threadId, query.threadId),
-          query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
-          query.responseIdentity
-            ? inArray(documentEdits.kind, ["write", "revert", "undo", "redo"])
-            : inArray(documentEdits.kind, ["write", "revert"]),
-          query.responseIdentity
-            ? eq(documentEdits.editScopeId, query.responseIdentity.editScopeId)
-            : undefined,
-          query.documentIds ? inArray(documentEdits.documentId, query.documentIds) : undefined,
-        ),
-      )
-      .orderBy(documentEdits.documentId);
-    return rows.map((row) => row.documentId);
+    return [
+      ...new Set((await readTurnEditTargets(db(), query)).map((target) => target.documentId)),
+    ].sort();
   }
   async function history(documentIds: DocumentId[]): Promise<StoredInversePart[]> {
     if (!documentIds.length) return [];

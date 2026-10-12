@@ -396,7 +396,6 @@ export function createBranchAgentEditCoordinator(input: {
 }
 
 export function createBranchAgentEditJournal(input: {
-  threadId: ThreadId;
   liveJournal: UpdateJournal;
   pendingJournalEntries?: BranchPendingJournalEntries;
 }): UpdateJournal {

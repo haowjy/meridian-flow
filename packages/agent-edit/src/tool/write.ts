@@ -1,7 +1,6 @@
 import * as Y from "yjs";
 import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
 import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
@@ -53,7 +52,6 @@ export interface WriteTool {
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
-  const threadOrigins = createThreadOriginRegistry();
   const localSessions = new Map<string, ActorSession>();
   const idempotencyCache = createWriteIdempotencyCache(options);
   const autoTurnIdNonce = createAutoTurnIdNonce();
@@ -96,7 +94,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       semanticProvenance: options.semanticProvenance,
       onLinkSpliceFallback: options.onLinkSpliceFallback,
     },
-    threadOrigins,
     autoTurnCounter,
     autoTurnIdNonce,
     renderer,
@@ -242,7 +239,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     async invalidateThread(docId, threadId) {
       responseCommitter.dropForThread(docId, threadId);
       await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
-      threadOrigins.evictThread(docId, threadId);
     },
   };
 }
