@@ -4,6 +4,7 @@
 
 - Keep review commands reachable in narrow panes, enlarge phone hit targets without taller chrome, and restore the selected change after reload.
 - Make model Undo and Redo counts mean edits, with atomic refusal when too few remain and accurate chat labels for refused writes.
+- Accept per-change Discard while the writer types elsewhere, keeping the clicked closed membership and refusing changes that gained dependencies.
 
 - Retire the unused mutation provenance table; immutable edit receipts remain the authority for write history and card actions.
 

@@ -61,7 +61,9 @@ refusal sends nothing, refreshes nothing and removes no draft-only tab.
 
 Whole commands send the draft ID without preview tokens or operation sets.
 Selections send every selected operation plus the cached active preview's live
-and draft revision tokens. The executor reads the generation and predicts
+and draft revision tokens. Discard also sends the exact server-vended closure
+class IDs; the server admits unchanged membership despite unrelated draft typing,
+while Apply remains fenced by the full draft observation. The executor reads the generation and predicts
 `completesDraft` from all remaining changes; no active preview refuses `stale`
 without sending. The claim keeps generation, not a retained preview basis.
 
@@ -217,7 +219,8 @@ not an automatic consequence of a selection's closure.
 Whole Apply stays in generation G. Whole Discard and last-selection disposition
 reset the branch to G+1; the reset and next proposal share that room/generation.
 Proposal content, not the number alone, distinguishes them. Revision tokens
-change with writes and are request stale fences, never room identity.
+change with writes and are observation/Apply stale fences, never room identity.
+Discard fences current live authority and selected closed membership instead.
 The reducer owns shown generation R and completion K:
 
 | Row | Input | Result |

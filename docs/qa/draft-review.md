@@ -68,9 +68,11 @@ the change-list screenshot and browser errors. Stop only this worktree's stack.
 
 Stage two independent paragraph edits in a named Work. Save a preview and its
 revision tokens with `./mf api`. Append another draft edit, then try a per-change
-Apply or Discard using the saved tokens: PASS is `stale`, with no disposition of
-the requested rows. Refresh the preview and use its new tokens: the selected
-closed class alone settles. Repeat after another per-change Discard re-forks the
+Apply using the saved tokens: PASS is `stale`, with no disposition of
+the requested rows. Discard sends the saved `closureClassIds` as well as operation
+IDs and revision tokens: an independent paragraph admission must not refuse it,
+while an admission joining the selected class must return `stale`. Refresh
+the preview after a refused command: the selected closed class alone settles. Repeat after another per-change Discard re-forks the
 draft and after a row's status changes through Apply. A concurrent preview may
 show either complete observation, never one generation's hunks with another's
 rows/token. An unknown or closed draft returns `gone` without provisioning a
@@ -724,3 +726,18 @@ to read the file and issue two independent `write replace` calls, changing
 
 The DB model-inverse matrix also checks all-or-nothing shortage for Undo and
 failed-scope rollback of both single-edit Undo actions, in Live and Draft.
+
+## Discard while the writer keeps typing
+
+Stage `sword → sabre` in Alpha and `shield → buckler` in Beta, with an unchanged
+Gamma paragraph, in a named draft-mode Work. In the browser open review and
+install an interceptor scoped to this document's `/draft/discard` POST before
+clicking Alpha's Discard. Hold that request until the writer's Gamma edit is
+durably visible in a fresh preview. Click Discard and insert Gamma text within
+200 ms, then keep typing Gamma while the request is pending. Release the request.
+PASS: the first command returns `discarded`, Alpha reads `sword`, Beta still reads
+`buckler`, every Gamma word survives, and no “Check it and discard again” notice
+appears. Read the draft independently with `./mf api` and live with `./mf doc read`.
+Capture request body/response, typing timestamps, preview class membership,
+screenshot and browser errors. Repeat with typing inside the AI-inserted word:
+PASS: refusal remains attached to the moved class and all writer text survives.

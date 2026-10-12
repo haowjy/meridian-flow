@@ -182,6 +182,8 @@ export type DraftDiscardRequest = {
   /** Required for per-change Discard; absent for whole-document Discard. */
   liveRevisionToken?: string;
   draftRevisionToken?: string;
+  /** Required for per-change Discard: the exact server-vended closed membership at click. */
+  closureClassIds?: string[];
 };
 
 /** Select complete server-vended classes. Physical journal IDs never cross the wire. */
