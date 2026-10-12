@@ -48,6 +48,20 @@ type AlignmentEntry<T extends BlockAlignmentInput = BlockInfo> =
   | { kind: "delete"; live: T }
   | { kind: "insert"; draft: T };
 
+/** Both immutable identities and all supplying effects survive presentation pairing. */
+type DocumentDifferenceEntry =
+  | Exclude<AlignmentEntry, { kind: "change" }>
+  | {
+      kind: "change";
+      live: BlockInfo;
+      draft: BlockInfo;
+      effects: {
+        insertedRanges: ClockRange[];
+        deletedRanges: ClockRange[];
+        formatting?: ReviewFormattingChange[];
+      };
+    };
+
 type RawHunkBase = {
   anchor: { relStart: string; relEnd: string };
   blockKey: string;
@@ -198,24 +212,11 @@ function lcsLengths(left: readonly string[], right: readonly string[]): number[]
 }
 
 export function diffAlignedBlocks(
-  alignment: readonly AlignmentEntry[],
+  alignment: readonly DocumentDifferenceEntry[],
   draftDoc: Y.Doc,
 ): RawHunk[] {
   const hunks: RawHunk[] = [];
-  const paired = new Set<number>();
-  for (const [blockIndex, entry] of alignment.entries()) {
-    if (paired.has(blockIndex)) continue;
-    const next = alignment[blockIndex + 1];
-    if (
-      entry.kind === "delete" &&
-      next?.kind === "insert" &&
-      entry.live.text === next.draft.text &&
-      !isDeepStrictEqual(entry.live.content, next.draft.content)
-    ) {
-      hunks.push(blockChangeHunk(entry.live, next.draft, draftDoc));
-      paired.add(blockIndex + 1);
-      continue;
-    }
+  for (const entry of alignment) {
     if (entry.kind === "insert") {
       hunks.push(
         isTextInsertHunk(entry.draft)
@@ -240,7 +241,7 @@ export function diffAlignedBlocks(
         entry.live.text !== entry.draft.text &&
         isDeepStrictEqual(entry.live.richRanges, entry.draft.richRanges)
           ? diffChangedBlock(entry.live, entry.draft, draftDoc)
-          : [blockChangeHunk(entry.live, entry.draft, draftDoc)]),
+          : [blockChangeHunk(entry, draftDoc)]),
       );
     }
   }
@@ -316,36 +317,54 @@ function blockDeleteHunk(
   };
 }
 
-function blockChangeHunk(live: BlockInfo, draft: BlockInfo, draftDoc: Y.Doc): RawHunk {
-  const insertedBlock = displayBlock(draft);
-  const deletedBlock = displayBlock(live);
-  const rich = isDeepStrictEqual(
-    textContentShape(unwrapBlock(live.block)),
-    textContentShape(unwrapBlock(draft.block)),
-  )
-    ? richDifference(unwrapBlock(live.block), unwrapBlock(draft.block))
-    : null;
+function changedBlocks(live: BlockInfo, draft: BlockInfo): DocumentDifferenceEntry {
+  const rich =
+    live.identity === draft.identity &&
+    isDeepStrictEqual(
+      textContentShape(unwrapBlock(live.block)),
+      textContentShape(unwrapBlock(draft.block)),
+    )
+      ? richDifference(unwrapBlock(live.block), unwrapBlock(draft.block))
+      : null;
+  const beforeLevel =
+    live.type === "heading" ? unwrapBlock(live.block).getAttribute("level") : null;
+  const afterLevel =
+    draft.type === "heading" ? unwrapBlock(draft.block).getAttribute("level") : null;
+  return {
+    kind: "change",
+    live,
+    draft,
+    effects: {
+      insertedRanges: rich?.insertedRanges ?? subtractRanges(draft.effectRanges, live.effectRanges),
+      deletedRanges: rich?.deletedRanges ?? subtractRanges(live.effectRanges, draft.effectRanges),
+      ...(live.text === draft.text
+        ? {
+            formatting:
+              rich?.formatting ??
+              (typeof beforeLevel === "number" &&
+              typeof afterLevel === "number" &&
+              beforeLevel !== afterLevel
+                ? [{ kind: "heading", before: beforeLevel, after: afterLevel } as const]
+                : live.type === draft.type
+                  ? [{ kind: "structure" } as const]
+                  : [{ kind: "block", before: live.type, after: draft.type } as const]),
+          }
+        : {}),
+    },
+  };
+}
+
+function blockChangeHunk(
+  { live, draft, effects }: Extract<DocumentDifferenceEntry, { kind: "change" }>,
+  draftDoc: Y.Doc,
+): RawHunk {
   return {
     kind: "block",
     anchor: anchorForWholeBlock(draft, draftDoc),
-    ...(live.text === draft.text
-      ? {
-          formatting:
-            rich?.formatting ??
-            (live.type === draft.type
-              ? [{ kind: "structure" }]
-              : [{ kind: "block", before: live.type, after: draft.type }]),
-        }
-      : {}),
+    ...(effects.formatting ? { formatting: effects.formatting } : {}),
     ...(live.id !== draft.id ? { beforeBlockKey: live.id } : {}),
-    insertedBlock: {
-      ...insertedBlock,
-      ranges: rich?.insertedRanges ?? subtractRanges(draft.effectRanges, live.effectRanges),
-    },
-    deletedBlock: {
-      ...deletedBlock,
-      ranges: rich?.deletedRanges ?? subtractRanges(live.effectRanges, draft.effectRanges),
-    },
+    insertedBlock: { ...displayBlock(draft), ranges: effects.insertedRanges },
+    deletedBlock: { ...displayBlock(live), ranges: effects.deletedRanges },
     blockKey: draft.id,
   };
 }
@@ -709,22 +728,55 @@ export function documentDifference(
   live: Y.Doc,
   draft: Y.Doc,
   model: AgentEditModel,
-): AlignmentEntry[] {
+): DocumentDifferenceEntry[] {
   if (documentEffectsEqual(live, draft)) return [];
   const alignment = alignBlocks(describeBlocks(live, model), describeBlocks(draft, model));
-  const difference: AlignmentEntry[] = [];
-  for (let index = 0; index < alignment.length; index++) {
-    const entry = alignment[index],
-      next = alignment[index + 1];
-    // Recreating an identical block changes physical history, not document content.
-    if (
-      entry.kind === "delete" &&
-      next?.kind === "insert" &&
-      isDeepStrictEqual(entry.live.content, next.draft.content)
-    ) {
-      difference.push({ kind: "equal", live: entry.live, draft: next.draft });
+  const difference: DocumentDifferenceEntry[] = [];
+  for (let index = 0; index < alignment.length; ) {
+    const entry = alignment[index];
+    if (entry.kind === "equal" || entry.kind === "change") {
+      difference.push(entry.kind === "change" ? changedBlocks(entry.live, entry.draft) : entry);
       index++;
-    } else difference.push(entry);
+      continue;
+    }
+    // Identity alignment bounds a replacement gap. Equal ordered content is a
+    // semantic no-op at any length, not evidence of cross-block provenance.
+    const removed: BlockInfo[] = [];
+    const added: BlockInfo[] = [];
+    const gap: AlignmentEntry[] = [];
+    while (index < alignment.length) {
+      const candidate = alignment[index];
+      if (candidate.kind !== "delete" && candidate.kind !== "insert") break;
+      gap.push(candidate);
+      if (candidate.kind === "delete") removed.push(candidate.live);
+      else added.push(candidate.draft);
+      index++;
+    }
+    if (
+      removed.length === added.length &&
+      removed.every((block, offset) => blockContentMatches(block, added[offset]))
+    ) {
+      difference.push(
+        ...removed.map((block, offset) => ({
+          kind: "equal" as const,
+          live: block,
+          draft: added[offset],
+        })),
+      );
+      continue;
+    }
+    for (let offset = 0; offset < gap.length; offset++) {
+      const current = gap[offset],
+        next = gap[offset + 1];
+      if (
+        current.kind === "delete" &&
+        next?.kind === "insert" &&
+        current.live.text === next.draft.text
+      ) {
+        difference.push(changedBlocks(current.live, next.draft));
+        offset++;
+      } else if (current.kind === "delete" || current.kind === "insert") difference.push(current);
+    }
   }
   return difference;
 }

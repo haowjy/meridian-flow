@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep replaced paragraphs together in review, omit unchanged recreated runs, and preserve writer ownership of uncertified formatting copies.
+
 - Review and publish formatting-only draft edits. Bold, links, heading levels and list changes keep per-change Apply and Discard.
 
 - Keep independent AI edits saving across repeated Discards and preserve every write result on publication retries. Dropped-edit notices distinguish partial handle groups and name the affected text.

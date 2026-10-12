@@ -1,13 +1,8 @@
 /** Replays draft history into an attribution index, preserving explicit coverage failure. */
 
-import { isDeepStrictEqual } from "node:util";
 import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
-import {
-  PROSEMIRROR_FRAGMENT_NAME,
-  restorationAliasesFromMetadata,
-} from "@meridian/prosemirror-schema";
+import { restorationAliasesFromMetadata } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { contentValue, visibleContent } from "./document-content.js";
 import {
   asPhysicalSourceUpdateIds,
   asSourceUpdateIds,
@@ -105,24 +100,6 @@ export function indexDraftUpdates(input: {
         operationIds: operationIdsForVisibleRange(introduced, deleted, range),
       }));
       const deletedContent = deletedContentForRanges(replayDoc, beforeVisibility);
-      const recreatesFormatting =
-        decoded.structs.some(
-          (struct) => struct instanceof Y.Item && struct.content instanceof Y.ContentFormat,
-        ) &&
-        beforeVisibility.some(({ range, visible }) => {
-          const item = findItem(replayDoc, range.client, range.clock);
-          return visible && item instanceof Y.Item && item.content instanceof Y.ContentFormat;
-        });
-      const richSources = recreatesFormatting
-        ? captureRichRestorationSources(
-            replayDoc,
-            beforeVisibility.filter((entry) => entry.visible).map((entry) => entry.range),
-          )
-        : [];
-      const beforeContent = recreatesFormatting
-        ? visibleContent(replayDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))
-        : null;
-
       const certifiedAliases = restorationAliasesFromMetadata(update.updateMeta);
       const beforeState = Y.decodeStateVector(Y.encodeStateVector(replayDoc));
       const introducedRanges = decoded.structs
@@ -141,15 +118,7 @@ export function indexDraftUpdates(input: {
 
       Y.applyUpdate(replayDoc, update.updateData, { origin: { type: "branch-review" } });
 
-      const richRestorationAliases =
-        beforeContent !== null &&
-        isDeepStrictEqual(
-          beforeContent,
-          visibleContent(replayDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
-        )
-          ? restoredRichAliases(replayDoc, richSources, introducedRanges)
-          : [];
-      for (const alias of [...certifiedAliases, ...richRestorationAliases]) {
+      for (const alias of certifiedAliases) {
         aliases.push(alias);
         clearDeletedRange(deleted, replayDoc, aliases, alias.source);
       }
@@ -254,8 +223,6 @@ export function indexDraftUpdates(input: {
       if (deletedContent.text.length > 0) {
         deletedContentByOperationId.set(operationId, deletedContent);
       }
-      for (const alias of richRestorationAliases)
-        clearDeletedRange(deleted, replayDoc, aliases, alias.source);
       if (!hasOwnEffect) byOperationId.delete(operationId);
     }
     for (const operation of byOperationId.values()) {
@@ -884,67 +851,4 @@ function splitAtAliasBoundaries(
   return clocks
     .slice(0, -1)
     .map((clock, index) => ({ client: range.client, clock, length: clocks[index + 1] - clock }));
-}
-
-type RichRestorationSource = {
-  source: ClockRange;
-  parent: Y.XmlText;
-  offset: number;
-  key: string;
-  value: unknown;
-};
-
-function captureRichRestorationSources(
-  doc: Y.Doc,
-  removed: readonly ClockRange[],
-): RichRestorationSource[] {
-  return removed.flatMap((source) => {
-    const item = findItem(doc, source.client, source.clock);
-    if (
-      !(item instanceof Y.Item) ||
-      !(item.content instanceof Y.ContentFormat) ||
-      !(item.parent instanceof Y.XmlText)
-    )
-      return [];
-    const offset = formatItemOffset(item);
-    return offset === null
-      ? []
-      : [{ source, parent: item.parent, offset, key: item.content.key, value: item.content.value }];
-  });
-}
-
-/** A semantically unchanged retype recreates the same mark boundaries, not new formatting effects. */
-function restoredRichAliases(
-  doc: Y.Doc,
-  sources: readonly RichRestorationSource[],
-  introduced: readonly ClockRange[],
-): RangeAlias[] {
-  const remaining = [...introduced];
-  return sources.flatMap(({ source, parent, offset, key, value }) => {
-    const index = remaining.findIndex((target) => {
-      const fresh = findItem(doc, target.client, target.clock);
-      return (
-        fresh instanceof Y.Item &&
-        fresh.content instanceof Y.ContentFormat &&
-        parent === fresh.parent &&
-        offset === formatItemOffset(fresh) &&
-        key === fresh.content.key &&
-        isDeepStrictEqual(contentValue(value), contentValue(fresh.content.value))
-      );
-    });
-    if (index < 0) return [];
-    const [target] = remaining.splice(index, 1);
-    return [{ source, target }];
-  });
-}
-
-function formatItemOffset(item: Y.Item): number | null {
-  if (!(item.parent instanceof Y.XmlText)) return null;
-  let offset = 0;
-  for (let candidate = item.parent._start; candidate; candidate = candidate.right) {
-    if (candidate === item) return offset;
-    if (!candidate.deleted && candidate.content instanceof Y.ContentString)
-      offset += candidate.length;
-  }
-  return null;
 }

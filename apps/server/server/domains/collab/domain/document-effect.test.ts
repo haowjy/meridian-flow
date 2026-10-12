@@ -10,22 +10,40 @@ import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import { cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
 
 it.each([
-  { kind: "bold", before: "Alpha", after: "**Alpha**" },
-  { kind: "italic", before: "Alpha", after: "*Alpha*" },
-  {
-    kind: "link",
-    before: "[Alpha](https://old.example.com)",
-    after: "[Alpha](https://example.com)",
-  },
-  { kind: "heading level", before: "## Alpha", after: "### Alpha" },
-  { kind: "list type", before: "- Alpha", after: "1. Alpha" },
-  { kind: "split", before: "> AlphaBeta", after: "> Alpha\n>\n> Beta" },
-  { kind: "restore then retype", before: "**Alpha** and **Beta**", after: "Alpha and **Beta**" },
-])("reviews, Applies and Discards $kind with exact content and attribution", ({
-  kind,
-  before,
-  after,
-}) => {
+  "marks",
+  "heading level",
+  "list type",
+  "split",
+  "restore then retype and identical recreated run",
+  "different-identity formatted replacement",
+  "uncertified writer formatting copy",
+])("reviews, Applies and Discards %s with exact content and attribution", (group) => {
+  if (group === "different-identity formatted replacement") {
+    for (const independent of [false, true]) verifyHistoryDifference("replacement", independent);
+  } else if (group === "uncertified writer formatting copy") {
+    for (const neighbor of [false, true]) verifyHistoryDifference("writer", neighbor);
+  } else if (group === "restore then retype and identical recreated run") {
+    verifyHistoryDifference("recreated run", false);
+    verifyRichChange("restore then retype", "**Alpha** and **Beta**", "Alpha and **Beta**");
+  } else if (group === "marks") {
+    for (const [kind, before, after] of [
+      ["bold", "Alpha", "**Alpha**"],
+      ["italic", "Alpha", "*Alpha*"],
+      ["link", "[Alpha](https://old.example.com)", "[Alpha](https://example.com)"],
+    ])
+      verifyRichChange(kind, before, after);
+  } else {
+    const cases = {
+      "heading level": ["## Alpha", "### Alpha"],
+      "list type": ["- Alpha", "1. Alpha"],
+      split: ["> AlphaBeta", "> Alpha\n>\n> Beta"],
+    };
+    const [before, after] = cases[group as keyof typeof cases];
+    verifyRichChange(group, before, after);
+  }
+});
+
+function verifyRichChange(kind: string, before: string, after: string) {
   const live = createDoc(`${before}\n\nControl`);
   const draft = cloneDoc(live);
   const rows: {
@@ -108,10 +126,11 @@ it.each([
         formatting: [{ kind: "structure" }],
       });
     expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(2);
-    const selected = preview.operations.find((op) => op.sourceUpdateIds.includes(10 as never));
+    const source = kind === "restore then retype" ? 9 : 10;
+    const selected = preview.operations.find((op) => op.sourceUpdateIds.includes(source as never));
     if (!selected) throw new Error("Missing rich change");
     expect(selected.canApplyOrDiscard).not.toBe(false);
-    expect(selected.sourceUpdateIds).toEqual([10]);
+    expect(selected.sourceUpdateIds).toEqual([source]);
     const ids = new Set(selected.closureUpdateIds);
     expect(ids.has(11 as never)).toBe(false);
     const applied = cloneDoc(live);
@@ -149,7 +168,7 @@ it.each([
       });
       for (const change of published)
         expect(attribution.ownersByBlock.get(change.blockId)).toEqual([
-          { threadId: "chat", turnId: "turn-10" },
+          { threadId: "chat", turnId: `turn-${source}` },
         ]);
       const remainder = computeDraftReviewHunks({
         liveDoc: applied,
@@ -173,4 +192,133 @@ it.each([
     live.destroy();
     draft.destroy();
   }
-});
+}
+
+/** Semantic equality never certifies ownership; identity replacements retain both rows. */
+function verifyHistoryDifference(
+  kind: "replacement" | "writer" | "recreated run",
+  variant: boolean,
+) {
+  const before = kind === "replacement" ? "red" : kind === "writer" ? "red blue" : "Alpha\n\nBeta";
+  const after = kind === "replacement" ? "**red**" : kind === "writer" ? "**red** blue" : before;
+  const live = createDoc(`${before}\n\nControl`);
+  const draft = cloneDoc(live);
+  const rows: {
+    id: number;
+    actorTurnId: string | null;
+    actorUserId?: string;
+    updateData: Uint8Array;
+  }[] = [];
+  const write = (edit: () => void, writer = false) => {
+    const id = rows.length + 1;
+    draft.clientID = 200 + id;
+    const deltas: Uint8Array[] = [];
+    const capture = (update: Uint8Array) => deltas.push(update);
+    draft.on("update", capture);
+    try {
+      draft.transact(edit);
+    } finally {
+      draft.off("update", capture);
+    }
+    rows.push({
+      id,
+      actorTurnId: writer ? null : `turn-${id}`,
+      ...(writer ? { actorUserId: "writer" } : {}),
+      updateData: Y.mergeUpdates(deltas),
+    });
+  };
+  const text = (index = 0) =>
+    unwrapBlock(model.getBlocks(toDocHandle(draft))[index]).get(0) as Y.XmlText;
+  const insert = () => model.insertBlocks(toDocHandle(draft), null, codec.parse(after));
+  const remove = () =>
+    model.deleteBlock(toDocHandle(draft), model.getBlocks(toDocHandle(draft))[0]);
+  const trees = (doc: Y.Doc) => model.projectBlocks(toDocHandle(doc)).map((node) => node.toJSON());
+  const expected = (markdown: string) => codec.parse(markdown).blocks.map((node) => node.toJSON());
+  try {
+    if (kind === "replacement") {
+      if (variant) {
+        write(remove);
+        write(insert);
+      } else
+        write(() => {
+          remove();
+          insert();
+        });
+    } else if (kind === "writer") {
+      write(() => text().format(0, 3, { strong: {} }));
+      write(() => {
+        const target = text();
+        target.delete(0, target.length);
+        target.insert(0, "red blue");
+        target.format(0, 3, { strong: {} });
+        if (variant) text(1).insert(7, "!");
+      }, true);
+    } else {
+      write(() => {
+        remove();
+        remove();
+        insert();
+      });
+      expect(documentEffectsEqual(live, draft)).toBe(true);
+    }
+    if (kind !== "writer")
+      write(() => text(model.getBlocks(toDocHandle(draft)).length - 1).insert(7, "!"));
+    const preview = computeDraftReviewHunks({
+      liveDoc: live,
+      draftDoc: draft,
+      model,
+      draftUpdates: rows,
+    });
+    expect(preview.diagnostics).toEqual([]);
+    expect(preview.operations.every((op) => op.canApplyOrDiscard !== false)).toBe(true);
+    const publication = publicationBlockChanges({ model, beforeDoc: live, afterDoc: draft });
+    if (kind === "recreated run") {
+      expect(preview.hunks).toHaveLength(1);
+      expect(publication).toHaveLength(1);
+      expect(preview.operations.map((op) => op.sourceUpdateIds)).toEqual([[2]]);
+    } else if (kind === "writer") {
+      expect(
+        preview.operations.every((op) => op.kind === "writer" && op.actorUserId === "writer"),
+      ).toBe(true);
+      expect(preview.operations.map((op) => op.sourceUpdateIds)).toEqual([[2]]);
+      expect(preview.operations[0].closureUpdateIds).toEqual([1, 2]);
+    } else {
+      expect(preview.hunks[0]).toMatchObject({
+        kind: "block",
+        formatting: [{ kind: "structure" }],
+      });
+      expect(publication).toHaveLength(2);
+      const sources = preview.operations
+        .filter((op) => op.closureClassId === preview.operations[0].closureClassId)
+        .flatMap((op) => op.sourceUpdateIds);
+      expect(sources).toEqual(variant ? [1, 2] : [1]);
+    }
+    for (const closureClassId of new Set(preview.operations.map((op) => op.closureClassId))) {
+      const operations = preview.operations.filter((op) => op.closureClassId === closureClassId);
+      const ids = new Set(operations.flatMap((op) => op.closureUpdateIds));
+      const applied = cloneDoc(live),
+        discarded = cloneDoc(live);
+      try {
+        for (const row of rows)
+          Y.applyUpdate(ids.has(row.id as never) ? applied : discarded, row.updateData);
+        const main = kind === "writer" || (kind === "replacement" && ids.has(1 as never));
+        const neighbor = kind === "writer" ? variant : !main;
+        expect(trees(applied)).toEqual(
+          expected(`${main ? after : before}\n\nControl${neighbor ? "!" : ""}`),
+        );
+        expect(trees(discarded)).toEqual(
+          expected(
+            `${!main && kind === "replacement" ? after : before}\n\nControl${!neighbor && kind !== "writer" ? "!" : ""}`,
+          ),
+        );
+        expect(documentEffectsEqual(live, applied)).toBe(false);
+      } finally {
+        applied.destroy();
+        discarded.destroy();
+      }
+    }
+  } finally {
+    live.destroy();
+    draft.destroy();
+  }
+}

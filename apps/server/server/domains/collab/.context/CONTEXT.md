@@ -369,18 +369,23 @@ document correlation and affected hunk count, never document content.
 
 `domain/draft-review-attribution.ts` owns replay, restoration aliases, range
 ownership and completeness. `domain/document-difference.ts` owns block alignment,
-identity-aware text gaps and anchors, without review authority.
+identity-aware semantic changes with complete effect evidence, text gaps and
+anchors, without review authority.
 `domain/document-content.ts` is the semantic equality oracle for review, publication
 and pending settlement: text, marks, node types, attributes and ordered children.
 Yjs history and attribute-object prototypes do not change content. Alignment uses
 canonical block identities, not scope-dependent display hash widths. Rich-only
 changes are whole-block hunks attributed through changed format/attribute clocks;
 unchanged prose is not an inserted or removed text effect. Attribution intersects
-changed mark intervals and reads winning attribute items; copied unchanged marks
-never nominate an authoring row. Nested paragraph boundaries are content too. Their formatting facts
+changed mark intervals and reads winning attribute items. Semantic no-op detection
+is not provenance: fresh formatting copies keep their supplying row unless
+certified restoration metadata proves correspondence. Nested paragraph boundaries are content too. Their formatting facts
 are localized by the client, in the same row as text changes.
 `domain/draft-review-hunks.ts` composes the raw difference with review attribution; publication consumes the raw difference directly. Recreated identical blocks
-are equal at that shared semantic boundary, not hidden by a review-only cancellation rule.
+and rich-equal ordered replacement runs are equal at that shared semantic boundary,
+not hidden by a review-only cancellation rule. Same-text replacements with different
+immutable identities retain both structural effects and supplying rows in one
+canonical change; only same-identity changes use rich-field-only evidence.
 `domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
 
