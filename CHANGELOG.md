@@ -5,6 +5,10 @@
 - Keep manifest-only drafts pending while settling semantically unchanged rich prose through one complete-effect comparison.
 
 - Settle chat change trails from transactional dirty signals instead of a no-op work queue. Late Apply, Discard and writer inverses reopen their producing trails after restart without adding a cross-domain owner-lock protocol.
+- Reject a first AI edit that resumes after its reply rolls back, without leaving an orphaned staged write.
+
+- Discard staged AI edits even after an earlier Discard evicts their core, preserving independent documents in the reply.
+
 - Revoke in-flight AI edits when their document is wholly discarded, while independent edits in the same reply still save.
 
 - Keep scoped AI reads current after Discard and preserve buffered edits when a rollback transaction aborts.
