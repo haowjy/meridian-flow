@@ -1,9 +1,9 @@
 /** Real-Yjs draft review behavioral coverage. */
-import { toDocHandle } from "@meridian/agent-edit/integration";
+import { type SemanticEditIRV1, toDocHandle } from "@meridian/agent-edit/integration";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
-import { computeDraftReviewOperations } from "./draft-review-operations.js";
 import {
   captureUpdate,
   cloneDoc,
@@ -12,10 +12,106 @@ import {
   model,
   spanTextRange,
 } from "./draft-review-test-fixture.js";
+import { createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 
 describe("draft review class-replay", () => {
+  it("fact-carrying structural writes in separate paragraphs replay independently", () => {
+    const live = createDoc("Alpha Beta.\n\nDivider.\n\nBlue Silver."),
+      draft = cloneDoc(live);
+    try {
+      const updates = [
+        { id: 1, prefix: 6, output: "Gamma Beta." },
+        { id: 2, prefix: 5, output: "Gold Silver." },
+      ].map(({ id, prefix, output }, index) => {
+        const paragraph = index * 2;
+        draft.clientID = 900 + id;
+        const block = model.getBlocks(toDocHandle(draft))[paragraph];
+        const source = model.getVisibleContentLineage(block)[0];
+        const replacement = codec.parse(output).blocks[0];
+        const before = Y.encodeStateVector(draft);
+        const ir: SemanticEditIRV1 = {
+          version: 1,
+          documentId: "doc",
+          inputRevision: "revision" as never,
+          scope: [source],
+          deleted: [source],
+          intent: {
+            kind: "mappedEdits",
+            edits: [
+              {
+                edit: { kind: "block", documentId: "doc", file: "doc.md", block, replacement },
+                outputRuns: [
+                  {
+                    kind: "fresh",
+                    payload: output.slice(0, prefix),
+                    output: { from: 0, to: prefix },
+                  },
+                  {
+                    kind: "preserved",
+                    source: {
+                      ...source,
+                      clock: source.clock + prefix,
+                      length: output.length - prefix,
+                    },
+                    output: { from: prefix, to: output.length },
+                  },
+                ],
+              },
+            ],
+          },
+        };
+        const updateData = Y.mergeUpdates(
+          captureMutationUpdates(draft, () =>
+            draft.transact(() => {
+              const previous =
+                paragraph === 0 ? null : model.getBlocks(toDocHandle(draft))[paragraph - 1];
+              model.deleteBlock(toDocHandle(draft), block);
+              model.insertBlocks(toDocHandle(draft), previous, codec.parse(output));
+              createSemanticProvenanceWriter().writeCertifiedFacts(toDocHandle(draft), ir, before);
+            }),
+          ),
+        );
+        const structs = Y.decodeUpdate(updateData).structs;
+        expect(new Set(structs.map((item) => item.id.client))).toEqual(new Set([900 + id]));
+        const facts = structs.filter(
+          (item) => item instanceof Y.Item && (item.parent as unknown) === PROVENANCE_TARGETS_TYPE,
+        ) as Y.Item[];
+        expect(facts.length).toBeGreaterThan(0);
+        for (const fact of facts) {
+          expect(fact.origin).toBeNull();
+          expect(fact.rightOrigin).toBeNull();
+        }
+        return { id, actorTurnId: `turn-${id}`, updateData };
+      });
+      const preview = computeDraftReviewHunks({
+        liveDoc: live,
+        draftDoc: draft,
+        model,
+        draftUpdates: updates,
+      });
+      expect(preview.operations).toHaveLength(2);
+      expect(new Set(preview.operations.map((op) => op.closureClassId)).size).toBe(2);
+      for (const [index, row] of updates.entries()) {
+        const replay = cloneDoc(live);
+        try {
+          Y.applyUpdate(replay, row.updateData);
+          expect(model.getBlocks(toDocHandle(replay)).map((block) => model.getText(block))).toEqual(
+            index === 0
+              ? ["Gamma Beta.", "Divider.", "Blue Silver."]
+              : ["Alpha Beta.", "Divider.", "Gold Silver."],
+          );
+          expect(replay.store.pendingStructs).toBeNull();
+        } finally {
+          replay.destroy();
+        }
+      }
+    } finally {
+      live.destroy();
+      draft.destroy();
+    }
+  });
+
   it.each([
-    { label: "shared client", adjacentRewrite: false, freshPeers: false },
     { label: "shared client with adjacent rewrite", adjacentRewrite: true, freshPeers: false },
     { label: "fresh chat peers (reported operation 72)", adjacentRewrite: false, freshPeers: true },
   ])("publishes every class and its preview complement ($label)", ({

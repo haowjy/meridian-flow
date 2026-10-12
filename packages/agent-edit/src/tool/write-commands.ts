@@ -4,6 +4,7 @@ import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
+import type { ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
@@ -338,12 +339,12 @@ export function createWriteCommands(deps: {
             overwrite.edits,
             origin,
             beforeSegment,
+            certifySegment(runtime, overwrite.ir, beforeVector, preWriteSnapshot),
           );
           if (!applied.ok) {
             restorePreWriteSnapshot(runtime, preWriteSnapshot);
             return errorResponse(applied.error.code, applied.error.message, address.filePath);
           }
-          writeCertifiedProvenance(runtime, overwrite.ir, beforeVector, preWriteSnapshot);
           touchedHashes = new Set(applied.changedBlocks);
           deletedHashes = new Set(applied.deletedBlocks);
           insertedHashes = applied.insertedBlocks;
@@ -617,9 +618,8 @@ export function createWriteCommands(deps: {
           resolved.edits,
           origin,
           beforeSegment,
+          certifySegment(runtime, resolved.ir, beforeVector, preOwnSnapshot),
         );
-        if (applied.ok)
-          writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
         return applied;
       },
       options.segmentDraftWrites,
@@ -934,6 +934,35 @@ export function createWriteCommands(deps: {
     };
   }
 
+  /** Certify inside the segment's prose transaction, before capture rotates its fresh client. */
+  function certifySegment(
+    runtime: { doc: Y.Doc },
+    ir: SemanticEditIRV1,
+    beforeStateVector: Uint8Array,
+    snapshot: Uint8Array,
+  ): (segment: readonly ResolvedEdit[]) => void {
+    return (segment) => {
+      const intent = ir.intent;
+      if (intent.kind === "fullScopeFreshReplacement") return;
+      const edits = intent.edits.filter(({ edit }) =>
+        segment.some(
+          (part) =>
+            part === edit ||
+            (part.kind === "textRanges" &&
+              edit.kind === "textRanges" &&
+              part.block === edit.block &&
+              part.replacements.some((replacement) => edit.replacements.includes(replacement))),
+        ),
+      );
+      writeCertifiedProvenance(
+        runtime,
+        { ...ir, intent: { ...intent, edits } },
+        beforeStateVector,
+        snapshot,
+      );
+    };
+  }
+
   function writeCertifiedProvenance(
     runtime: { doc: Y.Doc },
     ir: SemanticEditIRV1,
@@ -984,7 +1013,7 @@ function captureWriteUpdate<T>(
   };
   const beforeSegment = () => {
     flush();
-    if (segmented) doc.clientID = allocateDocumentClient(doc);
+    doc.clientID = allocateDocumentClient(doc);
   };
   const collect = (update: Uint8Array) => updates.push(update);
   doc.on("update", collect);

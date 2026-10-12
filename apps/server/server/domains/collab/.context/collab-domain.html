@@ -522,9 +522,12 @@ reversal history.
 <span class="ref"><code>packages/prosemirror-schema/src/index.ts</code> <code>RESERVED_CLIENT_ID_MAX</code>, <code>hocuspocus-persistence.ts</code> <code>rejectReservedClientIdUpdate</code></span>
 </p>
 <p>
-The Y.Map <code>__meridian_provenance_targets_v1</code> is the reserved
+The Y.Map <code>__meridian_provenance_targets_v2</code> is the reserved
 provenance namespace. The server writes certified target-to-root lineage facts
-there so moved or restored prose keeps its original first-birth attribution.
+there, keyed by target client and clock, in each part’s own fresh-client transaction
+so metadata cannot couple independent review rows. Moved or restored prose keeps
+its original first-birth attribution. Old dev snapshots may retain the inert v1
+array root; those facts are not read.
 A writer update that inserts into, deletes from, or anchors inside that map is
 rejected before append. A client able to edit it could rewrite whose prose is
 whose, and with it which edits count as swept writer work.

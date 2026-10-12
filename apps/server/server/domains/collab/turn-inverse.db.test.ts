@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
@@ -134,6 +134,28 @@ describe("forward card inverse", () => {
           actor: { type: "user", userId: USER_ID },
         });
         expect(outcome).toMatchObject({ status: "reversed", acceptedParts: 2, skips: [] });
+        const inverseParts = await db
+          .select({ update: schema.documentEditParts.update })
+          .from(schema.documentEditParts)
+          .innerJoin(
+            schema.documentEdits,
+            eq(schema.documentEditParts.editId, schema.documentEdits.id),
+          )
+          .where(inArray(schema.documentEdits.kind, ["undo", "redo"]));
+        for (const { update } of inverseParts) {
+          const structs = Y.decodeUpdate(update).structs;
+          // Pure inverse deletions have no inserted structs; every authored struct otherwise shares its part client.
+          expect(new Set(structs.map((item) => item.id.client)).size).toBeLessThanOrEqual(1);
+          for (const item of structs)
+            if (
+              item instanceof Y.Item &&
+              (item.parent as unknown) === "__meridian_provenance_targets_v2"
+            ) {
+              expect(item.origin).toBeNull();
+              expect(item.rightOrigin).toBeNull();
+            }
+        }
+
         expect(
           placement === "applied"
             ? await harness.liveMarkdown(ALPHA_ID)

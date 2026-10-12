@@ -11,8 +11,12 @@ import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
-export const PROVENANCE_TARGETS_TYPE = "__meridian_provenance_targets_v1";
-export const PROVENANCE_RESERVED_TYPES = [PROVENANCE_TARGETS_TYPE] as const;
+export const PROVENANCE_TARGETS_TYPE = "__meridian_provenance_targets_v2";
+// Retained dev snapshots may contain this inert root; its facts are never read.
+export const PROVENANCE_RESERVED_TYPES = [
+  PROVENANCE_TARGETS_TYPE,
+  "__meridian_provenance_targets_v1",
+] as const;
 const RESERVED_TYPE_NAMES = new Set<string>(PROVENANCE_RESERVED_TYPES);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),
@@ -251,7 +255,7 @@ export function birthClassFromAttribution(
   return "agent";
 }
 
-/** Append-only provenance-fact writer. Facts are arrays, never last-writer-wins maps. */
+/** Write-once target-keyed facts: independently authored ranges never share sequence anchors. */
 export function appendProvenanceFacts(
   doc: Y.Doc,
   input: { targets?: readonly ProvenanceTargetFactV1[] },
@@ -262,7 +266,15 @@ export function appendProvenanceFacts(
   for (const fact of newTargets) targets.add(fact.target, fact, sameTargetFact);
   assertRootUnitInjectivity(doc, targets);
   doc.transact(() => {
-    if (newTargets.length > 0) doc.getArray(PROVENANCE_TARGETS_TYPE).push(newTargets);
+    const map = doc.getMap(PROVENANCE_TARGETS_TYPE);
+    for (const fact of newTargets) {
+      const key = `${fact.target.clientID}:${fact.target.clock}`;
+      const prior = map.get(key);
+      if (prior !== undefined) {
+        if (!sameTargetFact(parseTargetFact(prior), fact))
+          throw blocked("Conflicting target assignment key");
+      } else map.set(key, fact);
+    }
   }, "meridian-provenance-write");
   primeReservedNamespaceIndex(doc);
   return Y.encodeStateAsUpdate(doc, before);
@@ -752,8 +764,10 @@ export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
 
 function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
   const index = new RangeIndex<ProvenanceTargetFactV1>("target assignment");
-  for (const value of doc.getArray(PROVENANCE_TARGETS_TYPE).toArray()) {
+  for (const [key, value] of doc.getMap(PROVENANCE_TARGETS_TYPE).entries()) {
     const fact = parseTargetFact(value);
+    if (key !== `${fact.target.clientID}:${fact.target.clock}`)
+      throw blocked("Target assignment key does not name its target");
     index.add(fact.target, fact, sameTargetFact);
   }
   return index;
@@ -897,6 +911,16 @@ function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
 }
 
 function collectTypeStructs(type: unknown, index: ReservedRangeIndex): void {
+  const map = (type as { _map?: Map<string, YItemLike> })._map;
+  for (const entry of map?.values() ?? []) {
+    let item: YItemLike | null = entry;
+    while (item) {
+      index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length });
+      const content = (item as unknown as { content?: { getContent?: () => unknown[] } }).content;
+      for (const child of content?.getContent?.() ?? []) collectTypeStructs(child, index);
+      item = item.left ?? null;
+    }
+  }
   let item = (type as { _start?: YItemLike | null })._start ?? null;
   while (item) {
     index.add({ clientID: item.id.client, clock: item.id.clock, length: item.length });
@@ -1091,7 +1115,18 @@ export function appendInverseRestorationFacts(
         clock: alias.source.clock + offset,
         length: 1,
       };
-      targets.push({ version: 1, target, root: resolvedRootUnits(assignments, source)[0] });
+      const root = resolvedRootUnits(assignments, source)[0];
+      const previous = targets.at(-1);
+      if (
+        previous &&
+        previous.target.clientID === target.clientID &&
+        end(previous.target) === target.clock &&
+        previous.root.clientID === root.clientID &&
+        end(previous.root) === root.clock
+      ) {
+        previous.target.length++;
+        previous.root.length++;
+      } else targets.push({ version: 1, target, root });
     }
   }
   appendProvenanceFacts(doc, { targets });

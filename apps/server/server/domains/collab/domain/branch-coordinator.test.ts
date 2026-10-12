@@ -28,7 +28,7 @@ function docWithText(value: string): Y.Doc {
 function documentWithReservedFacts(): Y.Doc {
   const doc = docWithText("seed");
   const nested = new Y.Array<unknown>();
-  doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
+  doc.getMap(PROVENANCE_TARGETS_TYPE).set("nested", nested);
   nested.push(["authority fact"]);
   return doc;
 }
@@ -198,7 +198,7 @@ describe("BranchCoordinator", () => {
     const roomDocument = materialize(storedBranch(store, "work"));
     const hostileClient = materialize(storedBranch(store, "work"));
     const before = Y.encodeStateVector(hostileClient);
-    hostileClient.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1);
+    hostileClient.getMap(PROVENANCE_TARGETS_TYPE).delete("nested");
     const updateData = Y.encodeStateAsUpdate(hostileClient, before);
 
     const coordinator = createBranchCoordinator({ store });
@@ -213,9 +213,7 @@ describe("BranchCoordinator", () => {
     ).rejects.toThrow("reserved provenance");
 
     expect(store.journal).toHaveLength(0);
-    expect(materialize(storedBranch(store, "work")).getArray(PROVENANCE_TARGETS_TYPE)).toHaveLength(
-      1,
-    );
+    expect(materialize(storedBranch(store, "work")).getMap(PROVENANCE_TARGETS_TYPE).size).toBe(1);
   });
 
   it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
