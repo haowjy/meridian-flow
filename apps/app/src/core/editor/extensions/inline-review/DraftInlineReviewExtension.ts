@@ -446,6 +446,18 @@ export function buildInlineReviewPlugin({
       // first-listed operation as the active one — surfaces reading plugin
       // state (the dock Changes rows) can reflect the emphasis.
       handleDOMEvents: {
+        input: (view) => {
+          // Review projection can repaint before the MutationObserver's delivery,
+          // overwriting a native input's caret with the previous PM selection.
+          // Consume it through PM's own observer (prosemirror-view 1.41.9), not a
+          // second DOM parser or a numeric selection repair after the repaint.
+          const { domObserver } = view as EditorView & {
+            domObserver: { forceFlush(): void; flush(): void };
+          };
+          domObserver.forceFlush();
+          domObserver.flush();
+          return false;
+        },
         mousedown: (view, event) => {
           const target = event.target as HTMLElement | null;
           const hit = target?.closest?.(`[${OPERATION_ATTR}]`);
