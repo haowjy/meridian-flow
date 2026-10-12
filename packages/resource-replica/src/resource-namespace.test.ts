@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { planResourceDeletion } from "./resource-deletion";
 import {
   installCanonicalRefresh,
+  namespaceOutcomeMatches,
   prepareNamespaceAttempt,
   reconcileResourceNamespace,
   recordNamespaceOutcome,
@@ -11,6 +12,7 @@ import {
 } from "./resource-namespace";
 import { projectResourceLocation, projectResourceNeedsRepair } from "./resource-projection";
 import type {
+  NamespaceAttempt,
   NamespaceOutcome,
   ResourceMetadataStore,
   ResourceNamespaceTransport,
@@ -991,4 +993,42 @@ it.each([
     kind: "delete",
     body: { path: "A.md", expected: { kind: "file", documentId: "document" } },
   });
+});
+
+it("refuses a move receipt for a different captured destination parent", () => {
+  const attempt: NamespaceAttempt = {
+    attemptId: "attempt",
+    request: {
+      kind: "move",
+      scheme: "manuscript",
+      sourceWorkSlug: null,
+      destinationWorkSlug: null,
+      body: {
+        operationId: "operation",
+        path: "A.md",
+        expected: { kind: "file", nodeId: "document" },
+        destinationScheme: "manuscript",
+        destinationFolderPath: "B",
+        destinationParent: { kind: "folder", folderId: "selected" },
+      },
+    },
+  };
+  const outcome: NamespaceOutcome = {
+    kind: "operation",
+    receipt: {
+      operationId: "operation",
+      command: {
+        kind: "move",
+        sourceUri: "manuscript://A.md",
+        destinationUri: "manuscript://B/A.md",
+        expected: { kind: "file", nodeId: "document" },
+        destinationParent: { kind: "folder", folderId: "replacement" },
+      },
+      result: { ok: true, value: { destinationPath: "B/A.md" } },
+    },
+  };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(false);
+  if (outcome.receipt.command.kind !== "move") throw new Error("Expected move receipt");
+  outcome.receipt.command.destinationParent = { kind: "folder", folderId: "selected" };
+  expect(namespaceOutcomeMatches(attempt, outcome)).toBe(true);
 });

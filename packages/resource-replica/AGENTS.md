@@ -26,6 +26,10 @@ by a later command (including a reminted create conflict) is terminal
 `superseded`: retain its attempts as evidence, never as executable work or
 placement/deletion ownership.
 
+Move receipt matching includes the captured destination parent identity when the
+request carries one. The server supports that contract; local destination producers
+still use paths until the identity-parent restructuring is completed.
+
 Typed non-retryable HTTP 4xx refusals also settle namespace attempts when route
 intake rejects before a server receipt exists. Persist that refusal against the
 submitted operation ID, never invent a server receipt. Bare HTTP/network failures

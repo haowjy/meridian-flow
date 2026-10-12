@@ -73,6 +73,9 @@ until an authorized terminal cleanup transition.
 
 `reconcileResourceNamespace` persists an immutable attempt before dispatch,
 records received evidence separately, and applies it through metadata CAS.
+Move receipt matching checks the selected parent identity as well as the existing
+URI and expected-source fields. Destination identity is currently an optional
+wire capability; the local path-based destination model has not yet been replaced.
 Receipt lookup and dispatch share a short account/resource lock with future
 identity and terminal transitions. Historical move receipts create a canonical
 refresh obligation; a post-receipt catalog or exact-ID availability lookup may
