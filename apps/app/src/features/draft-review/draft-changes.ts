@@ -40,7 +40,7 @@ export type DraftChangesView = {
   locked: boolean;
   /**
    * The draft is still open, but its read lists no change and no command of
-   * ours is hiding one: what remains (formatting) has no per-change view.
+   * ours is hiding one. This is not evidence of terminal settlement.
    * Apply draft and Discard draft are the way to finish it.
    */
   unlisted: boolean;

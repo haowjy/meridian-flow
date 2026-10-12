@@ -252,6 +252,8 @@ function removedSegments(
   operationsById: ReadonlyMap<string, ReviewOperation>,
 ): RemovalSegment[] {
   if (hunk.kind === "block") {
+    // A rich-only change tints the actual draft node, not a fake text removal.
+    if (hunk.insertedBlock?.display === hunk.deletedBlock?.display) return [];
     const text = hunk.deletedBlock?.display;
     return text ? [{ text, kind: blockRemovalKind(hunk, operationsById) }] : [];
   }

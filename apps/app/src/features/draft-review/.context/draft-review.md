@@ -32,8 +32,11 @@ Draft-to-Auto-apply transitions or count bookkeeping-only branches as changes.
 `closureClassId`, ordered by earliest hunk with class ID breaking ties. Send all
 operations in the class, never a representative. Only new documents become one whole-draft item, with all
 mark keys and attribution retained. Its Apply/Discard use existing whole-draft
-commands, never synthetic IDs in a selective request. With no hunks or
-operations, the preview remains formatting-only. Whole claims hide the addressed
+commands, never synthetic IDs in a selective request. Formatting-only edits have
+server classes and whole-block decorations. Rich hunks carry semantic formatting
+facts; the client localizes their one-line row description through messages.po
+(provisional wording). Unchanged text is never shown struck through beside itself.
+Whole claims hide the addressed
 generation's preview optimistically; failures restore it.
 Existing documents retain each class. Unclassified hunks and classes flagged
 `canApplyOrDiscard: false` show no selective controls; other classes remain
@@ -146,8 +149,7 @@ A non-closing answer or failed/released claim withdraws pending. Closed stays
 sticky while that review remains open, including after claim release. Opening
 later adopts only current cache/claim evidence, not an old closing answer.
 An empty list never means finished: `useReviewChanges` derives `finished` only
-from closed completion, `completing` from pending, and `unlisted` for formatting
-residue with no listed changes or command hiding them.
+from closed completion, `completing` from pending, and `unlisted` for an active preview with no listed changes or command hiding them.
 
 Pending last Discard shows warm live text inert; refusal/non-closure restores
 review. Pending last Apply keeps the review editor with marks gone until the

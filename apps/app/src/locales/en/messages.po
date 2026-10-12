@@ -198,6 +198,10 @@ msgstr "{0} subagents finished ({1} stopped)"
 msgid "{0} tok/s"
 msgstr "{0} tok/s"
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "{before} → {after}"
+msgstr "{before} → {after}"
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
@@ -265,6 +269,18 @@ msgstr "{hours}h"
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "{links, plural, one {Updated # link} other {Updated # links}}"
 msgstr "{links, plural, one {Updated # link} other {Updated # links}}"
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "{mark} changed on “{text}”"
+msgstr "{mark} changed on “{text}”"
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "{mark} off “{text}”"
+msgstr "{mark} off “{text}”"
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "{mark} on “{text}”"
+msgstr "{mark} on “{text}”"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -652,6 +668,10 @@ msgstr "Between {0} and {1}."
 msgid "Billing"
 msgstr "Billing"
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "Block"
+msgstr "Block"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Block alignment"
 msgstr "Block alignment"
@@ -660,6 +680,7 @@ msgstr "Block alignment"
 msgid "blockquote"
 msgstr "blockquote"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
@@ -673,6 +694,7 @@ msgstr "Brainstorm away"
 msgid "Breadcrumb"
 msgstr "Breadcrumb"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
 msgstr "Bullet list"
@@ -936,6 +958,10 @@ msgstr "Close the list"
 #: src/features/editor/SyncStatus.tsx
 msgid "Closed"
 msgstr "Closed"
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "Code"
+msgstr "Code"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2013,6 +2039,14 @@ msgstr "Fork from here"
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
 
+#: src/features/draft-review/operation-change-text.ts
+msgid "Formatting"
+msgstr "Formatting"
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "Formatting changed"
+msgstr "Formatting changed"
+
 #: src/features/draft-review/ReviewCompletion.tsx
 #: src/features/project/work/WorkChangeFile.tsx
 msgid "Formatting changes remain"
@@ -2089,9 +2123,14 @@ msgstr "Handoff brief unavailable"
 msgid "Header row"
 msgstr "Header row"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
 msgstr "Heading"
+
+#: src/features/draft-review/operation-change-text.ts
+msgid "Heading {before} → {after}"
+msgstr "Heading {before} → {after}"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2238,6 +2277,7 @@ msgstr "Invoking a skill…"
 msgid "It may have moved or been removed."
 msgstr "It may have moved or been removed."
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Italic"
@@ -2302,6 +2342,7 @@ msgstr "Let's work on it"
 msgid "Light"
 msgstr "Light"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Link"
 msgstr "Link"
@@ -2788,6 +2829,7 @@ msgstr "Nothing to undo yet."
 msgid "now"
 msgstr "now"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Numbered list"
@@ -2942,6 +2984,7 @@ msgstr "Output tokens"
 msgid "Over your monthly usage"
 msgstr "Over your monthly usage"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Paragraph"
 msgstr "Paragraph"
@@ -3715,6 +3758,7 @@ msgstr "Stopping compaction"
 msgid "Stopping the handoff brief"
 msgstr "Stopping the handoff brief"
 
+#: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
 msgstr "Strikethrough"

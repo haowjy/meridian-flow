@@ -18,7 +18,11 @@ import {
   type ChangeAttribution,
   changeAttribution,
 } from "./change-attribution";
-import { changeTextForHunks, type OperationChangeText } from "./operation-change-text";
+import {
+  changeTextForHunks,
+  formattingChangeText,
+  type OperationChangeText,
+} from "./operation-change-text";
 
 /**
  * The dot's colour family: AI, the writer's, an AI removal, a merge nobody can
@@ -254,5 +258,7 @@ export function changeExcerpt(change: ReviewChange): {
     const flat = text?.replace(/\s+/g, " ").trim();
     return flat ? flat : null;
   };
+  if (change.change.formatting?.length)
+    return { added: change.change.formatting.map(formattingChangeText).join(". "), removed: null };
   return { added: squash(change.change.added), removed: squash(change.change.removed) };
 }

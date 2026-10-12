@@ -4,6 +4,7 @@
  * Pins the grouping (never repaired on the client), document order from the
  * hunks, visible author attribution and class-owned excerpts.
  */
+import { i18n } from "@lingui/core";
 import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
@@ -118,18 +119,30 @@ describe("reviewChanges", () => {
 });
 
 describe("a change's hunks", () => {
-  it("reads the text of the hunks its operations own, and of no other class", () => {
+  it("reads the semantic formatting of its class, without fake text additions or removals", () => {
+    i18n.loadAndActivate({ locale: "en", messages: {} });
     const ops = [
       op({ operationId: "a", closureClassId: "c1" }),
       op({ operationId: "b", closureClassId: "c2" }),
     ];
     const hunks = [
-      textHunk({ hunkId: "h1", operationIds: ["a"], deletedText: "old a" }),
+      {
+        kind: "block" as const,
+        hunkId: "h1",
+        operationIds: ["a"],
+        anchor: { relStart: "", relEnd: "" },
+        insertedBlock: { type: "paragraph", display: "red" },
+        deletedBlock: { type: "paragraph", display: "red" },
+        formatting: [
+          { kind: "mark" as const, mark: "strong", change: "added" as const, text: "red" },
+        ],
+      },
       textHunk({ hunkId: "h2", operationIds: ["b"], deletedText: "old b" }),
-      textHunk({ hunkId: "h3", operationIds: ["a", "b"], deletedText: "shared" }),
     ];
     const [first, second] = reviewChanges(ops, hunks);
-    expect(first.change.removed).toBe("old a\nshared");
-    expect(second.change.removed).toBe("old b\nshared");
+    expect(first.change.removed).toBeNull();
+    expect(first.change.added).toBeNull();
+    expect(changeExcerpt(first)).toEqual({ added: "Bold on “red”", removed: null });
+    expect(second.change.removed).toBe("old b");
   });
 });

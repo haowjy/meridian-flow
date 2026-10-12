@@ -19,7 +19,7 @@ import {
 } from "./branch-push-contracts.js";
 import { assertNoPendingIntegration } from "./branch-push-plan.js";
 import { createBranchTurnReversalPlanner } from "./branch-turn-reversal-plan.js";
-import { documentEffectsEqual } from "./document-effect.js";
+import { documentEffectsEqual } from "./document-content.js";
 
 type Dependencies = {
   branchStore: BranchStore;

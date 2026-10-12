@@ -1,8 +1,13 @@
 /** Replays draft history into an attribution index, preserving explicit coverage failure. */
 
+import { isDeepStrictEqual } from "node:util";
 import type { ReviewDeletedSpan } from "@meridian/contracts/drafts";
-import { restorationAliasesFromMetadata } from "@meridian/prosemirror-schema";
+import {
+  PROSEMIRROR_FRAGMENT_NAME,
+  restorationAliasesFromMetadata,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { contentValue, visibleContent } from "./document-content.js";
 import {
   asPhysicalSourceUpdateIds,
   asSourceUpdateIds,
@@ -100,6 +105,17 @@ export function indexDraftUpdates(input: {
         operationIds: operationIdsForVisibleRange(introduced, deleted, range),
       }));
       const deletedContent = deletedContentForRanges(replayDoc, beforeVisibility);
+      const recreatesFormatting =
+        decoded.structs.some(
+          (struct) => struct instanceof Y.Item && struct.content instanceof Y.ContentFormat,
+        ) &&
+        beforeVisibility.some(({ range, visible }) => {
+          const item = findItem(replayDoc, range.client, range.clock);
+          return visible && item instanceof Y.Item && item.content instanceof Y.ContentFormat;
+        });
+      const beforeContent = recreatesFormatting
+        ? visibleContent(replayDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))
+        : null;
 
       const certifiedAliases = restorationAliasesFromMetadata(update.updateMeta);
       const beforeState = Y.decodeStateVector(Y.encodeStateVector(replayDoc));
@@ -119,7 +135,19 @@ export function indexDraftUpdates(input: {
 
       Y.applyUpdate(replayDoc, update.updateData, { origin: { type: "branch-review" } });
 
-      for (const alias of certifiedAliases) {
+      const richRestorationAliases =
+        beforeContent !== null &&
+        isDeepStrictEqual(
+          beforeContent,
+          visibleContent(replayDoc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
+        )
+          ? restoredRichAliases(
+              replayDoc,
+              beforeVisibility.filter((entry) => entry.visible).map((entry) => entry.range),
+              introducedRanges,
+            )
+          : [];
+      for (const alias of [...certifiedAliases, ...richRestorationAliases]) {
         aliases.push(alias);
         clearDeletedRange(deleted, replayDoc, aliases, alias.source);
       }
@@ -224,6 +252,8 @@ export function indexDraftUpdates(input: {
       if (deletedContent.text.length > 0) {
         deletedContentByOperationId.set(operationId, deletedContent);
       }
+      for (const alias of richRestorationAliases)
+        clearDeletedRange(deleted, replayDoc, aliases, alias.source);
       if (!hasOwnEffect) byOperationId.delete(operationId);
     }
     for (const operation of byOperationId.values()) {
@@ -852,4 +882,31 @@ function splitAtAliasBoundaries(
   return clocks
     .slice(0, -1)
     .map((clock, index) => ({ client: range.client, clock, length: clocks[index + 1] - clock }));
+}
+
+/** A semantically unchanged retype can recreate mark boundaries; later removals still own their effects. */
+function restoredRichAliases(
+  doc: Y.Doc,
+  removed: readonly ClockRange[],
+  introduced: readonly ClockRange[],
+): RangeAlias[] {
+  const remaining = [...introduced];
+  return removed.flatMap((source) => {
+    const old = findItem(doc, source.client, source.clock);
+    if (!(old instanceof Y.Item) || !(old.content instanceof Y.ContentFormat)) return [];
+    const oldFormat = old.content;
+    const index = remaining.findIndex((target) => {
+      const fresh = findItem(doc, target.client, target.clock);
+      return (
+        fresh instanceof Y.Item &&
+        fresh.content instanceof Y.ContentFormat &&
+        old.parent === fresh.parent &&
+        oldFormat.key === fresh.content.key &&
+        isDeepStrictEqual(contentValue(oldFormat.value), contentValue(fresh.content.value))
+      );
+    });
+    if (index < 0) return [];
+    const [target] = remaining.splice(index, 1);
+    return [{ source, target }];
+  });
 }

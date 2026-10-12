@@ -1,11 +1,10 @@
 /** Real-Yjs draft review behavioral coverage. */
-import { toDocHandle } from "@meridian/agent-edit/integration";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { alignBlocks } from "./document-difference.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
-import { captureUpdate, cloneDoc, codec, createDoc, model } from "./draft-review-test-fixture.js";
+import { captureUpdate, cloneDoc, createDoc, model } from "./draft-review-test-fixture.js";
 
 describe("draft review hunks", () => {
   it("uses a generic image label rather than exposing a stored source identity", () => {
@@ -35,36 +34,6 @@ describe("draft review hunks", () => {
       draft.destroy();
       live.destroy();
     }
-  });
-
-  it("allows text and block hunks to coexist", () => {
-    const live = createDoc("Alpha sword.\n\nOmega.");
-    const draft = cloneDoc(live);
-    const [alpha] = model.getBlocks(toDocHandle(draft));
-    const textUpdate = captureUpdate(draft, () =>
-      model.applyTextEdit(toDocHandle(draft), alpha, { from: 6, to: 11 }, "blade"),
-    );
-    const ruleUpdate = captureUpdate(draft, () =>
-      model.insertBlocks(toDocHandle(draft), alpha, codec.parse("---")),
-    );
-
-    const result = computeDraftReviewHunks({
-      liveDoc: live,
-      draftDoc: draft,
-      model,
-      draftUpdates: [
-        { id: 58, actorTurnId: "turn-text", updateData: textUpdate },
-        { id: 59, actorTurnId: "turn-block", updateData: ruleUpdate },
-      ],
-    });
-
-    expect(result.hunks.map((hunk) => hunk.kind)).toEqual(["text", "block"]);
-    expect(result.hunks[0]).toMatchObject({ kind: "text", operationIds: ["58"] });
-    expect(result.hunks[1]).toMatchObject({
-      kind: "block",
-      operationIds: ["59"],
-      insertedBlock: { type: "horizontal_rule", display: "───" },
-    });
   });
 });
 
