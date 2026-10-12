@@ -5,6 +5,7 @@ import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
 import type { ScreenKey } from "../shell/screens";
 import { useOpenEditorReview, usePendingEditorReviewDraftId } from "./editor-review-handoff";
+import { exitedReviewOwnsAddress } from "./review-address-ownership";
 
 export function EditorReviewAddressOwner({
   review,
@@ -72,10 +73,11 @@ export function EditorReviewAddressOwner({
       restoring.current = null;
       // Exiting the previous review cannot consume a different destination's request.
       if (
-        requestedDraftId &&
-        owned.workId === review.controller.workId &&
-        owned.documentId === activeDocumentId &&
-        owned.draftId === requestedDraftId
+        exitedReviewOwnsAddress(owned, {
+          workId: review.controller.workId,
+          documentId: activeDocumentId,
+          draftId: requestedDraftId,
+        })
       ) {
         onSetDraftId(null);
         return;

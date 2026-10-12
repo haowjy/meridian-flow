@@ -37,6 +37,7 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
+import { documentAddressReview } from "./document-address-review";
 import {
   DocumentSwitchFailureProvider,
   destinationFailure,
@@ -353,9 +354,7 @@ function ReadableProjectDestination({
         documentDestination.path,
         {
           ...addressOwner,
-          ...(address.draftId && addressWorkId
-            ? { review: { workId: addressWorkId, draftBranchId: address.draftId } }
-            : {}),
+          review: documentAddressReview(address.draftId, addressWorkId),
         },
       );
     },
