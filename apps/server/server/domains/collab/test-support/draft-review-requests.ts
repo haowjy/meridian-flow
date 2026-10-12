@@ -61,13 +61,20 @@ export function fencedRequest<T>(
   command: T,
   preview: Pick<
     Extract<DraftPreviewResponse, { status: "active" }>,
-    "liveRevisionToken" | "draftRevisionToken"
+    "liveRevisionToken" | "draftRevisionToken" | "operations"
   >,
   operationIds: string[],
 ) {
   return {
     ...command,
     operationIds,
+    closureClassIds: [
+      ...new Set(
+        preview.operations
+          .filter((op) => operationIds.includes(op.operationId))
+          .map((op) => op.closureClassId),
+      ),
+    ],
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
   };

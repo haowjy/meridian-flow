@@ -38,6 +38,7 @@ it.each([
     const selection = {
       ...command,
       operationIds: preview.operations.map((op) => op.operationId),
+      closureClassIds: [...new Set(preview.operations.map((op) => op.closureClassId))],
       liveRevisionToken: preview.liveRevisionToken,
       draftRevisionToken: preview.draftRevisionToken,
     };

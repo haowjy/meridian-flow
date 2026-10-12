@@ -16,12 +16,25 @@ describe("Discard request selection", () => {
   it("reserves whole Discard for a genuinely absent selection", () => {
     expect(parseDraftDiscardSelection({})).toEqual({ status: "ready", command: {} });
     expect(() => parseDraftDiscardSelection({ liveRevisionToken: "live" })).toThrow();
+    expect(() => parseDraftDiscardSelection({ closureClassIds: ["class"] })).toThrow();
   });
-  it("refuses missing selective revisions as stale", () => {
+  it("refuses missing selective admission evidence as stale", () => {
     expect(parseDraftDiscardSelection({ operationIds: ["1"] })).toEqual({ status: "stale" });
+    expect(
+      parseDraftDiscardSelection({
+        operationIds: ["1"],
+        liveRevisionToken: "live",
+        draftRevisionToken: "draft",
+      }),
+    ).toEqual({ status: "stale" });
   });
   it("keeps the complete typed selective command", () => {
-    const command = { operationIds: ["1"], liveRevisionToken: "live", draftRevisionToken: "draft" };
+    const command = {
+      closureClassIds: ["class"],
+      operationIds: ["1"],
+      liveRevisionToken: "live",
+      draftRevisionToken: "draft",
+    };
     expect(parseDraftDiscardSelection(command)).toEqual({ status: "ready", command });
   });
 });

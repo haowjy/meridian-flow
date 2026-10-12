@@ -376,6 +376,7 @@ describe("document edit receipts (Postgres)", () => {
           ...target,
           userId: USER_ID as never,
           operationIds: [op.operationId],
+          closureClassIds: [op.closureClassId],
           liveRevisionToken: preview.liveRevisionToken,
           draftRevisionToken: preview.draftRevisionToken,
         };
@@ -963,6 +964,7 @@ describe("document edit receipts (Postgres)", () => {
           ...target,
           userId: USER_ID as never,
           operationIds: [change.operationId],
+          closureClassIds: [change.closureClassId],
           liveRevisionToken: preview.liveRevisionToken,
           draftRevisionToken: preview.draftRevisionToken,
         };
@@ -1055,6 +1057,7 @@ describe("document edit receipts (Postgres)", () => {
             ...target,
             userId: USER_ID as never,
             operationIds: [preview.operations[0].operationId],
+            closureClassIds: [preview.operations[0].closureClassId],
             liveRevisionToken: preview.liveRevisionToken,
             draftRevisionToken: preview.draftRevisionToken,
           }),
@@ -1189,6 +1192,7 @@ describe("document edit receipts (Postgres)", () => {
           ...target,
           userId: USER_ID as never,
           operationIds: [next.operations[0].operationId],
+          closureClassIds: [next.operations[0].closureClassId],
           liveRevisionToken: next.liveRevisionToken,
           draftRevisionToken: next.draftRevisionToken,
         }),

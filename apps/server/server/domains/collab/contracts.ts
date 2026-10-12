@@ -288,8 +288,18 @@ export type DocumentCheckpoints = {
 };
 
 export type DraftDiscardCommand =
-  | { operationIds?: never; liveRevisionToken?: never; draftRevisionToken?: never }
-  | { operationIds: string[]; liveRevisionToken: string; draftRevisionToken: string };
+  | {
+      operationIds?: never;
+      liveRevisionToken?: never;
+      draftRevisionToken?: never;
+      closureClassIds?: never;
+    }
+  | {
+      operationIds: string[];
+      liveRevisionToken: string;
+      draftRevisionToken: string;
+      closureClassIds: string[];
+    };
 
 export type DraftReviewApi = {
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
