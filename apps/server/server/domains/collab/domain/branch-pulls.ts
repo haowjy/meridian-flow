@@ -32,6 +32,7 @@ export type BranchPullService = {
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
+    peerBranchId: string;
     branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
@@ -236,7 +237,13 @@ export function createBranchPullService(input: {
             else await input.branchCoordinator.pullFromBranch(peer.branchId);
           });
           const branchGeneration = upstream?.generation ?? captured.peerGeneration;
-          return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
+          return {
+            peerBranchId: peer.branchId,
+            branchGeneration,
+            afterJournalId,
+            liveJournalSeq,
+            attributionBaseline,
+          };
         } finally {
           liveDoc.destroy();
         }

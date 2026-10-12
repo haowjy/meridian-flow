@@ -164,6 +164,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
 }
 
 type PulledThreadPeer = {
+  peerBranchId?: string;
   branchGeneration: number;
   afterJournalId?: number;
   liveJournalSeq?: number;
@@ -225,7 +226,7 @@ export function createThreadPeerCorePool(input: {
   const responses = new Map<string, ResponseRecord>();
   // D41: the version of each document the model last read or wrote, per thread.
   // Process-local like the runtime docs it guards; a restart forgets it.
-  const lastSeen = new Map<string, FileDestination>();
+  const lastSeen = new Map<string, { destination: FileDestination; peerBranchId?: string }>();
   const maxThreadCores = input.maxThreadCores ?? 128;
 
   /**
@@ -338,6 +339,7 @@ export function createThreadPeerCorePool(input: {
       ...context,
       interactionContext: {
         mode: "threadPeer" as const,
+        peerBranchId: pulled.peerBranchId,
         branchGeneration: pulled.branchGeneration,
         afterJournalId: pulled.afterJournalId ?? 0,
         liveJournalSeq: pulled.liveJournalSeq,
@@ -378,15 +380,20 @@ export function createThreadPeerCorePool(input: {
       : (pinned?.grant.destination ?? requested);
     const core = pinned?.core ?? coreForDestination(destination, context.threadId);
     await evictIdleCores();
-    const outcome = await core.read(
-      command,
+    const callContext =
       command.format === "edits"
         ? routedTo(context, destination)
-        : await threadPeerContext(core, documentId, routedTo(context, destination)),
-    );
+        : await threadPeerContext(core, documentId, routedTo(context, destination));
+    const outcome = await core.read(command, callContext);
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
-      lastSeen.set(seenKey(context.threadId, documentId), destination);
+      lastSeen.set(seenKey(context.threadId, documentId), {
+        destination,
+        peerBranchId:
+          callContext.interactionContext?.mode === "threadPeer"
+            ? callContext.interactionContext.peerBranchId
+            : undefined,
+      });
     }
     const read = outcome.result.read;
     // Results name the version actually read, which a reply's pin can choose.
@@ -410,8 +417,8 @@ export function createThreadPeerCorePool(input: {
     const destination = pinned?.grant.destination ?? grant.destination;
     if (documentId && context.threadId) {
       const seen = lastSeen.get(seenKey(context.threadId, documentId));
-      if (seen && !sameDestination(seen, destination)) {
-        return readRequired(command, seen, destination);
+      if (seen && !sameDestination(seen.destination, destination)) {
+        return readRequired(command, seen.destination, destination);
       }
     }
     const core = pinned?.core ?? coreForDestination(destination, context.threadId);
@@ -424,19 +431,24 @@ export function createThreadPeerCorePool(input: {
     await evictIdleCores();
     const immediateInverse =
       command.command === "undo" || command.command === "redo" || command.command === "revert";
-    const call = async () =>
-      core.write(
-        command,
-        immediateInverse
-          ? routedTo(context, destination)
-          : await threadPeerContext(core, documentId, routedTo(context, destination)),
-      );
+    let callContext = routedTo(context, destination);
+    const call = async () => {
+      if (!immediateInverse) callContext = await threadPeerContext(core, documentId, callContext);
+      return core.write(command, callContext);
+    };
     const outcome =
       record && !immediateInverse
         ? await call()
         : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
     if (!outcome.isError && documentId) {
-      if (context.threadId) lastSeen.set(seenKey(context.threadId, documentId), destination);
+      if (context.threadId)
+        lastSeen.set(seenKey(context.threadId, documentId), {
+          destination,
+          peerBranchId:
+            callContext.interactionContext?.mode === "threadPeer"
+              ? callContext.interactionContext.peerBranchId
+              : undefined,
+        });
       if (!context.responseIdentity?.editScopeId && destination.kind === "live")
         input.afterLiveCommit?.(documentId);
     }
@@ -491,15 +503,21 @@ export function createThreadPeerCorePool(input: {
     };
   }
 
-  async function retireThreadPeers(docId: string, threadIds: readonly string[]): Promise<void> {
+  async function retireThreadPeers(
+    docId: string,
+    peers: readonly { threadId: string; peerBranchId: string }[],
+  ): Promise<void> {
     const errors: unknown[] = [];
-    for (const threadId of new Set(threadIds)) {
+    for (const { threadId, peerBranchId } of peers) {
+      if (!docId || !threadId || !peerBranchId)
+        throw new Error("Retirement names one document, thread and peer branch");
       const id = threadId as ThreadId;
-      lastSeen.delete(seenKey(id, docId as DocumentId));
+      const key = seenKey(id, docId as DocumentId);
+      if (lastSeen.get(key)?.peerBranchId === peerBranchId) lastSeen.delete(key);
       // Response-pinned owners survive cache eviction and must lose these buffers too.
       for (const core of new Set([...ownersForThread(id), input.liveUtilityCore])) {
         try {
-          await core.invalidateThreadDocument(docId, threadId);
+          await core.invalidateThreadDocument(docId, threadId, peerBranchId);
         } catch (cause) {
           errors.push(cause);
         }
@@ -615,10 +633,13 @@ export function createThreadPeerCorePool(input: {
       );
     },
     retireThreadPeers,
-    async invalidateThreadDocument(docId, threadId) {
-      if (!docId || !threadId)
+    async invalidateThreadDocument(docId, threadId, peerBranchId) {
+      if (!docId || !threadId || peerBranchId === "")
         throw new Error("invalidateThreadDocument names one document and one thread");
-      await retireThreadPeers(docId, [threadId]);
+      if (peerBranchId) return retireThreadPeers(docId, [{ threadId, peerBranchId }]);
+      lastSeen.delete(seenKey(threadId, docId as DocumentId));
+      for (const core of new Set([...ownersForThread(threadId as ThreadId), input.liveUtilityCore]))
+        await core.invalidateThreadDocument(docId, threadId);
     },
     async evictThread(threadId) {
       if (!threadId) throw new Error("evictThread names one thread");

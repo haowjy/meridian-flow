@@ -850,4 +850,6 @@ draft. A reply's staged edits to other documents must still finish.
 The repeatable service-seam check is
 `DB_TEST_WORKERS=1 pnpm test:db apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts`.
 It also checks that retirement waits for transaction commit and closes only A's
-peer room. This is DB integration evidence, not a browser or live-runtime probe.
+peer room. It also gates retirement after commit, evicts the old reply entry as
+a refusal would, and stages a fresh peer's write in the same open reply before
+releasing that gate; the fresh write and room must survive. This is DB integration evidence, not a browser or live-runtime probe.

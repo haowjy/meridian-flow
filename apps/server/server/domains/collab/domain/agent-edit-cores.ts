@@ -61,7 +61,10 @@ export type ThreadPeerAgentEditCore = Omit<AgentEditCore, "read" | "write" | "co
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
   /** Where this reply's writes to a document go, once it has written there. */
   /** Retire only the thread/document states named by a committed branch closure. */
-  retireThreadPeers(documentId: string, threadIds: readonly string[]): Promise<void>;
+  retireThreadPeers(
+    documentId: string,
+    peers: readonly { threadId: string; peerBranchId: string }[],
+  ): Promise<void>;
   responseDestination(responseId: string, documentId: string): FileDestination | undefined;
   commitResponse(
     responseId: string,
