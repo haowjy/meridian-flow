@@ -96,8 +96,8 @@ prove your message was answered or the thread is idle.
   A failed or cancelled run is a `result`, never a terminal `error` record.
 - A send or `tail --until-idle` deadline reads one final snapshot. Its result
   reports `stillRunning` (turn id and status, or null), `owed` (pending writer
-  messages), and `next` commands. If the snapshot lacks the pending inbox,
-  `pendingUnavailable: true` replaces `owed`. Text says when the server is
+  messages), and `next` commands. The pending inbox is a mandatory live-state
+  field. Text says when the server is
   still running and how to stop it. **Timeout never cancels a run.** Plain
   `tail` remains a bounded live view and exits 0 when its wait expires.
 - `tail --until-idle` currently waits for the next `turn.finished` or
@@ -113,6 +113,12 @@ prove your message was answered or the thread is idle.
   once through the app's admission route. Accepted resumes following; rejected
   or not seen exits 1; a failed lookup or still-pending admission exits 6
   `admission_unknown`. `send --no-wait` proves admission only.
+- Before reporting complete, `send` reads a snapshot. If its admitted user turn
+  id is still in `liveState.pending.items`, it exits 6 `unproven` with reason
+  `owed`, `stillRunning`, the pending writer messages, and
+  `./mf thread tail <thread> --until-idle` as the next command. It prints no
+  answer for this unproven result. Absence from pending does not yet prove
+  which reply answered the message; that binding remains phase 2.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
   The staged result alone does not prove a committed write.

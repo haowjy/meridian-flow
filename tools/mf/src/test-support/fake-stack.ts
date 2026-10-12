@@ -143,7 +143,7 @@ function createFake() {
   const interruptPolicy = {
     response: "resolved" as "resolved" | "unconfirmed" | "rejected" | "other",
   };
-  const snapshotPolicy = { pending: true, running: true };
+  const snapshotPolicy = { running: true };
   const admissions = new Map<string, unknown>();
   let runCounter = 0;
   const nextSeq = () => String(journal.length + 1);
@@ -369,6 +369,60 @@ function createFake() {
       const concatenated = body.blocks.map((block) => block.text ?? "").join("");
       if (concatenated !== body.text) return send(400, { message: "text must equal blocks" });
       const resumeAfterSeq = String(journal.length);
+      if (body.text === "steer behind completed run") {
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const first: FakeTurn = {
+          id: "reply-first",
+          role: "assistant",
+          status: "streaming",
+          error: null,
+          text: "",
+        };
+        const second: FakeTurn = {
+          id: "reply-second",
+          role: "assistant",
+          prevTurnId: userTurnId,
+          status: "pending",
+          error: null,
+          text: "",
+        };
+        turns.push(
+          first,
+          { id: userTurnId, role: "user", status: "complete", error: null, text: body.text },
+          second,
+        );
+        pendingItems.push({
+          id: userTurnId,
+          seq: runCounter,
+          intent: "message",
+          provenance: { kind: "writer", actorId: "u1" },
+          deliveryState: "waiting",
+          summary: body.text,
+          enqueuedAt: "2026-01-02T00:00:00.000Z",
+        });
+        setTimeout(() => {
+          first.status = "complete";
+          first.text = "First answer";
+          second.status = "streaming";
+          publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: first.id } as AGUIEvent);
+          publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: second.id } as AGUIEvent);
+          setTimeout(() => {
+            second.status = "complete";
+            second.text = "Second answer";
+            pendingItems.splice(0);
+            publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: second.id } as AGUIEvent);
+          }, 100);
+        }, 50);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: first.id,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
       if (body.text === "wait behind cancelled run") {
         runCounter += 1;
         const userTurnId = `turn-u${runCounter}`;
@@ -461,7 +515,6 @@ function createFake() {
         turns: turns.map(turnDto),
         liveState: {
           ...liveState(String(journal.length), pendingItems),
-          ...(!snapshotPolicy.pending ? { pending: undefined } : {}),
           runningTurnId: !snapshotPolicy.running
             ? null
             : (turns

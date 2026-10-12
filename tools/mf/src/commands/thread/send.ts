@@ -33,6 +33,7 @@ import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import {
   type Claim,
   finishResult,
+  snapshotActivity,
   type TerminalResult,
   terminalResult,
   timeoutReport,
@@ -305,6 +306,26 @@ async function followToOutcome(
         : status === "error"
           ? { outcome: "failed", reason: null }
           : { outcome: "unproven", reason: "unconfirmed" };
+  // Writer admission reuses the user turn id as the inbox id. A finished
+  // steered run cannot prove this send while that same message remains pending.
+  if (
+    claim.outcome === "complete" &&
+    snapshot.liveState.pending.items.some((item) => item.id === admitted.userTurnId)
+  ) {
+    return terminalResult(
+      "thread.send",
+      { outcome: "unproven", reason: "owed" },
+      {
+        threadId,
+        turnId: ourTurn,
+        status,
+        finalText: null,
+        error: null,
+        ...snapshotActivity(snapshot),
+        next: [`./mf thread tail ${threadId} --until-idle`],
+      },
+    );
+  }
   return terminalResult("thread.send", claim, {
     threadId,
     turnId: ourTurn,

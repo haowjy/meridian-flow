@@ -59,7 +59,12 @@ predicates are not yet the shared follow session, so the existing run-outcome
 limitations still apply. In particular `tail --until-idle` waits for the next
 `turn.finished` or `turn.failed`, not confirmed idle. On a deadline, send and
 until-idle tail read a final snapshot and report `stillRunning`, pending writer
-messages (`owed`, or `pendingUnavailable`), and `next`; they never cancel.
+messages (`owed`), and `next`; they never cancel. The pending projection is
+mandatory. Before reporting complete, send checks that the admitted user turn id
+is absent from `liveState.pending.items` (writer admission uses that same id for
+the inbox row). If it remains, send returns 6 `unproven` / `owed` with
+`stillRunning` and a next until-idle tail, not the earlier run's answer.
+This guard does not prove which reply answered; phase 2 still owns that binding.
 `respond` uses the shared interrupt sender and confirms its exact interrupt's
 journaled resolution (deadline: 6 `unconfirmed`). A replay gap makes `events`
 6 `replay_truncated` after printing the replay. Send recovers a lost HTTP

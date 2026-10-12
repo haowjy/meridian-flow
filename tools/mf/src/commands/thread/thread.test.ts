@@ -230,6 +230,31 @@ describe("thread", () => {
     });
   });
 
+  it("send refuses complete while its steered message is still owed", async () => {
+    const isolated = await startFakeStack();
+    try {
+      const result = await isolated.mf([
+        "thread",
+        "send",
+        THREAD_ID,
+        "steer behind completed run",
+        "--json",
+      ]);
+      expect(result.code).toBe(EXIT.unproven);
+      expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+        type: "result",
+        command: "thread.send",
+        outcome: "unproven",
+        reason: "owed",
+        stillRunning: { turnId: "reply-second", status: "streaming" },
+        owed: [expect.objectContaining({ id: "turn-u1" })],
+        next: [`./mf thread tail ${THREAD_ID} --until-idle`],
+      });
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it("send times out with exit 124 instead of hanging", async () => {
     const result = await mf(["thread", "send", THREAD_ID, "hang", "--timeout", "300ms", "--json"]);
     expect(result.code).toBe(EXIT.timeout);
@@ -406,13 +431,9 @@ describe("thread", () => {
       await isolated.close();
     }
   });
-  it.each([
-    true,
-    false,
-  ])("timeout distinguishes owed from an unavailable pending inbox (pending=%s)", async (pending) => {
+  it("timeout reports owed when no turn is running", async () => {
     const isolated = await startFakeStack();
     try {
-      isolated.snapshotPolicy.pending = pending;
       isolated.snapshotPolicy.running = false;
       const result = await isolated.mf([
         "thread",
@@ -424,18 +445,13 @@ describe("thread", () => {
         "--json",
       ]);
       expect(result.code).toBe(EXIT.timeout);
-      const record = JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "");
-      expect(record).toMatchObject({
+      expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
         type: "result",
         outcome: "timeout",
         reason: "owed",
         stillRunning: null,
+        owed: [],
       });
-      if (pending) expect(record.owed).toEqual([]);
-      else {
-        expect(record).not.toHaveProperty("owed");
-        expect(record.pendingUnavailable).toBe(true);
-      }
     } finally {
       await isolated.close();
     }
