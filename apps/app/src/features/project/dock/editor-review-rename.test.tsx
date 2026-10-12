@@ -20,12 +20,12 @@ describe("review restoration after a rename", () => {
     const group = {
       documentId,
       documentName: "A",
-      contextPath: "chapters/old-name.md",
+      contextLocation: { scheme: "manuscript", path: "chapters/old-name.md" },
       draft: {
         draftId,
         documentId,
         documentName: "A",
-        contextPath: "chapters/old-name.md",
+        contextLocation: { scheme: "manuscript", path: "chapters/old-name.md" },
         status: "active",
         updatedAt: "2026-10-06T00:00:00.000Z",
       },

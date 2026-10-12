@@ -46,12 +46,12 @@ export function DraftReviewChip({ documentId }: DraftReviewChipProps) {
       data-draft-review-chip
       data-draft-review-chip-failed={failed ? "" : undefined}
       onClick={() =>
-        group.contextPath &&
+        group.contextLocation &&
         openAiDraft({
           workId: controller.workId,
           documentId: group.documentId,
           draftId: draft.draftId,
-          contextPath: group.contextPath,
+          contextLocation: group.contextLocation,
           documentName: group.documentName ?? undefined,
           isNewDocument: draft.isNewDocument === true,
         })

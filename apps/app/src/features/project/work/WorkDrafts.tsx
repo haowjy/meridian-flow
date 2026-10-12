@@ -30,7 +30,7 @@ export function WorkDrafts({
   const commandRecords = useDraftCommandRecords();
   const groups = activeWorkDraftGroups(query.groups);
   const visible = groups.filter((group) =>
-    matchesSearch(group.documentName || group.contextPath || ""),
+    matchesSearch(group.documentName || group.contextLocation?.path || ""),
   );
   // Drafts appear only when there is something to review; never a loading flash.
   if (query.status !== "error" && visible.length === 0) return null;
@@ -46,7 +46,7 @@ export function WorkDrafts({
         <RuledList
           className="-mx-2"
           rows={visible.map((group) => {
-            const path = group.contextPath;
+            const path = group.contextLocation?.path;
             const draft = {
               projectId,
               workId,
@@ -63,12 +63,12 @@ export function WorkDrafts({
                     className={workFileRowClass}
                     disabled={!path}
                     onClick={() => {
-                      if (path)
+                      if (group.contextLocation)
                         openAiDraft({
                           workId,
                           documentId: group.documentId,
                           draftId: group.draft.draftId,
-                          contextPath: path,
+                          contextLocation: group.contextLocation,
                           documentName: group.documentName ?? undefined,
                           isNewDocument: group.draft.isNewDocument === true,
                         });

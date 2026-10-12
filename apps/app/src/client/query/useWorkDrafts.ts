@@ -5,7 +5,7 @@
  * Groups the active list by document because review launchers and navigation
  * operate at document scope.
  */
-import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { UpdateWorkWriteModeRequest } from "@meridian/contracts/protocol";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -18,13 +18,13 @@ import { readDraftsAfterCommands } from "./draft-command-record";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
-import { useContextCatalogView } from "./useContextCatalog";
+import { useContextCatalogViews } from "./useContextCatalog";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
 
 export type ThreadDraftGroup = {
   documentId: string;
   documentName: string | null;
-  contextPath: string | null;
+  contextLocation: ThreadDraftListItem["contextLocation"];
   /** The server permits one active Work-draft branch per (document, Work). */
   draft: ThreadDraftListItem;
 };
@@ -75,7 +75,7 @@ export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraf
   return Array.from(groups, ([documentId, draft]) => ({
     documentId,
     documentName: draft.documentName,
-    contextPath: draft.contextPath,
+    contextLocation: draft.contextLocation,
     draft,
   }));
 }
@@ -95,8 +95,16 @@ export function withLiveDocumentLabels(
     const file = catalog.findDocument(group.documentId);
     if (!file) return group;
     const documentName = documentTitleFromUri(file.uri) ?? group.documentName;
-    if (documentName === group.documentName && file.path === group.contextPath) return group;
-    return { ...group, documentName, contextPath: file.path };
+    const parsed = parseUnifiedContextUri(file.uri);
+    if (!parsed.ok) return group;
+    const contextLocation = { scheme: parsed.value.scheme, path: file.path };
+    if (
+      documentName === group.documentName &&
+      contextLocation.path === group.contextLocation?.path &&
+      contextLocation.scheme === group.contextLocation.scheme
+    )
+      return group;
+    return { ...group, documentName, contextLocation };
   });
 }
 
@@ -144,13 +152,31 @@ export function useWorkDrafts(
     () => (result.data ? groupDraftsByDocument(result.data) : null),
     [result.data],
   );
-  const { catalog } = useContextCatalogView(projectId ?? "", "manuscript", {
-    enabled: enabled && grouped !== null && grouped.length > 0,
-    workId: null,
+  const schemes = useMemo(
+    () => [
+      ...new Set(
+        grouped?.flatMap((group) =>
+          group.contextLocation ? [group.contextLocation.scheme] : [],
+        ) ?? [],
+      ),
+    ],
+    [grouped],
+  );
+  const catalogs = useContextCatalogViews(projectId ?? "", schemes, {
+    enabled: enabled && schemes.length > 0,
+    workId,
   });
   const groups = useMemo(
-    () => (grouped ? withLiveDocumentLabels(grouped, catalog) : null),
-    [grouped, catalog],
+    () =>
+      grouped
+        ? withLiveDocumentLabels(grouped, {
+            findDocument: (id) =>
+              schemes
+                .map((scheme) => catalogs[scheme].catalog?.findDocument(id))
+                .find((file) => file != null) ?? null,
+          })
+        : null,
+    [grouped, schemes, catalogs],
   );
 
   if (!enabled) {

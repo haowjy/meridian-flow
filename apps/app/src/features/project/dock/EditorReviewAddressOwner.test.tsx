@@ -16,7 +16,7 @@ const draft: AiDraftLaunchTarget = {
   workId: "work-1",
   documentId: "document-a",
   draftId: "draft-a",
-  contextPath: "chapters/a.md",
+  contextLocation: { scheme: "manuscript", path: "chapters/a.md" },
 };
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 let setInline: ((inline: { documentId: string; draftId: string } | null) => void) | null = null;
@@ -33,7 +33,7 @@ function Harness({
   requestedDraftId,
   activeScreen = "context",
   activeScheme = "manuscript",
-  activePath = draft.contextPath,
+  activePath = draft.contextLocation.path,
   activeDocumentId,
   onSetDraftId,
   exitInlineReview,
@@ -63,12 +63,12 @@ function Harness({
           {
             documentId: draft.documentId,
             documentName: "A",
-            contextPath: draft.contextPath,
+            contextLocation: draft.contextLocation,
             draft: {
               draftId: draft.draftId,
               documentId: draft.documentId,
               documentName: "A",
-              contextPath: draft.contextPath,
+              contextLocation: draft.contextLocation,
               status: "active",
               updatedAt: "2026-10-02T00:00:00.000Z",
             },
@@ -79,7 +79,7 @@ function Harness({
             ? {
                 documentId: draft.documentId,
                 documentName: "A",
-                contextPath: draft.contextPath,
+                contextLocation: draft.contextLocation,
                 draft: { draftId: draft.draftId },
               }
             : null,

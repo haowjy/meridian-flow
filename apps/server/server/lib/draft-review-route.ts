@@ -456,7 +456,7 @@ function serializeThreadDraft(
     draftId: string;
     documentId: string;
     documentName: string | null;
-    contextPath: string | null;
+    contextLocation: ThreadDraftListItem["contextLocation"];
     status: "active";
     lastActorTurnId: string | null;
     updatedAt: Date;
@@ -472,7 +472,7 @@ function serializeThreadDraft(
     draftId: draft.draftId,
     documentId: draft.documentId,
     documentName: draft.documentName,
-    contextPath: draft.contextPath,
+    contextLocation: draft.contextLocation,
     status: draft.status,
     lastActorTurnId: draft.lastActorTurnId,
     updatedAt: draft.updatedAt.toISOString(),

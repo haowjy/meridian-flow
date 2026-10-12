@@ -27,13 +27,13 @@ const draftA: AiDraftLaunchTarget = {
   workId: "work-a",
   documentId: "document-shared",
   draftId: "draft-a",
-  contextPath: "chapters/shared.md",
+  contextLocation: { scheme: "manuscript", path: "chapters/shared.md" },
 };
 const draftB: AiDraftLaunchTarget = {
   workId: "work-b",
   documentId: "document-shared",
   draftId: "draft-b",
-  contextPath: "chapters/shared.md",
+  contextLocation: { scheme: "manuscript", path: "chapters/shared.md" },
 };
 
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
@@ -104,7 +104,10 @@ function Harness({
       ) : (
         <DraftReviewBoundary value={editorReview}>
           <ScopeProbe name="editor" />
-          <EditorReviewIntentClaimant editorWorkId={view.target.workId} activeScheme="manuscript" />
+          <EditorReviewIntentClaimant
+            editorWorkId={view.target.workId}
+            activeScheme={view.target.contextLocation.scheme}
+          />
         </DraftReviewBoundary>
       )}
     </EditorReviewHandoffProvider>
@@ -149,6 +152,22 @@ describe("Editor review handoff", () => {
     showEditor = null;
     showChat = null;
     observedScopes = [];
+  });
+
+  it("opens and claims a Knowledge Base review in its own scheme", async () => {
+    const target = {
+      ...draftA,
+      contextLocation: { scheme: "kb" as const, path: draftA.contextLocation.path },
+    };
+    await withHarness(async ({ navigate, enterA }) => {
+      await act(async () => {
+        await openReview?.(target);
+      });
+      expect(navigate.mock.calls[0]?.[0]).toMatchObject({ scheme: "kb" });
+      expect(navigate.mock.calls[0]?.[1]?.tab).toMatchObject({ scheme: "kb" });
+      await act(async () => showEditor?.(target));
+      expect(enterA).toHaveBeenCalledWith(target.documentId, target.draftId);
+    });
   });
 
   it("keeps Chat B and Editor A as sibling boundaries", async () => {

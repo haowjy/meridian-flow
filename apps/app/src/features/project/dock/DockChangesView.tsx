@@ -75,12 +75,12 @@ export function DockChangesView({ className }: { className?: string }) {
             active={row.documentId === inlineReview?.documentId}
             preview={row.documentId === inlineReview?.documentId ? activePreview : null}
             onReview={() =>
-              row.contextPath &&
+              row.contextLocation &&
               openAiDraft({
                 workId: controller.workId,
                 documentId: row.documentId,
                 draftId: row.draft.draftId,
-                contextPath: row.contextPath,
+                contextLocation: row.contextLocation,
                 documentName: row.documentName ?? undefined,
                 isNewDocument: row.isNewDocument,
               })
@@ -123,7 +123,7 @@ function ChangesDocumentGroup({
   const name =
     row.documentName ??
     (row.isNewDocument
-      ? (documentBasename(row.contextPath) ?? t`Untitled document`)
+      ? (documentBasename(row.contextLocation?.path) ?? t`Untitled document`)
       : row.documentId);
   const stats = draftStats(row.draft);
   return (

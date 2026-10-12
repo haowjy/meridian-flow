@@ -1,3 +1,4 @@
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 /**
  * context-tab-from-draft — ContextTab synthesized from a work-draft group.
  *
@@ -22,7 +23,7 @@ export function contextTabFromDraftGroup(group: {
   workId: string;
   documentId: string;
   draftId: string;
-  contextPath?: string | null;
+  contextLocation?: ThreadDraftListItem["contextLocation"];
   documentName?: string | null;
   /**
    * Server flag for a draft-CREATED document. Marks the tab `draftOnly` so
@@ -31,8 +32,9 @@ export function contextTabFromDraftGroup(group: {
    */
   isNewDocument?: boolean;
 }): ServerContextTab | null {
-  const path = group.contextPath;
-  if (!path) return null;
+  const location = group.contextLocation;
+  const path = location?.path;
+  if (!location || !path) return null;
   const filetype = filetypeForPath(path);
   const classification = classifyFiletype(filetype);
   // Draft review only exists for Yjs-tracked editable documents; a path that
@@ -44,10 +46,7 @@ export function contextTabFromDraftGroup(group: {
   return {
     kind: "tracked",
     documentId: group.documentId,
-    // The review launcher navigates with a hard-coded manuscript scheme; a
-    // non-manuscript draft never reaches this path (server sends null
-    // contextPath for other schemes).
-    scheme: "manuscript",
+    scheme: location.scheme,
     path,
     name: basename || (group.documentName ?? group.documentId),
     editable: true,

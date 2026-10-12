@@ -63,7 +63,7 @@ describe("DraftReviewProvider remote settlement", () => {
       workId: "work-a",
       documentId: "document-a",
       draftId: "draft-a",
-      contextPath: "/chapter.md",
+      contextLocation: { scheme: "manuscript", path: "/chapter.md" },
       isNewDocument: true,
     });
     if (!tab) throw new Error("Draft tab fixture must be editable");

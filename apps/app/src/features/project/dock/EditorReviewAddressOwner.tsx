@@ -1,6 +1,7 @@
 /** Owns inline-review restoration and the draft identity on an Editor address. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
+import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
 import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
 import type { ScreenKey } from "../shell/screens";
 import { useOpenEditorReview, usePendingEditorReviewDraftId } from "./editor-review-handoff";
@@ -34,10 +35,12 @@ export function EditorReviewAddressOwner({
   const ownedReview = useRef(false);
   const addressNames = (
     documentId: string,
-    contextPath: string | null | undefined,
+    contextLocation: ThreadDraftGroup["contextLocation"] | undefined,
   ): "yes" | "no" | "pending" => {
     if (activeDocumentId) return activeDocumentId === documentId ? "yes" : "no";
-    return contextPath === activePath ? "yes" : "pending";
+    return contextLocation?.scheme === activeScheme && contextLocation?.path === activePath
+      ? "yes"
+      : "pending";
   };
 
   useEffect(() => {
@@ -46,8 +49,12 @@ export function EditorReviewAddressOwner({
       ownedReview.current = true;
       restoring.current = null;
       const group = review.groupForDocument(inline.documentId);
-      const match = group ? addressNames(inline.documentId, group.contextPath) : "no";
-      if (activeScreen !== "context" || activeScheme !== "manuscript" || match === "no") {
+      const match = group ? addressNames(inline.documentId, group.contextLocation) : "no";
+      if (
+        activeScreen !== "context" ||
+        activeScheme !== group?.contextLocation?.scheme ||
+        match === "no"
+      ) {
         review.controller.exitInlineReview();
         return;
       }
@@ -69,7 +76,7 @@ export function EditorReviewAddressOwner({
       restoring.current = null;
       return;
     }
-    if (activeScreen !== "context" || activeScheme !== "manuscript") {
+    if (activeScreen !== "context" || !activeScheme) {
       restoring.current = null;
       onSetDraftId(null);
       return;
@@ -79,20 +86,22 @@ export function EditorReviewAddressOwner({
     const group = review.groups.find((candidate) => candidate.draft.draftId === requestedDraftId);
     const draft = group?.draft.draftId === requestedDraftId ? group.draft : null;
     const match =
-      group?.contextPath && draft ? addressNames(group.documentId, group.contextPath) : "no";
+      group?.contextLocation && draft
+        ? addressNames(group.documentId, group.contextLocation)
+        : "no";
     if (match === "no") {
       restoring.current = null;
       onSetDraftId(null);
       return;
     }
-    if (match === "pending" || !group?.contextPath || !draft) return;
+    if (match === "pending" || !group?.contextLocation || !draft) return;
     if (restoring.current === requestedDraftId) return;
     restoring.current = requestedDraftId;
     void openReview({
       workId: review.controller.workId,
       documentId: group.documentId,
       draftId: requestedDraftId,
-      contextPath: group.contextPath,
+      contextLocation: group.contextLocation,
       documentName: group.documentName ?? undefined,
       isNewDocument: draft.isNewDocument === true,
     }).catch((error) => {
