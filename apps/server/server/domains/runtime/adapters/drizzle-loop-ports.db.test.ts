@@ -172,6 +172,77 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
     });
 
+    it("publishes idle after orphan repair commits the turn and stale lease deletion", async () => {
+      const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
+      const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+      const repos = createDrizzleRepositoriesForTest(db);
+      const turn = await repos.turns.create({
+        threadId: THREAD_A,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      await db.insert(schema.threadRunLeases).values({
+        threadId: THREAD_A,
+        runId: "dead-run",
+        holderId: "dead-worker",
+        turnId: turn.id,
+        boundTurnIds: [turn.id],
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const authority = createDrizzleRunClaim(db);
+      const published: unknown[] = [];
+      const publishStatus = async (threadId: ThreadId) => {
+        // Read through the root connection, as a subscriber would after commit.
+        published.push({
+          status: await authority.read(threadId),
+          turns: await db.select({ status: schema.turns.status }).from(schema.turns),
+          leases: await db.select().from(schema.threadRunLeases),
+        });
+      };
+      const delivery = createTestDrizzleDelivery(db, { repos, runClaim: authority, publishStatus });
+      const repairDeps = {
+        repos,
+        inbox: delivery,
+        authority,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        settleStaleExecution: delivery.settleStaleExecution,
+        retireOrphanedReply: delivery.retireOrphanedReply,
+        clearOrphanedTurn: delivery.clearOrphanedTurn,
+        publisher: {
+          async publish() {
+            return "already" as const;
+          },
+        },
+        eventSink: createInMemoryEventSink(),
+      };
+      const failing = createTestDrizzleDelivery(db, {
+        repos,
+        runClaim: authority,
+        publishStatus,
+        eventWriter: {
+          async appendEvent() {
+            throw new Error("projection unavailable");
+          },
+        },
+      });
+      await createOrphanReportRepair({
+        ...repairDeps,
+        settleStaleExecution: failing.settleStaleExecution,
+      }).sweep(10);
+      expect((await repos.turns.findById(turn.id))?.status).toBe("streaming");
+      expect(await authority.holder(THREAD_A)).toBe("dead-run");
+      expect(published).toEqual([]);
+      const repair = createOrphanReportRepair(repairDeps);
+      await repair.sweep(10);
+      expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+      expect(published).toEqual([
+        { status: { kind: "asleep" }, turns: [{ status: "error" }], leases: [] },
+      ]);
+      const next = required(await authority.startExecution(THREAD_A, "next-run"));
+      await authority.release(next);
+    });
+
     it("carries one thread lease through acquire, renew, release, and a stale release after reacquire", async () => {
       const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
       const second = createDrizzleRunClaim(db, { holderId: "holder-2" });

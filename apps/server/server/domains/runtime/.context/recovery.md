@@ -13,7 +13,7 @@ acquiring that claim is orphaned. `finalizeOrphanedTurns` and the placeholder
 lane in `spawn/orphan-report-repair.ts` repair it; they also repair dead
 primary assistant turns. Compactions use `finalizeExecution`. Handoff seeds
 use `completeHandoffSeed` to write an unavailable card, interrupted recovery
-metadata and history read line, then publish a status refresh.
+metadata and history read line.
 
 Run repair holds the destination thread lock and run claim. Expired lease rows
 alone do not prove death. Once the session claim proves the prior owner is gone,
@@ -22,6 +22,16 @@ Repair finalizes that reply and atomically retires and acknowledges its exact
 receipt, whether the reply belongs to a primary or child thread. Late messages
 that the dead run never adopted stay queued, and a crashed child publishes one
 failure report without starting again for the retired parent message.
+The bounded sweep calls delivery's `settleStaleExecution` while holding the
+exclusive session claim. That one recovery boundary finalizes turns, retires
+receipts, deletes the stale lease through `RunClaim.release`, and journals the
+resulting inbox projection in the same thread-lock transaction. Only after
+commit does it publish `thread.status`, so subscribers see asleep immediately
+and a new message can start without waiting for lease expiry. Rollback preserves
+both the unfinished turn and its lease and publishes nothing. Run-start repair
+instead retains the replacement run's already-acquired lease; it only retires
+the inherited dead receipt before selecting new work.
+
 Every finalized orphan clears the dead turn selector and bound-turn set before
 later work can start. Non-reply repair, including a crashed compaction, clears
 the receipt without acknowledging its adopted messages so the next run can

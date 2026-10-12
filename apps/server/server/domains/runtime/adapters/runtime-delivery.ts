@@ -50,7 +50,9 @@ export interface DeliveryStore extends InboxReader {
 
 export interface DeliveryLeaseStore {
   cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
-  lockThreadReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
+  lockThreadReceipt(
+    threadId: ThreadId,
+  ): Promise<{ ids: string[]; turnId: TurnId | null; lease: Lease } | null>;
   bindTurn(
     lease: Lease,
     turnId: TurnId,
@@ -695,6 +697,17 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () => retireOrphanedReply(threadId, turnId)),
     clearOrphanedTurn: (threadId, turnId) =>
       threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
+    settleStaleExecution: (threadId, repair) =>
+      threadLock.withThreadLock(threadId, async () => {
+        const receipt = await leaseStore.lockThreadReceipt(threadId);
+        const result = await repair();
+        if (receipt) await deps.runClaim.release(receipt.lease);
+        await appendPending(threadId);
+        schedulePostCommit(async () => {
+          await deps.publishStatus?.(threadId);
+        });
+        return result;
+      }),
     repairOrphanedTurns: async (lease) => {
       const reports = await threadLock.withThreadLock(lease.threadId, () =>
         finalizeOrphanedTurns(
