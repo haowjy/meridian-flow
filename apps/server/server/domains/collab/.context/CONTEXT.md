@@ -202,9 +202,10 @@ explicit checkpoint lookup/listing and restore expose historical checkpoints.
 Live checkpoints use the opaque `CapturedCheckpointCut`, minted only by trusted
 journal capture adapters. Capture takes a generation-qualified checkpoint reference
 and closed suffix sequence range under the mutation lock, without reading large
-bytes or replaying journal history there. Its read-only transaction/savepoint is
-rolled back intentionally, releasing capture-acquired locks even in an ambient
-transaction (a normal savepoint commit would retain them). Existing caller-owned
+bytes or replaying journal history there. The database's single-statement `capture_document_checkpoint_range` function
+uses an exception subtransaction to release capture-acquired locks even in an
+ambient transaction. No JavaScript-managed savepoint spans awaits: rolling it
+back could undo concurrently queued sibling statements. Existing caller-owned
 locks remain the caller's responsibility.
 Persistence materializes the range before acquiring its own mutation lock, then
 revalidates generation under lock. Materialization uses immutable fetched inputs,

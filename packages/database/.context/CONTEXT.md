@@ -225,13 +225,19 @@ Existing databases that ran the pre-relaunch chain must be reset with
 `pnpm db:reset` (local data is destroyed), not incrementally migrated.
 
 The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
-change-trail lifecycle functions/triggers on `branch_write_journal`. The six
+change-trail lifecycle functions/triggers on `branch_write_journal`. The
 functions in `src/functions/` remain a separate post-migration install that the
 `db:migrate` runner synchronizes. Fresh installs seed no users, Projects, or
 Works: the historical No Work and thread binding backfills had no rows to
 transform. Application project bootstrap creates locked No Work; thread
 admission establishes the primary binding. Legacy user imports belong in a
 separate ETL, not universal schema migrations.
+
+The checkpoint range capture function takes only immutable references and sequence
+bounds under the document mutation lock. Its exception subtransaction releases
+capture-owned locks before returning, including inside an ambient transaction.
+Keep this a single SQL statement: a client-managed savepoint spanning awaits can
+roll back sibling operations queued concurrently on the same connection.
 
 ### Merging parallel migration lanes
 

@@ -233,6 +233,29 @@ describe("durable document derivations", () => {
     }
   });
 
+  it("parallel captures cannot roll back sibling work in an ambient transaction", async () => {
+    const client = new Y.Doc({ gc: false });
+    try {
+      await append(client, "Before");
+      const cuts = await runInDrizzleTransaction(db, async () => {
+        const captures = await Promise.all(Array.from({ length: 4 }, () => checkpointCut()));
+        await append(client, " After");
+        return captures;
+      });
+      for (const cut of cuts) {
+        const cold = new Y.Doc({ gc: false });
+        try {
+          Y.applyUpdate(cold, await cut.materializeState());
+          expect(cold.getText("prose").toString()).toBe("Before");
+        } finally {
+          cold.destroy();
+        }
+      }
+    } finally {
+      client.destroy();
+    }
+  });
+
   it("refuses a captured range whose suffix was compacted before materialization", async () => {
     const client = new Y.Doc({ gc: false });
     try {
