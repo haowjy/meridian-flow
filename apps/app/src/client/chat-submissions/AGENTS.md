@@ -82,3 +82,26 @@ the journal record fails after Edit moves the words into that tab's message box,
 another tab can still Retry the record. Draft write and removal run in one synchronous
 step, so the only trigger is localStorage removal being refused when storage access
 is denied altogether.
+
+## Deleted chats
+
+Only an owner-attested `thread_deleted` (without `projectDeleted`) moves words.
+The attestation's `authenticatedUserId` must equal the bound account. The visible
+Chat center, uncovered expanded dock, or phone chat transfers its shown unadmitted
+rows and its tab-local box into the project's New chat ahead of existing writing.
+The same tab-local draft stores the title/count notice and the existing record and
+box receipts atomically; reload cannot prepend twice. Dismiss removes the notice;
+Send clears it. Then every journal record and this tab's old box are cleared, and
+the surface leaves the deleted chat. Hidden, collapsed, covered and index-warm
+surfaces move nothing. Own successful Delete and project deletion only clear.
+`thread_not_found` and the never-created-chat (O4) lifecycle are unchanged.
+
+Deletion runs under the existing submission lock, or inside that lock when the
+driver reports it. No new lock or cross-tab transfer protocol exists. On account
+bind, after journal rewrite readiness, a single pass probes off-screen journal and
+session-draft destinations (four concurrent requests, each bounded to 15 seconds).
+Only attested chat/project deletion clears them; other answers preserve them.
+
+Accepted rough edge: in two tabs on the same deleted chat, the first tab's journal
+cleanup can remove the second tab's failed rows before it learns of deletion. Its
+own per-tab box still moves when it learns. Receipts are per tab, not cross-tab.

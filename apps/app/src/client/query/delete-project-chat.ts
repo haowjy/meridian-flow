@@ -5,6 +5,8 @@
  */
 import type { QueryClient } from "@tanstack/react-query";
 import { deleteThread } from "@/client/api/threads-api";
+import { getChatSubmissionAccountId } from "@/client/chat-submissions";
+import { cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
 import { removeChatRow, restoreChatRow, snapshotChatRow } from "./chat-projections";
 import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
@@ -27,6 +29,9 @@ export async function deleteProjectChat(
   client.removeQueries({ queryKey: projectQueryKeys.threadUserState(projectId, threadId) });
   try {
     await deleteThread({ data: { threadId } });
+    const accountId = getChatSubmissionAccountId();
+    if (accountId)
+      void cleanDeletedChat(accountId, threadId, projectId, "own-delete").catch(reportError);
     void invalidateProjectThreadData(client, projectId);
     void invalidateWorkThreads(client, projectId);
     return { status: "success" };

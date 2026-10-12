@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Deleting a chat also clears its unsent and failed messages from this browser. If it is deleted elsewhere while you're in it, what you wrote moves to New chat.
+
 ### Changed
 
 - Deleted-project responses now identify the project to its owner, separately from a deleted chat. Missing and other writers’ projects stay concealed.

@@ -4,6 +4,7 @@ import type { SubmissionOutcome, ThreadRunController } from "@/client/copilot/Th
 import { classifyWriteFailure } from "@/client/copilot/ThreadRunController";
 import { abortable, type SubmissionLock } from "./lock";
 import type { ChatSubmission } from "./store";
+import { threadAvailability } from "./thread-availability";
 
 export type SubmissionJournal = {
   entries(): ChatSubmission[];
@@ -33,10 +34,12 @@ export type SubmissionDriverOptions = {
   transferForEdit(entry: ChatSubmission, cohort: ChatSubmission[]): boolean;
   edited(entry: ChatSubmission): void;
   transferReceived(entry: ChatSubmission): boolean;
+  deleted?(entry: ChatSubmission, reason: "deleted" | "project-deleted"): Promise<void>;
   timeoutMs?: number;
 };
 
 export class ChatSubmissionDriver {
+  private readonly deletedThreads = new Set<string>();
   private readonly localFailures = new Set<string>();
   private readonly drives = new Map<string, Promise<void>>();
   constructor(private readonly options: SubmissionDriverOptions) {}
@@ -73,6 +76,7 @@ export class ChatSubmissionDriver {
   }
 
   drive(threadId: string): Promise<void> {
+    if (this.deletedThreads.has(threadId)) return Promise.resolve();
     const existing = this.drives.get(threadId);
     if (existing) return existing;
     const tried = new Set<string>();
@@ -86,7 +90,7 @@ export class ChatSubmissionDriver {
       threadId,
       async (derived) => {
         entered = true;
-        while (this.current()) {
+        while (this.current() && !this.deletedThreads.has(threadId)) {
           const entry = this.options.journal
             .entries()
             .filter(
@@ -135,7 +139,8 @@ export class ChatSubmissionDriver {
     const original = this.options.journal
       .entries()
       .find((entry) => entry.submissionId === submissionId);
-    if (!original || !this.current()) return Promise.resolve();
+    if (!original || this.deletedThreads.has(original.threadId) || !this.current())
+      return Promise.resolve();
     if (this.options.transferReceived(original)) return this.edit(submissionId);
     this.options.status(original, "pending");
     return this.locked(
@@ -245,7 +250,12 @@ export class ChatSubmissionDriver {
       try {
         thread = await this.request((signal) => this.options.create(creating, signal));
       } catch (error) {
-        if (this.current()) this.settle(entry, classifyWriteFailure(error));
+        if (this.current()) {
+          const availability = threadAvailability(error, this.options.accountId);
+          if (availability === "deleted" || availability === "project-deleted")
+            await this.deleted(entry, { kind: availability, submissionId: entry.submissionId });
+          else this.settle(entry, classifyWriteFailure(error));
+        }
         return;
       }
       if (!this.current()) return;
@@ -276,6 +286,7 @@ export class ChatSubmissionDriver {
         ),
       );
       if (!this.current()) return;
+      if (await this.deleted(entry, outcome)) return;
       if (outcome.kind === "abandoned") {
         this.settle(entry, "ambiguous");
         return;
@@ -303,6 +314,7 @@ export class ChatSubmissionDriver {
       ),
     );
     if (!this.current()) return;
+    if (await this.deleted(entry, outcome)) return;
     if (outcome.kind === "abandoned") {
       this.settle(entry, "ambiguous");
       return;
@@ -311,7 +323,10 @@ export class ChatSubmissionDriver {
       await this.reconcileAmbiguous(entry, options);
       return;
     }
-    this.settle(entry, outcome.kind === "not-seen" ? "ambiguous" : outcome.kind);
+    this.settle(
+      entry,
+      outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
+    );
   }
 
   private async reconcileAmbiguous(
@@ -327,10 +342,18 @@ export class ChatSubmissionDriver {
       ),
     );
     if (!this.current()) return;
+    if (await this.deleted(entry, outcome)) return;
     this.settle(
       entry,
       outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
     );
+  }
+
+  private async deleted(entry: ChatSubmission, outcome: SubmissionOutcome): Promise<boolean> {
+    if (outcome.kind !== "deleted" && outcome.kind !== "project-deleted") return false;
+    this.deletedThreads.add(entry.threadId);
+    await this.options.deleted?.(entry, outcome.kind);
+    return true;
   }
 
   private settle(entry: ChatSubmission, kind: "accepted" | "rejected" | "ambiguous") {
@@ -360,6 +383,7 @@ export class ChatSubmissionDriver {
       .find((entry) => entry.submissionId === submissionId);
     if (
       !original?.draft ||
+      this.deletedThreads.has(original.threadId) ||
       original.state !== "rejected" ||
       (this.localFailures.has(original.recordId) && !this.options.transferReceived(original))
     )
@@ -389,6 +413,7 @@ export class ChatSubmissionDriver {
             ),
           );
           if (!this.current()) return;
+          if (await this.deleted(entry, outcome)) return;
           if (outcome.kind === "accepted") {
             this.settle(entry, "accepted");
             return;

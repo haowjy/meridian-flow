@@ -40,7 +40,16 @@ function browserJournal(): DeviceChatSubmissionJournal | null {
 }
 
 export function bindChatSubmissions(accountId: string): void {
-  browserJournal()?.setUser(accountId);
+  const current = browserJournal();
+  if (!current || current.accountId === accountId) return;
+  const ready = current.setUser(accountId);
+  const epoch = current.epoch;
+  void ready
+    .then(async () => {
+      const { cleanDeletedChatsOnBind } = await import("./deleted-chat");
+      await cleanDeletedChatsOnBind(accountId, epoch);
+    })
+    .catch((error) => reportError(error));
 }
 
 export function getChatSubmissionAccountId(): string | null {
