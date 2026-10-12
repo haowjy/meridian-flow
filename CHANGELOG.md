@@ -5,6 +5,7 @@
 - Merge concurrent AI replacements and writer deletions as Yjs peers. Refuse staged draft writes only on explicit Discard or inverse evidence, and explain that evidence in their receipts.
 - Preserve server draft-list observations through whole Apply, projecting immediate disappearance from generation-addressed intents so newer proposals reappear.
 - Delete superseded undo-repair, rollback and preview-notice contracts; align architecture references with immutable edits and transactional trail signals.
+- Separate receipt persistence tests from response-helper replay and revocation schedules, exposing each whole-Discard schedule as an independently runnable case.
 
 - Keep review commands reachable in narrow panes, enlarge phone hit targets without taller chrome, and restore the selected change after reload.
 - Make model Undo and Redo counts mean edits, with atomic refusal when too few remain and accurate chat labels for refused writes.
