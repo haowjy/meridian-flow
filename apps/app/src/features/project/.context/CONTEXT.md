@@ -303,8 +303,10 @@ selection. Boundaries only re-provide those values: ChatSurface and the Chat
 context dock share the Chat value, while viewer/editor surfaces receive the
 Editor value. An explicit latest-wins route handoff carries review commands into
 the matching Editor. A matching committed Editor may claim immediately; other
-destinations claim after navigation. Claims require Work, manuscript path,
-mounted document, and draft membership to agree. The document address persists
+destinations claim after navigation. Claims require Work, document identity,
+mounted document, and draft membership to agree. Review addresses bind the
+selected branch to its document through the Work draft list before local path
+resolution; a colliding live catalog entry never substitutes for that identity. The document address persists
 the draft identity, so reload restores through the same handoff; stale identities
 are removed by replacing the current entry. The owner survives phone view
 unmounts.

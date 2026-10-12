@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- Review opens the draft's document even when a separate live file shares its path. Moved and renamed review documents repair their addresses.
+
 - Inline review keeps the sidebar collapsed during warm address loading; unavailable destinations and Work recovery restore navigation.
 
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.

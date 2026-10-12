@@ -37,7 +37,11 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
-import { documentAddressReview } from "./document-address-review";
+import {
+  bindDocumentAddressReview,
+  reviewAddressRouteBinding,
+  reviewBoundAddressResult,
+} from "./document-address-review";
 import {
   DocumentSwitchFailureProvider,
   destinationFailure,
@@ -334,6 +338,9 @@ function ReadableProjectDestination({
     ...addressOwner,
     enabled: !!documentDestination && editorWork.status === "present",
   });
+  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
+  const addressBinding = bindDocumentAddressReview(address.draftId, addressWorkId, editorDrafts);
+  const addressReview = addressBinding.kind === "review" ? addressBinding.review : undefined;
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
     queryKey: [
@@ -343,6 +350,7 @@ function ReadableProjectDestination({
       addressOwner.rootThreadId ?? addressOwner.workId,
       address.draftId ? addressWorkId : null,
       address.draftId,
+      addressReview?.documentId,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -354,11 +362,14 @@ function ReadableProjectDestination({
         documentDestination.path,
         {
           ...addressOwner,
-          review: documentAddressReview(address.draftId, addressWorkId),
+          review: addressReview,
         },
       );
     },
-    enabled: !!documentDestination && editorWork.status === "present",
+    enabled:
+      !!documentDestination &&
+      editorWork.status === "present" &&
+      (addressBinding.kind === "plain" || addressBinding.kind === "review"),
     staleTime: 0,
     retry: false,
   });
@@ -372,7 +383,7 @@ function ReadableProjectDestination({
   });
   const localDocumentAddress = useMemo(
     () =>
-      documentDestination
+      documentDestination && addressBinding.kind === "plain"
         ? resolveLocalDocumentAddress(
             projectId,
             documentDestination,
@@ -384,6 +395,7 @@ function ReadableProjectDestination({
         : undefined,
     [
       addressCatalog,
+      addressBinding.kind,
       documentDestination,
       addressOwner.workId,
       addressOwner.rootThreadId,
@@ -391,10 +403,9 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
-    documentLookup.data,
+    reviewBoundAddressResult(addressBinding, documentLookup.data),
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
@@ -408,6 +419,20 @@ function ReadableProjectDestination({
     (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
   );
   const documentResult = gated.result;
+  const reviewRouteBinding = reviewAddressRouteBinding(
+    addressBinding,
+    documentResult,
+    selection,
+    documentDestination,
+    workId,
+  );
+  useLayoutEffect(() => {
+    if (!reviewRouteBinding) return;
+    contextRemoval.bindRouteSelection(projectId, reviewRouteBinding.revision, {
+      kind: "server",
+      documentId: reviewRouteBinding.documentId,
+    });
+  }, [contextRemoval, projectId, reviewRouteBinding?.revision, reviewRouteBinding?.documentId]);
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
   const addressDocumentId =
     documentResult && documentResult.kind !== "unavailable"
@@ -419,7 +444,7 @@ function ReadableProjectDestination({
     : (routeWorkIssue(routeWork) ??
       (!documentResult
         ? // A prerequisite that failed ends the wait: the address stays, with a way to retry.
-          documentLookup.isError || gated.outcome === "failed"
+          documentLookup.isError || gated.outcome === "failed" || addressBinding.kind === "failed"
           ? "error"
           : "loading"
         : documentResult.kind === "unavailable"

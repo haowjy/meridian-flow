@@ -50,11 +50,7 @@ export function EditorReviewAddressOwner({
       restoring.current = null;
       const group = review.groupForDocument(inline.documentId);
       const match = group ? addressNames(inline.documentId, group.contextLocation) : "no";
-      if (
-        activeScreen !== "context" ||
-        activeScheme !== group?.contextLocation?.scheme ||
-        match === "no"
-      ) {
+      if (activeScreen !== "context" || !activeScheme || match === "no") {
         review.controller.exitInlineReview();
         return;
       }
@@ -100,10 +96,7 @@ export function EditorReviewAddressOwner({
       group?.contextLocation && draft
         ? addressNames(group.documentId, group.contextLocation)
         : "no";
-    if (
-      match === "no" ||
-      (group?.contextLocation && group.contextLocation.scheme !== activeScheme)
-    ) {
+    if (match === "no") {
       restoring.current = null;
       onSetDraftId(null);
       return;

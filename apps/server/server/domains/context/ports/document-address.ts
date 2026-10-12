@@ -21,6 +21,13 @@ export interface DocumentAddressStore {
   ): Promise<{ kind: "current" | "alias"; documentId: DocumentId } | null>;
 }
 
+export type DocumentIdentityAddressInput = Pick<
+  DocumentAddressInput,
+  "projectId" | "userId" | "view"
+> & { documentId: DocumentId };
+
 export interface DocumentAddressResolver {
+  /** A validated review branch selects identity, never the occupant of its locator. */
+  resolveById(input: DocumentIdentityAddressInput): Promise<DocumentAddressResult>;
   resolve(input: DocumentAddressInput): Promise<DocumentAddressResult>;
 }
