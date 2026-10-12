@@ -5,6 +5,7 @@ import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react
 import { act, type ReactNode, useState } from "react";
 import { vi } from "vitest";
 import * as draftsApi from "@/client/api/drafts-api";
+import type { DraftRef } from "@/client/query/draft-command-record";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DocumentSession } from "@/core/editor/document-session";
@@ -18,7 +19,7 @@ import {
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftChangesView } from "@/features/draft-review/draft-changes";
-import { type DraftChangesTarget, useDraftChanges } from "@/features/draft-review/useDraftChanges";
+import { useDraftView } from "@/features/draft-review/useDraftView";
 import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import {
@@ -113,7 +114,7 @@ export type ScopeProbe = {
   movePresentedToWork: (to: Work) => Promise<void>;
   moveChatToWork: (to: Work) => Promise<void>;
   mountDraftChanges: (
-    target: DraftChangesTarget,
+    target: DraftRef,
     scope?: "chat" | "third",
   ) => Promise<() => DraftChangesView>;
 };
@@ -146,11 +147,11 @@ export async function renderReviewScopes(
   const current: Partial<ScopeProbe> = {};
   let lateView: ReviewChangesView | null = null;
   let showLateReader: (() => void) | null = null;
-  let addChangeList: ((target: DraftChangesTarget, scope: "chat" | "third") => void) | null = null;
-  const changeLists = new Map<DraftChangesTarget, DraftChangesView>();
-  function ChangeList({ target, scope }: { target: DraftChangesTarget; scope: "chat" | "third" }) {
+  let addChangeList: ((target: DraftRef, scope: "chat" | "third") => void) | null = null;
+  const changeLists = new Map<DraftRef, DraftChangesView>();
+  function ChangeList({ target, scope }: { target: DraftRef; scope: "chat" | "third" }) {
     const controller = current[scope]?.commands as WorkDraftCommands;
-    changeLists.set(target, useDraftChanges(target, { controller }));
+    changeLists.set(target, useDraftView(target, { controller }));
     return null;
   }
   function RunnerProbe() {
@@ -164,9 +165,7 @@ export async function renderReviewScopes(
   function HeaderProbe() {
     const [reviewed, setReviewed] = useState(initialReviewed);
     const [lateMounted, setLateMounted] = useState(false);
-    const [lists, setLists] = useState<{ target: DraftChangesTarget; scope: "chat" | "third" }[]>(
-      [],
-    );
+    const [lists, setLists] = useState<{ target: DraftRef; scope: "chat" | "third" }[]>([]);
     showLateReader = () => setLateMounted(true);
     addChangeList = (target, scope) => setLists((held) => [...held, { target, scope }]);
     current.header = useReviewHeader({ ...reviewed, onOpenDraft });

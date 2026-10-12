@@ -5,7 +5,7 @@ import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
+import { useDraftView } from "@/features/draft-review/useDraftView";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
 import { DockFailureText } from "./DraftDockMessages";
@@ -65,7 +65,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
               </QuietButton>
             </>
           ) : null}
-          <ReviewPill onClick={dock.reviewFirst} disabled={dock.reviewBusy || !dock.reviewable} />
+          <ReviewPill onClick={dock.reviewFirst} disabled={!dock.reviewable} />
         </>
       )}
     </div>
@@ -165,7 +165,7 @@ function DockFileLine({
   summary?: (trouble: ReactNode) => ReactNode;
 }) {
   const touch = usePhoneShell() ?? false;
-  const view = useDraftChanges(
+  const view = useDraftView(
     {
       projectId: dock.projectId,
       workId: dock.workId,

@@ -53,7 +53,7 @@ export function ReviewChangeBar({
             className={touch ? "min-h-11" : undefined}
           />
         </div>
-        {change.actionable ? (
+        {change.target.kind !== "display" ? (
           <span
             className={
               touch

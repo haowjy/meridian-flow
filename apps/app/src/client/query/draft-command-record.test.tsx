@@ -9,7 +9,6 @@ import {
   bindDraftCommandAccount,
   confirmDraftCommand,
   draftCommandFailure,
-  draftCommandPendingIn,
   failDraftCommand,
   pendingChangeCommand,
   readDraftsAfterCommands,
@@ -44,10 +43,16 @@ describe("draft command records", () => {
     await run(async () => {
       const earlier = deferred<typeof listed>();
       const read = readDraftsAfterCommands(scope, () => earlier.promise);
+      const later = deferred<typeof listed>();
+      const secondRead = readDraftsAfterCommands(scope, () => later.promise);
       await act(async () => confirmDraftCommand(draft));
       expect(Object.keys(held)).toHaveLength(1);
       earlier.resolve(listed);
       expect(await read).toEqual([]);
+      await act(async () => undefined);
+      expect(Object.keys(held)).toHaveLength(1);
+      later.resolve(listed);
+      expect(await secondRead).toEqual([]);
       await act(async () => undefined);
       expect(held).toEqual({});
       // The next generation of proposals reuses the id; a later read sees it.
@@ -94,7 +99,6 @@ describe("draft command records", () => {
       expect(pendingChangeCommand(held, draft)?.draftClosed).toEqual({
         documentName: "Chapter 13",
       });
-      expect(draftCommandPendingIn(held, scope)).toBe(true);
       await act(async () => releaseDraftCommand(draft));
       // The server reuses the id for the next proposal: the answer is gone with the claim.
       expect(pendingChangeCommand(held, draft)).toBeNull();

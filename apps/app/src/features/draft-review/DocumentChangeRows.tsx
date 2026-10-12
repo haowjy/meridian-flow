@@ -1,7 +1,7 @@
 /**
  * DocumentChangeRows — one draft's changes as rows, from any `DraftChangesView`:
  * the open review's (`useReviewChanges`) or an unopened draft's
- * (`useDraftChanges`). Loading shows a skeleton, an unreadable preview shows
+ * (`useDraftView`). Loading shows a skeleton, an unreadable preview shows
  * Retry (never "no changes"), a ready draft shows its rows in document order
  * and pulses a change that arrived while the writer was looking.
  *

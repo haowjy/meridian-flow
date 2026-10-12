@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Queue review actions per chapter so slow chapters do not block others, preserving exact change membership through reforks and one confirmed stale retry.
+
 - Keep the manuscript's place and restored original text through per-change Discard, with stable review identities and account-bound queued actions.
 
 - Use one atomic edit path for create, copy and replacement, retaining independent paragraph metadata and bounded copy receipts.

@@ -5,22 +5,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import {
   type CommandStart,
-  type DraftBatchItem,
   type DraftCommandOutcome,
   type DraftSelection,
   newestKnownProposal,
   runDraftBatch,
   runDraftSelection,
+  runWholeDraftIntent,
   startDraftCommand,
 } from "@/client/query/draft-command-executor";
-import {
-  currentDraftCommandRecords,
-  type DraftClaim,
-  draftCommandPendingIn,
-  pendingDraftCommand,
-  useDraftCommandRecords,
-  wholeDraftCommandPendingIn,
-} from "@/client/query/draft-command-record";
 import { getContextTabs } from "@/client/stores";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
@@ -29,6 +21,7 @@ import {
 } from "@/features/project/routing/ProjectNavigationContext";
 import { useDraftOnlyLifecycle } from "./draft-only-lifecycle";
 import type { DraftReviewSelection } from "./draft-review-session";
+import type { ChangeTarget } from "./review-changes";
 
 export type WorkDraftCommands = ReturnType<typeof useWorkDraftCommands>;
 
@@ -46,24 +39,14 @@ export function useWorkDraftCommands({
   const lifecycle = useDraftOnlyLifecycle(projectId);
   const openContextRoute = useOpenContextRoute();
   const isCurrentContextRoute = useIsCurrentContextRoute();
-  const records = useDraftCommandRecords();
-  const isDisposing = draftCommandPendingIn(records, { projectId, workId });
   const frozen = !work || isWorkArchived(work);
-  // A change's own Apply and Discard queue behind each other; only a command on
-  // the whole draft, or a batch, holds them back.
-  const changesLocked = frozen || wholeDraftCommandPendingIn(records, { projectId, workId });
+  const changesLocked = frozen;
   const commands = useMemo(() => {
     const scope = { projectId, workId };
-    const whole = (
-      mode: "apply" | "discard",
-      draft: DraftReviewSelection,
-      reserved: DraftClaim | null = null,
-    ): CommandStart => {
+    const sendWhole = (mode: "apply" | "discard", draft: DraftReviewSelection): CommandStart => {
       if (frozen) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
-      const target = { ...scope, ...draft };
-      const generation = reserved
-        ? pendingDraftCommand(currentDraftCommandRecords(), target)?.draftGeneration
-        : newestKnownProposal(queryClient, target);
+      const target = { ...scope, documentId: draft.documentId, draftId: draft.draftId };
+      const generation = newestKnownProposal(queryClient, target);
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === draft.documentId,
       );
@@ -77,7 +60,6 @@ export function useWorkDraftCommands({
           completesDraft: true,
         },
         threadId,
-        reserved,
         () => {
           if (mode === "discard") lifecycle.remove(target);
         },
@@ -116,33 +98,28 @@ export function useWorkDraftCommands({
       frozen
         ? Promise.resolve<DraftCommandOutcome>({ kind: "blocked" })
         : runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
+    const whole = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
+      runWholeDraftIntent(
+        { ...scope, documentId: draft.documentId, draftId: draft.draftId },
+        mode,
+        () => sendWhole(mode, draft),
+      );
+    const commandChange = (
+      mode: "apply" | "discard",
+      draft: DraftReviewSelection,
+      target: ChangeTarget,
+    ) =>
+      target.kind === "draft"
+        ? whole(mode, draft).outcome
+        : target.kind === "operations"
+          ? selection(mode, draft, target.selection)
+          : Promise.resolve<DraftCommandOutcome>({ kind: "blocked" });
     const batch = (
       mode: "apply" | "discard",
-      items: readonly (DraftSelection | { draft: DraftReviewSelection; wholeDraft: true })[],
-    ) =>
-      runDraftBatch(
-        scope,
-        mode,
-        items.map(
-          (item): DraftBatchItem =>
-            "wholeDraft" in item
-              ? {
-                  draft: item.draft,
-                  command: {
-                    target: "all",
-                    mode,
-                    draftGeneration: newestKnownProposal(queryClient, { ...scope, ...item.draft }),
-                    completesDraft: true,
-                  },
-                }
-              : item,
-        ),
-        (item, claim) =>
-          item.command
-            ? whole(mode, item.draft, claim).outcome
-            : selection(mode, item.draft, item.selection),
-      );
+      items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
+    ) => runDraftBatch(items, (item) => commandChange(mode, item.draft, item.target));
     return {
+      commandChange,
       projectId,
       workId,
       threadId,
@@ -155,27 +132,15 @@ export function useWorkDraftCommands({
         selection("apply", draft, changes),
       discardChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
         selection("discard", draft, changes),
-      applyBatch: (
-        items: readonly (DraftSelection | { draft: DraftReviewSelection; wholeDraft: true })[],
-      ) => batch("apply", items),
-      discardBatch: (
-        items: readonly (DraftSelection | { draft: DraftReviewSelection; wholeDraft: true })[],
-      ) => batch("discard", items),
+      applyBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
+        batch("apply", items),
+      discardBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
+        batch("discard", items),
       disposeDrafts: async (mode: "apply" | "discard", drafts: readonly DraftReviewSelection[]) =>
         (
           await runDraftBatch(
-            scope,
-            mode,
-            drafts.map((draft) => ({
-              draft,
-              command: {
-                target: "all" as const,
-                mode,
-                draftGeneration: newestKnownProposal(queryClient, { ...scope, ...draft }),
-                completesDraft: true,
-              },
-            })),
-            ({ draft }, claim) => whole(mode, draft, claim).outcome,
+            drafts.map((draft) => ({ draft })),
+            ({ draft }) => whole(mode, draft).outcome,
           )
         ).map(({ outcome }) => outcome),
     };
@@ -189,7 +154,7 @@ export function useWorkDraftCommands({
     openContextRoute,
     isCurrentContextRoute,
   ]);
-  return { ...commands, isDisposing, dispositionLocked: isDisposing || frozen, changesLocked };
+  return { ...commands, dispositionLocked: frozen, changesLocked };
 }
 
 const WorkDraftCommandsContext = createContext<WorkDraftCommands | null>(null);

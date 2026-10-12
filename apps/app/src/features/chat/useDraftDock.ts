@@ -12,7 +12,7 @@ import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import type { ReviewChange } from "@/features/draft-review/review-changes";
+import { type ReviewChange, targetOfChanges } from "@/features/draft-review/review-changes";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -79,9 +79,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     (mode: "apply" | "discard") => {
       const items = actionableFiles.map((file) => ({
         draft: { documentId: file.row.documentId, draftId: file.row.draft.draftId },
-        ...(file.actionable.some((change) => change.wholeDraft)
-          ? { wholeDraft: true as const }
-          : { selection: selectionOf(file.actionable) }),
+        target: targetOfChanges(file.actionable),
       }));
       if (items.length === 0) return;
       // The runner hides every file's selection at the click and returns each as
@@ -116,8 +114,6 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
-    /** Review is held while a whole-draft command is running in this Work. */
-    reviewBusy: controller.isDisposing,
     reviewable: reviewable !== null,
     projectId,
     workId,

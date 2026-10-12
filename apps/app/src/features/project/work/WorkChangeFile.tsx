@@ -13,7 +13,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import type { DraftChangesView } from "@/features/draft-review/draft-changes";
 import { ReviewMessageText } from "@/features/draft-review/ReviewMessageText";
-import { useDraftChanges } from "@/features/draft-review/useDraftChanges";
+import { useDraftView } from "@/features/draft-review/useDraftView";
 import type { WorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { cn } from "@/lib/utils";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
@@ -38,7 +38,7 @@ export function WorkChangeFile({
   const records = useDraftCommandRecords();
   const draft = { projectId, workId, documentId: file.documentId, draftId: file.draft.draftId };
   const refused = draftCommandFailure(records, draft);
-  const view = useDraftChanges(draft, { controller, enabled: expanded });
+  const view = useDraftView(draft, { controller, enabled: expanded });
   if (
     expanded &&
     (view.status === "gone" ||

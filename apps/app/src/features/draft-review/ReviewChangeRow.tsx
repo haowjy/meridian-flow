@@ -45,7 +45,7 @@ export function ReviewChangeRow({
   const { added, removed } = changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
-  const firstLine = touch ? "min-h-11" : change.actionable ? "min-h-6" : undefined;
+  const firstLine = touch ? "min-h-11" : change.target.kind !== "display" ? "min-h-6" : undefined;
   const iconButton = touch ? "size-11 [&_svg:not([class*='size-'])]:size-5" : undefined;
   return (
     // Mouse convenience only: the keyboard reaches the same command through
@@ -103,7 +103,7 @@ export function ReviewChangeRow({
             />
           ) : null}
         </div>
-        {change.actionable ? (
+        {change.target.kind !== "display" ? (
           <span className="flex shrink-0 items-center">
             <IconButton
               size="xs"

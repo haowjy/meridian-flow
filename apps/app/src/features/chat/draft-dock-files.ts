@@ -60,7 +60,7 @@ export function dockFile(
     ...base,
     status: "ready",
     changes,
-    actionable: changes.filter((change) => change.actionable),
+    actionable: changes.filter((change) => change.target.kind !== "display"),
   };
 }
 

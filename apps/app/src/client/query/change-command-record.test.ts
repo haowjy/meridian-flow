@@ -7,11 +7,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   beginChangeCommand,
   changeCommandState,
-  confirmChangeCommand,
   currentChangeCommandRecords,
   failChangeCommand,
-  intentKeys,
-  queueChangeSelection,
   readPreviewAfterChangeCommands,
   releaseDraftCommand,
   resetDraftCommandRecords,
@@ -60,21 +57,8 @@ function preview(): DraftPreviewResponse {
   };
 }
 
-const operationIds = (p: DraftPreviewResponse) =>
-  p.status === "active" ? p.operations.map((o) => o.operationId) : [];
-
 describe("change command record", () => {
   beforeEach(() => resetDraftCommandRecords());
-
-  it("retiring one queued selection leaves another of the same draft hidden", () => {
-    const first = queueChangeSelection(draft, one, "apply");
-    queueChangeSelection(draft, two, "apply");
-    first.retire();
-    expect([...intentKeys(currentChangeCommandRecords(), draft).hidden]).toEqual([
-      "row:2",
-      "row:3",
-    ]);
-  });
 
   describe("a selection of several changes", () => {
     const both = { classIds: ["c1", "c2"], operationIds: ["1", "2", "3"] };
@@ -108,24 +92,6 @@ describe("change command record", () => {
         previewWithoutKeys(preview(), new Set(["row:1", "row:2", "row:3"])),
       );
       expect(changeCommandState(currentChangeCommandRecords(), draft, both)).toBeNull();
-    });
-
-    it("hides every operation of the selection while its claim is held, and a confirmation fences reads", async () => {
-      beginChangeCommand(draft, both, "apply", 1);
-      expect([...intentKeys(currentChangeCommandRecords(), draft).hidden]).toEqual([
-        "row:1",
-        "row:2",
-        "row:3",
-      ]);
-      releaseDraftCommand(draft);
-      let finish!: (value: DraftPreviewResponse) => void;
-      const read = readPreviewAfterChangeCommands(
-        draft,
-        () => new Promise<DraftPreviewResponse>((resolve) => (finish = resolve)),
-      );
-      confirmChangeCommand(draft, both, "apply");
-      finish(preview());
-      expect(operationIds(await read)).toEqual([]);
     });
   });
 

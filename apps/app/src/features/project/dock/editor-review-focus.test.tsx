@@ -7,7 +7,7 @@ import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
 } from "@/features/draft-review/DraftReviewProvider";
-import { useOpenReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ReviewAddressOwner } from "../ReviewAddressOwner";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
@@ -26,7 +26,7 @@ type Model = {
 
 // The preview read is the one boundary that needs a query client; the claimant
 // is what these tests drive.
-vi.mock("@/features/draft-review/useReviewChanges", () => ({ useOpenReviewChanges: vi.fn() }));
+vi.mock("@/features/draft-review/useOpenReviewChanges", () => ({ useOpenReviewChanges: vi.fn() }));
 
 const target: AiDraftLaunchTarget = {
   workId: "work-1",
