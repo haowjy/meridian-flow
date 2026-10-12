@@ -1,3 +1,5 @@
+import type { ProjectContextTreeScheme } from "../protocol/index.js";
+
 export type WIdRange = { min: number; max: number };
 
 /** Wire view-models for listing and reviewing AI document drafts. */
@@ -6,7 +8,7 @@ export interface ThreadDraftListItem {
   draftId: string;
   documentId: string;
   documentName: string | null;
-  contextPath: string | null;
+  contextLocation: { scheme: ProjectContextTreeScheme; path: string } | null;
   status: "active";
   lastActorTurnId: string | null;
   updatedAt: string;
