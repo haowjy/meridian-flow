@@ -1,6 +1,6 @@
 /**
  * ws-thread-subscription — the per-thread subscription registry for
- * `WsThreadTransport`.
+ * `ThreadSocketClient`.
  *
  * Tracks active subscriptions (handler sets, last-seen seq, gap counts, server
  * ack state), decides when to (re)send subscribe frames, and selects the newest
@@ -8,7 +8,7 @@
  */
 import { compareSeq } from "@meridian/contracts/protocol";
 
-import type { ThreadTransportHandlers } from "./ThreadTransport";
+import type { ThreadTransportHandlers } from "./thread-transport";
 
 export type ActiveThreadSubscription = {
   handlers: Set<ThreadTransportHandlers>;

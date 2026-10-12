@@ -3,20 +3,16 @@
  *
  * A thread whose journal outgrows the server replay cap makes the transport
  * resubscribe forever from the same unreplayable cursor. These tests drive the
- * real `WsThreadTransport` against a fake server that models the cap: any
+ * real `ThreadSocketClient` against a fake server that models the cap: any
  * subscribe at/below the capped window answers `gap`, anything beyond answers
  * `subscribed`. The transport must move its resume point to the gap's `toSeq`
  * and converge after a single resubscribe.
  */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { FakeThreadSocket } from "./test-support/FakeThreadSocket";
+import { FakeThreadSocket } from "../test-support/fake-thread-socket";
 
-vi.mock("./dev-transport", () => ({
-  buildThreadsWsUrl: () => "ws://test/api/threads/ws",
-}));
-
-const { WsThreadTransport } = await import("./WsThreadTransport");
+const { ThreadSocketClient } = await import("./thread-socket-client");
 
 const THREAD_ID = "thread-1";
 const CAP_WINDOW_SEQ = 10_000_999n; // end cursor of the oldest replayable window
@@ -85,10 +81,13 @@ function createHarness(maxResubscribes = 5) {
     answer(target, frame.lastSeq);
   };
 
-  const transport = new WsThreadTransport({
+  const transport = new ThreadSocketClient({
+    url: () => "ws://test/api/threads/ws",
+    toError: (error) => new Error(error.message),
+    cancelTurn: vi.fn(),
     webSocketFactory: () => {
       socket = new FakeThreadSocket(respond);
-      return socket as unknown as WebSocket;
+      return socket;
     },
   });
 
@@ -118,18 +117,21 @@ function createHarness(maxResubscribes = 5) {
   };
 }
 
-describe("WsThreadTransport gap recovery", () => {
+describe("ThreadSocketClient gap recovery", () => {
   it("does not resume past a head advertised without a delivered event", () => {
     const resumes: Array<{ subscriptions?: Array<{ lastSeq?: string }> }> = [];
     let socket: FakeThreadSocket | null = null;
-    const transport = new WsThreadTransport({
+    const transport = new ThreadSocketClient({
+      url: () => "ws://test/api/threads/ws",
+      toError: (error) => new Error(error.message),
+      cancelTurn: vi.fn(),
       webSocketFactory: () => {
         socket = new FakeThreadSocket((_target, frame) => {
           if ((frame as { type?: string }).type === "resume") {
             resumes.push(frame as { subscriptions?: Array<{ lastSeq?: string }> });
           }
         });
-        return socket as unknown as WebSocket;
+        return socket;
       },
     });
     const unsubscribe = transport.subscribe(THREAD_ID, { onEvent: () => {} });

@@ -46,11 +46,11 @@ import {
   type YjsRoomName,
 } from "@meridian/contracts/protocol";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
-import type { ConnectionState } from "@/core/transport/ThreadTransport";
 import {
   commitContentInitialization,
   readContentInitialization,

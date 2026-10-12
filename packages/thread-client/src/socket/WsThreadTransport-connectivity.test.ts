@@ -1,15 +1,12 @@
-// @vitest-environment jsdom
 /** Thread recovery and success reporting through the real transport boundary. */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ConnectivityHint, ConnectivityHintsPort } from "./connectivity-hints";
-import type { ConnectionState } from "./ThreadTransport";
-import { FakeThreadSocket } from "./test-support/FakeThreadSocket";
-import { WsThreadTransport } from "./WsThreadTransport";
+import { FakeThreadSocket } from "../test-support/fake-thread-socket";
+import type { ConnectivityHint, ConnectivityHintsPort } from "./socket-ports";
+import { ThreadSocketClient } from "./thread-socket-client";
+import type { ConnectionState } from "./thread-transport";
 
-vi.mock("@/client/api/threads-api", () => ({ cancelTurn: vi.fn() }));
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal("WebSocket", FakeThreadSocket);
 });
 afterEach(() => {
   vi.clearAllTimers();
@@ -31,12 +28,15 @@ function setup() {
     reportDisconnected: vi.fn(),
   };
   const sockets: FakeThreadSocket[] = [];
-  const transport = new WsThreadTransport({
-    connectivityHints: hints,
+  const transport = new ThreadSocketClient({
+    url: () => "ws://test/api/threads/ws",
+    toError: (error) => new Error(error.message),
+    cancelTurn: vi.fn(),
+    connectivity: hints,
     webSocketFactory: () => {
       const socket = new FakeThreadSocket();
       sockets.push(socket);
-      return socket as unknown as WebSocket;
+      return socket;
     },
   });
   const states: ConnectionState[] = [];
