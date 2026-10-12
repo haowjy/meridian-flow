@@ -21,6 +21,7 @@ import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/doc
 import { projectRestoring } from "@/core/editor/extensions/inline-review";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import {
+  annotateCoverBlocks,
   type CoverView,
   dropReviewPlace,
   hasReviewPlace,
@@ -254,7 +255,8 @@ export function EditorView(props: EditorViewProps) {
   }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: the intents moving is what rebuilds a cover.
   useLayoutEffect(
-    () => projectCover(projectIntents, readCoverView),
+    () =>
+      projectCover({ annotate: annotateCoverBlocks, project: projectIntents, read: readCoverView }),
     [projectCover, projectIntents, discardedKey],
   );
   useEffect(() => () => projectCover(null), [projectCover]);

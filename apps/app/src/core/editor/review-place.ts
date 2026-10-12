@@ -16,7 +16,11 @@ import { operationKey } from "@meridian/contracts/drafts";
 import type { Editor } from "@tiptap/core";
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import * as Y from "yjs";
-import { getInlineReviewPluginState } from "./extensions/inline-review";
+import {
+  getInlineReviewPluginState,
+  inlineReviewClassNames,
+  REMOVED_BLOCKS_ATTR,
+} from "./extensions/inline-review";
 import {
   type RelativePositionRuntime,
   relativePositionForIndex,
@@ -53,7 +57,7 @@ export type ReviewPlace = {
   navigateTo?: readonly string[];
 };
 
-const RESTORING_CLASS = "meridian-review-restoring";
+const RESTORING_CLASS = inlineReviewClassNames.restoring;
 const places = new Map<string, ReviewPlace>();
 
 /**
@@ -85,20 +89,6 @@ function stableIndex(editor: Editor, index: number): number {
     position += doc.child(i).nodeSize;
   }
   return counted;
-}
-
-/** The successor's blocks as a reader counts them: those not hidden for a Discard, with where each begins. */
-function visibleBlocks(editor: Editor): { position: number; text: string }[] {
-  const { doc } = editor.state;
-  const blocks: { position: number; text: string }[] = [];
-  let position = 0;
-  for (let i = 0; i < doc.childCount; i += 1) {
-    const dom = editor.view.nodeDOM(position);
-    const hidden = dom instanceof HTMLElement && dom.classList.contains(RESTORING_CLASS);
-    if (!hidden) blocks.push({ position, text: beginning(doc.child(i).textContent) });
-    position += doc.child(i).nodeSize;
-  }
-  return blocks;
 }
 
 /** Position of the `block`th top-level block that is not hidden, counting as `stableIndex` does. */
@@ -258,7 +248,7 @@ export function restoreReviewPlace(
     const destination = place.navigateTo && operationOfChange(editor, place.navigateTo);
     if (destination) editor.commands.scrollInlineReviewOperationIntoView(destination);
     else if (coverView) {
-      const block = blockForCoverView(editor, coverView);
+      const block = blockOfCoverView(editor, runtime, coverView);
       if (block !== null)
         restoreViewport(editor, pane, runtime, { block, offset: coverView.offset, rel: null });
     } else if (place.viewport) restoreViewport(editor, pane, runtime, place.viewport);
@@ -273,69 +263,148 @@ export function restoreReviewPlace(
 }
 
 /**
- * Where a reader of a paint cover is: the first block they can see, as the
- * editor that replaces the cover will count its blocks, and how that block
- * begins (to tell it from a neighbour if the count is off).
+ * Where a reader of a paint cover is: the first block they can see. A block of
+ * the old review is named by its Yjs identity, stamped on the cover when it was
+ * captured (`annotateCoverBlocks`), which the successor resolves whatever blocks
+ * came or went around it. The original paragraphs of a discarded change are
+ * blocks of the successor that the old review did not have: they are named by
+ * the nearest block that was there and how many blocks away they are. `block`
+ * counts the same view among the blocks, for a cover that held no identities.
  */
-export type CoverView = { block: number; offset: number; text: string };
+export type CoverView = {
+  /** A real block's serialized Yjs position, or null when the cover held none. */
+  anchor: string | null;
+  /** Blocks from that one to the first in view; negative when the view is before it. */
+  step: number;
+  /** The first in view, counted among the blocks the successor will have. */
+  block: number;
+  /** The first in view, its top edge below the pane's top edge, in pixels. */
+  offset: number;
+};
 
-const WIDGET_OR_HIDDEN =
-  ".meridian-review-bar-slot,.meridian-review-removal-block,.meridian-review-restoring";
-const PREFIX = 48;
+/** On a cover's copy of a top-level block: its Yjs identity, base64 of an encoded relative position. */
+const BLOCK_ANCHOR_ATTR = "data-review-block-anchor";
 
-const beginning = (text: string | null | undefined) =>
-  (text ?? "").replace(/\s+/g, " ").trim().slice(0, PREFIX);
+const classes = inlineReviewClassNames;
+/** Drawn by the review among the document's blocks without being one. */
+const NOT_A_BLOCK = `.${classes.barSlot},.${classes.removal},.${classes.restoring},.ProseMirror-gapcursor`;
+
+function toBase64(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function fromBase64(text: string): Uint8Array {
+  return Uint8Array.from(atob(text), (character) => character.charCodeAt(0));
+}
+
+/**
+ * Stamp each real top-level block of the editors on `live` onto its copy in
+ * `copy`, with the Yjs identity it has now. A cover is a copy of the DOM, which
+ * knows no Yjs; the identity can only be read while the editor lives.
+ */
+export function annotateCoverBlocks(live: HTMLElement, copy: HTMLElement): void {
+  const copies = copy.querySelectorAll<HTMLElement>(".ProseMirror");
+  for (const [index, dom] of live.querySelectorAll<HTMLElement>(".ProseMirror").entries()) {
+    const editor = (dom as { editor?: Editor }).editor;
+    const target = copies[index];
+    if (!editor || editor.isDestroyed || !target || dom.closest('[data-paint-scope="inactive"]'))
+      continue;
+    try {
+      const runtime = relativePositionRuntimeFromState(editor.state);
+      if (!runtime) continue;
+      const places = new Map(Array.from(dom.children).map((child, at) => [child, at]));
+      const targets = target.children;
+      let start = 0;
+      editor.state.doc.forEach((node) => {
+        const at = places.get(editor.view.nodeDOM(start) as Element);
+        // The start of the document has no item of its own to name; the first
+        // character does. A first block with none (an atom, an empty one) is counted instead.
+        const position = start === 0 ? (node.isTextblock ? 1 : null) : start;
+        const rel = position === null ? null : encode(runtime, position);
+        if (rel && at !== undefined) targets[at]?.setAttribute(BLOCK_ANCHOR_ATTR, toBase64(rel));
+        start += node.nodeSize;
+      });
+    } catch {
+      // A cover without identities is counted instead.
+    }
+  }
+}
+
+/** One block of the successor as the cover shows it: the cover's own block or an original it restores. */
+type Slot = { element: HTMLElement; anchor: string | null };
+
+/** The blocks of a cover's editor, in order, as the successor will have them. */
+function coverSlots(prose: HTMLElement): Slot[] {
+  const slots: Slot[] = [];
+  for (const element of Array.from(prose.children)) {
+    if (!(element instanceof HTMLElement)) continue;
+    if (element.classList.contains(classes.restored)) {
+      // Said by the widget: its open form also holds a button, its folded form no paragraphs.
+      const count = Number(element.getAttribute(REMOVED_BLOCKS_ATTR)) || 0;
+      const paragraphs = Array.from(element.children).filter((child) => child.tagName === "P");
+      for (let i = 0; i < count; i += 1)
+        slots.push({
+          element: (paragraphs.length === count ? paragraphs[i] : element) as HTMLElement,
+          anchor: null,
+        });
+    } else if (!element.matches(NOT_A_BLOCK)) {
+      slots.push({ element, anchor: element.getAttribute(BLOCK_ANCHOR_ATTR) });
+    }
+  }
+  return slots;
+}
 
 export function readCoverView(cover: HTMLElement): CoverView | null {
   const pane = cover.querySelector<HTMLElement>(".meridian-editor");
   const prose = pane?.querySelector<HTMLElement>(".ProseMirror");
   if (!pane || !prose) return null;
   const top = paneTop(pane);
-  let block = 0;
-  const seen = (element: HTMLElement): CoverView | null => {
+  const slots = coverSlots(prose);
+  const block = slots.findIndex(({ element }) => {
     const rect = element.getBoundingClientRect();
-    return rect.height > 0 && rect.bottom > top
-      ? { block, offset: rect.top - top, text: beginning(element.innerText) }
-      : null;
+    return rect.height > 0 && rect.bottom > top;
+  });
+  if (block < 0) return null;
+  const offset = (slots[block]?.element.getBoundingClientRect().top ?? top) - top;
+  // The nearest block of the old review: itself, else the next (the originals
+  // it restores stand just before it), else the last before.
+  let from = slots.findIndex((slot, at) => at >= block && slot.anchor !== null);
+  for (let at = block - 1; from < 0 && at >= 0; at -= 1) if (slots[at]?.anchor) from = at;
+  return {
+    anchor: from >= 0 ? (slots[from]?.anchor ?? null) : null,
+    step: from >= 0 ? block - from : 0,
+    block,
+    offset,
   };
-  for (const element of Array.from(prose.children)) {
-    if (!(element instanceof HTMLElement)) continue;
-    // Original paragraphs drawn as a widget are blocks of the successor, as many as it holds.
-    if (element.classList.contains("meridian-review-restored")) {
-      for (const paragraph of Array.from(element.children)) {
-        if (!(paragraph instanceof HTMLElement)) continue;
-        const found = seen(paragraph);
-        if (found) return found;
-        block += 1;
-      }
-      continue;
-    }
-    // Other widgets, and insertions hidden for a Discard, are not blocks of the successor.
-    if (element.matches(WIDGET_OR_HIDDEN)) continue;
-    const rect = element.getBoundingClientRect();
-    if (rect.height === 0) continue;
-    const found = seen(element);
-    if (found) return found;
-    block += 1;
-  }
-  return null;
 }
 
 /**
- * The successor's block for what the cover's reader saw: the counted one, unless
- * a nearby block is the one that begins as it did (a count can be off by a block
- * the cover drew differently).
+ * The successor's block (counted among those it shows) for what the cover's
+ * reader saw: its identity resolved, then the steps from it; the counted block
+ * when the identity is gone or was never stamped.
  */
-function blockForCoverView(editor: Editor, view: CoverView): number | null {
-  const blocks = visibleBlocks(editor);
-  if (blocks.length === 0) return null;
-  const counted = Math.min(view.block, blocks.length - 1);
-  if (view.text.length < 12 || blocks[counted]?.text.startsWith(view.text)) return counted;
-  for (let distance = 1; distance <= 8; distance += 1) {
-    for (const index of [counted - distance, counted + distance])
-      if (blocks[index]?.text.startsWith(view.text)) return index;
+function blockOfCoverView(
+  editor: Editor,
+  runtime: RelativePositionRuntime | null,
+  view: CoverView,
+): number {
+  const { doc } = editor.state;
+  const shown = stableIndex(editor, doc.childCount);
+  if (shown === 0) return 0;
+  const clamp = (block: number) => Math.max(0, Math.min(block, shown - 1));
+  if (view.anchor && runtime) {
+    try {
+      const resolved = resolveRelativePosition(
+        runtime,
+        Y.decodeRelativePosition(fromBase64(view.anchor)),
+      );
+      if (resolved !== null)
+        return clamp(stableIndex(editor, doc.resolve(resolved).index(0)) + view.step);
+    } catch {
+      // A malformed or foreign anchor is counted instead.
+    }
   }
-  return counted;
+  return clamp(view.block);
 }
 
 /** The successor's operation for a change the writer chose, found by what it is. */
