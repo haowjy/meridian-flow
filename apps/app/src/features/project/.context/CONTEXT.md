@@ -223,8 +223,9 @@ The Chat screen's right context rail (`shell/ContextSidebar.tsx`) is drawn with 
 parts: section heads are `RailPaneHeader` (uppercase, collapsible, no counts), rows are
 `RailFileRow` over `contextTreeFileRowClassName` and the tree's `RowIcon`, and a row shows its
 file name only (no size). The rail is Recent only: without a chat or recent documents it shows
-only the Open document header, with no empty section heading or hint. The header and open
-document title menus have no root heading; drilled areas and folders keep their back row.
+only the Recent header, with no empty section heading or hint and no browse menu (the left tree
+is the explorer). The path's crumb menus have no root heading; drilled areas and folders keep
+their back row.
 A Recent row opens in the dock's document slot
 (an id-keyed door, see `dock/.context/CONTEXT.md`); the rail stays mounted under the slot, so no "current
 row" mark is shown. The phone has no such rail, and no Results surface (the app has none; the
