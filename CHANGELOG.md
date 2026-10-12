@@ -2,11 +2,11 @@
 
 ## [Unreleased]
 
-- Deleting a chat also clears its unsent and failed messages from this browser. If it is deleted elsewhere while you're in it, what you wrote moves to New chat. Cleanup preserves writing through cold loads and storage failures, and your own Delete keeps nothing even during a send.
-
 ### Changed
 
-- Deleted-project responses now identify the project to its owner, separately from a deleted chat. Missing and other writers’ projects stay concealed.
+- Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
+- A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
+
 ### Fixed
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
