@@ -41,6 +41,7 @@ export interface SyncedMutationSummary {
   echo: ApplyEchoHunk[];
   concurrentEdits?: ConcurrentEditInfo;
   reconciled: boolean;
+  awarenessDegraded?: true;
 }
 
 export interface MutationEchoInput {
@@ -134,6 +135,7 @@ export interface ApplyWithRecheckResult {
   revision: string | null;
   concurrent: CapturedConcurrentDetection;
   lateSweep?: DestructiveSweepReport;
+  awarenessDegraded?: true;
 }
 
 export type JournalBatchCommit = {
@@ -190,6 +192,11 @@ export interface MutationCommit {
     input: CommitPreflightInput & { update: Uint8Array; liveOrigin: ConcurrentUpdateOrigin },
     preflight?: CapturedConcurrentDetection,
   ): Promise<ApplyWithRecheckResult>;
+  reportAcceptedMutation(
+    before: Y.Doc,
+    after: Y.Doc,
+    input: CommitPreflightInput,
+  ): Promise<ApplyWithRecheckResult>;
   recheckCommittedUpdate(
     liveDoc: Y.Doc,
     input: CommitPreflightInput,
@@ -213,26 +220,31 @@ export function createMutationCommit(deps: {
     captureCommitPreflight,
     applyCommittedUpdateWithRecheck,
     recheckCommittedUpdate,
+    reportAcceptedMutation,
   };
 
   function summarizeMutationEcho(
     input: MutationEchoInput,
     concurrent: ConcurrentDetectionResult = emptyConcurrentDetection(),
   ): SyncedMutationSummary {
-    const after =
-      input.afterSnapshot ??
-      snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
-    const echo = computeEcho({
-      before: input.before,
-      after,
-      agentTouchedHashes: input.touchedHashes,
-      agentDeletedHashes: input.deletedHashes,
-    });
-    return {
-      echo,
-      concurrentEdits: withRunShownLinks(concurrent.info, input.links),
-      reconciled: echo.some((hunk) => hunk.mode === "full"),
-    };
+    try {
+      const after =
+        input.afterSnapshot ??
+        snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
+      const echo = computeEcho({
+        before: input.before,
+        after,
+        agentTouchedHashes: input.touchedHashes,
+        agentDeletedHashes: input.deletedHashes,
+      });
+      return {
+        echo,
+        concurrentEdits: withRunShownLinks(concurrent.info, input.links),
+        reconciled: echo.some((hunk) => hunk.mode === "full"),
+      };
+    } catch {
+      return { echo: [], reconciled: false, awarenessDegraded: true };
+    }
   }
 
   async function detectConcurrentEdits(input: {
@@ -286,6 +298,7 @@ export function createMutationCommit(deps: {
     let revision: string | null = null;
     let captured: CapturedConcurrentDetection | undefined;
     let lateSweep: DestructiveSweepReport | undefined;
+    let awarenessDegraded: true | undefined;
     let journalCommitKind: JournalCommitKind | null = null;
     let response: Awaited<ReturnType<typeof withLiveDocument<null>>>;
     try {
@@ -315,6 +328,7 @@ export function createMutationCommit(deps: {
           revision = applied.revision;
           captured = applied.concurrent;
           lateSweep = applied.lateSweep;
+          awarenessDegraded = applied.awarenessDegraded;
           return null;
         },
       );
@@ -326,6 +340,7 @@ export function createMutationCommit(deps: {
     if (captured) applyCapturedConcurrentToRuntime(input.runtime, captured);
     return {
       ok: true,
+      ...(awarenessDegraded ? { awarenessDegraded } : {}),
       revision,
       summary: summarizeMutationEcho(
         {
@@ -373,6 +388,7 @@ export function createMutationCommit(deps: {
       revision: applied.revision,
       concurrent: applied.concurrent,
       ...(applied.lateSweep ? { lateSweep: applied.lateSweep } : {}),
+      ...(applied.awarenessDegraded ? { awarenessDegraded: true } : {}),
     };
   }
 
@@ -408,17 +424,44 @@ export function createMutationCommit(deps: {
     const revision = deps.links.revision(liveDoc, input.links.scope);
     const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     try {
-      const lateSweep = await destructiveReport(input, current, beforeApplyDoc, afterApplyDoc);
+      const report = await acceptedReport(input, current, beforeApplyDoc, afterApplyDoc);
       return {
         revision,
         concurrent: current,
         journalCommitKind,
-        ...(lateSweep ? { lateSweep } : {}),
+        ...report,
       };
     } finally {
       beforeApplyDoc.destroy();
       afterApplyDoc.destroy();
     }
+  }
+
+  async function acceptedReport(
+    input: CommitPreflightInput,
+    concurrent: CapturedConcurrentDetection,
+    before: Y.Doc,
+    after: Y.Doc,
+  ) {
+    try {
+      const lateSweep = await destructiveReport(input, concurrent, before, after);
+      return lateSweep ? { lateSweep } : {};
+    } catch {
+      return { awarenessDegraded: true as const };
+    }
+  }
+
+  async function reportAcceptedMutation(
+    before: Y.Doc,
+    after: Y.Doc,
+    input: CommitPreflightInput,
+  ): Promise<ApplyWithRecheckResult> {
+    const concurrent = await captureConcurrentDetection(before, input);
+    return {
+      revision: deps.links.revision(after, input.links.scope),
+      concurrent,
+      ...(await acceptedReport(input, concurrent, before, after)),
+    };
   }
 
   async function recheckCommittedUpdate(

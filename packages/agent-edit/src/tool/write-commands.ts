@@ -432,6 +432,7 @@ export function createWriteCommands(deps: {
                   },
                 ],
           concurrentEdits: summary.concurrentEdits,
+          awarenessDegraded: summary.awarenessDegraded,
           ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
         }),
       );
@@ -506,7 +507,9 @@ export function createWriteCommands(deps: {
           ? { concurrentEdits: committed.summary.concurrentEdits }
           : {}),
         ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
-        ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
+        ...(committed.awarenessDegraded || (committed.ok && committed.summary.awarenessDegraded)
+          ? { awarenessDegraded: true }
+          : {}),
         ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
       }),
     );
@@ -669,6 +672,7 @@ export function createWriteCommands(deps: {
           settlementId: writeIdentity.durableId,
           echo: summary.echo,
           concurrentEdits: summary.concurrentEdits,
+          awarenessDegraded: summary.awarenessDegraded,
           deletedBlocks: applied.deletedBlocks,
           ...copiedEcho(),
         });
@@ -780,7 +784,9 @@ export function createWriteCommands(deps: {
         concurrentEdits: syncedMutation.summary.concurrentEdits,
         deletedBlocks: applied.deletedBlocks,
         ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
-        ...(syncedMutation.awarenessDegraded ? { awarenessDegraded: true } : {}),
+        ...(syncedMutation.awarenessDegraded || syncedMutation.summary.awarenessDegraded
+          ? { awarenessDegraded: true }
+          : {}),
         ...copiedEcho(),
       }),
     );
