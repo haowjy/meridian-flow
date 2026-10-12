@@ -126,7 +126,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await deleteDrizzleRows(db, [
         schema.branchPushOutboxUpdates,
         schema.branchPushSettlementOutbox,
-        schema.turnTrailWork,
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailDocumentDetails,
         schema.changeTrailDocumentOccurrences,

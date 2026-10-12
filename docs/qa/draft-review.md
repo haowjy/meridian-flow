@@ -556,3 +556,24 @@ work evidence. It uses real Yjs and a cold encoding for every cold round, no
 caches and no timing assertion. Do not count it as browser or live-app evidence.
 
 [undo-perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/draft-review-repair/undo-step1-fix7-evidence/long-history-perf.ts
+
+## Terminal trail recovery
+
+Use an owned thread and Work draft. Let its producing assistant turn finish,
+then wait for the empty trail to settle while the edit remains unapplied.
+Apply the draft, repeat with another edit and Discard, and read the trail through
+`./mf api GET /api/threads/<thread-id>/change-trails`. Each late disposition
+must reopen the producing trail and settle at a higher version. Unapplied drafts
+must not publish themselves. An empty or failed assistant turn must also settle.
+
+For the commit-to-worker crash window, use the PostgreSQL lifecycle suite:
+
+```bash
+DB_TEST_WORKERS=1 pnpm test:db -- apps/server/server/domains/collab/change-trail-lifecycle.db.test.ts
+```
+
+Its restart checks commit before constructing a fresh aggregate adapter on a
+separate connection. Receipt and placement rollback must leave the owner revision
+unchanged; committed invalidation must survive destroying warm state. Pending
+live publication must delay settlement. These are DB integration checks, not a
+claim that this manual writer workflow passed.

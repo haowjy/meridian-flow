@@ -65,9 +65,8 @@ the dock shows it. Switching to Auto-apply with pending changes needs a
 choice (`work-push-policy.ts`, D40): `apply` pushes each pending draft once,
 then sets the mode; `keep` sets only the mode. An archived Work's `apply`
 refuses at its first push, under the Work lock (D30). Branches carry no push
-policy: turn trail work never pushes, and a due work row settles `no_op`
-(`adapters/drizzle-turn-trail-work.ts`); a push or discard completes it
-through the journal trigger.
+policy. Trail reconciliation observes durable owner revisions and never
+publishes a draft. Active unapplied rows do not delay a terminal receipt.
 
 ## Pull and provisioning transactions
 
