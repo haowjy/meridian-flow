@@ -18,6 +18,10 @@ import type { Selection } from "./selection";
 import { catalogPathOfUri } from "./tree-projection";
 import { type UploadOutcome, uploadFiles } from "./uploader";
 
+/** Imports over this many files redraw the tree no more often than every few seconds. */
+const BIG_IMPORT = 500;
+const BIG_IMPORT_TREE_MS = 3000;
+
 export type ImportsSnapshot = { ids: readonly string[]; states: readonly ImportState[] };
 
 export type RevealRequest = { scheme: string; path: string; nonce: number };
@@ -53,7 +57,29 @@ export class ImportCoordinator {
   };
   private snapshot: ImportsSnapshot = { ids: [], states: [] };
   readonly getSnapshot = () => this.snapshot;
+  private lastTreeUpdate = 0;
+  private treeTimer: ReturnType<typeof setTimeout> | undefined;
   private changed() {
+    // A big import re-renders a big tree; let it catch up at most every few seconds.
+    const now = performance.now();
+    const big = [...this.stores.values()].some((store) => {
+      const state = store.getSnapshot();
+      return (
+        (state.report?.entries.size ?? 0) > BIG_IMPORT ||
+        (state.local?.rows.length ?? 0) > BIG_IMPORT
+      );
+    });
+    if (big && now - this.lastTreeUpdate < BIG_IMPORT_TREE_MS) {
+      this.treeTimer ??= setTimeout(
+        () => {
+          this.treeTimer = undefined;
+          this.changed();
+        },
+        BIG_IMPORT_TREE_MS - (now - this.lastTreeUpdate),
+      );
+      return;
+    }
+    this.lastTreeUpdate = now;
     const ids = this.computeKnown();
     const states = ids
       .map((id) => this.stores.get(id)?.getSnapshot())
@@ -440,6 +466,7 @@ export class ImportCoordinator {
   dispose() {
     this.disposed = true;
     if (this.openTimer) clearTimeout(this.openTimer);
+    if (this.treeTimer) clearTimeout(this.treeTimer);
     for (const controller of this.uploads.values()) controller.abort();
     for (const store of this.stores.values()) store.dispose();
   }

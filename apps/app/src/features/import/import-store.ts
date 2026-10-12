@@ -212,7 +212,10 @@ export class ImportStore {
       const stillWatched = this.watchers.size > 0;
       const done = this.state.report?.summary.state === "finished" && this.state.report.complete;
       if (stillWatched && !done) {
-        this.schedule([...this.watchers.values()].includes("report") ? POLL_MS : NOTICE_POLL_MS);
+        // A big import is read less often: each read redraws a big tree.
+        const big = (this.state.report?.entries.size ?? 0) > 500;
+        const base = [...this.watchers.values()].includes("report") ? POLL_MS : NOTICE_POLL_MS;
+        this.schedule(big ? base * 2 : base);
       }
     }, delay);
   }
