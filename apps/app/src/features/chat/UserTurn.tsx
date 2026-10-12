@@ -7,7 +7,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
-
+import { ErrorCard } from "@/components/app/ErrorCard";
 import { Button } from "@/components/ui/button";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -17,7 +17,6 @@ import type {
   MarkdownSkillOccurrence,
 } from "@/rich-content/reference-occurrences";
 import { HandoffTurnAction, useTurnDerivation } from "./derivation/DeriveTurnActions";
-import { ErrorCard } from "./ErrorCard";
 import { useReferenceAvailability } from "./reference-availability";
 
 export type UserTurnProps = {

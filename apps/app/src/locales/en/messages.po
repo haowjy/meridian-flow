@@ -1391,13 +1391,18 @@ msgstr "Couldn't send your answer."
 msgid "Couldn't send your message."
 msgstr "Couldn't send your message."
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr "Couldn't send."
 
 #: src/components/app/composer/Composer.tsx
-msgid "Couldn't send. Your message was not lost."
-msgstr "Couldn't send. Your message was not lost."
+#~ msgid "Couldn't send. Nothing was lost."
+#~ msgstr "Couldn't send. Nothing was lost."
+
+#: src/components/app/composer/Composer.tsx
+#~ msgid "Couldn't send. Your message was not lost."
+#~ msgstr "Couldn't send. Your message was not lost."
 
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't start a new brief. Try again."
@@ -1647,6 +1652,7 @@ msgstr "Discard all changes?"
 msgid "Discard changes"
 msgstr "Discard changes"
 
+#: src/components/app/ErrorCard.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
