@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Reading an import landing inside its transaction never publishes uncommitted text to open editors.
+
 - Restoring a checkpoint never makes an edited import placeholder eligible for replacement again.
 
 - Planned import links reject personal-project targets and draft-only documents; import binding requires a live view.

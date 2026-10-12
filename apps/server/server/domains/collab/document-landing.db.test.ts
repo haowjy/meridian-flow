@@ -110,6 +110,76 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("document landing (postgr
     await db.close();
   });
 
+  it.each(
+    (["fill", "prepend"] as const).flatMap((door) =>
+      [false, true].flatMap((warm) =>
+        [false, true].flatMap((read) =>
+          [false, true].map((commit) => ({ door, warm, read, commit })),
+        ),
+      ),
+    ),
+  )("$door landing warm=$warm read=$read commit=$commit never publishes before commit", async ({
+    door,
+    warm,
+    read,
+    commit,
+  }) => {
+    if (door === "prepend")
+      await subject.engine.fillEmptyDocument(documentId, await subject.bind("kept"));
+    const kept = door === "prepend" ? "kept\n" : "";
+    // A fresh room adapter avoids retaining the seed/fill operation's direct connection.
+    subject = setup();
+    const observer = warm ? await subject.hp.openDirectConnection(documentId) : null;
+    if (warm) await subject.engine.readAsMarkdown(documentId);
+    const content = await subject.bind("arrived");
+    const land = async () => {
+      const result =
+        door === "fill"
+          ? await subject.engine.fillEmptyDocument(documentId, content)
+          : await subject.engine.prependBlocks(documentId, content);
+      expect(result).toMatchObject({ ok: true, value: { updateSeq: expect.any(Number) } });
+      if (read)
+        expect(await subject.engine.readAsMarkdown(documentId)).toEqual({ ok: true, value: kept });
+      // Public reads may use private copies, never open or hydrate a shared cold room.
+      expect(subject.hp.documents.has(documentId)).toBe(warm);
+      const room = subject.hp.documents.get(documentId);
+      if (room)
+        expect(
+          codec.serialize(
+            model.projectBlocks(toDocHandle(room)),
+            createStaticDocumentLinkScopes().reader({ uri: null, view: { kind: "live" } }),
+          ),
+        ).toBe(kept);
+      if (!commit) throw new Error("rollback");
+    };
+    try {
+      if (commit) await runInDrizzleTransaction(db, land);
+      else await expect(runInDrizzleTransaction(db, land)).rejects.toThrow("rollback");
+      expect((await subject.journal.read(documentId)).updates).toHaveLength(
+        (door === "prepend" ? 1 : 0) + (commit ? 1 : 0),
+      );
+      const expected = commit ? (door === "prepend" ? "arrived\n\nkept\n" : "arrived\n") : kept;
+      expect(await subject.engine.readAsMarkdown(documentId)).toEqual({
+        ok: true,
+        value: expected,
+      });
+      const newcomer = await subject.hp.openDirectConnection(documentId);
+      try {
+        if (!newcomer.document) throw new Error("missing observer document");
+        expect(
+          codec.serialize(
+            model.projectBlocks(toDocHandle(newcomer.document)),
+            createStaticDocumentLinkScopes().reader({ uri: null, view: { kind: "live" } }),
+          ),
+        ).toBe(expected);
+      } finally {
+        await newcomer.disconnect();
+      }
+    } finally {
+      await observer?.disconnect();
+    }
+  });
+
   it.each([
     "writer content",
     "",
