@@ -1375,10 +1375,6 @@ msgid "Couldn't send. Nothing was lost."
 msgstr "Couldn't send. Nothing was lost."
 
 #: src/components/app/composer/Composer.tsx
-#~ msgid "Couldn't send. Your message stays."
-#~ msgstr "Couldn't send. Your message stays."
-
-#: src/components/app/composer/Composer.tsx
 #~ msgid "Couldn't send. Your message was not lost."
 #~ msgstr "Couldn't send. Your message was not lost."
 
@@ -3179,7 +3175,6 @@ msgstr "Resume my documents on any device"
 #: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/ErrorBlock.tsx
-#: src/features/chat/InterruptResponseFeedback.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -4483,8 +4478,8 @@ msgid "You left checkout. No purchase was confirmed."
 msgstr "You left checkout. No purchase was confirmed."
 
 #: src/features/chat/InterruptResponseFeedback.tsx
-#~ msgid "Your answer may not have reached the agent."
-#~ msgstr "Your answer may not have reached the agent."
+msgid "Your answer may not have reached the agent."
+msgstr "Your answer may not have reached the agent."
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."

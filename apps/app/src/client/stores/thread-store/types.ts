@@ -11,6 +11,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   InterruptResponseEntry,
   InterruptResponseIdentity,
+  InterruptResponseState,
 } from "@/core/session/interrupt-response";
 
 export type LiveTurnMeta = {
@@ -106,10 +107,13 @@ export type ThreadStoreActions = {
     input: InterruptResponseIdentity & { value: JsonValue; generation: number },
   ): void;
   /**
-   * Move a tracked response to the retryable `failed` state. Upserts, because a
-   * send that never left the client has no pending row yet.
+   * Move a tracked response to a proven/ambiguous local failure state. Upserts,
+   * because a send that never left the client has no pending row yet.
    */
-  failInterruptResponse(input: InterruptResponseIdentity & { value: JsonValue }): void;
+  failInterruptResponse(
+    input: InterruptResponseIdentity & { value: JsonValue },
+    failure: InterruptResponseState,
+  ): void;
   /** Clear the tracked response once the server resolves/expires the interrupt. */
   settleInterruptResponse(identity: InterruptResponseIdentity): void;
   /**
@@ -118,8 +122,8 @@ export type ThreadStoreActions = {
    */
   pendingInterruptResponseForThread(threadId: string): InterruptResponseEntry | null;
   /**
-   * Mark every still-pending response written on `generation` failed. Called
+   * Mark every still-pending response written on `generation` ambiguous. Called
    * when that socket closes before any matching resolution arrived.
    */
-  failInterruptResponsesForGeneration(generation: number): void;
+  markInterruptResponsesForGenerationAmbiguous(generation: number): void;
 };

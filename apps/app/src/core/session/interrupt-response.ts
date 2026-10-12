@@ -5,10 +5,8 @@
  *
  * This is not the answer authority. The agent outcome is server-confirmed by the
  * journaled `meridian.interrupt` lifecycle event; these entries only carry the
- * local send state (pending / failed) that keeps the card's controls honest and
- * offers a tuple-preserving Retry. `failed` covers every send whose delivery
- * is not confirmed: Retry is safe because the server consumes a pending
- * interrupt once, so a repeat of a landed answer is rejected, not applied twice.
+ * local send state (pending / proven-failed / ambiguous) that keeps the card's
+ * controls honest and offers a tuple-preserving Retry.
  */
 import type { JsonValue } from "@meridian/contracts/threads";
 
@@ -18,7 +16,7 @@ export type InterruptResponseIdentity = {
   interruptId: string;
 };
 
-export type InterruptResponseStatus = "pending" | "failed";
+export type InterruptResponseStatus = "pending" | "ambiguous" | "failed";
 
 export type InterruptResponseState = {
   status: InterruptResponseStatus;
@@ -37,7 +35,7 @@ export type InterruptResponseEntry = InterruptResponseIdentity & {
   /**
    * Socket generation the frame was written on, or null when the write never
    * left the client. When that generation closes before a matching resolution,
-   * the entry is still pending and becomes failed/retryable.
+   * the entry is still pending and becomes ambiguous/retryable.
    */
   generation: number | null;
 };
