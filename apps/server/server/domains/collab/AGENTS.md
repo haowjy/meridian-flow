@@ -13,7 +13,8 @@ editor UI or transport-shell policy.
   Document Apply publishes its whole current branch. Per-change Apply and Discard
   share server-vended dependency-closed classes, never client-reconstructed turns.
   Per-change Apply fences both preview revisions. Discard fences the live revision
-  and exact server-vended class membership, not unrelated draft typing. Both
+  and server-vended evidence of complete closed rows and rich class effect, not
+  unrelated draft typing. Both
   use current-cut snapshot CAS at durable commit; document Apply and whole
   Discard remain unfenced.
 - Writer source rows retain their identities through attribution. Only dependency

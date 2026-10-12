@@ -60,7 +60,7 @@ Paths outside this directory are relative to `apps/app/src`.
 - Accepted per-change commands keep an immutable stable member set. Reforks may
   rename rows but never enlarge or shrink that set; incomplete classes refuse.
   Explicit stale answers get one fresh-cut retry only for identical actionable
-  members. Transport ambiguity and permission failures never retry.
+  members and unchanged server admission evidence. Transport ambiguity and permission failures never retry.
 - Per-change commands send every operation of the class and the viewed revision
   tokens. Whole-draft commands settle the current server branch, not a preview.
 - Only new documents are one whole-draft

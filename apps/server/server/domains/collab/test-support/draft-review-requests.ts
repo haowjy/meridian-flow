@@ -68,6 +68,13 @@ export function fencedRequest<T>(
   return {
     ...command,
     operationIds,
+    admissionTokens: [
+      ...new Set(
+        preview.operations
+          .filter((op) => operationIds.includes(op.operationId))
+          .map((op) => op.admissionToken),
+      ),
+    ],
     closureClassIds: [
       ...new Set(
         preview.operations

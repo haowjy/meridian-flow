@@ -87,7 +87,12 @@ describe("draft command records", () => {
 
   it("keeps nothing of the answer that closed the draft once the claim is released, even with a read in flight", async () => {
     await run(async () => {
-      const closing = { classIds: ["c"], operationIds: ["1"], mode: "discard" as const };
+      const closing = {
+        classIds: ["c"],
+        admissionTokens: ["c"],
+        operationIds: ["1"],
+        mode: "discard" as const,
+      };
       const earlier = deferred<typeof listed>();
       const read = readDraftsAfterCommands(scope, () => earlier.promise);
       await act(async () => {

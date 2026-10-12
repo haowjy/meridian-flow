@@ -100,6 +100,7 @@ it.each([
     const selection = {
       ...request,
       operationIds: preview.operations.map((operation) => operation.operationId),
+      admissionTokens: [...new Set(preview.operations.map((op) => op.admissionToken))],
       closureClassIds: [
         ...new Set(preview.operations.map((operation) => operation.closureClassId)),
       ],

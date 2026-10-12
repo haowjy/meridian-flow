@@ -26,8 +26,9 @@ The review wire shape is intentionally JSON-natural and UI-oriented:
   preview's opaque `liveRevisionToken` and `draftRevisionToken`. It answers
   `applied` with the applied `operationIds` and `closureClassIds`, or `stale`,
   `gone`, `draft_only` (new document) or `incomplete_class`, all as HTTP 200.
-  Selective Discard sends operation ids and the same tokens; the server expands
-  each id to its class.
+  Selective Discard sends operation ids, stable class IDs and server-vended
+  admission tokens over complete closed journal rows and rich effect. The server
+  expands each id to its current class and checks that evidence.
 - Successful per-change Apply and Discard responses add `draftClosed`. When
   true, `draftDisposition` names the settled review (`applied` if any content
   reached live, otherwise `discarded`). No client-side operation-count guess
@@ -41,9 +42,11 @@ domain maps `draftId` to `document_branches` and owns
 `branch_write_journal`/`push_lineage` integration.
 
 Selective Discard must send `liveRevisionToken` and `draftRevisionToken` from the
-preview alongside `operationIds`. Missing/changed tokens return `stale`; refresh
-instead of reporting success or closing the review. Whole-document Discard omits
-these tokens and remains unfenced.
+preview alongside `operationIds`, `closureClassIds` and `admissionTokens`. Missing
+evidence or changed live/class evidence returns `stale`; unrelated draft typing
+does not. Stable class identity alone is never admission evidence. Refresh instead
+of reporting success or closing the review. Whole-document Discard omits these
+tokens and remains unfenced.
 
 Incomplete attribution retains an explicit `unclassified: true` hunk; empty
 `operationIds` means there is no attributable author, not no difference. Render
