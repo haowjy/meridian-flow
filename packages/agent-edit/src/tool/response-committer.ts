@@ -25,7 +25,7 @@ import type {
   MutationCommit,
   OwnWriteStep,
 } from "./mutation-commit.js";
-import { renderSettledReceipts } from "./receipt.js";
+import { rejectedWriteExplanation, renderSettledReceipts } from "./receipt.js";
 
 import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
 import type {
@@ -165,6 +165,7 @@ export interface ResponseStageUpdateInput {
 }
 
 interface StagedResponseUpdate extends JournaledUpdate {
+  rejectionReason?: import("../ports/document-coordinator.js").StagedWriteRejectionReason;
   documentLabel: string;
   description: string;
   commandName: DocumentCommandName;
@@ -190,7 +191,7 @@ interface ResponseDocumentBufferFields {
   ensureDocumentBeforeCommit: boolean;
   createdDocumentBeforeCommit: boolean;
   discardedBeforeCommit: boolean;
-  discardedUpdates?: StagedResponseUpdate[];
+  rejectedUpdates?: StagedResponseUpdate[];
   interactionContext?: InteractionContext;
 }
 
@@ -398,7 +399,10 @@ export function createResponseCommitter(deps: {
         const scope = kept.some((entry) => entry.writeId === handle)
           ? "part of this handle"
           : "all staged writes for this handle";
-        return `${writes[0]?.documentLabel} ${handle}: ${scope} was discarded with the text it edited. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
+        const explanation = writes.every((entry) => entry.rejectionReason === "discard")
+          ? "was discarded with the text it edited"
+          : `did not land: ${[...new Set(writes.map((entry) => rejectedWriteExplanation(entry.rejectionReason)))].join("; ")}`;
+        return `${writes[0]?.documentLabel} ${handle}: ${scope} ${explanation}. Dropped writes: ${writes.map((entry) => entry.description).join("; ")}. Re-read and retry.`;
       });
     },
   };
@@ -459,7 +463,15 @@ export function createResponseCommitter(deps: {
       if (docBuffer.view !== view) continue;
       const keptIds = new Set(accepted.keptEntries.map((entry) => entry.mutation?.writeId));
       const updates = docBuffer.updates.filter((entry) => keptIds.has(entry.durableWriteId));
-      const rejected = docBuffer.updates.filter((entry) => !keptIds.has(entry.durableWriteId));
+      const reasons = new Map(
+        accepted.rejectedWrites?.map((write) => [write.writeId, write.reason]),
+      );
+      const rejected = docBuffer.updates
+        .filter((entry) => !keptIds.has(entry.durableWriteId))
+        .map((entry) => ({
+          ...entry,
+          rejectionReason: reasons.get(entry.durableWriteId) ?? ("integration" as const),
+        }));
       // Equivalent readers do not invalidate each other; actual content/cut changes still retry.
       if (
         !rejected.length &&
@@ -474,7 +486,7 @@ export function createResponseCommitter(deps: {
       // No buffer or helper mutation occurs before host admission and CAS accept.
       Object.assign(docBuffer, {
         updates,
-        discardedUpdates: [...(docBuffer.discardedUpdates ?? []), ...rejected],
+        rejectedUpdates: [...(docBuffer.rejectedUpdates ?? []), ...rejected],
         view: {
           ...docBuffer.view,
           cut: { ...accepted.helperCut, state: accepted.helperCut.state.slice() },
@@ -908,7 +920,7 @@ export function createResponseCommitter(deps: {
             receipts: applied.awarenessDegraded
               ? renderSettledReceipts(
                   docBuffer.updates,
-                  docBuffer.discardedUpdates ?? [],
+                  docBuffer.rejectedUpdates ?? [],
                   applied.revision,
                   () => null,
                 )
@@ -1138,7 +1150,7 @@ export function createResponseCommitter(deps: {
       updateCount: docBuffer.updates.length,
       receipts: renderSettledReceipts(
         docBuffer.updates,
-        docBuffer.discardedUpdates ?? [],
+        docBuffer.rejectedUpdates ?? [],
         revision,
         () => null,
       ),
@@ -1152,7 +1164,7 @@ export function createResponseCommitter(deps: {
   ): ResponseCommitDocumentResult["receipts"] {
     return renderSettledReceipts(
       docBuffer.updates,
-      docBuffer.discardedUpdates ?? [],
+      docBuffer.rejectedUpdates ?? [],
       revision,
       () => {
         const links = linksOf(docBuffer);
@@ -1451,7 +1463,8 @@ export function createResponseCommitter(deps: {
       ...(input.copied ? { copied: input.copied } : {}),
     };
     if (rejected) {
-      docBuffer.discardedUpdates = [...(docBuffer.discardedUpdates ?? []), entry];
+      entry.rejectionReason = "discard";
+      docBuffer.rejectedUpdates = [...(docBuffer.rejectedUpdates ?? []), entry];
       enqueueNotices(input.responseId, input.docId, [entry]);
     } else docBuffer.updates.push(entry);
     buffer.nextStageSeq += 1;
@@ -1627,7 +1640,7 @@ function responseLifecycleMessage(detail: ResponseLifecycleErrorDetail): string 
 }
 
 function hasStagedReceipts(doc: ResponseDocumentBuffer): boolean {
-  return doc.updates.length > 0 || (doc.discardedUpdates?.length ?? 0) > 0;
+  return doc.updates.length > 0 || (doc.rejectedUpdates?.length ?? 0) > 0;
 }
 
 function snapshotResponseBuffer(buffer: ResponseBuffer): ResponseBuffer {

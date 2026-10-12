@@ -59,7 +59,11 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
       [retired],
       Y.encodeStateAsUpdate(draft),
     );
-    expect(kept.map((row) => row.mutation?.writeId)).toEqual(["independent"]);
+    expect(kept.keptEntries.map((row) => row.mutation?.writeId)).toEqual(["independent"]);
+    expect(kept.rejectedWrites).toEqual([
+      { writeId: "lost", reason: "discard" },
+      { writeId: "dependent", reason: "discard" },
+    ]);
     expect(current.getText("chapter").toString()).toBe("red Zblue green");
     // The command boundary now sends one envelope with ordered parts; storage expands rows.
     const logical = cloneYDoc(live);
@@ -78,7 +82,7 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
           envelopes,
           [retired],
           Y.encodeStateAsUpdate(draft),
-        ).map((entry) => entry.mutation?.writeId),
+        ).keptEntries.map((entry) => entry.mutation?.writeId),
       ).toEqual(["independent"]);
       expect(logical.getText("chapter").toString()).toBe("red Zblue green");
     } finally {
@@ -106,5 +110,113 @@ it("drops a whole multi-segment write and its later dependency, never its indepe
     live.destroy();
     draft.destroy();
     helper.destroy();
+  }
+});
+
+it.each([
+  "chat replacement",
+  "writer deletion",
+  "writer deletion after refork",
+])("admits ordinary concurrent %s like a Yjs peer", (concurrent) => {
+  const base = new Y.Doc({ gc: false });
+  base.getText("chapter").insert(0, "Alpha Beta.");
+  const current = cloneYDoc(base),
+    helper = cloneYDoc(base);
+  const updates: Uint8Array[] = [];
+  helper.on("update", (update: Uint8Array) => updates.push(update));
+  helper.transact(() => {
+    helper.getText("chapter").delete(6, 4);
+    helper.getText("chapter").insert(6, "Delta");
+  });
+  const update = Y.mergeUpdates(updates);
+  current.transact(() => {
+    current.getText("chapter").delete(6, 4);
+    if (concurrent === "chat replacement") current.getText("chapter").insert(6, "Gamma");
+  });
+  const expected = cloneYDoc(current);
+  Y.applyUpdate(expected, update);
+  const entry: JournalBatchAppendEntry = {
+    docId: "chapter",
+    update,
+    meta: { origin: "agent:thread", seq: 0 },
+    mutation: {
+      mode: "threadPeer",
+      branchGeneration: 1,
+      threadId: "thread",
+      turnId: null,
+      actorKind: "agent",
+      writeId: "replacement",
+    },
+  };
+  try {
+    expect(
+      reconcileStagedBranchWrites(
+        current,
+        helper,
+        [entry],
+        concurrent === "writer deletion after refork" ? [Y.encodeStateAsUpdate(base)] : [],
+        Y.encodeStateAsUpdate(base),
+      ).keptEntries,
+    ).toEqual([entry]);
+    expect(current.getText("chapter").toString()).toBe(expected.getText("chapter").toString());
+    expect(current.store.pendingStructs).toBeNull();
+    expect(current.store.pendingDs).toBeNull();
+  } finally {
+    base.destroy();
+    current.destroy();
+    helper.destroy();
+    expected.destroy();
+  }
+});
+
+it("protects planning-visible identities removed by an explicit inverse", () => {
+  const base = new Y.Doc({ gc: false });
+  const text = base.getText("chapter");
+  text.insert(0, "Alpha Beta.");
+  const undo = new Y.UndoManager(text);
+  text.delete(6, 4);
+  text.insert(6, "Gamma");
+  const planningState = Y.encodeStateAsUpdate(base);
+  const helper = cloneYDoc(base);
+  const updates: Uint8Array[] = [];
+  helper.on("update", (update: Uint8Array) => updates.push(update));
+  helper.transact(() => {
+    helper.getText("chapter").delete(6, 5);
+    helper.getText("chapter").insert(6, "Delta");
+  });
+  const inverse: Uint8Array[] = [];
+  base.on("update", (update: Uint8Array) => inverse.push(update));
+  undo.undo();
+  const current = cloneYDoc(base);
+  const entry: JournalBatchAppendEntry = {
+    docId: "chapter",
+    update: Y.mergeUpdates(updates),
+    meta: { origin: "agent:thread", seq: 0 },
+    mutation: {
+      mode: "threadPeer",
+      branchGeneration: 1,
+      threadId: "thread",
+      turnId: null,
+      actorKind: "agent",
+      writeId: "replacement",
+    },
+  };
+  try {
+    const replay = reconcileStagedBranchWrites(
+      current,
+      helper,
+      [entry],
+      [],
+      planningState,
+      inverse,
+    );
+    expect(replay.keptEntries).toEqual([]);
+    expect(replay.rejectedWrites).toEqual([{ writeId: "replacement", reason: "inverse" }]);
+    expect(current.getText("chapter").toString()).toBe("Alpha Beta.");
+  } finally {
+    undo.destroy();
+    base.destroy();
+    helper.destroy();
+    current.destroy();
   }
 });

@@ -87,6 +87,15 @@ confirmed for the journal's no-grant guard. The pool
 also records each document's last read version per thread (`live` or
 `draft` of a Work); a write against another version returns `read_required`.
 
+Prepared response replay admits ordinary concurrent chat edits and writer deletions
+as Yjs peers. A missing planning-visible item is not Discard evidence. Only
+physically absent structs supplied by a retired generation, or removals by
+immutable inverse edits after the helper cut, revoke a staged write. The host
+reads inverse kind from immutable edit origins, not actor or text similarity.
+Replay drops the whole logical write and its later dependency closure, retains
+independent writes, and checks physical integration and unexplained residuals.
+Its typed refusal evidence follows the write into notices and settled receipts.
+
 ## Write mode and drafts
 
 The Work's write mode decides only where new AI writes go. A draft write

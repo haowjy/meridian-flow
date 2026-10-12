@@ -7,7 +7,10 @@ export interface StagedHelperCut {
   state: Uint8Array;
 }
 
+export type StagedWriteRejectionReason = "discard" | "inverse" | "integration";
+
 export interface StagedWriteReplayResult {
+  rejectedWrites?: readonly { writeId: string; reason: StagedWriteRejectionReason }[];
   keptEntries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
   helperState: Uint8Array;
   helperCut: StagedHelperCut;
