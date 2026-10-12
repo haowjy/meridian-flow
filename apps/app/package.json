@@ -29,6 +29,7 @@
     "@meridian/markup": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "@meridian/resource-replica": "workspace:*",
+    "@meridian/thread-client": "workspace:*",
     "@meridian/yjs-inspect": "workspace:*",
     "@tanstack/react-query": "^5.101.1",
     "@tanstack/react-router": "^1.170.16",
@@ -87,8 +88,7 @@
     "y-indexeddb": "9.0.12",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
-    "zustand": "^5.0.14",
-    "@meridian/thread-client": "workspace:*"
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",

@@ -12,7 +12,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@meridian/contracts": "workspace:*"
+    "@meridian/contracts": "workspace:*",
+    "@meridian/markup": "workspace:*"
   },
   "devDependencies": {
     "typescript": "catalog:",
