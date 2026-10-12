@@ -51,7 +51,6 @@ export interface MutationEchoInput {
   before: readonly BlockSnapshot[];
   touchedHashes: ReadonlySet<string>;
   deletedHashes: ReadonlySet<string>;
-  afterSnapshot?: readonly BlockSnapshot[];
 }
 
 export interface JournaledUpdate {
@@ -87,7 +86,6 @@ export interface PreparedMutation extends Omit<LiveProjectionInput, "preOwnSnaps
    * one acquisition that journals, so the check belongs here and not earlier.
    */
   refuseUnlessEmpty?: InternalWriteResult;
-  before: readonly BlockSnapshot[];
   preOwnSnapshot: Uint8Array;
 }
 
@@ -146,7 +144,7 @@ type MutationSubmissionResult = (
   | {
       ok: true;
       revision: string | null;
-      summary: SyncedMutationSummary;
+      concurrentEdits?: ConcurrentEditInfo;
       journalCommitKind: JournalCommitKind;
       lateSweep?: DestructiveSweepReport;
     }
@@ -174,7 +172,6 @@ export interface MutationCommit {
     docId: string;
     runtime: MutationCommitRuntime;
     links: CommandLinks;
-    agentUpdate: Uint8Array;
     /** Prepared response helpers cannot acquire ambient bytes through reporting. */
     reportingOnly?: boolean;
     interactionContext?: InteractionContext;
@@ -228,9 +225,7 @@ export function createMutationCommit(deps: {
     concurrent: ConcurrentDetectionResult = emptyConcurrentDetection(),
   ): SyncedMutationSummary {
     try {
-      const after =
-        input.afterSnapshot ??
-        snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
+      const after = snapshotBlocks(toDocHandle(input.runtime.doc), model, input.links.codec);
       const echo = computeEcho({
         before: input.before,
         after,
@@ -251,7 +246,6 @@ export function createMutationCommit(deps: {
     docId: string;
     runtime: MutationCommitRuntime;
     links: CommandLinks;
-    agentUpdate: Uint8Array;
     /** Prepared response helpers cannot acquire ambient bytes through reporting. */
     reportingOnly?: boolean;
     interactionContext?: InteractionContext;
@@ -284,7 +278,6 @@ export function createMutationCommit(deps: {
         input.runtime,
         input.links,
         updates,
-        detectionVector,
         input.ownTurnId,
         input.reportingOnly,
       );
@@ -342,16 +335,7 @@ export function createMutationCommit(deps: {
       ok: true,
       ...(awarenessDegraded ? { awarenessDegraded } : {}),
       revision,
-      summary: summarizeMutationEcho(
-        {
-          runtime: input.runtime,
-          links: input.links,
-          before: input.before,
-          touchedHashes: input.touchedHashes,
-          deletedHashes: input.deletedHashes,
-        },
-        captured?.detection,
-      ),
+      concurrentEdits: captured?.detection.info,
       journalCommitKind: journalCommitKind ?? "durable",
       ...(lateSweep ? { lateSweep } : {}),
     };
@@ -421,9 +405,9 @@ export function createMutationCommit(deps: {
     // INVARIANT (LOCK-WS): this final in-memory snapshot recheck and Y.applyUpdate
     // are one synchronous block. Never add an await between them.
     Y.applyUpdate(liveDoc, input.update, input.liveOrigin);
-    const revision = deps.links.revision(liveDoc, input.links.scope);
     const afterApplyDoc = docFromSnapshot(Y.encodeStateAsUpdate(liveDoc));
     try {
+      const revision = deps.links.revision(afterApplyDoc, input.links.scope);
       const report = await acceptedReport(input, current, beforeApplyDoc, afterApplyDoc);
       return {
         revision,
@@ -431,6 +415,8 @@ export function createMutationCommit(deps: {
         journalCommitKind,
         ...report,
       };
+    } catch {
+      return { revision: null, concurrent: current, journalCommitKind, awarenessDegraded: true };
     } finally {
       beforeApplyDoc.destroy();
       afterApplyDoc.destroy();
@@ -550,7 +536,6 @@ export function createMutationCommit(deps: {
     runtime: MutationCommitRuntime,
     links: CommandLinks,
     updates: readonly ConcurrentUpdate[],
-    _syncVector: Uint8Array,
     turnId: string | undefined,
     reportingOnly = false,
   ): ConcurrentDetectionResult {

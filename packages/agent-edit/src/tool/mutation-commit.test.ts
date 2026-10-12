@@ -1,8 +1,6 @@
 // Mutation commit contracts at the journal/live projection seam.
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { snapshotBlocks } from "../apply/echo.js";
-import { toDocHandle } from "../handles.js";
 import { createStaticDocumentLinks } from "../ports/static-document-links.js";
 import type { JournalBatchAppendEntry } from "../ports/update-journal.js";
 import { createMutationCommit } from "./mutation-commit.js";
@@ -45,7 +43,6 @@ describe("mutation commit", () => {
       commandName: "replace",
       runtime: { doc: runtimeDoc },
       links: { codec, scope: links.scopeFor("chapter.md", undefined) },
-      before: snapshotBlocks(toDocHandle(coordinator.require("chapter.md")), model, codec),
       updates: [journalEntry(Y.encodeStateAsUpdate(runtimeDoc, beforeVector))],
       liveOrigin: { type: "agent", actorTurnId: "turn-lock" },
       touchedHashes: new Set([hashAt(runtimeDoc, 0)]),

@@ -81,7 +81,7 @@ describe("write tool dispatch", () => {
     expectOutcome(staged, "success");
     const committed = await ctx.core.commitResponse("report-failure");
     expect(committed.documents[0].receipts).toMatchObject([
-      { result: { status: "success", awarenessDegraded: true } },
+      { writeId: staged.result.write?.id, result: { status: "success", awarenessDegraded: true } },
     ]);
     expect(transitions).not.toContain("recovery_succeeded");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Accepted response text."]);
@@ -564,6 +564,42 @@ describe("write tool dispatch", () => {
     const reread = await ctx.core.read({ file: "chapter.md" }, context);
     expectOutcome(reread, "success");
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
+    for (const command of [
+      {
+        command: "replace" as const,
+        file: "chapter.md",
+        in: [1, 2] as [number, number],
+        content: "kitten one\n\nkitten two",
+      },
+      {
+        command: "create" as const,
+        file: "chapter.md",
+        overwrite: true,
+        content: "kitten one\n\nkitten two",
+      },
+    ]) {
+      let certified = 0;
+      const multipart = harness(
+        { "chapter.md": "cat one\n\ncat two" },
+        {
+          semanticProvenance: {
+            writeCertifiedFacts() {
+              if (++certified === 2) throw new Error("second part rejected");
+            },
+          },
+        },
+      );
+      const rejected = await multipart.core.write(command, {
+        ...context,
+        responseId: "certification",
+        createdDocument: false,
+      });
+      expectOutcome(rejected, "partial_failure", true);
+      expect(certified).toBe(2);
+      expect((await multipart.core.commitResponse("certification")).updateCount).toBe(0);
+      expect((await multipart.journal.read("chapter.md")).updates).toHaveLength(0);
+      expect(blockTexts(multipart.liveDoc("chapter.md"))).toEqual(["cat one", "cat two"]);
+    }
   });
 });
 
