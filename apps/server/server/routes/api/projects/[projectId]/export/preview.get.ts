@@ -14,7 +14,13 @@ export default defineEventHandler(async (event) => {
   );
   setHeader(event, "Cache-Control", "private, no-store");
   try {
-    return await app.projectExport.preview(project.id, user.userId, exportOptions(getQuery(event)));
+    // A superseded or closed-dialog preview aborts the request; stop reading documents.
+    return await app.projectExport.preview(
+      project.id,
+      user.userId,
+      exportOptions(getQuery(event)),
+      event.req.signal,
+    );
   } catch (error) {
     if (!(error instanceof ExportReadError)) throw error;
     throw createError({ statusCode: 503, message: error.message, data: { retryable: true } });

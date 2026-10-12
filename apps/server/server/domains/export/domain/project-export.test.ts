@@ -1,6 +1,5 @@
 /** Export contract: a portable, frozen vault whose Markdown links resolve to ZIP entries. */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import { type CatalogDocument, documentRef } from "@meridian/contracts";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -131,7 +130,8 @@ function fixture() {
   const reads: string[] = [];
   let unavailable = false;
   const denied = new Set<string>();
-  const service = createProjectExport({
+  let afterRead = () => {};
+  const ports: Parameters<typeof createProjectExport>[0] = {
     pendingDrafts: {
       async count() {
         return 3;
@@ -160,6 +160,7 @@ function fixture() {
       async readForExport(id, scope) {
         if (unavailable) return { ok: false, error: { code: "not_found", documentId: id } };
         reads.push(id);
+        afterRead();
         const holder = createHolderLinkScope(
           {
             uri: docs.find((doc) => doc.id === id)!.uri,
@@ -204,9 +205,14 @@ function fixture() {
         return { ok: true, value: { bytes, mimeType: "image/png" } };
       },
     },
-  });
+  };
   return {
-    service,
+    service: createProjectExport(ports),
+    /** A separate instance over the same backing ports, as on another server replica. */
+    replica: () => createProjectExport(ports),
+    onRead(callback: () => void) {
+      afterRead = callback;
+    },
     denied,
     docs,
     blocks,
@@ -239,36 +245,69 @@ function checkRelativeLinks(files: Record<string, Uint8Array>) {
   }
 }
 describe("project exports", () => {
-  it("reauthorizes deleted documents and Work parts at every download without held state", async () => {
-    const { service, denied, docs } = fixture();
+  it("serves every download from an independent instance with current grants and content", async () => {
+    const { service, replica, denied, docs, blocks, reads } = fixture();
     const options = { scratch: true, uploads: true };
-    // A prior preview cannot carry readable grants into a later GET.
+    const proseEntries = (files: Record<string, Uint8Array>) =>
+      Object.keys(files).filter(
+        (path) => !path.endsWith(".png") && !path.endsWith("meridian-export.json"),
+      ).length;
+    // The preview runs on one instance; downloads arrive at another that never saw it.
     await service.preview("project", "account", options);
+    const other = replica();
+    reads.length = 0;
+    const first = await entries(await other.download("project", "account", "Serial", options));
+    expect(first["Serial/Knowledge Base/map.png"]).toBeDefined();
+    expect(first["Serial/Works/Work/Scratch/note.md"]).toBeDefined();
+    expect(JSON.parse(strFromU8(first["Serial/meridian-export.json"]!)).excludedLinks).toBe(0);
+    expect(reads).toHaveLength(proseEntries(first));
+    checkRelativeLinks(first);
+
+    // Grants and content change between GETs; the repeat download reflects both.
     denied.add(uuid("image"));
     for (const doc of docs.filter((doc) => doc.workId === "one")) denied.add(doc.id);
-    const files = await entries(await service.download("project", "account", "Serial", options));
-    expect(files["Serial/Knowledge Base/map.png"]).toBeUndefined();
-    expect(Object.keys(files).some((path) => path.startsWith("Serial/Works/Work/"))).toBe(false);
-    expect(files["Serial/Works/work/Scratch/note.md"]).toBeDefined();
-    expect(JSON.parse(strFromU8(files["Serial/meridian-export.json"]!)).excludedLinks).toBe(3);
-    checkRelativeLinks(files);
-    // Another instance needs only the same ports, never an issued ticket.
-    const other = fixture();
-    expect(
-      Object.keys(
-        await entries(await other.service.download("project", "account", "Serial", options)),
-      ).length,
-    ).toBeGreaterThan(0);
+    blocks.push(
+      schema.node(
+        "paragraph",
+        null,
+        schema.text("Later", [
+          schema.marks.link!.create({ href: "kb://Lore/Sects", ref: documentRef(uuid("lore")) }),
+        ]),
+      ),
+    );
+    reads.length = 0;
+    const second = await entries(await other.download("project", "account", "Serial", options));
+    expect(second["Serial/Knowledge Base/map.png"]).toBeUndefined();
+    expect(Object.keys(second).some((path) => path.startsWith("Serial/Works/Work/"))).toBe(false);
+    expect(second["Serial/Works/work/Scratch/note.md"]).toBeDefined();
+    expect(strFromU8(second["Serial/Manuscript/Chapter.md"]!)).toContain("[Later](");
+    expect(JSON.parse(strFromU8(second["Serial/meridian-export.json"]!)).excludedLinks).toBe(3);
+    expect(reads).toHaveLength(proseEntries(second));
+    checkRelativeLinks(second);
+
+    // The original instance downloads the same current state; nothing differs per instance.
+    const again = await entries(await service.download("project", "account", "Serial", options));
+    expect(Object.keys(again).sort()).toEqual(Object.keys(second).sort());
   });
-  it("has no module-held export state or ticket boundary and counts the bytes it streams", async () => {
-    const source = readFileSync(new URL("./project-export.ts", import.meta.url), "utf8");
-    expect(source.slice(0, source.indexOf("export function createProjectExport"))).not.toMatch(
-      /new Map|setTimeout|randomUUID/,
-    );
-    expect(existsSync(new URL("../ports/export-tickets.ts", import.meta.url))).toBe(false);
-    expect(existsSync(new URL("../adapters/process-export-tickets.ts", import.meta.url))).toBe(
-      false,
-    );
+  it("stops reading documents once an abandoned preview is aborted", async () => {
+    const { service, reads, onRead } = fixture();
+    const controller = new AbortController();
+    onRead(() => {
+      if (reads.length === 2) controller.abort();
+    });
+    await expect(
+      service.preview("project", "account", { scratch: true, uploads: true }, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(reads).toHaveLength(2);
+    const aborted = new AbortController();
+    aborted.abort();
+    reads.length = 0;
+    await expect(
+      service.preview("project", "account", { scratch: false, uploads: false }, aborted.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(reads).toHaveLength(0);
+  });
+  it("counts the outside links in the bytes it streams, not those an earlier preview saw", async () => {
     const { service, blocks } = fixture();
     const options = { scratch: false, uploads: false };
     expect((await service.preview("project", "account", options)).outsideLinks).toEqual({

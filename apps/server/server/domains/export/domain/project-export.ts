@@ -14,7 +14,7 @@ import type { CollabDomain } from "../../collab/index.js";
 import { exportFilename } from "../../context/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
-import type { ExportSnapshotStore } from "../ports/export-snapshot.js";
+import type { ExportDocument, ExportSnapshotStore } from "../ports/export-snapshot.js";
 import { buildExportLayout, type ExportOptions, portableName } from "./export-layout.js";
 
 export class ExportReadError extends Error {
@@ -55,31 +55,16 @@ export function createProjectExport(deps: {
     );
     const uris = new Map(documents.map((doc) => [doc.id, doc.uri]));
     const byId = new Map(documents.map((doc) => [doc.id, doc]));
-    async function read(documentId: string): Promise<{
-      bytes: Uint8Array;
-      mimeType: string;
-      filename: string;
-      excludedLinks: number;
-      outsideCounts: Record<ExportOutsideArea, number>;
-    }> {
-      let excludedLinks = 0;
-      const outsideCounts = { scratch: 0, uploads: 0, user: 0, deleted: 0 };
+    function lookup(documentId: string) {
       const document = byId.get(documentId);
       if (!document) throw new ExportReadError("not_found", "Document is not available for export");
-      const filename =
-        paths.get(documentId)?.split("/").at(-1) ??
-        exportFilename(document.name, document.extension, document.fileType);
-      if (document.storageUrl) {
-        const key = objectStoreKeyFromStorageUrl(document.storageUrl);
-        if (!key) throw new ExportReadError("storage_invalid", "Invalid document storage URL");
-        const result = await deps.objects.get(key);
-        if (!result.ok)
-          throw new ExportReadError(
-            result.error.code === "not_found" ? "not_found" : "storage_unavailable",
-            result.error.message,
-          );
-        return { ...result.value, filename, excludedLinks, outsideCounts };
-      }
+      return document;
+    }
+    /** One link-spelling pass over live prose; the preview counts it without encoding bytes. */
+    async function spell(document: ExportDocument) {
+      let excludedLinks = 0;
+      const outsideCounts = { scratch: 0, uploads: 0, user: 0, deleted: 0 };
+      const documentId = document.id;
       const result = await deps.documents.readForExport(
         documentId,
         (links) =>
@@ -105,6 +90,30 @@ export function createProjectExport(deps: {
       );
       if (!result.ok)
         throw new ExportReadError("document_unavailable", "Document could not be read for export");
+      return { text: result.value, excludedLinks, outsideCounts };
+    }
+    async function read(documentId: string): Promise<{
+      bytes: Uint8Array;
+      mimeType: string;
+      filename: string;
+      excludedLinks: number;
+    }> {
+      const document = lookup(documentId);
+      const filename =
+        paths.get(documentId)?.split("/").at(-1) ??
+        exportFilename(document.name, document.extension, document.fileType);
+      if (document.storageUrl) {
+        const key = objectStoreKeyFromStorageUrl(document.storageUrl);
+        if (!key) throw new ExportReadError("storage_invalid", "Invalid document storage URL");
+        const result = await deps.objects.get(key);
+        if (!result.ok)
+          throw new ExportReadError(
+            result.error.code === "not_found" ? "not_found" : "storage_unavailable",
+            result.error.message,
+          );
+        return { ...result.value, filename, excludedLinks: 0 };
+      }
+      const { text, excludedLinks } = await spell(document);
       const properties = readStoredDocumentProperties(document.metadata);
       const frontmatter =
         document.fileType === "markdown" && properties
@@ -113,8 +122,7 @@ export function createProjectExport(deps: {
       return {
         filename,
         excludedLinks,
-        outsideCounts,
-        bytes: new TextEncoder().encode(frontmatter + result.value),
+        bytes: new TextEncoder().encode(frontmatter + text),
         mimeType: "text/markdown; charset=utf-8",
       };
     }
@@ -173,12 +181,15 @@ export function createProjectExport(deps: {
         { objectMode: false, highWaterMark: 65536 },
       );
     }
-    async function summarize() {
+    /** Stops between documents once the caller abandons the preview (closed dialog, newer options). */
+    async function summarize(signal?: AbortSignal) {
       let count = 0;
       const byArea = { scratch: 0, uploads: 0, user: 0, deleted: 0 };
       for (const id of paths.keys()) {
-        if (byId.get(id)?.storageUrl) continue;
-        const file = await read(id);
+        signal?.throwIfAborted();
+        const document = lookup(id);
+        if (document.storageUrl) continue;
+        const file = await spell(document);
         count += file.excludedLinks;
         for (const area of Object.keys(byArea) as ExportOutsideArea[])
           byArea[area] += file.outsideCounts[area];
@@ -193,10 +204,12 @@ export function createProjectExport(deps: {
       projectId: string,
       accountId: string,
       options: ExportOptions,
+      signal?: AbortSignal,
     ): Promise<ProjectExportPreview> {
       const scope = await createScope(projectId, accountId, options);
+      signal?.throwIfAborted();
       const [outsideLinks, pendingDrafts] = await Promise.all([
-        scope.summarize(),
+        scope.summarize(signal),
         deps.pendingDrafts.count(projectId),
       ]);
       return { outsideLinks, pendingDrafts };

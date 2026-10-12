@@ -25,5 +25,7 @@ and unapplied-draft counts. It runs the same `ExportLinkScope` pass the ZIP
 uses over current collab content rather than `document_links`: those rows are a
 lagging certified-cut hint, omit ref-less internal hrefs, and would need a second
 outside-link classifier (settlements, ahead paths, contextual hrefs) that could
-drift from the export. Preview and download can differ when content changes. Browser owns download progress/failure; preview errors
+drift from the export. The request's abort signal stops that pass between
+documents, so a superseded or closed-dialog preview does not keep reading. Preview
+and download can differ when content changes. Browser owns download progress/failure; preview errors
 belong in the dialog and do not prevent Export.
