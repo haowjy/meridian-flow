@@ -1,5 +1,7 @@
 /** Work-draft listing, preview, Apply, and Discard orchestration. */
+
 import type { YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type {
   DraftApplyChangesRequest,
   DraftApplyChangesResponse,
@@ -84,6 +86,7 @@ export function createWorkDraftReviewService(input: {
     ]);
     for (const { branch, actorThreadIds } of pending) {
       const uri = uris.get(branch.documentId) ?? null;
+      const location = uri ? parseUnifiedContextUri(uri) : null;
       drafts.push({
         draftId: branch.branchId,
         documentId: branch.documentId,
@@ -96,7 +99,9 @@ export function createWorkDraftReviewService(input: {
         })),
         updatedAt: branch.updatedAt,
         documentName: documentTitleFromUri(uri),
-        contextPath: manuscriptContextPath(uri),
+        contextLocation: location?.ok
+          ? { scheme: location.value.scheme, path: `/${location.value.path}` }
+          : null,
         ...(draftOnlyDocumentIds.has(branch.documentId) ? { createdDocument: true } : {}),
       });
     }
@@ -380,10 +385,4 @@ export function createWorkDraftReviewService(input: {
       },
     },
   };
-}
-
-function manuscriptContextPath(uri: string | null): string | null {
-  if (!uri?.startsWith("manuscript://")) return null;
-  const path = uri.slice("manuscript://".length).replace(/^\/+/, "");
-  return path ? `/${path}` : null;
 }

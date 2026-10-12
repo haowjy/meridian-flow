@@ -102,6 +102,8 @@ export type EditorTabCandidate =
       scheme: ProjectContextTreeScheme;
       workId?: string | null;
       rootThreadId?: string | null;
+      draftOnly?: boolean;
+      reviewWorkId?: string;
     };
 
 /**
@@ -111,6 +113,7 @@ export type EditorTabCandidate =
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
+  if (tab.draftOnly && tab.reviewWorkId !== workId) return false;
   if (!isEditorScheme(tab.scheme)) return false;
   if (tab.rootThreadId) return true;
   return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;

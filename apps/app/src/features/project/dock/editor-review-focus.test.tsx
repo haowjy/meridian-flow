@@ -32,7 +32,7 @@ const target: AiDraftLaunchTarget = {
   workId: "work-1",
   documentId: "doc-1",
   draftId: "draft-1",
-  contextPath: "chapters/one.md",
+  contextLocation: { scheme: "manuscript", path: "chapters/one.md" },
   focusOperationIds: ["op-2"],
 };
 const other = { documentId: "doc-0", draftId: "draft-0" };
@@ -85,7 +85,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
       {
         documentId: target.documentId,
         documentName: "One",
-        contextPath: target.contextPath,
+        contextLocation: target.contextLocation,
         draft: { draftId: target.draftId },
       },
     ];
@@ -113,7 +113,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
               container: "editor",
               documentId: target.documentId,
               scheme: "manuscript",
-              path: target.contextPath,
+              path: target.contextLocation.path,
               draftOnly: false,
               review: (addressed ? target.draftId : undefined)
                 ? {

@@ -43,6 +43,22 @@ commit, viewport, run-owned identities, request scope/order, screenshots, clean
 console and fresh manuscript/draft readback. Read-only API success does not prove
 writer interaction.
 
+## Review across document schemes
+
+In a named draft-mode Work, use the mock model to create `kb://Place`,
+edit an existing `kb://Hero`, and edit `manuscript://Chapter`. Check
+the durable transcript with `./mf thread view` and the Work draft list:
+every row has `contextLocation: { scheme, path }` with its own scheme.
+
+Open each kb draft from the chat strip, the document's change list, and the
+Work page. The Editor stays in Knowledge Base, shows the new draft as
+draft-only (no live-file error), and admits inline review. Apply the new
+document and read it back from `kb://`; Discard the existing-document edit
+and verify its live text is unchanged. Review the Manuscript chapter too.
+Repeat with two Works drafting the same new document: each transient tab
+must retain its own Work and draft identity. File policy alone chooses where drafts can exist. The review path imposes
+no scheme whitelist; each row opens its own location.
+
 ## Rich-only paragraph changes (CLI and visual)
 
 With this worktree's mock stack running, seed `## Scene` followed by
@@ -84,7 +100,7 @@ recipe remains a runtime check, not a claim that a DB suite drove the product.
 
 ## Probe A — review from the Work page
 
-Regression guard for #152 (server sent `contextPath: null`, making a draft
+Regression guard for #152 (server sent no document location, making a draft
 row's Review a silent no-op).
 
 1. Get the mock assistant to produce a draft on an existing document. Open the

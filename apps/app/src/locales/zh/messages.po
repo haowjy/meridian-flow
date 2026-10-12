@@ -4704,12 +4704,13 @@ msgid "Untitled chat"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
+#: src/features/project/work/WorkChangeFile.tsx
 msgid "Untitled document"
 msgstr ""
 
 #: src/features/project/work/WorkChangeFile.tsx
-msgid "Untitled manuscript"
-msgstr ""
+#~ msgid "Untitled manuscript"
+#~ msgstr ""
 
 #: src/lib/project-title.ts
 msgid "Untitled project"

@@ -139,6 +139,16 @@ function composeProjectSlice(state: ContextTabsState, projectId: string): Projec
   return composed;
 }
 
+function sameReviewOverlay(left: ContextTab, right: ContextTab): boolean {
+  return (
+    left.kind !== "new" &&
+    right.kind !== "new" &&
+    left.documentId === right.documentId &&
+    left.reviewWorkId === right.reviewWorkId &&
+    left.reviewDraftId === right.reviewDraftId
+  );
+}
+
 function composeSlices(durable: ProjectTabsSlice, overlay?: ProjectTabsSlice): ProjectTabsSlice {
   if (!overlay) return durable;
   const overlayIds = new Set(overlay.tabs.map((tab) => tab.documentId));
@@ -196,7 +206,10 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
           const reviewOverlayTab = get()._reviewOverlayByProject[projectId]?.tabs.find(
-            (candidate) => candidate.documentId === tab.documentId && candidate.draftOnly,
+            (candidate) =>
+              candidate.documentId === tab.documentId &&
+              candidate.draftOnly &&
+              (!tab.draftOnly || sameReviewOverlay(candidate, tab)),
           );
           if (tab.draftOnly) {
             const durableMember = sliceFor(get(), projectId).tabs.find(
@@ -211,8 +224,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             }
             rawSet((base) => {
               const overlay = base._reviewOverlayByProject[projectId] ?? emptySlice();
-              const index = overlay.tabs.findIndex(
-                (candidate) => candidate.documentId === tab.documentId,
+              const index = overlay.tabs.findIndex((candidate) =>
+                sameReviewOverlay(candidate, tab),
               );
               const existing = index < 0 ? undefined : overlay.tabs[index];
               const mounted =
@@ -273,7 +286,9 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             dispatchResult(() => ({ kind: "open", projectId, tab }), isCurrent);
           }
           const installed = composeProjectSlice(get(), projectId).tabs.find(
-            (member) => member.documentId === tab.documentId,
+            (member) =>
+              member.documentId === tab.documentId &&
+              (!tab.draftOnly || sameReviewOverlay(member, tab)),
           );
           return installed ? { kind: "opened", tab: installed } : { kind: "not-opened" };
         },

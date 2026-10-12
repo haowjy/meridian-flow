@@ -73,7 +73,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     },
     [openReviewFile, workId],
   );
-  const reviewable = files.find((file) => file.row.contextPath) ?? null;
+  const reviewable = files.find((file) => file.row.contextLocation) ?? null;
 
   const send = useCallback(
     (mode: "apply" | "discard") => {

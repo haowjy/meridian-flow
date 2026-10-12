@@ -1,10 +1,12 @@
 /** Wire view-models for listing and reviewing AI document drafts. */
+import type { ParsedContextUri } from "../context-uri.js";
 
 export interface ThreadDraftListItem {
   draftId: string;
   documentId: string;
   documentName: string | null;
-  contextPath: string | null;
+  /** The document URI's scheme and leading-slash path, independent of its review Work. */
+  contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   status: "active";
   /**
    * The draft's generation: it rises with each close, and the same `draftId`

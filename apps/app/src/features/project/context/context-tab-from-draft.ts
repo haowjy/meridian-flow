@@ -15,14 +15,14 @@
  * a visible extension (`outline.json`) states its type.
  */
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
-
 import type { ServerContextTab } from "@/client/stores";
+import type { ContextUri } from "@/lib/context-uri";
 
 export function contextTabFromDraftGroup(group: {
   workId: string;
   documentId: string;
   draftId: string;
-  contextPath?: string | null;
+  contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
   documentName?: string | null;
   /**
    * Server flag for a draft-CREATED document. Marks the tab `draftOnly` so
@@ -31,8 +31,9 @@ export function contextTabFromDraftGroup(group: {
    */
   isNewDocument?: boolean;
 }): ServerContextTab | null {
-  const path = group.contextPath;
-  if (!path) return null;
+  const location = group.contextLocation;
+  if (!location?.path) return null;
+  const { scheme, path } = location;
   const filetype = filetypeForPath(path);
   const classification = classifyFiletype(filetype);
   // Draft review only exists for Yjs-tracked editable documents; a path that
@@ -44,10 +45,7 @@ export function contextTabFromDraftGroup(group: {
   return {
     kind: "tracked",
     documentId: group.documentId,
-    // The review launcher navigates with a hard-coded manuscript scheme; a
-    // non-manuscript draft never reaches this path (server sends null
-    // contextPath for other schemes).
-    scheme: "manuscript",
+    scheme,
     path,
     name: basename || (group.documentName ?? group.documentId),
     editable: true,

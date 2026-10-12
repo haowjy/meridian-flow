@@ -51,7 +51,7 @@ export function WorkChanges({
     if (!hasFiles) setConfirmingDiscard(false);
   }, [hasFiles]);
   const visible = files.filter((file) =>
-    matchesSearch(file.documentName || file.contextPath || ""),
+    matchesSearch(file.documentName || file.contextLocation?.path || ""),
   );
   if (files.length === 0 && drafts.status === "error") {
     return (

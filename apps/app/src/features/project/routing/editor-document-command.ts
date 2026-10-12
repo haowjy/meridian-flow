@@ -23,7 +23,7 @@ export type EditorCommandSnapshot = {
   editorWorkId: string | null;
   noWorkId: string | null;
   addressDocumentId?: string;
-  manuscriptCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
+  catalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
 };
 export function createEditorDocumentCommand({
   projectId,
@@ -65,7 +65,7 @@ export function createEditorDocumentCommand({
           addressed: current.address.destination,
           addressNamesIt: sameDocument,
           draftOnly: options.tab?.kind === "tracked" && options.tab.draftOnly === true,
-          catalog: current.manuscriptCatalog,
+          catalog: current.catalog,
           lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
@@ -166,7 +166,11 @@ export function prepareEditorDestination(
       ? workspace.selectedTabIdByWork[resolvedWorkId]
       : undefined);
   const tab = documentId
-    ? workspace.tabs.find((tab) => tab.documentId === documentId)
+    ? workspace.tabs.find(
+        (tab) =>
+          tab.documentId === documentId &&
+          (!tab.draftOnly || (tab.kind !== "new" && tab.reviewWorkId === resolvedWorkId)),
+      )
     : resolvedWorkId
       ? workspace.tabs.find((tab) =>
           contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }),

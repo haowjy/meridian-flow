@@ -1,4 +1,5 @@
 /** One draft-only lifecycle across Editor membership and the dock slot. */
+
 import { useMemo } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
@@ -7,8 +8,13 @@ import {
   useOptionalAccountEpochSignal,
 } from "@/features/project/context/account-feature-context";
 import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
+import type { ContextUri } from "@/lib/context-uri";
 
-export type DraftOnlyPresentation = DraftRef & { container: "editor" | "dock"; token: string };
+export type DraftOnlyPresentation = DraftRef & {
+  container: "editor" | "dock";
+  token: string;
+  contextLocation: Pick<ContextUri, "scheme" | "path">;
+};
 export interface DraftOnlyContainer {
   presentations(projectId: string): readonly DraftOnlyPresentation[];
   subscribe(listener: () => void): () => void;
@@ -29,6 +35,7 @@ function presentation(projectId: string, tab: ContextTab, container: "editor" | 
         draftId: tab.reviewDraftId,
         token: tab.tabInstanceToken,
         container,
+        contextLocation: { scheme: tab.scheme, path: tab.path },
       }
     : null;
 }
