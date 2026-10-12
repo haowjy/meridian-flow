@@ -53,7 +53,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
     });
     const runtimes = useComposedRuntimes(() => db);
 
-    const HARBOR = "lore/places/harbor.md";
+    const HARBOR = "lore/places/harbor";
     const HARBOR_URI = `manuscript://${HARBOR}`;
     const HARBOR_TEXT = "The harbor smells of salt and tar.";
     const MAP = "atlas/map.png";
@@ -72,7 +72,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       const ascension = await scenario.work("Ascension", "draft");
       const direct = await scenario.work("Direct", "direct");
       const model = scenario.model(ascension);
-      const written = await scenario.writer.create("chapter.md", { content: "Chapter one." });
+      const written = await scenario.writer.create("chapter", { content: "Chapter one." });
       const chapter = written.documentId as DocumentId;
 
       const harbor = await model.create(HARBOR, HARBOR_TEXT);
@@ -96,13 +96,13 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .select({ storageUrl: documents.storageUrl })
         .from(documents)
         .where(eq(documents.id, map));
-      const discarded = await model.create("discarded.md", "Discarded.");
+      const discarded = await model.create("discarded", "Discarded.");
       await scenario.discard(ascension, [discarded]);
 
       // Tombstones the draft still names (stale change rows).
       const tombstones = [
-        await model.create("gone.md", "Gone."),
-        await model.create("retired/gone.md", "Retired."),
+        await model.create("gone", "Gone."),
+        await model.create("retired/gone", "Retired."),
       ];
       await db
         .update(documents)
@@ -110,8 +110,8 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .where(inArray(documents.id, tombstones));
       // A draft's move of its create (PR 3): the row stays, the draft has it elsewhere.
       const draft = await scenario.draftOf(ascension);
-      const relocated = await model.create("secret/relocated.md", "Relocated.");
-      const anchor = await model.create("draft-location/anchor.md", "Anchor.");
+      const relocated = await model.create("secret/relocated", "Relocated.");
+      const anchor = await model.create("draft-location/anchor", "Anchor.");
       const [anchorRow] = await db
         .select({ folderId: documents.folderId })
         .from(documents)
@@ -128,14 +128,14 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           sourceDocumentId: harbor,
           targetDocumentId: chapter,
           linkKey: `doc:${chapter}`,
-          address: "manuscript://chapter.md",
+          address: "manuscript://chapter",
           occurrences: 2,
         },
         {
           sourceDocumentId: harbor,
           aheadId: pending,
           linkKey: `ahead:${pending}`,
-          address: "manuscript://future.md",
+          address: "manuscript://future",
           occurrences: 1,
         },
       ]);
@@ -153,10 +153,10 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
 
       // For the picture's denials: a rival Work's draft and another account's Work.
       const rival = await scenario.work("Rival", "draft");
-      await scenario.model(rival).create("rival.md", "The rival's.");
+      await scenario.model(rival).create("rival", "The rival's.");
       const foreign = await draftTreeScenario(db, { runtime, runtimes });
       const foreignWork = await foreign.work("Foreign", "draft");
-      await foreign.model(foreignWork).create("foreign.md", "Foreign.");
+      await foreign.model(foreignWork).create("foreign", "Foreign.");
 
       const signing = vi.spyOn(ports.objectStore, "getSignedUrl");
       /** The figure route, as the writer (or another account) calls it, and what it signed. */
@@ -586,7 +586,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
               .resolutions[0];
             return result?.kind === "available" ? result.entry.uri : result?.kind;
           },
-          expected: "manuscript://draft-location/relocated.md",
+          expected: "manuscript://draft-location/relocated",
         },
         {
           surface: "figure other same-project Work's active draft",
@@ -719,7 +719,7 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .values({ workId: s.ascension.id, scope: "work", name: "Uploads", slug: "uploads" })
         .returning();
       if (!source) throw new Error("Missing uploads source");
-      const hidden = await s.scenario.seedHidden(s.ascension, "upload.md");
+      const hidden = await s.scenario.seedHidden(s.ascension, "upload");
       await db
         .update(documents)
         .set({ contextSourceId: source.id })
@@ -729,19 +729,20 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         actorUserId: s.userId,
         owner: { kind: "work", projectId: s.projectId, workId: s.ascension.id },
         filename: "upload.md",
+        documentFilename: { name: "upload", extension: "", filetype: "markdown" },
         mimeType: "text/markdown",
         byteDigest: "a".repeat(64),
         fingerprint: "reader-matrix",
         fileType: "markdown",
       });
       expect(reserved.kind === "reserved" ? reserved.reservation.finalPath : reserved.kind).toBe(
-        "upload.md",
+        "upload",
       );
     });
 
     it("never bootstraps a hidden chapter as the writer's first chapter (C-1a)", async () => {
       const s = await bareSubject();
-      const hidden = await s.scenario.model(s.ascension).create("chapter-1.md", "Drafted.");
+      const hidden = await s.scenario.model(s.ascension).create("Chapter 1", "Drafted.");
       // The scenario's project stands in for the personal one the world seeded for user://.
       await db
         .update(projects)

@@ -16,7 +16,7 @@ const old = (label: string, ref: string, current: string, live = true) => ({
   live,
 });
 const written = (label: string, href: string) => ({ label, href });
-const seen = (ref: string, address: string, at: number, holderUri = "holder.md") => ({
+const seen = (ref: string, address: string, at: number, holderUri = "holder") => ({
   ref,
   address,
   at,
@@ -26,7 +26,7 @@ const input = (values: Partial<CorrespondenceInput>): CorrespondenceInput => ({
   old: [],
   written: [],
   shown: [],
-  holderUri: "holder.md",
+  holderUri: "holder",
   normalize,
   isLive: () => true,
   ...values,
@@ -145,23 +145,18 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "r7 strong precedence sacrifices two weak historical continuations",
       values: input({
-        old: [old("Alpha", "D", "a.md"), old("Beta", "E", "c.md")],
-        written: [written("Beta", "a.md"), written("Alpha", "b.md")],
-        shown: [
-          seen("D", "b.md", 1),
-          seen("E", "a.md", 1),
-          seen("D", "a.md", 2),
-          seen("E", "c.md", 2),
-        ],
+        old: [old("Alpha", "D", "a"), old("Beta", "E", "c")],
+        written: [written("Beta", "a"), written("Alpha", "b")],
+        shown: [seen("D", "b", 1), seen("E", "a", 1), seen("D", "a", 2), seen("E", "c", 2)],
       }),
       expected: [{ pass: 1, occurrence: 0 }, { pass: 3 }],
     },
     {
       name: "r7 distinct labels erased by whole replacements use document order",
       values: input({
-        old: [old("Alpha", "D", "c.md"), old("Beta", "E", "a.md")],
-        written: [written("X", "a.md"), written("Y", "a.md")],
-        shown: [seen("D", "a.md", 1), seen("E", "a.md", 2)],
+        old: [old("Alpha", "D", "c"), old("Beta", "E", "a")],
+        written: [written("X", "a"), written("Y", "a")],
+        shown: [seen("D", "a", 1), seen("E", "a", 2)],
       }),
       expected: [
         { pass: 1, occurrence: 0 },
@@ -171,9 +166,9 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "r7 unmatched duplicate reuses latest showing in pass 2",
       values: input({
-        old: [old("Target", "D", "c.md")],
-        written: [written("Target", "a.md"), written("Target", "a.md")],
-        shown: [seen("D", "a.md", 1)],
+        old: [old("Target", "D", "c")],
+        written: [written("Target", "a"), written("Target", "a")],
+        shown: [seen("D", "a", 1)],
       }),
       expected: [
         { pass: 1, occurrence: 0 },
@@ -183,14 +178,14 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "r7 pair count outranks exact labels at equal strength",
       values: input({
-        old: [old("Alpha", "D", "d.md"), old("Beta", "E", "e.md")],
-        written: [written("Alpha", "a.md"), written("X", "b.md")],
+        old: [old("Alpha", "D", "d"), old("Beta", "E", "e")],
+        written: [written("Alpha", "a"), written("X", "b")],
         shown: [
-          seen("D", "a.md", 1),
-          seen("D", "b.md", 2),
-          seen("D", "d.md", 3),
-          seen("E", "a.md", 1),
-          seen("E", "e.md", 3),
+          seen("D", "a", 1),
+          seen("D", "b", 2),
+          seen("D", "d", 3),
+          seen("E", "a", 1),
+          seen("E", "e", 3),
         ],
       }),
       expected: [
@@ -201,13 +196,13 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "holder move normalizes latest and historical showings against their own holders",
       values: input({
-        old: [old("A", "D", "manuscript://now/T.md")],
-        written: [written("X", "T.md"), written("Y", "manuscript://now/T.md")],
+        old: [old("A", "D", "manuscript://now/T")],
+        written: [written("X", "T"), written("Y", "manuscript://now/T")],
         shown: [
-          seen("D", "manuscript://one/T.md", 1, "manuscript://one/H.md"),
-          seen("D", "manuscript://two/T.md", 2, "manuscript://two/H.md"),
+          seen("D", "manuscript://one/T", 1, "manuscript://one/H"),
+          seen("D", "manuscript://two/T", 2, "manuscript://two/H"),
         ],
-        holderUri: "manuscript://now/H.md",
+        holderUri: "manuscript://now/H",
         normalize: (href, holder) => new URL(href, holder ?? undefined).href,
       }),
       expected: [{ pass: 1, occurrence: 0 }, { pass: 3 }],
@@ -215,13 +210,13 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "historical relative address remains weak when latest relative form differs",
       values: input({
-        old: [old("A", "D", "manuscript://now/T.md")],
-        written: [written("X", "T.md")],
+        old: [old("A", "D", "manuscript://now/T")],
+        written: [written("X", "T")],
         shown: [
-          seen("D", "manuscript://one/T.md", 1, "manuscript://one/H.md"),
-          seen("D", "manuscript://two/R.md", 2, "manuscript://two/H.md"),
+          seen("D", "manuscript://one/T", 1, "manuscript://one/H"),
+          seen("D", "manuscript://two/R", 2, "manuscript://two/H"),
         ],
-        holderUri: "manuscript://now/H.md",
+        holderUri: "manuscript://now/H",
         normalize: (href, holder) => new URL(href, holder ?? undefined).href,
       }),
       expected: [{ pass: 1, occurrence: 0 }],
@@ -229,12 +224,12 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "pass 2 uses current liveness before recency, never a stale showing",
       values: input({
-        written: [written("X", "a.md"), written("Y", "vacated.md")],
+        written: [written("X", "a"), written("Y", "vacated")],
         shown: [
-          seen("gone", "a.md", 8),
-          seen("live", "a.md", 1),
-          seen("moved", "vacated.md", 9),
-          seen("moved", "b.md", 10),
+          seen("gone", "a", 8),
+          seen("live", "a", 1),
+          seen("moved", "vacated", 9),
+          seen("moved", "b", 10),
         ],
         isLive: (ref) => ref !== "gone",
       }),
@@ -243,12 +238,12 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "pass 2 normalizes against showing holder and chooses latest live ref",
       values: input({
-        written: [written("X", "T.md")],
+        written: [written("X", "T")],
         shown: [
-          seen("older", "manuscript://one/T.md", 1, "manuscript://one/H.md"),
-          seen("newer", "manuscript://two/T.md", 2, "manuscript://two/H.md"),
+          seen("older", "manuscript://one/T", 1, "manuscript://one/H"),
+          seen("newer", "manuscript://two/T", 2, "manuscript://two/H"),
         ],
-        holderUri: "manuscript://now/H.md",
+        holderUri: "manuscript://now/H",
         normalize: (href, holder) => new URL(href, holder ?? undefined).href,
       }),
       expected: [{ pass: 2, ref: "newer" }],
@@ -276,17 +271,17 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "two occurrences of the same opaque ref remain distinct for exact-label matching",
       values: input({
-        old: [old("Alpha", "ahead:opaque", "a.md"), old("Beta", "ahead:opaque", "a.md")],
-        written: [written("Beta", "a.md")],
-        shown: [seen("ahead:opaque", "a.md", 1)],
+        old: [old("Alpha", "ahead:opaque", "a"), old("Beta", "ahead:opaque", "a")],
+        written: [written("Beta", "a")],
+        shown: [seen("ahead:opaque", "a", 1)],
       }),
       expected: [{ pass: 1, occurrence: 1 }],
     },
     {
       name: "pass 1 uses occurrence liveness before document order",
       values: input({
-        old: [old("A", "gone", "a.md", false), old("B", "live", "a.md")],
-        written: [written("X", "a.md")],
+        old: [old("A", "gone", "a", false), old("B", "live", "a")],
+        written: [written("X", "a")],
         isLive: () => false,
       }),
       expected: [{ pass: 1, occurrence: 1 }],
@@ -294,16 +289,16 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "pass 2 equal recency and liveness never depend on showing enumeration order",
       values: input({
-        written: [written("X", "a.md")],
-        shown: [seen("z", "a.md", 1), seen("a", "a.md", 1)],
+        written: [written("X", "a")],
+        shown: [seen("z", "a", 1), seen("a", "a", 1)],
       }),
       expected: [{ pass: 2, ref: "a" }],
     },
     {
       name: "live targets outrank displacement when a gone occurrence competes with two survivors",
       values: input({
-        old: [old("A", "gone", "a.md", false), old("B", "one", "a.md"), old("C", "two", "a.md")],
-        written: [written("X", "a.md"), written("Y", "a.md")],
+        old: [old("A", "gone", "a", false), old("B", "one", "a"), old("C", "two", "a")],
+        written: [written("X", "a"), written("Y", "a")],
       }),
       expected: [
         { pass: 1, occurrence: 1 },
@@ -313,35 +308,31 @@ it("preserves r7 ranking counterexamples, stated ambiguities and historical hold
     {
       name: "exact labels outrank displacement and earliest-written ties",
       values: input({
-        old: [old("Target", "D", "a.md")],
-        written: [written("Unknown", "a.md"), written("Target", "a.md"), written("Target", "a.md")],
+        old: [old("Target", "D", "a")],
+        written: [written("Unknown", "a"), written("Target", "a"), written("Target", "a")],
       }),
       expected: [{ pass: 3 }, { pass: 1, occurrence: 0 }, { pass: 3 }],
     },
     {
       name: "label continuity outranks displacement after exact labels",
       values: input({
-        old: [old("Target", "D", "a.md"), old("Target", "E", "a.md")],
-        written: [
-          written("T", "a.md"),
-          written("Target expanded", "a.md"),
-          written("Target", "a.md"),
-        ],
+        old: [old("Target", "D", "a"), old("Target", "E", "a")],
+        written: [written("T", "a"), written("Target expanded", "a"), written("Target", "a")],
       }),
       expected: [{ pass: 3 }, { pass: 1, occurrence: 0 }, { pass: 1, occurrence: 1 }],
     },
     {
       name: "an inserted duplicate never sacrifices latest-view strength",
       values: input({
-        old: [old("", "D", "c.md"), old("A", "D", "c.md", false)],
-        written: [written("A", "a.md"), written("A", "b.md"), written("A", "a.md")],
-        shown: [seen("D", "a.md", 1), seen("D", "b.md", 2)],
+        old: [old("", "D", "c"), old("A", "D", "c", false)],
+        written: [written("A", "a"), written("A", "b"), written("A", "a")],
+        shown: [seen("D", "a", 1), seen("D", "b", 2)],
       }),
       expected: [{ pass: 1, occurrence: 0 }, { pass: 1, occurrence: 1 }, { pass: 3 }],
     },
     {
       name: "empty write is an unlink, not a new assignment",
-      values: input({ old: [old("A", "D", "a.md")], shown: [seen("D", "a.md", 1)] }),
+      values: input({ old: [old("A", "D", "a")], shown: [seen("D", "a", 1)] }),
       expected: [],
     },
   ];
@@ -366,12 +357,9 @@ it("preserves uniquely identifiable historical-address links in all 153 r7 reord
     const ids = Array.from({ length: n }, (_, i) => i);
     for (const order of permutations(ids)) {
       const values = input({
-        old: ids.map((i) => old(`Old ${i}`, `ref${i}`, `new${i}.md`)),
-        written: order.map((i) => written(`Entirely changed ${i}`, `old${i}.md`)),
-        shown: ids.flatMap((i) => [
-          seen(`ref${i}`, `old${i}.md`, 1),
-          seen(`ref${i}`, `new${i}.md`, 2),
-        ]),
+        old: ids.map((i) => old(`Old ${i}`, `ref${i}`, `new${i}`)),
+        written: order.map((i) => written(`Entirely changed ${i}`, `old${i}`)),
+        shown: ids.flatMap((i) => [seen(`ref${i}`, `old${i}`, 1), seen(`ref${i}`, `new${i}`, 2)]),
       });
       expect
         .soft(correspondLinks(values), `reorder ${order.join(",")}`)
@@ -391,14 +379,14 @@ it("matches exhaustive six-component ranking with mixed historical holders and r
   const pick = <T>(values: readonly T[]) => values[random(values.length)];
   const labels = ["", "X", "XY", "YX", "XYZ", "Target", "Target expanded"];
   const refs = ["Z", "a", "ä", "Ω", "😀"];
-  const holders = ["manuscript://p/a/H.md", "manuscript://p/b/H.md", "manuscript://p/H.md"];
+  const holders = ["manuscript://p/a/H", "manuscript://p/b/H", "manuscript://p/H"];
   const addresses = [
-    "manuscript://p/a/T.md",
-    "manuscript://p/b/T.md",
-    "manuscript://p/T.md",
-    "manuscript://p/a/U.md",
+    "manuscript://p/a/T",
+    "manuscript://p/b/T",
+    "manuscript://p/T",
+    "manuscript://p/a/U",
   ];
-  const hrefs = [...addresses, "T.md", "../T.md", "U.md", "a/T.md", "https://example.com"];
+  const hrefs = [...addresses, "T", "../T", "U", "a/T", "https://example.com"];
   const normalize = (href: string, holder: string) =>
     href.startsWith("https:") ? null : new URL(href, holder).href;
   for (let row = 0; row < 1000; row++) {

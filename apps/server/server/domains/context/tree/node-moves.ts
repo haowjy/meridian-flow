@@ -253,6 +253,7 @@ async function checkFinalNamespace(
       const found = await tree.resolvePath(LIVE_TREE, {
         contextSourceId: move.to.contextSourceId,
         path,
+        as: isFinal ? move.node.kind : "folder",
       });
       if (found.kind === "not_found") break;
       if (found.kind === "ambiguous") return Err({ code: "conflict", node: move.node });

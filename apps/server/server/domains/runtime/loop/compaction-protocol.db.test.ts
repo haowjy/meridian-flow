@@ -194,7 +194,7 @@ else
       let sequence = 1;
       const results = [];
       for (const record of records) {
-        const uri = "manuscript://chapter.md";
+        const uri = "manuscript://chapter";
         const isSearch = record.command === "search";
         const toolName = isSearch ? "search" : record.command === "read" ? "read" : "write";
         const staleText = `${record.id.toUpperCase()} TEXT`;
@@ -308,7 +308,7 @@ else
             type: "reference",
             text: "Chapter",
             documentId: "00000000-0000-4000-8000-000000000012",
-            uri: "manuscript://chapter.md",
+            uri: "manuscript://chapter",
           },
         ],
       });
@@ -316,7 +316,7 @@ else
       expect(current).toHaveBeenCalledTimes(2);
       expect(rig.summarizer.calls[0].changedDocuments).toEqual([
         "kb://old-chapter",
-        "manuscript://chapter.md",
+        "manuscript://chapter",
       ]);
       const c = await rig.repos.turns.findById(run.executionTurnId);
       expect(c).toMatchObject({
@@ -1678,7 +1678,7 @@ else
           kind: "awareness_degraded",
           scope: { kind: "thread", threadId: rig.threadId },
           message: "Refresh context.",
-          data: { documentIds: ["chapter-1"], documentNames: ["chapter-1.md"] },
+          data: { documentIds: ["chapter-1"], documentNames: ["chapter-1"] },
         });
         await rig.send(rig.threadId, "late writer before commit failure");
         armed = true;

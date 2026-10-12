@@ -1,6 +1,6 @@
 -- D62: the chat owns its AI write mode. The Work's mode becomes the default a new chat copies, each
 -- thread gets its own mode backfilled from its primary Work, and a thread control body may switch it.
--- The new CHECKs are added NOT VALID and validated by 0040.
+-- The new CHECKs are added NOT VALID and validated by 0041.
 SET LOCAL lock_timeout = '2s';
 --> statement-breakpoint
 -- Metadata-only rename under the lock timeout; every reader is renamed in the same release.

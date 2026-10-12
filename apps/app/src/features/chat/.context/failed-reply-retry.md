@@ -17,8 +17,10 @@ reply itself.
 divider counts as a row. The client does not gate Retry on the chat being
 busy: a failed reply is followed at once by whatever runs next, which takes
 its Retry away, and the server refuses a Retry that races a run (409), which
-shows the refused note below. A failed first send (`failedSendRetry`) keeps its own "Couldn't
-send." Retry, and an inherited failed reply stays read-only.
+shows the refused note below. An unadmitted message keeps its "Couldn't send."
+Retry on the writer row, not here, drawn in the same `ErrorCard` shell as an
+inline, one-line card that is not itself an alert (the chat announces it once
+through its own region). An inherited failed reply stays read-only.
 
 Every failed reply reads the same, whatever ended it: a reply cut off by a
 shutdown or crash is an ordinary failed reply. The one exception is a provider

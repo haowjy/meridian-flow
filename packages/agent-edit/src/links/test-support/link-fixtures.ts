@@ -164,20 +164,21 @@ export function linkHarness(input: {
     },
     /** Reads the holder as the model would. */
     read(command: Record<string, unknown> = {}) {
-      return ctx.core.read(
-        { file: "holder.md", documentId: input.holder.id, ...command } as never,
-        { sessionId: "session-a", threadId: "thread-a" },
-      );
+      return ctx.core.read({ file: "holder", documentId: input.holder.id, ...command } as never, {
+        sessionId: "session-a",
+        threadId: "thread-a",
+      });
     },
     /** Runs one model command against the holder, with the given showings as evidence. */
     write(
       command: Record<string, unknown> & { command: string },
       shown: readonly ShownLink[] = [],
     ) {
-      return ctx.core.write(
-        { file: "holder.md", documentId: input.holder.id, ...command } as never,
-        { sessionId: "session-a", threadId: "thread-a", shownLinks: async () => shown },
-      );
+      return ctx.core.write({ file: "holder", documentId: input.holder.id, ...command } as never, {
+        sessionId: "session-a",
+        threadId: "thread-a",
+        shownLinks: async () => shown,
+      });
     },
   };
 }

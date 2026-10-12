@@ -15,8 +15,8 @@ it("projects only the requesting project's durable location intention", () => {
   }).next;
   record.resource.canonical = {
     scheme: "user",
-    path: "/shared.md",
-    name: "shared.md",
+    path: "/shared",
+    name: "shared",
     workId: null,
   };
   const placed = planResourceLocation({
@@ -27,7 +27,7 @@ it("projects only the requesting project's durable location intention", () => {
     destination: {
       scheme: "manuscript",
       folderPath: "chapters",
-      name: "opening.md",
+      name: "opening",
       workId: null,
     },
   });
@@ -35,12 +35,12 @@ it("projects only the requesting project's durable location intention", () => {
 
   expect(projectResourceLocation("project-a", placed.next)).toMatchObject({
     scheme: "manuscript",
-    path: "/chapters/opening.md",
+    path: "/chapters/opening",
     provisional: false,
   });
   expect(projectResourceLocation("project-b", placed.next)).toMatchObject({
     scheme: "user",
-    path: "/shared.md",
+    path: "/shared",
   });
   // Lowest-level contract: naming remains complete after placement ownership retires.
   const settled = placed.next;
@@ -56,11 +56,11 @@ it("projects only the requesting project's durable location intention", () => {
       operationId: "file",
       command: {
         kind: "move",
-        sourceUri: "user://shared.md",
-        destinationUri: "manuscript://chapters/opening.md",
+        sourceUri: "user://shared",
+        destinationUri: "manuscript://chapters/opening",
         expected: { kind: "file", nodeId: "document" },
       },
-      result: { ok: true, value: { destinationPath: "chapters/opening.md" } },
+      result: { ok: true, value: { destinationPath: "chapters/opening" } },
     },
   });
   if (!received) throw new Error("Missing filing outcome");
@@ -70,12 +70,12 @@ it("projects only the requesting project's durable location intention", () => {
   intent.state = "settled";
   received.next.resource.canonical = {
     scheme: "manuscript",
-    path: "/moved/opening.md",
-    name: "opening.md",
+    path: "/moved/opening",
+    name: "opening",
     workId: null,
   };
   expect(projectResourceLocation("project-a", received.next)).toMatchObject({
-    path: "/moved/opening.md",
+    path: "/moved/opening",
     provisional: false,
   });
 });

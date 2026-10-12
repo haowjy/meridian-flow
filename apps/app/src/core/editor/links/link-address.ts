@@ -5,13 +5,19 @@
  * Every internal link is an address (a Context URI, or a path relative to its
  * holder), and addresses are unique, so a link names one document or none.
  * The Editor `@` menu's link-ahead row and a follow's Create both name a new
- * document at an address; they share the filename rule here so the link one
+ * document at an address; they use the contracts ahead-address rule so the link one
  * writes is the document the other makes.
  */
 
-import { canonicalContextUri, parseContextUri, resolveDocumentHref } from "@meridian/contracts";
+import {
+  aheadAddress,
+  canonicalContextUri,
+  parseContextUri,
+  resolveDocumentHref,
+} from "@meridian/contracts";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
-import { classifyFiletype, filetypeForKnownPath } from "@meridian/contracts/protocol";
+import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import { classifyFiletype, parseDocumentFilename } from "@meridian/contracts/protocol";
 
 import type { LinkTarget } from "./link-target";
 
@@ -30,14 +36,13 @@ export function linkTargetAddress(target: LinkTarget, baseUri: string | null): s
 }
 
 /**
- * What a writer calls the document an address names: its filename without a
- * `.md` (any other extension stays, `map.png`). Addresses hold names already
- * decoded, so this never decodes again.
+ * What a writer calls the document an address names: its stored name
+ * (`Chapter 13`, `map.png`). Addresses hold names already decoded, so this
+ * never decodes again.
  */
 export function addressDocumentName(address: string): string | null {
   const parsed = parseContextUri(address);
-  const leaf = parsed.ok ? parsed.value.path.split("/").at(-1) : null;
-  return leaf ? leaf.replace(/\.md$/i, "") || leaf : null;
+  return parsed.ok ? documentTitleFromUri(parsed.value.path) : null;
 }
 
 /**
@@ -57,16 +62,18 @@ export function isLinkDocumentScheme(scheme: string): boolean {
 }
 
 /**
- * A writer's name as a document filename: kept when it already is one, with
- * `.md` when it carries no known extension, and null when it names another
- * kind of file (`map.png` never becomes `map.png.md`).
+ * The stored name of the document a writer's name makes (`Chapter 13.md` and
+ * `Chapter 13` both make `Chapter 13`), and null when the name makes another
+ * kind of file (`map.png` is not a document a link can conjure).
  */
-export function documentFileName(name: string): string | null {
-  const filetype = filetypeForKnownPath(name);
-  if (!filetype) return `${name}.md`;
-  const classification = classifyFiletype(filetype);
+export function linkedDocumentName(name: string): string | null {
+  const parsed = parseDocumentFilename(name);
+  if (!parsed.ok) return null;
+  const classification = classifyFiletype(parsed.value.filetype);
   return classification.kind === "tracked" && classification.schemaType === "document"
-    ? name
+    ? (aheadAddress(canonicalContextUri("manuscript", name), "link")?.slice(
+        "manuscript://".length,
+      ) ?? null)
     : null;
 }
 
@@ -87,14 +94,15 @@ export function linkAheadAddress(
   const trimmed = name.trim();
   const segments = folders.map((folder) => folder.trim());
   if (![...segments, trimmed].every((segment) => validateContextEntryName(segment).ok)) return null;
-  const filename = documentFileName(trimmed);
+  const filename = linkedDocumentName(trimmed);
   if (!filename) return null;
   const path = [...segments, filename];
   const holder = holderUri ? parseContextUri(holderUri) : null;
   if (!holder?.ok || !holder.value.path || !isCreatableLinkScheme(holder.value.scheme))
-    return canonicalContextUri("manuscript", path.join("/"));
+    return aheadAddress(canonicalContextUri("manuscript", path.join("/")), "link");
   // Relative to the holder: beside it, or up its folders to the area root.
   const depth = segments.length ? holder.value.path.split("/").length - 1 : 0;
   const href = [...Array<string>(depth).fill(".."), ...path.map(encodeURIComponent)].join("/");
-  return resolveDocumentHref(href, holderUri)?.uri ?? null;
+  const address = resolveDocumentHref(href, holderUri)?.uri;
+  return address ? aheadAddress(address, "link") : null;
 }

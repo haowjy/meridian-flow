@@ -21,6 +21,7 @@ function harness() {
         intakeId: input.intakeId,
         documentId: "00000000-0000-4000-8000-000000000001",
         fingerprint: input.fingerprint,
+        filename: input.filename,
         finalPath: input.filename,
         objectKey: "uploads/project/document",
         canonicalUri: `uploads://@/${input.filename}`,
@@ -163,7 +164,7 @@ describe("UploadIntake", () => {
 
   it("classifies text, images, and designation-only binaries on the server", () => {
     expect(classifyUpload({ filename: "notes.unknown", mimeType: "text/plain", bytes })).toBe(
-      "text",
+      "markdown",
     );
     expect(
       classifyUpload({ filename: "cover.png", mimeType: "image/png", bytes: new Uint8Array([0]) }),

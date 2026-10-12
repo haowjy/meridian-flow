@@ -16,7 +16,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
   it("merges a create the writer also made live, names a live rename back, and refuses the model's later create usefully (E-1)", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
-    const kael = await s.model(ascension).create("characters/kael.md", "Kael guards the gate.");
+    const kael = await s.model(ascension).create("characters/kael", "Kael guards the gate.");
     // F26: absent and another view's hidden folder give the same refusal.
     const beacon = await s.work("Beacon", "draft");
     const missing = await s.model(beacon).now("ls", { path: "manuscript://missing/" });
@@ -38,17 +38,15 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(itemFor(hidden.items, kael), "new while hidden").toMatchObject({
       origin: "created",
       isNew: true,
-      path: "manuscript://characters/kael.md",
+      path: "manuscript://characters/kael",
       conflict: null,
     });
     expect
       .soft(hidden.drafts, "the legacy list shows it too, as new (early probe 1, 4)")
-      .toMatchObject([
-        { documentId: kael, contextPath: "/characters/kael.md", isNewDocument: true },
-      ]);
+      .toMatchObject([{ documentId: kael, contextPath: "/characters/kael", isNewDocument: true }]);
 
     // The writer makes it live: one document, D's own.
-    const made = await s.writer.create("characters/kael.md", { content: "Writer's Kael." });
+    const made = await s.writer.create("characters/kael", { content: "Writer's Kael." });
     expect.soft(made, "the live create reveals D's document").toEqual({
       status: "created",
       documentId: kael,
@@ -56,7 +54,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     // After the reveal it is an existing file: the model's create is refused, with guidance.
     const refused = await s.model(ascension).now("write", {
       command: "create",
-      path: "manuscript://characters/kael.md",
+      path: "manuscript://characters/kael",
       content: "A second Kael.",
     });
     expect
@@ -65,15 +63,15 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
 
     // The writer renames it live; Apply names it back at the draft's location.
     expect
-      .soft(await s.writer.move("characters/kael.md", "characters/kael-fix.md"))
+      .soft(await s.writer.move("characters/kael", "characters/kael-fix"))
       .toMatchObject({ ok: true });
-    await s.writer.write("characters/kael-fix.md", "Writer's Kael.\n\nThe writer's second line.");
+    await s.writer.write("characters/kael-fix", "Writer's Kael.\n\nThe writer's second line.");
     const reviewed = itemFor(await s.items(ascension), kael);
     expect.soft(reviewed, "revealed, then renamed live").toMatchObject({
       isNew: false,
-      path: "manuscript://characters/kael.md",
-      livePath: "manuscript://characters/kael-fix.md",
-      conflict: { code: "rename_replaced", livePath: "manuscript://characters/kael-fix.md" },
+      path: "manuscript://characters/kael",
+      livePath: "manuscript://characters/kael-fix",
+      conflict: { code: "rename_replaced", livePath: "manuscript://characters/kael-fix" },
     });
     expect.soft(await s.applyAll(ascension), "one command, one publication").toEqual({
       status: "completed",
@@ -86,28 +84,28 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
           notes: [
             {
               code: "rename_replaced",
-              replacedPath: "manuscript://characters/kael-fix.md",
-              path: "manuscript://characters/kael.md",
+              replacedPath: "manuscript://characters/kael-fix",
+              path: "manuscript://characters/kael",
             },
           ],
         },
       ],
     });
     const live = s.view("live");
-    expect.soft(await live.idAt("characters/kael.md"), "named back").toBe(kael);
-    expect.soft(await live.idAt("characters/kael-fix.md"), "the rename's path freed").toBeNull();
-    const text = await live.text("characters/kael.md");
+    expect.soft(await live.idAt("characters/kael"), "named back").toBe(kael);
+    expect.soft(await live.idAt("characters/kael-fix"), "the rename's path freed").toBeNull();
+    const text = await live.text("characters/kael");
     expect.soft(text, "the draft's text").toContain("Kael guards the gate.");
     expect.soft(text, "the writer's live edit").toContain("The writer's second line.");
     expect.soft(await s.draftStatuses(ascension), "nothing pending: D closed").toEqual(["closed"]);
 
     // A rename that lands after a tokenless Apply read the draft is named back, and the
     // receipt says so: notes come from what completion did (E-R5).
-    const notes = await s.model(ascension).create("notes/original.md", "Notes, drafted.");
-    await s.writer.create("notes/original.md", { content: "Writer's notes." });
+    const notes = await s.model(ascension).create("notes/original", "Notes, drafted.");
+    await s.writer.create("notes/original", { content: "Writer's notes." });
     const renameLate = setCollabHook("applyItems.afterLinkCut", async () => {
       renameLate();
-      await s.writer.move("notes/original.md", "notes/renamed.md");
+      await s.writer.move("notes/original", "notes/renamed");
     });
     const [raced] = await s.apply(ascension, [notes], { tokens: "none" });
     renameLate();
@@ -119,15 +117,15 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
           notes: [
             {
               code: "rename_replaced",
-              replacedPath: "manuscript://notes/renamed.md",
-              path: "manuscript://notes/original.md",
+              replacedPath: "manuscript://notes/renamed",
+              path: "manuscript://notes/original",
             },
           ],
         },
       },
     });
-    expect.soft(await live.idAt("notes/original.md")).toBe(notes);
-    expect.soft(await live.idAt("notes/renamed.md")).toBeNull();
+    expect.soft(await live.idAt("notes/original")).toBe(notes);
+    expect.soft(await live.idAt("notes/renamed")).toBeNull();
   });
 
   it("shows a second draft only its own part after the first applies their shared create (E-2)", async () => {
@@ -136,12 +134,12 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       await s.work("Ascension", "draft"),
       await s.work("Beacon", "draft"),
     ];
-    const kael = await s.model(ascension).create("characters/kael.md", "Ascension's Kael.");
-    const joined = await s.model(beacon).create("characters/kael.md", "Beacon's Kael.");
+    const kael = await s.model(ascension).create("characters/kael", "Ascension's Kael.");
+    const joined = await s.model(beacon).create("characters/kael", "Beacon's Kael.");
     expect.soft(joined, "both drafts use one hidden document").toBe(kael);
 
     expect.soft((await s.applyAll(ascension)).status).toBe("completed");
-    expect.soft(await s.view("live").text("characters/kael.md")).toContain("Ascension's Kael.");
+    expect.soft(await s.view("live").text("characters/kael")).toContain("Ascension's Kael.");
     const [item] = await s.items(beacon);
     expect.soft(item, "Beacon still has it, no longer new").toMatchObject({
       documentId: kael,
@@ -165,14 +163,14 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
   it("applies at the right path after a live folder rename absorbed the draft's hidden folder, and a recovered reveal replays from the catalog (E-4)", async () => {
     const { runtime, s } = await start();
     const ascension = await s.work("Ascension", "draft");
-    const notes = await s.model(ascension).create("ideas/kael/notes.md", "Notes.");
-    const plan = await s.writer.createDocument("drafts/plan.md", "Plan.");
+    const notes = await s.model(ascension).create("ideas/kael/notes", "Notes.");
+    const plan = await s.writer.createDocument("drafts/plan", "Plan.");
     expect.soft(await s.writer.move("drafts", "ideas")).toMatchObject({ ok: true });
     const [item] = await s.items(ascension);
     expect.soft(item, "still new, at its path").toMatchObject({
       documentId: notes,
       isNew: true,
-      path: "manuscript://ideas/kael/notes.md",
+      path: "manuscript://ideas/kael/notes",
       conflict: null,
     });
     // The legacy per-document Apply of a hidden create (early probe 2: it answered 404).
@@ -187,8 +185,8 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
       },
     ]);
     const live = s.view("live");
-    expect.soft(await live.idAt("ideas/kael/notes.md"), "at the draft's path").toBe(notes);
-    expect.soft(await live.idAt("ideas/plan.md"), "the renamed folder's file").toBe(plan);
+    expect.soft(await live.idAt("ideas/kael/notes"), "at the draft's path").toBe(notes);
+    expect.soft(await live.idAt("ideas/plan"), "the renamed folder's file").toBe(plan);
     const ideas = await db
       .select({ id: folders.id })
       .from(folders)
@@ -199,7 +197,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     // replaying from a cursor taken before the Apply learns of the file (F23, E-R4).
     const { contextCatalog } = runtime.ports;
     const scope = { kind: "project" as const, projectId: s.project.id };
-    const fresh = await s.model(ascension).create("catalog/new.md", "Drafted catalog file.");
+    const fresh = await s.model(ascension).create("catalog/new", "Drafted catalog file.");
     const before = await contextCatalog.snapshot(scope);
     const remove = setCollabHook("applyItems.afterStaging", async () => {
       remove();
@@ -217,22 +215,22 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
   it("restores an edited document deleted live with its folder, and holds one whose path a new document took (E-8)", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
-    const harbor = await s.writer.createDocument("lore/harbor.md", "The harbor.");
-    const map = await s.writer.createDocument("atlas/map.md", "The map.");
-    await s.model(ascension).edit("lore/harbor.md", "The harbor.", "The harbor, drafted.");
-    await s.model(ascension).edit("atlas/map.md", "The map.", "The map, drafted.");
+    const harbor = await s.writer.createDocument("lore/harbor", "The harbor.");
+    const map = await s.writer.createDocument("atlas/map", "The map.");
+    await s.model(ascension).edit("lore/harbor", "The harbor.", "The harbor, drafted.");
+    await s.model(ascension).edit("atlas/map", "The map.", "The map, drafted.");
     expect.soft((await s.writer.delete("lore")).ok, "the folder deleted live").toBe(true);
-    expect.soft((await s.writer.delete("atlas/map.md")).ok).toBe(true);
-    const newMap = await s.writer.createDocument("atlas/map.md", "A new map.");
+    expect.soft((await s.writer.delete("atlas/map")).ok).toBe(true);
+    const newMap = await s.writer.createDocument("atlas/map", "A new map.");
 
     const items = await s.items(ascension);
     expect.soft(itemFor(items, harbor), "deleted live, still the draft's").toMatchObject({
-      path: "manuscript://lore/harbor.md",
+      path: "manuscript://lore/harbor",
       conflict: { code: "deleted_live" },
     });
     expect.soft(itemFor(items, map).conflict, "its path taken").toEqual({
       code: "path_taken",
-      path: "manuscript://atlas/map.md",
+      path: "manuscript://atlas/map",
     });
     expect.soft(await s.applyAll(ascension)).toMatchObject({
       status: "completed",
@@ -241,19 +239,19 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
         {
           itemKey: itemFor(items, harbor).itemKey,
           status: "applied",
-          notes: [{ code: "restored", path: "manuscript://lore/harbor.md" }],
+          notes: [{ code: "restored", path: "manuscript://lore/harbor" }],
         },
         {
           itemKey: itemFor(items, map).itemKey,
           status: "held",
-          reason: { code: "path_taken", path: "manuscript://atlas/map.md" },
+          reason: { code: "path_taken", path: "manuscript://atlas/map" },
         },
       ]),
     });
     const live = s.view("live");
-    expect.soft(await live.idAt("lore/harbor.md"), "restored with its folder").toBe(harbor);
-    expect.soft(await live.text("lore/harbor.md")).toContain("The harbor, drafted.");
-    expect.soft(await live.idAt("atlas/map.md"), "the new map stays").toBe(newMap);
+    expect.soft(await live.idAt("lore/harbor"), "restored with its folder").toBe(harbor);
+    expect.soft(await live.text("lore/harbor")).toContain("The harbor, drafted.");
+    expect.soft(await live.idAt("atlas/map"), "the new map stays").toBe(newMap);
     expect.soft(await live.locate(map), "the held one stays deleted").toBeNull();
   });
 });

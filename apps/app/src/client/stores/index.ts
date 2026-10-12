@@ -43,11 +43,16 @@ export {
   useProjectActions,
   useProjectStore,
 } from "./project-store";
-export { announce, announceError, useAnnouncement } from "./thread-store/announcements";
+export {
+  announce,
+  announceError,
+  clearAnnouncement,
+  useAnnouncement,
+} from "./thread-store/announcements";
 export {
   ThreadStoreProvider,
   useIsThreadPendingCreation,
   useThreadActions,
   useThreadStore,
 } from "./thread-store/thread-store";
-export type { PendingStreamStart, ThreadStoreActions } from "./thread-store/types";
+export type { ThreadStoreActions } from "./thread-store/types";

@@ -32,6 +32,14 @@ afterEach(() => {
   }
 });
 
+/** The replies the store shows; a send's own user row is not what these tests follow. */
+function assistantTurnIds(scenario: { turns(): readonly { id: string; role: string }[] }) {
+  return scenario
+    .turns()
+    .filter(({ role }) => role === "assistant")
+    .map(({ id }) => id);
+}
+
 describe("ThreadRunController write outcomes", () => {
   it("does not revive old recovery or submission after reactivating the same session object", async () => {
     const lookup = scenarioGate<AdmissionLookup>();
@@ -42,7 +50,15 @@ describe("ThreadRunController write outcomes", () => {
     });
     const session = {};
     scenario.controller.beginRecoverySession(session);
-    const recovered = scenario.controller.lookupSubmission("thread_1", "sub-1", {}, session);
+    const row = scenario.store
+      .getState()
+      .appendUserTurn("thread_1", [{ type: "text", text: "hello" }]);
+    const recovered = scenario.controller.lookupSubmission(
+      "thread_1",
+      "sub-1",
+      { signal: new AbortController().signal, optimisticUserTurnId: row.id },
+      session,
+    );
     const submitted = scenario.submit("hello");
     scenario.controller.dispose();
     scenario.controller.activate();
@@ -57,8 +73,8 @@ describe("ThreadRunController write outcomes", () => {
       snapshotFloorNextSeq: "43",
     });
     append.resolve(defaultSendResponse());
-    await expect(recovered).resolves.toMatchObject({ kind: "ambiguous" });
-    await expect(submitted).resolves.toMatchObject({ kind: "ambiguous" });
+    await expect(recovered).resolves.toMatchObject({ kind: "abandoned" });
+    await expect(submitted).resolves.toMatchObject({ kind: "abandoned" });
     expect(scenario.activeSubscription()).toBeUndefined();
     scenario.controller.dispose();
   });
@@ -74,7 +90,7 @@ describe("ThreadRunController write outcomes", () => {
     const pending = scenario.controller.retireSubmission(
       "thread_1",
       "sub-1",
-      { optimisticUserTurnId: row.id },
+      { signal: new AbortController().signal, optimisticUserTurnId: row.id },
       session,
     );
     await vi.waitFor(() => expect(scenario.retireRequests).toHaveLength(1));
@@ -90,7 +106,7 @@ describe("ThreadRunController write outcomes", () => {
       snapshotFloorNextSeq: "43",
     });
 
-    await expect(pending).resolves.toMatchObject({ kind: "ambiguous" });
+    await expect(pending).resolves.toMatchObject({ kind: "abandoned" });
     expect(scenario.turns()).toEqual([expect.objectContaining({ id: row.id, status: "pending" })]);
     expect(scenario.activeSubscription()).toBeUndefined();
   });
@@ -120,10 +136,10 @@ describe("ThreadRunController write outcomes", () => {
       scenario.controller.lookupSubmission(
         "thread_1",
         "sub-ended",
-        { optimisticUserTurnId: endedRow.id },
+        { signal: new AbortController().signal, optimisticUserTurnId: endedRow.id },
         ended,
       ),
-    ).resolves.toMatchObject({ kind: "ambiguous" });
+    ).resolves.toMatchObject({ kind: "abandoned" });
 
     // The sibling token still owns its own reconciliation and settles normally.
     const siblingRow = scenario.store
@@ -133,7 +149,7 @@ describe("ThreadRunController write outcomes", () => {
       scenario.controller.lookupSubmission(
         "thread_1",
         "sub-sibling",
-        { optimisticUserTurnId: siblingRow.id },
+        { signal: new AbortController().signal, optimisticUserTurnId: siblingRow.id },
         sibling,
       ),
     ).resolves.toMatchObject({ kind: "accepted" });
@@ -227,7 +243,7 @@ describe("ThreadRunController same-lease successor", () => {
 
     scenario.emit(runStarted("turn-b", ["turn-m2"], "turn-a"), "13");
     expect(scenario.transport.subscriptions).toHaveLength(1);
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a", "turn-b"]);
     expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
 
     scenario.emit(runFinished("turn-b"), "14");
@@ -239,7 +255,7 @@ describe("ThreadRunController same-lease successor", () => {
     scenario.resume({ expectedTurnId: "turn-a" });
     scenario.emit(runFinished("turn-a", true), "12");
     scenario.emit(runStarted("turn-b", [], "turn-a"), "13");
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a", "turn-b"]);
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
   });
@@ -256,7 +272,7 @@ describe("ThreadRunController same-lease successor", () => {
     scenario.controller.cancel("thread_1");
     scenario.emit(runStarted("turn-c", ["other-tab-m"]), "13");
     expect(scenario.transport.cancelRequests).toEqual([]);
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a"]);
   });
 
   it("ignores an unrelated reply that starts right after A while M2 waits", async () => {
@@ -272,7 +288,7 @@ describe("ThreadRunController same-lease successor", () => {
       "14",
     );
     expect(scenario.transport.cancelRequests).toEqual([]);
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a"]);
 
     scenario.emit(runFinished("turn-c"), "15");
     scenario.emit(runStarted("turn-b", ["turn-m2"]), "16");
@@ -331,7 +347,7 @@ describe("ThreadRunController same-lease successor", () => {
     // with no running id, and R's start binds and takes Stop.
     scenario.resume({ after: "12" });
     scenario.emit(runStarted("turn-r", ["turn-m1"]), "13");
-    expect(scenario.turns().map(({ id }) => id)).toContain("turn-r");
+    expect(assistantTurnIds(scenario)).toContain("turn-r");
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-r" }]);
     scenario.emit(runFinished("turn-r"), "14");
@@ -346,7 +362,7 @@ describe("ThreadRunController send behind a queued switch", () => {
     });
     await scenario.submit("first request");
     scenario.emit(runStarted("turn-a", ["turn-user"]), "11");
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a"]);
 
     // The server names no reply: a new one, after the switch, answers this message.
     scenario.setAppend(async () =>
@@ -357,16 +373,14 @@ describe("ThreadRunController send behind a queued switch", () => {
       }),
     );
     await scenario.submit("second request");
-    expect(scenario.turns().map(({ id }) => id)).toContain("turn-a");
+    expect(assistantTurnIds(scenario)).toContain("turn-a");
 
     scenario.emit(
       { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-a" } as never,
       "12",
     );
     scenario.emit(runStarted("turn-b", ["turn-user-2"]), "13");
-    expect(scenario.turns().map(({ id }) => id)).toEqual(
-      expect.arrayContaining(["turn-a", "turn-b"]),
-    );
+    expect(assistantTurnIds(scenario)).toEqual(expect.arrayContaining(["turn-a", "turn-b"]));
     expect(scenario.turns().find(({ id }) => id === "turn-a")?.status).not.toBe("streaming");
   });
 
@@ -386,7 +400,7 @@ describe("ThreadRunController send behind a queued switch", () => {
       await scenario.submit(`queued ${userTurnId}`);
     }
     // Two sends behind the switch leave A visible, and Stop still targets A.
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a"]);
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-a" }]);
 
@@ -394,7 +408,7 @@ describe("ThreadRunController send behind a queued switch", () => {
     scenario.emit({ type: EventType.RUN_ERROR, message: "cancelled" } as never, "12");
     expect(scenario.activeSubscription()).toBeDefined();
     scenario.emit(runStarted("turn-b", ["turn-user-2", "turn-user-3"]), "13");
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a", "turn-b"]);
     expect(scenario.transport.cancelRequests).toHaveLength(1);
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests.at(-1)).toEqual({
@@ -433,7 +447,7 @@ describe("ThreadRunController follows the reply that answers its message", () =>
 
     scenario.emit(runStarted("turn-b", ["turn-m2"]), "13");
     expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a", "turn-b"]);
     scenario.emit(runFinished("turn-b"), "14");
     await vi.advanceTimersByTimeAsync(300);
     expect(scenario.activeSubscription()).toBeUndefined();
@@ -454,7 +468,7 @@ describe("ThreadRunController follows the reply that answers its message", () =>
     expect(scenario.activeSubscription()).toBeDefined();
 
     scenario.emit(runStarted("turn-b", ["turn-m2"]), "14");
-    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+    expect(assistantTurnIds(scenario)).toEqual(["turn-a", "turn-b"]);
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
   });
@@ -526,7 +540,7 @@ describe("ThreadRunController follows the reply that answers its message", () =>
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(scenario.activeSubscription()).toBeDefined();
     scenario.emit(runStarted("turn-b", ["turn-m2"]), "20");
-    expect(scenario.turns().map(({ id }) => id)).toContain("turn-b");
+    expect(assistantTurnIds(scenario)).toContain("turn-b");
   });
 
   it("ignores a replayed start that answers another message", async () => {
@@ -544,12 +558,12 @@ describe("ThreadRunController follows the reply that answers its message", () =>
     );
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests).toEqual([]);
-    expect(scenario.turns().map(({ id }) => id)).not.toContain("turn-x");
+    expect(assistantTurnIds(scenario)).not.toContain("turn-x");
 
     scenario.emit(runFinished("turn-x"), "13");
     scenario.emit(runStarted("turn-b", ["turn-m2"]), "14");
     expect(scenario.transport.cancelRequests).toEqual([{ threadId: "thread_1", turnId: "turn-b" }]);
-    expect(scenario.turns().map(({ id }) => id)).toContain("turn-b");
+    expect(assistantTurnIds(scenario)).toContain("turn-b");
   });
 });
 

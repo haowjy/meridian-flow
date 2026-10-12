@@ -189,8 +189,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .where(
         and(
           eq(liveDocuments.contextSourceId, contextSourceId),
-          eq(liveDocuments.name, "chapter-1"),
-          eq(liveDocuments.extension, "md"),
+          eq(liveDocuments.name, "Chapter 1"),
+          eq(liveDocuments.extension, ""),
         ),
       )
       .limit(1);
@@ -206,8 +206,8 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         }).createDocumentRecordIfAbsent({
           id: documentId,
           folderId: null,
-          name: "chapter-1",
-          extension: "md",
+          name: "Chapter 1",
+          extension: "",
           filetype: "markdown",
           markdown: "",
         });

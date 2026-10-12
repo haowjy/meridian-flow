@@ -350,8 +350,16 @@ msgid "A file named {0} already exists in this location."
 msgstr "A file named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {trimmed} already exists in this location."
-msgstr "A file named {trimmed} already exists in this location."
+#~ msgid "A file named {candidate} already exists in this location."
+#~ msgstr "A file named {candidate} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A file named {name} already exists in this location."
+msgstr "A file named {name} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A file named {trimmed} already exists in this location."
+#~ msgstr "A file named {trimmed} already exists in this location."
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -359,8 +367,16 @@ msgid "A folder named {0} already exists in this location."
 msgstr "A folder named {0} already exists in this location."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {trimmed} already exists in this location."
-msgstr "A folder named {trimmed} already exists in this location."
+#~ msgid "A folder named {candidate} already exists in this location."
+#~ msgstr "A folder named {candidate} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+msgid "A folder named {name} already exists in this location."
+msgstr "A folder named {name} already exists in this location."
+
+#: src/features/project/context/context-entry-name.ts
+#~ msgid "A folder named {trimmed} already exists in this location."
+#~ msgstr "A folder named {trimmed} already exists in this location."
 
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
@@ -519,6 +535,10 @@ msgstr "All your devices"
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
 msgstr "Alt text"
+
+#: src/features/project/context/context-entry-name.ts
+msgid "An entry named {name} already exists in this location."
+msgstr "An entry named {name} already exists in this location."
 
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
@@ -791,8 +811,8 @@ msgstr "Chats in this Work share its goal and scratch files."
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Check submission status"
-msgstr "Check submission status"
+#~ msgid "Check submission status"
+#~ msgstr "Check submission status"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
@@ -1346,7 +1366,10 @@ msgstr "Couldn't send a message to {line}"
 msgid "Couldn't send your answer."
 msgstr "Couldn't send your answer."
 
-#: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/useChatSubmissions.ts
+msgid "Couldn't send your message."
+msgstr "Couldn't send your message."
+
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr "Couldn't send."
@@ -2408,6 +2431,14 @@ msgstr "Move row up"
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
 msgstr "Move up"
+
+#: src/features/chat/UserTurn.tsx
+#~ msgid "Moved to composer."
+#~ msgstr "Moved to composer."
+
+#: src/features/chat/UserTurn.tsx
+msgid "Moved to the message box."
+msgstr "Moved to the message box."
 
 #: src/features/chat/FormBlock.tsx
 msgid "Must be a number"
@@ -3485,8 +3516,8 @@ msgstr "Start a Work"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
-msgid "Start over"
-msgstr "Start over"
+#~ msgid "Start over"
+#~ msgstr "Start over"
 
 #: src/features/editor/EditorView.tsx
 msgid "Start writing…"

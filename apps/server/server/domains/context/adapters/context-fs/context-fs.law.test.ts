@@ -1,11 +1,13 @@
 /** ContextFS in-memory laws: untitled allocation, rename-refuse, write/read, ensure-tracked. */
 
+import { documentTitleFromUri } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { Ok } from "../../../../shared/result.js";
 import type { BindMarkdownInput } from "../../../collab/index.js";
 import { createInMemoryCollabDomain } from "../../../collab/index.js";
 import { fakeBoundWrite } from "../../../collab/test-support/bound-writes.js";
 import { type ContextTreeDispatch, ContextTreeMover } from "../../context/context-tree-mover.js";
+import { createContextPortRouter } from "../../context/router.js";
 import { ContextFS, type ContextFSDeps } from "./context-fs.js";
 import {
   createInMemoryContextDocumentStoreBacking,
@@ -108,6 +110,45 @@ function manuscriptFs(documentSync: ContextFSDeps["documentSync"]) {
 }
 
 describe("ContextFS createUntitledDocument", () => {
+  it.each([
+    ["Chapter#13", "Chapter#13"],
+    ["Book#1/Chapter 13", "Chapter 13"],
+  ])("preserves literal # in created address %s and its title", async (path, title) => {
+    const { fs } = createUntitledFs({});
+    const port = createContextPortRouter({
+      sources: new Map([["manuscript", { adapter: fs, authority: { kind: "contextual" } }]]),
+      workAuthorities: new Map(),
+    });
+    const created = await port.createTrackedDocument(`manuscript://${path}`, "", {
+      origin: { type: "system" },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) throw new Error(created.error.code);
+    expect(created.value.uri).toBe(`manuscript://${path}`);
+    expect(documentTitleFromUri(created.value.uri)).toBe(title);
+  });
+
+  it("reports the occupying kind through the context router", async () => {
+    const { fs } = createUntitledFs({});
+    const port = createContextPortRouter({
+      sources: new Map([["manuscript", { adapter: fs, authority: { kind: "contextual" } }]]),
+      workAuthorities: new Map(),
+    });
+    await fs.mkdir("Lore");
+    expect(
+      await port.createBoundDocument("manuscript://Lore", null, { origin: { type: "system" } }),
+    ).toMatchObject({ ok: false, error: { code: "conflict", occupantKind: "folder" } });
+  });
+
+  it("allocates past folder prose aliases", async () => {
+    const { fs } = createUntitledFs({});
+    await fs.mkdir("Untitled 1.md");
+    await fs.mkdir("Untitled 2.txt");
+    expect(await fs.createUntitledDocument("", untitledOptions(DOCUMENT_A))).toMatchObject({
+      ok: true,
+      value: { name: "Untitled 3" },
+    });
+  });
   it("rolls back identity when Yjs initialization fails", async () => {
     const collab = createInMemoryCollabDomain();
     let failDurableHeadOnce = true;
@@ -159,7 +200,7 @@ describe("ContextFS createUntitledDocument", () => {
     ]);
     expect(
       outcomes.map((outcome) => (outcome.ok ? outcome.value.name : outcome.error.code)).sort(),
-    ).toEqual(["Untitled 1.md", "Untitled 2.md"]);
+    ).toEqual(["Untitled 1", "Untitled 2"]);
   });
 
   it("returns a conflict after bounded allocation collisions", async () => {
@@ -251,7 +292,7 @@ describe("ContextFS rename filetype invariant", () => {
     await expect(context.stat("chapter.md")).resolves.toEqual({ ok: true, value: null });
     await expect(context.stat("first/chapter.txt")).resolves.toMatchObject({
       ok: true,
-      value: { documentId: initial.value.documentId, filetype: "text" },
+      value: { documentId: initial.value.documentId, filetype: "markdown" },
     });
     await expect(context.stat("second/chapter.txt")).resolves.toEqual({ ok: true, value: null });
   });
@@ -321,5 +362,212 @@ describe("ContextFS ensureTrackedDocument", () => {
       },
     });
     await expect(fs.list("")).resolves.toEqual({ ok: true, value: [] });
+  });
+});
+
+describe("canonical document naming laws", () => {
+  it("creates one row for every prose spelling, returns canonical paths and refuses disguised data", async () => {
+    const { fs, backing } = createUntitledFs({});
+    const first = await fs.ensureTrackedDocument("ch12.md");
+    expect(first.ok).toBe(true);
+    for (const path of ["ch12", "ch12.md", "ch12.txt", "ch12.markdown", "ch12.mdx", "ch12.MD.md"]) {
+      expect(await fs.ensureTrackedDocument(path)).toMatchObject({
+        ok: true,
+        value: { created: false, documentId: first.ok ? first.value.documentId : "" },
+      });
+      expect(await fs.stat(path)).toMatchObject({
+        ok: true,
+        value: { path: "ch12", filetype: "markdown" },
+      });
+      expect(await fs.read(path)).toMatchObject({ ok: true, value: { content: "" } });
+    }
+    expect([...backing.documents.values()]).toHaveLength(1);
+    expect(await fs.ensureTrackedDocument("data.json.md")).toMatchObject({
+      ok: false,
+      error: { code: "invalid_name" },
+    });
+    await fs.ensureTrackedDocument("outline.json");
+    expect(await fs.stat("outline")).toEqual({ ok: true, value: null });
+  });
+  it("renames aliases in place and keeps the actual non-prose extension for CAS destinations and copies", async () => {
+    const { fs, backing } = createUntitledFs({});
+    const mover = new ContextTreeMover();
+    const dispatch = (path: string): ContextTreeDispatch => ({
+      adapter: fs,
+      scheme: "manuscript",
+      path,
+      canonical: `manuscript://${path}`,
+      workScopeId: null,
+    });
+    const prose = await fs.ensureTrackedDocument("ch12");
+    if (!prose.ok) throw new Error("fixture failed");
+    expect(
+      await mover.commitWriterLocation(dispatch("ch12"), dispatch("ch12.md"), {
+        kind: "file",
+        nodeId: prose.value.documentId,
+      }),
+    ).toMatchObject({
+      ok: true,
+      value: { destinationPath: "ch12", movedNodeId: prose.value.documentId },
+    });
+    await fs.ensureTrackedDocument("config.toml");
+    expect(
+      await mover.commitWriterLocation(dispatch("config.toml"), dispatch("settings")),
+    ).toMatchObject({ ok: true, value: { destinationPath: "settings.toml" } });
+    expect(await fs.ensureTrackedDocument("copied", { sourceExtension: "toml" })).toMatchObject({
+      ok: true,
+    });
+    expect(await fs.stat("copied.toml")).toMatchObject({ ok: true, value: { filetype: "text" } });
+    expect([...backing.documents.values()].map((row) => [row.name, row.extension])).toEqual([
+      ["ch12", ""],
+      ["settings", "toml"],
+      ["copied", "toml"],
+    ]);
+  });
+  it("refuses file/folder clashes in both directions and at exact moves", async () => {
+    const { fs } = createUntitledFs({});
+    await fs.mkdir("Lore");
+    expect(await fs.ensureTrackedDocument("Lore.md")).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    await fs.ensureTrackedDocument("Chapter.md");
+    // A namespace clash is a conflict result naming its occupant, never a throw.
+    await expect(fs.mkdir("Chapter")).resolves.toEqual({
+      ok: false,
+      error: { code: "conflict", occupantKind: "file" },
+    });
+    const mover = new ContextTreeMover();
+    const dispatch = (path: string): ContextTreeDispatch => ({
+      adapter: fs,
+      scheme: "manuscript",
+      path,
+      canonical: `manuscript://${path}`,
+      workScopeId: null,
+    });
+    expect(await mover.commitWriterLocation(dispatch("Chapter"), dispatch("Lore"))).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    expect(await mover.commitWriterLocation(dispatch("Lore"), dispatch("Chapter"))).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+  });
+});
+
+it("atomically claims opposite-kind names across in-memory store instances", async () => {
+  const backing = createInMemoryContextDocumentStoreBacking();
+  const left = new InMemoryContextDocumentStore({ sourceId: SOURCE_A, backing });
+  const right = new InMemoryContextDocumentStore({ sourceId: SOURCE_A, backing });
+  for (const [index, fileFirst] of [true, false].entries()) {
+    const name = `Clash ${index}`;
+    const file = () =>
+      left.createDocument({
+        folderId: null,
+        name,
+        extension: "",
+        filetype: "markdown",
+        markdown: "",
+      });
+    const folder = () => right.ensureFolderPath([name]);
+    const results = await Promise.allSettled(fileFirst ? [file(), folder()] : [folder(), file()]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" && rejected.reason.message).toBe(
+      "Context entry already exists",
+    );
+  }
+});
+
+describe("router through real ContextFS naming", () => {
+  function harness() {
+    const fixture = createUntitledFs({});
+    const port = createContextPortRouter({
+      sources: new Map([
+        ["manuscript", { adapter: fixture.fs, authority: { kind: "contextual" } }],
+      ]),
+      workAuthorities: new Map(),
+    });
+    return { ...fixture, port };
+  }
+
+  it("consumes destination inheritance once and stores the codec filetype", async () => {
+    const { port, backing } = harness();
+    const created = await port.ensureTrackedDocument("manuscript://settings.txt", {
+      sourceExtension: "toml",
+    });
+    expect(created).toMatchObject({ ok: true, value: { uri: "manuscript://settings" } });
+    expect([...backing.documents.values()]).toMatchObject([
+      { name: "settings", extension: "", filetype: "markdown" },
+    ]);
+    expect(await port.stat("manuscript://settings")).toMatchObject({
+      ok: true,
+      value: { documentId: created.ok ? created.value.documentId : "" },
+    });
+  });
+
+  it("creates readable binary names through the same identity codec", async () => {
+    const { port, fs } = harness();
+    const written = await port.writeBinary("manuscript://bytes.txt", {
+      fileType: "pdf",
+      mimeType: "application/pdf",
+      storageUrl: "s3://bytes",
+      sizeBytes: 3,
+    });
+    expect(written).toMatchObject({ ok: true, value: { uri: "manuscript://bytes.pdf" } });
+    expect(await port.stat("manuscript://bytes.pdf")).toMatchObject({
+      ok: true,
+      value: { documentId: written.ok ? written.value.documentId : "" },
+    });
+    expect(await fs.tree.inspectMovable("bytes.pdf")).toMatchObject({
+      ok: true,
+      value: { kind: "file" },
+    });
+    const unregistered = await port.writeBinary("manuscript://LICENSE", {
+      fileType: "binary",
+      mimeType: "application/octet-stream",
+      storageUrl: "s3://license",
+      sizeBytes: 3,
+    });
+    expect(unregistered).toMatchObject({ ok: true, value: { uri: "manuscript://LICENSE" } });
+    expect(await port.stat("manuscript://LICENSE")).toMatchObject({ ok: true });
+  });
+
+  it("refuses folder document-alias claims, parent provisioning and CAS moves", async () => {
+    const { fs, port } = harness();
+    await fs.mkdir("Lore.md");
+    expect(await port.ensureTrackedDocument("manuscript://Lore")).toMatchObject({
+      ok: false,
+      error: { code: "conflict" },
+    });
+    const chapter = await port.ensureTrackedDocument("manuscript://Chapter");
+    expect(chapter.ok).toBe(true);
+    // A namespace clash is a conflict result naming its occupant, never a throw.
+    await expect(fs.mkdir("Chapter.txt/child")).resolves.toEqual({
+      ok: false,
+      error: { code: "conflict", occupantKind: "file" },
+    });
+    expect(
+      await port.commitWriterLocation("manuscript://Chapter", "manuscript://Lore"),
+    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+    await fs.mkdir("Other");
+    expect(
+      await port.commitWriterLocation("manuscript://Other", "manuscript://Chapter.md"),
+    ).toMatchObject({ ok: false, error: { code: "conflict" } });
+  });
+
+  it.each([
+    ["data.json", "data.md"],
+    ["notes", "notes.json"],
+  ])("refuses cross-schema rename %s to %s without changing identity or location", async (source, destination) => {
+    const { port, backing } = harness();
+    const original = await port.ensureTrackedDocument(`manuscript://${source}`);
+    expect(original.ok).toBe(true);
+    const before = [...backing.documents.values()].map((row) => ({ ...row }));
+    expect(
+      await port.commitWriterLocation(`manuscript://${source}`, `manuscript://${destination}`),
+    ).toMatchObject({ ok: false, error: { code: "invalid_operation" } });
+    expect([...backing.documents.values()]).toEqual(before);
   });
 });

@@ -44,7 +44,7 @@ runtime shapes, and observability records.
   `parseRequestId`, so a malformed ref is gone and never reaches a lookup;
   `storedLinkRef` keeps a present malformed attr as a ref so it reaches
   resolution as gone instead of falling back to its address), the only
-  ahead-ref mint, and `aheadAddress` with `hasFileExtension`, the one rule for
+  ahead-ref mint, and `aheadAddress` with `isAheadFilename`, the one rule for
   what address an ahead ref may be registered at (mint and registry alike).
   `document-link.ts` owns the one stored-link resolution (`resolveStoredLink`
   over a host `LinkCatalog`), the one written-link classifier
@@ -82,6 +82,14 @@ runtime shapes, and observability records.
   `features/chat/compaction/thread-controls.ts`). A missing kind fails its
   enqueue or drops that queued item from the tray.
 - Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
+- `protocol/document-filename.ts` is the input codec for document basenames. Prose
+  stores empty extension and markdown filetype; registered non-prose suffixes
+  keep their lower-case extension, unknown suffixes belong to the name. Move
+  and copy pass the source extension explicitly, never infer it from filetype.
+  Binary storage applies `filenameForBinary` to the same parsed parts; no separate
+  binary identity mode exists. Folder clashes use `folderDocumentName` without
+  changing folder spelling.
+  Stored parts already render the writer/model name; do not add a display key.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.
 - Blocks describe the writer transcript. Model-only document-text elisions belong
@@ -99,3 +107,8 @@ runtime shapes, and observability records.
   (`ProjectContextRequestOptions`). `GET .../context/lineages/:rootThreadId`
   names a lineage by handle and title, trashed first chat included. `WorkingSetRoute` has the same two arms: a
   Work-scoped route carries `workId`, a chat's Scratch route `rootThreadId`.
+
+- `protocol/document-filename.ts` owns input naming: `storedFilename` gives
+  destination names and parsed parts to clients and server commands, while
+  `filenameForBinary` alone chooses a storage suffix for prose-named bytes.
+  Identity parsing never depends on storage kind.

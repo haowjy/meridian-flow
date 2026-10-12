@@ -52,7 +52,7 @@ function documentSortKey(row: DockRow): string {
 }
 
 /**
- * The basename of a document's context path (`work://drafts/ch-3.md` → `ch-3.md`),
+ * The basename of a document's context path (`work://drafts/ch-3` → `ch-3`),
  * or `null` when there's no usable path. New documents are URI-addressed, so the
  * basename is the display name when the AI created the doc unnamed (spec §5.5,
  * product call 2026-07-05). Trailing slashes are ignored.

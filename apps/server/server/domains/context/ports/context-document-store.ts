@@ -16,7 +16,7 @@ import type { TreeView } from "../tree/tree-view.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
 export class ContextEntryConflictError extends Error {
-  constructor() {
+  constructor(readonly occupantKind?: "file" | "folder") {
     super("Context entry already exists");
     this.name = "ContextEntryConflictError";
   }
@@ -127,8 +127,9 @@ export interface ContextDocumentStore {
   /**
    * Claim only the SQL/tree identity, live, under `claim` (default `any`: reveal the
    * hidden document at the path or insert). Null when the path is taken; a claim the
-   * locks don't confirm throws {@link LiveCreateCandidateChangedError}. The
-   * document-creation aggregate owns Yjs initialization around this operation.
+   * locks don't confirm throws {@link LiveCreateCandidateChangedError}; a live folder at the
+   * document's canonical name throws {@link ContextEntryConflictError} with the folder kind.
+   * The document-creation aggregate owns Yjs initialization around this operation.
    */
   createDocumentRecordIfAbsent(
     input: CreateDocumentInput,

@@ -68,7 +68,7 @@ if (!RUN) {
     } as const;
     type Scheme = keyof typeof SOURCES;
     const addressFor = (scheme: Scheme) =>
-      scheme === "manuscript" ? "manuscript://chapter.md" : `${scheme}://@notes/chapter.md`;
+      scheme === "manuscript" ? "manuscript://chapter.toml" : `${scheme}://@notes/chapter.toml`;
     const registrationFor = (scheme: Scheme, aheadId = AHEAD) => ({
       aheadId,
       holderProjectId: PROJECT as never,
@@ -110,7 +110,7 @@ if (!RUN) {
     const insertDocument = (db: Database, scheme: Scheme = "manuscript", id = DOCUMENT) =>
       db
         .insert(documents)
-        .values({ id, contextSourceId: SOURCES[scheme], name: "chapter", extension: "md" });
+        .values({ id, contextSourceId: SOURCES[scheme], name: "chapter", extension: "toml" });
     const settledIds = async () =>
       (await database.select({ id: linkAheadRefs.settledDocumentId }).from(linkAheadRefs)).map(
         (row) => row.id,
@@ -313,7 +313,7 @@ if (!RUN) {
       expect(after?.settledAt).toEqual(first?.settledAt);
 
       await expect(
-        registry.register([{ ...registration, address: "manuscript://other.md" }]),
+        registry.register([{ ...registration, address: "manuscript://other.toml" }]),
       ).rejects.toThrow(/another address/);
 
       // Registration commits first, so a caller that then rolls back leaves a harmless orphan row.
@@ -362,12 +362,12 @@ if (!RUN) {
       }
       const registry = newRegistry(database);
       await registry.register([
-        { ...registration, address: "scratch://@/c1/note.md" },
-        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.md" },
+        { ...registration, address: "scratch://@/c1/note.toml" },
+        { ...registration, aheadId: DOCUMENT_2, address: "scratch://@/c2/note.toml" },
       ]);
       await database
         .insert(documents)
-        .values({ id: DOCUMENT, contextSourceId: SOURCES[0], name: "note", extension: "md" });
+        .values({ id: DOCUMENT, contextSourceId: SOURCES[0], name: "note", extension: "toml" });
       await runInDrizzleTransaction(database, async () => {
         await lockContextSources(database, [SOURCES[0]]);
         expect(await registry.settleArrivals([DOCUMENT as never])).toBe(1);
@@ -393,7 +393,7 @@ if (!RUN) {
         "scratch://@/trailing.",
         "scratch://@/.hidden",
         "scratch://@/noext",
-        "scratch://contextual.md",
+        "scratch://contextual.toml",
       ]) {
         await expect(
           registry.register([{ ...registration, aheadId: DOCUMENT_2, address }]),
@@ -408,7 +408,7 @@ if (!RUN) {
           seed = (seed * 1_664_525 + 1_013_904_223) >>> 0;
           return String.fromCharCode(0x4e00 + (seed % 18_000));
         }).join("");
-      const long = `manuscript://${Array.from({ length: 18 }, segment).join("/")}.md`;
+      const long = `manuscript://${Array.from({ length: 18 }, segment).join("/")}.toml`;
       const longRegistration = { ...registration, aheadId: DOCUMENT_2, address: long };
       await expect.soft(registry.register([longRegistration])).resolves.toBeUndefined();
       await expect.soft(registry.register([longRegistration])).resolves.toBeUndefined();
@@ -429,14 +429,14 @@ if (!RUN) {
       const db = createDb(DATABASE_URL, { max: 12 });
       afterAll(() => db.close());
       const runtimes = useComposedRuntimes(() => db);
-      const KAEL = "manuscript://lore/kael.md";
+      const KAEL = "manuscript://lore/kael";
 
       async function start() {
         const runtime = await runtimes.compose();
         const scenario = await draftTreeScenario(db, { runtime, runtimes });
         const work = await scenario.work("Ascension", "draft");
         // The model's create is a hidden row in the Work's draft.
-        const kael = await scenario.model(work).create("lore/kael.md", "Kael, the smith.");
+        const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
         const draft = await scenario.draftOf(work);
         return { runtime, scenario, work, kael, draft };
       }
@@ -496,7 +496,7 @@ if (!RUN) {
 
       it("registers the writer's link typed in the draft's review room, and leaves no row past a close it waited on (L-3)", async () => {
         const { runtime, scenario, work, kael, draft } = await start();
-        const chapter = await scenario.model(work).create("chapter-two.md", "The forge was cold.");
+        const chapter = await scenario.model(work).create("chapter-two", "The forge was cold.");
         // The client mints the ahead ref as the writer types; the server has never seen it.
         const typeLink = (aheadId: string) => (doc: Y.Doc) => {
           const paragraph = new Y.XmlElement("paragraph");
@@ -535,12 +535,12 @@ if (!RUN) {
 
         // A live save the draft pulls in, with no journal row and no new generation (F18):
         // the text Apply would publish changed, so the cut must say so.
-        const one = await scenario.writer.create("chapter-one.md", { content: "One." });
+        const one = await scenario.writer.create("chapter-one", { content: "One." });
         const chapterOne = one.documentId as DocumentId;
         const edit = await scenario.model(work).reply();
         await edit.call("write", {
           command: "insert",
-          path: "manuscript://chapter-one.md",
+          path: "manuscript://chapter-one",
           find: "One.",
           content: " Two.",
         });
@@ -550,7 +550,7 @@ if (!RUN) {
           draftId: draft.id,
           branchIds: [pulledBranch.branchId],
         });
-        await scenario.writer.write("chapter-one.md", "One.\n\n[Kael](lore/kael.md)");
+        await scenario.writer.write("chapter-one", "One.\n\n[Kael](lore/kael)");
         await runtime.ports.documentSync.flushBranchLivePull(chapterOne);
         const pulledState = await runtime.ports.documentSync.loadHocuspocusBranchState(
           pulledBranch.branchId,
@@ -583,7 +583,7 @@ if (!RUN) {
           const paragraph = new Y.XmlElement("paragraph");
           const text = new Y.XmlText();
           text.insert(0, "Notes", {
-            link: { href: "scratch://@ghost-work/notes.md", ref: `ahead:${ghost}`, title: null },
+            link: { href: "scratch://@ghost-work/notes", ref: `ahead:${ghost}`, title: null },
           });
           paragraph.insert(0, [text]);
           doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
@@ -595,7 +595,7 @@ if (!RUN) {
         expect.soft(unregistrable, "a ready cut that names the unregistrable ref").toMatchObject({
           status: "ready",
           cut: { draftId: draft.id, branches: [{ branchId }] },
-          unregistrable: [{ aheadId: ghost, address: "scratch://@ghost-work/notes.md" }],
+          unregistrable: [{ aheadId: ghost, address: "scratch://@ghost-work/notes" }],
         });
         expect
           .soft(await meanings(beside), "the independent valid ref still registers")

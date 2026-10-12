@@ -16,6 +16,7 @@ import type {
   AdmissionFingerprint,
   UserMessageBlock,
   UserTurnAdmissionInput,
+  UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
@@ -43,16 +44,16 @@ function winnerProjection(
   winner: AdmissionRecord,
   fingerprint: string,
   submissionId: string,
-): AcceptedAdmission | { kind: "pending" | "rejected"; submissionId: string; code?: string } {
+): UserTurnAdmissionResult {
   if (winner.fingerprint !== null && winner.fingerprint !== fingerprint) {
     throw new AdmissionConflictError();
   }
   if (winner.state === "accepted") return { ...winner.response, kind: "already-accepted" };
   if (winner.state === "pending") return { kind: "pending", submissionId };
   return {
-    kind: "rejected",
+    kind: winner.state,
     submissionId,
-    code: winner.state === "retired" ? "retired" : winner.code,
+    code: winner.code,
   };
 }
 
@@ -103,11 +104,8 @@ export function createWriterTurnProducer(deps: {
         input.userTurnMetadata ??
         null;
 
-      type Projection =
-        | AcceptedAdmission
-        | { kind: "pending" | "rejected"; submissionId: string; code?: string };
       try {
-        return await persistWriterEnqueue<Projection>({
+        return await persistWriterEnqueue<UserTurnAdmissionResult>({
           persistence: deps.persistence,
           hub: deps.hub,
           threadId,

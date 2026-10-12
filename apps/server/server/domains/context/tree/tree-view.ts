@@ -13,9 +13,10 @@ import type {
   ProjectId,
   WorkId,
 } from "@meridian/contracts";
+import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { eq, inArray, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
@@ -94,6 +95,17 @@ export type VisibleFolder = {
   locationVersion: bigint;
   path: string;
 };
+
+/**
+ * A path asked as a claim of one kind also meets the shared document and folder namespace:
+ * a document's name is held by a folder whose document alias it is (folder `Lore.md`
+ * holds document `Lore`), and a folder's name by the document at its alias. Creates,
+ * placements and moves ask this way; reads resolve literally and never do.
+ */
+export type NameClaim = "document" | "folder";
+
+/** A path to resolve; `as` makes it a claim of that kind. */
+export type PathQuery = { contextSourceId: ContextSourceId; path: string; as?: NameClaim };
 
 export type PathResolution<N> =
   | { kind: "found"; node: N }
@@ -184,10 +196,7 @@ export type DocumentLineage = {
 };
 
 export interface TreeReader {
-  resolvePath(
-    view: TreeView,
-    at: { contextSourceId: ContextSourceId; path: string },
-  ): Promise<PathResolution<TreeNode>>;
+  resolvePath(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
   /**
    * One step of a walk: what this view shows named `filename` directly under `parentId`
    * (null: the source root). The same answer as `resolvePath` at that folder's path plus
@@ -195,7 +204,12 @@ export interface TreeReader {
    */
   childAt(
     view: TreeView,
-    at: { contextSourceId: ContextSourceId; parentId: FolderId | null; filename: string },
+    at: {
+      contextSourceId: ContextSourceId;
+      parentId: FolderId | null;
+      filename: string;
+      as?: NameClaim;
+    },
   ): Promise<PathResolution<NodeRef>>;
   /**
    * What this view shows at each source-relative path, in input order: the documents and
@@ -203,7 +217,7 @@ export interface TreeReader {
    */
   occupancy(
     view: TreeView,
-    at: readonly { contextSourceId: ContextSourceId; path: string }[],
+    at: readonly PathQuery[],
   ): Promise<{ documents: DocumentId[]; folders: FolderId[] }[]>;
   /** An id names one node; other visible ids at its address in this view are `clashesWith`. */
   findById(
@@ -345,7 +359,7 @@ export function createTreeReader(
    */
   async function pathOccupants(
     view: TreeView,
-    queries: readonly { contextSourceId: ContextSourceId; path: string }[],
+    queries: readonly PathQuery[],
   ): Promise<PathOccupancy[]> {
     const walks = queries.map((query) => {
       const segments = query.path.split("/").filter(Boolean);
@@ -396,17 +410,102 @@ export function createTreeReader(
       ),
     );
     const folderHits = await loadFolderIdsAt(tx(), view, leaves.slots);
+    const aliases = await aliasOccupants(
+      view,
+      walks.map((walk, owner) => ({ ...walk, as: queries[owner]?.as })),
+    );
     return walks.map((walk, owner) => ({
       path: walk.path,
-      documents: leaves.idsFor(owner, documentHits),
-      folders: leaves.idsFor(owner, folderHits),
+      documents: [
+        ...new Set([...leaves.idsFor(owner, documentHits), ...(aliases[owner]?.documents ?? [])]),
+      ],
+      folders: [
+        ...new Set([...leaves.idsFor(owner, folderHits), ...(aliases[owner]?.folders ?? [])]),
+      ],
     }));
   }
 
-  async function resolvePath(
+  /**
+   * The nodes a claim meets through the shared namespace alone (`NameClaim`), for each
+   * leaf name under its candidate parents. Literal occupants are the caller's.
+   */
+  async function aliasOccupants(
     view: TreeView,
-    at: { contextSourceId: ContextSourceId; path: string },
-  ): Promise<PathResolution<TreeNode>> {
+    asks: readonly {
+      sourceId: ContextSourceId;
+      parents: readonly (FolderId | null)[];
+      filename: string;
+      as?: NameClaim | undefined;
+    }[],
+  ): Promise<{ documents: DocumentId[]; folders: FolderId[] }[]> {
+    const parentKey = (sourceId: string, parentId: string | null) =>
+      JSON.stringify([sourceId, parentId]);
+    // Folders whose document alias is a claimed document's name: every folder under the
+    // parent, since an alias may carry any run of prose suffixes.
+    const folderParents = new Map<
+      string,
+      { sourceId: ContextSourceId; parentId: FolderId | null }
+    >();
+    for (const ask of asks) {
+      if (ask.as !== "document") continue;
+      for (const parentId of ask.parents) {
+        folderParents.set(parentKey(ask.sourceId, parentId), { sourceId: ask.sourceId, parentId });
+      }
+    }
+    const siblings =
+      folderParents.size === 0
+        ? []
+        : await folderRows(view, (vf) =>
+            or(
+              ...[...folderParents.values()].map((at) =>
+                and(
+                  eq(vf.contextSourceId, at.sourceId),
+                  at.parentId === null ? isNull(vf.parentId) : eq(vf.parentId, at.parentId),
+                ),
+              ),
+            ),
+          );
+    // The document at a claimed folder name's alias.
+    const documentAsks = positions(
+      asks.flatMap((ask, owner) => {
+        const alias = folderDocumentName(ask.filename);
+        return ask.as === "folder" && alias !== ask.filename
+          ? ask.parents.map((parentId) => ({
+              owner,
+              sourceId: ask.sourceId,
+              parentId,
+              name: alias,
+            }))
+          : [];
+      }),
+    );
+    const documentHits = await loadDocumentIdsAt(
+      tx(),
+      view,
+      documentAsks.slots.flatMap((slot) =>
+        filenameSplits(slot.name).map((split) => ({ ...slot, ...split })),
+      ),
+    );
+    return asks.map((ask, owner) => {
+      const parents = new Set(ask.parents.map((parentId) => parentKey(ask.sourceId, parentId)));
+      return {
+        documents: documentAsks.idsFor(owner, documentHits),
+        folders:
+          ask.as === "document"
+            ? siblings
+                .filter(
+                  (folder) =>
+                    parents.has(parentKey(folder.contextSourceId, folder.parentId)) &&
+                    folder.name !== ask.filename &&
+                    folderDocumentName(folder.name) === ask.filename,
+                )
+                .map((folder) => folder.id)
+            : [],
+      };
+    });
+  }
+
+  async function resolvePath(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>> {
     const [found] = await pathOccupants(view, [at]);
     if (!found || found.documents.length + found.folders.length === 0) {
       return { kind: "not_found" };
@@ -437,7 +536,12 @@ export function createTreeReader(
 
   async function childAt(
     view: TreeView,
-    at: { contextSourceId: ContextSourceId; parentId: FolderId | null; filename: string },
+    at: {
+      contextSourceId: ContextSourceId;
+      parentId: FolderId | null;
+      filename: string;
+      as?: NameClaim;
+    },
   ): Promise<PathResolution<NodeRef>> {
     const slot = { key: 0, sourceId: at.contextSourceId, parentId: at.parentId, name: at.filename };
     const documentHits = await loadDocumentIdsAt(
@@ -446,11 +550,21 @@ export function createTreeReader(
       filenameSplits(at.filename).map((split) => ({ ...slot, ...split })),
     );
     const folderHits = await loadFolderIdsAt(tx(), view, [slot]);
+    const [alias] = at.as
+      ? await aliasOccupants(view, [
+          {
+            sourceId: at.contextSourceId,
+            parents: [at.parentId],
+            filename: at.filename,
+            as: at.as,
+          },
+        ])
+      : [];
     const [first, second, ...rest] = [
-      ...[...new Set(documentHits.map((hit) => hit.id))].map(
+      ...[...new Set([...documentHits.map((hit) => hit.id), ...(alias?.documents ?? [])])].map(
         (id): NodeRef => ({ kind: "document", id }),
       ),
-      ...[...new Set(folderHits.map((hit) => hit.id))].map(
+      ...[...new Set([...folderHits.map((hit) => hit.id), ...(alias?.folders ?? [])])].map(
         (id): NodeRef => ({ kind: "folder", id }),
       ),
     ];
@@ -802,10 +916,7 @@ export function createTreeReader(
     return (await lineages(view, [id])).get(id) ?? null;
   }
 
-  async function occupancy(
-    view: TreeView,
-    at: readonly { contextSourceId: ContextSourceId; path: string }[],
-  ) {
+  async function occupancy(view: TreeView, at: readonly PathQuery[]) {
     if (at.length === 0) return [];
     return (await pathOccupants(view, at)).map(({ documents, folders }) => ({
       documents,

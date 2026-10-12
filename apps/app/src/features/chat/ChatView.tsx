@@ -19,20 +19,9 @@ import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import {
-  getChatSubmissionEpoch,
-  recordChatSubmission,
-  retireChatSubmission,
-  settleChatSubmission,
-} from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
-import {
-  announceError,
-  useIsThreadPendingCreation,
-  useThreadActions,
-  useThreadStore,
-} from "@/client/stores";
+import { useIsThreadPendingCreation, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
   type ComposerChatCommand,
@@ -46,6 +35,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
@@ -67,7 +57,6 @@ import {
   type DerivationDeps,
   startDerivation,
   useDerivationStatus,
-  whenDerived,
 } from "./derivation/derive-conversation";
 import { isHandoffSeed, optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
@@ -80,14 +69,8 @@ import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
-import type { UserTurnRecovery } from "./UserTurn";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
-import {
-  forgetSubmissionTurnId,
-  rememberSubmissionTurnId,
-  submissionTurnId,
-  useChatSubmissionRecovery,
-} from "./useChatSubmissionRecovery";
+import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
@@ -95,8 +78,8 @@ import { usePendingInbox } from "./usePendingInbox";
 import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
-import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
+import { useThreadRunResume } from "./useThreadRunResume";
 
 const EMPTY_TURNS: Turn[] = [];
 
@@ -135,7 +118,6 @@ export function ChatView({
   activeThread = null,
   activeWork = null,
   snapshotLiveState = null,
-  snapshotNextSeq = null,
   snapshotThreadUsage = null,
   historySettled,
   activateProjection,
@@ -154,6 +136,7 @@ export function ChatView({
   const draft = useComposerSessionDraft(accountId, { kind: "chat", id: threadId });
   const accountSignal = useAccountEpochSignal();
   const openThread = useOpenChatThread();
+  const navigation = useChatNavigation();
   const pendingCreation = useIsThreadPendingCreation(threadId);
   const derivation = useDerivationStatus(threadId);
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
@@ -326,12 +309,19 @@ export function ChatView({
     isStreaming,
   });
 
-  const submissionRecovery = useChatSubmissionRecovery(threadId, accountId, controller, actions);
-  const failedSendRetry = useThreadHandoff(threadId, projectId, accountId, controller, actions, {
-    liveState: snapshotLiveState,
-    nextSeq: snapshotNextSeq,
-    activateProjection,
-  });
+  const submissions = useChatSubmissions(
+    threadId,
+    projectId,
+    accountId,
+    controller,
+    actions,
+    () => composerRef.current?.focus(),
+    () => {
+      navigation.forgetChat(threadId);
+      void navigation.openNewChat(undefined, { replace: true });
+    },
+  );
+  useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const draftMode = activeWork?.aiWriteMode === "draft";
@@ -343,116 +333,10 @@ export function ChatView({
   const dock = useDraftDock({ generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
-    // Durable witness before display and dispatch: a displayed action survives
-    // reload only if the intent was persisted first. If the journal refuses the
-    // write, do not show a row or dispatch — keep the draft and report failure.
-    const epoch = getChatSubmissionEpoch();
-    const recorded = recordChatSubmission(accountId, {
-      kind: "existing-thread",
-      submissionId: envelope.submissionId,
-      threadId,
-      projectId,
-      createdAt: new Date().toISOString(),
-      text: envelope.text,
-      blocks: [...envelope.blocks],
-      references: [...envelope.references],
-      activatedSkillSlugs: [...envelope.activatedSkillSlugs],
-      draft: envelope.draft,
-    });
-    if (!recorded) {
-      return {
-        kind: "rejected" as const,
-        submissionId: envelope.submissionId,
-        acceptedRevision: envelope.acceptedRevision,
-      };
-    }
-    draft.handoffSubmitted(envelope.draft);
-    requestTailFollow();
-    const optimisticUserTurn = actions.appendUserTurn(threadId, envelope.blocks);
-    // Register the live row before the POST awaits admission: a thread remount
-    // while the server still holds the lease must reuse it, not append a second
-    // pending copy. Cleared below on acknowledgement or proved rejection.
-    rememberSubmissionTurnId(accountId, envelope.submissionId, optimisticUserTurn.id);
-    // A fork or handoff opened before the server had it: the message is shown
-    // now and sent once the thread exists. If creation failed, the message
-    // fails with it and keeps Retry.
-    if (!(await whenDerived(threadId))) {
-      submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurn.id);
-      return {
-        kind: "rejected" as const,
-        submissionId: envelope.submissionId,
-        acceptedRevision: envelope.acceptedRevision,
-      };
-    }
-    try {
-      const outcome = await controller.submit(threadId, envelope, {
-        optimisticUserTurnId: optimisticUserTurn.id,
-        keepOptimisticOnFailure: true,
-      });
-      if (outcome.kind === "accepted") {
-        if (settleChatSubmission(accountId, envelope.submissionId, "accepted", epoch))
-          forgetSubmissionTurnId(accountId, envelope.submissionId);
-      } else if (outcome.kind === "rejected") {
-        // A proved rejection stays on the turn with edit/retry recovery; the
-        // recovery owner retires the journal witness and retains the payload.
-        submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurn.id);
-      }
-      return outcome;
-    } catch (error) {
-      // An unexpected throw is ambiguous: keep the row and journal so a reload
-      // can still reconcile or replay instead of losing the displayed send.
-      announceError(error instanceof Error ? error.message : "Failed to submit message");
-      return {
-        kind: "ambiguous" as const,
-        submissionId: envelope.submissionId,
-        acceptedRevision: envelope.acceptedRevision,
-      };
-    }
+    const recorded = await submissions.submit(envelope);
+    if (recorded) requestTailFollow();
+    return recorded;
   }
-
-  const focusRejectedMessage = useCallback(() => {
-    composerRef.current?.focus();
-  }, []);
-
-  const settleQuarantined = useCallback(
-    async (envelope: ComposerSubmitEnvelope, retire: boolean) => {
-      const optimisticUserTurnId = submissionTurnId(accountId, envelope.submissionId);
-      const epoch = getChatSubmissionEpoch();
-      const outcome = await (retire
-        ? controller.retire(threadId, envelope, { optimisticUserTurnId })
-        : controller.lookup(threadId, envelope, {
-            optimisticUserTurnId,
-            keepOptimisticOnFailure: true,
-          }));
-      if (!retire && outcome.kind === "not-seen" && optimisticUserTurnId) {
-        // The server never saw this submission. Replay the stored fingerprint
-        // through the shared recovery path with the live optimistic row so the
-        // displayed send is not lost; this surface owns no second re-issue.
-        // The replay carries revision 0, so keep the envelope's revision.
-        const replayOutcome = await submissionRecovery.replaySubmission(
-          envelope.submissionId,
-          optimisticUserTurnId,
-        );
-        if (replayOutcome.kind === "accepted") {
-          forgetSubmissionTurnId(accountId, envelope.submissionId);
-        }
-        return { ...replayOutcome, acceptedRevision: envelope.acceptedRevision };
-      }
-      if (outcome.kind === "accepted" || (retire && outcome.kind === "rejected")) {
-        // Acknowledgement, or writer-directed Start over: retire the witness.
-        const retired =
-          outcome.kind === "accepted"
-            ? settleChatSubmission(accountId, envelope.submissionId, "accepted", epoch)
-            : retireChatSubmission(accountId, envelope.submissionId, epoch);
-        if (retired) forgetSubmissionTurnId(accountId, envelope.submissionId);
-      } else if (outcome.kind === "rejected" && optimisticUserTurnId) {
-        // A definitive rejection keeps the failed row with edit/retry recovery.
-        submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurnId);
-      }
-      return outcome;
-    },
-    [accountId, controller, submissionRecovery, threadId],
-  );
 
   function handleStop() {
     // A compaction or brief has no reply stream for the run controller to
@@ -471,32 +355,6 @@ export function ChatView({
   );
 
   const links = useChatLinkFollowing({ projectId, activeThread, activeWork, active });
-
-  const submissionRecoveryByTurnId = new Map<string, UserTurnRecovery>();
-  for (const entry of submissionRecovery.recovered) {
-    submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
-      kind: "ambiguous",
-      onCheck: () => submissionRecovery.check(entry.submissionId),
-      onRetire: () => submissionRecovery.retire(entry.submissionId),
-    });
-  }
-  for (const entry of submissionRecovery.rejected) {
-    const draftIsRecoverable = Boolean(entry.fingerprint.draft);
-    submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
-      kind: "rejected",
-      onRetry: () => {
-        void submissionRecovery.retry(entry.optimisticTurnId);
-      },
-      // Edit transfers durable rejected words before focusing the composer.
-      ...(draftIsRecoverable
-        ? {
-            onEdit: () => {
-              if (submissionRecovery.edit(entry.submissionId)) focusRejectedMessage();
-            },
-          }
-        : {}),
-    });
-  }
 
   return (
     <TranscriptLinkNavigationContext.Provider value={links.navigation}>
@@ -539,8 +397,6 @@ export function ChatView({
                   activeWork ? { kind: "work", projectId, workId: activeWork.id } : undefined
                 }
                 onSubmit={handleSubmit}
-                onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
-                onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
                 onStop={handleStop}
                 toolbarLeft={
                   activeWork ? (
@@ -569,9 +425,8 @@ export function ChatView({
                     tailFollowRevision={tailFollowRevision}
                     ariaLabel={t`Chat`}
                     onRespondToInterrupt={handleRespondToInterrupt}
-                    failedSendRetry={failedSendRetry}
                     changeTrails={changeTrails.byId}
-                    submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+                    submissionRecoveryByTurnId={submissions.presentation}
                     queuedWriterTurnIds={queuedWriterTurnIds}
                     controls={controls}
                     brief={brief}

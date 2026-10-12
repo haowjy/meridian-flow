@@ -14,7 +14,7 @@ import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { forkThread, handoffThread } from "@/client/api/threads-api";
 import { type ThreadStoreActions, useIsThreadPendingCreation } from "@/client/stores";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { makeOptimisticThread, runExclusiveThreadCreation } from "@/lib/send-project-chat";
+import { makeOptimisticThread } from "@/lib/optimistic-thread";
 import type { InheritedView } from "./inherited-view";
 
 export type DerivationKind = "fork" | "handoff";
@@ -54,6 +54,26 @@ export type DerivationDeps = {
     "ensureThread" | "markPendingCreation" | "clearPendingCreation"
   >;
 };
+
+const persistJobs = new WeakMap<AbortSignal, Map<string, Promise<Thread>>>();
+
+/** Share only create-or-get across mounts in one account epoch; each mount owns dispatch. */
+export function runExclusiveThreadCreation(
+  accountEpoch: AbortSignal,
+  threadId: string,
+  create: () => Promise<Thread>,
+): Promise<Thread> {
+  let jobs = persistJobs.get(accountEpoch);
+  if (!jobs) {
+    jobs = new Map();
+    persistJobs.set(accountEpoch, jobs);
+  }
+  const existing = jobs.get(threadId);
+  if (existing) return existing;
+  const running = create().finally(() => jobs.delete(threadId));
+  jobs.set(threadId, running);
+  return running;
+}
 
 const JOURNAL_PREFIX = "meridian.derivations.v1:";
 const statuses = new Map<string, DerivationStatus>();
@@ -222,12 +242,25 @@ export function retryDerivation(threadId: string, deps: DerivationDeps) {
  * Resolves once the destination exists (true) or its creation failed (false).
  * A thread with no derivation in flight is ready now.
  */
-export function whenDerived(threadId: string): Promise<boolean> {
+export function whenDerived(threadId: string, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
   const status = statuses.get(threadId);
   if (!status || status.state === "created") return Promise.resolve(true);
   if (status.state === "failed") return Promise.resolve(false);
-  return new Promise((resolve) => {
-    waiters.set(threadId, [...(waiters.get(threadId) ?? []), resolve]);
+  return new Promise((resolve, reject) => {
+    const finish = (ready: boolean) => {
+      signal?.removeEventListener("abort", abort);
+      resolve(ready);
+    };
+    const abort = () => {
+      waiters.set(
+        threadId,
+        (waiters.get(threadId) ?? []).filter((waiter) => waiter !== finish),
+      );
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    waiters.set(threadId, [...(waiters.get(threadId) ?? []), finish]);
   });
 }
 

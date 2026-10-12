@@ -1,6 +1,10 @@
 /** Drizzle backing-scoped atomic ContextFS tree mutations. */
 
 import type { ContextSourceId, FolderId } from "@meridian/contracts";
+import {
+  parseDocumentFilename,
+  renderFilename as renderDocumentFilename,
+} from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documents, folders } from "@meridian/database/schema";
@@ -8,7 +12,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleSavepoint } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import { parseFilename } from "../../context/paths.js";
+import { splitPath } from "../../context/paths.js";
 import { countIncomingLinks } from "../../links/move-link-count.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
 import {
@@ -149,22 +153,35 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         path: "",
       };
     }
-    const found = await createTreeReader(this.db).resolvePath(LIVE_TREE, {
-      contextSourceId: sourceId as ContextSourceId,
-      path: normalized,
-    });
-    if (found.kind !== "found") return null;
-    if (found.node.kind === "folder") {
-      return { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
+    // A document answers at its canonical name (`ch1.md` is `ch1`); a folder at its literal one.
+    const tree = createTreeReader(this.db);
+    const documentPath = canonicalDocumentPath(normalized);
+    const asDocument =
+      documentPath === null
+        ? null
+        : await tree.resolvePath(LIVE_TREE, {
+            contextSourceId: sourceId as ContextSourceId,
+            path: documentPath,
+          });
+    if (asDocument?.kind === "found" && asDocument.node.kind === "document") {
+      const document = asDocument.node.document;
+      return {
+        kind: "file",
+        nodeId: document.id,
+        sourceId,
+        path: documentPath as string,
+        filetype: isStorageBackedDocument(document) ? null : document.fileType,
+      };
     }
-    const document = found.node.document;
-    return {
-      kind: "file",
-      nodeId: document.id,
-      sourceId,
-      path: normalized,
-      filetype: isStorageBackedDocument(document) ? null : document.fileType,
-    };
+    const found =
+      documentPath === normalized && asDocument
+        ? asDocument
+        : await tree.resolvePath(LIVE_TREE, {
+            contextSourceId: sourceId as ContextSourceId,
+            path: normalized,
+          });
+    if (found.kind !== "found" || found.node.kind !== "folder") return null;
+    return { kind: "directory", nodeId: found.node.folder.id, sourceId, path: normalized };
   }
 
   private async expectationStillMatches(
@@ -204,7 +221,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const targetToken =
         input.expectedTarget.state === "occupied" ? input.expectedTarget.token : null;
       if (targetToken) {
-        if (targetToken.kind !== input.source.kind) return Err({ code: "invalid_operation" });
+        if (targetToken.kind !== input.source.kind) return Err({ code: "conflict" });
         if (targetToken.nodeId === input.source.nodeId) return Err({ code: "invalid_operation" });
         if (!input.overwrite || input.source.kind === "directory") {
           return Err({ code: "conflict" });
@@ -256,8 +273,10 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       }
 
       const isFile = input.source.kind === "file";
-      const { name, extension } = isFile
-        ? parseFilename(targetBasename)
+      const parsed = isFile ? parseDocumentFilename(targetBasename) : null;
+      if (parsed && !parsed.ok) return Err({ code: "invalid_operation" });
+      const { name, extension } = parsed?.ok
+        ? parsed.value
         : { name: targetBasename, extension: undefined };
       const moved = await moveNodes(this.db, {
         moves: [
@@ -423,4 +442,12 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       return Ok({ deletedDocumentIds, availabilityGeneration });
     });
   }
+}
+
+/** `path` with its leaf spelled as the codec's canonical document name; null when it can't name one. */
+function canonicalDocumentPath(path: string): string | null {
+  const { dir, filename } = splitPath(path);
+  const parsed = parseDocumentFilename(filename);
+  if (!parsed.ok) return null;
+  return [...dir, renderDocumentFilename(parsed.value.name, parsed.value.extension)].join("/");
 }

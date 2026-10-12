@@ -125,7 +125,7 @@ describe("branch-push durable projection", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
     });
     await db.insert(threads).values({
@@ -329,7 +329,7 @@ describe("branch-push durable projection", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      extension: "md",
+      extension: "",
       fileType: "markdown",
       updatedAt: old,
     });

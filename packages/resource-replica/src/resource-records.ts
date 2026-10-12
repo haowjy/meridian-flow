@@ -149,6 +149,8 @@ export type NamespaceIntent = ResourceKey & {
     | { kind: "create"; folderPath: string; provisionalName?: string }
     | {
         kind: "set-location";
+        /** Original input; canonical destination is only for display and comparison. */
+        typedName: string;
         destination: ResourceDestination;
       }
     | { kind: "set-folder-location"; destination: ResourceDestination }

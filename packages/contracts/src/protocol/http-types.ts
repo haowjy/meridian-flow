@@ -110,6 +110,11 @@ export type CreateUntitledContextDocumentResponse = {
   workId?: string | null;
 };
 
+/** Creation uses the same conflict payload for files and folders, including HTTP 409. */
+export type CreateContextEntryResult =
+  | { status: "created"; documentId?: string; uri?: string }
+  | { status: "conflict"; uri: string; occupantKind?: "file" | "folder" };
+
 export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
   | { status: "conflict" };

@@ -239,8 +239,8 @@ describe("durable document derivations", () => {
     if (!preMove) throw new Error("Missing location cut");
     await runInDrizzleTransaction(db, async () => {
       await recordLocationHistory(db, {
-        vacated: [{ contextSourceId: sourceId, path: "/chapter.md", documentId }],
-        claimed: [{ contextSourceId: sourceId, path: "/renamed.md" }],
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/renamed" }],
       });
       await bumpLocationVersions(db, { documentIds: [documentId] });
     });
@@ -262,7 +262,7 @@ describe("durable document derivations", () => {
     const text = new Y.XmlText();
     paragraph.push([text]);
     const target = randomUUID();
-    text.insert(0, "next", { link: { href: "manuscript://next.md", ref: `doc:${target}` } });
+    text.insert(0, "next", { link: { href: "manuscript://next", ref: `doc:${target}` } });
     await append(doc, "old");
     const oldCut = await store.capture(documentId);
     if (!oldCut) throw new Error("Missing old cut");
@@ -274,7 +274,7 @@ describe("durable document derivations", () => {
         linkKey: `doc:${target}`,
         targetDocumentId: target,
         aheadId: null,
-        address: "manuscript://next.md",
+        address: "manuscript://next",
         occurrences: 1,
       },
     ];
@@ -284,7 +284,7 @@ describe("durable document derivations", () => {
     await expect(
       runInDrizzleTransaction(db, async () => {
         text.format(0, text.length, {
-          link: { href: "manuscript://wrong.md", ref: `doc:${randomUUID()}` },
+          link: { href: "manuscript://wrong", ref: `doc:${randomUUID()}` },
         });
         await append(doc, " rolled back");
         await service.derive(documentId);
@@ -305,8 +305,8 @@ describe("durable document derivations", () => {
         .set({ folderId })
         .where(eq(documents.id, documentId));
       await recordLocationHistory(db, {
-        vacated: [{ contextSourceId: sourceId, path: "/chapter.md", documentId }],
-        claimed: [{ contextSourceId: sourceId, path: "/moved/chapter.md" }],
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/moved/chapter" }],
       });
       await bumpLocationVersions(db, { documentIds: [documentId] });
     });
@@ -561,14 +561,14 @@ describe("durable document derivations", () => {
     doc.getXmlFragment("prosemirror").push([paragraph]);
     const text = new Y.XmlText();
     paragraph.push([text]);
-    text.insert(0, "later", { link: { href: "manuscript://later.md", ref: `ahead:${aheadId}` } });
+    text.insert(0, "later", { link: { href: "manuscript://later", ref: `ahead:${aheadId}` } });
     await append(doc, "Linked");
     const registered = () =>
       db.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, aheadId));
 
     expect(await aheadService.derive(documentId)).toMatchObject({ status: "derived" });
     expect(await links()).toEqual([
-      expect.objectContaining({ aheadId, address: "manuscript://later.md" }),
+      expect.objectContaining({ aheadId, address: "manuscript://later" }),
     ]);
     expect(await registered()).toEqual([]);
     // Certified and unchanged: only the anti-join recovery can still find the ref.
@@ -576,7 +576,7 @@ describe("durable document derivations", () => {
     failRegistration = false;
     await aheadService.sweep();
     expect(await registered()).toEqual([
-      expect.objectContaining({ scheme: "manuscript", path: "later.md", settledDocumentId: null }),
+      expect.objectContaining({ scheme: "manuscript", path: "later", settledDocumentId: null }),
     ]);
 
     // More refs than one page: the holder's registration drains them all before a move locks.
@@ -586,7 +586,7 @@ describe("durable document derivations", () => {
     );
     for (const [i, id] of backlog.entries()) {
       text.insert(text.length, ` bulk ${i}`, {
-        link: { href: `manuscript://bulk-${i}.md`, ref: `ahead:${id}` },
+        link: { href: `manuscript://bulk-${i}`, ref: `ahead:${id}` },
       });
     }
     await append(doc, " More");
@@ -608,7 +608,7 @@ describe("durable document derivations", () => {
         sourceDocumentId: documentId,
         linkKey: `ahead:${id}`,
         aheadId: id,
-        address: "scratch://@missing/later.md",
+        address: "scratch://@missing/later",
         occurrences: 1,
       };
     });
@@ -619,7 +619,7 @@ describe("durable document derivations", () => {
         sourceDocumentId: documentId,
         linkKey: `ahead:${valid}`,
         aheadId: valid,
-        address: "manuscript://recoverable.md",
+        address: "manuscript://recoverable",
         occurrences: 1,
       },
     ]);

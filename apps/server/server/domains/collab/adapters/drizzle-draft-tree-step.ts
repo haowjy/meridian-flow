@@ -399,7 +399,12 @@ function slotsOf(node: TreeStateNode) {
   return [
     ...dir.map((_, depth) => ({ path: dir.slice(0, depth + 1).join("/"), target: false })),
     { path, target: true },
-  ].map((slot) => ({ ...slot, contextSourceId, key: `${contextSourceId}\u0000${slot.path}` }));
+  ].map((slot) => ({
+    ...slot,
+    contextSourceId,
+    as: slot.target ? ("document" as const) : ("folder" as const),
+    key: `${contextSourceId}\u0000${slot.path}`,
+  }));
 }
 
 /** A path in the node's target source, spelled as its target is. */

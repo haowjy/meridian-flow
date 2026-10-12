@@ -15,6 +15,8 @@ import {
   formatDocumentFile,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
+import { documentPathKey } from "@meridian/contracts";
+import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import type { DocumentCreationMetadata } from "../../domains/context/document-metadata.js";
 import {
@@ -69,15 +71,20 @@ export async function resolveDocumentAddress(
   command: DocumentCommandName,
   path: string,
   options: {
+    sourceExtension?: string;
     metadata?: DocumentCreationMetadata;
     origin?: import("../../domains/context/index.js").WriteProvenance;
   } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
   const { filePath: basePath, fragment } = splitDocumentFile(path);
+  const canonicalPath = documentPathKey(basePath) + (fragment === undefined ? "" : `#${fragment}`);
   if (command === "create" || command === "copy") {
     if (fragment) return writeToolError(command, `${command} does not accept a #fragment in path`);
     const ensureOptions = {
+      ...(options.sourceExtension !== undefined
+        ? { sourceExtension: options.sourceExtension }
+        : {}),
       ...(options.origin ? { origin: options.origin } : {}),
       ...(options.metadata ? { metadata: options.metadata } : {}),
     };
@@ -91,7 +98,7 @@ export async function resolveDocumentAddress(
     return {
       documentId: ensured.value.documentId,
       uri: ensured.value.uri,
-      filePath: ensured.value.uri.startsWith("scratch://@/") ? ensured.value.uri : basePath,
+      filePath: ensured.value.uri,
       created: ensured.value.created,
     };
   }
@@ -100,7 +107,7 @@ export async function resolveDocumentAddress(
   if (!ref.ok) {
     if (ref.error.code === "not_found") {
       return writeToolError(command, documentNotFoundMessage(command), "document_not_found", {
-        path,
+        path: canonicalPath,
       });
     }
     // A URI naming no Work or no scheme addresses no document; the reason lists the valid ones.
@@ -111,7 +118,7 @@ export async function resolveDocumentAddress(
       command,
       contextErrorMessage(ref.error),
       unknownAddress ? "document_not_found" : "invalid_write",
-      unknownAddress ? { path } : {},
+      unknownAddress ? { path: canonicalPath } : {},
     );
   }
   if (ref.value.kind !== "tracked") {
@@ -121,16 +128,16 @@ export async function resolveDocumentAddress(
         ? "The file is binary, so it can't be read as text."
         : "The file is binary, so it can't be edited as text.",
       "binary_file",
-      { path },
+      { path: ref.value.uri },
     );
   }
   if (!ref.value.documentId) {
-    return writeToolError(command, `Document id missing for ${path}`);
+    return writeToolError(command, `Document id missing for ${canonicalPath}`);
   }
   return {
     documentId: ref.value.documentId,
     uri: ref.value.uri,
-    filePath: ref.value.uri.startsWith("scratch://@/") ? ref.value.uri : basePath,
+    filePath: ref.value.uri,
     ...(fragment === undefined ? {} : { fragment }),
   };
 }
@@ -139,10 +146,22 @@ function buildAgentWriteCommand(
   input: WriteToolInput,
   address: ResolvedDocumentAddress,
   toolUseId: string | undefined,
+  copied?: CopiedSource,
 ): WriteCommand {
   const { path: _path, ...command } = input;
   return {
     ...command,
+    ...("from" in command && command.from && copied
+      ? {
+          from: {
+            ...command.from,
+            path: formatDocumentFile({
+              filePath: copied.copiedFrom.uri,
+              fragment: splitDocumentFile(command.from.path).fragment,
+            }),
+          },
+        }
+      : {}),
     documentId: address.documentId,
     file: formatDocumentFile(address),
     tool_use_id: toolUseId,
@@ -184,7 +203,7 @@ async function writeUnderGrant(
   try {
     written = await deps.documentSync
       .agentEdit()
-      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
+      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId, copied), {
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,
@@ -315,7 +334,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           turnId: ctx.turnId,
         },
         ...(parsed.command === "copy" && copied
-          ? { metadata: { copiedFrom: copied.copiedFrom } }
+          ? {
+              metadata: { copiedFrom: copied.copiedFrom },
+              sourceExtension: sourceExtension(copied.copiedFrom.uri),
+            }
           : {}),
       }),
     );
@@ -387,4 +409,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       shown: outcome.shown,
     };
   };
+}
+
+function sourceExtension(uri: string): string {
+  const parsed = parseDocumentFilename(uri.slice(uri.lastIndexOf("/") + 1));
+  return parsed.ok ? parsed.value.extension : "";
 }
