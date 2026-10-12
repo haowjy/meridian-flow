@@ -55,7 +55,7 @@ it.each([
       fencedRequest(
         cmd,
         preview,
-        preview.operations.map((op) => op.operationId),
+        preview.operations.filter((op) => op.kind === "agent").map((op) => op.operationId),
       ),
     );
     const after = await f.collab.draftReview.preview(cmd);
@@ -67,6 +67,28 @@ it.each([
     expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("**Beta**");
     expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(1);
+    expect(after.operations).toHaveLength(1);
+    expect(after.operations[0]?.kind).toBe("writer");
+    expect(after.hunks[0]).toMatchObject({
+      kind: "block",
+      formatting: [{ kind: "mark", mark: "strong", change: "added", text: "Beta" }],
+    });
+    const formattingResult = await (action === "apply"
+      ? f.collab.draftReview.applyWorkDraftChanges
+      : f.collab.draftReview.discardWorkDraft)(
+      fencedRequest(
+        cmd,
+        after,
+        after.operations.map((op) => op.operationId),
+      ),
+    );
+    expect(formattingResult).toMatchObject({
+      status: action === "apply" ? "applied" : "discarded",
+      draftClosed: true,
+    });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
+      action === "apply" ? "Alpha base. Agent\n\n**Beta** base.\n" : "Alpha base.\n\nBeta base.\n",
+    );
   } finally {
     harness.destroyWarmState();
   }

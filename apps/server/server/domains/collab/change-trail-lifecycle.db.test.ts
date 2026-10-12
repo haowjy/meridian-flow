@@ -355,7 +355,7 @@ describe("change trail (postgres)", () => {
     ).resolves.toEqual([expect.objectContaining({ status: "pushed" }), expect.any(Number)]);
   });
 
-  it("reopens and re-settles a settled trail when branch work is redone", async () => {
+  it("reopens and re-settles redone draft work without a phantom live change", async () => {
     const harness = createHarness(db);
     const branchId = await harness.seedDestructivePush("redo-after-settled");
 
@@ -388,14 +388,17 @@ describe("change trail (postgres)", () => {
       ],
     );
 
-    // The redo waits in the draft (D59); applying it completes the trail work.
+    const liveBeforeRedo = await harness.liveMarkdown(ALPHA_ID);
+    expect(await harness.crossWorkProbeFixture().draftMarkdown(branchId)).toBe(liveBeforeRedo);
+    // This redo recreated equal blocks. Physical identities alone are not publication effects.
     await expect(harness.push(branchId)).resolves.toMatchObject({ status: "pushed" });
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe(liveBeforeRedo);
     await harness.pollTrails();
     expect(await harness.workRows()).toEqual([
       expect.objectContaining({ state: "complete", attempts: 0 }),
     ]);
     expect((await harness.trailRowMembership()).shells).toEqual([
-      expect.objectContaining({ state: "settling", version: 6, settledAt: null }),
+      expect.objectContaining({ state: "settling", version: 5, settledAt: null }),
     ]);
 
     await harness.pollTrails();
@@ -403,10 +406,10 @@ describe("change trail (postgres)", () => {
     expect(resettled.shells).toEqual([
       expect.objectContaining({
         state: "settled",
-        version: 7,
+        version: 6,
         settledAt: expect.any(Date),
-        changeCount: 1,
-        documentCount: 1,
+        changeCount: 0,
+        documentCount: 0,
       }),
     ]);
     expect((await harness.trailEventSequence()).map((row) => [row.version, row.eventKind])).toEqual(
@@ -415,18 +418,17 @@ describe("change trail (postgres)", () => {
         [3, "settled"],
         [4, "updated"],
         [5, "updated"],
-        [6, "updated"],
-        [7, "settled"],
+        [6, "settled"],
       ],
     );
     expect(
-      resettled.outbox.find((row) => row.version === 7 && row.eventKind === "settled"),
+      resettled.outbox.find((row) => row.version === 6 && row.eventKind === "settled"),
     ).toMatchObject({
-      changeCount: 1,
-      documentCount: 1,
-      documents: [expect.objectContaining({ documentId: ALPHA_ID })],
-      wordsAdded: expect.any(Number),
-      wordsRemoved: expect.any(Number),
+      changeCount: 0,
+      documentCount: 0,
+      documents: [],
+      wordsAdded: null,
+      wordsRemoved: null,
     });
   });
 });
