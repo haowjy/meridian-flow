@@ -455,6 +455,10 @@ msgstr ""
 msgid "{files, plural, one {# file} other {# files}}"
 msgstr ""
 
+#: src/features/import/ImportProvider.tsx
+msgid "{files, plural, one {Importing # file into {into}.} other {Importing # files into {into}.}}"
+msgstr ""
+
 #: src/features/import/status-copy.ts
 msgid "{findings, plural, one {# worth a look} other {# worth a look}}"
 msgstr ""
@@ -478,6 +482,10 @@ msgstr ""
 
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "{links, plural, one {Updated # link} other {Updated # links}}"
+msgstr ""
+
+#: src/features/import/milestones.ts
+msgid "{looks, plural, one {Import finished. # worth a look.} other {Import finished. # worth a look.}}"
 msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -2606,8 +2614,8 @@ msgid "Import didn't start."
 msgstr ""
 
 #: src/features/import/milestones.ts
-msgid "Import finished. {looks} worth a look."
-msgstr ""
+#~ msgid "Import finished. {looks} worth a look."
+#~ msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/context/ContextTreeRows.tsx
@@ -2660,8 +2668,8 @@ msgstr ""
 
 #. placeholder {0}: destination.name
 #: src/features/import/ImportProvider.tsx
-msgid "Importing {files} files into {0}."
-msgstr ""
+#~ msgid "Importing {files} files into {0}."
+#~ msgstr ""
 
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Include Scratch"
@@ -4230,7 +4238,7 @@ msgstr ""
 msgid "Shared an attachment"
 msgstr "分享了附件"
 
-#. placeholder {0}: rows.length
+#. placeholder {0}: i18n.number(rows.length)
 #: src/features/import/ReportSections.tsx
 msgid "Show all {0}"
 msgstr ""

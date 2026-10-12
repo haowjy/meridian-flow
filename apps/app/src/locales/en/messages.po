@@ -455,6 +455,10 @@ msgstr "{files, plural, one {# file in 1 folder} other {# files in 1 folder}}"
 msgid "{files, plural, one {# file} other {# files}}"
 msgstr "{files, plural, one {# file} other {# files}}"
 
+#: src/features/import/ImportProvider.tsx
+msgid "{files, plural, one {Importing # file into {into}.} other {Importing # files into {into}.}}"
+msgstr "{files, plural, one {Importing # file into {into}.} other {Importing # files into {into}.}}"
+
 #: src/features/import/status-copy.ts
 msgid "{findings, plural, one {# worth a look} other {# worth a look}}"
 msgstr "{findings, plural, one {# worth a look} other {# worth a look}}"
@@ -479,6 +483,10 @@ msgstr "{landedCount, plural, one {Imported # file} other {Imported # files}}"
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "{links, plural, one {Updated # link} other {Updated # links}}"
 msgstr "{links, plural, one {Updated # link} other {Updated # links}}"
+
+#: src/features/import/milestones.ts
+msgid "{looks, plural, one {Import finished. # worth a look.} other {Import finished. # worth a look.}}"
+msgstr "{looks, plural, one {Import finished. # worth a look.} other {Import finished. # worth a look.}}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{matches} results in {inDocuments}"
@@ -2606,8 +2614,8 @@ msgid "Import didn't start."
 msgstr "Import didn't start."
 
 #: src/features/import/milestones.ts
-msgid "Import finished. {looks} worth a look."
-msgstr "Import finished. {looks} worth a look."
+#~ msgid "Import finished. {looks} worth a look."
+#~ msgstr "Import finished. {looks} worth a look."
 
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/context/ContextTreeRows.tsx
@@ -2660,8 +2668,8 @@ msgstr "Importing {done} of {total}"
 
 #. placeholder {0}: destination.name
 #: src/features/import/ImportProvider.tsx
-msgid "Importing {files} files into {0}."
-msgstr "Importing {files} files into {0}."
+#~ msgid "Importing {files} files into {0}."
+#~ msgstr "Importing {files} files into {0}."
 
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Include Scratch"
@@ -4230,7 +4238,7 @@ msgstr "Settings sections"
 msgid "Shared an attachment"
 msgstr "Shared an attachment"
 
-#. placeholder {0}: rows.length
+#. placeholder {0}: i18n.number(rows.length)
 #: src/features/import/ReportSections.tsx
 msgid "Show all {0}"
 msgstr "Show all {0}"
