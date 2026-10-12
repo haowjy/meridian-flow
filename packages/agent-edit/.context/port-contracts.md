@@ -104,16 +104,16 @@ shown identities (an `asset:<id>` one loads its upload by id).
 After parse, `links/assign-refs.ts` applies the shipped image rule (a known
 manuscript path becomes `asset:<id>`) in pass 3 of ref assignment, to written
 sources nothing old or shown continued; copies are never assigned.
-`@meridian/prosemirror-schema` is a devDependency only — host composition passes
-the schema explicitly. This keeps the package host-agnostic without server/infra
-dependency leaks.
+`@meridian/prosemirror-schema` is a runtime dependency for shared rich-content
+semantics. Host composition still passes the schema explicitly; the package
+imports no server or infrastructure code.
 
 ### AgentEditModel (`src/ports/model.ts` — port, `src/model/y-prosemirror.js` — v1 impl)
 Structural model port for what "block" means to the editing core. The kernel
 sees opaque `DocHandle`/`BlockRef` handles; adapters own the concrete CRDT
 objects. The seam carries block lookup/identity, visible-content CRDT lineage,
-text inspection, plain-text (undo repair) and structural
-mutation verbs, a nonempty inline-run count for undo repair, adapter-owned `applyInlineReplacements` and
+text inspection, plain-text `applyTextEdit` and structural
+mutation verbs, adapter-owned `applyInlineReplacements` and
 same-type `applyBlockReplacement`, and batch projection/serialization
 (`projectBlocks`, `serializeBlockLines`, `serializeBlockBodies`). v1 is
 y-prosemirror only. `yProsemirrorModel(schema)` is explicit; the server
@@ -145,8 +145,9 @@ Callers already on the batch path: `snapshotBlocks` (`apply/echo.ts`),
 (`model/block-hash.ts`), and echo after-snapshots in
 `tool/mutation-commit.ts`. Response settlement recomputes each staged write's
 receipt against the settled runtime projection before the host publishes it.
-Receipts carry a unique host-only settlement id because several tool calls may
-intentionally share one model-facing write handle.
+Each logical model edit reserves its own ordinal before staging; tool results,
+journal parts and immutable receipts use that same write handle. Receipts also
+carry a host-only settlement id for response settlement bookkeeping.
 The Drizzle journal adapter commits a buffered response in one multi-row INSERT
 via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same

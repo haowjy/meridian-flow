@@ -280,9 +280,7 @@ export interface ResponseCommitSuccessResult {
 }
 
 export interface ResponseRollbackResult {
-  status: "rolledBack" | "rolledBackDegraded";
+  status: "rolledBack";
   responseId: string;
   stagedCreates: ResponseStagedCreateOutcome;
-  /** Runtime restoration failed, so affected runtimes were evicted and will rebuild on demand. */
-  restorationFailed?: true;
 }

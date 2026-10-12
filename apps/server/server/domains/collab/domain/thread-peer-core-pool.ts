@@ -685,15 +685,12 @@ function mergeRollbackResults(
   results: readonly ResponseRollbackResult[],
 ): ResponseRollbackResult {
   return {
-    status: results.some((result) => result.status === "rolledBackDegraded")
-      ? "rolledBackDegraded"
-      : "rolledBack",
+    status: "rolledBack",
     responseId,
     stagedCreates: {
       committed: results.flatMap((result) => result.stagedCreates.committed),
       discarded: results.flatMap((result) => result.stagedCreates.discarded),
     },
-    ...(results.some((result) => result.restorationFailed) ? { restorationFailed: true } : {}),
   };
 }
 

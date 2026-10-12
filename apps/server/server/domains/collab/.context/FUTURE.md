@@ -24,9 +24,6 @@ reviewable content.
   `adapters/drizzle-change-trail-aggregate.ts`; actionable predicates avoid
   history-induced settlement delay but may still scan much of that history.
   Consider a partial state index after measuring the plan.
-- Extend `adapters/drizzle-change-trail-aggregate.db.test.ts` history regression
-  with old `turn_trail_work` rows as well as settled shells, explicitly protecting
-  both candidate-page predicates from independent regressions.
 
 ## Reply save and room admission statement counts
 
