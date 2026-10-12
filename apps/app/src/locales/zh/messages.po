@@ -1660,9 +1660,8 @@ msgstr ""
 msgid "Discard changes"
 msgstr ""
 
-#: src/components/app/ErrorCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/chat/DeletedChatNotice.tsx
+#: src/components/app/NoticeCard.tsx
 #: src/features/editor/SchemaRepairNotice.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
