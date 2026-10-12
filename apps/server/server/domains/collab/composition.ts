@@ -61,14 +61,13 @@ import {
 } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleDraftReviewLive } from "./adapters/drizzle-draft-review-live.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
-import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
   createDrizzlePendingSettlementStore,
   stagePendingSettlementWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
+import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
-import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import {
   createDrizzleEmptyDraftSettlement,
   createDrizzleWorkDraftDiscard,
@@ -96,7 +95,6 @@ import { createDocumentDerivationService } from "./domain/document-derivations.j
 import {
   scopeAgentEdit,
   scopeBranchPeer,
-  scopeLiveReversal,
   scopeOfflineReconciliation,
   scopeResponseFinalizer,
 } from "./domain/document-link-scope-doors.js";
@@ -425,23 +423,29 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         diagnostics: noticeDiagnostics,
       })
     : SILENT_POST_DURABILITY_NOTICES;
-  const liveDependencies = createDrizzleLiveTurnDependencyStore(deps.db);
+  const turnInverse = createDrizzleTurnInverseService({
+    db: deps.db,
+    journal: persistence.journal,
+    branches,
+    coordinator: liveCoordinator,
+    branchCoordinator,
+    criticalSections,
+    resolveDocumentUri: documentUriResolver,
+    refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
+    flushLivePull: branchPulls.flushLivePull,
+    notices: reversalNoticePort,
+    workProjection: deps.workProjectionMutation,
+  });
   const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({
       agentEdit,
-      liveAgentEdit: runtime.liveUtilityCore,
-      reversalStore: persistence.journal,
-      liveReversal: liveDependencies,
-      resolveDocumentUri: documentUriResolver,
+      rollback: turnInverse,
       branches: createResponseBranchFinalization({
         branches,
         branchCoordinator,
-        branchJournal,
-        branchReview,
       }),
       projections: projectionRefresher,
       notices: postDurabilityNotices,
-      deferUntilCommit: deferUntilDrizzleCommit,
     }),
     deps.links,
   );
@@ -506,23 +510,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const lineage = createTurnLiveLineageReadModel({
     store: createDrizzleTurnLiveLineageStore(deps.db),
-    receiptStore: createDrizzleTurnReceiptStore(deps.db),
+    receiptStore: turnInverse,
     resolveDocumentUri: documentUriResolver,
   });
   const turnReversal = createTurnReversalService({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
-    live: {
-      reversalStore: persistence.journal,
-      agentEdit: scopeLiveReversal(runtime.liveUtilityCore, deps.links),
-      resolveDocumentUri: documentUriResolver,
-      checkDependentLaterLiveRows: liveDependencies.checkDependentLaterLiveRows,
-      refreshDocumentProjection: projectionRefresher.refresh,
-      deferUntilCommit: deferUntilDrizzleCommit,
-    },
+    live: { refreshDocumentProjection: projectionRefresher.refresh },
     agentEdit,
-    branchReview,
-    branchJournal,
-    branches,
+    turnInverse,
     resolveDocumentUri: documentUriResolver,
     listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
     fileAccess: deps.fileAccess,

@@ -1,3 +1,4 @@
+import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 /** Drizzle persistence adapter for shadow branch peers and manifest peers. */
 
 import { randomUUID } from "node:crypto";
@@ -150,7 +151,12 @@ export function createDrizzleBranchStore(
   ): Promise<BranchSnapshot> {
     const [row] = await currentDrizzleDb(db)
       .insert(documentBranches)
-      .values({ ...values, schemaVersion: packCollabSchemaVersion(values.schemaVersion) })
+      .values({
+        ...values,
+        liveCut: values.kind === "work_draft" ? values.state : null,
+        hasEffect: false,
+        schemaVersion: packCollabSchemaVersion(values.schemaVersion),
+      })
       .returning();
     if (!row) throw new Error("Failed to create document branch");
     return mapBranch({
@@ -165,6 +171,7 @@ export function createDrizzleBranchStore(
       state: row.state,
       stateVector: row.stateVector,
       discardedStateVector: row.discardedStateVector,
+      liveCut: row.liveCut,
       schemaVersion: row.schemaVersion,
     });
   }
@@ -645,6 +652,7 @@ export function createDrizzleBranchStore(
         ),
       )
       .returning({ id: documentBranches.id });
+    if (row) await refreshDraftEffect(currentDrizzleDb(db), input.branchId, input.liveCut);
     return Boolean(row);
   }
 
@@ -918,54 +926,54 @@ export function createDrizzleBranchStore(
     },
 
     async commitBranchMutation(input: CommitBranchMutationInput) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
-        const journals = input.journals ?? [];
-        const editBranch = await getBranchSnapshot(input.branchId);
-        await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
-        if (
-          journals.some(
-            (row) => row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
+      return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, () =>
+        mutatePending([input.branchId], async () => {
+          const journals = input.journals ?? [];
+          const editBranch = await getBranchSnapshot(input.branchId);
+          await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
+          if (
+            journals.some(
+              (row) =>
+                row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
+            )
           )
-        )
-          throw new BranchMutationRollback();
-        const ok = await updateBranchSnapshot(input);
-        if (!ok) throw new BranchMutationRollback();
-        for (const journal of journals) {
-          if (journal?.expectedJournalWatermark !== undefined) {
-            const [head] = await currentDrizzleDb(db)
-              .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
-              .from(branchWriteJournal)
-              .where(
-                and(
-                  eq(branchWriteJournal.branchId, journal.branchId),
-                  eq(branchWriteJournal.generation, journal.generation),
-                ),
-              );
-            if ((head?.id ?? 0) > journal.expectedJournalWatermark) {
-              throw new BranchMutationRollback();
+            throw new BranchMutationRollback();
+          const ok = await updateBranchSnapshot(input);
+          if (!ok) throw new BranchMutationRollback();
+          for (const journal of journals) {
+            if (journal?.expectedJournalWatermark !== undefined) {
+              const [head] = await currentDrizzleDb(db)
+                .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
+                .from(branchWriteJournal)
+                .where(
+                  and(
+                    eq(branchWriteJournal.branchId, journal.branchId),
+                    eq(branchWriteJournal.generation, journal.generation),
+                  ),
+                );
+              if ((head?.id ?? 0) > journal.expectedJournalWatermark) {
+                throw new BranchMutationRollback();
+              }
+            }
+            if (journal?.expectedJournalRevision !== undefined) {
+              const rows = await currentDrizzleDb(db)
+                .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+                .from(branchWriteJournal)
+                .where(
+                  and(
+                    eq(branchWriteJournal.branchId, journal.branchId),
+                    eq(branchWriteJournal.generation, journal.generation),
+                  ),
+                )
+                .orderBy(branchWriteJournal.id)
+                .for("update");
+              if (branchJournalRevision(rows) !== journal.expectedJournalRevision) {
+                throw new BranchMutationRollback();
+              }
             }
           }
-          if (journal?.expectedJournalRevision !== undefined) {
-            const rows = await currentDrizzleDb(db)
-              .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-              .from(branchWriteJournal)
-              .where(
-                and(
-                  eq(branchWriteJournal.branchId, journal.branchId),
-                  eq(branchWriteJournal.generation, journal.generation),
-                ),
-              )
-              .orderBy(branchWriteJournal.id)
-              .for("update");
-            if (branchJournalRevision(rows) !== journal.expectedJournalRevision) {
-              throw new BranchMutationRollback();
-            }
-          }
-        }
-        if (journals.length) {
-          await mutatePending(
-            journals.map((journal) => journal.branchId),
-            async () => {
+          if (journals.length) {
+            {
               const rows = await currentDrizzleDb(db)
                 .insert(branchWriteJournal)
                 .values(
@@ -992,11 +1000,11 @@ export function createDrizzleBranchStore(
               } finally {
                 doc.destroy();
               }
-            },
-          );
-        }
-        return true;
-      }).catch((cause) => {
+            }
+          }
+          return true;
+        }),
+      ).catch((cause) => {
         if (cause instanceof BranchMutationRollback) return false;
         throw cause;
       });
@@ -1010,6 +1018,9 @@ export function createDrizzleBranchStore(
             .update(documentBranches)
             .set({
               generation: sql`${documentBranches.generation} + 1`,
+              hasEffect: false,
+              blocking: false,
+              liveCut: Buffer.from(input.state),
               state: Buffer.from(input.state),
               stateVector: Buffer.from(input.stateVector),
               discardedStateVector: Buffer.from(input.discardedStateVector),
@@ -1232,6 +1243,7 @@ function selectBranch(db: DrizzleDb) {
       state: documentBranches.state,
       stateVector: documentBranches.stateVector,
       discardedStateVector: documentBranches.discardedStateVector,
+      liveCut: documentBranches.liveCut,
       schemaVersion: documentBranches.schemaVersion,
     })
     .from(documentBranches);
@@ -1250,6 +1262,7 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     state: row.state,
     stateVector: row.stateVector,
     discardedStateVector: row.discardedStateVector,
+    liveCut: row.liveCut,
     schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
   };
 }

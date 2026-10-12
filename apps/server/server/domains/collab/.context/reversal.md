@@ -16,18 +16,29 @@ Context-document reversal adopts the context resolver's successful canonical
 URI together with its document ID. The request URI is syntax to resolve, never
 stable reversal-result identity.
 
-- **Live receipt reversal state uses the command planner**:
-  `drizzle-turn-receipt.ts` asks agent-edit `planUndo` and `planRedo` for each
-  live document instead of projecting availability from mutation status.
-  Command execution uses the same planners. The planner rejects redo after a
-  later writer (`human:*`) row but ignores the undo's system row, other system
-  bookkeeping, and later agent rows. Persist-time guards repeat the writer-only
-  watermark check under the document lock, covering a writer admission between
-  planning and persistence. Active Work-draft receipt and command paths both use
-  `branch-turn-reversal-plan.ts`; its authority is branch generation, journal
-  status, dependency analysis, and successful peer reconstruction. Undo treats
-  both `active` and `rollback_pending` rows as current effects; redo rebuilds
-  from active survivors plus only the selected discarded target.
+- **Receipt actions and rollback use forward inverses**: `turn-inverse-service.ts`
+  chooses one view per document and calls the same primitive for the command and
+  its dry run. Redo comes first while the latest unconsumed Undo has a reapplicable
+  accepted part; else an invertible active part offers Undo. Actions group edits
+  across documents. Each inverse edit transitions one target edit, and appends
+  ordinary immutable journal parts with restoration aliases, never rewriting a
+  target row or marking it reversed. Partial results name skipped parts with their
+  own before/after text. Card inverse rows are writer rows with no turn.
+- **Holds and locking**: a pending inverse holds roots where its draft's visible
+  identity differs from live's. Holds and destinations are keyed by branch ID.
+  A skipped hold marks that draft blocking so Apply/Discard stays reachable when
+  its prose equals live. Inverses take sorted transition advisory locks, all branch
+  and live process locks, Work rows, then ordinary admission locks. Apply never
+  takes the transition lock. Preparation includes the locked live cut in a draft.
+- **Effect and rollback**: `hasEffect` compares visible prose and managed manifest
+  membership to the draft's last pulled `liveCut`. Lists, counts and Work
+  publication use effect or blocking, not row count. Only Apply/Discard retire an
+  empty generation. Failed-response rollback selects by response and transitions
+  accepted parts as terminal rollback edits; only uninvertible pending target rows
+  retain rollback_pending. Repeated rollback does not create another inverse.
+  Response checkpoints and refreshes enlist as post-commit participants; a failed
+  checkpoint cannot reject a durable save and reopen its response for rollback.
+
 - **Receipt command unavailable states are semantic outcomes**: the reverse endpoint may
   return `nothing_to_undo`, `nothing_to_redo`, `cant_undo_dependent`, `expired`,
   or `partial` with HTTP 200 when state races the projection. The app invalidates
@@ -57,7 +68,7 @@ stable reversal-result identity.
   transitions both reject the stale reversal for replanning.
   After Apply advances to an empty generation, reversal lookup falls back to the
   live store so pushed writes retain their normal undo path.
-- **Turn reversal is durable-atomic and runtime-staged**: production persists
+- **Model-engine aggregate reversal is durable-atomic and runtime-staged**: production persists
   branch and live changes in one ambient Drizzle transaction. Across distinct
   documents, a no-op or unavailable result mixed with success makes the aggregate partial
   and aborts the whole transaction. Duplicate branch/live results for the same
@@ -82,7 +93,7 @@ stable reversal-result identity.
   mutation or representative push author.
 - **Intrinsic undo guard**: `persistUndo` in `adapters/drizzle-journal.ts` runs
   the dependency check (`@meridian/agent-edit`'s `hasDependentLaterRows`, the
-  same rule `planUndo` uses for the receipt) inside the same transaction, under
+  same rule the model command’s `planUndo` uses) inside the same transaction, under
   `lockDocumentMutation` advisory lock; nothing else guards a live
   reversal commit. Work-draft reversal uses the generation and
   journal-watermark fence above.

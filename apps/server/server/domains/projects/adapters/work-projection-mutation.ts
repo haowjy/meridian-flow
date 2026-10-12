@@ -97,6 +97,7 @@ export function createWorkProjectionMutation(input: {
           inArray(documentBranches.workId, workIds),
           eq(documentBranches.kind, "work_draft"),
           eq(documentBranches.status, "active"),
+          sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
           sql`(${branchWriteJournal.updateMeta}->>'kind') is distinct from 'manifest_membership'
             or jsonb_typeof(${branchWriteJournal.updateMeta}->'documentId') is distinct from 'string'`,
         ),

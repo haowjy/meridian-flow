@@ -80,8 +80,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID,
         kind: "work_draft",
         workId: WORK_ID,
-        state: Buffer.from([0]),
-        stateVector: Buffer.from([0]),
+        state: Buffer.from(projectionDraft.state),
+        stateVector: Buffer.from(projectionDraft.vector),
       });
       const availability = createDrizzleProjectContextAvailability(db);
       const catalog = createDrizzleContextCatalog(db, undefined, {
@@ -158,8 +158,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: null,
         generation: 1,
         status: "active" as const,
-        state: new Uint8Array([0]),
-        stateVector: new Uint8Array([0]),
+        state: projectionDraft.state,
+        stateVector: projectionDraft.vector,
         schemaVersion: 1 as never,
       };
       const pushStore = createDrizzlePushCommitStore(
@@ -242,3 +242,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
   });
 }
+
+// Valid immutable draft bytes; these suites exercise publication ownership, not fake CRDT encodings.
+const projectionDraft = (() => {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 6000;
+  const paragraph = new Y.XmlElement("paragraph"),
+    text = new Y.XmlText();
+  text.insert(0, "Pending.");
+  paragraph.insert(0, [text]);
+  doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
+  const state = Y.encodeStateAsUpdate(doc),
+    vector = Y.encodeStateVector(doc);
+  doc.destroy();
+  return { state, vector };
+})();

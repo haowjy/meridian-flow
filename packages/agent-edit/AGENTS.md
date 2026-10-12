@@ -48,5 +48,5 @@ retained-struct lookup, visibility, splitting, redone hydration/capture and
 low-level UndoManager execution, pinned to Yjs 13.6.31. `computeInverse` returns one edit
 per target edit, with transaction-delta parts and aliases; the host persists
 those edits under one action ID. Normalization is per edit, never per action.
-This primitive does not route commands, choose destinations, or replace the
-existing reversal engine yet.
+This primitive does not route commands, choose destinations, or choose a destination. The server now uses it for receipt actions and
+failed-response rollback; model undo/redo still runs on the old engine.

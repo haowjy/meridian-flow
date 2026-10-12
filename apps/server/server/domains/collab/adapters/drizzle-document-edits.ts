@@ -14,6 +14,7 @@ import {
   documentYjsUpdates,
   type EditOrigin,
   type EditPlacement,
+  documentBranches as importedDocumentBranches,
 } from "@meridian/database";
 import { and, eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -135,6 +136,11 @@ export async function placeDraftRows(
       ),
     )
     .returning({ editId: documentEditParts.editId, ordinal: documentEditParts.ordinal });
+  if (placed.length)
+    await db
+      .update(importedDocumentBranches)
+      .set({ blocking: false })
+      .where(eq(importedDocumentBranches.id, branchId));
   if (placement.kind === "live" && placed.length === 1) {
     await db
       .update(documentYjsUpdates)

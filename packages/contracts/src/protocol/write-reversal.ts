@@ -38,7 +38,17 @@ export interface WorkReversalResult {
   message?: string;
 }
 
+export interface TurnInverseSkip {
+  documentId: string;
+  uri: string;
+  before: string;
+  after: string;
+  reason: string;
+}
+
 export interface ReversalOutcome {
+  skips?: TurnInverseSkip[];
+  acceptedParts?: number;
   status: WriteStatus;
   documents: DocumentReversalResult[];
   workReceipts?: WorkReversalResult[];

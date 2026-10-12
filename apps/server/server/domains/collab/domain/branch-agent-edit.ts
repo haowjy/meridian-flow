@@ -275,6 +275,7 @@ export function createBranchAgentEditCoordinator(input: {
             request.sourceDoc,
             request.entries,
             retired,
+            request.helperCut.state,
           );
           return {
             result: {

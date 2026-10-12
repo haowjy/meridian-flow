@@ -184,3 +184,34 @@ export function executeUndo(
   }
   return updates;
 }
+
+/** String clocks only; container and formatting structs have no textual excerpt. */
+export function textInRanges(
+  doc: Y.Doc,
+  ranges: readonly { client: number; clock: number; len: number }[],
+): string {
+  return ranges
+    .flatMap((range) =>
+      Array.from({ length: range.len }, (_, offset) => {
+        const clock = range.clock + offset;
+        const item = findItem(doc, Y.createID(range.client, clock));
+        return item?.content instanceof Y.ContentString
+          ? item.content.str[clock - item.id.clock]
+          : "";
+      }),
+    )
+    .join("");
+}
+
+/** Transaction deltas only; state-vector encoding would repeat old tombstones. */
+export function captureMutationUpdates(doc: Y.Doc, mutate: () => void): Uint8Array[] {
+  const updates: Uint8Array[] = [];
+  const collect = (update: Uint8Array) => updates.push(update);
+  doc.on("update", collect);
+  try {
+    mutate();
+  } finally {
+    doc.off("update", collect);
+  }
+  return updates;
+}

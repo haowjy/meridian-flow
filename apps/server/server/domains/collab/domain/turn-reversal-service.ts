@@ -1,7 +1,7 @@
 /** Turn reversal orchestration across live documents and work-draft branches. */
 import { parseWriteHandle, type ReversalSelection } from "@meridian/agent-edit/integration";
-import type { DocumentReversalResult, ReversalOutcome } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { ReversalOutcome } from "@meridian/contracts/protocol";
+import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import {
   type FileAccess,
   type FileAccessDenied,
@@ -16,15 +16,11 @@ import {
   type TurnReversalAccess,
 } from "../contracts.js";
 import type { ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
-import type { BranchStore } from "./branch-coordinator.js";
-import type { BranchJournalReadStore, BranchReviewService } from "./branch-push-contracts.js";
 import {
   aggregateStatus,
   documentReversalOutcome,
   documentReversalResult,
   isSuccessfulReversal,
-  type ReverseTurnDeps,
-  reverseTurn,
 } from "./turn-reversal.js";
 
 export type ThreadContextReversalResolver = {
@@ -41,12 +37,11 @@ export type ThreadContextReversalResolver = {
 
 export type TurnReversalServiceDeps = {
   atomic?<T>(operation: () => Promise<T>): Promise<T>;
-  live: Required<Omit<ReverseTurnDeps, "deferUntilCommit">> &
-    Pick<ReverseTurnDeps, "deferUntilCommit">;
+  live: {
+    refreshDocumentProjection(input: { documentId: DocumentId; threadId: ThreadId }): Promise<void>;
+  };
   agentEdit: Pick<ThreadPeerAgentEditCore, "reverse">;
-  branchReview: BranchReviewService;
-  branchJournal: Pick<BranchJournalReadStore, "listJournalRowsForTurn">;
-  branches: Pick<BranchStore, "getBranch">;
+  turnInverse: Pick<import("./turn-inverse-service.js").TurnInverseService, "reverseTurn">;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   listEditedDocumentsForTurn(
     threadId: string,
@@ -58,100 +53,7 @@ export type TurnReversalServiceDeps = {
 };
 
 export function createTurnReversalService(input: TurnReversalServiceDeps): TurnReversalAccess {
-  const reverseTurnAcrossScopes = async (
-    command: Parameters<TurnReversalAccess["reverseTurn"]>[0],
-  ): Promise<ReversalOutcome> => {
-    const atomic = input.atomic ?? (async <T>(operation: () => Promise<T>) => operation());
-    try {
-      return await atomic(async () => {
-        const statuses =
-          command.direction === "undo" ? (["active"] as const) : (["discarded"] as const);
-        const rows = await input.branchJournal.listJournalRowsForTurn({
-          threadId: command.threadId,
-          turnId: command.turnId,
-          statuses,
-        });
-        const allowedDocumentIds = command.documentIds
-          ? new Set<string>(command.documentIds)
-          : undefined;
-        const branches = [];
-        for (const branchId of new Set(rows.map((row) => row.branchId))) {
-          const branch = await input.branches.getBranch(branchId);
-          if (branch && (!allowedDocumentIds || allowedDocumentIds.has(branch.documentId))) {
-            branches.push(branch);
-          }
-        }
-        const results = await input.branchReview.reverseBranchTurns({
-          branchIds: branches.map((branch) => branch.branchId),
-          threadId: command.threadId,
-          turnId: command.turnId,
-          direction: command.direction,
-          reviewedByUserId:
-            command.actor.type === "user" ? (command.actor.userId as UserId) : undefined,
-        });
-        const documentOfBranch = new Map(
-          branches.map((branch) => [branch.branchId, branch.documentId]),
-        );
-        // An archived Work's draft is frozen (D30): that document's whole turn
-        // stays as it is, live writes included, and the rest still reverses.
-        const frozenDocumentIds = new Set<string>();
-        const branchDocuments: Array<ReversalOutcome["documents"][number]> = [];
-        for (const result of results) {
-          const documentId = documentOfBranch.get(result.branchId) ?? result.branchId;
-          if (result.status === "permission_denied") frozenDocumentIds.add(documentId);
-          else
-            branchDocuments.push({
-              uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
-              status: result.status,
-            });
-        }
-        const frozenDocuments = await Promise.all(
-          [...frozenDocumentIds].map(async (documentId) => ({
-            uri: (await input.resolveDocumentUri(documentId)) ?? documentId,
-            status: "permission_denied" as const,
-          })),
-        );
-        const branchOutcome = {
-          status: aggregateStatus(command.direction, branchDocuments),
-          documents: [...branchDocuments, ...frozenDocuments],
-        } satisfies ReversalOutcome;
-        if (branchOutcome.status === "partial" || branchOutcome.status === "cant_undo_dependent") {
-          throw new CrossScopeReversalRefused(branchOutcome);
-        }
-
-        // Branch and live durable writes share the ambient transaction. Their
-        // process-local projections and broadcasts publish only after commit.
-        const liveDocumentIds =
-          frozenDocumentIds.size === 0
-            ? command.documentIds
-            : (
-                command.documentIds ??
-                (await input.live.reversalStore.documentsForTurn(command.threadId, command.turnId))
-              ).filter((documentId) => !frozenDocumentIds.has(documentId));
-        const liveOutcome = await reverseTurn(input.live, {
-          ...command,
-          documentIds: liveDocumentIds,
-        });
-        const documents = mergeDocumentScopeResults(command.direction, [
-          ...liveOutcome.documents,
-          ...branchDocuments,
-        ]);
-        const outcome = {
-          status: aggregateStatus(command.direction, documents),
-          documents,
-        } satisfies ReversalOutcome;
-        if (outcome.status === "partial" || outcome.status === "cant_undo_dependent") {
-          throw new CrossScopeReversalRefused(outcome);
-        }
-        if (frozenDocuments.length === 0) return outcome;
-        const withFrozen = [...documents, ...frozenDocuments];
-        return { status: aggregateStatus(command.direction, withFrozen), documents: withFrozen };
-      });
-    } catch (cause) {
-      if (cause instanceof CrossScopeReversalRefused) return cause.outcome;
-      throw cause;
-    }
-  };
+  const reverseTurnAcrossScopes = input.turnInverse.reverseTurn;
 
   return {
     reverseTurn: reverseTurnAcrossScopes,
@@ -275,13 +177,6 @@ async function writerGrants(
   return { grants, refused };
 }
 
-class CrossScopeReversalRefused extends Error {
-  constructor(readonly outcome: ReversalOutcome) {
-    super(`Cross-scope reversal refused with status ${outcome.status}`);
-    this.name = "CrossScopeReversalRefused";
-  }
-}
-
 function validateThreadContextSelection(input: ReverseThreadContextInput): void {
   if (input.scope === "write" && !input.uri) {
     throw new ReverseThreadContextError("invalid_scope", "uri required for write scope");
@@ -307,38 +202,4 @@ function reversalSelection(input: ReverseThreadContextInput): ReversalSelection 
   }
   if (input.scope === "turn") return { kind: "turn", turnId: input.selection ?? "" };
   return { kind: "all" };
-}
-
-function mergeDocumentScopeResults(
-  direction: "undo" | "redo",
-  documents: readonly DocumentReversalResult[],
-): DocumentReversalResult[] {
-  const grouped = new Map<string, DocumentReversalResult[]>();
-  for (const document of documents) {
-    const group = grouped.get(document.uri) ?? [];
-    group.push(document);
-    grouped.set(document.uri, group);
-  }
-  return [...grouped.entries()].map(([uri, results]) => {
-    const status = aggregateSameDocumentScopeStatus(direction, results);
-    const text = results.find((result) => result.text)?.text;
-    return { uri, status, ...(text ? { text } : {}) };
-  });
-}
-
-function aggregateSameDocumentScopeStatus(
-  direction: "undo" | "redo",
-  results: readonly DocumentReversalResult[],
-): DocumentReversalResult["status"] {
-  const noOp = direction === "undo" ? "nothing_to_undo" : "nothing_to_redo";
-  const statuses = results.map((result) => result.status);
-  if (
-    statuses.every(
-      (status) => status === "reversed" || status === "reconciled" || status === noOp,
-    ) &&
-    statuses.some((status) => status === "reversed" || status === "reconciled")
-  ) {
-    return statuses.includes("reconciled") ? "reconciled" : "reversed";
-  }
-  return aggregateStatus(direction, results);
 }

@@ -13,6 +13,7 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -73,6 +74,10 @@ export const documentBranches = pgTable(
     status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
+    /** Current visible effect against the durable last-pulled live cut. */
+    hasEffect: boolean("has_effect").notNull().default(true),
+    blocking: boolean("blocking").notNull().default(false),
+    liveCut: byteaColumn("live_cut"),
     discardedStateVector: byteaColumn("discarded_state_vector"),
     schemaVersion: integer("schema_version")
       .notNull()
