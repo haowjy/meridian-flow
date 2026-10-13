@@ -43,6 +43,7 @@ export type ResponseTransactionHooks = {
 };
 
 import { BranchCasConflictError, BranchStaleUpdateError } from "./branch-coordinator.js";
+import { ThreadPeerPullLost } from "./branch-pulls.js";
 import type { Drafts } from "./drafts.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
@@ -396,20 +397,29 @@ export function createThreadPeerCorePool(input: {
   }
 
   /**
-   * Why a failed peer pull is Discard's doing: the draft it pulled for is closed, or the
-   * peer branch the error names is closed or gone. Any other branch store error is not.
+   * Why a failed peer pull is Discard's doing, in the save fence's precedence: the draft it
+   * pulled for is closed, else the upstream it captured is closed or gone, else its peer is.
+   * Any other failure, or a pull whose branches are all still live, is not a Discard.
    */
   async function discardLossReason(
     cause: unknown,
     view: LinkView,
   ): Promise<DiscardedWriteReason | undefined> {
-    if (!(cause instanceof BranchStaleUpdateError || cause instanceof BranchCasConflictError))
+    const lost = cause instanceof ThreadPeerPullLost;
+    if (
+      !lost &&
+      !(cause instanceof BranchStaleUpdateError || cause instanceof BranchCasConflictError)
+    )
       return undefined;
     if (view.kind === "draft" && !(await input.drafts.shareActive(view.draftId)))
       return "discarded_draft";
-    if (cause.branchId.startsWith("draft:")) return undefined;
-    const branch = await input.branches.getBranch(cause.branchId);
-    return !branch || branch.status === "closed" ? "discarded_edit" : undefined;
+    if (!lost) return undefined;
+    const gone = async (branchId: string) => {
+      const branch = await input.branches.getBranch(branchId);
+      return !branch || branch.status === "closed";
+    };
+    if (await gone(cause.upstreamBranchId)) return "discarded_document";
+    return (await gone(cause.peerBranchId)) ? "discarded_edit" : undefined;
   }
 
   /**

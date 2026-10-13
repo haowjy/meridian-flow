@@ -544,6 +544,47 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
   });
 
+  it.each([
+    { name: "last use deletes the branch rows", other: false },
+    { name: "another Work's draft still uses the create, so its rows close", other: true },
+  ])("23b: Discard of a hidden create between a write's capture and its pull names the document ($name)", async ({
+    other,
+  }) => {
+    const { second, review, fixture, core } = await createdThenStaged();
+    if (other) {
+      await seedSecondWork(fixture);
+      await shareHiddenCreate(fixture);
+    }
+    const withLeases = fixture.branchCoordinator.withLeases;
+    let once = true;
+    fixture.branchCoordinator.withLeases = (async (...args: Parameters<typeof withLeases>) => {
+      if (once && args[0].length === 2) {
+        once = false;
+        await review.discardItem(NEW_ID);
+      }
+      return withLeases.apply(fixture.branchCoordinator, args);
+    }) as typeof withLeases;
+    let late: Awaited<ReturnType<typeof core.write>>;
+    try {
+      late = await core.write(
+        {
+          command: "replace",
+          file: "created",
+          documentId: NEW_ID as never,
+          find: "Newer.",
+          content: "Newest.",
+          tool_use_id: "w-late",
+        },
+        { ...responseContext(second), grant: grantFor(NEW_ID) },
+      );
+    } finally {
+      fixture.branchCoordinator.withLeases = withLeases;
+    }
+    expect(late).toMatchObject({ isError: true, status: "invalid_write" });
+    expect(JSON.stringify(late.result)).toContain(DOC);
+    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, DOC]]);
+  });
+
   it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
     const { responseId, review, write, core, context, fixture } = await setup();
     const withLeases = fixture.branchCoordinator.withLeases;
