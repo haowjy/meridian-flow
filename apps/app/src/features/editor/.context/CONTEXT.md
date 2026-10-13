@@ -27,7 +27,10 @@ three paragraphs and pressing Center centers three paragraphs.
 geometry — the chrome row inset, the canvas wrapper, and `editorProseClass`
 for the ProseMirror node. The toolbar row's inset equals the canvas inset plus
 the prose inset, so the first control sits exactly above the first character;
-that sum is the invariant the file documents. `editorProseClass` takes the
+that sum is the invariant the file documents. The insets follow the pane (the
+frame's `@container`), not the viewport, and narrow panes are asymmetric: the
+leading gutter keeps the block handle's `MARGIN_GUTTER_MIN`, the trailing one
+drops to the table Add column tab's 32px floor (#744). `editorProseClass` takes the
 toolbar state because a docked row already provides the top breathing room.
 Tracked and untitled documents share this column exactly, so nothing moves when
 an untitled tab materializes. Never re-encode these classes at a call site.
