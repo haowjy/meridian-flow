@@ -16,7 +16,11 @@ import type { LinkDestination } from "@/features/links";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
-import { type AiDraftLaunchTarget, useOpenEditorReview } from "./editor-review-handoff";
+import {
+  type AiDraftLaunchTarget,
+  useOpenEditorReview,
+  useOptionalOpenEditorReview,
+} from "./editor-review-handoff";
 import { commitDockDocument } from "./use-dock-placement";
 
 /** Containers choose launch placement once; list launches outside the dock remain Editor commands. */
@@ -82,13 +86,23 @@ export function useDockReviewLauncher(projectId: string, document: DockDocument)
  * other document to the surface's own live opener.
  */
 export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
-  const { openAiDraft } = useAiDraftLauncher();
+  const openEditorReview = useOptionalOpenEditorReview();
+  const containerLaunch = useContext(ReviewLaunchContext);
   return useCallback(
     (document, gesture) => {
-      if (!document.review) return open(document, gesture);
-      openAiDraft({ documentId: document.documentId, ...document.review });
-      return Promise.resolve();
+      const { review } = document;
+      if (!review) return open(document, gesture);
+      const target = { documentId: document.documentId, ...review };
+      if (containerLaunch) {
+        containerLaunch(target);
+        return Promise.resolve();
+      }
+      if (!openEditorReview)
+        throw new Error("Opening a draft requires the project review handoff owner");
+      return openEditorReview(target).catch((error) => {
+        console.error("[editor-review] launch failed", error);
+      });
     },
-    [open, openAiDraft],
+    [open, openEditorReview, containerLaunch],
   );
 }
