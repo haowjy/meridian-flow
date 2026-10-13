@@ -7,12 +7,12 @@ import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type {
-  DocumentCoordinator,
   DiscardedWriteReason,
+  DocumentCoordinator,
   DocumentLockOptions,
   HostSaveLease,
-  StagedWriteRejectionReason,
   StagedHelperCut,
+  StagedWriteRejectionReason,
 } from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
@@ -1606,7 +1606,10 @@ export function createResponseCommitter(deps: {
         doc.view = { ...doc.view, doc: rebuilt };
       }
     } else {
-      buffer.refused.set(docId, [...buffer.refused.get(docId)!, ...(doc.rejectedUpdates ?? [])]);
+      buffer.refused.set(docId, [
+        ...(buffer.refused.get(docId) ?? []),
+        ...(doc.rejectedUpdates ?? []),
+      ]);
       if (isPrepared(doc)) doc.view.doc.destroy();
       buffer.docs.delete(docId);
     }

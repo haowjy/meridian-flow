@@ -24,10 +24,10 @@ import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { BranchPullService } from "./branch-pulls.js";
 import { BranchNotFoundError } from "./branch-resolver.js";
 import { documentRevision, versioned } from "./document-revision.js";
-import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type { Drafts } from "./drafts.js";
+import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { PeerRetirement } from "./peer-retirement.js";
+import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {

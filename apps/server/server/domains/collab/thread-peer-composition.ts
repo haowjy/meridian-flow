@@ -6,9 +6,8 @@
 import {
   type AgentEditCodecFactory,
   createAgentEditCore,
-  type DocumentLifecycle,
   type DocumentEdits,
-  type DocumentCoordinator,
+  type DocumentLifecycle,
   type SemanticProvenanceWriter,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
@@ -59,7 +58,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
   journal: UpdateJournal;
   documentEdits?: DocumentEdits;
-  liveCoordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   branches: ApplicationBranchStore;
   branchCoordinator: BranchCoordinator;
@@ -120,7 +118,6 @@ export function createBranchThreadPeerAgentEditCore(input: {
         }),
         coordinator: createBranchAgentEditCoordinator({
           threadId,
-          liveCoordinator: input.liveCoordinator,
           branchCoordinator: input.branchCoordinator,
           branches: input.branches,
           pendingJournalEntries,

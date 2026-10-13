@@ -24,7 +24,6 @@ import {
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
 import { createBranchCriticalSections } from "../../domain/branch-critical-sections.js";
-import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";

@@ -1,6 +1,7 @@
 /** Owns serialization for branch mutations and provides proof of held locks. */
-import { hostSaveLeaseBrand, type HostSaveLease } from "@meridian/agent-edit/integration";
+
 import { AsyncLocalStorage } from "node:async_hooks";
+import { type HostSaveLease, hostSaveLeaseBrand } from "@meridian/agent-edit/integration";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 
 const leaseMarker: unique symbol = Symbol("BranchLockLease");

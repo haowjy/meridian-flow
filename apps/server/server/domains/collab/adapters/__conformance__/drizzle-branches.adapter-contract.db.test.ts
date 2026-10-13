@@ -353,7 +353,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
-      const live = docWithText("live base");
+      // Pending counts describe visible manuscript effect, not arbitrary Y.Text roots.
+      const { buildDocumentSchema, createCollabYDoc } = await import(
+        "@meridian/prosemirror-schema"
+      );
+      const model = yProsemirrorModel(buildDocumentSchema());
+      const codec = mdxCodec({ schema: buildDocumentSchema() });
+      const proseDoc = (text: string) => {
+        const doc = createCollabYDoc({ gc: false });
+        model.insertBlocks(toDocHandle(doc), null, codec.parse(text));
+        return doc;
+      };
+      const live = proseDoc("live base");
       const work = await store.ensureDraftBranch({
         documentId: DOC_ID as never,
         draftId: DRAFT_ID as never,

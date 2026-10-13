@@ -6,10 +6,10 @@ import { harness } from "../../../../../../packages/agent-edit/src/tool/test-sup
 import type { FileDestination } from "../../file-policy/index.js";
 import {
   createFakeBranchTable,
-  createFakeFileAccess,
   createFakeDrafts,
-  fakeEditGrant,
+  createFakeFileAccess,
   createFakeThreadPeerCores,
+  fakeEditGrant,
   inProcessResponseTransactions,
 } from "../test-support/thread-peer-pool-fakes.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";

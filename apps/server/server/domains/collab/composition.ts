@@ -387,7 +387,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
       drafts: workDrafts,
-      liveCoordinator,
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
       async lockWorks(workIds) {
