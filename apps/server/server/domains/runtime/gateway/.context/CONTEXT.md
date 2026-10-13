@@ -106,7 +106,7 @@ The registry's `maxOutputTokens` also reserves reply room when auto-compaction
 computes the usable input window: `contextWindow` minus `maxOutputTokens` and
 the other reserves. This value mirrors the provider default rather than
 defining a lower Meridian limit. It is 65,536 for DeepSeek V4 Flash and 64,000
-for both Claude Sonnet 4 entries.
+for Claude Sonnet 4.6.
 
 Output limits are not cache keys. Anthropic's thinking budget does affect the
 cache, so implicit effort budgets resolve against the model's output budget,
@@ -117,3 +117,25 @@ DeepSeek V4 Flash declares a 1,048,576-token window. A live Anthropic-compatible
 call accepted 150,013 input tokens (253 uncached plus 149,760 cached) on
 2026-09-27; a separate 300,013-token call also succeeded. Prices remain tracked
 separately in issue #613.
+
+## Model lifecycle and persisted selections
+
+The default is `claude-sonnet-4-6` (provider inventory and lifecycle checked
+2026-10-13). Anthropic Sonnet 4 and Haiku 3.5 are retired; OpenRouter uses
+`anthropic/claude-sonnet-4.6`. DeepSeek now lists `deepseek-flash`; its retired
+V4 Flash name is a provider alias, not a Meridian registry entry. Flash fallback
+pricing pins published peak rates; off-peak pricing remains a separate billing
+concern (issue #613).
+
+Agent source revisions and thread Agent bindings persist model selections.
+General is seeded with the configured default for new chats. Existing bindings
+remain immutable: an unregistered model fails gateway route resolution with
+`invalid_request` and a gateway message identifying the unavailable model before any
+provider call. Catalog selection and child spawning also reject unavailable
+models. Turn/response model fields are historical accounting, not routing
+authority. No local-data migration or retired-ID mapping is needed.
+
+Anthropic rejects root tool-schema unions. Its request mapper advertises the
+union of command properties with only common required fields and preserves
+nested field alternatives. Tool execution validates the unchanged original
+schema; provider advertisement is not argument-validation authority.
