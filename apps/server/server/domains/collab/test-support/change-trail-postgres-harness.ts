@@ -82,9 +82,6 @@ const { createDrizzleDraftTreeStep } = await import("../adapters/drizzle-draft-t
 const { expirePendingSettlementClaims } = await import(
   "../../../test-support/settlement-claims.js"
 );
-const { createDraftBranchAheadRegistration } = await import(
-  "../domain/draft-branch-ahead-registration.js"
-);
 const { createDraftPublication } = await import("../domain/draft-publication.js");
 const { createDraftReviewItems } = await import("../domain/draft-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
@@ -787,12 +784,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     publication: createDraftPublication({
       drafts: workDrafts,
       reviewItems,
-      draftLinks: createDraftBranchAheadRegistration({
-        branches: branchCoordinator,
-        drafts: workDrafts,
-        registrar: UNSUPPORTED_AHEAD_REFS,
-        outsideTransaction: runOutsideDrizzleTransaction,
-      }),
       push: realBranchPush,
     }),
   });

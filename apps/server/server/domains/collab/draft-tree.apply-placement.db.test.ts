@@ -111,7 +111,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     // receipt says so: notes come from what completion did (E-R5).
     const notes = await s.model(ascension).create("notes/original", "Notes, drafted.");
     await s.writer.create("notes/original", { content: "Writer's notes." });
-    const renameLate = setCollabHook("applyItems.afterLinkCut", async () => {
+    const renameLate = setCollabHook("applyItems.beforeStaging", async () => {
       renameLate();
       await s.writer.move("notes/original", "notes/renamed");
     });

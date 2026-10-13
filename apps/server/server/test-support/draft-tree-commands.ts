@@ -160,13 +160,13 @@ export interface DraftTreeCommands {
   storedLinks(documentId: DocumentId): Promise<{ ref: string | null; href: string }[]>;
   /**
    * What a stored link means live from its holder (pinned by id): the document's id with
-   * `inDraft`/`bound` when they hold, else the answer's state (`missing`, `gone`, …).
+   * `inDraft` when they hold, else the answer's state (`missing`, `gone`, …).
    */
   liveMeaning(input: {
     ref: string;
     href: string;
     holder: { uri: string; id: DocumentId };
-  }): Promise<{ id: string; inDraft?: true; bound?: true } | string>;
+  }): Promise<{ id: string; inDraft?: true } | string>;
   /**
    * The per-document Apply route core, one call per document in order, each with the
    * tokens its item rendered unless `tokens` says otherwise (`none`: the legacy request).
@@ -619,7 +619,6 @@ export function draftTreeCommands(
         ? {
             id: answer.document.id,
             ...(answer.inDraft ? { inDraft: true as const } : {}),
-            ...(answer.holderBound ? { bound: true as const } : {}),
           }
         : answer.state;
     },

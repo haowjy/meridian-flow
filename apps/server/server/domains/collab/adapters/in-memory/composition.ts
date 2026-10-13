@@ -200,7 +200,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
-      rebindHolderBoundRefs: runtime.linkBinder.rebindHolderBoundRefs,
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
@@ -247,13 +246,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       workDraftDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
       },
-      // No draft branches in memory: nothing to register, and no publication to prepare.
-      draftLinks: {
-        prepareDraftLinkPublication: async () => {
-          throw new Error("Draft links need Postgres; the in-memory collab domain has no drafts");
-        },
-        flush: async () => {},
-      },
+      // No draft branches in memory: nothing to register.
+      draftLinks: { flush: async () => {} },
     },
     documentCreation,
   });
