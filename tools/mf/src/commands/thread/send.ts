@@ -441,6 +441,6 @@ export const threadSendCommand: CommandSpec = {
       return terminal.exitCode;
     }
     const outcome = await sendMessage(session, ctx.out, { threadId, ...input });
-    return finishResult(ctx.out, outcome);
+    return finishResult(ctx.out, outcome, { full: flag(ctx, "full") });
   },
 };

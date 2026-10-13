@@ -5,6 +5,7 @@ import { serializeMessageDoc } from "@meridian/thread-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EXIT } from "../../core/cli-error";
 import {
+  DIVERGED_STORED_TEXT,
   DOCUMENT_ID,
   type FakeStack,
   PROJECT_ID,
@@ -91,13 +92,17 @@ describe("thread", () => {
     expect(json.code).toBe(EXIT.ok);
     expect(JSON.parse(json.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
       outcome: "complete",
-      finalText: "Stored answer",
+      finalText: DIVERGED_STORED_TEXT,
       liveView: "differs",
-      liveDiff: [{ field: "finalText", live: "Hello there", server: "Stored answer" }],
+      liveDiff: [{ field: "finalText", live: "Hello there", server: DIVERGED_STORED_TEXT }],
     });
     const text = await mf(["thread", "send", THREAD_ID, "diverge"]);
     expect(text.code).toBe(EXIT.ok);
     expect(text.stderr.match(/live view differs from the server/g)).toHaveLength(1);
+    expect(text.stderr).toContain("--full to show");
+    const full = await mf(["thread", "send", THREAD_ID, "diverge", "--full"]);
+    expect(full.stderr).toContain(DIVERGED_STORED_TEXT);
+    expect(full.stderr).not.toContain("--full to show");
   });
 
   it("resumes after a socket drop mid-run without duplicating the replay", async () => {
