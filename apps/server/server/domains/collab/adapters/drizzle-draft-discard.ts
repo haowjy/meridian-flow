@@ -202,7 +202,7 @@ export function createDrizzleDraftDiscard(
 
   /**
    * Reset the draft's branch on an item from live when it holds reviewable rows (CAS), and
-   * close that branch's thread peers: exactly this draft's, which the caller leased.
+   * close that branch's thread peers (rows or not): exactly this draft's, which the caller leased.
    */
   async function resetItemText(
     input: Extract<DiscardKernelInput, { selection: { kind: "items" } }>,
@@ -229,9 +229,12 @@ export function createDrizzleDraftDiscard(
         ),
       )
       .limit(1);
-    // A rowless branch has nothing to review, unless its state cannot be read: Discard is
-    // the recovery for a corrupt item, rows or not.
-    if (!pending && isReadable(content.state)) return [];
+    // A healthy rowless branch has no text to reset (unless its state cannot be read: Discard
+    // is the recovery for a corrupt item, rows or not), but an open reply may still hold staged
+    // writes on it, so its peers close either way.
+    if (!pending && isReadable(content.state)) {
+      return deps.branches.closeThreadPeersOf([content.branchId], "edit_discarded");
+    }
     const liveDoc = input.liveDocs.get(item.documentId);
     if (!liveDoc) throw new Error(`Discard of ${item.documentId} holds no live document`);
     const reset = await deps.coordinator.resetFromDocIfUnchangedWithLease(input.lease, {

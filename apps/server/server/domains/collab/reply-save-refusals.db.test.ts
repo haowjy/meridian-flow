@@ -332,6 +332,15 @@ describe("reply save refusals (postgres)", () => {
     expect((await fixture.collab.draftReview.items({ workId: WORK_ID })).draftId).not.toBeNull();
   });
 
+  it("11b: item Discard of a drained item still drops the staged write of a reply opened after Apply", async () => {
+    const { fixture, branchId, responseId, review, write } = await setup();
+    expect(await review.applyAll()).toMatchObject({ status: "completed" });
+    expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
+    expect(await review.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
+    expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
+    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\ngreen\n");
+  });
+
   it("12: switching to direct after Apply all while staged still lands the write in the draft", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
