@@ -141,6 +141,12 @@ export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): s
   switch (reason) {
     case "discard":
       return "the user discarded the text it edited";
+    case "discarded_draft":
+      return "the user discarded this draft";
+    case "discarded_document":
+      return "the user discarded this new document";
+    case "discarded_edit":
+      return "the user discarded the text it edited";
     case "inverse":
       return "an inverse removed the text it edited";
     default:

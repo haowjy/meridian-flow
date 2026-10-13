@@ -12,6 +12,10 @@ export const asDocumentId = (s: string) => s as DocumentId;
 export type DraftId = string;
 /** One document's `work_draft` branch inside a draft (D68). */
 export type DraftBranchId = string;
+/** `${draftId}:${documentId}`: the client's one review identity for a document of a draft (D68). */
+export type DraftItemKey = string;
+/** A client-generated UUID naming one writer Apply or Discard command; resends reuse it. */
+export type DraftCommandId = string;
 export type ThreadId = string;
 export const asThreadId = (s: string) => s as ThreadId;
 export type TurnId = string;

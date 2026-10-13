@@ -8,11 +8,10 @@ import { isWorkScopedProjectContextScheme, type ProjectContextTreeScheme } from 
 /** A Work-capable scheme's owner: a Work, or for Scratch a lineage (the first chat's id). */
 export type ProjectContextRequestOptions = ContextOwner;
 
-/** Review URLs name a per-document branch, never the whole draft tree id. */
+/** Review URLs name the Work and the item (`itemKey`); a branch id or `drafts.id` never selects one. */
 export type DocumentAddressReviewSelector = {
   workId: string;
-  draftBranchId: string;
-  documentId?: string;
+  itemKey: string;
 };
 export type DocumentAddressRequestOptions = ProjectContextRequestOptions & {
   review?: DocumentAddressReviewSelector;
@@ -67,8 +66,7 @@ export function apiProjectDocumentAddressPath(
   setOwnerQuery(query, scheme, opts);
   if (opts?.review) {
     query.set("reviewWorkId", opts.review.workId);
-    query.set("draftBranchId", opts.review.draftBranchId);
-    if (opts.review.documentId) query.set("documentId", opts.review.documentId);
+    query.set("itemKey", opts.review.itemKey);
   }
   return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
 }
@@ -125,6 +123,15 @@ export function apiProjectWorkDraftsPath(projectId: string, workId: string): str
 /** Apply all: one command over the Work's whole draft. */
 export function apiProjectWorkDraftsApplyPath(projectId: string, workId: string): string {
   return `${apiProjectWorkDraftsPath(projectId, workId)}/apply`;
+}
+
+/** Observes one Apply or Discard command by its client `commandId`. */
+export function apiProjectWorkDraftCommandPath(
+  projectId: string,
+  workId: string,
+  commandId: string,
+): string {
+  return `${apiProjectWorkDraftsPath(projectId, workId)}/commands/${commandId}`;
 }
 
 /** Discard all: one command over the Work's whole draft. */

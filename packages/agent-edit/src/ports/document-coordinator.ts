@@ -7,7 +7,17 @@ export interface StagedHelperCut {
   state: Uint8Array;
 }
 
-export type StagedWriteRejectionReason = "discard" | "inverse" | "integration";
+/**
+ * Why a staged write did not land. `discarded_*` come from a Discard that retired the thread's peer:
+ * the whole draft, this created document, or this edited document's text.
+ */
+export type StagedWriteRejectionReason =
+  | "discard"
+  | "inverse"
+  | "integration"
+  | "discarded_draft"
+  | "discarded_document"
+  | "discarded_edit";
 
 export interface StagedWriteReplayResult {
   rejectedWrites?: readonly { writeId: string; reason: StagedWriteRejectionReason }[];
