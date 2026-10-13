@@ -108,6 +108,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
         <CommandCapture />
         {delayedAdmission && (
           <ReviewAddressOwner
+            admission="admitted"
             review={review}
             presented={{
               container: "editor",

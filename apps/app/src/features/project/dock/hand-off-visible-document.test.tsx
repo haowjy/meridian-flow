@@ -124,15 +124,38 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
     tabInstanceToken: "token",
   };
   fixture.network.listWorkDrafts.mockResolvedValue({
-    drafts: [
+    items: [
       {
         ...listed,
+        draftId: "whole-draft",
+        origin: "created",
+        binary: false,
+        wholeItem: true,
+        livePath: null,
+        conflict: null,
+        settling: false,
+        tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
         contextLocation: { scheme: tab.scheme, path: tab.path },
         isNew: draftOnly,
       },
     ],
   });
-  fixture.network.getDraftPreview.mockResolvedValue(preview);
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    draftId: "whole-draft",
+    item: {
+      ...listed,
+      draftId: "whole-draft",
+      origin: "edited",
+      isNew: false,
+      binary: false,
+      wholeItem: false,
+      livePath: null,
+      conflict: null,
+      settling: false,
+      tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
+    },
+  });
   let setEditorItemKey!: (itemKey: string | undefined) => void;
   const route = vi.fn(async (_target: unknown, options?: { itemKey?: string }) => {
     setEditorItemKey(options?.itemKey);
@@ -218,6 +241,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         <PresentedDocumentContext.Provider value={presented}>
           <DraftReviewBoundary value={value}>
             <ReviewAddressOwner
+              admission="admitted"
               review={value}
               presented={presented}
               port={{

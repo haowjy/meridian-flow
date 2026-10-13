@@ -200,7 +200,7 @@ it("keeps a draft-only document out of the live view and repairs only its review
         work: { kind: "none" },
       }}
       result={result}
-      draftOnlyId="draft-1"
+      reviewItemKey="draft-1"
       workId={noWorkId}
       noWorkId={noWorkId}
       navigation={navigation}

@@ -79,7 +79,6 @@ describe("draft tab settlement", () => {
       const outcome = new ContextRemovalCoordinator("account-a").discardDraft(
         "project-a",
         "work-a",
-        "document-a",
         "draft-a",
       );
       expect(outcome.kind).not.toBe("noop");
@@ -112,7 +111,7 @@ describe("draft tab settlement", () => {
       });
     };
     select();
-    coordinator.discardDraft("project-a", "work-a", "document-a", "draft-a");
+    coordinator.discardDraft("project-a", "work-a", "draft-a");
     expect(getContextTabs("project-a").tabs).toEqual([]);
     updateSearch.mockClear();
 

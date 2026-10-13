@@ -1,4 +1,6 @@
 /** Dock reload contracts: durable layout, hydrated identity, scope, and newer intent. */
+
+import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import {
   type CatalogCacheView,
   emptyCatalogView,
@@ -7,7 +9,6 @@ import {
 } from "@meridian/resource-replica";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
-import { listed } from "@/test-support/draft-review-scope";
 import {
   createDockDocumentStore,
   type DockDocument,
@@ -82,7 +83,13 @@ const renamedAvailability = {
 const empty: ResourceProjectionSnapshot = { records: [], folders: [], catalogs: [] };
 function resources(snapshot = empty) {
   return {
-    readWorkDrafts: vi.fn(async () => []),
+    admitReview: vi.fn(
+      async () =>
+        ({
+          kind: "current",
+          document: { documentId: "doc", entry: renamedAvailability.resolutions[0].entry },
+        }) as unknown as DocumentAddressResult,
+    ),
     resources: {
       readProjection: vi.fn(async () => snapshot),
       acquireCatalog: vi.fn(async (): Promise<CatalogCacheView> => {
@@ -378,105 +385,84 @@ it.each([
   expect(createDockDocumentStore(() => disk, "account").getState().restoring).toBeNull();
 });
 
-it("reloads a draft-only review from its Work list, without catalog membership", async () => {
-  const review = { workId: "work", itemKey: "draft" };
-  const second = reload({
+it.each([
+  false,
+  true,
+])("restores a saved review of an unlisted active item, hidden=%s", async (hidden) => {
+  const review = { workId: "work", itemKey: "draft:admitted" };
+  const candidate: DockDocument = {
     ...document,
     review,
     tab: {
       ...tab,
-      draftOnly: true,
-      reviewWorkId: "work",
-      reviewItemKey: "draft",
-      tabInstanceToken: "old",
+      documentId: "stale",
+      ...(hidden
+        ? {
+            draftOnly: true,
+            reviewWorkId: "work",
+            reviewItemKey: review.itemKey,
+            tabInstanceToken: "token",
+          }
+        : {}),
     },
-  });
-  const candidate = second.getState().restoring;
-  if (!candidate) throw new Error("Expected a saved dock candidate");
+  };
   const replica = resources();
-  const restored = await restoreDockDocument(candidate, {
-    ...replica,
-    resources: replica.resources,
-    readWorkDrafts: async (project, work) => {
-      expect([project, work]).toEqual(["project", "work"]);
-      return [
-        {
-          ...listed,
-          documentId: "doc",
-          itemKey: "other-draft",
-          isNew: true,
-          contextLocation: { scheme: "kb", path: "/Wrong.md" },
-        },
-        {
-          ...listed,
-          documentId: "doc",
-          itemKey: "draft",
-          isNew: true,
-          contextLocation: { scheme: "manuscript", path: "/Current.md" },
-        },
-      ];
+  // There is deliberately no list port: an incomplete or pending list cannot participate in admission.
+  replica.admitReview.mockResolvedValue({
+    kind: "current",
+    document: {
+      documentId: "admitted",
+      entry: {
+        ...renamedAvailability.resolutions[0].entry,
+        uri: "kb://Hidden.md",
+        path: ["Hidden.md"],
+        name: "Hidden.md",
+      },
     },
+  } as unknown as DocumentAddressResult);
+  const restored = await restoreDockDocument(candidate, replica);
+  expect(replica.admitReview).toHaveBeenCalledWith("project", review, {
+    scheme: "manuscript",
+    path: "/Old.md",
   });
   expect(replica.resources.readProjection).not.toHaveBeenCalled();
-  await expect(
-    restoreDockDocument(candidate, {
-      ...replica,
-      readWorkDrafts: async () => {
-        throw new Error("offline");
-      },
-    }),
-  ).rejects.toThrow("offline");
+  expect(replica.resources.acquireCatalog).not.toHaveBeenCalled();
+  expect(availability).not.toHaveBeenCalled();
   expect(restored).toMatchObject({
     review,
-    tab: {
-      documentId: "doc",
-      draftOnly: true,
-      reviewWorkId: "work",
-      reviewItemKey: "draft",
-      path: "/Current.md",
-    },
+    reviewAdmission: "admitted",
+    tab: { documentId: "admitted", scheme: "kb", path: "/Hidden.md" },
   });
+  expect(restored?.tab.draftOnly === true).toBe(hidden);
 });
-it("keeps a manuscript review while validating its renamed live identity", async () => {
-  availability.mockResolvedValue(renamedAvailability);
-  const review = { workId: "work", itemKey: "draft" };
+it("keeps failed and unavailable saved selectors without showing a live occupant", async () => {
+  const review = { workId: "work", itemKey: "draft:doc" };
+  const candidate = { ...document, review };
   const replica = resources();
-  const restored = await restoreDockDocument(
-    { ...document, review },
-    {
-      ...replica,
-      resources: replica.resources,
-      readWorkDrafts: async () => [
-        { ...listed, documentId: "doc", itemKey: "draft", isNew: false },
-      ],
-    },
-  );
-  expect(restored).toMatchObject({ review, tab: { documentId: "doc", path: "/New.md" } });
+  replica.admitReview.mockResolvedValue({ kind: "unavailable" });
+  expect(await restoreDockDocument(candidate, replica)).toMatchObject({
+    review,
+    reviewAdmission: "unavailable",
+  });
+  replica.admitReview.mockRejectedValue(new Error("offline"));
+  expect(await restoreDockDocument(candidate, replica)).toMatchObject({
+    review,
+    reviewAdmission: "failed",
+  });
+  expect(replica.resources.readProjection).not.toHaveBeenCalled();
+});
+it("keeps a manuscript review while the selector repairs its renamed identity", async () => {
+  const review = { workId: "work", itemKey: "draft:doc" };
+  const replica = resources();
   expect(await restoreDockDocument({ ...document, review }, replica)).toMatchObject({
-    review: null,
+    review,
     tab: { documentId: "doc", path: "/New.md" },
   });
-  // Discard leaves a reserved document ID that availability can still resolve,
-  // but neither a review-less draft-only snapshot nor a live-looking ghost may restore.
+  // Without a review selector, a reserved ID still needs live catalog membership.
+  availability.mockResolvedValue(renamedAvailability);
   replica.resources.acquireCatalog.mockResolvedValue(
     emptyCatalogView({ kind: "project", projectId: "project" }),
   );
-  expect(await restoreDockDocument({ ...document, review }, replica)).toBeNull();
-  expect(
-    await restoreDockDocument(
-      {
-        ...document,
-        tab: {
-          ...tab,
-          draftOnly: true,
-          reviewWorkId: "work",
-          reviewItemKey: "draft",
-          tabInstanceToken: "draft-instance",
-        },
-      },
-      replica,
-    ),
-  ).toBeNull();
   expect(await restoreDockDocument(document, replica)).toBeNull();
 });
 
