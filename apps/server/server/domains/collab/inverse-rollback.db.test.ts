@@ -10,13 +10,11 @@ import {
   ALPHA_ID,
   closeDatabase,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
@@ -122,14 +120,15 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
         context,
       );
     await harness.commit(responseId);
-    const [draft] = await view.collab.draftReview.list({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-    });
     const [branch] = await db
       .select()
       .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, draft.draftId));
+      .where(
+        and(
+          eq(schema.documentBranches.documentId, ALPHA_ID),
+          eq(schema.documentBranches.kind, "work_draft"),
+        ),
+      );
     const doc = new Y.Doc({ gc: false });
     try {
       Y.applyUpdate(doc, branch.state);
@@ -153,7 +152,7 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
         turnId: TURN_ID,
       },
     );
-    expect(await view.draftMarkdown(draft.draftId)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
     const pending = await db
       .select()
       .from(schema.branchWriteJournal)
@@ -169,7 +168,7 @@ it("failed response leaves only the writer-dependent draft part rollback_pending
         turnId: TURN_ID,
       },
     );
-    expect(await view.draftMarkdown(draft.draftId)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    expect(await view.draftMarkdown(branch.id)).toBe("Alpha Ga!mma.\n\nBlue.\n");
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "view_change",
     });
@@ -211,7 +210,6 @@ it.each([
       .where(
         and(
           eq(schema.documentBranches.documentId, ALPHA_ID),
-          eq(schema.documentBranches.workId, WORK_ID),
           eq(schema.documentBranches.kind, "work_draft"),
         ),
       );
