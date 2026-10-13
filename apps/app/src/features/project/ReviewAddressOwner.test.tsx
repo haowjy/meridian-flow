@@ -161,16 +161,18 @@ describe("ReviewAddressOwner", () => {
   });
 
   describe("a review whose draft the list no longer names", () => {
-    it("missing draft metadata keeps the review without claiming or repairing ownership", async () => {
+    it("a cold, unlisted open is still owned: Back to live clears the address instead of reopening", async () => {
       const exit = vi.fn();
       const setItemKey = vi.fn();
+      const openContextRoute = vi.fn(async () => ({ kind: "applied" as const }));
       await withReactRoot(
         <Harness
           listed={false}
           activeDocumentId={draft.documentId}
+          requestedItemKey={draft.itemKey}
           onSetItemKey={setItemKey}
           exitInlineReview={exit}
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+          openContextRoute={openContextRoute}
         />,
         async () => {
           await act(async () =>
@@ -178,6 +180,10 @@ describe("ReviewAddressOwner", () => {
           );
           expect(exit).not.toHaveBeenCalled();
           expect(setItemKey).not.toHaveBeenCalled();
+          const coldAdmissions = openContextRoute.mock.calls.length;
+          await act(async () => setInline?.(null));
+          expect(setItemKey).toHaveBeenCalledExactlyOnceWith(null);
+          expect(openContextRoute).toHaveBeenCalledTimes(coldAdmissions);
         },
       );
     });
