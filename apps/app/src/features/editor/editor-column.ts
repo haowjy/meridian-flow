@@ -8,24 +8,26 @@
  * The horizontal inset is split across two layers — a wrapper and the
  * ProseMirror node's own padding. The whole editor pane is click-to-focus
  * territory (EditorSurfaceFrame routes gutter presses to the caret), so the
- * split is pure geometry now; the sum invariant these recipes encode is:
+ * split is pure geometry; the sum is what a reader sees as margin:
  *
- *   chrome inset  =  canvas wrapper inset  +  prose inset
- *   px-12/14/16   =  px-2/4/6              +  px-10
+ *   pane (container)   leading (handle side)   trailing
+ *   < @2xl (42rem)     48 = px-2 + pl-10        32 = px-2 + pr-6
+ *   @2xl – @3xl        56 = px-4 + px-10        56
+ *   >= @3xl (48rem)    64 = px-6 + px-10        64
  *
- * That sum is also the GUTTER, and the gutter is load-bearing: the block
- * handle and the table's row grips are drawn in the manuscript's own scroll
- * pane, which clips them at its edge, so anything they reach past the text
- * edge has to fit inside it. `MARGIN_GUTTER_MIN` is what they reach
- * (`surfaces/blocks/block-geometry.ts`); every breakpoint here clears it, and
- * `editor-column.test.ts` fails if one stops.
+ * Every step answers to the PANE (EditorSurfaceFrame's `@container`), not the
+ * viewport: the dock's document, a narrow Editor window and the phone all get
+ * the narrow tiers because their pane is narrow, whatever the screen.
  *
- * The ramp is in the wrapper alone — 48/56/64 — and the prose keeps one
- * padding at every width. It follows the viewport; a pane narrower than `@md`
- * (the dock's document) falls back to the 48 that still clears the gutter,
- * whatever the viewport, because its width is not the viewport's. A narrow window gives up 16px of line length for a
- * usable margin, which is the trade, and the reward is that crossing 768px no
- * longer moves the text edge by 24px per side.
+ * Both gutters are load-bearing, because chrome drawn past the text edge lives
+ * in the manuscript's own scroll pane, which clips it:
+ * - LEADING holds the block handle and the table's row grips, so it never drops
+ *   below `MARGIN_GUTTER_MIN` (`surfaces/blocks/block-geometry.ts`, 48px).
+ * - TRAILING holds less: a full-width table's Add column tab, which reaches
+ *   `ADD_TAB_GAP + ADD_TAB` = 27px past the table (`surfaces/table/table-anchors.ts`),
+ *   so 32px is its floor.
+ * A narrow pane gives the difference back to the line on the trailing side
+ * (#744); wide panes stay symmetric around the centered 48rem column.
  *
  * Change any inset only by editing this file; never re-encode these classes
  * at a call site.
@@ -34,14 +36,15 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Chrome rows aligned to the prose edge (the document toolbar row). In a pane
- * narrower than `@md` (the dock) the row stops aligning to the prose and
- * takes the identity bar's 16px inset, which is all the width a toolbar has.
+ * Chrome rows aligned to the prose edges (the document toolbar row). In a pane narrower than `@md` (the dock) the row stops aligning to the
+ * prose and takes the identity bar's 16px inset, which is all the width a
+ * toolbar has.
  */
-export const editorColumnChrome = "mx-auto w-full max-w-3xl px-12 sm:px-14 md:px-16 @max-md:px-4";
+export const editorColumnChrome =
+  "mx-auto w-full max-w-3xl px-4 @md:pr-8 @md:pl-12 @2xl:px-14 @3xl:px-16";
 
 /** The scrolling canvas wrapper around `EditorContent`. */
-export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 sm:px-4 md:px-6 @max-md:px-2";
+export const editorColumnCanvas = "mx-auto w-full max-w-3xl px-2 @2xl:px-4 @3xl:px-6";
 
 /**
  * Fill chain for the canvas wrapper AND `EditorContent`, so the ProseMirror
@@ -86,7 +89,7 @@ export const editorProseScrollPastEnd = "pb-[50vh]";
  */
 export function editorProseClass(toolbar: "docked" | "none"): string {
   return cn(
-    "prose-tokens min-h-full shrink-0 px-10",
+    "prose-tokens min-h-full shrink-0 pl-10 pr-6 @2xl:pr-10",
     editorProseScrollPastEnd,
     toolbar === "docked" ? "pt-4" : "pt-6 md:pt-8",
   );
