@@ -224,6 +224,14 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
   };
 }
 
+/** Thrown inside the staging transaction to roll back its command claim with it. */
+class LineageConflictAfterClaim extends Error {
+  constructor(readonly push: PushLineageRow) {
+    super("A lineage conflict ended staging after the command was claimed");
+    this.name = "LineageConflictAfterClaim";
+  }
+}
+
 export function createDrizzlePushCommitStore(
   db: Database,
   stageSettlementBatchWithinTx: StageSettlementBatchWithinTx,
@@ -264,6 +272,9 @@ export function createDrizzlePushCommitStore(
             return { status: "command_exists" as const };
           }
           const existing = await firstCommitted();
+          // A claim with no batch can never settle: roll it back with this transaction and
+          // let the caller's retry claim again (§4.6).
+          if (existing && input.command) throw new LineageConflictAfterClaim(existing);
           if (existing) return { status: "conflict" as const, push: existing };
           const sorted = sortPushesByDocumentId(input.pushes);
           // Every document lock before any trail lock, as completion takes them.
@@ -298,6 +309,9 @@ export function createDrizzlePushCommitStore(
           return { status: "inserted" as const, pushes: staged.map(({ push }) => push) };
         }),
       ).catch(async (error: unknown) => {
+        if (error instanceof LineageConflictAfterClaim) {
+          return { status: "conflict" as const, push: error.push };
+        }
         if (!(error instanceof WorkLifecycleUnavailableError)) throw error;
         // Archive can win after another process committed this exact attempt.
         // A durable receipt is history, not permission to perform another write.
