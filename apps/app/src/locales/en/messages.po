@@ -1619,6 +1619,7 @@ msgid "Couldn't update that Work"
 msgstr "Couldn't update that Work"
 
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/useSwitchLedger.ts
 #: src/features/chat/thread-controls/useThreadControls.ts
 msgid "Couldn't withdraw. Try again."
 msgstr "Couldn't withdraw. Try again."
