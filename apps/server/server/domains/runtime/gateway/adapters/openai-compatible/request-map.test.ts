@@ -12,7 +12,7 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
           },
         ],
       },
-      "anthropic/claude-sonnet-4",
+      "anthropic/claude-sonnet-4.6",
       5 * 60 * 1_000,
     );
     expect(params).toMatchObject({ cache_control: { type: "ephemeral", ttl: "5m" } });
@@ -42,7 +42,7 @@ describe("toOpenAIChatCompletionParams prompt-cache passthrough", () => {
           },
         ],
       },
-      "anthropic/claude-sonnet-4",
+      "anthropic/claude-sonnet-4.6",
       60 * 60 * 1_000,
     );
     expect(params.messages[1]).toEqual({

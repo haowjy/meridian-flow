@@ -251,7 +251,8 @@ function replicationUpdate(
 }
 
 function instantiateSharedType(doc: Y.Doc, name: string, type: unknown): void {
-  if (type instanceof Y.Map) doc.getMap(name);
+  if (name === "__meridian_provenance_targets_v1") doc.getArray(name);
+  else if (name === "__meridian_provenance_targets_v2" || type instanceof Y.Map) doc.getMap(name);
   else if (type instanceof Y.Text) doc.getText(name);
   else if (type instanceof Y.Array) doc.getArray(name);
   else if (type instanceof Y.XmlFragment) doc.getXmlFragment(name);

@@ -1,7 +1,6 @@
 /**
  * Yjs update dependency predicates: the one rule for whether a later update
- * depends on earlier ones, shared by undo planning, live undo persistence and
- * branch review closure.
+ * depends on earlier ones, used by branch replay and review closure.
  */
 import * as Y from "yjs";
 
@@ -45,7 +44,7 @@ export function deleteRanges(decoded: DecodedUpdateLike): ClockRange[] {
   return ranges;
 }
 
-function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
+export function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
   const refs: ClockRange[] = [];
   for (const struct of decoded.structs ?? []) {
     if (struct.origin) refs.push({ ...struct.origin, length: 1 });
@@ -53,13 +52,6 @@ function structDependencies(decoded: DecodedUpdateLike): ClockRange[] {
     if (isYId(struct.parent)) refs.push({ ...struct.parent, length: 1 });
   }
   return refs;
-}
-
-export function hasDependentLaterRows(
-  selectedRows: readonly JournalDependencyRow[],
-  laterRows: readonly JournalDependencyRow[],
-): boolean {
-  return laterRows.some(dependsOnRows(selectedRows));
 }
 
 /**
@@ -79,7 +71,7 @@ export function dependsOnRows(
       // Yjs update delete sets can be cumulative for a state-vector diff, so a
       // later delete-only row may name ranges deleted by earlier rows too. We
       // accept that as a conservative false-positive dependency: it can withhold
-      // an otherwise-safe selective undo, but never allows a lossy undo.
+      // an otherwise-safe replay selection, but never admits a broken dependency.
       deleted: deleteRanges(decoded),
     };
   });
@@ -101,6 +93,30 @@ export function dependsOnRows(
         anchors.some((dependency) => row.deleted.some((range) => rangesOverlap(range, dependency))),
     );
   };
+}
+
+/** Later staged segments lost with a selected segment, including clock prefixes. */
+export function laterDependencyClosure<T extends JournalDependencyRow>(
+  rows: readonly T[],
+  seeds: ReadonlySet<T>,
+): Set<T> {
+  const closed = new Set(seeds);
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    if (closed.has(row)) continue;
+    const earlier = rows.slice(0, index).filter((candidate) => closed.has(candidate));
+    const supplied = suppliedRanges(decodeUpdateForDependencies(row.updateData));
+    if (
+      dependsOnRows(earlier)(row) ||
+      earlier.some((candidate) =>
+        suppliedRanges(decodeUpdateForDependencies(candidate.updateData)).some((prefix) =>
+          supplied.some((range) => prefix.client === range.client && prefix.clock < range.clock),
+        ),
+      )
+    )
+      closed.add(row);
+  }
+  return closed;
 }
 
 function isYId(value: unknown): value is YId {

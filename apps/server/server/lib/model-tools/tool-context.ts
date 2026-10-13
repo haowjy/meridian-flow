@@ -149,10 +149,15 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
-  ctx: { threadId: string; responseId?: string },
+  ctx: { threadId: string; responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
   version?: DocumentVersion,
 ): Promise<ToolCall | ToolErrorOutput> {
-  const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
+  const context = await resolveContextPort(
+    deps,
+    ctx.threadId,
+    ctx.responseIdentity?.editScopeId,
+    version,
+  );
   if (isToolError(context)) return context;
   const { primaryWorkId } = context.resolution;
   if (!primaryWorkId) throw new Error(`Thread primary Work is missing: ${ctx.threadId}`);

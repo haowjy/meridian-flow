@@ -1,6 +1,5 @@
 import type { ParsedContent } from "@meridian/markup";
 import type { Mark, Node as PMNode, Schema } from "prosemirror-model";
-import { Transform } from "prosemirror-transform";
 import { updateYFragment, yXmlFragmentToProseMirrorRootNode } from "y-prosemirror";
 import * as Y from "yjs";
 import type { AgentEditCodec } from "../codec-adapter.js";
@@ -86,10 +85,6 @@ export function yProsemirrorModel(schema: Schema): YProsemirrorDocumentModel {
 
     getVisibleContentLineage(block) {
       return collectVisibleContentLineage(unwrapBlock(block));
-    },
-
-    inlineRunCount(block) {
-      return countTextRuns(unwrapBlock(block));
     },
 
     transact(doc, fn, origin) {
@@ -276,12 +271,21 @@ export function applyInlineReplacements(
     };
   }
 
-  const transform = new Transform(current);
+  if (element.length === 0 && current.content.size === 0) element.insert(0, [new Y.XmlText()]);
+  const text = element.get(0);
+  if (!(text instanceof Y.XmlText) || element.length !== 1) {
+    return { ok: false, code: "invalid_write", message: "Text edits require one flat Y.XmlText" };
+  }
   for (const replacement of [...replacements].reverse()) {
-    transform.replaceWith(replacement.span.from, replacement.span.to, replacement.content);
-    // Project each exact step while the surrounding Yjs transaction remains open.
-    // updateYFragment can then retain equal prose on both sides of every range.
-    writePmBlock(doc, element, transform.doc);
+    const { from, to } = replacement.span;
+    if (to > from) text.delete(from, to - from);
+    let offset = from;
+    replacement.content.forEach((node) => {
+      if (!node.isText) throw new Error("Exact text replacement requires text nodes");
+      const attributes = Object.fromEntries(node.marks.map((mark) => [mark.type.name, mark.attrs]));
+      text.insert(offset, node.text ?? "", attributes);
+      offset += node.text?.length ?? 0;
+    });
   }
   return { ok: true };
 }
@@ -452,23 +456,6 @@ function collectTextSegments(block: Y.XmlElement): TextSegment[] {
   };
   visit(block);
   return segments;
-}
-
-function countTextRuns(block: Y.XmlElement): number {
-  let count = 0;
-  const visit = (type: Y.XmlElement | Y.XmlText) => {
-    if (type instanceof Y.XmlText) {
-      for (const delta of type.toDelta()) {
-        if (typeof delta.insert === "string" && delta.insert.length > 0) count += 1;
-      }
-      return;
-    }
-    for (const child of type.toArray()) {
-      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
-    }
-  };
-  visit(block);
-  return count;
 }
 
 function clearText(type: Y.XmlElement | Y.XmlText): void {
