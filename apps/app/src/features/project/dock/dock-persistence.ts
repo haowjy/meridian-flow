@@ -85,7 +85,13 @@ export function writeDockSnapshot(storage: () => DockStorage | null, snapshot: D
     () => undefined,
   ).write({
     occupant: snapshot.occupant
-      ? { ...snapshot.occupant, tab: durableContextTab(snapshot.occupant.tab) }
+      ? {
+          projectId: snapshot.occupant.projectId,
+          screen: snapshot.occupant.screen,
+          screenWorkId: snapshot.occupant.screenWorkId,
+          review: snapshot.occupant.review,
+          tab: durableContextTab(snapshot.occupant.tab),
+        }
       : null,
   });
 }

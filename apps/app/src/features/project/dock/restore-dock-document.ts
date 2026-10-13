@@ -1,19 +1,23 @@
 /** Restores a hidden dock candidate only after replica hydration and identity validation. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import type { DocumentAddressResult, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
+import {
+  type DocumentAddressResult,
+  isProjectContextTreeScheme,
+  type ProjectContextTreeScheme,
+} from "@meridian/contracts/protocol";
 import { resourcePlacementForSnapshot, resourceVisibleInProject } from "@meridian/resource-replica";
-import { useQueryClient } from "@tanstack/react-query";
+
 import { useEffect, useLayoutEffect } from "react";
 import { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
-import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
+
 import type { ContextTab } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { validateServerRoute } from "../browser-editor-tab-validation";
 import { useAccountId, useAccountResourceReplica } from "../context/account-feature-context";
 import { workingSetRouteForTab } from "../context/context-removal-planner";
-import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
+
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 
@@ -27,8 +31,6 @@ export type DockRestorePorts = {
     review: ReviewSelector,
     locator: { scheme: ProjectContextTreeScheme; path: string },
   ) => Promise<DocumentAddressResult>;
-  /** Labels and whole-item state only; a failed or incomplete list proves nothing. */
-  readWorkDrafts: (projectId: string, workId: string) => Promise<ThreadDraftListItem[]>;
 };
 
 /**
@@ -38,7 +40,7 @@ export type DockRestorePorts = {
  */
 export async function restoreDockDocument(
   document: DockDocument,
-  { resources, admitReview, readWorkDrafts }: DockRestorePorts,
+  { resources, admitReview }: DockRestorePorts,
 ): Promise<DockDocument | null> {
   const { review } = document;
   if (!review || document.tab.kind === "new") {
@@ -46,25 +48,30 @@ export async function restoreDockDocument(
     return tab ? { ...document, tab, review } : null;
   }
   const { tab } = document;
-  const answer = await admitReview(document.projectId, review, {
-    scheme: tab.scheme,
-    path: tab.path,
-  });
-  if (answer.kind === "unavailable") return document;
-  const documentId = answer.document.documentId;
-  const bound: DockDocument = { ...document, tab: { ...tab, documentId } };
-  const row = (await readWorkDrafts(document.projectId, review.workId).catch(() => [])).find(
-    (candidate) => candidate.itemKey === review.itemKey && candidate.documentId === documentId,
-  );
-  if (row?.isNew) {
-    const fromRow = contextTabFromDraftGroup({ ...row, workId: review.workId });
-    return fromRow ? { ...bound, tab: fromRow } : null;
+  let answer: DocumentAddressResult;
+  try {
+    answer = await admitReview(document.projectId, review, { scheme: tab.scheme, path: tab.path });
+  } catch {
+    return { ...document, reviewAdmission: "failed" };
   }
-  // A hidden created item the list lacks keeps the draft-only tab it was saved with.
-  if (tab.draftOnly && tab.reviewItemKey === review.itemKey && tab.reviewWorkId === review.workId)
-    return bound;
-  const live = await restoreLiveTab(bound, resources);
-  return live ? { ...bound, tab: live } : null;
+  if (answer.kind === "unavailable") return { ...document, reviewAdmission: "unavailable" };
+  const entry = answer.document.entry;
+  const uri = parseUnifiedContextUri(entry.uri);
+  if (!uri.ok || !isProjectContextTreeScheme(uri.value.scheme))
+    return { ...document, reviewAdmission: "unavailable" };
+  // The selector proves review addressability, never catalog membership. Restore the admitted
+  // identity and canonical locator without waiting for a list or installing a live representation.
+  return {
+    ...document,
+    reviewAdmission: "admitted",
+    tab: {
+      ...tab,
+      documentId: answer.document.documentId,
+      scheme: uri.value.scheme,
+      path: `/${entry.path.join("/")}`,
+      name: entry.name,
+    },
+  };
 }
 
 async function restoreLiveTab(
@@ -122,7 +129,6 @@ export function useDockDocumentRestoration(projectId: string, workspaceHydrated:
   const storedAccountId = useDockDocumentStore((state) => state.accountId);
   const restoring = useDockDocumentStore((state) => state.restoring);
   const resources = useAccountResourceReplica();
-  const queryClient = useQueryClient();
   useEffect(() => {
     if (
       storedAccountId !== accountId ||
@@ -136,8 +142,6 @@ export function useDockDocumentRestoration(projectId: string, workspaceHydrated:
       resources,
       admitReview: (project, review, locator) =>
         getProjectDocumentAddress(project, locator.scheme, locator.path, { review }),
-      readWorkDrafts: (project, work) =>
-        queryClient.fetchQuery(workDraftsQueryOptions(project, work)),
     }).then(
       (tab) => {
         if (live) useDockDocumentStore.getState().restore(restoring, tab);
@@ -149,5 +153,5 @@ export function useDockDocumentRestoration(projectId: string, workspaceHydrated:
     return () => {
       live = false;
     };
-  }, [accountId, storedAccountId, workspaceHydrated, restoring, resources, projectId, queryClient]);
+  }, [accountId, storedAccountId, workspaceHydrated, restoring, resources, projectId]);
 }

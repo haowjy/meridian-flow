@@ -584,7 +584,11 @@ function HydratedReviewControllers({
         <ReviewAddressOwner
           review={presentedReview}
           presented={presented}
-          admission={props.reviewAddressAdmission ?? "pending"}
+          admission={
+            presented?.container === "dock"
+              ? (dock?.reviewAdmission ?? "admitted")
+              : (props.reviewAddressAdmission ?? "pending")
+          }
           port={port}
         />
         {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}

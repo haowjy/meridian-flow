@@ -72,7 +72,7 @@ describe("readable project addresses", () => {
     expect(parse(`${P}/chats?item=draft-one`)).toMatchObject({ href: `${P}/chats` });
     expect(parse(`${P}/editor/manuscript/chapter.md?item=a&item=b`)).toMatchObject({
       kind: "invalid",
-      reason: "duplicate:draft",
+      reason: "duplicate:item",
     });
   });
 

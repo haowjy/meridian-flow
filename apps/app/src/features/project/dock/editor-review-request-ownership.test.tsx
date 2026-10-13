@@ -1,138 +1,131 @@
 // @vitest-environment jsdom
-/** Real shared review state and scope effect ordering on a same-document Work switch. */
-import "fake-indexeddb/auto";
-import { emptyCatalogView } from "@meridian/resource-replica";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+/** A warm Work or item change must never be overwritten by the departing review. */
 import { act, useState } from "react";
-import { expect, it } from "vitest";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
-import { useDraftReviewScopeValue } from "@/features/chat/DraftReviewProvider";
-import { useDraftReviewStateOwner } from "@/features/chat/useDraftReviewController";
-import { EditorReviewAddressOwner } from "@/features/project/dock/EditorReviewAddressOwner";
-import { EditorReviewHandoffProvider } from "@/features/project/dock/editor-review-handoff";
-import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
+import { expect, it, vi } from "vitest";
+import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { exitedReviewOwnsAddress, ReviewAddressOwner } from "../ReviewAddressOwner";
+import { EditorReviewHandoffProvider } from "./editor-review-handoff";
 
-it("a same-document Work switch preserves the newly requested branch and the old owner provenance", async () => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  for (const work of ["a", "b"])
-    client.setQueryData(projectQueryKeys.workDrafts("project", work), [
-      {
-        workId: work,
-        itemKey: `branch-${work}`,
-        documentId: "document",
-        status: "active",
-        updatedAt: "2026-10-12T00:00:00Z",
-        contextLocation: { scheme: "kb", path: "/Same" },
-        documentName: "Same",
-      },
-    ]);
-  const scope = { kind: "project" as const, projectId: "project" };
-  client.setQueryData(projectQueryKeys.contextCatalog("project", scope), emptyCatalogView(scope));
-  let enter!: () => void;
-  let switchWork!: () => void;
-  const rewrites: string[] = [];
+it.each(["work", "item"])("a same-locator %s switch keeps the new request", async (change) => {
+  let switchRequest!: () => void;
+  const write = vi.fn();
+  const exit = vi.fn();
   function Harness() {
-    const stateOwner = useDraftReviewStateOwner();
-    const [workId, setWorkId] = useState("a");
-    const [branch, setBranch] = useState<string | null>(null);
-    enter = () =>
-      stateOwner.dispatch({ type: "enterInline", documentId: "document", itemKey: "branch-a" });
-    switchWork = () => {
-      setWorkId("b");
-      setBranch("branch-b");
+    const [next, setNext] = useState(false);
+    switchRequest = () => setNext(true);
+    const review = {
+      controller: {
+        workId: "a",
+        inlineReview: { documentId: "document", itemKey: "item-a" },
+        exitInlineReview: exit,
+      },
+      files: [],
+      fileForDocument: () => undefined,
+    } as unknown as DraftReviewContextValue;
+    const address = {
+      workId: next && change === "work" ? "b" : "a",
+      itemKey: next && change === "item" ? "item-b" : "item-a",
     };
-    const review = useDraftReviewScopeValue({
-      projectId: "project",
-      work: { id: workId, projectId: "project", name: workId, archivedAt: null } as never,
-      stateOwner,
-    });
     return (
       <EditorReviewHandoffProvider
         projectId="project"
         openContextRoute={async () => ({ kind: "applied" })}
       >
-        <EditorReviewAddressOwner
-          reviewAddressAdmission="admitted"
+        <ReviewAddressOwner
+          admission="pending"
           review={review}
-          requestedItemKey={branch ?? undefined}
-          activeScreen="context"
-          activeScheme="kb"
-          activePath="/Same"
-          activeDocumentId="document"
-          onSetItemKey={(next) => {
-            rewrites.push(`${workId}:${next ?? "plain"}`);
-            setBranch(next);
+          presented={{
+            container: "editor",
+            documentId: change === "work" ? "document" : null,
+            scheme: "kb",
+            path: "/Same",
+            review: address,
+            draftOnly: false,
           }}
+          port={{ write, admit: vi.fn() }}
         />
         <output>
-          {workId}:{branch ?? "plain"}:{review.controller.inlineReview?.itemKey ?? "no-review"}
+          {address.workId}:{address.itemKey}
         </output>
       </EditorReviewHandoffProvider>
     );
   }
-  try {
-    await withReactRoot(
-      <QueryClientProvider client={client}>
-        <AccountFeatureTestProvider accountId="binding-probe">
-          <Harness />
-        </AccountFeatureTestProvider>
-      </QueryClientProvider>,
-      async () => {
-        await act(async () => enter());
-        expect(document.querySelector("output")?.textContent).toBe("a:branch-a:branch-a");
-        rewrites.length = 0;
-        await act(async () => switchWork());
-        expect(rewrites).not.toContain("b:branch-a");
-        expect(document.querySelector("output")?.textContent).toBe("b:branch-b:no-review");
-      },
-      { drainMacrotask: true },
+  await withReactRoot(<Harness />, async () => {
+    expect(exit).not.toHaveBeenCalled();
+    await act(async () => switchRequest());
+    expect(exit).toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(document.querySelector("output")?.textContent).toBe(
+      change === "work" ? "b:item-a" : "a:item-b",
     );
-  } finally {
-    client.clear();
-  }
+  });
 });
-it("an explicit branch switch wins over the old unresolved same-locator review", async () => {
-  let switchBranch!: () => void;
+
+const owned = {
+  container: "editor" as const,
+  workId: "a",
+  itemKey: "item-a",
+  documentId: "document",
+  locator: { scheme: "kb" as const, path: "/Confirmed" },
+};
+it("Exit before identity settles consumes only the confirmed owned locator", () => {
+  expect(exitedReviewOwnsAddress(owned, { ...owned, documentId: null })).toBe(true);
+  expect(
+    exitedReviewOwnsAddress(owned, {
+      ...owned,
+      documentId: null,
+      locator: { scheme: "kb", path: "/Guess" },
+    }),
+  ).toBe(false);
+  expect(exitedReviewOwnsAddress(owned, { ...owned, documentId: "other" })).toBe(false);
+  expect(
+    exitedReviewOwnsAddress(owned, { ...owned, locator: { scheme: "user", path: "/Moved" } }),
+  ).toBe(true);
+});
+it("Editor and Dock never consume one another's Exit", () => {
+  expect(exitedReviewOwnsAddress(owned, { ...owned, container: "dock" })).toBe(false);
+});
+
+it("Exit during unresolved identity clears only the owner's confirmed request", async () => {
+  let leave!: () => void;
+  const write = vi.fn();
   function Harness() {
-    const [branch, setBranch] = useState<string | null>("a");
-    switchBranch = () => setBranch("b");
-    const groups = ["a", "b"].map((id) => ({
-      documentId: `doc-${id}`,
-      contextLocation: { scheme: "kb", path: "/Collision" },
-      draft: { itemKey: id },
-    }));
+    const [exited, setExited] = useState(false);
+    leave = () => setExited(true);
     const review = {
       controller: {
-        workId: "work",
-        inlineReview: { documentId: "doc-a", itemKey: "a" },
-        exitInlineReview: () => undefined,
+        workId: "a",
+        inlineReview: exited ? null : { documentId: "document", itemKey: "item-a" },
+        exitInlineReview: vi.fn(),
       },
-      drafts: { status: "ready" },
-      groups,
-      groupForDocument: (id: string) => groups.find((group) => group.documentId === id),
+      files: [],
+      fileForDocument: () => ({ contextLocation: { scheme: "kb", path: "/Confirmed" } }),
     } as unknown as DraftReviewContextValue;
     return (
       <EditorReviewHandoffProvider
         projectId="project"
         openContextRoute={async () => ({ kind: "applied" })}
       >
-        <EditorReviewAddressOwner
-          reviewAddressAdmission="pending"
+        <ReviewAddressOwner
+          admission={exited ? "pending" : "admitted"}
           review={review}
-          requestedItemKey={branch ?? undefined}
-          activeScreen="context"
-          activeScheme="kb"
-          activePath="/Collision"
-          onSetItemKey={setBranch}
+          presented={{
+            container: "editor",
+            documentId: exited ? null : "document",
+            scheme: "kb",
+            path: "/Confirmed",
+            review: { workId: "a", itemKey: "item-a" },
+            draftOnly: false,
+          }}
+          port={{ write, admit: vi.fn() }}
         />
-        <output>{branch}</output>
       </EditorReviewHandoffProvider>
     );
   }
   await withReactRoot(<Harness />, async () => {
-    await act(async () => switchBranch());
-    expect(document.querySelector("output")?.textContent).toBe("b");
+    expect(write).not.toHaveBeenCalled();
+    await act(async () => leave());
+    expect(write).toHaveBeenCalledExactlyOnceWith(null);
   });
 });

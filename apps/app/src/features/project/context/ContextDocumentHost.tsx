@@ -93,7 +93,7 @@ export function ContextDocumentHost({
     retry?: () => void,
   ): ReactNode => {
     if (!mountEditor) return null;
-    const hosted = session !== null || branchOnly;
+    const hosted = session !== null || branchOnly || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
     if (session) {

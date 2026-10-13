@@ -22,6 +22,7 @@ function Restore({ review }: { review: DraftReviewContextValue }) {
   const admit = useOpenEditorReview();
   return (
     <ReviewAddressOwner
+      admission="admitted"
       review={review}
       presented={{
         container: "editor",

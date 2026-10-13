@@ -12,7 +12,6 @@ import {
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
@@ -39,6 +38,7 @@ import {
 } from "./chat-navigation";
 import {
   bindDocumentAddressReview,
+  documentAddressQueryOptions,
   reviewAddressRouteBinding,
   reviewBoundAddressResult,
 } from "./document-address-review";
@@ -357,35 +357,21 @@ function ReadableProjectDestination({
         refetch: () => undefined,
       };
   const addressBinding = bindDocumentAddressReview(address.itemKey, addressWorkId);
-  const addressReview = addressBinding.kind === "review" ? addressBinding.review : undefined;
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
-  const documentLookup = useQuery({
-    queryKey: [
-      ...projectQueryKeys.documentAddresses(projectId),
-      documentDestination?.scheme,
-      documentDestination?.path,
-      addressOwner.rootThreadId ?? addressOwner.workId,
-      address.itemKey ? addressWorkId : null,
-      address.itemKey,
-      addressCatalog?.normalized.generation,
-      addressCatalog?.normalized.appliedRevision,
-    ],
-    queryFn: () => {
-      if (!documentDestination) throw new Error("Document address is required");
-      return getProjectDocumentAddress(
+  const documentLookup = useQuery(
+    documentAddressQueryOptions(
+      {
         projectId,
-        documentDestination.scheme,
-        documentDestination.path,
-        { ...addressOwner, review: addressReview },
-      );
-    },
-    enabled:
-      !!documentDestination &&
-      editorWork.status === "present" &&
-      (addressBinding.kind === "plain" || addressBinding.kind === "review"),
-    staleTime: 0,
-    retry: false,
-  });
+        destination: documentDestination,
+        owner: addressOwner,
+        binding: addressBinding,
+        workResolved: editorWork.status === "present",
+        catalogGeneration: addressCatalog?.normalized.generation,
+        catalogRevision: addressCatalog?.normalized.appliedRevision,
+      },
+      getProjectDocumentAddress,
+    ),
+  );
   const { selection } = useContextRemovalProject(projectId);
   const boundDocumentId = routeContinuityDocumentId({
     selection,
@@ -450,6 +436,7 @@ function ReadableProjectDestination({
     });
   }, [contextRemoval, projectId, reviewRouteBinding?.revision, reviewRouteBinding?.documentId]);
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
+  const reviewItemKey = address.itemKey ?? draftOnly?.draft.itemKey;
   const addressDocumentId =
     documentResult && documentResult.kind !== "unavailable"
       ? documentResult.document.documentId
@@ -502,14 +489,16 @@ function ReadableProjectDestination({
       (localDocumentId
         ? undefined
         : (documentIssue ??
-          (draftOnly
+          (reviewItemKey
             ? // Review installs the tab; until it has, the address is still being repaired.
-              address.itemKey === draftOnly.draft.itemKey &&
-              workspaceTabs.some((tab) =>
-                matchesReviewItem(tab, {
-                  reviewWorkId: workId ?? "",
-                  reviewItemKey: draftOnly.draft.itemKey,
-                }),
+              address.itemKey === reviewItemKey &&
+              workspaceTabs.some(
+                (tab) =>
+                  (address.itemKey && !tab.draftOnly && tab.documentId === addressDocumentId) ||
+                  matchesReviewItem(tab, {
+                    reviewWorkId: workId ?? "",
+                    reviewItemKey,
+                  }),
               )
               ? undefined
               : "loading"
@@ -773,7 +762,7 @@ function ReadableProjectDestination({
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
               result={documentResult}
               localFile={reconciledDocumentAddress.localFile}
-              draftOnlyId={draftOnly?.draft.itemKey}
+              reviewItemKey={reviewItemKey}
               workId={workId}
               noWorkId={noWorkId}
               navigation={navigation}
