@@ -38,7 +38,7 @@ function resolveApiKey(auth: ProviderConfig["auth"]): string | undefined {
 export function createOpenAIResponsesAdapter(config: ProviderConfig): ProviderAdapter {
   const apiKey = resolveApiKey(config.auth);
   const client = new OpenAI({
-    apiKey,
+    apiKey: apiKey ?? "not-needed",
     ...(config.baseUrl ? { baseURL: config.baseUrl } : {}),
     defaultHeaders: config.auth?.headers,
     // The gateway owns retries (streamWithRetry + retry.maxAttempts); SDK retries would multiply them.

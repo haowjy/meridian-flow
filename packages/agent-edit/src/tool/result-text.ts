@@ -52,9 +52,6 @@ function statusLine(result: AgentEditResultV1): string {
         : `copied: ${blockCount(count)} from ${result.copied.from}`,
     );
   }
-  if (result.reversal && result.reversal.writes.length > 0) {
-    facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
-  }
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
@@ -75,7 +72,7 @@ function blockCount(count: number): string {
  * A finished call's result in brief, for one history line (D48): the status
  * when it isn't plain success, the write handle, `words` (the size of the
  * content the call sent, which only the host has), the draft it changed, what it
- * copied or reversed, and a read's block count.
+ * copied, and a read's block count.
  */
 export function agentEditResultSummary(result: AgentEditResultV1, words?: number): string {
   const facts: string[] = [];
@@ -86,8 +83,6 @@ export function agentEditResultSummary(result: AgentEditResultV1, words?: number
   if (result.destination === "draft" && result.draftWork !== undefined)
     facts.push(`version: ${writeVersion(result)}`);
   if (result.copied?.blocks !== undefined) facts.push(`copied ${blockCount(result.copied.blocks)}`);
-  if (result.reversal && result.reversal.writes.length > 0)
-    facts.push(`${result.reversal.direction}: ${result.reversal.writes.join(", ")}`);
   if (result.read) {
     const count = documentItems(result.blocks ?? []).length;
     const total = result.read.documentBlocks;
