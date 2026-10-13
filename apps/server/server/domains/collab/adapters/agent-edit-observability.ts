@@ -3,8 +3,6 @@ import type {
   createAgentEditCore,
   LinkSpliceFallbackDetail,
   ResponseLifecycleClaimDiscardedDetail,
-  ReversalNoticeFailedDetail,
-  ReversalNoticePort,
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
@@ -16,6 +14,7 @@ import type { DocumentProjectionDiagnostics } from "../domain/document-projectio
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
+import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service.js";
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
@@ -217,23 +216,6 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
           threadId: input.threadId,
           documentIds: [...input.documentIds],
           ...(input.responseId ? { responseId: input.responseId } : {}),
-          ...(input.affectedBlockHashes
-            ? { affectedBlockHashes: [...input.affectedBlockHashes] }
-            : {}),
-          cause: unknownToEventPayload(input.cause),
-        },
-      });
-    },
-    degradedRecordFailedAfterDurability(input) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.model_context_notices",
-        name: "degraded_record_failed_after_durability",
-        payload: {
-          threadId: input.threadId,
-          documentIds: [...input.documentIds],
-          ...(input.responseId ? { responseId: input.responseId } : {}),
           cause: unknownToEventPayload(input.cause),
         },
       });
@@ -243,28 +225,21 @@ export function createReversalNoticeDiagnostics(eventSink?: EventSink): Reversal
 
 export function createAgentEditObservabilityOptions(input: {
   eventSink?: EventSink;
-  reversalNoticePort?: ReversalNoticePort;
 }): Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "reversalNoticePort"
-  | "onInvariantViolation"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
-  | "onReversalNoticeFailed"
   | "onLinkSpliceFallback"
 > {
   return {
-    ...(input.reversalNoticePort ? { reversalNoticePort: input.reversalNoticePort } : {}),
-    onInvariantViolation: invariantPolicy(input.eventSink),
     onResponseLifecycleError: responseLifecycleObserver(input.eventSink),
     onResponseClaimDiscarded: responseClaimDiscardedObserver(input.eventSink),
     onResponseCommitterTransition: responseCommitterTransitionObserver(input.eventSink),
     onIdempotencyHit: idempotencyHitObserver(input.eventSink),
     onUnexpectedWriteError: unexpectedWriteErrorObserver(input.eventSink),
-    onReversalNoticeFailed: reversalNoticeFailedObserver(input.eventSink),
     onLinkSpliceFallback: linkSpliceFallbackObserver(input.eventSink),
   };
 }
@@ -312,25 +287,6 @@ function unexpectedWriteErrorObserver(
         ...unknownToEventPayload(event.cause),
       },
     });
-  };
-}
-
-function invariantPolicy(eventSink?: EventSink): (message: string) => void {
-  return (message) => {
-    if (process.env.NODE_ENV !== "production") throw new Error(message);
-
-    if (eventSink) {
-      try {
-        emitEvent(eventSink, {
-          level: "error",
-          source: "collab.agent_edit",
-          name: "invariant_violation",
-          payload: { errorCode: "invariant_violation" },
-        });
-      } catch {
-        // Invariant reporting is best-effort after production policy has handled it.
-      }
-    }
   };
 }
 
@@ -398,22 +354,27 @@ function idempotencyHitObserver(
   };
 }
 
-function reversalNoticeFailedObserver(
-  eventSink?: EventSink,
-): NonNullable<Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"]> {
-  return (event: ReversalNoticeFailedDetail) => {
-    if (eventSink) {
-      try {
-        emitEvent(eventSink, {
-          level: "error",
-          source: "collab.undo_notifications",
-          name: "record.failed",
-          payload: { ...event },
-        });
-        return;
-      } catch {
-        // Notice diagnostics cannot change the already-durable reversal outcome.
-      }
-    }
+export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
+  return {
+    dispositionMaintenanceFailed({ documentId, draftId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.draft_review",
+        name: "disposition.maintenance_failed",
+        correlation: { documentId },
+        payload: { draftId, error: String(cause) },
+      });
+    },
+    unattributedHunks({ documentId, hunkIds }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft_review",
+        name: "attribution.incomplete",
+        correlation: { documentId },
+        payload: { hunkCount: hunkIds.length },
+      });
+    },
   };
 }

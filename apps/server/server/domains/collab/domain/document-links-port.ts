@@ -39,7 +39,9 @@ export function createScopedDocumentLinks(input: {
 
 /** The live utility core: every command reads and writes the live tree. */
 export function liveViewFor(_documentId: string, context: WriteContext | undefined): LinkView {
-  return context?.responseId ? { kind: "live", responseId: context.responseId } : { kind: "live" };
+  return context?.responseIdentity?.editScopeId
+    ? { kind: "live", responseId: context.responseIdentity.editScopeId }
+    : { kind: "live" };
 }
 
 /** The registry rows for minted ahead refs: each under the project its holder scope had. */

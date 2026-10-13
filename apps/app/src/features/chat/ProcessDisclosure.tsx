@@ -20,10 +20,12 @@ import { cn } from "@/lib/utils";
 type ProcessDisclosureProps = {
   /** Also the button's accessible name: a screen reader hears what the fold shows. */
   label: ReactNode;
+  /** Tool calls folded inside, so a reveal can land on a fold it must leave closed. */
+  toolCallIds?: readonly string[];
   children: ReactNode;
 };
 
-export function ProcessDisclosure({ label, children }: ProcessDisclosureProps) {
+export function ProcessDisclosure({ label, toolCallIds, children }: ProcessDisclosureProps) {
   const [open, setOpen] = useState(false);
   const [hasOpened, setHasOpened] = useState(false);
   const panelId = useId();
@@ -42,6 +44,7 @@ export function ProcessDisclosure({ label, children }: ProcessDisclosureProps) {
         onClick={handleToggle}
         aria-expanded={open}
         aria-controls={panelId}
+        data-tool-call-ids={toolCallIds?.length ? toolCallIds.join(" ") : undefined}
         className="disclosure-trigger justify-start"
       >
         <ChevronRight

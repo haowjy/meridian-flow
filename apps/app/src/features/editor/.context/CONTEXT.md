@@ -16,7 +16,7 @@ they serve and belong to the rebuild, not to incremental patches here. See
 The rest of this surface is the prose column, the sync indicator, and the
 notice/popover surfaces below. Image ingress is not here: it is a lane of its
 own ([`surfaces/images/AGENTS.md`](../surfaces/images/AGENTS.md)) whose runtime
-`EditorView` mounts, exactly as it mounts the link runtime.
+`SessionEditor` mounts, exactly as it mounts the link runtime.
 
 Block alignment is a shared command module, not the toolbar's own:
 `block-alignment.ts` resolves every alignable block a selection touches (a
@@ -75,38 +75,114 @@ that moves, so they read `anchorRect` rather than a captured point. Both are
 
 ## Draft chrome
 
-Two self-contained surfaces, both resolving their own state from
-`DraftReviewProvider` (never props-drilled):
+Desktop draft chrome reads the presented review value from `DraftReviewProvider`. Phone
+`MobileDocumentReview` passes one shared header model to top and bottom chrome:
 
-- `DraftReviewChip` — the pending-changes nudge, mounted by the context
-  feature's `DocumentIdentityBar` in the breadcrumb row. Hides itself while
-  its document is under inline review.
-- `DraftReviewHeader` — the review-mode strip, rendered by `ContextViewer`
-  ABOVE the identity bar (order: tab strip → review strip → identity bar →
-  prose). Matches the DraftDock strip's geometry and tone
-  (`min-h-7`, `bg-dock-surface`, `text-caption`); destructive verb left,
-  jade primary pill far right — the same order as the dock.
+- `DraftReviewChip` — the version chip on a live document with a pending
+  draft, mounted by the context feature's `DocumentIdentityBar` in the
+  breadcrumb row. It is the same `DraftSwitcher` menu as in review, showing
+  Live; its Draft item opens the review.
+- `DraftReviewBand` — the review controls inside `DocumentIdentityBar`, in the
+  same row as the path (there is no separate header above it), once
+  `inlineReview.shown`: the version chip (Draft), the document's change-list
+  button (an icon, in every review state, opening a popover with
+  `DocumentChanges`), the stepper, Show changes,
+  Discard draft and Apply draft. The row takes the dock tint while a draft is
+  reviewed. As the row narrows it collapses in a fixed order (folders, Show
+  changes label, stepper count, file name, button labels); the chip, the list
+  icon, Discard and Apply stay. A line under the row appears only for a failed whole-draft
+  command, "No changes left" with Next draft, or "Formatting changes remain".
+  Its parts live in `features/draft-review`.
+- The focused change's bar is the `review-change-bar` chrome surface
+  (`surfaces/review`). It never covers manuscript text. With room in the right
+  margin (`place-review-bar`: at least 132px between the text column and the
+  pane edge, 200px when the bar carries "Discard with your edits") it is portalled into the manuscript's scroll pane beside the
+  change's first line. Without, the surface asks the inline-review plugin for a
+  bar slot (`setInlineReviewBarSlot`): an empty non-editable block widget after
+  the paragraph the change ends in, which the bar is portalled into, so the
+  text below moves down for it. Both scroll with the text. `useInlineReviewFocus` keeps the marks and the controller saying the
+  same thing (Show changes, the focused change, a click on a mark, the pulse on
+  arrivals).
 
 The chip and header are mutually exclusive by the chip's own inline-review
-check, not by a shared slot.
+check, not by a shared slot. Both read the same `shown` flag, so the swap
+happens in one frame.
 
-The review manuscript is the server draft projection, not a track-changes
-composition. Inline decorations may style ranges that exist in that projection,
-but must not inject deleted live prose or blocks. Zero-content seams mark
-pure-deletion locations for visible Changes-card navigation. Before/after
-content belongs in the dock's Changes cards. The review editor stays editable:
-the draft is a Yjs room and the writer is one more peer in it, so keystrokes in
-review land in the draft branch rather than live. The review header is the
-visible signal that the draft surface is active.
+**Paint hold.** Pane continuity belongs to the shared
+[`PaintHold`](../../../components/app/PaintHold.md). Capture points declare
+painted/pending/failed surfaces; only finished paint replaces its retained
+snapshot, never a loading status or a pending-token gap. `EditorView` chooses terminal
+notices before settled live, painted review, requested-but-pending review, or
+ordinary live. Warm live and constructing review surfaces stay mounted in
+inactive paint scopes. `EditorView` owns a construction receipt addressed by mount identity and session
+GUID. A requested review waits for that editor's model acknowledgement (or
+1.5 s), including draft-only entry; the room owner owns no paint state. `setInlineReviewShown(reviewVisible ||
+settled)` still synchronizes the body, header and completion focus in layout.
+A draft-only tab without a review shows a terminal Close card. Surface wrappers
+carry `data-editor-surface="live|review"`; the inert copy is `data-paint-hold`.
 
-### Rejected placements
+**Seamless generation change.** A Discard re-forks the draft and the review
+editor is replaced; the writer must not see it. (1) *Original from the click:* a
+discarded change stays in the inline model flagged `restoring`; its insertion is
+hidden (`meridian-review-restoring`, whole paragraphs it fills included) and its
+removed text is drawn as plain prose (`meridian-review-restored`). A Discard
+accepted while a cover already holds the old review shows on the cover too: the
+cover is its capture plus the current projection of the intents
+(`PaintHold.projectCover`, `projectRestoring`), rebuilt when they move. The marks and removals a Discard hides keep their markup under a class (`meridian-review-restoring` / `-restored`), so the cover toggles them both ways and a Discard refused under it comes back; the review keeps the Discards made since its cover's review was on screen. The cover reports its reader's first visible block (`readCoverView`) by Yjs item, never by what the block says. At capture `annotateCoverBlocks` (one pass over the binding, the document and the DOM, linear in blocks) stamps each real top-level block of the copy with its `blockItemKey` (`data-review-block-id`). A block the old review did not have, an original a Discard restores, is a paragraph of its removal widget carrying the live block it was (the server names it on the hunk: `deletedBlock.blockId`, `deletedBlockId`; a re-forked draft keeps the live items). The successor looks the item up in a table of its own items built once, so an item it no longer has names nothing. Only a paragraph the server did not name falls back to the nearest stamped block and the distance to it, and a cover with no stamps to a count; both are approximate (a block inserted between moves them) and the view says so (`near`, `block`). The widget says how many blocks it stands for (`data-review-removed-blocks`), never its children (an open fold also holds a button). A folded removal keeps its paragraphs hidden under the fold class, so restoring it reveals them and suppresses the button, and withdrawing returns the fold. Restored originals are manuscript prose in every state (`inline-review.css` last block: no removal colour, emphasis, pulse, fold, click) while their markup stays for a refusal. A refusal drops the
+flag and the change returns with its marks. (2) *Place:* `ReviewPlaceCapture`
+takes the first visible block (Yjs anchor, stable block index, pixel offset), the
+caret and focus ownership in the commit that removes the review editor
+(`core/editor/review-place.ts`, memory only, keyed by draft). Native review input
+is consumed synchronously by ProseMirror's own DOM observer before a projection
+can repaint its selection. The caret's exact relative identity includes typing
+after the command click. If that identity is absent in the successor, captured
+text-item edges are tried nearest-first within the same identified block; a block
+inserted above or text inserted inside it cannot redirect the fallback. No source
+caret offsets are carried. If no old text survives, restore inside the surviving
+block. The successor
+shows only once it has synced, carried the writer's unsent edits and projected
+the review; `PaintHold.afterRelease` then restores selection (never scrolled to),
+the viewport and focus in the task that lifts the cover. A writer's explicit
+navigation in between (`noteReviewNavigation`, addressed to the draft and naming
+the change by its keys) replaces the held viewport. The cover scrolls (its prose
+is inert, typing is blocked), and how far it was scrolled is added to the
+restored viewport. The same place is applied to
+the warm live editor when a last Apply or Discard hands the page over. (3)
+*Chrome is the draft's:* `shown` is not cleared by a generation change, so the
+header, change list and phone sheet stay; the open review's list is held while
+the review and its preview disagree about the generation. Discard and Apply both
+move the focus to the next change and scroll to it; the place held across the swap
+is the viewport as it is then.
 
-| Placement | Reason rejected |
-|---|---|
-| Floating card pinned top-left | Card chrome broke the no-lines stack; overlay covered the first line and needed a `pt-16` reserve |
-| Centered over the page | Balanced but least connected to chrome or text; still covers first line |
-| Corner-right palette | Out of the writing path but further from reach |
-| Full-width strip above editor | Mismatched the centered text column; read as stray chrome |
+For generation, completion and command ordering, use the
+[draft-review lifecycle reference](../../draft-review/.context/draft-review.md).
+`SessionEditor` constructs the common surface; `EditorView` composes review-only
+registration, model sync and focus.
+
+The review manuscript is the server draft projection plus decorations, in the
+manner of suggestion mode. Insertions are inline decorations over text that
+exists in the projection (green AI, gold writer, gold inside green for a writer
+edit inside an AI change, dashed grey when the server flags `mergeArtifact`: a
+true CRDT interleave, not merely two authors in one hunk).
+Removed live text is a read-only widget decoration (`removal-widget.ts`), struck
+through where it was: crimson for the AI, gold for the writer, each stretch in its
+remover's colour (a text hunk's `deletedSpans`; a block hunk's removal is read
+from its owning operations), never part of the
+Y.Doc or the TipTap document, so it cannot be typed into, selected into or
+saved. A removal the server could not attribute is struck in no author's
+colour. Long removals (over 200 removed characters) fold to "N paragraphs
+removed" (between blocks) or "N words removed" (inside a paragraph) and open on
+click. A pointer click on the struck text puts the caret at the removal's
+position (for a removed block, before or after it by the clicked half); the
+removal itself stays untouched. Focus emphasizes every operation sharing the
+change's `closureClassId`. The review editor stays editable on desktop: the
+draft is a Yjs room and the writer is one more peer in it, so keystrokes in
+review land in the draft branch rather than live. The phone mounts it
+read-only (`features/project/mobile`).
+`setInlineReviewMarksVisible(false)` hides every mark and removal without
+remounting; the full projection (including typing while hidden), model,
+selection and open folds survive. Review decoration styles live in
+`inline-review.css`, imported by `editor.css` before common node styles.
 
 ## Component API
 
@@ -125,7 +201,7 @@ than gating on `isActive` alone.
 
 ### Insertion and document catalogs
 
-`EditorView` owns §5.7's eleven-entry slash catalog and the `[[` menu's
+`SessionEditor` owns §5.7's eleven-entry slash catalog and the `[[` menu's
 document list, and hands `useMountedEditor` a *getter* for each, never the
 catalog itself. The extension mounts as a construction fact;
 its localized labels, group headings, hints, and the door into the image picker
@@ -141,7 +217,7 @@ is the resolver's own candidate set
 
 ## The editor's scope
 
-One plain value, `{ projectId, workId }`, provided by `EditorView` around
+One plain value, `{ projectId, workId }`, provided by `SessionEditor` around
 its host (`editor-scope.tsx`) and read with `useEditorScope()`. The Editor has
 no Work: for links, Scratch and Uploads holders use the replica's projected
 resource location `workId` (including No Work); manuscript, kb, user, and
@@ -153,9 +229,9 @@ This same value drives the local link index, `@` and LinkForm catalogs,
 resolution/cache registration, contextual Create, and link destinations.
 Scope is deliberately NOT part of `EditorMountIdentity`: moving a holder
 must not destroy its collaborative editor or UndoManager. Route `workId`
-and `reviewWorkId` remain separate inputs for draft navigation and review.
+and the Editor review's Work remain separate authorities for navigation and review.
 
-The runtimes `EditorView` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
+The runtimes `SessionEditor` mounts (`ProjectLinkRuntime`, `ImageIngressRuntime`)
 are ports and render nothing; the surfaces those lanes show the writer mount
 through the chrome host like every other one. See
 [`surfaces/link/.context/CONTEXT.md`](../surfaces/link/.context/CONTEXT.md).
@@ -181,7 +257,7 @@ native behavior; both hosts opt in.
 
 ## Schema fence
 
-`EditorView` subscribes to its `DocumentSessionSnapshot` and derives live
+`SessionEditor` subscribes to its `DocumentSessionSnapshot` and derives live
 editability as the caller's `editable` input AND the absence of
 `snapshot.schemaFence`. A fence raised after mount reaches the existing
 `useMountedEditor()` surface-options seam, which calls `setEditable(false)`
@@ -193,7 +269,7 @@ state.
 
 ## Schema repair report
 
-`EditorView` delays binding behind the bounded evidence horizon and renders the
+`SessionEditor` delays binding behind the bounded evidence horizon and renders the
 existing pending shell while it waits. A timeout degrades evidence but always
 continues into an editable mount.
 
@@ -216,7 +292,7 @@ mounts no projection at all, and a surface with no projection to read stands
 down on its own.
 
 Detail comes from the shared trail-detail cache in
-[`features/change-trail`](../../change-trail/AGENTS.md). `EditorView` prefetches
+[`features/change-trail`](../../change-trail/AGENTS.md). `SessionEditor` prefetches
 it for every agent mark on screen, so the popover normally opens with its
 evidence already available; while a first read is genuinely in flight the
 actions row is withheld rather than rendered half-empty, and only actor and
@@ -238,3 +314,12 @@ pointer close restores the held selection. Keyboard activation moves focus into
 the popover; Escape or close returns focus to the mark's current span. Neither
 hands anything back when another surface opened in its place — Mod+K reaches the
 popover as a close, and the caret then belongs to what opened.
+
+### Writer handoff loss
+
+`WriterHandoffLossNotice` reports unrecoverable typing on the addressed document,
+not on a vanished review or in a global toast. Review room refs write one local
+loss flag per project/document into the account-owned QueryClient. The desktop
+Editor/dock chrome and phone document host render that same dismissible sentence,
+including after review ends or the document is reopened. It does not expire off
+screen, survive account replacement, gate writing, or keep a review active.

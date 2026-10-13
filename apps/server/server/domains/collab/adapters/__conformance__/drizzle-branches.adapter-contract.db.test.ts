@@ -37,7 +37,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { useRollbackTestDatabase, deleteDrizzleRows } = await import(
       "../../../../test-support/drizzle-reset.js"
     );
-    const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
+    const { createFixtureBranchStore } = await import("../../test-support/fixture-branch-store.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
     const {
       createDrizzleBranchJournalReadStore,
@@ -78,8 +78,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const THREAD_ID = "00000000-0000-4000-8000-000000000606";
     const TURN_ID = "00000000-0000-4000-8000-000000000607";
 
+    const measuredQueries: string[] = [];
+    let captureQueries = false;
     const database = useRollbackTestDatabase(DATABASE_URL, {
       max: 4,
+      postgres: {
+        debug: (_connection, query) => {
+          if (captureQueries) measuredQueries.push(query);
+        },
+      },
       prepareSuite: async (db) => {
         await deleteDrizzleRows(db, [users]);
         await db.insert(users).values(conformanceUserValues(USER_ID, "drizzle-branches"));
@@ -151,7 +158,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       async recover() {},
     };
     function createBranchStore() {
-      return createDrizzleBranchStore(db, {
+      return createFixtureBranchStore(db, {
         journal: livePersistence.journal,
         lifecycle: livePersistence.lifecycle,
         coordinator: liveCoordinator,
@@ -225,6 +232,84 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       liveDocs.clear();
     });
 
+    it("bulk-appends forty segment rows with one ownership lookup and two pending scans", async () => {
+      const { createWorkProjectionMutation } = await import(
+        "../../../projects/adapters/work-projection-mutation.js"
+      );
+      const { createDrizzleContextCatalog } = await import(
+        "../../../context/adapters/context-catalog.js"
+      );
+      const { createDrizzleProjectContextAvailability } = await import(
+        "../../../context/adapters/project-context-availability.js"
+      );
+      const availability = createDrizzleProjectContextAvailability(db);
+      const catalog = createDrizzleContextCatalog(db, undefined, {
+        availabilityMutations: availability,
+      });
+      const projection = createWorkProjectionMutation({ db, availability, catalog });
+      const measuredStore = createFixtureBranchStore(db, undefined, undefined, projection);
+      const base = docWithText("live");
+      const branch = await measuredStore.ensureWorkDraftBranch({
+        documentId: DOC_ID as never,
+        workId: WORK_ID as never,
+        liveDoc: base,
+      });
+      const snapshot = await measuredStore.getBranch(branch.branchId);
+      if (!snapshot) throw new Error("missing batch target");
+      const source = new Y.Doc({ gc: false });
+      Y.applyUpdate(source, snapshot.state);
+      const { createDrizzleJournal } = await import("../drizzle-journal.js");
+      const wId = await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID);
+      const rows = Array.from({ length: 40 }, (_, index) => {
+        source.clientID = 10000 + index;
+        const before = Y.encodeStateVector(source);
+        source.getText("content").insert(source.getText("content").length, String(index));
+        return {
+          branchId: branch.branchId,
+          generation: snapshot.generation,
+          source: "agent" as const,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          toolCallId: "forty-segment-edit",
+          wId,
+          updateData: Y.encodeStateAsUpdate(source, before),
+        };
+      });
+      measuredQueries.length = 0;
+      captureQueries = true;
+      try {
+        const coordinator = createBranchCoordinator({ store: measuredStore });
+        expect(
+          await coordinator.commitSegmentRows({
+            branchId: branch.branchId,
+            expectedGeneration: snapshot.generation,
+            sourceDoc: source,
+            rows,
+          }),
+        ).toBe(true);
+      } finally {
+        captureQueries = false;
+      }
+      expect(measuredQueries.filter((query) => query.includes("count(distinct"))).toHaveLength(2);
+      expect(
+        measuredQueries.filter((query) =>
+          query.startsWith('select "id", "work_id" from "document_branches"'),
+        ),
+      ).toHaveLength(1);
+      expect(
+        measuredQueries.filter((query) => query.startsWith('insert into "branch_write_journal"')),
+      ).toHaveLength(1);
+      const persisted = await db
+        .select({ toolCallId: branchWriteJournal.toolCallId })
+        .from(branchWriteJournal)
+        .where(eq(branchWriteJournal.branchId, branch.branchId))
+        .orderBy(branchWriteJournal.id);
+      expect(persisted.map((row) => row.toolCallId)).toEqual(rows.map((row) => row.toolCallId));
+      console.log("forty-segment adapter: ownership=1 pending-scans=2 journal-inserts=1");
+      source.destroy();
+      base.destroy();
+    });
+
     it("reseeds a clean thread peer under the reassigned primary Work", async () => {
       const live = docWithText("live prose");
       const oldPeer = await store.ensureThreadPeerBranch({
@@ -284,7 +369,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
-      const live = docWithText("live base");
+      // Pending counts describe visible manuscript effect, not arbitrary Y.Text roots.
+      const model = yProsemirrorModel(buildDocumentSchema());
+      const codec = mdxCodec({ schema: buildDocumentSchema() });
+      const proseDoc = (text: string) => {
+        const doc = createCollabYDoc({ gc: false });
+        model.insertBlocks(toDocHandle(doc), null, codec.parse(text));
+        return doc;
+      };
+      const live = proseDoc("live base");
       const work = await store.ensureWorkDraftBranch({
         documentId: DOC_ID as never,
         workId: WORK_ID as never,
@@ -295,7 +388,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         store,
         onBranchReset: ({ generation }) => resets.push(generation),
       });
-      const draft = docWithText("draft row before discard");
+      const draft = proseDoc("draft row before discard");
       await coordinator.commitUpdate({
         branchId: work.branchId,
         updateData: Y.encodeStateAsUpdate(draft),
@@ -931,12 +1024,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expectedState: branch.state,
         state: updateData,
         stateVector: Y.encodeStateVector(changed),
-        journal: {
-          branchId: branch.branchId,
-          generation: branch.generation + 1,
-          updateData,
-          source: "agent",
-        },
+        journals: [
+          {
+            branchId: branch.branchId,
+            generation: branch.generation + 1,
+            updateData,
+            source: "agent",
+          },
+        ],
       });
       const reloaded = await store.getBranch(branch.branchId);
       const journalRows = await db
@@ -979,14 +1074,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expectedState: branch.state,
         state: Y.encodeStateAsUpdate(changed),
         stateVector: Y.encodeStateVector(changed),
-        journal: {
-          branchId: branch.branchId,
-          generation: branch.generation,
-          expectedJournalWatermark: planned.id,
-          expectedJournalRevision: `${planned.id}:active`,
-          updateData: Y.encodeStateAsUpdate(changed),
-          source: "agent",
-        },
+        journals: [
+          {
+            branchId: branch.branchId,
+            generation: branch.generation,
+            expectedJournalWatermark: planned.id,
+            expectedJournalRevision: `${planned.id}:active`,
+            updateData: Y.encodeStateAsUpdate(changed),
+            source: "agent",
+          },
+        ],
       });
       const reloaded = await store.getBranch(branch.branchId);
       const rows = await db
