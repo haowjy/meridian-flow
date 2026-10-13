@@ -3135,8 +3135,8 @@ msgid "Open source chat {name}"
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
-msgid "Open the chat that wrote this change"
-msgstr ""
+#~ msgid "Open the chat that wrote this change"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Open this document in a project to upload figures."

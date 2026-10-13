@@ -107,7 +107,14 @@ export function ChangeAuthor({
   );
 }
 
-/** Measure whole names, never partial names. Overflow retains exact chat/turn links. */
+/**
+ * The first chat is always named; a bare "+N" says nothing. In menu mode names
+ * after the first appear only when they fit whole, the rest collapse into "+N",
+ * and a first name that does not fit is truncated with an ellipsis (still a
+ * working link, full title on hover). In hide mode the whole attribution
+ * disappears when it is wider than its share of the row, never a bare count.
+ * Overflow retains exact chat/turn links.
+ */
 function OverflowChats({
   mode,
   chats,
@@ -145,7 +152,7 @@ function OverflowChats({
         used = next;
         count++;
       }
-      setVisible(count);
+      setVisible(Math.max(1, count));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -231,17 +238,17 @@ function ChatLink({
   return (
     <button
       type="button"
-      title={t`Open the chat that wrote this change`}
+      title={name}
       onClick={(event) => {
         event.stopPropagation();
         openChat(chat, onOpenThread);
       }}
       className={cn(
-        "focus-ring inline-flex shrink-0 whitespace-nowrap items-center gap-0.5 self-stretch rounded-sm text-primary hover:underline",
+        "focus-ring inline-flex min-w-0 shrink whitespace-nowrap items-center gap-0.5 self-stretch rounded-sm text-primary hover:underline",
         touch && "min-h-11 min-w-11",
       )}
     >
-      <span>{name}</span>
+      <span className="truncate">{name}</span>
       <ArrowUpRight aria-hidden className="size-3 shrink-0" />
     </button>
   );
