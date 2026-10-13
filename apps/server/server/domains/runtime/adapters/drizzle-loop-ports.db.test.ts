@@ -507,6 +507,127 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         };
       }
+      it("withdraws the last blocked control atomically without poisoning later work", async () => {
+        const { repos, turn } = await assistant();
+        await db
+          .update(schema.turns)
+          .set({ status: "complete" })
+          .where(eq(schema.turns.id, turn.id));
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "usage"));
+        try {
+          const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+          const first = await delivery.enqueue({
+            ...message("compact"),
+            intent: "control",
+            body: { kind: "compact" },
+          });
+          const second = await delivery.enqueue({
+            ...message("compact-2"),
+            intent: "control",
+            body: { kind: "compact" },
+          });
+          await delivery.enqueue(notice("remaining-notice"));
+          await delivery.blockForUsage(lease);
+          await delivery.withdrawControl(THREAD_A, first.id);
+          expect((await delivery.readPendingProjection(THREAD_A)).blocked).toBeDefined();
+          await expect(
+            createTestDrizzleDelivery(db, {
+              repos,
+              runClaim,
+              eventWriter: failure,
+            }).withdrawControl(THREAD_A, second.id),
+          ).rejects.toThrow("projection unavailable");
+          expect((await delivery.readPendingProjection(THREAD_A)).blocked).toBeDefined();
+          expect((await delivery.selectPending(THREAD_A)).map((row) => row.id)).toContain(
+            second.id,
+          );
+          expect(await delivery.withdrawControl(THREAD_A, second.id)).toEqual({
+            outcome: "withdrawn",
+          });
+          const [thread] = await db
+            .select()
+            .from(schema.threads)
+            .where(eq(schema.threads.id, THREAD_A));
+          expect(thread?.inboxBlockedReason).toBeNull();
+          expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).not.toHaveProperty(
+            "pending.blocked",
+          );
+          // A refused wake with only notices cannot install a new orphan block.
+          await delivery.blockForUsage(lease);
+          const [empty] = await db
+            .select()
+            .from(schema.threads)
+            .where(eq(schema.threads.id, THREAD_A));
+          expect(empty?.inboxBlockedReason).toBeNull();
+          await delivery.enqueue(message("funded"));
+          expect((await delivery.readPendingProjection(THREAD_A)).blocked).toBeUndefined();
+        } finally {
+          await runClaim.release(lease);
+        }
+      });
+      it("persists the usage block and publishes it until the next run starts", async () => {
+        const { readPendingInbox } = await import("../loop/pending-inbox.js");
+        const { repos, turn } = await assistant();
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "usage"));
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        const row = await delivery.enqueue(message("kept"));
+        await expect(
+          createTestDrizzleDelivery(db, { repos, runClaim, eventWriter: failure }).blockForUsage(
+            lease,
+          ),
+        ).rejects.toThrow("projection unavailable");
+        expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
+        await delivery.blockForUsage(lease);
+        await runClaim.release(lease);
+        const saved = await readPendingInbox(createDrizzleInbox(db), THREAD_A);
+        const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
+        const snapshot = await buildThreadSnapshot(
+          repos,
+          {
+            async headSeq() {
+              return 0n;
+            },
+            async readModelProjectionWatermark() {
+              return 0n;
+            },
+          },
+          {
+            async read() {
+              return { kind: "asleep" as const };
+            },
+            async readMany() {
+              return new Map();
+            },
+            readRunningTurnId: runClaim.readRunningTurnId,
+            readPending: (threadId) => readPendingInbox(delivery, threadId),
+          },
+          THREAD_A,
+        );
+        expect(snapshot.liveState.pending.blocked).toEqual({ reason: "credits_exhausted" });
+        expect(saved.blocked).toEqual({ reason: "credits_exhausted" });
+        expect(saved.items.map((item) => item.id)).toEqual([row.id]);
+        const events = await journalEventsByThread(db, THREAD_A);
+        expect(events.at(-1)?.payload).toMatchObject({
+          pending: { blocked: { reason: "credits_exhausted" } },
+        });
+        const nextLease = required(await runClaim.startExecution(THREAD_A, "restored"));
+        await delivery.adoptBatch(nextLease, async () => ({
+          value: undefined,
+          turnKind: "assistant" as const,
+          turnId: turn.id,
+          messageIds: [row.id],
+        }));
+        expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
+        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).toMatchObject({
+          pending: { items: expect.any(Array) },
+        });
+        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).not.toHaveProperty(
+          "pending.blocked",
+        );
+        await runClaim.release(nextLease);
+      });
       it("rolls back enqueue when projection fails; commits one replacement before the wake", async () => {
         const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
         const writer = createDrizzleEventJournalWriter(db);

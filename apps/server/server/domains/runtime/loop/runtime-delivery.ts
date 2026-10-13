@@ -84,6 +84,8 @@ export type AdoptedBatch<TCurrent = undefined> = {
 export interface RuntimeDelivery
   extends WorkContextNotices,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
+  /** Save a credit-gated start refusal under the current run claim. */
+  blockForUsage(lease: Lease): Promise<void>;
   /** Append a transcript command to the thread's ordinary ordered inbox. */
   enqueueControl(input: {
     threadId: ThreadId;
