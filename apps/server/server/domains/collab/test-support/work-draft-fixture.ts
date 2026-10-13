@@ -158,13 +158,12 @@ export function createWorkDraftFixture(db: Database) {
     collab: ReturnType<typeof createTestCollab>,
     documentId: string,
   ): Promise<string> {
-    const drafts = await collab.draftReview.list({
-      projectId: PROJECT_ID as never,
+    const draft = await collab.draftReview.resolveItemByDocument({
       workId: WORK_ID as never,
+      documentId: documentId as never,
     });
-    const draft = drafts.find((candidate) => candidate.documentId === documentId);
-    if (!draft) throw new Error(`missing reviewable draft for ${documentId}`);
-    return draft.draftId;
+    if (!draft?.draftBranchId) throw new Error(`missing reviewable draft for ${documentId}`);
+    return draft.draftBranchId;
   }
 
   return { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId };

@@ -8,12 +8,7 @@
  */
 import { randomUUID } from "node:crypto";
 import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
-import type {
-  DraftApplyAllResponse,
-  DraftDiscardAllResponse,
-  DraftDiscardResponse,
-  DraftReviewItemWire,
-} from "@meridian/contracts/drafts";
+import type { DraftCommandResult, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { branchPushSettlementBatches, works } from "@meridian/database/schema";
@@ -30,7 +25,7 @@ import { createTreeReader, LIVE_TREE } from "../domains/context/tree/tree-view.j
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
 import {
-  type DraftApplyRouteResult,
+  type CommandRouteResult,
   handleApplyAllWorkDraftRequest,
   handleApplyWorkDraftRequest,
   handleDiscardAllWorkDraftRequest,
@@ -132,7 +127,7 @@ export interface DraftTreeCommands {
     work: ScenarioWork,
     items: "all" | readonly DocumentId[],
     options?: { draftId?: string },
-  ): Promise<DraftDiscardAllResponse | DraftDiscardResponse[]>;
+  ): Promise<DraftCommandResult | DraftCommandResult[]>;
   /**
    * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
    * the purge sweep runs.
@@ -141,7 +136,7 @@ export interface DraftTreeCommands {
   /** The Work's review list through its route core: the legacy `drafts` and the `items`. */
   review(work: ScenarioWork): ReturnType<typeof handleWorkDraftListRequest>;
   /** The review list's `items` only. */
-  items(work: ScenarioWork): Promise<DraftReviewItemWire[]>;
+  items(work: ScenarioWork): Promise<ThreadDraftListItem[]>;
   /** The statuses of every draft whose origin is the Work, oldest first. */
   draftStatuses(work: ScenarioWork): Promise<string[]>;
   /** Every settlement batch's state (they belong to no user: suites clear them per case). */
@@ -180,15 +175,15 @@ export interface DraftTreeCommands {
     work: ScenarioWork,
     documentIds: readonly DocumentId[],
     options?: { tokens?: "rendered" | "none" },
-  ): Promise<DraftApplyRouteResult[]>;
+  ): Promise<CommandRouteResult[]>;
   /**
    * The Apply all route core over the items the review list rendered (or `items`, as a
    * dock would send what it rendered earlier), for the Work's active draft (or `draftId`).
    */
   applyAll(
     work: ScenarioWork,
-    options?: { items?: readonly DraftReviewItemWire[]; draftId?: string },
-  ): Promise<DraftApplyAllResponse>;
+    options?: { items?: readonly ThreadDraftListItem[]; draftId?: string },
+  ): Promise<DraftCommandResult>;
   /** The Work draft's branch of this document, as its review room names it. */
   draftBranch(
     work: ScenarioWork,
@@ -198,9 +193,9 @@ export interface DraftTreeCommands {
 
 /** The review item of `documentId`; throws when the list has none. */
 export function itemFor(
-  items: readonly DraftReviewItemWire[],
+  items: readonly ThreadDraftListItem[],
   documentId: DocumentId,
-): DraftReviewItemWire {
+): ThreadDraftListItem {
   const item = items.find((candidate) => candidate.documentId === documentId);
   if (!item) throw new Error(`no review item for ${documentId}`);
   return item;
@@ -218,13 +213,13 @@ export function typeLink(href: string, aheadId: string) {
 }
 
 /** The tokens an item rendered, as a request carries them. */
-function refOf(item: DraftReviewItemWire) {
+function refOf(item: ThreadDraftListItem) {
   return {
-    locationToken: item.locationToken,
-    ...(item.liveTextToken === null ? {} : { liveTextToken: item.liveTextToken }),
-    ...(item.branchGenerationToken === null
+    locationToken: item.tokens.locationToken,
+    ...(item.tokens.liveTextToken === null ? {} : { liveTextToken: item.tokens.liveTextToken }),
+    ...(item.tokens.branchGenerationToken === null
       ? {}
-      : { branchGenerationToken: item.branchGenerationToken }),
+      : { branchGenerationToken: item.tokens.branchGenerationToken }),
   };
 }
 
@@ -455,16 +450,9 @@ export function draftTreeCommands(
 
   async function draftBranch(work: ScenarioWork, documentId: DocumentId) {
     const review = ports().documentSync.draftReview;
-    const item = (await review.list({ projectId, workId: work.id })).find(
-      (candidate) => candidate.documentId === documentId,
-    );
+    const item = await review.resolveItemByDocument({ workId: work.id, documentId });
     if (!item) throw new Error(`No draft of ${documentId} in ${work.slug}`);
-    const preview = await review.preview({
-      projectId,
-      workId: work.id,
-      documentId,
-      draftId: item.draftId,
-    });
+    const preview = await review.preview({ workId: work.id, itemKey: item.itemKey });
     if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
     const room = parseYjsRoomName(preview.reviewRoomName);
     if (room?.kind !== "branch") throw new Error(`Not a branch room: ${preview.reviewRoomName}`);
@@ -524,13 +512,15 @@ export function draftTreeCommands(
     work: ScenarioWork,
     documentIds: readonly DocumentId[],
     verb: string,
-    run: (item: { documentId: DocumentId; draftId: string }) => Promise<unknown>,
+    run: (item: { documentId: DocumentId; draftId: string; itemKey: string }) => Promise<unknown>,
   ) {
-    const items = await ports().documentSync.draftReview.list({ projectId, workId: work.id });
     for (const documentId of documentIds) {
-      const item = items.find((candidate) => candidate.documentId === documentId);
+      const item = await ports().documentSync.draftReview.resolveItemByDocument({
+        workId: work.id,
+        documentId,
+      });
       if (!item) throw new Error(`No draft of ${documentId} to ${verb}`);
-      await run({ documentId, draftId: item.draftId });
+      await run({ documentId, draftId: item.draftId, itemKey: item.itemKey });
     }
   }
 
@@ -549,23 +539,27 @@ export function draftTreeCommands(
       const draftId =
         options.draftId ?? (await ports().documentSync.drafts.activeForWork(work.id))?.id;
       if (!draftId) throw new Error(`${work.slug} has no draft to discard`);
-      return handleDiscardAllWorkDraftRequest(routes(), {
-        projectId,
-        workId: work.id,
-        userId,
-        request: { draftId },
-      });
-    }
-    const results: DraftDiscardResponse[] = [];
-    await eachItem(work, items, "discard", async ({ documentId, draftId }) => {
-      results.push(
-        await handleDiscardWorkDraftRequest(routes(), {
+      return (
+        await handleDiscardAllWorkDraftRequest(routes(), {
           projectId,
           workId: work.id,
-          documentId,
-          draftId,
           userId,
-        }),
+          request: { draftId, commandId: randomUUID() },
+        })
+      ).body;
+    }
+    const results: DraftCommandResult[] = [];
+    await eachItem(work, items, "discard", async ({ documentId, draftId, itemKey }) => {
+      results.push(
+        (
+          await handleDiscardWorkDraftRequest(routes(), {
+            projectId,
+            workId: work.id,
+            documentId,
+            userId,
+            request: { draftId, itemKey, commandId: randomUUID() },
+          })
+        ).body,
       );
     });
     return results;
@@ -631,18 +625,22 @@ export function draftTreeCommands(
     },
     async apply(work, documentIds, options = {}) {
       const { items } = await review(work);
-      const results: DraftApplyRouteResult[] = [];
+      const results: CommandRouteResult[] = [];
       for (const documentId of documentIds) {
         const item = items.find((candidate) => candidate.documentId === documentId);
-        if (!item?.draftBranchId) throw new Error(`No draft branch of ${documentId} to apply`);
+        if (!item?.branchGeneration) throw new Error(`No draft branch of ${documentId} to apply`);
         results.push(
           await handleApplyWorkDraftRequest(routes(), {
             projectId,
             workId: work.id,
             documentId,
-            draftId: item.draftBranchId,
             userId,
-            ...(options.tokens === "none" ? {} : { tokens: refOf(item) }),
+            request: {
+              draftId: item.draftId,
+              itemKey: item.itemKey,
+              commandId: randomUUID(),
+              ...(options.tokens === "none" ? {} : refOf(item)),
+            },
           }),
         );
       }
@@ -656,15 +654,18 @@ export function draftTreeCommands(
         items[0]?.draftId ??
         (await ports().documentSync.drafts.activeForWork(work.id))?.id;
       if (!draftId) throw new Error(`${work.slug} has no draft to apply`);
-      return handleApplyAllWorkDraftRequest(routes(), {
-        projectId,
-        workId: work.id,
-        userId,
-        request: {
-          draftId,
-          items: items.map((item) => ({ itemKey: item.itemKey, ...refOf(item) })),
-        },
-      });
+      return (
+        await handleApplyAllWorkDraftRequest(routes(), {
+          projectId,
+          workId: work.id,
+          userId,
+          request: {
+            draftId,
+            commandId: randomUUID() as never,
+            items: items.map((item) => ({ itemKey: item.itemKey, ...refOf(item) })),
+          },
+        })
+      ).body;
     },
   };
 }
