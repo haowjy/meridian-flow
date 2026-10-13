@@ -4,12 +4,15 @@
 
 ### UpdateJournal (`src/ports/update-journal.ts`)
 
-The journal owns ordinary append, batch append, read, checkpoint and compaction,
+The journal owns ordinary append, batch append, read and compaction,
 plus durable per-document/thread write-ordinal reservation. Storage adapters expand
 one logical edit's ordered parts into journal rows. `read` returns a checkpoint
 and matching ordered updates; a bounded `since` read does not hide its retained
 rows behind a newer checkpoint. `persistenceWatermark` includes the checkpoint's
 cut even when no update rows remain above it.
+
+Checkpoint production belongs to the host, whose captured-cut port binds bytes
+to guaranteed durable coverage.
 
 Undo/redo state does not live in transport rows. `DocumentEdits` reads immutable
 edit parts and delegates model stack operations to the host's inverse policy.

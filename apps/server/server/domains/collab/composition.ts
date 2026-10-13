@@ -409,7 +409,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     hocuspocus: hocuspocusBinding.current,
     eventSink: deps.eventSink,
     metaForOrigin,
-    latestUpdateSeq: persistence.store.latestUpdateSeq,
     afterCallerCommit: (callback) => {
       runAfterDrizzleCommit(callback);
     },
@@ -519,7 +518,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const checkpoints = createCheckpointService({
     coordinator: liveCoordinator,
     store: persistence.store,
-    latestUpdateSeq: persistence.store.latestUpdateSeq,
+    journal: persistence.journal,
     markdownDocuments: runtime.markdownDocuments,
     replaceAuthorityGeneration,
   });
