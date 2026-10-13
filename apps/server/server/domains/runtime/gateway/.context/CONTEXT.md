@@ -104,9 +104,10 @@ summaries and handoff briefs send no `maxTokens`. Anthropic requires
 
 The registry's `maxOutputTokens` also reserves reply room when auto-compaction
 computes the usable input window: `contextWindow` minus `maxOutputTokens` and
-the other reserves. This value mirrors the provider default rather than
-defining a lower Meridian limit. It is 65,536 for DeepSeek V4 Flash and 64,000
-for Claude Sonnet 4.6.
+the other reserves. Sonnet 4.6 uses the published provider maximum of 128,000
+tokens, both direct and through OpenRouter, not an inherited 64,000-token
+Meridian cap. Anthropic requires an explicit `max_tokens`, so a call without
+`request.maxTokens` sends this maximum rather than inventing a lower limit.
 
 Output limits are not cache keys. Anthropic's thinking budget does affect the
 cache, so implicit effort budgets resolve against the model's output budget,
