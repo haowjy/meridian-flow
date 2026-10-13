@@ -85,11 +85,12 @@ keep receiving live frames meanwhile. One replay is in flight per thread; a
 request made meanwhile is sent when `subscribed` arrives.
 
 A `gap` means the server could not replay from the client's cursor. Its frame
-carries `fromSeq`/`toSeq`; the transport advances the subscription's resume point
-to `toSeq` after notifying `onGap` consumers and before re-subscribing, so the
-next read asks for history the server can serve. The truncated catch-up that
-follows is skipped by the monotonic seq guard. Consumers recover missing
-history through snapshots; each client owns its resync policy.
+carries `fromSeq`/`toSeq`; after notifying `onGap` consumers, the transport moves
+every handler's cursor up to `toSeq` and re-subscribes, so the next read asks
+for history the server can serve. The gap answers the request in flight in place
+of `subscribed`, so the re-subscribe goes out at once and the fence stays up for
+its waiters. Frames at or below `toSeq` are skipped by the cursor rule. Consumers
+recover missing history through snapshots; each client owns its resync policy.
 
 ## Thread socket deadlines
 
