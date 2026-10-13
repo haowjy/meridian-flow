@@ -52,7 +52,9 @@ whatever `--session` says, including other teams' probes.
 Protects #817. With your stack running (`pnpm dev`), note the count of
 `startup.complete` lines in `logs/events/*.jsonl`. In a sibling worktree run
 `pnpm install`, or just hardlink one store file:
-`ln <store file under node_modules/.pnpm> /tmp/probe-link`. Wait 10 seconds.
+`ln <store file under node_modules/.pnpm> ../probe-link` (the link must be on the
+same filesystem as the store file, so not `/tmp` when that is tmpfs). Remove the
+link afterwards. Wait 10 seconds.
 Expect no new `startup.complete` and no `[nitro] Server built` in
 `logs/portless.log`. Then edit a server source file: one rebuild is expected.
 Without the stack running, this cannot be checked.
