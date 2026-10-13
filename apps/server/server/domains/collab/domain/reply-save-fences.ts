@@ -6,13 +6,9 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import {
-  type FileAccess,
-  type FileGrant,
-  grantWorkIds,
-  markReplyConfirmed,
-  targetDocumentId,
-} from "../../file-policy/index.js";
+import type { FileAccess, FileGrant } from "../../file-policy/index.js";
+import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
+import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
 import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
 import { collabHook } from "./collab-test-hooks.js";
@@ -30,6 +26,8 @@ export type ReplyRecord = {
   responseId: string;
   threadId?: ThreadId;
   participants: Set<AgentEditCore>;
+  /** Cores holding refused writes whose receipts the reply's save must still deliver. */
+  receipting: Set<AgentEditCore>;
   documents: Map<DocumentId, ReplyDocument>;
 };
 
@@ -106,15 +104,30 @@ export function createReplySaveFences(deps: {
         }
         if (reason) refusals.set(documentId, { documentId, reason });
       }
+      const denied = new Set<AgentEditCore>();
       for (const [documentId, refusal] of refusals) {
-        const entry = record.documents.get(documentId)!;
-        entry.core.refuseStaged(
-          record.responseId,
-          documentId,
-          "reason" in refusal ? refusal.reason : "integration",
-          entry.pin?.peerBranchId,
-        );
+        const entry = record.documents.get(documentId);
+        if (!entry) continue;
         record.documents.delete(documentId);
+        if ("reason" in refusal) {
+          // Each write keeps its own receipt; the participant still saves them.
+          record.receipting.add(entry.core);
+          entry.core.refuseStaged(
+            record.responseId,
+            documentId,
+            refusal.reason,
+            entry.pin?.peerBranchId,
+          );
+        } else if (record.threadId) {
+          // A denial carries the policy's document-level copy; the writes are dropped (D29, D42).
+          await entry.core.invalidateThreadDocument(documentId, record.threadId);
+          denied.add(entry.core);
+        }
+      }
+      // A core whose every document was denied has closed the reply on its side.
+      for (const core of denied) {
+        const writesElsewhere = [...record.documents.values()].some((entry) => entry.core === core);
+        if (!writesElsewhere && !record.receipting.has(core)) record.participants.delete(core);
       }
       // Refused participants still own per-write receipts and must save them.
       markReplyConfirmed([...record.documents.keys()]);

@@ -40,7 +40,6 @@ import {
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
 import { createThreadPeerCorePool } from "../../domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
-import { reverseTurn } from "../../domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
 import {
@@ -141,16 +140,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
-    liveAgentEdit: runtime.liveUtilityCore,
-    reversalStore: journal,
-    liveReversal: {
-      checkDependentLaterLiveRows: async () => ({
-        hasDependents: false,
-        blockingActorTypes: [],
-        checkedUntilSeq: 0,
-      }),
+    rollback: {
+      async rollbackResponse() {
+        throw new Error("Durable inverse rollback requires the receipt-backed Postgres adapter");
+      },
     },
-    resolveDocumentUri: async (documentId) => documentId,
     branches: { async checkpointThreadPeer() {} },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
@@ -190,21 +184,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       agentEdit: () => agentEdit,
     },
     reversal: {
-      reverseTurn: (input) =>
-        reverseTurn(
-          {
-            reversalStore: journal,
-            agentEdit: runtime.liveUtilityCore,
-            resolveDocumentUri: async (documentId) => documentId,
-            checkDependentLaterLiveRows: async () => ({
-              hasDependents: false,
-              blockingActorTypes: [],
-              checkedUntilSeq: 0,
-            }),
-            refreshDocumentProjection: projections.refresh,
-          },
-          input,
-        ),
+      reverseTurn: async () => {
+        throw new Error("Turn receipts require the durable Postgres receipt adapter");
+      },
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {

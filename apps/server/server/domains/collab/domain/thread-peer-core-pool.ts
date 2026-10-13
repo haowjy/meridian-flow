@@ -23,15 +23,13 @@ import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import {
-  type FileAccess,
-  type FileAccessDenied,
-  type FileDestination,
-  type FileGrant,
-  grantWorkIds,
-  markReplyConfirmed,
-  runWithEditGrants,
-  targetDocumentId,
+import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
+import { markReplyConfirmed, runWithEditGrants } from "../../file-policy/edit-confirmation.js";
+import type {
+  FileAccess,
+  FileAccessDenied,
+  FileDestination,
+  FileGrant,
 } from "../../file-policy/index.js";
 import {
   asThreadPeerAgentEditCore,
@@ -212,6 +210,7 @@ export function createThreadPeerCorePool(input: {
       responseId,
       ...(id ? { threadId: id } : {}),
       participants: new Set(),
+      receipting: new Set(),
       documents: new Map(),
     };
     responses.set(responseId, record);
@@ -354,6 +353,10 @@ export function createThreadPeerCorePool(input: {
       }
     }
     const core = pinned?.core ?? coreForDestination(destination, context.threadId);
+    // Lookup and enrollment are synchronous: close must see the first owner
+    // before cache maintenance yields, so that owner's lifecycle rejects late staging.
+    record?.participants.add(core);
+    await evictIdleCores();
     const immediateInverse =
       command.command === "undo" || command.command === "redo" || command.command === "revert";
     const draftView: LinkView | undefined =
@@ -372,26 +375,36 @@ export function createThreadPeerCorePool(input: {
           };
     const routedContext = await routedTo(context, destination, pinned?.linkView ?? draftView);
     let entry = pinned;
-    // Lookup and enrollment are synchronous: close must see the first owner
-    // before cache maintenance yields, so that owner's lifecycle rejects late staging.
-    if (record) {
-      record.participants.add(core);
-      if (documentId && !pinned && !immediateInverse) {
-        entry = { core, grant, linkView: routedContext.linkView! };
-        record.documents.set(documentId, entry);
-      }
+    if (record && documentId && !pinned && !immediateInverse) {
+      entry = { core, grant, linkView: routedContext.linkView! };
+      record.documents.set(documentId, entry);
     }
-    await evictIdleCores();
     let callContext = routedContext;
     const call = async () => {
       if (!immediateInverse) callContext = await threadPeerContext(core, documentId, callContext);
       if (!immediateInverse) pinStaged(entry, callContext);
       return core.write(command, callContext);
     };
-    const outcome =
-      record && !immediateInverse
-        ? await call()
-        : await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
+    // An immediate drafted write that lost its draft to a close (Discard all) between the
+    // ensure and its commit refuses like a save does, never as a crash.
+    const draftClosedUnder = async () =>
+      draftView?.kind === "draft" &&
+      destination.kind === "draft" &&
+      !sameView(await input.drafts.viewForWork(destination.workId), draftView);
+    const immediate = async (): Promise<WriteOutcome> => {
+      try {
+        const done = await commitNow(core, documentId, context, pinned?.grant ?? grant, call);
+        return done.isError && done.status === "internal_error" && (await draftClosedUnder())
+          ? draftChanged(command)
+          : done;
+      } catch (cause) {
+        if (!(await draftClosedUnder())) throw cause;
+        if (documentId && context.threadId)
+          await core.invalidateThreadDocument(documentId, context.threadId);
+        return draftChanged(command);
+      }
+    };
+    const outcome = record && !immediateInverse ? await call() : await immediate();
     if (!outcome.isError && documentId) {
       if (context.threadId)
         lastSeen.set(seenKey(context.threadId, documentId), {
@@ -440,6 +453,7 @@ export function createThreadPeerCorePool(input: {
       if (lastSeen.get(key)?.peerBranchId === peerBranchId) lastSeen.delete(key);
       for (const record of responses.values()) {
         if (record.threadId !== id) continue;
+        for (const core of record.participants) record.receipting.add(core);
         const entry = record.documents.get(docId as DocumentId);
         if (entry?.pin?.peerBranchId === peerBranchId) record.documents.delete(docId as DocumentId);
       }
@@ -474,8 +488,10 @@ export function createThreadPeerCorePool(input: {
     write,
     refuseStaged(responseId, docId, reason, peerBranchId) {
       const record = responses.get(responseId);
-      for (const core of record?.participants ?? [])
+      for (const core of record?.participants ?? []) {
         core.refuseStaged(responseId, docId, reason, peerBranchId);
+        record?.receipting.add(core);
+      }
       const entry = record?.documents.get(docId as DocumentId);
       if (entry && (!peerBranchId || entry.pin?.peerBranchId === peerBranchId))
         record?.documents.delete(docId as DocumentId);
@@ -659,6 +675,27 @@ function readRequired(
       payload: { path, message },
     }),
   };
+}
+
+/** The Work's draft this write ensured closed before the write landed. */
+function draftChanged(command: WriteCommand): WriteOutcome {
+  const path = splitDocumentFile(command.file).filePath;
+  const message = `This file's draft changed before your write landed (it was applied or discarded), so this change wasn't kept. Read ${path} again before editing.`;
+  return {
+    status: "invalid_write",
+    isError: true,
+    revision: null,
+    command: command.command,
+    result: modelResult({
+      command: command.command,
+      status: "invalid_write",
+      payload: { path, message },
+    }),
+  };
+}
+
+function sameView(a: { kind: string; draftId?: string }, b: LinkView): boolean {
+  return a.kind === "draft" && b.kind === "draft" ? a.draftId === b.draftId : a.kind === b.kind;
 }
 
 function versionPhrase(destination: FileDestination, preposition: "in" | "to"): string {

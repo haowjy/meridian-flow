@@ -1,42 +1,69 @@
 /** Pool routing per document (D19, D42), live undo routing, and read-version checks (D41). */
 
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { harness } from "../../../../../../packages/agent-edit/src/tool/test-support/write-tool-harness.js";
-import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
-import { testFileGrant } from "../../../test-support/file-grants.js";
 import type { FileDestination } from "../../file-policy/index.js";
 import {
+  createFakeBranchTable,
+  createFakeFileAccess,
+  createFakeDrafts,
+  fakeEditGrant,
   createFakeThreadPeerCores,
   inProcessResponseTransactions,
 } from "../test-support/thread-peer-pool-fakes.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
+import { createBranchCriticalSections } from "./branch-critical-sections.js";
+import { createReplySaveFences } from "./reply-save-fences.js";
 import { createThreadPeerCorePool } from "./thread-peer-core-pool.js";
 
 const THREAD_ID = "thread-1" as ThreadId;
 const live: FileDestination = { kind: "live" };
 const draftA: FileDestination = { kind: "draft", workId: "work-a" as WorkId, workSlug: "a" };
+
+/** The drafts and reply fences every pool takes, over fake branch rows. */
+function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
+  const drafts = createFakeDrafts();
+  const branches = createFakeBranchTable({ documentId: "ch12", threadId: THREAD_ID });
+  const fileAccess = createFakeFileAccess();
+  const criticalSections = createBranchCriticalSections();
+  const fences = createReplySaveFences({
+    liveUtilityCore,
+    branches,
+    criticalSections,
+    drafts,
+    fileAccess,
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
+  });
+  return { drafts, branches, fences, criticalSections, fileAccess };
+}
+
 function createPool() {
   const { pullThreadPeer, liveCore, threadCore } = createFakeThreadPeerCores();
+  const liveUtilityCore = asLiveAgentEditCore(liveCore.asCore());
+  const ports = poolPorts(liveUtilityCore);
   const pool = createThreadPeerCorePool({
-    liveUtilityCore: asLiveAgentEditCore(liveCore.asCore()),
+    drafts: ports.drafts,
+    fences: ports.fences,
+    liveUtilityCore,
     createThreadCore: () => threadCore.asCore(),
     pullThreadPeer: pullThreadPeer,
     afterLiveCommit: () => {},
     commitThreadResponseAtomically: (operation) => operation(),
     ...inProcessResponseTransactions,
-    fileAccess: createAllowAllFileAccess(),
+    fileAccess: createFakeFileAccess(),
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
-  return { pool, liveCore, threadCore, pullThreadPeer };
+  return { pool, liveCore, threadCore, pullThreadPeer, ...ports };
 }
 
 const context = (destination: FileDestination, responseId?: string) => ({
   sessionId: THREAD_ID,
   threadId: THREAD_ID,
   turnId: "turn-1",
-  grant: testFileGrant(destination),
+  grant: fakeEditGrant(destination),
   ...(responseId
     ? { responseIdentity: { providerResponseId: responseId, editScopeId: responseId } }
     : {}),
@@ -97,7 +124,10 @@ describe("thread-peer pool", () => {
       const reached = new Promise<void>((resolve) => {
         entered = resolve;
       });
+      const closingPorts = poolPorts(asLiveAgentEditCore(liveHarness.core));
       const closingPool = createThreadPeerCorePool({
+        drafts: closingPorts.drafts,
+        fences: closingPorts.fences,
         liveUtilityCore: asLiveAgentEditCore(liveHarness.core),
         createThreadCore: () => {
           const owner = harness({ "alpha.md": "red" });
@@ -119,10 +149,15 @@ describe("thread-peer pool", () => {
         pullThreadPeer: async () =>
           pausedEviction
             ? undefined
-            : { branchGeneration: 1, attributionBaseline: new Uint8Array() },
+            : {
+                peerBranchId: "peer-1",
+                upstreamBranchId: "upstream-1",
+                branchGeneration: 1,
+                attributionBaseline: new Uint8Array(),
+              },
         commitThreadResponseAtomically: (operation) => operation(),
         ...inProcessResponseTransactions,
-        fileAccess: createAllowAllFileAccess(),
+        fileAccess: createFakeFileAccess(),
         lockWorks: async () => {},
         lockLiveDocuments: async () => {},
         maxThreadCores: 1,
@@ -162,5 +197,121 @@ describe("thread-peer pool", () => {
       { status: "invalid_write", isError: true, poolHas: false, coreHas: false },
       { status: "invalid_write", isError: true, poolHas: false, coreHas: false },
     ]);
+  });
+});
+
+describe("reasoned refusal and retirement through the pool", () => {
+  const replyContext = (responseId: string, threadId = THREAD_ID) => ({
+    ...context(draftA, responseId),
+    threadId,
+  });
+
+  it("refuseStaged evicts the response's entry so a later write ensures a fresh draft and peer (U2)", async () => {
+    const { pool, threadCore, drafts, pullThreadPeer } = createPool();
+    await pool.write(insertCh12, context(draftA, "reply-1"));
+    expect(drafts.ensureActiveForWrite).toHaveBeenCalledTimes(1);
+
+    pool.refuseStaged("reply-1", "ch12", "discarded_draft");
+    expect(threadCore.refuseStaged).toHaveBeenCalledWith(
+      "reply-1",
+      "ch12",
+      "discarded_draft",
+      undefined,
+    );
+    expect(pool.responseDestination("reply-1", "ch12")).toBeUndefined();
+
+    await pool.write(insertCh12, context(draftA, "reply-1"));
+    expect(drafts.ensureActiveForWrite).toHaveBeenCalledTimes(2);
+    expect(pullThreadPeer).toHaveBeenCalledTimes(2);
+    expect(pool.responseDestination("reply-1", "ch12")).toMatchObject({ kind: "draft" });
+  });
+
+  it("rolls a reply back inside its leases without touching a branch (U5)", async () => {
+    const { pool, threadCore, branches, criticalSections } = createPool();
+    await pool.write(insertCh12, context(draftA, "reply-1"));
+    const held = vi.spyOn(criticalSections, "withBranches");
+    branches.getBranch.mockClear();
+    let rolledBackUnderLease = false;
+    threadCore.rollbackResponse.mockImplementation(async (responseId: string) => {
+      rolledBackUnderLease = held.mock.calls.length === 1;
+      return {
+        status: "rolledBack" as const,
+        responseId,
+        stagedCreates: { committed: [], discarded: [] },
+      };
+    });
+
+    await pool.rollbackResponse("reply-1");
+
+    expect(held).toHaveBeenCalledTimes(1);
+    expect(held.mock.calls[0]?.[0]).toEqual(["peer-1", "upstream-1"]);
+    expect(rolledBackUnderLease).toBe(true);
+    expect(branches.getBranch).not.toHaveBeenCalled();
+  });
+
+  it("retires one peer without touching the replacement peer's entry or lastSeen (U6)", async () => {
+    const { pool, threadCore } = createPool();
+    // Reply 1 stages on peer-1; reply 2, in the same thread, on its replacement peer-2.
+    await pool.write(insertCh12, replyContext("reply-1"));
+    await pool.write(insertCh12, replyContext("reply-2"));
+
+    await pool.retireThreadPeers("ch12", [
+      { threadId: THREAD_ID, peerBranchId: "peer-1", reason: "discarded_edit" },
+    ]);
+
+    expect(threadCore.retirePeer).toHaveBeenCalledWith({
+      documentId: "ch12",
+      threadId: THREAD_ID,
+      peerBranchId: "peer-1",
+      reason: "discarded_edit",
+    });
+    expect(pool.responseDestination("reply-1", "ch12")).toBeUndefined();
+    expect(pool.responseDestination("reply-2", "ch12")).toMatchObject({ kind: "draft" });
+    // The replacement peer's read still stands: a write to another version needs a re-read.
+    await expect(pool.write(insertCh12, context(live))).resolves.toMatchObject({
+      status: "read_required",
+    });
+
+    await pool.retireThreadPeers("ch12", [
+      { threadId: THREAD_ID, peerBranchId: "peer-2", reason: "discarded_edit" },
+    ]);
+    expect(pool.responseDestination("reply-2", "ch12")).toBeUndefined();
+  });
+
+  it("reaches a response-pinned owner the cache evicted (U6)", async () => {
+    const { pullThreadPeer, liveCore } = createFakeThreadPeerCores();
+    const cores = new Map<string, ReturnType<typeof createFakeThreadPeerCores>["threadCore"]>();
+    const live = asLiveAgentEditCore(liveCore.asCore());
+    const ports = poolPorts(live);
+    const pool = createThreadPeerCorePool({
+      drafts: ports.drafts,
+      fences: ports.fences,
+      liveUtilityCore: live,
+      createThreadCore: (threadId) => {
+        const core = createFakeThreadPeerCores().threadCore;
+        cores.set(threadId, core);
+        return core.asCore();
+      },
+      pullThreadPeer,
+      commitThreadResponseAtomically: (operation) => operation(),
+      ...inProcessResponseTransactions,
+      fileAccess: createFakeFileAccess(),
+      lockWorks: async () => {},
+      lockLiveDocuments: async () => {},
+      maxThreadCores: 1,
+    });
+    await pool.write(insertCh12, replyContext("reply-a", "thread-a" as ThreadId));
+    // A second thread crowds thread A out of the cache; its open reply still owns its core.
+    await pool.write(insertCh12, replyContext("reply-b", "thread-b" as ThreadId));
+    await pool.evictThread("thread-a" as ThreadId);
+
+    await pool.retireThreadPeers("ch12", [
+      { threadId: "thread-a", peerBranchId: "peer-1", reason: "discarded_document" },
+    ]);
+
+    expect(cores.get("thread-a")?.retirePeer).toHaveBeenCalledWith(
+      expect.objectContaining({ peerBranchId: "peer-1", reason: "discarded_document" }),
+    );
+    expect(cores.get("thread-b")?.retirePeer).not.toHaveBeenCalled();
   });
 });

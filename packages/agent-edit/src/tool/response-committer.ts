@@ -1778,6 +1778,8 @@ function snapshotResponseBuffer(buffer: ResponseBuffer): ResponseBuffer {
 }
 
 function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
+  // A refused write still owes its receipt, even when its document left the buffer.
+  if (buffer.refused?.size) return true;
   return [...buffer.docs.values()].some(
     (docBuffer) => hasStagedReceipts(docBuffer) || docBuffer.discardedBeforeCommit,
   );
