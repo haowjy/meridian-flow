@@ -47,7 +47,6 @@ describe("Drizzle manifest persistence", () => {
     journal: livePersistence.journal,
     hocuspocus: () => ({ documents: liveDocs }) as never,
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
-    latestUpdateSeq: (documentId) => livePersistence.store.latestUpdateSeq(documentId),
     emitAgentEditInvariantViolation() {},
   });
   storeWarmDocument = hocuspocusPersistence.storeHocuspocusDocument;

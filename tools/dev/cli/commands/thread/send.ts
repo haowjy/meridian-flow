@@ -76,7 +76,8 @@ export type SendOutcome = {
   type: "result" | "error";
   threadId: string;
   turnId: string | null;
-  status: Turn["status"] | "timeout" | "unknown";
+  status: Turn["status"] | "timeout" | "unknown" | "blocked";
+  reason?: "credits_exhausted";
   finalText: string | null;
   error: string | null;
   interrupt?: { turnId: string; interruptId: string };
@@ -202,6 +203,27 @@ async function followToOutcome(
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
+  const blockedOutcome = (
+    pending: ThreadSnapshotResponse["liveState"]["pending"],
+  ): SendOutcome | null =>
+    pending.blocked?.reason === "credits_exhausted" &&
+    pending.items.some((item) => item.id === admitted.userTurnId)
+      ? {
+          type: "error",
+          threadId,
+          turnId: null,
+          status: "blocked",
+          reason: "credits_exhausted",
+          finalText: null,
+          error: "Your message is waiting for usage",
+        }
+      : null;
+  const initial = blockedOutcome(
+    (await session.request<ThreadSnapshotResponse>("GET", apiThreadSnapshotPath(threadId)))
+      .liveState.pending,
+  );
+  if (initial) return initial;
+  let blocked: SendOutcome | null = null;
   const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
   try {
     const deadlineAt = Date.now() + input.timeoutMs;
@@ -215,6 +237,13 @@ async function followToOutcome(
         full: input.full,
         textStream: "err",
         shouldStop(event: CliEvent) {
+          if (event.type === "event" && event.name === "meridian.inbox.changed") {
+            const pending = event.value as
+              | ThreadSnapshotResponse["liveState"]["pending"]
+              | undefined;
+            if (pending) blocked = blockedOutcome(pending);
+            if (blocked) return true;
+          }
           if (event.type === "turn.started" && ourTurn === null) ourTurn = event.turnId;
           if (event.type === "turn.finished") return isOurs(event.turnId);
           if (event.type === "turn.failed") return ourTurn !== null;
@@ -226,6 +255,22 @@ async function followToOutcome(
         },
       });
       lastSeq = followed.lastSeq;
+      if (blocked) {
+        // A replayed refusal is state, not a terminal outcome. Recovery may already
+        // have completed beyond this event; reconcile before deciding or resuming.
+        const snapshot = await session.request<ThreadSnapshotResponse>(
+          "GET",
+          apiThreadSnapshotPath(threadId),
+        );
+        blocked = blockedOutcome(snapshot.liveState.pending);
+        if (blocked) return blocked;
+        const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
+        if (answer) {
+          ourTurn = answer.id;
+          if (["complete", "cancelled", "error"].includes(answer.status)) break;
+        }
+        continue;
+      }
       if (followed.stoppedBy?.type !== "turn.failed") break;
 
       // A previous run can fail while this send's user turn is still queued.
@@ -263,6 +308,8 @@ async function followToOutcome(
     "GET",
     apiThreadSnapshotPath(threadId),
   );
+  blocked = blockedOutcome(snapshot.liveState.pending);
+  if (blocked) return blocked;
   const turn = snapshot.turns.find((candidate) => candidate.id === ourTurn);
   const status: SendOutcome["status"] = interrupt
     ? "waiting_interrupt"

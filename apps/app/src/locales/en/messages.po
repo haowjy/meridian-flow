@@ -519,6 +519,10 @@ msgstr "Add row"
 msgid "Add to favorites"
 msgstr "Add to favorites"
 
+#: src/features/chat/UsageBlockedNotice.tsx
+msgid "Add usage"
+msgstr "Add usage"
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 #~ msgid "Added"
 #~ msgstr "Added"
@@ -4172,8 +4176,8 @@ msgid "The AI provider turned this request down."
 msgstr "The AI provider turned this request down."
 
 #: src/features/chat/ErrorBlock.tsx
-msgid "The AI provider turned this request down. Trying again won't help until that's fixed."
-msgstr "The AI provider turned this request down. Trying again won't help until that's fixed."
+#~ msgid "The AI provider turned this request down. Trying again won't help until that's fixed."
+#~ msgstr "The AI provider turned this request down. Trying again won't help until that's fixed."
 
 #: src/features/project/context/ContextViewer.tsx
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
@@ -4804,6 +4808,10 @@ msgstr "Viewing chat resources is not available yet. These files remain availabl
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
 
+#: src/features/chat/UserTurn.tsx
+msgid "Waiting for usage"
+msgstr "Waiting for usage"
+
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
 msgstr "We couldn’t confirm this purchase yet. Check your balance before trying again."
@@ -4955,6 +4963,10 @@ msgstr "You have {count, plural, one {# pending change} other {# pending changes
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
 msgstr "You left checkout. No purchase was confirmed."
+
+#: src/features/chat/UsageBlockedNotice.tsx
+msgid "You're out of usage. Your messages will send when you add more."
+msgstr "You're out of usage. Your messages will send when you add more."
 
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Your answer may not have reached the agent."
