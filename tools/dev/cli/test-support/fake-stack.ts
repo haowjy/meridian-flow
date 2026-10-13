@@ -128,6 +128,7 @@ function createFake() {
     summary: string;
     enqueuedAt: string;
   }[] = [];
+  let blockedForUsage = false;
   const sockets = new Set<WebSocket>();
   const mockScripts: unknown[] = [];
   const removedMockScripts: string[] = [];
@@ -350,6 +351,88 @@ function createFake() {
           status: "accepted",
         });
       }
+      if (body.text === "recovered before admission returns") {
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        const replyId = `turn-a${runCounter}`;
+        turns.push({
+          id: userTurnId,
+          role: "user",
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        const item = {
+          id: userTurnId,
+          seq: runCounter,
+          intent: "message",
+          provenance: { kind: "writer", actorId: "u1" },
+          deliveryState: "waiting",
+          summary: body.text,
+          enqueuedAt: "2026-01-02T00:00:00.000Z",
+        };
+        publish({
+          type: "CUSTOM",
+          name: "meridian.inbox.changed",
+          value: { items: [item], blocked: { reason: "credits_exhausted" } },
+        } as AGUIEvent);
+        blockedForUsage = false;
+        pendingItems.splice(0, pendingItems.length);
+        publish({
+          type: "CUSTOM",
+          name: "meridian.inbox.changed",
+          value: { items: [] },
+        } as AGUIEvent);
+        turns.push({
+          id: replyId,
+          role: "assistant",
+          prevTurnId: userTurnId,
+          status: "complete",
+          error: null,
+          text: "Recovered reply",
+        });
+        publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+        publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: replyId } as AGUIEvent);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: null,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      if (body.text === "wait for usage") {
+        runCounter += 1;
+        const userTurnId = `turn-u${runCounter}`;
+        pendingItems.push({
+          id: userTurnId,
+          seq: runCounter,
+          intent: "message",
+          provenance: { kind: "writer", actorId: "u1" },
+          deliveryState: "waiting",
+          summary: body.text,
+          enqueuedAt: "2026-01-02T00:00:00.000Z",
+        });
+        setTimeout(() => {
+          blockedForUsage = true;
+          publish({
+            type: "CUSTOM",
+            name: "meridian.inbox.changed",
+            value: { items: pendingItems, blocked: { reason: "credits_exhausted" } },
+          } as AGUIEvent);
+        }, 50);
+        return send(202, {
+          threadId: THREAD_ID,
+          userTurnId,
+          assistantTurnId: null,
+          resumeAfterSeq,
+          snapshotFloorNextSeq: resumeAfterSeq,
+          status: "accepted",
+        });
+      }
+      blockedForUsage = false;
+      pendingItems.splice(0, pendingItems.length);
       runScenario(body.text);
       return send(202, {
         threadId: THREAD_ID,
@@ -365,7 +448,13 @@ function createFake() {
         threadId: THREAD_ID,
         thread: threadDto(),
         turns: turns.map(turnDto),
-        liveState: liveState(String(journal.length), pendingItems),
+        liveState: {
+          ...liveState(String(journal.length), pendingItems),
+          pending: {
+            items: pendingItems,
+            ...(blockedForUsage ? { blocked: { reason: "credits_exhausted" } } : {}),
+          },
+        },
         actionRequired: false,
         nextSeq: String(journal.length + 1),
       });
