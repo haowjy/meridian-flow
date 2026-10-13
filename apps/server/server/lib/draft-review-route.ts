@@ -421,10 +421,11 @@ type PreparedCommand =
 /**
  * The one ingress every draft command goes through. After authenticated project and Work
  * access the id is looked up (a resend answers its stored outcome, §4.6); `prepare` then
- * resolves the item and acquires grants. Any refusal of that phase, a missing item or a
- * grant that has become unavailable, looks the id up once more before it answers (LA-1): a
- * request that lost a race to its own twin gets the winner's outcome, a new effect gets the
- * refusal. Nothing here skips authorization; `prepare` still gates every effect.
+ * resolves the item and acquires grants, and the grants are confirmed again before the
+ * effect. A refusal at either point, a missing item or a grant that has become unavailable,
+ * looks the id up once more before it answers (LA-1): a request that lost a race to its own
+ * twin gets the winner's outcome, a new effect gets the refusal. Nothing here skips
+ * authorization; the grants still gate every effect.
  */
 async function commandIngress(
   deps: DraftRouteServices,
@@ -436,19 +437,28 @@ async function commandIngress(
   await requireDraftWorkAccess(deps, input);
   const replay = await recorded(deps, envelope, options);
   if (replay) return replay;
+  const replayOr = async (cause: unknown): Promise<CommandRouteResult> => {
+    if (isFileAccessRefusal(cause)) {
+      const stored = await recorded(deps, envelope, options);
+      if (stored) return stored;
+    }
+    throw cause;
+  };
   let prepared: PreparedCommand;
   try {
     prepared = await prepare();
   } catch (cause) {
-    if (!isFileAccessRefusal(cause)) throw cause;
-    const stored = await recorded(deps, envelope, options);
-    if (stored) return stored;
-    throw cause;
+    return replayOr(cause);
   }
   if ("refusal" in prepared) return (await recorded(deps, envelope, options)) ?? prepared.refusal();
-  const outcome = await withEditGrants(deps.fileAccess, prepared.grants, () =>
-    callDraftReview(prepared.effect()),
-  );
+  let outcome: Awaited<ReturnType<typeof prepared.effect>>;
+  try {
+    outcome = await withEditGrants(deps.fileAccess, prepared.grants, () =>
+      callDraftReview(prepared.effect()),
+    );
+  } catch (cause) {
+    return replayOr(cause);
+  }
   return respond(
     outcome,
     { draftId: envelope.draftId ?? "", commandId: envelope.commandId },
