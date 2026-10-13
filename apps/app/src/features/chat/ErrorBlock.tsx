@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
  *   without partial output.
  * - `retry` → a failed reply's Retry never reached the server; this is its
  *   stand-in, and Retry re-sends the same request.
- * - `provider-declined` → the AI provider turned the request down and the
- *   server judged a retry futile.
+ * - `provider-declined` → the AI provider turned the request down; a retry
+ *   may succeed once the cause is fixed.
  */
 export type ErrorBlockKind = "generation" | "retry" | "provider-declined";
 
@@ -37,9 +37,7 @@ function copy(kind: ErrorBlockKind, current: boolean): string {
     case "retry":
       return current ? t`Couldn't start the retry. Try again.` : t`Couldn't start the retry.`;
     case "provider-declined":
-      return current
-        ? t`The AI provider turned this request down. Trying again won't help until that's fixed.`
-        : t`The AI provider turned this request down.`;
+      return t`The AI provider turned this request down.`;
     default:
       return t`This response failed.`;
   }

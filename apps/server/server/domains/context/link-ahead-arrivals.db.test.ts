@@ -68,7 +68,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
       backgroundTasks: processDetachedWork,
       db,
       eventSink: createNoopEventSink(),
-      environment: { OPENAI_API_KEY: "sk-test-ahead-arrivals" },
+      environment: { FLOW_OPENAI_API_KEY: "sk-test-ahead-arrivals" },
     });
     const app = composeAppServices(ports);
     try {
