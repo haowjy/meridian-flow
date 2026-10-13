@@ -255,9 +255,6 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async recoverPendingLiveSettlements() {
     return 0;
   },
-  async pushToLive() {
-    throw new Error("Branch push service is not configured");
-  },
   async countPendingByWorkIds() {
     return new Map();
   },

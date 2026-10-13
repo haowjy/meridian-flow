@@ -6,11 +6,13 @@
 import { randomUUID } from "node:crypto";
 import { branchPushSettlementBatches } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
+import { createError } from "nitro/h3";
 import { expect, it } from "vitest";
 import {
   handleApplyWorkDraftChangesRequest,
   handleApplyWorkDraftRequest,
   handleDiscardAllWorkDraftRequest,
+  handleDiscardWorkDraftRequest,
   handleDraftCommandObservation,
   handleWorkDraftPreviewRequest,
   selectDraftRouteServices,
@@ -196,6 +198,45 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     const closed = await handleDiscardAllWorkDraftRequest(c.deps, { ...c.scope, request });
     expect(closed.body).toMatchObject({ status: "discarded" });
     expect(await handleDiscardAllWorkDraftRequest(c.deps, { ...c.scope, request })).toEqual(closed);
+  });
+
+  it("12b: a twin that lost the race to its own command's effect answers the stored outcome when its grant is refused", async () => {
+    const c = await twoChanges(start);
+    const { itemKey, draftId } = await c.item();
+    const request = {
+      draftId,
+      itemKey,
+      commandId: randomUUID(),
+    } as Parameters<typeof handleDiscardWorkDraftRequest>[1]["request"];
+    let twin: Awaited<ReturnType<typeof handleDiscardWorkDraftRequest>> | undefined;
+    const authorize = c.deps.fileAccess.authorize.bind(c.deps.fileAccess);
+    let first = true;
+    const deps = {
+      ...c.deps,
+      fileAccess: {
+        ...c.deps.fileAccess,
+        // The twin's grant arrives after the first request has committed and tombstoned.
+        authorize: async (...args: Parameters<typeof authorize>) => {
+          if (first) {
+            first = false;
+            twin = await handleDiscardWorkDraftRequest(c.deps, {
+              ...c.scope,
+              documentId: c.chapter,
+              request,
+            });
+            throw createError({ statusCode: 404, message: "Draft not found" });
+          }
+          return authorize(...args);
+        },
+      },
+    } as typeof c.deps;
+    const answered = await handleDiscardWorkDraftRequest(deps, {
+      ...c.scope,
+      documentId: c.chapter,
+      request,
+    });
+    expect(twin?.body).toMatchObject({ status: "discarded" });
+    expect(answered).toEqual(twin);
   });
 
   it("13: a blocked batch is observed as blocked, and a resend stages nothing", async () => {

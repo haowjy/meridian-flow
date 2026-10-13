@@ -671,7 +671,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
     branchPush: {
       recoverPendingLiveSettlements: branchPush.recoverPendingLiveSettlements,
-      pushToLive: branchPush.pushToLive,
       countPendingByWorkIds: workDraftPendingStore.countPendingByWorkIds,
       setWorkPushPolicy: workPushPolicy.setWorkPushPolicy,
     },

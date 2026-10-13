@@ -408,14 +408,55 @@ async function commandItem(
     : null;
 }
 
-/** A refusal before any effect: the command id is looked up once more first (LA-1). */
-async function refused(
+/** What a command's pre-effect phase decided: refuse it, or run its effect under these grants. */
+type PreparedCommand =
+  | { refusal: () => CommandRouteResult }
+  | { grants: FileGrant<"edit">[]; effect: () => Promise<CommandOutcome> };
+
+/**
+ * The one ingress every draft command goes through. After authenticated project and Work
+ * access the id is looked up (a resend answers its stored outcome, §4.6); `prepare` then
+ * resolves the item and acquires grants. Any refusal of that phase, a missing item or a
+ * grant that has become unavailable, looks the id up once more before it answers (LA-1): a
+ * request that lost a race to its own twin gets the winner's outcome, a new effect gets the
+ * refusal. Nothing here skips authorization; `prepare` still gates every effect.
+ */
+async function commandIngress(
   deps: DraftRouteServices,
+  input: CommandScope,
   envelope: DraftCommandEnvelope,
-  fallback: () => CommandRouteResult,
-  options?: { itemApply?: boolean },
+  options: { itemApply?: boolean },
+  prepare: () => Promise<PreparedCommand>,
 ): Promise<CommandRouteResult> {
-  return (await recorded(deps, envelope, options)) ?? fallback();
+  await requireDraftWorkAccess(deps, input);
+  const replay = await recorded(deps, envelope, options);
+  if (replay) return replay;
+  let prepared: PreparedCommand;
+  try {
+    prepared = await prepare();
+  } catch (cause) {
+    if (!isNotFoundRefusal(cause)) throw cause;
+    const stored = await recorded(deps, envelope, options);
+    if (stored) return stored;
+    throw cause;
+  }
+  if ("refusal" in prepared) return (await recorded(deps, envelope, options)) ?? prepared.refusal();
+  const outcome = await withEditGrants(deps.fileAccess, prepared.grants, () =>
+    callDraftReview(prepared.effect()),
+  );
+  return respond(
+    outcome,
+    { draftId: envelope.draftId ?? "", commandId: envelope.commandId },
+    options,
+  );
+}
+
+function isNotFoundRefusal(cause: unknown): boolean {
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    (cause as { statusCode?: unknown }).statusCode === 404
+  );
 }
 
 /**
@@ -430,7 +471,6 @@ export async function handleApplyWorkDraftRequest(
     signal?: AbortSignal;
   },
 ): Promise<CommandRouteResult> {
-  await requireDraftWorkAccess(deps, input);
   const { request } = input;
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
@@ -440,41 +480,49 @@ export async function handleApplyWorkDraftRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  const itemApply = { itemApply: true };
-  const replay = await recorded(deps, envelope, itemApply);
-  if (replay) return replay;
-  const item = await commandItem(deps, input);
-  if (!item) {
-    return refused(
-      deps,
-      envelope,
-      () => {
-        throw createError({ statusCode: 404, message: "Draft not found" });
-      },
-      itemApply,
-    );
-  }
-  const grants = await applyGrants(deps, { ...input, items: [item] });
-  const outcome = await withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(
-      deps.documentSync.draftReview.applyItem({
-        workId: input.workId,
-        item,
-        userId: input.userId,
-        envelope,
-        tokens: {
-          ...(request.locationToken ? { locationToken: request.locationToken } : {}),
-          ...(request.liveTextToken !== undefined ? { liveTextToken: request.liveTextToken } : {}),
-          ...(request.branchGenerationToken !== undefined
-            ? { branchGenerationToken: request.branchGenerationToken }
-            : {}),
-        } as never,
-        ...(input.signal ? { signal: input.signal } : {}),
-      }),
-    ),
-  );
-  return respond(outcome, request, itemApply);
+  return commandIngress(deps, input, envelope, { itemApply: true }, async () => {
+    const item = await commandItem(deps, input);
+    if (!item) {
+      return {
+        refusal: () => {
+          throw createError({ statusCode: 404, message: "Draft not found" });
+        },
+      };
+    }
+    return {
+      grants: await applyGrants(deps, { ...input, items: [item] }),
+      effect: () =>
+        deps.documentSync.draftReview.applyItem({
+          workId: input.workId,
+          item,
+          userId: input.userId,
+          envelope,
+          tokens: {
+            ...(request.locationToken ? { locationToken: request.locationToken } : {}),
+            ...(request.liveTextToken !== undefined
+              ? { liveTextToken: request.liveTextToken }
+              : {}),
+            ...(request.branchGenerationToken !== undefined
+              ? { branchGenerationToken: request.branchGenerationToken }
+              : {}),
+          } as never,
+          ...(input.signal ? { signal: input.signal } : {}),
+        }),
+    };
+  });
 }
+
+/** An item the draft no longer holds, as a 200 body status. */
+const goneItem = (request: { draftId: string; itemKey: string }) => (): CommandRouteResult => ({
+  httpStatus: 200,
+  body: { status: "gone", draftId: request.draftId as DraftId, itemKey: request.itemKey },
+});
+
+/** A draft that is not the Work's active one, as a 200 body status. */
+const goneDraft = (draftId: DraftId) => (): CommandRouteResult => ({
+  httpStatus: 200,
+  body: { status: "gone", draftId },
+});
 
 /** Per-change Apply: complete server-vended classes; refusals are 200 body statuses. */
 export async function handleApplyWorkDraftChangesRequest(
@@ -485,7 +533,6 @@ export async function handleApplyWorkDraftChangesRequest(
     signal?: AbortSignal;
   },
 ): Promise<CommandRouteResult> {
-  await requireDraftWorkAccess(deps, input);
   const { request } = input;
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
@@ -495,33 +542,27 @@ export async function handleApplyWorkDraftChangesRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  const replay = await recorded(deps, envelope);
-  if (replay) return replay;
-  const item = await commandItem(deps, input);
-  const goneBody = (): CommandRouteResult => ({
-    httpStatus: 200,
-    body: { status: "gone", draftId: request.draftId as DraftId, itemKey: request.itemKey },
+  return commandIngress(deps, input, envelope, {}, async () => {
+    const item = await commandItem(deps, input);
+    if (!item) return { refusal: goneItem(request) };
+    return {
+      grants: await applyGrants(deps, { ...input, items: [item] }),
+      effect: () =>
+        deps.documentSync.draftReview.applyChanges({
+          workId: input.workId,
+          itemKey: request.itemKey,
+          userId: input.userId,
+          envelope,
+          selection: {
+            kind: "apply",
+            operationIds: request.operationIds,
+            liveRevisionToken: request.liveRevisionToken,
+            draftRevisionToken: request.draftRevisionToken,
+          },
+          ...(input.signal ? { signal: input.signal } : {}),
+        }),
+    };
   });
-  if (!item) return refused(deps, envelope, goneBody);
-  const grants = await applyGrants(deps, { ...input, items: [item] });
-  const outcome = await withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(
-      deps.documentSync.draftReview.applyChanges({
-        workId: input.workId,
-        itemKey: request.itemKey,
-        userId: input.userId,
-        envelope,
-        selection: {
-          kind: "apply",
-          operationIds: request.operationIds,
-          liveRevisionToken: request.liveRevisionToken,
-          draftRevisionToken: request.draftRevisionToken,
-        },
-        ...(input.signal ? { signal: input.signal } : {}),
-      }),
-    ),
-  );
-  return respond(outcome, request);
 }
 
 /**
@@ -532,7 +573,6 @@ export async function handleApplyAllWorkDraftRequest(
   deps: DraftRouteServices,
   input: CommandScope & { request: DraftApplyAllRequest; signal?: AbortSignal },
 ): Promise<CommandRouteResult> {
-  await requireDraftWorkAccess(deps, input);
   const { request } = input;
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
@@ -542,35 +582,28 @@ export async function handleApplyAllWorkDraftRequest(
     selectors: {},
     body,
   });
-  const replay = await recorded(deps, envelope);
-  if (replay) return replay;
-  const listed = await deps.documentSync.draftReview.items({ workId: input.workId });
   const draftId = request.draftId as DraftId;
-  if (listed.draftId !== draftId) {
-    return refused(deps, envelope, () => ({
-      httpStatus: 200,
-      body: { status: "gone", draftId },
-    }));
-  }
-  // The grants of what is still an item; one that isn't answers stale from the service.
-  const keys = new Set(request.items.map((ref) => ref.itemKey));
-  const grants = await applyGrants(deps, {
-    ...input,
-    items: listed.items.filter((item) => keys.has(item.itemKey)),
-  });
-  const outcome = await withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(
-      deps.documentSync.draftReview.applyAll({
-        workId: input.workId,
-        draftId,
-        items: request.items,
-        userId: input.userId,
-        envelope,
-        ...(input.signal ? { signal: input.signal } : {}),
+  return commandIngress(deps, input, envelope, {}, async () => {
+    const listed = await deps.documentSync.draftReview.items({ workId: input.workId });
+    if (listed.draftId !== draftId) return { refusal: goneDraft(draftId) };
+    // The grants of what is still an item; one that isn't answers stale from the service.
+    const keys = new Set(request.items.map((ref) => ref.itemKey));
+    return {
+      grants: await applyGrants(deps, {
+        ...input,
+        items: listed.items.filter((item) => keys.has(item.itemKey)),
       }),
-    ),
-  );
-  return respond(outcome, request);
+      effect: () =>
+        deps.documentSync.draftReview.applyAll({
+          workId: input.workId,
+          draftId,
+          items: request.items,
+          userId: input.userId,
+          envelope,
+          ...(input.signal ? { signal: input.signal } : {}),
+        }),
+    };
+  });
 }
 
 /**
@@ -584,7 +617,6 @@ export async function handleDiscardWorkDraftRequest(
     request: ReturnType<typeof parseDraftDiscardSelection>;
   },
 ): Promise<CommandRouteResult> {
-  await requireDraftWorkAccess(deps, input);
   const { request } = input;
   const perChange = request.closureClassIds !== undefined;
   const { commandId: _, ...body } = request;
@@ -595,48 +627,37 @@ export async function handleDiscardWorkDraftRequest(
     selectors: { itemKey: request.itemKey, documentId: input.documentId },
     body,
   });
-  const replay = await recorded(deps, envelope);
-  if (replay) return replay;
-  const item = await commandItem(deps, input);
-  if (!item) {
-    return refused(deps, envelope, () => ({
-      httpStatus: 200,
-      body: {
-        status: "gone",
-        draftId: request.draftId as DraftId,
-        itemKey: request.itemKey,
-      },
-    }));
-  }
-  const grants = await applyGrants(deps, { ...input, items: [item] }, { live: false });
-  const outcome = await withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(
-      perChange
-        ? deps.documentSync.draftReview.discardChanges({
-            workId: input.workId,
-            itemKey: request.itemKey,
-            userId: input.userId,
-            envelope,
-            selection: {
-              kind: "discard",
-              closureClassIds: request.closureClassIds ?? [],
-              admissionTokens: request.admissionTokens ?? [],
-              memberPartKeys: request.memberPartKeys ?? [],
-              liveRevisionToken: request.liveRevisionToken ?? "",
-              ...(request.draftRevisionToken
-                ? { draftRevisionToken: request.draftRevisionToken }
-                : {}),
-            },
-          })
-        : deps.documentSync.draftReview.discardItem({
-            workId: input.workId,
-            item,
-            userId: input.userId,
-            envelope,
-          }),
-    ),
-  );
-  return respond(outcome, request);
+  return commandIngress(deps, input, envelope, {}, async () => {
+    const item = await commandItem(deps, input);
+    if (!item) return { refusal: goneItem(request) };
+    return {
+      grants: await applyGrants(deps, { ...input, items: [item] }, { live: false }),
+      effect: () =>
+        perChange
+          ? deps.documentSync.draftReview.discardChanges({
+              workId: input.workId,
+              itemKey: request.itemKey,
+              userId: input.userId,
+              envelope,
+              selection: {
+                kind: "discard",
+                closureClassIds: request.closureClassIds ?? [],
+                admissionTokens: request.admissionTokens ?? [],
+                memberPartKeys: request.memberPartKeys ?? [],
+                liveRevisionToken: request.liveRevisionToken ?? "",
+                ...(request.draftRevisionToken
+                  ? { draftRevisionToken: request.draftRevisionToken }
+                  : {}),
+              },
+            })
+          : deps.documentSync.draftReview.discardItem({
+              workId: input.workId,
+              item,
+              userId: input.userId,
+              envelope,
+            }),
+    };
+  });
 }
 
 /**
@@ -647,7 +668,6 @@ export async function handleDiscardAllWorkDraftRequest(
   deps: DraftRouteServices,
   input: CommandScope & { request: DraftDiscardAllRequest },
 ): Promise<CommandRouteResult> {
-  await requireDraftWorkAccess(deps, input);
   const { request } = input;
   const { commandId: _, ...body } = request;
   const envelope = envelopeOf(input, {
@@ -657,28 +677,21 @@ export async function handleDiscardAllWorkDraftRequest(
     selectors: {},
     body,
   });
-  const replay = await recorded(deps, envelope);
-  if (replay) return replay;
-  const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
   const draftId = request.draftId as DraftId;
-  if (listed.draftId !== draftId) {
-    return refused(deps, envelope, () => ({
-      httpStatus: 200,
-      body: { status: "gone", draftId },
-    }));
-  }
-  const grants = await applyGrants(deps, { ...input, items: listed.items }, { live: false });
-  const outcome = await withEditGrants(deps.fileAccess, grants, () =>
-    callDraftReview(
-      deps.documentSync.draftReview.discardAll({
-        workId: input.workId,
-        draftId,
-        userId: input.userId,
-        envelope,
-      }),
-    ),
-  );
-  return respond(outcome, request);
+  return commandIngress(deps, input, envelope, {}, async () => {
+    const listed = await deps.documentSync.draftReview.listItems({ workId: input.workId });
+    if (listed.draftId !== draftId) return { refusal: goneDraft(draftId) };
+    return {
+      grants: await applyGrants(deps, { ...input, items: listed.items }, { live: false }),
+      effect: () =>
+        deps.documentSync.draftReview.discardAll({
+          workId: input.workId,
+          draftId,
+          userId: input.userId,
+          envelope,
+        }),
+    };
+  });
 }
 
 // --- Wire --------------------------------------------------------------------------------------
