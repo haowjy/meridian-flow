@@ -176,8 +176,6 @@ async function harness(
       },
     }),
     refreshDocumentProjection: async () => {},
-    // No holder here has a binding: a copy keeps every ref it read.
-    rebindHolderBoundRefs: async (nodes: unknown) => nodes,
     drafts: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => ({
       // A copy's source read asks for nodes; a plain read shows facts spelled

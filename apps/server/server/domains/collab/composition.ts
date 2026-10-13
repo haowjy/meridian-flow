@@ -136,7 +136,6 @@ import {
 import {
   createDocumentPresentationResolver,
   createPostDurabilityNoticeService,
-  createReversalNoticePort,
 } from "./domain/reversal-notices.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
@@ -514,7 +513,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const publication = createDraftPublication({
     drafts: workDrafts,
     reviewItems,
-    draftLinks: draftBranchAheads,
     push: branchPush,
   });
   const workPushPolicy = createWorkPushPolicy({
@@ -655,7 +653,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
-      rebindHolderBoundRefs: runtime.linkBinder.rebindHolderBoundRefs,
     },
     projections: {
       documentDerivations: derivations,

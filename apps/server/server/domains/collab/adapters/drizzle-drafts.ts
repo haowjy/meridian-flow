@@ -11,7 +11,6 @@ import { assertDraftWriteJoinAllowed } from "../../../shared/draft-write-join.js
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
-import { dropDraftSettlements } from "../../context/adapters/link-ahead-draft-settlements.js";
 import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { Draft, DraftStore, DraftWriteBoundary } from "../domain/ports/draft-store.js";
 
@@ -78,7 +77,6 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
         .update(documentBranches)
         .set({ status: "closed", updatedAt: at })
         .where(and(eq(documentBranches.draftId, draftId), eq(documentBranches.status, "active")));
-      await dropDraftSettlements(db, { draftId });
     },
     async byIds(draftIds) {
       const ids = [...new Set(draftIds)].filter(isUuid);

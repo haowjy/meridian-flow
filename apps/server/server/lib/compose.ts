@@ -477,7 +477,6 @@ export async function createProductionAppPorts(input: {
   const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  let boundCollab: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
   });
@@ -490,16 +489,7 @@ export async function createProductionAppPorts(input: {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  // Bound once the collab domain exists; registration never runs before composition finishes.
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, {
-    drafts: {
-      shareActive: (draftId) => {
-        if (!boundCollab) throw new Error("Drafts used before composition finished");
-        return boundCollab.drafts.shareActive(draftId);
-      },
-    },
-    eventSink,
-  });
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
@@ -587,7 +577,6 @@ export async function createProductionAppPorts(input: {
       },
     },
   });
-  boundCollab = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     lineages: createDrizzleScratchLineages(db),

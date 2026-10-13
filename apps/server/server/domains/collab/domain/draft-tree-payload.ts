@@ -57,28 +57,13 @@ const PayloadSchema = z.object({
   draftId: z.string(),
   /** Null for a publication no writer command owns (D40's switch). */
   command: CommandSchema.nullable(),
-  linkCut: z.object({
-    draftId: z.string(),
-    branches: z
-      .array(z.object({ branchId: z.string(), documentId: z.string(), fingerprint: z.string() }))
-      .readonly(),
-  }),
   items: z.array(PayloadItemSchema).readonly(),
-  holderMeanings: z
-    .array(
-      z.object({
-        holderDocumentId: z.string(),
-        refs: z.array(z.object({ aheadId: z.string(), documentId: z.string() })).readonly(),
-      }),
-    )
-    .readonly(),
 });
 
 /**
  * The step's durable input, immutable once staged. Apply never closes the draft (§2.4).
  * `items` keeps only the items eligible
- * at the pre-staging check; `holderMeanings` is filled there, with the link cut fenced, so
- * completion and recovery bind from this snapshot (V2-H4).
+ * at the pre-staging check, so completion and recovery publish from this snapshot.
  */
 export type DraftTreePayload = z.infer<typeof PayloadSchema>;
 export type DraftTreePayloadItem = DraftTreePayload["items"][number];
@@ -98,9 +83,7 @@ export type DraftTreeRefusal =
   /** A rendered token moved, or an item is no longer the draft's: these items. */
   | { kind: "stale"; itemKeys: readonly DraftItemKey[] }
   /** The draft closed. */
-  | { kind: "gone" }
-  /** A branch changed since its links registered (F18): register again. */
-  | { kind: "link_cut_changed" };
+  | { kind: "gone" };
 
 const StaleDetail = z.object({ itemKeys: z.array(z.string()) });
 
@@ -110,7 +93,6 @@ export const draftTreeRefusal = {
     detail: { itemKeys: [...itemKeys] },
   }),
   gone: (): PublicationRefusal => ({ code: "gone" }),
-  linkCutChanged: (): PublicationRefusal => ({ code: "link_cut_changed" }),
 };
 
 /** The step's refusal, or null for one another step made. */
@@ -120,8 +102,6 @@ export function readDraftTreeRefusal(reason: PublicationRefusal): DraftTreeRefus
       return { kind: "stale", itemKeys: StaleDetail.parse(reason.detail).itemKeys };
     case "gone":
       return { kind: "gone" };
-    case "link_cut_changed":
-      return { kind: "link_cut_changed" };
     default:
       return null;
   }
