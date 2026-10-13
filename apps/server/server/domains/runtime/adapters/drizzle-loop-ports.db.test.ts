@@ -175,6 +175,194 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
     });
 
+    it("retires a failed compaction successor before crash recovery", async () => {
+      const { failCompactionSuccessor } = await import("../loop/compaction-successor.js");
+      const { createRuntimeHarness } = await import("../loop/__tests__/runtime-harness.js");
+      const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
+      const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+      const repos = createDrizzleRepositoriesForTest(db);
+      const authority = createDrizzleRunClaim(db);
+      const eventWriter = createDrizzleEventJournalWriter(db);
+      const delivery = createTestDrizzleDelivery(db, { repos, runClaim: authority, eventWriter });
+      const adopted = await delivery.enqueue(message("failed-summary"));
+      await repos.turns.create({
+        id: adopted.id,
+        threadId: THREAD_A,
+        role: "user",
+        origin: "writer",
+        status: "complete",
+      });
+      const placeholder = await repos.turns.create({
+        threadId: THREAD_A,
+        prevTurnId: adopted.id,
+        role: "compaction",
+        origin: "system",
+        status: "pending",
+      });
+      // A sweep can capture C before its owner commits the failure landing.
+      const candidates = (await repos.turns.listPendingPlaceholders(100)).filter(
+        (turn) => turn.id === placeholder.id,
+      );
+      const lease = { threadId: THREAD_A, executionId: "failed-summary", holderId: "dead-worker" };
+      await db.insert(schema.threadRunLeases).values({
+        ...lease,
+        turnId: placeholder.id,
+        boundTurnIds: [placeholder.id],
+        adoptedMessageIds: [adopted.id],
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const fail = (boundaryDelivery: typeof delivery) =>
+        failCompactionSuccessor({
+          deps: createRuntimeHarness({
+            repos,
+            runClaim: authority,
+            delivery: boundaryDelivery,
+            eventWriter,
+          }).deps,
+          threadId: THREAD_A,
+          placeholder,
+          settleResponses: async () => {},
+          failure: new Error("Summary provider failed"),
+          boundary: {
+            lease,
+            currentTurn: placeholder,
+            continueTask: true,
+            knownTurnIds: new Set([adopted.id, placeholder.id]),
+            expectedLeafTurnId: placeholder.id,
+            current: { kind: "assistant" },
+            prepareNextContext: async () => {
+              throw new Error("Unexpected optional compaction path");
+            },
+          },
+        });
+      const failing = createTestDrizzleDelivery(db, {
+        repos,
+        runClaim: authority,
+        eventWriter: {
+          async appendEvent(threadId, event) {
+            if (event.type === "inbox.changed") throw new Error("projection unavailable");
+            return eventWriter.appendEvent(threadId, event);
+          },
+        },
+      });
+      await expect(fail(failing)).rejects.toThrow();
+      expect((await repos.turns.findById(placeholder.id))?.status).toBe("pending");
+      expect(await repos.turns.listByThread(THREAD_A)).toHaveLength(2);
+      expect(await delivery.selectPending(THREAD_A)).toMatchObject([{ id: adopted.id }]);
+      expect(await db.select().from(schema.threadRunLeases)).toMatchObject([
+        {
+          ...lease,
+          turnId: placeholder.id,
+          adoptedMessageIds: [adopted.id],
+        },
+      ]);
+
+      const failed = await fail(delivery);
+      expect((await repos.turns.findById(placeholder.id))?.status).toBe("error");
+      expect(failed.next.status).toBe("error");
+      expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+
+      // No failure-close or run-session cleanup: the worker died after commit.
+      await createOrphanReportRepair({
+        repos: {
+          ...repos,
+          turns: {
+            ...repos.turns,
+            async listPendingPlaceholders() {
+              return candidates;
+            },
+          },
+        },
+        inbox: delivery,
+        authority,
+        eventWriter,
+        settleStaleExecution: delivery.settleStaleExecution,
+        retireOrphanedReply: delivery.retireOrphanedReply,
+        clearOrphanedTurn: delivery.clearOrphanedTurn,
+        publisher: {
+          async publish() {
+            return "already" as const;
+          },
+        },
+        eventSink: createInMemoryEventSink(),
+      }).sweep(10);
+      expect(await authority.read(THREAD_A)).toEqual({ kind: "asleep" });
+      expect(await delivery.selectPending(THREAD_A)).toEqual([]);
+      expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+      expect(await repos.turns.listUnsettledForThread(THREAD_A)).toEqual([]);
+    });
+
+    it("publishes idle after orphan repair commits the turn and stale lease deletion", async () => {
+      const { createOrphanReportRepair } = await import("../spawn/orphan-report-repair.js");
+      const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+      const repos = createDrizzleRepositoriesForTest(db);
+      const turn = await repos.turns.create({
+        threadId: THREAD_A,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      await db.insert(schema.threadRunLeases).values({
+        threadId: THREAD_A,
+        executionId: "dead-run",
+        holderId: "dead-worker",
+        turnId: turn.id,
+        boundTurnIds: [turn.id],
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      const authority = createDrizzleRunClaim(db);
+      const published: unknown[] = [];
+      const publishStatus = async (threadId: ThreadId) => {
+        // Read through the root connection, as a subscriber would after commit.
+        published.push({
+          status: await authority.read(threadId),
+          turns: await db.select({ status: schema.turns.status }).from(schema.turns),
+          leases: await db.select().from(schema.threadRunLeases),
+        });
+      };
+      const delivery = createTestDrizzleDelivery(db, { repos, runClaim: authority, publishStatus });
+      const repairDeps = {
+        repos,
+        inbox: delivery,
+        authority,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        settleStaleExecution: delivery.settleStaleExecution,
+        retireOrphanedReply: delivery.retireOrphanedReply,
+        clearOrphanedTurn: delivery.clearOrphanedTurn,
+        publisher: {
+          async publish() {
+            return "already" as const;
+          },
+        },
+        eventSink: createInMemoryEventSink(),
+      };
+      const failing = createTestDrizzleDelivery(db, {
+        repos,
+        runClaim: authority,
+        publishStatus,
+        eventWriter: {
+          async appendEvent() {
+            throw new Error("projection unavailable");
+          },
+        },
+      });
+      await createOrphanReportRepair({
+        ...repairDeps,
+        settleStaleExecution: failing.settleStaleExecution,
+      }).sweep(10);
+      expect((await repos.turns.findById(turn.id))?.status).toBe("streaming");
+      expect(await authority.holder(THREAD_A)).toBe("dead-run");
+      expect(published).toEqual([]);
+      const repair = createOrphanReportRepair(repairDeps);
+      await repair.sweep(10);
+      expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+      expect(published).toEqual([
+        { status: { kind: "asleep" }, turns: [{ status: "error" }], leases: [] },
+      ]);
+      const next = required(await authority.startExecution(THREAD_A, "next-run", async () => {}));
+      await authority.release(next);
+    });
+
     it("carries one thread lease through acquire, renew, release, and a stale release after reacquire", async () => {
       const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
       const second = createDrizzleRunClaim(db, { holderId: "holder-2" });
@@ -322,6 +510,130 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         };
       }
+      it("withdraws the last blocked control atomically without poisoning later work", async () => {
+        const { repos, turn } = await assistant();
+        await db
+          .update(schema.turns)
+          .set({ status: "complete" })
+          .where(eq(schema.turns.id, turn.id));
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "usage", async () => {}));
+        try {
+          const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+          const first = await delivery.enqueue({
+            ...message("compact"),
+            intent: "control",
+            body: { kind: "compact" },
+          });
+          const second = await delivery.enqueue({
+            ...message("compact-2"),
+            intent: "control",
+            body: { kind: "compact" },
+          });
+          await delivery.enqueue(notice("remaining-notice"));
+          await delivery.blockForUsage(lease);
+          await delivery.withdrawControl(THREAD_A, first.id);
+          expect((await delivery.readPendingProjection(THREAD_A)).blocked).toBeDefined();
+          await expect(
+            createTestDrizzleDelivery(db, {
+              repos,
+              runClaim,
+              eventWriter: failure,
+            }).withdrawControl(THREAD_A, second.id),
+          ).rejects.toThrow("projection unavailable");
+          expect((await delivery.readPendingProjection(THREAD_A)).blocked).toBeDefined();
+          expect((await delivery.selectPending(THREAD_A)).map((row) => row.id)).toContain(
+            second.id,
+          );
+          expect(await delivery.withdrawControl(THREAD_A, second.id)).toEqual({
+            outcome: "withdrawn",
+          });
+          const [thread] = await db
+            .select()
+            .from(schema.threads)
+            .where(eq(schema.threads.id, THREAD_A));
+          expect(thread?.inboxBlockedReason).toBeNull();
+          expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).not.toHaveProperty(
+            "pending.blocked",
+          );
+          // A refused wake with only notices cannot install a new orphan block.
+          await delivery.blockForUsage(lease);
+          const [empty] = await db
+            .select()
+            .from(schema.threads)
+            .where(eq(schema.threads.id, THREAD_A));
+          expect(empty?.inboxBlockedReason).toBeNull();
+          await delivery.enqueue(message("funded"));
+          expect((await delivery.readPendingProjection(THREAD_A)).blocked).toBeUndefined();
+        } finally {
+          await runClaim.release(lease);
+        }
+      });
+      it("persists the usage block and publishes it until the next run starts", async () => {
+        const { readPendingInbox } = await import("../loop/pending-inbox.js");
+        const { repos, turn } = await assistant();
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "usage", async () => {}));
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        const row = await delivery.enqueue(message("kept"));
+        await expect(
+          createTestDrizzleDelivery(db, { repos, runClaim, eventWriter: failure }).blockForUsage(
+            lease,
+          ),
+        ).rejects.toThrow("projection unavailable");
+        expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
+        await delivery.blockForUsage(lease);
+        await runClaim.release(lease);
+        const saved = await readPendingInbox(createDrizzleInbox(db), THREAD_A);
+        const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
+        const snapshot = await buildThreadSnapshot(
+          repos,
+          {
+            async headSeq() {
+              return 0n;
+            },
+            async readModelProjectionWatermark() {
+              return 0n;
+            },
+          },
+          {
+            async read() {
+              return { kind: "asleep" as const };
+            },
+            async readMany() {
+              return new Map();
+            },
+            readRunningTurnId: runClaim.readRunningTurnId,
+            readOpenExecutionId: runClaim.readOpenExecutionId,
+            readPending: (threadId) => readPendingInbox(delivery, threadId),
+          },
+          THREAD_A,
+        );
+        expect(snapshot.liveState.pending.blocked).toEqual({ reason: "credits_exhausted" });
+        expect(saved.blocked).toEqual({ reason: "credits_exhausted" });
+        expect(saved.items.map((item) => item.id)).toEqual([row.id]);
+        const events = await journalEventsByThread(db, THREAD_A);
+        expect(events.at(-1)?.payload).toMatchObject({
+          pending: { blocked: { reason: "credits_exhausted" } },
+        });
+        const nextLease = required(
+          await runClaim.startExecution(THREAD_A, "restored", async () => {}),
+        );
+        await delivery.adoptBatch(nextLease, async () => ({
+          value: undefined,
+          turnKind: "assistant" as const,
+          turnId: turn.id,
+          messageIds: [row.id],
+        }));
+        expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
+        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).toMatchObject({
+          pending: { items: expect.any(Array) },
+        });
+        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).not.toHaveProperty(
+          "pending.blocked",
+        );
+        await runClaim.release(nextLease);
+      });
       it("rolls back enqueue when projection fails; commits one replacement before the wake", async () => {
         const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
         const writer = createDrizzleEventJournalWriter(db);

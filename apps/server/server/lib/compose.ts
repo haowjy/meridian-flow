@@ -259,7 +259,6 @@ import {
 } from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
-import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
   liveDocuments: Pick<TreeReader, "findById">;
@@ -482,7 +481,6 @@ export async function createProductionAppPorts(input: {
   const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  let boundCollab: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
   });
@@ -495,16 +493,7 @@ export async function createProductionAppPorts(input: {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  // Bound once the collab domain exists; registration never runs before composition finishes.
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, {
-    drafts: {
-      shareActive: (draftId) => {
-        if (!boundCollab) throw new Error("Drafts used before composition finished");
-        return boundCollab.drafts.shareActive(draftId);
-      },
-    },
-    eventSink,
-  });
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
@@ -590,21 +579,8 @@ export async function createProductionAppPorts(input: {
         );
         return { projectId: thread.projectId };
       },
-      resolveContextDocument: (input) =>
-        readThreadContextDocument(
-          {
-            contextPorts,
-            fileAccess,
-            threads: threadRepos.threads,
-            threadWorks: threadRepos.threadWorks,
-            works: workRepo,
-            workAuthorityResolver,
-          },
-          input as never,
-        ),
     },
   });
-  boundCollab = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     lineages: createDrizzleScratchLineages(db),
@@ -672,7 +648,7 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
-  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-v4-flash";
+  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-flash";
   if (
     !MODEL_REGISTRY.providers.some((provider) =>
       provider.models.some((model) => model.id === summarizerModel),
@@ -924,16 +900,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
     inbox: delivery,
+    settleStaleExecution: delivery.settleStaleExecution,
     retireOrphanedReply: delivery.retireOrphanedReply,
     clearOrphanedTurn: delivery.clearOrphanedTurn,
-    settleStaleExecution: delivery.settleStaleExecution,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: runClaim,
-    threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
-    publishStatus: publishThreadStatus,
   });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
@@ -1452,6 +1426,9 @@ export function createInMemoryAppServices(): AppServices {
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
     documentAddresses: {
+      async resolveById() {
+        return { kind: "unavailable" };
+      },
       async resolve() {
         return { kind: "unavailable" };
       },

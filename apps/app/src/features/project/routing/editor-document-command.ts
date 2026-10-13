@@ -1,7 +1,14 @@
 /** Document commands normalize preparation failures and install tabs before any transfer effect. */
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
+import {
+  type ContextTab,
+  editorTabsForWork,
+  getContextTabs,
+  matchesReviewItem,
+  matchesTabInstance,
+  useContextTabsStore,
+} from "@/client/stores";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { resolveLaunchLocator } from "./launch-locator";
@@ -23,7 +30,7 @@ export type EditorCommandSnapshot = {
   editorWorkId: string | null;
   noWorkId: string | null;
   addressDocumentId?: string;
-  manuscriptCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
+  documentCatalog: Parameters<typeof resolveLaunchLocator>[0]["catalog"];
 };
 export function createEditorDocumentCommand({
   projectId,
@@ -65,7 +72,8 @@ export function createEditorDocumentCommand({
           addressed: current.address.destination,
           addressNamesIt: sameDocument,
           draftOnly: options.tab?.kind === "tracked" && options.tab.draftOnly === true,
-          catalog: current.manuscriptCatalog,
+          catalog: current.documentCatalog,
+          selected: !!options.itemKey && !!requested.workId,
           lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
@@ -78,14 +86,20 @@ export function createEditorDocumentCommand({
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
         target,
         preparedTab,
-        options?.draftId ?? (sameDocument ? current.address.draftId : undefined),
+        options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined),
+        options?.changeId ??
+          (sameDocument && (!options?.itemKey || options.itemKey === current.address.itemKey)
+            ? current.address.changeId
+            : undefined),
       );
       const tab = next.tab;
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
       const commit = () => {
         let selected = tab;
         if (preparedTab) {
-          const installed = useContextTabsStore.getState().openTab(projectId, preparedTab);
+          const installed = useContextTabsStore
+            .getState()
+            .openTab(projectId, preparedTab, undefined, resolvedWorkId ?? undefined);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
           if (installed.tab.kind === "tracked") admitDraftReview(installed.tab);
           selected = installed.tab;
@@ -99,6 +113,7 @@ export function createEditorDocumentCommand({
                 ? routeTargetForTab(selected, resolvedWorkId).workId
                 : resolvedWorkId,
               selected.documentId,
+              selected,
             );
       };
       if (
@@ -155,7 +170,8 @@ export function prepareEditorDestination(
   },
   target: ContextRouteRequest,
   preparedTab?: ContextTab,
-  draftId?: string,
+  itemKey?: string,
+  changeId?: string,
 ) {
   let state: Record<string, unknown> | undefined;
   const workspace = getContextTabs(projectId);
@@ -165,13 +181,29 @@ export function prepareEditorDestination(
     (target.path === "" && resolvedWorkId
       ? workspace.selectedTabIdByWork[resolvedWorkId]
       : undefined);
-  const tab = documentId
-    ? workspace.tabs.find((tab) => tab.documentId === documentId)
-    : resolvedWorkId
-      ? workspace.tabs.find((tab) =>
-          contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }),
+  const eligible = editorTabsForWork(workspace.tabs, resolvedWorkId ?? null);
+  const selectedInstance = resolvedWorkId
+    ? workspace.selectedTabInstanceIdByWork?.[resolvedWorkId]
+    : undefined;
+  const addressedDraft =
+    itemKey && documentId && resolvedWorkId
+      ? eligible.find((tab) =>
+          matchesReviewItem(tab, {
+            reviewWorkId: resolvedWorkId,
+            reviewItemKey: itemKey,
+          }),
         )
       : undefined;
+  const tab =
+    addressedDraft ??
+    eligible.find(
+      (tab) => tab.documentId === documentId && tab.tabInstanceId === selectedInstance,
+    ) ??
+    (documentId
+      ? eligible.find((tab) => tab.documentId === documentId)
+      : resolvedWorkId
+        ? eligible.find((tab) => contextTabMatchesRoute(tab, { ...target, workId: resolvedWorkId }))
+        : undefined);
   const selected = preparedTab ?? tab;
   // A locally created document keeps its stable selection even when its
   // readable address is reused or its background placement is rejected.
@@ -180,7 +212,7 @@ export function prepareEditorDestination(
     (selected?.kind === "tracked" && selected.origin === "local-resource")
   ) {
     const tabs = preparedTab
-      ? [...workspace.tabs.filter((tab) => tab.documentId !== preparedTab.documentId), preparedTab]
+      ? [...workspace.tabs.filter((tab) => !matchesTabInstance(tab, preparedTab)), preparedTab]
       : workspace.tabs;
     if (
       !selected?.resourceHandle ||
@@ -222,7 +254,8 @@ export function prepareEditorDestination(
         ? { kind: "absent" }
         : workSelectionFor(destination, target.workId, noWorkId),
       ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
-      draftId,
+      itemKey,
+      changeId: itemKey ? changeId : undefined,
     } as ProjectAddress,
     state,
   };

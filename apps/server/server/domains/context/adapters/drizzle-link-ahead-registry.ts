@@ -1,10 +1,9 @@
 /**
  * Drizzle persistence for ahead-link identities (contract §9): durable rows minted
  * for addresses with no document yet, settled by the first live document that
- * arrives at the exact address (or at registration, if one is already there), and,
- * for a ref written in a draft, by that draft's occupant in its own view (§10.5).
+ * arrives at the exact address (or at registration, if one is already there). Binding
+ * is global and once; drafts store nothing about ahead refs.
  */
-import type { DraftId } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
@@ -23,7 +22,6 @@ import {
   runInRootDrizzleTransaction,
   runOutsideWrite,
 } from "../../../shared/drizzle-transaction.js";
-import type { Drafts } from "../../collab/domain/drafts.js";
 import {
   createNoopEventSink,
   type EventSink,
@@ -48,22 +46,34 @@ import {
   sameCoordinates,
   UnresolvableAddressError,
 } from "./document-address.js";
-import { atAddress, settleRegisteredInDrafts } from "./link-ahead-draft-settlements.js";
 
 /** The registry key: a decoded canonical address resolved to storage coordinates. */
 type Address = DocumentCoordinates;
-export type LinkAheadRegistryDeps = {
-  /** Registration relies on a named draft staying active while it settles there. */
-  drafts: Pick<Drafts, "shareActive">;
-  eventSink?: EventSink;
-};
+export type LinkAheadRegistryDeps = { eventSink?: EventSink };
+
+/** Registry rows at exactly this address. */
+function atAddress(address: Address) {
+  return and(
+    eq(linkAheadRefs.projectId, address.projectId),
+    eq(linkAheadRefs.scheme, address.scheme),
+    address.workId === null
+      ? isNull(linkAheadRefs.workId)
+      : eq(linkAheadRefs.workId, address.workId),
+    address.rootThreadId
+      ? eq(linkAheadRefs.rootThreadId, address.rootThreadId)
+      : isNull(linkAheadRefs.rootThreadId),
+    // The index keys the path's md5 (unbounded paths overflow a B-tree tuple); exact recheck.
+    sql`md5(${linkAheadRefs.path}) = md5(${address.path})`,
+    eq(linkAheadRefs.path, address.path),
+  );
+}
 
 export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
   private readonly eventSink: EventSink;
 
   constructor(
     private readonly db: Database,
-    private readonly deps: LinkAheadRegistryDeps,
+    readonly deps: LinkAheadRegistryDeps,
   ) {
     this.eventSink = deps.eventSink ?? createNoopEventSink();
   }
@@ -74,14 +84,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     await runOutsideWrite(() =>
       runInRootDrizzleTransaction(this.db, async () => {
         const tx = currentDrizzleDb(this.db);
-        // Each draft before any namespace key (lock order rule 4). FOR SHARE waits out a
-        // close in progress, so no settlement can outlive the draft it names (O-12).
-        const active = new Set<DraftId>();
-        for (const draftId of [
-          ...new Set(registrations.flatMap((each) => (each.draftId ? [each.draftId] : []))),
-        ].sort()) {
-          if (await this.deps.drafts.shareActive(draftId)) active.add(draftId);
-        }
         const resolved = [];
         for (const registration of registrations) {
           const aheadId = parseRequestId(registration.aheadId);
@@ -103,10 +105,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
                 });
               },
             ),
-            draftId:
-              registration.draftId && active.has(registration.draftId)
-                ? registration.draftId
-                : null,
           });
         }
         // Namespace keys only: registration is not an authored write (archived Work
@@ -153,13 +151,6 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
           const documentId = await this.liveDocumentAt(address);
           if (documentId) await this.settle(address, documentId, aheadId);
         }
-        // What each ref means in its draft is the settlement module's to decide and write.
-        await settleRegisteredInDrafts(
-          this.db,
-          resolved.flatMap(({ aheadId, address, draftId }) =>
-            draftId ? [{ aheadId, draftId, address }] : [],
-          ),
-        );
       }),
     );
   }

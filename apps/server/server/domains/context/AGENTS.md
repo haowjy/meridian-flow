@@ -93,7 +93,9 @@ identity-bound `upload.delete.ts`. Upload routes delegate all authority,
 classification, collision, persistence, and deletion decisions to `UploadIntake`.
 Composer reference removal never calls the separate upload-delete route.
 
-Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
+Browser bookmarks use `address.get.ts`. A validated review branch resolves its
+document by identity in its active draft tree, independent of path occupancy;
+its canonical address repairs old locators. Plain bookmarks use a current-occupant-first lookup with
 previous paths pointing directly to stable document IDs. Chat links use previous locations only when there is no current occupant;
 editor links carry a stable ref and never consult them. Every successful namespace claim consumes the exact old
 alias in the same transaction; source provisioning is not a path claim.
@@ -126,10 +128,9 @@ reader cannot reach answers `gone` with no location, because a ref is not a
 capability. A hidden document answers `inDraft` with the `draft` that names it
 and that draft's path. The route pins the holder (`holderDocumentId` wherever it
 now sits, else the one document at `baseUri`), only one the reader may name and
-read, so its own bindings answer its ahead refs first (`holderBound`), and returns
-`holderUri` when the holder moved. One it can't pin (unknown, ambiguous, or not
-the reader's) answers ahead refs without bindings and says `holderUnresolved`,
-with no holder location, never silently. Ref-less links keep the address resolver; previous locations
+read, and returns `holderUri` when the holder moved; the holder only spells
+relative links. An ahead ref stays a path until a document goes live at it, then
+binds once for every holder; there are no per-holder bindings. Ref-less links keep the address resolver; previous locations
 apply only when `baseUri` is null (chat).
 
 **A move writes nothing into any document.** Links name documents, so a rename

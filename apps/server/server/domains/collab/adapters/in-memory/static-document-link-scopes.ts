@@ -28,7 +28,6 @@ export function createStaticDocumentLinkScopes(
         undefined,
       ),
     // No holder bindings without a registry; a reader door pins the catalog's own entry.
-    holderBinding: () => null,
     pinHolder: async ({ documentId, uri }) => {
       const entry = catalog?.documents.find((each) =>
         documentId ? each.documentId === documentId : each.uri === uri,

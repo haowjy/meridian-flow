@@ -7,8 +7,9 @@ const COLLAB_HOOK_POINTS = [
   "save.afterWorkLock",
   "checkpoint.afterAuthorityRead",
   "discard.afterLeases",
+  "discard.beforeRetirement",
   "access.afterLeases",
-  "applyItems.afterLinkCut",
+  "applyItems.beforeStaging",
   "applyItems.afterStaging",
   "applyItems.beforeContinue",
 ] as const;

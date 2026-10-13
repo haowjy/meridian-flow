@@ -164,11 +164,13 @@ targets.
 The dock holds one transient document for Work and Chat (see
 [`dock/.context/CONTEXT.md`](../dock/.context/CONTEXT.md)): a Work's Files row opens
 a Scratch note there in the standard editor, editable, with the Editor's saving,
-offline and archived-Work behaviour. The Files tab shows Drafts and Scratch only;
+offline and archived-Work behaviour. The Files tab shows Changes to review and Scratch only;
 Work Uploads have no Files tab surface (composer attachments still land there, see
-[TODO](TODO)). A "Drafts to review" row launches review through the same
+[TODO](TODO)). A "Changes to review" row launches review through the same
 `useAiDraftLauncher` handoff as the other review launchers, not a plain
-document open. Files search uses one name matcher across drafts and Scratch;
+document open. Rows expand to their change lists and Work-wide Apply/Discard
+use creation-bound `useWorkDraftCommands`, independently of the presented review.
+No Work has no Work page or Work-wide list. Files search uses one name matcher across drafts and Scratch;
 rename collisions use direct catalog siblings, and a failed New note remains as
 a retryable, dismissible attempt row. Scratch lists in the sidebar tree's order
 (`compareTreePlaces`), a new note sorted by the path it will land at, so a
@@ -272,7 +274,7 @@ Dock selection does not write the URL. Behind the index the chat surface keeps
 the current chat mounted and hidden — its persistent thread id always tracks
 the display's underlying chat, warm or not. **What is displayed, though, goes
 to nothing on the index**: the context rail (`ContextSidebar`) and the draft
-review scope both key off the *displayed* chat, which is null while the index
+command scope both key off the *displayed* chat, which is null while the index
 is showing, even though the surface stays warm behind it. Only the index's
 reopen chip (`ChatIndexController`'s `CurrentChatChip`) reads the remembered
 current chat directly. A confirmed snapshot 404 clears the current chat; a chat
@@ -296,18 +298,43 @@ membership is unchanged. No feed owns read/unread state. Lifecycle projection up
 `actionRequired` in cached rows when a subscribed thread emits; unsubscribed
 threads are only refreshed by ordinary query reads, not a background signal.
 
-Draft review follows the same persistent-shell rule with two sibling owners.
-The hydrated project owns one Chat review value (Chat Work plus thread) and one
-Editor review value (Editor Work, no thread authority) above desktop/phone
-selection. Boundaries only re-provide those values: ChatSurface and the Chat
-context dock share the Chat value, while viewer/editor surfaces receive the
-Editor value. An explicit latest-wins route handoff carries review commands into
+Draft review follows the persistent-shell rule. The hydrated project owns one
+review value (no thread authority) above desktop/phone selection, fed by the
+presented document (`presented-document.ts`): the Editor address on Context,
+the dock document on desktop Chat/Work, regardless of collapse. Its Work is the
+presented review's Work, falling back to the Editor route Work.
+`PresentedReviewScope` provides it to Editor and dock hosts and offers its
+presentation to outside lists. `ReviewAddressOwner` writes and restores the
+address through the presenting container's port: the Editor route, or dock
+admission without navigation. The port belongs to the screen's container even
+when its document slot is empty; an empty dock never selects the Editor port.
+The route boundary retains the Editor's own URL address while Chat/Work presents.
+Returning to an existing tab reuses its addressed draft only in the same Work
+and document. A rail return from that document's live dock copy resumes the
+Editor address; an explicit dock jump or another reviewed document still hands
+over its own address. Local Close and Back to live cannot erase the warm
+Editor's review. Chat and Work lists compose the existing Work
+drafts query with creation-bound `useWorkDraftCommands`, without review state
+or executor arbitration. Commands publish addressed records for the open
+review to observe. `DraftOnlySettlement` is the project lifecycle owner
+for remote settlement across the Works represented by draft-only Editor tabs
+and the dock document.
+An explicit latest-wins route handoff carries review launches into
 the matching Editor. A matching committed Editor may claim immediately; other
-destinations claim after navigation. Claims require Work, manuscript path,
-mounted document, and draft membership to agree. The document address persists
-the draft identity, so reload restores through the same handoff; stale identities
-are removed by replacing the current entry. The owner survives phone view
-unmounts.
+destinations claim after navigation. Claims require Work, document identity,
+mounted document, and draft membership to agree. Review addresses bind the
+Work and item immediately, with server admission supplying document identity.
+The draft list loads in parallel for labels and whole-item classification, never admission; a colliding live catalog entry never substitutes for that identity. The document address persists
+the item identity. Dock reload asks the selector before any list or catalog restoration,
+keeps failed/unavailable selectors on their destination, and never infers Live from an omitted row. Unknown or refused
+selectors stay on their unavailable/error destination; only owned Exit or deliberate
+navigation out of review consumes them. Route admission also gates owner restoration. The owner survives phone view
+unmounts. Exit consumes only the owned container, Work and item: known document identity
+decides, with the last confirmed scheme/path as fallback while identity is
+unresolved. Pending rename guesses never replace that confirmed locator. Missing draft
+metadata stays unresolved without claiming or repairing ownership; an explicit Work or item
+switch still yields immediately. Selector-hosted reviews do not acquire a live room while
+metadata is unresolved. Leaving review reacquires live through normal session admission.
 
 A chat has one current Work binding. The new-chat Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
@@ -374,7 +401,7 @@ not the project-title header.
 Only `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
 at the main pane/dock band seam — arbitrary surface tokens there re-expose the
 notch wedge on palette change.
-Chat|Changes in the dock is a CONTAINED
+The dock's Chat|File switch (Work only, while a file is open) is a CONTAINED
 segmented track (a recessed ink-mix well whose active segment surfaces paper
 inside the track's own boundary), deliberately not tab chips: only the page
 rises out of a band. Two chips wear the tab grammar — the document tabs and
@@ -464,7 +491,7 @@ again. Writer close and Work pruning are reversible, while acknowledged deletion
 and confirmed draft discard keep exact re-entry guards against stale
 resurrection. A draft-only Discard closes its tab at once and is never
 reopened; a refusal shows on the pending draft instead
-([draft review](../../chat/.context/draft-review.md#the-pending-signal-and-draft-only-tab-lifecycle)).
+([draft review](../../draft-review/.context/draft-review.md)).
 
 ## Project routing, identity, and controllers
 
@@ -499,7 +526,7 @@ overlays. The first segment after `/p/<project>` is always a screen.
 /p/<id>/works/new                        create dialog
 /p/<id>/works/<workId>[?view=files]      Work page
 /p/<id>/editor[?work=<workId>]           Editor, nothing open
-/p/<id>/editor/<scheme>/<path>[?work=…&draft=<draftId>]  document, optionally in review
+/p/<id>/editor/<scheme>/<path>[?work=…&item=<itemKey>]  document, optionally in review
 /p/<id>/editor/browse[/<scheme>/<path>]  folder
 ?settings=<section> on any screen
 ```
@@ -519,7 +546,7 @@ repairs an identity `?work`. Slugs and
 are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
 `repairAddress` rewrites the current entry in place to its canonical path.
-`?draft=` belongs only to a document destination. It names a pending draft in
+`?item=` belongs only to a document destination. It names a pending draft in
 the addressed Work and document, never a separate document. A review address
 is self-describing: the draft belongs to exactly one Work, so a No Work review
 states `?work=` (empty) instead of leaving it to history state or to whichever
@@ -528,7 +555,7 @@ same draft after any Work selection. A live No Work document keeps its clean URL
 review launch pushes history; a launch on the current document replaces the
 entry (`replaceIfSameDocument`). Same document means the same scheme, path, and
 Work: the same path under another Work is a different destination. The review address owner replaces the current
-entry when it adds or removes `?draft=`, so Back does not toggle review.
+entry when it adds or removes `?item=`, so Back does not toggle review.
 
 A route finds its document in one order on desktop and phone
 (`context/route-document-owner.ts`, with `resolveWorkspaceRoute`): the bound
@@ -539,21 +566,21 @@ its document the same way (`routing/launch-locator.ts`: tab, address, draft-only
 admission, live catalog, then the server's identity lookup) and fails rather than
 navigating to a cached path. `gateLiveView` reports `pending`, `failed` or
 `ready`; a failed catalog or draft-list read ends the wait with the route
-boundary's error and Retry (address and `?draft=` kept), and the phone host
+boundary's error and Retry (address and `?item=` kept), and the phone host
 treats a failed address as neither pending nor settled, so it never rejects the route.
 A launch that fails records `review-failed` on the draft's command record, so the
-row or chip the writer clicked shows it (`chat/.context/draft-review.md`).
+row or chip the writer clicked shows it ([draft review](../../draft-review/.context/draft-review.md)).
 
 A path never refutes identity. Renaming or moving a document with its review
 open keeps the review: once the address has resolved, identity decides whether
 it still names the reviewed document, and while it resolves a different path is
-`pending`, not a different document (`EditorReviewAddressOwner`). A committed
+`pending`, not a different document (`ReviewAddressOwner`). A committed
 rename or move through the identity bar or the tree replaces the current entry
-with the new path in the same history entry, and `?draft=` is never dropped on
+with the new path in the same history entry, and `?item=` is never dropped on
 the way. The removal coordinator's route repair carries the address's review, a
 review launch on the current document never moves the address, and replacing an
-entry with its own URL writes no history. Draft rows (composer strip, Work Files)
-take the name from the live catalog entry, so a rename shows there in the same
+entry with its own URL writes no history. Draft rows (composer strip, the Work
+page's Changes to review) take the name from the live catalog entry, so a rename shows there in the same
 frame; a draft-only document keeps its recorded label.
 
 Work details use `/p/<project>/works/<work-id>` from the moment of creation.
@@ -626,7 +653,9 @@ A cold different-project transition replaces the old shell with an inert
 boundary. Same-Work pending Editor navigation retains the usable document and
 its identity chrome; recovery and unavailable/error destinations mask it.
 The route publishes authorized tab metadata, while the document host owns
-live-session binding. See [Editor document lifecycle](editor-document-lifecycle.md)
+live-session binding. A server live-address admission proves live membership
+without waiting for the browser catalog. Review-view admissions carry separate
+provenance and still need live-membership or pending-create evidence. See [Editor document lifecycle](editor-document-lifecycle.md)
 for entry paths, publication ordering, retention, and failure behavior.
 Writer Close commits through accepted navigation; forced availability repair
 remains an identity and revision guarded CAS over the current address projection.

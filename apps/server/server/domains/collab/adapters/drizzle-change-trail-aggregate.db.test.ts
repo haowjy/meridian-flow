@@ -60,6 +60,7 @@ describe("change trail aggregate projections (postgres)", () => {
   afterAll(() => closeDatabase(db));
 
   it("bounds reconciliation and revisits earlier pages to settle every trail", async () => {
+    await db.update(schema.turns).set({ status: "streaming" }).where(eq(schema.turns.id, TURN_ID));
     const turnIds = Array.from({ length: 101 }, () => crypto.randomUUID() as TurnId);
     await db.insert(schema.turns).values(
       turnIds.map((id, index) => ({
@@ -86,7 +87,7 @@ describe("change trail aggregate projections (postgres)", () => {
     const states = async () =>
       (await db.select().from(schema.changeTrailShells)).map((row) => row.state);
     await writer.reconcileTerminalOwners();
-    expect((await states()).filter((state) => state === "settling")).toHaveLength(100);
+    expect((await states()).filter((state) => state === "settling")).toHaveLength(99);
     await writer.reconcileTerminalOwners();
     expect((await states()).filter((state) => state === "settling")).toHaveLength(101);
     await writer.reconcileTerminalOwners();

@@ -89,7 +89,9 @@ provider answered, `providerError` (`status`, message capped at 1,000
 characters) as debug evidence only. `replyFailureMetadata` is the only writer.
 The codec lives in `@meridian/contracts/threads` so the app reads the same
 shape: a reply with `retryable: false` and a `providerError` renders as a
-provider-declined block with no Retry. The provider's message never enters
+provider-declined block with Retry under the same latest-reply conditions as
+other failures. The gateway verdict does not block a writer's explicit Retry;
+it may succeed once the cause is fixed. The provider's message never enters
 event logs. A completed
 compaction's metadata also carries its frozen `elisions` and ordered
 `pinnedRequestTurnIds`; the codec declares `trigger` and

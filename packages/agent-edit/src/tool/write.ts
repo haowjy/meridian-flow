@@ -1,25 +1,21 @@
-// Thin facade wiring the read and mutation entry points, idempotency, and response lifecycle.
-import type { LinkView } from "@meridian/contracts";
 import * as Y from "yjs";
 import type { z } from "zod";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { UndoAvailability } from "../undo/availability.js";
-import { createThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { ReadCommandSchema, WriteCommandSchema } from "./command-schema.js";
+import { createDocumentEditCommands } from "./document-edits.js";
 import { createDocumentRenderer } from "./document-renderer.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { AgentEditResultCommand } from "./model-result.js";
 import { createMutationCommit } from "./mutation-commit.js";
+import { settledReceipt } from "./receipt.js";
 import { createResponseCommitter, type ResponseCommitter } from "./response-committer.js";
 import { status, toOutcome } from "./response-format.js";
 import { createRuntimeStore } from "./runtime-store.js";
 import type {
   DocumentCommandName,
   ReadFunction,
-  RedoResult,
   ResponseCommitSuccessResult,
   ResponseRollbackResult,
-  UndoResult,
   WriteContext,
   WriteFunction,
   WriteOutcome,
@@ -34,63 +30,50 @@ import {
   writeSchemaError,
 } from "./write-helpers.js";
 import { createWriteIdempotencyCache, scopedToolUseId } from "./write-idempotency.js";
-import { createWriteReversal } from "./write-reversal.js";
-import {
-  createWriteReversalEndpoints,
-  type ReverseInput,
-  type VerifiedReverseResult,
-} from "./write-reversal-endpoints.js";
 
 export type { CreateWriteToolOptions } from "./write-deps.js";
-export type {
-  ReverseInput,
-  VerifiedReverseEffect,
-  VerifiedReverseResult,
-} from "./write-reversal-endpoints.js";
-
-const DEFAULT_UNDO_CLIENT_ID = 999;
-
 export interface WriteTool {
   read: ReadFunction;
   write: WriteFunction;
   recover(docId: string): Promise<void>;
+  /** Buffer-only selection. Public finalizers take the typed provider/scope pair. */
   commitResponse(
-    responseId: string,
+    editScopeId: string,
     options?: import("./response-committer.js").ResponseCommitOptions,
   ): Promise<ResponseCommitSuccessResult>;
   rollbackResponse(
-    responseId: string,
-    options?: Pick<
-      import("./response-committer.js").ResponseCommitOptions,
-      "deferFinalization" | "branchLease"
-    >,
+    editScopeId: string,
+    options?: Pick<import("./response-committer.js").ResponseCommitOptions, "deferFinalization">,
   ): Promise<ResponseRollbackResult>;
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
-  withResponseDocument: ResponseCommitter["withResponseDocument"];
+  prepare: ResponseCommitter["prepare"];
   responseDocuments: ResponseCommitter["responseDocuments"];
-  getAvailability(docId: string, threadId: string): Promise<UndoAvailability>;
-  /** `linkView`: the view of the destination whose history the host routed this to. */
-  undo(docId: string, threadId: string, linkView?: LinkView): Promise<UndoResult>;
-  redo(docId: string, threadId: string, linkView?: LinkView): Promise<RedoResult>;
-  reverse(input: ReverseInput): Promise<UndoResult | RedoResult | VerifiedReverseResult>;
-  /**
-   * Drop one thread's process-local state on one document: its staged writes, runtime and
-   * undo origins. Both ids are required; there is no "every thread" or "every document".
-   */
+  /** Move one response document's staged writes (one peer's, when named) to rejected receipts. */
+  refuseStaged(
+    responseId: string,
+    documentId: string,
+    reason: import("../ports/document-coordinator.js").StagedWriteRejectionReason,
+    peerBranchId?: string,
+  ): void;
+  retirePeer(input: {
+    documentId: string;
+    threadId: string;
+    peerBranchId: string;
+    reason: import("../ports/document-coordinator.js").DiscardedWriteReason;
+  }): Promise<void>;
+  /** Drop one thread/document pair's runtimes and staged writes, for the request that owns them. */
   invalidateThreadDocument(docId: string, threadId: string): Promise<void>;
-  /** Drop one thread's runtimes on every document (a pooled core being evicted). */
+  /** Evict one thread's runtimes without revoking its response buffers. */
   evictThread(threadId: string): Promise<void>;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
-  const threadOrigins = createThreadOriginRegistry();
-  const undoClientId = options.undoClientId ?? DEFAULT_UNDO_CLIENT_ID;
   const localSessions = new Map<string, ActorSession>();
   const idempotencyCache = createWriteIdempotencyCache(options);
   const autoTurnIdNonce = createAutoTurnIdNonce();
   const autoTurnCounter = { value: 0 };
   const renderer = createDocumentRenderer({ model: options.model, codec: options.codec });
-  const reversalStore = options.journal;
+  const journal = options.journal;
   const mutationCommit = createMutationCommit({
     links: options.links,
     journal: options.journal,
@@ -116,21 +99,6 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     closedResponseTombstoneCap: options.closedResponseTombstoneCap,
     afterPreflight: options.afterResponsePreflight,
   });
-  const writeReversal = createWriteReversal({
-    reversalStore,
-    coordinator: options.coordinator,
-    runtimeStore,
-    mutationCommit,
-    model: options.model,
-    codec: options.codec,
-    links: options.links,
-    undoClientId,
-    reversalNoticePort: options.reversalNoticePort,
-    deferUntilCommit: options.deferUntilCommit,
-    onInvariantViolation: options.onInvariantViolation,
-    onReversalNoticeFailed: options.onReversalNoticeFailed,
-  });
-
   const commands = createWriteCommands({
     options: {
       model: options.model,
@@ -142,30 +110,28 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       semanticProvenance: options.semanticProvenance,
       onLinkSpliceFallback: options.onLinkSpliceFallback,
     },
-    threadOrigins,
     autoTurnCounter,
     autoTurnIdNonce,
     renderer,
-    reversalStore,
+    journal,
     mutationCommit,
     runtimeStore,
     responseCommitter,
   });
-  const reversalEndpoints = createWriteReversalEndpoints({
-    coordinator: options.coordinator,
-    localSessions,
-    responseCommitter,
-    writeReversal,
+  const documentEdits = createDocumentEditCommands({
+    options,
+    committer: responseCommitter,
     runtimeStore,
-    threadOrigins,
   });
-  const dispatch = createWriteDispatch({ commands, reversal: reversalEndpoints });
+  const dispatch = createWriteDispatch({ commands, documentEdits });
 
   const read: ReadFunction = async (command, context = {}) => {
     const parsed = ReadCommandSchema.safeParse(command);
     if (!parsed.success) return invalidCommand("read", parsed.error);
     return execute("read", parsed.data, context, (valid, session) =>
-      commands.read(valid, session, context),
+      valid.format === "edits"
+        ? documentEdits(valid, session, context)
+        : commands.read(valid, session, context),
     );
   };
 
@@ -199,7 +165,7 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
         responseScopedStagedCacheStillValid(cached, context, session, toolUseId, responseCommitter)
       ) {
         idempotencyCache.notifyHit(session, context, toolUseId, cached);
-        return cached;
+        return withNotices(cached, context);
       }
     }
 
@@ -215,7 +181,9 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
           sessionId: session.id,
           threadId: session.threadId,
           ...(context.turnId ? { turnId: context.turnId } : {}),
-          ...(context.responseId ? { responseId: context.responseId } : {}),
+          ...(context.responseIdentity?.editScopeId
+            ? { responseId: context.responseIdentity?.editScopeId }
+            : {}),
           ...(toolUseId ? { toolUseId } : {}),
         });
       } catch {
@@ -224,9 +192,37 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
       result = writeError(cause);
     }
     const outcome = toOutcome(commandName, result, validCommand.file);
+    if (
+      commandName === "undo" ||
+      commandName === "redo" ||
+      commandName === "revert" ||
+      ("format" in validCommand && validCommand.format === "edits")
+    ) {
+      const receipt = settledReceipt(
+        { commandName, writeId: result.writeId ?? "", durableWriteId: result.settlementId ?? "" },
+        result.revision ?? null,
+        result,
+      );
+      outcome.result = { ...receipt.result, path: validCommand.file };
+    }
     if (cacheKey && outcome.status !== "internal_error")
       idempotencyCache.remember(cacheKey, outcome);
-    return outcome;
+    return withNotices(outcome, context);
+  }
+
+  function withNotices(outcome: WriteOutcome, context: WriteContext): WriteOutcome {
+    const notices = context.responseIdentity?.editScopeId
+      ? responseCommitter.drainNotices(context.responseIdentity?.editScopeId)
+      : [];
+    return notices.length
+      ? {
+          ...outcome,
+          result: {
+            ...outcome.result,
+            message: [outcome.result.message, ...notices].filter(Boolean).join("\n"),
+          },
+        }
+      : outcome;
   }
 
   async function resolveSession(context: WriteContext): Promise<ActorSession> {
@@ -254,16 +250,28 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     commitResponse: responseCommitter.commitResponse,
     rollbackResponse: responseCommitter.rollbackResponse,
     hasResponseDocument: responseCommitter.hasResponseDocument,
-    withResponseDocument: responseCommitter.withResponseDocument,
+    prepare: responseCommitter.prepare,
     responseDocuments: responseCommitter.responseDocuments,
-    getAvailability: writeReversal.getAvailability,
-    undo: (docId, threadId, linkView) =>
-      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "undo", linkView),
-    redo: (docId, threadId, linkView) =>
-      reversalEndpoints.runTurnReversalEndpoint(docId, threadId, "redo", linkView),
-    reverse: reversalEndpoints.reverse,
-    invalidateThreadDocument: reversalEndpoints.invalidateThreadDocument,
-    evictThread: reversalEndpoints.evictThread,
+    refuseStaged: responseCommitter.refuseStaged,
+    async retirePeer(input) {
+      if (!input.documentId || !input.threadId || !input.peerBranchId)
+        throw new Error("Retirement requires a document, thread and peer");
+      responseCommitter.retirePeer(input);
+      await runtimeStore.evictThreadRuntimes(input.documentId, input.threadId, {
+        markLiveDocStale: true,
+        peerBranchId: input.peerBranchId,
+      });
+    },
+    async invalidateThreadDocument(docId, threadId) {
+      if (!docId || !threadId)
+        throw new Error("invalidateThreadDocument names one document and one thread");
+      responseCommitter.dropForThread(docId, threadId);
+      await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
+    },
+    async evictThread(threadId) {
+      if (!threadId) throw new Error("evictThread names one thread");
+      await runtimeStore.evictThreadRuntimes(null, threadId);
+    },
   };
 }
 
@@ -274,12 +282,16 @@ function responseScopedStagedCacheStillValid(
   toolUseId: string | undefined,
   responseCommitter: import("./response-committer.js").ResponseCommitter,
 ): boolean {
-  if (!context.responseId || cached.status !== "success" || cached.phase !== "staged") {
+  if (
+    !context.responseIdentity?.editScopeId ||
+    cached.status !== "success" ||
+    cached.phase !== "staged"
+  ) {
     return true;
   }
   try {
     responseCommitter.assertCanStage({
-      responseId: context.responseId,
+      responseId: context.responseIdentity?.editScopeId,
       session,
       turnId: context.turnId,
       writeId: scopedToolUseId(context, toolUseId),

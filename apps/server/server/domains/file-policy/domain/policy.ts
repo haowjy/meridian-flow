@@ -8,7 +8,7 @@
  * Skill files (`skills://`, D52) have their own rule, `skillLevel`.
  */
 
-import type { ContextUriScheme } from "@meridian/contracts/context-uri";
+import { type ContextUriScheme, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { matchAncestors } from "./ancestors.js";
 import {
   type AgentChain,
@@ -26,29 +26,19 @@ import {
   type WorkRef,
 } from "./types.js";
 
-interface SourceRule {
-  /** Whether a draft-mode chat's Work holds agent writes to this source for review. */
-  readonly drafted: boolean;
-  /** The most any agent may do here, whatever its permission. */
-  readonly agentCap: FileAccessLevel;
-}
-
-/**
- * Per-source rules. Scratch is the Work's own working area and uploads are
- * read-only for agents, so neither is ever drafted (D9, D11).
- */
-const SOURCE_RULES: Readonly<Record<ContextUriScheme, SourceRule>> = {
-  manuscript: { drafted: true, agentCap: "edit" },
-  kb: { drafted: true, agentCap: "edit" },
-  user: { drafted: true, agentCap: "edit" },
-  unfiled: { drafted: true, agentCap: "edit" },
-  scratch: { drafted: false, agentCap: "edit" },
-  uploads: { drafted: false, agentCap: "read" },
+/** The most any agent may do in each source, whatever its permission. */
+const SOURCE_AGENT_CAPS: Readonly<Record<ContextUriScheme, FileAccessLevel>> = {
+  manuscript: "edit",
+  kb: "edit",
+  user: "edit",
+  unfiled: "edit",
+  scratch: "edit",
+  uploads: "read",
 };
 
 /** Whether agent writes to this source go to the Work draft in draft mode. */
 export function isDrafted(scheme: ContextUriScheme): boolean {
-  return SOURCE_RULES[scheme].drafted;
+  return isDraftedScheme(scheme);
 }
 
 /**
@@ -163,7 +153,7 @@ function workTerms(work: FileWorkFacts): Term[] {
  * of its thread's current Work, No Work's included (D55). The minimum wins.
  */
 function agentTerms(chain: AgentChain, facts: FileFacts): Term[] {
-  const terms: Term[] = [{ cap: SOURCE_RULES[facts.scheme].agentCap, limit: "uploads_read_only" }];
+  const terms: Term[] = [{ cap: SOURCE_AGENT_CAPS[facts.scheme], limit: "uploads_read_only" }];
   for (const link of chain) {
     const ownScratch =
       facts.scheme === "scratch" &&

@@ -25,10 +25,9 @@ it("shows the failure with a retry, keeping the destination's own content mounte
   );
 });
 
+// Masking is one `issue` truthiness test; the error row is the first test, resource-viewing shares it.
 it.each([
   "unavailable",
-  "error",
-  "resource-viewing",
   "loading",
 ] as const)("%s masks the destination body, not its address navigation", async (issue) => {
   const onNavigate = vi.fn();

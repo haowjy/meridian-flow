@@ -2266,7 +2266,6 @@ else
           inbox: rig.delivery,
           eventWriter: rig.eventWriter,
           authority: rig.runClaim,
-          threadLock: createDrizzleThreadLock(db),
           publisher: { publish: async () => "already" as const },
           eventSink: rig.deps.eventSink,
         });

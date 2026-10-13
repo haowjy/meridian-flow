@@ -32,7 +32,7 @@ export function createDrizzleDraftCreates(deps: {
   }
 
   return {
-    async createInDraft({ draft, dir, name, extension, node }) {
+    async createInDraft({ draft, dir, name, extension, node, createdBy }) {
       return createInDraft(deps.db, {
         draftId: draft.id,
         contextSourceId: await lockedSource(),
@@ -40,6 +40,7 @@ export function createDrizzleDraftCreates(deps: {
         name,
         extension,
         node,
+        ...(createdBy ? { createdBy } : {}),
         ensureEmptyContent: (documentId) => deps.documents.ensureDocument(documentId),
         ensureDraftBranch: (documentId) =>
           deps.branches.ensureCreatedDraftBranch({ documentId, draftId: draft.id }),

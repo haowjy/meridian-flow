@@ -1,4 +1,7 @@
+import { WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
+import { WorkCommandSchema } from "../../../tools/core-tools.js";
+import { modelToolSchema } from "../../../tools/model-tool-schema.js";
 import { assistant, system, toolResult, user } from "../../helpers/messages.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 
@@ -46,7 +49,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   it("prepends empty thinking on DeepSeek when tool_use has none", () => {
     const params = toAnthropicMessageParams(
       requestWithToolPair(),
-      "deepseek-v4-flash",
+      "deepseek-flash",
       256,
       "deepseek",
     );
@@ -74,7 +77,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
               type: "reasoning",
               text: "load it",
               providerOptions: {
-                meridian: { provider: "deepseek", model: "deepseek-v4-flash" },
+                meridian: { provider: "deepseek", model: "deepseek-flash" },
                 anthropic: { signature: "sig" },
               },
             },
@@ -89,7 +92,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
         ],
         tools: [skillTool],
       },
-      "deepseek-v4-flash",
+      "deepseek-flash",
       256,
       "deepseek",
     );
@@ -119,7 +122,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
         ],
         tools: [skillTool],
       },
-      "deepseek-v4-flash",
+      "deepseek-flash",
       256,
       "deepseek",
     );
@@ -220,46 +223,6 @@ describe("Anthropic prompt-cache breakpoints", () => {
     );
     expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
   });
-
-  it("never emits more than 4 cache_control breakpoints for the loop's 3-mark scheme", () => {
-    // Mirrors what `loop/prompt-cache-marks.ts` marks: the system message,
-    // the previous request's tail (read point), and this request's tail.
-    const params = toAnthropicMessageParams(
-      {
-        messages: [
-          {
-            ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
-          },
-          {
-            ...user("History line one."),
-            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true as const }],
-          },
-          assistant([{ type: "tool_use", toolCallId: "call_1", toolName: "search", input: {} }]),
-          {
-            ...toolResult("call_1", "result", false),
-            content: [
-              {
-                type: "tool_result",
-                toolCallId: "call_1",
-                output: "result",
-                isError: false,
-                cacheBreakpoint: true,
-              },
-            ],
-          },
-        ],
-      },
-      "claude-sonnet-4-5",
-      256,
-      undefined,
-      60 * 60 * 1_000,
-    );
-    const wireJson = JSON.stringify(params);
-    const breakpointCount = wireJson.split('"cache_control"').length - 1;
-    expect(breakpointCount).toBe(3);
-    expect(breakpointCount).toBeLessThanOrEqual(4);
-  });
 });
 
 it("keeps implicit thinking and cached content unchanged when only the output cap changes", () => {
@@ -274,17 +237,61 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
   };
   const original = toAnthropicMessageParams(
     request,
-    "claude-sonnet-4-20250514",
+    "claude-sonnet-4-6",
     16384,
     "anthropic",
     3600000,
   );
   const capped = toAnthropicMessageParams(
     { ...request, maxTokens: 4096 + 300 },
-    "claude-sonnet-4-20250514",
+    "claude-sonnet-4-6",
     16384,
     "anthropic",
     3600000,
   );
   expect(capped).toEqual({ ...original, max_tokens: 4396 });
+});
+
+it("preserves real Work and Write command instructions only when projecting for Anthropic", () => {
+  for (const input of [WorkCommandSchema, WriteToolInputSchema]) {
+    const inputSchema = modelToolSchema(input);
+    const original = structuredClone(inputSchema);
+    const request = { messages: [user("Hello")], tools: [{ ...skillTool, inputSchema }] };
+    const params = toAnthropicMessageParams(request, "claude-sonnet-4-6", 128_000, "anthropic");
+    const advertised = params.tools?.[0] as {
+      input_schema: { properties: Record<string, { description: string }>; required: string[] };
+    };
+    const branches = inputSchema.oneOf as Array<{
+      description: string;
+      required: string[];
+      properties: Record<string, { const?: string; description?: string }>;
+    }>;
+    for (const branch of branches) {
+      const command = branch.properties.command.const;
+      const guidance = advertised.input_schema.properties.command.description;
+      expect(guidance).toContain(`${command}: ${branch.description}`);
+      expect(guidance).toContain(`Required fields: ${branch.required.join(", ")}.`);
+      expect(guidance).toContain(`Allowed fields: ${Object.keys(branch.properties).join(", ")}.`);
+      for (const [field, schema] of Object.entries(branch.properties)) {
+        expect(advertised.input_schema.properties[field].description).toContain(`[${command}]`);
+        if (schema.description)
+          expect(advertised.input_schema.properties[field].description).toContain(
+            schema.description,
+          );
+      }
+    }
+    expect(advertised.input_schema).not.toHaveProperty("oneOf");
+    const { oneOf, ...root } = inputSchema;
+    const anyOfRequest = {
+      ...request,
+      tools: [{ ...skillTool, inputSchema: { ...root, anyOf: oneOf } }],
+    };
+    expect(
+      toAnthropicMessageParams(anyOfRequest, "claude-sonnet-4-6", 128_000, "anthropic").tools?.[0],
+    ).toHaveProperty("input_schema", advertised.input_schema);
+    expect(
+      toAnthropicMessageParams(request, "deepseek-flash", 65_536, "deepseek").tools?.[0],
+    ).toHaveProperty("input_schema", original);
+    expect(inputSchema).toEqual(original);
+  }
 });

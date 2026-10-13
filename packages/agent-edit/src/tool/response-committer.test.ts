@@ -1,6 +1,11 @@
 // Response committer lifecycle invariants: observer failures must not alter outcomes.
+
 import { describe, expect, it, vi } from "vitest";
-import type { ReversalStore, UpdateJournal } from "../ports/update-journal.js";
+import * as Y from "yjs";
+import { unwrapDoc } from "../handles.js";
+import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import { createStaticDocumentLinks } from "../ports/static-document-links.js";
+import type { UpdateJournal } from "../ports/update-journal.js";
 import { blockTexts, outcomeText } from "./test-support/assertions.js";
 import { context, harness, THREAD_ID } from "./test-support/write-tool-harness.js";
 import type { ResponseCommitterTransitionDetail } from "./types.js";
@@ -16,7 +21,11 @@ describe("response committer", () => {
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
-      { ...context, responseId, turnId: "turn-deferred-close" },
+      {
+        ...context,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+        turnId: "turn-deferred-close",
+      },
     );
     let participant: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
 
@@ -40,7 +49,11 @@ describe("response committer", () => {
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
-      { ...context, responseId, turnId: "turn-publish-close" },
+      {
+        ...context,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+        turnId: "turn-publish-close",
+      },
     );
     let commit = async () => {};
     await ctx.core.commitResponse(responseId, {
@@ -54,6 +67,155 @@ describe("response committer", () => {
       transition: "closed",
       closedOutcome: "committed",
     });
+
+    const links = createStaticDocumentLinks();
+    let mutateSaveLinks = false;
+    let failSaveLinks = false;
+    const saveReplicas: Y.Doc[] = [];
+    const openLinks = links.prepare.bind(links);
+    links.prepare = async (request) => {
+      if (mutateSaveLinks) {
+        saveReplicas.push(...request.docs);
+        for (const doc of request.docs)
+          doc.getMap("save-link-adapter").set("must-stay-on-replica", true);
+        if (failSaveLinks) throw new Error("link preparation refused");
+      }
+      return openLinks(request);
+    };
+    const prepared = harness({ "chapter.md": "Alpha." }, { links });
+    const snapshots: {
+      bytes: Uint8Array;
+      cut: import("../ports/document-coordinator.js").StagedHelperCut;
+    }[] = [];
+    let pauseNext = false;
+    let entered!: () => void, release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    Object.assign(prepared.coordinator, {
+      withStagedWrites: (async (request) => {
+        if (pauseNext) {
+          pauseNext = false;
+          entered();
+          await gate;
+        }
+        snapshots.push({ bytes: Y.encodeStateAsUpdate(request.sourceDoc), cut: request.helperCut });
+        return prepared.coordinator.withDocument(request.docId, async (canonical) => {
+          const candidate = new Y.Doc({ gc: false });
+          Y.applyUpdate(candidate, Y.encodeStateAsUpdate(canonical));
+          for (const entry of request.entries) Y.applyUpdate(candidate, entry.update);
+          const state = Y.encodeStateAsUpdate(candidate);
+          candidate.destroy();
+          return {
+            keptEntries: request.entries,
+            helperState: state,
+            helperCut: { generation: 1, state: Y.encodeStateAsUpdate(canonical) },
+            beforeState: Y.encodeStateAsUpdate(canonical),
+          };
+        });
+      }) satisfies NonNullable<DocumentCoordinator["withStagedWrites"]>,
+    });
+    const peer = {
+      ...context,
+      responseIdentity: { providerResponseId: "prepared-abort", editScopeId: "prepared-abort" },
+      turnId: "prepared-turn",
+      interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, afterJournalId: 0 },
+    };
+    await prepared.core.read({ file: "chapter.md" }, peer);
+    expect(
+      (await prepared.core.write({ command: "insert", file: "chapter.md", content: "Beta." }, peer))
+        .status,
+    ).toBe("success");
+    const borrowed = await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md");
+    if (!borrowed) throw new Error("Missing prepared lease");
+    unwrapDoc(borrowed.doc).getMap("foreign").set("must-stay-on-replica", true);
+    borrowed.dispose();
+    const before = snapshots.at(-1);
+    await prepared.core.write(
+      { command: "replace", file: "chapter.md", find: "Alpha.", content: "Pink." },
+      context,
+    );
+    let rollback: { commit(): void | Promise<void>; abort(): void | Promise<void> } | undefined;
+    await prepared.core.rollbackResponse(peer.responseIdentity.editScopeId, {
+      deferFinalization: (deferred) => {
+        rollback = deferred;
+      },
+    });
+    await rollback?.abort();
+    (await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"))?.dispose();
+    expect(snapshots.at(-1)).toEqual(before);
+    // A scoped read replay started before a later stage must not reject that new write.
+    pauseNext = true;
+    const reading = prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md");
+    await waiting;
+    try {
+      expect(
+        (
+          await prepared.core.write(
+            { command: "insert", file: "chapter.md", content: "Gamma." },
+            peer,
+          )
+        ).status,
+      ).toBe("success");
+    } finally {
+      release();
+    }
+    const current = await reading;
+    if (!current) throw new Error("Missing read lease");
+    try {
+      expect(blockTexts(unwrapDoc(current.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+    } finally {
+      current.dispose();
+    }
+    expect((await prepared.core.read({ file: "chapter.md" }, peer)).result.message).toBeUndefined();
+    const replayCount = snapshots.length;
+    const readers = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"),
+      ),
+    );
+    for (const reader of readers) {
+      if (!reader) throw new Error("Missing concurrent read lease");
+      expect(blockTexts(unwrapDoc(reader.doc))).toEqual(["Pink.", "Beta.", "Gamma."]);
+      reader.dispose();
+    }
+    expect(snapshots.length - replayCount).toBe(12);
+    mutateSaveLinks = true;
+    failSaveLinks = true;
+    await expect(prepared.core.commitResponse(peer.responseIdentity.editScopeId)).rejects.toThrow(
+      "link preparation refused",
+    );
+    expect(saveReplicas.length).toBeGreaterThan(0);
+    expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
+    failSaveLinks = false;
+    await prepared.core.commitResponse(peer.responseIdentity.editScopeId, {
+      deferFinalization: (deferred) => {
+        rollback = deferred;
+      },
+    });
+    const checkSaveReplica = () => {
+      const snapshot = snapshots.at(-1);
+      if (!snapshot) throw new Error("Missing replay source");
+      const source = new Y.Doc({ gc: false });
+      try {
+        Y.applyUpdate(source, snapshot.bytes);
+        expect(source.getMap("save-link-adapter").size).toBe(0);
+      } finally {
+        source.destroy();
+      }
+    };
+    checkSaveReplica();
+    expect(saveReplicas.every((doc) => doc.isDestroyed)).toBe(true);
+    await rollback?.abort();
+    (await prepared.core.prepare(peer.responseIdentity.editScopeId, "chapter.md"))?.dispose();
+    checkSaveReplica();
+    await prepared.core.rollbackResponse(peer.responseIdentity.editScopeId);
+    expect(prepared.core.hasResponseDocument(peer.responseIdentity.editScopeId, "chapter.md")).toBe(
+      false,
+    );
   });
 
   it("commits a multi-document thread-peer response in one journal batch", async () => {
@@ -66,9 +228,13 @@ describe("response committer", () => {
         { command: "insert", file, content: "Tail." },
         {
           ...context,
-          responseId,
+          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
           turnId: `turn-${file}`,
-          interactionContext: { mode: "threadPeer", branchGeneration: 1, branchId: "branch-peer" },
+          interactionContext: {
+            mode: "threadPeer",
+            branchGeneration: 1,
+            peerBranchId: "branch-peer",
+          },
         },
       );
     }
@@ -98,7 +264,7 @@ describe("response committer", () => {
     const responseContext = {
       ...context,
       turnId: "turn-durable-projection-recovery-failure",
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
@@ -134,7 +300,11 @@ describe("response committer", () => {
   it("rejects staging while a response commit owns its snapshot", async () => {
     const ctx = harness({ "chapter.md": "Alpha." });
     const responseId = "response-stage-during-commit";
-    const responseContext = { ...context, turnId: "turn-stage-during-commit", responseId };
+    const responseContext = {
+      ...context,
+      turnId: "turn-stage-during-commit",
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
@@ -169,7 +339,11 @@ describe("response committer", () => {
       { onResponseCommitterTransition: (event) => transitions.push(event) },
     );
     const responseId = "response-drop-during-append";
-    const responseContext = { ...context, turnId: "turn-drop-during-append", responseId };
+    const responseContext = {
+      ...context,
+      turnId: "turn-drop-during-append",
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(
       { command: "insert", file: "chapter.md", content: "Beta." },
@@ -215,7 +389,10 @@ describe("response committer", () => {
     const responseContext = {
       ...context,
       turnId: "turn-observer-throw",
-      responseId: "response-observer-throw",
+      responseIdentity: {
+        providerResponseId: "response-observer-throw",
+        editScopeId: "response-observer-throw",
+      },
     };
 
     await ctx.core.read({ file: "chapter.md" }, context);
@@ -263,7 +440,7 @@ describe("response committer", () => {
               appendBatchInFlight -= 1;
             }
           };
-          return gated as UpdateJournal & ReversalStore;
+          return gated as UpdateJournal;
         },
       },
     );
@@ -271,7 +448,7 @@ describe("response committer", () => {
     const responseContext = {
       ...context,
       turnId: "turn-concurrent-commit",
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
 
     await ctx.core.read({ file: "chapter.md" }, context);
@@ -300,6 +477,53 @@ describe("response committer", () => {
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+});
+
+describe("reasoned refusal of staged writes", () => {
+  const peerContext = (responseId: string, peerBranchId: string, turn: string) => ({
+    ...context,
+    turnId: turn,
+    responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, peerBranchId },
+  });
+  const receiptTexts = (
+    result: Awaited<ReturnType<ReturnType<typeof harness>["core"]["commitResponse"]>>,
+  ) =>
+    result.documents.flatMap((document) =>
+      document.receipts.map((receipt) => JSON.stringify(receipt)),
+    );
+
+  it("rolls a staged thread-peer reply back without any coordinator call (U5)", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-rollback";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      peerContext(responseId, "peer-1", "turn-1"),
+    );
+    const withDocument = vi.spyOn(ctx.coordinator, "withDocument");
+
+    await ctx.core.rollbackResponse(responseId);
+
+    expect(withDocument).not.toHaveBeenCalled();
+    expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(false);
+  });
+
+  it("a reply whose every document was refused still receipts each write", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-all-refused";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      peerContext(responseId, "peer-1", "turn-1"),
+    );
+    ctx.core.refuseStaged(responseId, "chapter.md", "discarded_document");
+
+    const saved = await ctx.core.commitResponse(responseId);
+    expect(saved).toMatchObject({ status: "committed", updateCount: 0 });
+    expect(receiptTexts(saved).join()).toContain("the user discarded this new document");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 });
 

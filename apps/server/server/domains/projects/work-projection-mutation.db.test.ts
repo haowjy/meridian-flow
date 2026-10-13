@@ -166,7 +166,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID,
         kind: "work_draft",
         draftId: DRAFT_ID,
-        state: Buffer.from([0]),
+        state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
       await db.insert(documentBranches).values({
@@ -174,7 +174,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: SECOND_DOCUMENT_ID,
         kind: "work_draft",
         draftId: SECOND_DRAFT_ID,
-        state: Buffer.from([0]),
+        state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
       await db.insert(documentBranches).values({
@@ -182,7 +182,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: OTHER_DOCUMENT_ID,
         kind: "work_draft",
         draftId: OTHER_DRAFT_ID,
-        state: Buffer.from([0]),
+        state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
       await db.insert(threads).values({
@@ -491,12 +491,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadId: null,
               generation: 1,
               status: "active",
-              state: new Uint8Array([0]),
+              state: new Uint8Array([0, 0]),
               stateVector: new Uint8Array([0]),
               schemaVersion: 1 as never,
             },
             journalRows: await journal.listReviewableJournalRows(value.branchId, 1),
-            state: new Uint8Array([0]),
+            state: new Uint8Array([0, 0]),
             stateVector: new Uint8Array([0]),
           });
         }

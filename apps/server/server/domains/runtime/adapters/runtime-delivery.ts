@@ -41,6 +41,7 @@ import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mod
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
+  setBlockedReason(threadId: ThreadId, reason: "credits_exhausted" | null): Promise<void>;
   findMessage(id: string): Promise<InboxMessage | null>;
   workNoticeTargets(workId: WorkId): Promise<ThreadId[]>;
   canMaterializeWork(threadId: ThreadId): Promise<boolean>;
@@ -56,7 +57,9 @@ export interface DeliveryStore extends InboxReader {
 
 export interface DeliveryLeaseStore {
   cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
-  lockThreadReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
+  lockThreadReceipt(
+    threadId: ThreadId,
+  ): Promise<{ ids: string[]; turnId: TurnId | null; lease: Lease } | null>;
   bindTurn(
     lease: Lease,
     turnId: TurnId,
@@ -125,18 +128,27 @@ export function createDeliveryAdapter(
    * The one acknowledgement path. Message rows this call actually delivers
    * record their deliverer and are journaled once as `messages.delivered`, in
    * the transaction that delivers them. Controls and notices record nothing.
+   * Every retirement path goes through here under the caller's thread lock, so
+   * a usage block is cleared the moment no message or control waits behind it.
    */
   const ack = async (threadId: ThreadId, ids: readonly string[], by: Deliverer | null = null) => {
-    if (ids.length === 0) return;
-    const delivered = await inbox.ack(threadId, [...ids], (by?.turn.id as TurnId) ?? null);
-    if (delivered.length === 0) return;
-    await deps.eventWriter.appendEvent(threadId, {
-      type: "messages.delivered",
-      byTurnId: by?.turn.id ?? null,
-      byTurnPosition: by?.turn.position ?? null,
-      executionId: by?.executionId ?? null,
-      userTurnIds: delivered,
-    });
+    const delivered =
+      ids.length === 0 ? [] : await inbox.ack(threadId, [...ids], (by?.turn.id as TurnId) ?? null);
+    if (delivered.length > 0)
+      await deps.eventWriter.appendEvent(threadId, {
+        type: "messages.delivered",
+        byTurnId: by?.turn.id ?? null,
+        byTurnPosition: by?.turn.position ?? null,
+        executionId: by?.executionId ?? null,
+        userTurnIds: delivered,
+      });
+    const projection = await inbox.readPendingProjection(threadId);
+    if (
+      !projection.messages.some(
+        (message) => message.intent === "message" || message.intent === "control",
+      )
+    )
+      await inbox.setBlockedReason(threadId, null);
   };
   const executionEnded = (threadId: ThreadId, executionId: string) =>
     deps.eventWriter.appendEvent(threadId, { type: "execution.ended", executionId });
@@ -211,12 +223,22 @@ export function createDeliveryAdapter(
     return reports;
   }
   /**
-   * Call holding a newly acquired claim. Repairs may commit separately: a crash
-   * between them loses nothing, because the end is decided from turns that
-   * carry the execution's id, never from the row's receipt arrays (repair
-   * clears those). The end append and the row delete are one transaction.
+   * Call holding the session claim. With no `repair`, this is the run starter's
+   * full settlement: repairs may commit separately (a crash between them loses
+   * nothing, because the end is decided from turns that carry the execution's
+   * id, never from the row's receipt arrays), then the stale row ends and is
+   * deleted in one transaction with the end append.
+   *
+   * A sweep lane passes its own `repair` and settles only what it names: a
+   * stale candidate may not repair a newer receipt's execution, so the row is
+   * released (its end journaled when a turn carries it) only when the repair
+   * retired its receipt or the receipt was already empty.
    */
-  async function settleStaleExecution(threadId: ThreadId) {
+  async function settleStaleExecution<T = void>(
+    threadId: ThreadId,
+    repair?: () => Promise<T>,
+  ): Promise<T | void> {
+    if (repair) return settleSweepLane(threadId, repair);
     const reports = await threadLock.withThreadLock(threadId, async () => {
       const repaired = await repairOrphans(threadId);
       const stale = await leaseStore.lockStaleExecution(threadId);
@@ -233,6 +255,29 @@ export function createDeliveryAdapter(
       if (turns.length > 0) await executionEnded(threadId, stale.executionId);
       await leaseStore.deleteStaleExecution(threadId, stale.executionId);
       await appendPending(threadId);
+    });
+    schedulePostCommit(async () => {
+      await deps.publishStatus?.(threadId);
+    });
+  }
+  async function settleSweepLane<T>(threadId: ThreadId, repair: () => Promise<T>): Promise<T> {
+    return threadLock.withThreadLock(threadId, async () => {
+      const receipt = await leaseStore.lockThreadReceipt(threadId);
+      const result = await repair();
+      const repaired = await leaseStore.lockThreadReceipt(threadId);
+      if (
+        receipt &&
+        repaired?.lease.executionId === receipt.lease.executionId &&
+        repaired.lease.holderId === receipt.lease.holderId &&
+        repaired.turnId === null &&
+        repaired.ids.length === 0
+      )
+        await endExecution(receipt.lease);
+      await appendPending(threadId);
+      schedulePostCommit(async () => {
+        await deps.publishStatus?.(threadId);
+      });
+      return result;
     });
   }
   async function releaseExecution(lease: Lease): Promise<"released" | "ended" | "abandoned"> {
@@ -987,6 +1032,22 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
     settleStaleExecution,
     releaseExecution,
+    blockForUsage: (lease) =>
+      threadLock.withThreadLock(lease.threadId, async () => {
+        const receipt = await leaseStore.lockReceipt(lease);
+        const projection = await inbox.readPendingProjection(lease.threadId);
+        if (
+          !receipt ||
+          !projection.messages.some(
+            (message) => message.intent === "message" || message.intent === "control",
+          ) ||
+          projection.run?.turnId ||
+          projection.blocked?.reason === "credits_exhausted"
+        )
+          return;
+        await inbox.setBlockedReason(lease.threadId, "credits_exhausted");
+        await appendPending(lease.threadId);
+      }),
     selectPending: inbox.selectPending,
     readPendingProjection: inbox.readPendingProjection,
     pendingMessageThreads: async (limit, afterThreadId) => {
@@ -1033,6 +1094,7 @@ export function createDeliveryAdapter(
             ),
             prepared.turnKind,
           );
+          await inbox.setBlockedReason(lease.threadId, null);
           await appendPending(lease.threadId);
           return { value: prepared.value };
         },

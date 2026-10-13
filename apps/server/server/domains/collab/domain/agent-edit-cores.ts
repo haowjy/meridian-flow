@@ -1,8 +1,10 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type {
   AgentEditCore,
+  DiscardedWriteReason,
   ReadCommand,
   ResponseCommitSuccessResult,
+  StagedWriteRejectionReason,
   WriteCommand,
   WriteContext,
   WriteOutcome,
@@ -36,7 +38,7 @@ export type RefusedResponseDocument =
        * The draft its writes were pinned to moved on before the save (closed, or this
        * document's draft applied or discarded): the save never re-drafts them (§2.5).
        */
-      stale: true;
+      reason: StagedWriteRejectionReason;
     };
 
 /**
@@ -49,8 +51,6 @@ export type RoutedWriteOutcome = WriteOutcome & {
 
 /** One reply's save across every destination it wrote (D42). */
 export type ResponseSaveResult = ResponseCommitSuccessResult & {
-  /** Documents saved to this thread's Work draft copy; the rest went live. */
-  draftedDocumentIds: DocumentId[];
   refused: RefusedResponseDocument[];
 };
 
@@ -72,18 +72,21 @@ export type ThreadPeerAgentEditCore = Omit<
 > & {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
   write(command: WriteCommand, context: RoutedWriteContext): Promise<RoutedWriteOutcome>;
+  /**
+   * Retire exactly these peers on `documentId` after their branches closed or were deleted:
+   * their staged writes are refused with the reason, then their runtimes and pulled baselines
+   * go. Durable branch rows are the caller's; other threads and documents are untouched.
+   */
+  retireThreadPeers(
+    documentId: string,
+    peers: readonly { threadId: string; peerBranchId: string; reason: DiscardedWriteReason }[],
+  ): Promise<void>;
   /** Where this reply's writes to a document go, once it has written there. */
   responseDestination(responseId: string, documentId: string): FileDestination | undefined;
   commitResponse(
     responseId: string,
     options?: ResponseTransactionOptions,
   ): Promise<ResponseSaveResult>;
-  /**
-   * Retire the process-local state of exactly these threads' peers on `documentId`
-   * (staged buffers, runtimes, pulled baselines) after their branches were deleted.
-   * Durable branch rows are the caller's; other threads and documents are untouched.
-   */
-  retireThreadPeers(documentId: string, threadIds: readonly string[]): Promise<void>;
   readonly [threadPeerAgentEditCoreBrand]: "thread-peer-agent-edit-core";
 };
 

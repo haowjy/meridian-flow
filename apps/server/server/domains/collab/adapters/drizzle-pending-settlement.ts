@@ -262,6 +262,7 @@ export function createDrizzlePendingSettlementStore(
               batchId: input.batchId,
               members: descriptors,
               held: checkHolds,
+              ...(input.lease ? { lease: input.lease } : {}),
               payloads: input.payloads,
               liveTextFingerprints: input.liveTextFingerprints,
             },
@@ -410,6 +411,7 @@ export function createDrizzlePendingSettlementStore(
             if (!(cause instanceof CompletionRefusal)) throw cause;
             admitted = [];
             await abandonWithinTx(txDb, input, members, cause.reason);
+            for (const { plan } of plans) await plan.onRefused?.(cause.reason);
             return { kind: "refused" as const, reason: cause.reason };
           }
         });

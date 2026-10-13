@@ -1,156 +1,123 @@
 /**
- * Apply binds what the writer reviewed (contract §10.5, §10.8, ledger E-3a, E-3b): the
- * holders a publication admits are bound from the link meanings staged with it, the link
- * cut is fenced (a link typed after it registers again), a model's copy keeps the meaning,
- * and a staged meaning survives a crash and a Discard of its target: recovery binds it,
- * the target reads gone, and a later document at its path doesn't capture it.
+ * Ahead links bind once, on a live arrival, for every holder (12a as amended 2026-10-13):
+ * until then each reader resolves the stored path in its own view, a draft's hidden
+ * document there reads "in a draft" from every view, and a Discard that leaves no
+ * document binds nothing, so the link reads "Doesn't exist yet" and a later live document
+ * takes it. One walk of the design's case table.
  */
-import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
+import { linkAheadRefs } from "@meridian/database/schema";
+import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
-import { typeLink } from "../../test-support/draft-tree-scenario.js";
+import { typeLink } from "../../test-support/draft-tree-commands.js";
+import type { ScenarioWork } from "../../test-support/draft-tree-scenario.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
-import { setCollabHook } from "./domain/collab-test-hooks.js";
 
 const KAEL = "manuscript://characters/kael";
 const MIRA = "manuscript://characters/mira";
+const VELA = "manuscript://characters/vela";
 
-describeDraftTreeDb("Apply binds what the writer reviewed (postgres)", (start) => {
-  it("binds a published holder's pasted, minted and late-typed refs to the draft's meaning, and a copy keeps it (E-3a)", async () => {
+describeDraftTreeDb("Ahead links bind once, on a live arrival (postgres)", (start, db) => {
+  it("reads by address in each view until a live document binds it, and a Discard binds nothing", async () => {
     const { s } = await start();
-    const [ascension, direct] = [
+    const [ascension, beacon] = [
       await s.work("Ascension", "draft"),
-      await s.work("Direct", "direct"),
+      await s.work("Beacon", "draft"),
     ];
+    const kaelAhead = await s.seedAhead("characters/kael");
+    const miraAhead = await s.seedAhead("characters/mira");
+    const velaAhead = await s.seedAhead("characters/vela");
+    const twelve = await s.writer.createDocument("chapter-twelve", "Twelve.");
+    const chapter = { uri: "manuscript://chapter-twelve", id: twelve };
+
+    /** What the ref means in a view (a Work's, or live): the document, "in a draft", or why not. */
+    const read = async (view: ScenarioWork | "live", aheadId: string, href: string) => {
+      const { answer } = await s.linkAnswer({
+        view,
+        ref: `ahead:${aheadId}`,
+        href,
+        baseUri: chapter.uri,
+        holderDocumentId: chapter.id,
+      });
+      return answer.state === "document"
+        ? { id: answer.document.id, ...(answer.inDraft ? { inDraft: true } : {}) }
+        : answer.state;
+    };
+    const everywhere = async (aheadId: string, href: string) => ({
+      ascension: await read(ascension, aheadId, href),
+      beacon: await read(beacon, aheadId, href),
+      live: await read("live", aheadId, href),
+    });
+    const settledTo = async (aheadId: string) =>
+      (
+        await db
+          .select({ id: linkAheadRefs.settledDocumentId })
+          .from(linkAheadRefs)
+          .where(eq(linkAheadRefs.aheadId, aheadId))
+      )[0]?.id ?? null;
+
+    // Nothing exists at the path: every view says so.
+    expect(await everywhere(kaelAhead, KAEL)).toEqual({
+      ascension: "missing",
+      beacon: "missing",
+      live: "missing",
+    });
+
+    // D creates kael: every view reads D's document in a draft, and nothing is bound.
     const kael = await s.model(ascension).create("characters/kael", "Kael.");
-    // A live ref minted after D's create: the registry has it, D's settlement doesn't.
-    const one = await s.writer.createDocument("chapter-one", "[Kael](characters/kael) waits.");
-    const [stored] = await s.storedLinks(one);
-    const pasted = stored?.ref?.replace(/^ahead:/, "") ?? "";
-    expect.soft(stored?.ref, "the live mint").toMatch(/^ahead:/);
-    const two = await s.writer.createDocument("chapter-two", "Two.");
-    await s.model(ascension).edit("chapter-two", "Two.", "Two, drafted.");
-    // Pasted into D's chapter two, and a fresh editor mint just before Apply (no debounce).
-    await s.writer.editDraft(ascension, two, typeLink(KAEL, pasted));
-    const minted = randomUUID();
-    await s.writer.editDraft(ascension, two, typeLink(KAEL, minted));
-    // An item named twice is refused before anything registers or stages (E-R1).
-    const twice = (await s.items(ascension)).find((item) => item.documentId === two);
-    await expect(
-      s.applyAll(ascension, { items: twice ? [twice, twice] : [] }),
-      "a duplicate selection",
-    ).rejects.toMatchObject({ statusCode: 400 });
-    expect.soft(await s.batchStates(), "nothing staged").toEqual([]);
-    expect
-      .soft(
-        (await s.review(ascension)).drafts.map((draft) => draft.documentId),
-        "its rows still reviewable",
-      )
-      .toContain(two);
-    // The writer types once more between the link cut and staging: the fence (F18)
-    // registers again, so that link keeps D's meaning too.
-    const late = randomUUID();
-    const typeLate = setCollabHook("applyItems.afterLinkCut", async () => {
-      typeLate();
-      await s.writer.editDraft(ascension, two, typeLink(KAEL, late));
+    const inKael = { id: kael, inDraft: true };
+    expect(await everywhere(kaelAhead, KAEL)).toEqual({
+      ascension: inKael,
+      beacon: inKael,
+      live: inKael,
     });
-    const [applied] = await s.apply(ascension, [two], { tokens: "none" });
-    typeLate();
-    expect.soft(applied?.httpStatus, "chapter two applies alone").toBe(200);
+    expect(await settledTo(kaelAhead)).toBeNull();
 
-    const meaning = (ref: string, holder: { uri: string; id: DocumentId }) =>
-      s.liveMeaning({ ref, href: KAEL, holder });
-    const chapterTwo = { uri: "manuscript://chapter-two", id: two };
-    const inDraft = { id: kael, inDraft: true, bound: true };
-    expect.soft(await meaning(`ahead:${pasted}`, chapterTwo), "pasted").toEqual(inDraft);
-    expect.soft(await meaning(`ahead:${minted}`, chapterTwo), "minted").toEqual(inDraft);
-    expect.soft(await meaning(`ahead:${late}`, chapterTwo), "typed after the cut").toEqual(inDraft);
-    expect
-      .soft(
-        await meaning(`ahead:${pasted}`, { uri: "manuscript://chapter-one", id: one }),
-        "the live chapter",
-      )
-      .toBe("missing");
-    // A model's copy into a third chapter keeps the meaning (doc:, §10.6).
-    await s.model(direct).copy("chapter-two", "chapter-three");
-    const three = (await s.view("live").idAt("chapter-three")) as DocumentId;
-    expect
-      .soft(
-        (await s.storedLinks(three)).map((link) => link.ref),
-        "rebound to the document",
-      )
-      .toContain(`doc:${kael}`);
-    expect
-      .soft(
-        await meaning(`doc:${kael}`, { uri: "manuscript://chapter-three", id: three }),
-        "the copy reads in a draft",
-      )
-      .toEqual({ id: kael, inDraft: true });
-
-    // 12b-Q3: the later Apply's binding wins for that holder only. One ref means kael in
-    // Ascension's draft and vela in Beacon's (seeded: a second draft's create at the
-    // same path would join the first's document). Ascension publishes it into chapters
-    // two and six; Beacon then publishes it into chapter two again.
-    const beacon = await s.work("Beacon", "draft");
+    // Another Work's draft is the only one at its path: D reads it in a draft too.
     const vela = await s.model(beacon).create("characters/vela", "Vela.");
-    const shared = await s.seedAhead("characters/shared");
-    await s.seedDraftSettlement(ascension, shared, kael);
-    await s.seedDraftSettlement(beacon, shared, vela);
-    const SHARED = "manuscript://characters/shared";
-    const six = await s.writer.createDocument("chapter-six", "Six.");
-    await s.model(ascension).edit("chapter-six", "Six.", "Six, drafted.");
-    await s.model(ascension).edit("chapter-two", "Two, drafted.", "Two, drafted twice.");
-    await s.writer.editDraft(ascension, two, typeLink(SHARED, shared));
-    await s.writer.editDraft(ascension, six, typeLink(SHARED, shared));
-    expect
-      .soft((await s.apply(ascension, [two, six])).map((result) => result.httpStatus))
-      .toEqual([200, 200]);
-    const chapterSix = { uri: "manuscript://chapter-six", id: six };
-    const sharedIn = (holder: { uri: string; id: DocumentId }) =>
-      s.liveMeaning({ ref: `ahead:${shared}`, href: SHARED, holder });
-    expect.soft(await sharedIn(chapterTwo), "Ascension's binding in two").toEqual(inDraft);
-    expect.soft(await sharedIn(chapterSix), "Ascension's binding in six").toEqual(inDraft);
-    await s.model(beacon).edit("chapter-two", "Two, drafted twice.", "Two, Beacon's.");
-    await s.writer.editDraft(beacon, two, typeLink(SHARED, shared));
-    expect.soft((await s.apply(beacon, [two])).map((result) => result.httpStatus)).toEqual([200]);
-    expect
-      .soft(await sharedIn(chapterTwo), "the later Apply's binding wins in two")
-      .toEqual({ id: vela, inDraft: true, bound: true });
-    expect.soft(await sharedIn(chapterSix), "six keeps Ascension's binding").toEqual(inDraft);
-    for (const holder of [two, six]) {
-      const refs = (await s.storedLinks(holder)).map((link) => link.ref);
-      expect.soft(refs, "the holder's text still says ahead").toContain(`ahead:${shared}`);
-      expect.soft(refs, "no meaning written into the text").not.toContain(`doc:${vela}`);
-      expect.soft(refs, "nor the first draft's").not.toContain(`doc:${kael}`);
-    }
-  });
-
-  it("binds from the staged snapshot across a crash and a Discard of the target, and nothing captures it later (E-3b)", async () => {
-    const { s } = await start();
-    const beacon = await s.work("Beacon", "draft");
-    const mira = await s.model(beacon).create("characters/mira", "Mira.");
-    const four = await s.writer.createDocument("chapter-four", "Four.");
-    await s.model(beacon).edit("chapter-four", "Four.", "Four, drafted.");
-    const forward = randomUUID();
-    await s.writer.editDraft(beacon, four, typeLink(MIRA, forward));
-    const remove = setCollabHook("applyItems.afterStaging", async () => {
-      remove();
-      throw new Error("injected process death after staging");
+    expect(await everywhere(velaAhead, VELA)).toEqual({
+      ascension: { id: vela, inDraft: true },
+      beacon: { id: vela, inDraft: true },
+      live: { id: vela, inDraft: true },
     });
-    await expect(s.apply(beacon, [four]), "the warm owner dies").rejects.toThrow(
-      "injected process death",
+
+    // ch12 applied before its target: it still reads kael in a draft, nothing bound.
+    await s.model(ascension).edit("chapter-twelve", "Twelve.", "Twelve, drafted.");
+    await s.writer.editDraft(ascension, twelve, typeLink(KAEL, kaelAhead));
+    expect((await s.apply(ascension, [twelve], { tokens: "none" }))[0]?.httpStatus).toBe(200);
+    expect(await s.liveMeaning({ ref: `ahead:${kaelAhead}`, href: KAEL, holder: chapter })).toEqual(
+      inKael,
     );
-    await s.discard(beacon, [mira]);
-    await s.expirePendingClaims();
-    await expect(s.recover()).resolves.toBe(1);
-    const chapterFour = { uri: "manuscript://chapter-four", id: four };
-    const meaning = () =>
-      s.liveMeaning({ ref: `ahead:${forward}`, href: MIRA, holder: chapterFour });
-    expect
-      .soft(await s.view("live").text("chapter-four"), "its text published")
-      .toContain("drafted");
-    expect.soft(await meaning(), "bound to the discarded target").toBe("gone");
-    await s.writer.createDocument("characters/mira", "A new Mira.");
-    expect.soft(await meaning(), "no capture").toBe("gone");
+    expect(await settledTo(kaelAhead)).toBeNull();
+
+    // The target applied: the reveal binds it once, and every view reads the live document.
+    expect((await s.apply(ascension, [kael], { tokens: "none" }))[0]?.httpStatus).toBe(200);
+    expect(await settledTo(kaelAhead)).toBe(kael);
+    expect(await everywhere(kaelAhead, KAEL)).toEqual({
+      ascension: { id: kael },
+      beacon: { id: kael },
+      live: { id: kael },
+    });
+
+    // The target's draft discarded, never revealed: nothing was bound, so the link reads
+    // "Doesn't exist yet" everywhere, and a later live document takes it.
+    const mira = await s.model(ascension).create("characters/mira", "Mira.");
+    expect(await read("live", miraAhead, MIRA)).toEqual({ id: mira, inDraft: true });
+    await s.discard(ascension, [mira]);
+    expect(await everywhere(miraAhead, MIRA)).toEqual({
+      ascension: "missing",
+      beacon: "missing",
+      live: "missing",
+    });
+    const liveMira = (await s.writer.createDocument(
+      "characters/mira",
+      "A new Mira.",
+    )) as DocumentId;
+    expect(await settledTo(miraAhead)).toBe(liveMira);
+    expect(await everywhere(miraAhead, MIRA)).toEqual({
+      ascension: { id: liveMira },
+      beacon: { id: liveMira },
+      live: { id: liveMira },
+    });
   });
 });

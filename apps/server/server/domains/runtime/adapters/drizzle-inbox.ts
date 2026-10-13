@@ -47,6 +47,12 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
   }
 
   return {
+    async setBlockedReason(threadId, reason) {
+      await db_()
+        .update(schema.threads)
+        .set({ inboxBlockedReason: reason })
+        .where(eq(schema.threads.id, threadId));
+    },
     async workNoticeTargets(workId) {
       const rows = await db_()
         .select({ threadId: schema.threadWorks.threadId })
@@ -142,10 +148,12 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
       const rows = await db_()
         .select({
           inbox: schema.threadInboxMessages,
+          blockedReason: schema.threads.inboxBlockedReason,
           turnId: schema.threadRunLeases.turnId,
           messageIds: schema.threadRunLeases.adoptedMessageIds,
         })
         .from(schema.threadInboxMessages)
+        .innerJoin(schema.threads, eq(schema.threads.id, schema.threadInboxMessages.threadId))
         .leftJoin(
           schema.threadRunLeases,
           and(
@@ -162,6 +170,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
         .orderBy(asc(schema.threadInboxMessages.seq));
       const first = rows[0];
       return {
+        ...(first?.blockedReason ? { blocked: { reason: first.blockedReason } } : {}),
         messages: rows.map((row) => toInboxMessage(row.inbox)),
         run:
           first?.turnId !== null && first?.turnId !== undefined

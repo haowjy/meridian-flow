@@ -3,8 +3,7 @@
  * (project, reader) operation, filled in batches by what each door is about to
  * spell or bind (contract §4.4).
  *
- * A prepare loads only keys the snapshot has not seen: an ahead ref's meanings (its
- * holders' bindings, each requested draft's settlement, the live settlement), documents
+ * A prepare loads only keys the snapshot has not seen: an ahead ref's live settlement, documents
  * by id, and every document at an exact or extension-omitted address. Each view reads
  * from the tree view's identity status: where a document is in that view, and, for a
  * hidden one, which draft it reads "in a draft" in and where that draft has it.
@@ -81,6 +80,12 @@ type ViewIndex = {
   byUri: Map<string, Row[]>;
   /** The same URI without its filename's extension: pass 3's extension-omitted key. */
   byStem: Map<string, Row[]>;
+  /**
+   * Hidden documents this view doesn't use, by the address of the draft each reads "in a
+   * draft" in, oldest draft first. Only `documentAt` reads it: an ahead ref's address
+   * shows a draft's document, while typed links (`documentFor`) never bind to one.
+   */
+  hiddenByUri: Map<string, Row[]>;
 };
 
 type Snapshot = {
@@ -100,13 +105,6 @@ type Snapshot = {
   addresses: Set<string>;
   /** The live settlement by ahead id; null = unsettled or unregistered. */
   settlements: Map<string, string | null>;
-  /** A draft's settlement, keyed `pairKey(draftId, aheadId)`. */
-  draftSettlements: Map<string, string | null>;
-  /** A holder's own binding (a published ref), keyed `pairKey(holderId, aheadId)`. */
-  bindings: Map<string, string | null>;
-  /** Draft ids and holder ids whose meanings load with every ahead id. */
-  draftIds: Set<string>;
-  holderIds: Set<string>;
   readable: Map<string, boolean>;
   /** View key → that view's identity statuses and address index. */
   views: Map<string, ViewIndex>;
@@ -124,8 +122,6 @@ const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `draft:${vi
 
 const treeViewOf = (view: LinkView): TreeView =>
   view.kind === "live" ? LIVE_TREE : { kind: "draft", draftId: view.draftId as DraftId };
-
-const pairKey = (owner: string, aheadId: string) => `${owner}\0${aheadId}`;
 
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
@@ -193,9 +189,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       ...request.holders.map((holder) => holder.view),
       ...(request.views ?? []),
     ];
-    for (const view of views) if (view.kind === "draft") snapshot.draftIds.add(view.draftId);
-    for (const holder of request.holders) snapshot.holderIds.add(holder.documentId);
-
     for (const documentId of await loadMeanings(snapshot, aheadIds)) ids.add(documentId);
 
     const newIds = [...ids].filter((id) => !snapshot.rows.has(id));
@@ -226,78 +219,26 @@ export function createDrizzleDocumentLinkScopes(deps: {
     await loadReadability(snapshot);
   }
 
-  /**
-   * Every ahead id's meanings the snapshot doesn't hold yet, for every holder and draft it
-   * knows (contract §10.4): bindings, then draft settlements, then the live settlement.
-   * Returns the documents they name.
-   */
+  /** The live settlement of every ahead id the snapshot doesn't hold yet; returns the documents they name. */
   async function loadMeanings(snapshot: Snapshot, requested: ReadonlySet<string>) {
     const named = new Set<string>();
-    const known = new Set([...snapshot.settlements.keys(), ...requested]);
-    const tx = currentDrizzleDb(db);
-
     const fresh = [...requested].filter((id) => !snapshot.settlements.has(id) && isUuid(id));
     for (const id of requested) if (!isUuid(id)) snapshot.settlements.set(id, null);
     if (fresh.length > 0) {
-      const settled = await tx.execute<{ ahead_id: string; settled: string | null }>(
+      const settled = await currentDrizzleDb(db).execute<{
+        ahead_id: string;
+        settled: string | null;
+      }>(
         sql`SELECT ahead_id::text, settled_document_id::text AS settled FROM link_ahead_refs
           WHERE ahead_id IN (${uuidList(fresh)})`,
       );
       const byId = new Map(settled.map((row) => [row.ahead_id, row.settled]));
-      for (const id of fresh) snapshot.settlements.set(id, byId.get(id) ?? null);
-    }
-    for (const id of fresh) {
-      const documentId = snapshot.settlements.get(id);
-      if (documentId) named.add(documentId);
-    }
-
-    const pairs = (owners: ReadonlySet<string>, loaded: Map<string, string | null>) => {
-      const missing = new Map<string, Set<string>>();
-      for (const owner of owners) {
-        for (const aheadId of known) {
-          if (loaded.has(pairKey(owner, aheadId))) continue;
-          if (!isUuid(owner) || !isUuid(aheadId)) {
-            loaded.set(pairKey(owner, aheadId), null);
-            continue;
-          }
-          missing.set(owner, (missing.get(owner) ?? new Set()).add(aheadId));
-        }
+      for (const id of fresh) {
+        const documentId = byId.get(id) ?? null;
+        snapshot.settlements.set(id, documentId);
+        if (documentId) named.add(documentId);
       }
-      return missing;
-    };
-    const load = async (
-      missing: Map<string, Set<string>>,
-      loaded: Map<string, string | null>,
-      select: (owners: SQL, aheadIds: SQL) => SQL,
-    ) => {
-      if (missing.size === 0) return;
-      const aheadIds = new Set([...missing.values()].flatMap((each) => [...each]));
-      const rows = await tx.execute<{ owner: string; ahead_id: string; document_id: string }>(
-        select(uuidList([...missing.keys()]), uuidList([...aheadIds])),
-      );
-      for (const [owner, each] of missing)
-        for (const aheadId of each) loaded.set(pairKey(owner, aheadId), null);
-      for (const row of rows) {
-        loaded.set(pairKey(row.owner, row.ahead_id), row.document_id);
-        named.add(row.document_id);
-      }
-    };
-    await load(
-      pairs(snapshot.holderIds, snapshot.bindings),
-      snapshot.bindings,
-      (owners, aheadIds) => sql`
-        SELECT holder_document_id::text AS owner, ahead_id::text, document_id::text
-        FROM link_ahead_holder_bindings
-        WHERE holder_document_id IN (${owners}) AND ahead_id IN (${aheadIds})`,
-    );
-    await load(
-      pairs(snapshot.draftIds, snapshot.draftSettlements),
-      snapshot.draftSettlements,
-      (owners, aheadIds) => sql`
-        SELECT draft_id::text AS owner, ahead_id::text, document_id::text
-        FROM link_ahead_draft_settlements
-        WHERE draft_id IN (${owners}) AND ahead_id IN (${aheadIds})`,
-    );
+    }
     return named;
   }
 
@@ -411,14 +352,28 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const keys = new Map(views.map((view) => [viewKey(view), view]));
     for (const [key, view] of keys) {
       const statuses = await tree.identityStatus(treeViewOf(view), ids);
-      const index: ViewIndex = { statuses, byUri: new Map(), byStem: new Map() };
+      const index: ViewIndex = {
+        statuses,
+        byUri: new Map(),
+        byStem: new Map(),
+        hiddenByUri: new Map(),
+      };
+      const hidden: { row: Row; at: IdentityStatus & { kind: "hidden" } }[] = [];
       for (const [id, status] of statuses) {
         const row = snapshot.rows.get(id);
-        if (!row || status.kind !== "visible") continue;
+        if (!row) continue;
+        if (status.kind === "hidden") hidden.push({ row, at: status });
+        if (status.kind !== "visible") continue;
         push(index.byUri, status.address.uri, row);
         const stem = stemOf(status.address.uri);
         if (stem) push(index.byStem, stem, row);
       }
+      hidden.sort(
+        (a, b) =>
+          a.at.draft.createdAt.getTime() - b.at.draft.createdAt.getTime() ||
+          a.at.draft.draftId.localeCompare(b.at.draft.draftId),
+      );
+      for (const { row, at } of hidden) push(index.hiddenByUri, at.address.uri, row);
       snapshot.views.set(key, index);
     }
   }
@@ -458,10 +413,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
         byUri: new Map(),
         addresses: new Set(),
         settlements: new Map(),
-        draftSettlements: new Map(),
-        bindings: new Map(),
-        draftIds: new Set(),
-        holderIds: new Set(),
         readable: new Map(),
         views: new Map(),
       };
@@ -492,7 +443,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
           projectId: holderRow?.projectId ?? snapshot.projectId ?? "",
           view,
         },
-        snapshotCatalog(snapshot, view, documentId, miss),
+        snapshotCatalog(snapshot, view, miss),
         miss,
       );
     },
@@ -507,17 +458,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
         observer.snapshotMiss({ documentId: uri ?? "reader", key, prepared: snapshot.prepared });
       return createHolderLinkScope(
         { uri, projectId: snapshot.projectId ?? "", view },
-        snapshotCatalog(snapshot, view, null, miss),
+        snapshotCatalog(snapshot, view, miss),
         miss,
       );
-    },
-    holderBinding({ holderDocumentId, aheadId }) {
-      const snapshot = storage.getStore();
-      if (!snapshot?.open) {
-        observer.unscoped(holderDocumentId);
-        return undefined;
-      }
-      return snapshot.bindings.get(pairKey(holderDocumentId, aheadId));
     },
     async pinHolder({ view, documentId, uri }) {
       // Pinning answers for the snapshot's reader: no open snapshot, no authority to pin in.
@@ -537,7 +480,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       // A holder is a document this reader may name and read, by the catalog's own rule:
       // an id alone is no capability, so an unreachable one stays unresolved and unspelled.
       await prepare({ holders: [], refs: [`doc:${candidate}`], views: [view] });
-      const document = snapshotCatalog(snapshot, view, null, () => {}).document(candidate);
+      const document = snapshotCatalog(snapshot, view, () => {}).document(candidate);
       const status = snapshot.views.get(viewKey(view))?.statuses.get(candidate as DocumentId);
       return document && reachable(document) && status?.kind === "visible"
         ? { documentId: candidate, uri: status.address.uri }
@@ -600,7 +543,6 @@ const UNLOADED = Symbol("unloaded");
 function snapshotCatalog(
   snapshot: Snapshot,
   view: LinkView,
-  holderId: string | null,
   miss: (key: string) => void,
 ): HolderCatalog {
   const key = viewKey(view);
@@ -675,9 +617,6 @@ function snapshotCatalog(
       ? deleted[0]?.row
       : undefined;
   };
-  /** One meaning's lookup: undefined when that key was never loaded. */
-  const meaning = (map: Map<string, string | null>, owner: string, aheadId: string) =>
-    map.get(pairKey(owner, aheadId));
   return {
     document(id) {
       const row = snapshot.rows.get(id);
@@ -686,30 +625,23 @@ function snapshotCatalog(
       const document = toDocument(row);
       return document === UNLOADED ? undefined : document;
     },
-    // Contract §10.4: the holder's binding, then this view's draft's settlement, then live.
-    settlement(aheadId) {
-      const live = snapshot.settlements.get(aheadId);
-      if (live === undefined) return undefined;
-      if (holderId !== null) {
-        const bound = meaning(snapshot.bindings, holderId, aheadId);
-        if (bound === undefined) return undefined;
-        if (bound) return bound;
-      }
-      if (view.kind === "draft") {
-        const drafted = meaning(snapshot.draftSettlements, view.draftId, aheadId);
-        if (drafted === undefined) return undefined;
-        if (drafted) return drafted;
-      }
-      return live;
-    },
+    // An ahead ref binds once, globally, on a live arrival; until then it reads by address.
+    settlement: (aheadId) => snapshot.settlements.get(aheadId),
     documentAt(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
       const documents = atAddress(uri, false);
       if (documents === undefined) return undefined;
+      const present = documents.find(
+        (document): document is CatalogDocument =>
+          document !== null && document.presence !== "deleted",
+      );
+      if (present) return present;
+      // Nothing visible there: a draft's hidden document reads "in a draft".
+      const hidden = (snapshot.views.get(key)?.hiddenByUri.get(uri) ?? []).map(toDocument);
+      if (hidden.includes(UNLOADED)) return undefined;
       return (
-        documents.find(
-          (document): document is CatalogDocument =>
-            document !== null && document.presence !== "deleted",
+        hidden.find(
+          (document): document is CatalogDocument => document !== null && document !== UNLOADED,
         ) ?? null
       );
     },

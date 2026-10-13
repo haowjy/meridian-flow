@@ -50,12 +50,9 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(itemFor(hidden.items, kael), "new while hidden").toMatchObject({
       origin: "created",
       isNew: true,
-      path: "manuscript://characters/kael",
+      contextLocation: { scheme: "manuscript", path: "/characters/kael" },
       conflict: null,
     });
-    expect
-      .soft(hidden.drafts, "the legacy list shows it too, as new (early probe 1, 4)")
-      .toMatchObject([{ documentId: kael, contextPath: "/characters/kael", isNewDocument: true }]);
 
     // The writer makes it live: one document, D's own.
     const made = await s.writer.create("characters/kael", { content: "Writer's Kael." });
@@ -81,14 +78,13 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     const reviewed = itemFor(await s.items(ascension), kael);
     expect.soft(reviewed, "revealed, then renamed live").toMatchObject({
       isNew: false,
-      path: "manuscript://characters/kael",
+      contextLocation: { scheme: "manuscript", path: "/characters/kael" },
       livePath: "manuscript://characters/kael-fix",
       conflict: { code: "rename_replaced", livePath: "manuscript://characters/kael-fix" },
     });
     expect.soft(await s.applyAll(ascension), "one command, one publication").toEqual({
       status: "completed",
       draftId: reviewed.draftId,
-      draftClosed: true,
       items: [
         {
           itemKey: reviewed.itemKey,
@@ -109,13 +105,13 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     const text = await live.text("characters/kael");
     expect.soft(text, "the draft's text").toContain("Kael guards the gate.");
     expect.soft(text, "the writer's live edit").toContain("The writer's second line.");
-    expect.soft(await s.draftStatuses(ascension), "nothing pending: D closed").toEqual(["closed"]);
+    expect.soft(await s.draftStatuses(ascension), "Apply never closes D").toEqual(["active"]);
 
     // A rename that lands after a tokenless Apply read the draft is named back, and the
     // receipt says so: notes come from what completion did (E-R5).
     const notes = await s.model(ascension).create("notes/original", "Notes, drafted.");
     await s.writer.create("notes/original", { content: "Writer's notes." });
-    const renameLate = setCollabHook("applyItems.afterLinkCut", async () => {
+    const renameLate = setCollabHook("applyItems.beforeStaging", async () => {
       renameLate();
       await s.writer.move("notes/original", "notes/renamed");
     });
@@ -161,15 +157,13 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     });
     const preview = await runtime.ports.documentSync.draftReview.preview({
       workId: beacon.id,
-      documentId: kael,
-      draftId: item?.draftBranchId ?? "",
+      itemKey: item?.itemKey ?? "",
     });
     if (preview.status !== "active") throw new Error("Beacon's review is gone");
     const excerpts = preview.operations.map((operation) => operation.afterExcerpt ?? "");
     expect.soft(excerpts.join(" "), "Beacon's part").toContain("Beacon's Kael.");
     expect.soft(excerpts.join(" "), "never Ascension's").not.toContain("Ascension's Kael.");
-    expect.soft(preview.live, "live is Ascension's").toContain("Ascension's Kael.");
-    expect.soft(preview.item?.isNew, "the preview's item").toBe(false);
+    expect.soft(preview.item.isNew, "the preview's item").toBe(false);
   });
 
   it("applies at the right path after a live folder rename absorbed the draft's hidden folder, and a recovered reveal replays from the catalog (E-4)", async () => {
@@ -182,16 +176,17 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     expect.soft(item, "still new, at its path").toMatchObject({
       documentId: notes,
       isNew: true,
-      path: "manuscript://ideas/kael/notes",
+      contextLocation: { scheme: "manuscript", path: "/ideas/kael/notes" },
       conflict: null,
     });
     // The legacy per-document Apply of a hidden create (early probe 2: it answered 404).
-    expect.soft(await s.apply(ascension, [notes], { tokens: "none" })).toEqual([
+    expect.soft(await s.apply(ascension, [notes], { tokens: "none" })).toMatchObject([
       {
         httpStatus: 200,
         body: {
           status: "applied",
-          draftId: item?.draftBranchId,
+          draftId: item?.draftId,
+          itemKey: item?.itemKey,
           item: { itemKey: item?.itemKey, status: "applied", notes: [] },
         },
       },
@@ -237,7 +232,7 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
 
     const items = await s.items(ascension);
     expect.soft(itemFor(items, harbor), "deleted live, still the draft's").toMatchObject({
-      path: "manuscript://lore/harbor",
+      contextLocation: { scheme: "manuscript", path: "/lore/harbor" },
       conflict: { code: "deleted_live" },
     });
     expect.soft(itemFor(items, map).conflict, "its path taken").toEqual({
@@ -246,7 +241,6 @@ describeDraftTreeDb("Apply's tree work (postgres)", (start, db) => {
     });
     expect.soft(await s.applyAll(ascension)).toMatchObject({
       status: "completed",
-      draftClosed: false,
       items: expect.arrayContaining([
         {
           itemKey: itemFor(items, harbor).itemKey,

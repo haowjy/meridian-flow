@@ -5,6 +5,7 @@ import {
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
@@ -17,6 +18,7 @@ import type {
   BranchPushAccess,
   CollabDomain,
   CollabDrafts,
+  CommandOutcome,
 } from "../../contracts.js";
 import {
   attributionFromMeta,
@@ -24,7 +26,6 @@ import {
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
 import { createBranchCriticalSections } from "../../domain/branch-critical-sections.js";
-import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
@@ -40,7 +41,6 @@ import {
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
 import { createThreadPeerCorePool } from "../../domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
-import { reverseTurn } from "../../domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
 import {
@@ -87,7 +87,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       async seedInitialDocument(documentId, state) {
         const snapshot = await journal.read(documentId);
         if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.checkpoint(documentId, state, 0);
+        await journal.seedInitialDocument(documentId, state);
         return true;
       },
     },
@@ -103,18 +103,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const fileAccess = createAllowAllFileAccess();
   const agentEdit = createThreadPeerCorePool({
     drafts,
+    branches: { getBranch: async () => null },
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    liveHistory: journal,
-    reversalHistory: {
-      branches: {
-        resolveThreadBranch: async (documentId, threadId) => {
-          throw new BranchNotFoundError(documentId, threadId);
-        },
-        getBranch: async () => null,
-      },
-      branchRows: { listJournalRowsForBranch: async () => [] },
-    },
     pullThreadPeer: async () => undefined,
     // Thread cores are the live core here, so nothing is ever pinned to a branch.
     fences: createReplySaveFences({
@@ -133,13 +124,14 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
     fileAccess,
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal,
     hocuspocus: hocuspocusBinding.current,
     metaForOrigin,
-    latestUpdateSeq: store.latestUpdateSeq,
     emitAgentEditInvariantViolation() {},
   });
   const authorityHeads = createInMemoryAuthorityHeads(journal);
@@ -149,20 +141,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
-    liveAgentEdit: runtime.liveUtilityCore,
-    reversalStore: journal,
-    liveReversal: {
-      checkDependentLaterLiveRows: async () => ({
-        hasDependents: false,
-        blockingActorTypes: [],
-        checkedUntilSeq: 0,
-      }),
-    },
-    resolveDocumentUri: async (documentId) => documentId,
-    branches: {
-      async checkpointThreadPeer() {},
-      async prepareFailedResponseRollback() {
-        return async () => {};
+    rollback: {
+      async rollbackResponse() {
+        throw new Error("Durable inverse rollback requires the receipt-backed Postgres adapter");
       },
     },
     projections,
@@ -171,7 +152,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const checkpoints = createCheckpointService({
     coordinator,
     store,
-    latestUpdateSeq: store.latestUpdateSeq,
+    journal: journal,
     markdownDocuments: runtime.markdownDocuments,
   });
 
@@ -203,21 +184,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       agentEdit: () => agentEdit,
     },
     reversal: {
-      reverseTurn: (input) =>
-        reverseTurn(
-          {
-            reversalStore: journal,
-            agentEdit: runtime.liveUtilityCore,
-            resolveDocumentUri: async (documentId) => documentId,
-            checkDependentLaterLiveRows: async () => ({
-              hasDependents: false,
-              blockingActorTypes: [],
-              checkedUntilSeq: 0,
-            }),
-            refreshDocumentProjection: projections.refresh,
-          },
-          input,
-        ),
+      reverseTurn: async () => {
+        throw new Error("Turn receipts require the durable Postgres receipt adapter");
+      },
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
@@ -230,7 +199,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
-      rebindHolderBoundRefs: runtime.linkBinder.rebindHolderBoundRefs,
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
@@ -265,7 +233,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       runtime.codec,
       links,
     ),
-    drafts: createInMemoryDraftStub(runtime.markdownDocuments),
+    drafts: createInMemoryDraftStub(),
     draftResolver: {
       drafts,
       // No draft branches in memory: a whole draft leases nothing.
@@ -277,13 +245,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       workDraftDisposal: {
         withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
       },
-      // No draft branches in memory: nothing to register, and no publication to prepare.
-      draftLinks: {
-        prepareDraftLinkPublication: async () => {
-          throw new Error("Draft links need Postgres; the in-memory collab domain has no drafts");
-        },
-        flush: async () => {},
-      },
+      // No draft branches in memory: nothing to register.
+      draftLinks: { flush: async () => {} },
     },
     documentCreation,
   });
@@ -293,14 +256,8 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async recoverPendingLiveSettlements() {
     return 0;
   },
-  async pushToLive() {
-    throw new Error("Branch push service is not configured");
-  },
   async countPendingByWorkIds() {
     return new Map();
-  },
-  async markFailedResponseRollbackPending() {
-    throw new Error("Branch review service is not configured");
   },
 };
 
@@ -351,52 +308,54 @@ function createInMemoryBranchPeerStub(
   };
 }
 
-function createInMemoryDraftStub(documents: {
-  readAsMarkdown(
-    documentId: string,
-  ): ReturnType<
-    import("../../domain/markdown-document.js").MarkdownDocumentEngine["readAsMarkdown"]
-  >;
-}): CollabDrafts {
+function createInMemoryDraftStub(): CollabDrafts {
+  const gone = async (input: { draftId: string }): Promise<CommandOutcome> => ({
+    kind: "result",
+    result: { status: "gone", draftId: input.draftId as DraftId },
+  });
   return {
     draftReview: {
       async list() {
         return [];
       },
       async listItems() {
-        return { draftId: null, drafts: [], items: [] };
+        return { draftId: null, items: [], threadTitles: new Map() };
       },
       async items() {
         return { draftId: null, items: [] };
       },
-      async item() {
+      async resolveItem() {
         return null;
       },
-      async applyAll(input) {
-        return { status: "gone", draftId: input.draftId };
+      async resolveItemByDocument() {
+        return null;
       },
       async preview(input) {
-        const live = await documents.readAsMarkdown(input.documentId);
-        if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        return { status: "gone", draftId: input.draftId, live: live.value };
+        return { status: "gone", itemKey: input.itemKey };
       },
-      async applyWorkDraft(input) {
-        return { status: "not_found", draftId: input.item.draftBranchId ?? input.item.itemKey };
+      async lookupCommand() {
+        return { kind: "none" };
       },
-      async discardWorkDraft(input) {
-        return {
-          status: "discarded",
-          draftId: input.draftId,
-        };
-      },
-      async discardAll(input) {
-        return { status: "gone", draftId: input.draftId };
-      },
-    },
-    draftSessionStats: {
-      async listActiveDraftsByWork() {
-        return [];
-      },
+      applyItem: (input) => gone(input.item),
+      applyAll: gone,
+      applyChanges: async (input) => ({
+        kind: "result",
+        result: {
+          status: "gone",
+          draftId: input.envelope.draftId as DraftId,
+          itemKey: input.itemKey,
+        },
+      }),
+      discardItem: (input) => gone(input.item),
+      discardChanges: async (input) => ({
+        kind: "result",
+        result: {
+          status: "gone",
+          draftId: input.envelope.draftId as DraftId,
+          itemKey: input.itemKey,
+        },
+      }),
+      discardAll: gone,
     },
   };
 }
@@ -440,8 +399,7 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
 
 function inMemoryStore(journal: InMemoryJournal) {
   return {
-    createCheckpoint: (docId: string, state: Uint8Array, reason: string, upToSeq: number) =>
-      journal.createCheckpoint(docId, state, reason, upToSeq),
+    createCheckpoint: journal.createCheckpoint.bind(journal),
     getCheckpoint: (id: string) => journal.getCheckpoint(id),
     listCheckpoints: (docId: string) => journal.listCheckpoints(docId),
     latestUpdate: (docId: string) => journal.latestUpdate(docId),

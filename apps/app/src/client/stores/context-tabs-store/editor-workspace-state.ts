@@ -188,7 +188,7 @@ export function durableContextTab(tab: ContextTab): ContextTab {
   const {
     draftOnly: _,
     reviewWorkId: _reviewWorkId,
-    reviewDraftId: _reviewDraftId,
+    reviewItemKey: _reviewItemKey,
     tabInstanceToken: _tabInstanceToken,
     ...persisted
   } = tab;
@@ -210,7 +210,7 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
         left.path === right.path &&
         left.workId === right.workId &&
         left.rootThreadId === right.rootThreadId)) &&
-    leftDraft?.reviewDraftId === rightDraft?.reviewDraftId &&
+    leftDraft?.reviewItemKey === rightDraft?.reviewItemKey &&
     leftDraft?.tabInstanceToken === rightDraft?.tabInstanceToken
   );
 }
@@ -377,20 +377,16 @@ export function reduceEditorWorkspace(
   }
   if (command.kind === "settle-draft") {
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    const index = workspace?.tabs.findIndex((tab) => sameTabIdentity(tab, command.tab)) ?? -1;
+    const index = workspace.tabs.findIndex((tab) => tab.documentId === command.tab.documentId);
     if (command.tab.kind === "new") return outcome("stale", current);
     const settled = durableContextTab(command.tab);
-    const conflicting = workspace.tabs.find(
-      (tab) =>
-        tab.documentId === command.tab.documentId &&
-        tab.tabInstanceId !== command.tab.tabInstanceId,
-    );
-    if (index < 0 && conflicting) return outcome("stale", current);
     const tabs =
       index < 0
         ? canonicalizeTabs([...workspace.tabs, settled])
         : workspace.tabs.map((candidate, candidateIndex) =>
-            candidateIndex === index ? settled : candidate,
+            candidateIndex === index
+              ? ({ ...settled, tabInstanceId: candidate.tabInstanceId } as ContextTab)
+              : candidate,
           );
     if (JSON.stringify(tabs) === JSON.stringify(workspace.tabs))
       return outcome("already-committed", current);
@@ -466,7 +462,7 @@ export function reduceEditorWorkspace(
             ? {
                 draftOnly: true,
                 reviewWorkId: existing.reviewWorkId,
-                reviewDraftId: existing.reviewDraftId,
+                reviewItemKey: existing.reviewItemKey,
                 tabInstanceToken: existing.tabInstanceToken,
               }
             : {}),

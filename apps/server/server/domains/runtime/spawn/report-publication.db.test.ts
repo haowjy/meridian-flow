@@ -45,6 +45,7 @@ else
       "../loop/__tests__/test-drizzle-delivery.js"
     );
     const { finalizeExecution } = await import("../loop/execution-finalizer.js");
+    const { createOrphanReportRepair } = await import("./orphan-report-repair.js");
     const { createReportPublisher } = await import("./report-publisher.js");
     const { bindAdmittedInvocationCard } = await import("./spawn-transcript.js");
     const { invocationCardProps } = await import("./spawn-output.js");
@@ -83,6 +84,139 @@ else
         },
       );
     }
+
+    it.each([
+      "child-report",
+      "child-placeholder",
+    ] as const)("preserves a newer orphan receipt after a stale %s candidate", async (lane) => {
+      // Capture A before another worker finishes it and admits B.
+      const staleReports = (await repos.executionReports.listUnfinalized(100)).filter(
+        (candidate) => candidate.childThreadId === ids.child,
+      );
+      const placeholder =
+        lane === "child-placeholder"
+          ? await repos.turns.create({
+              threadId: ids.child,
+              prevTurnId: ids.execution,
+              role: "compaction",
+              origin: "system",
+              status: "pending",
+            })
+          : null;
+      const stalePlaceholders = placeholder
+        ? (await repos.turns.listPendingPlaceholders(100)).filter(
+            (candidate) => candidate.id === placeholder.id,
+          )
+        : [];
+      await terminal();
+      if (placeholder)
+        await finalizeExecution(
+          { repos, eventWriter },
+          {
+            threadId: ids.child,
+            turnId: placeholder.id,
+            cause: { kind: "failed", reason: "orphaned", error: "Worker A stopped" },
+          },
+        );
+
+      const authority = createDrizzleRunClaim(db);
+      const runDelivery = createTestDrizzleDelivery(db, {
+        repos,
+        eventWriter,
+        runClaim: authority,
+      });
+      const message = await runDelivery.enqueue({
+        threadId: ids.child,
+        intent: "message",
+        provenance: { kind: "agent", threadId: ids.caller },
+        body: { kind: "text", text: "Already adopted by B" },
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const next = await repos.turns.create({
+        threadId: ids.child,
+        prevTurnId: placeholder?.id ?? ids.execution,
+        role: "assistant",
+        origin: "assistant",
+        status: "streaming",
+      });
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        executionTurnId: next.id,
+        handle: "p1",
+        origin: "message",
+        deliveryMode: "background_notification",
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
+        toolCallId: "message-B",
+        cardBlockId: null,
+      });
+      await db.insert(schema.threadRunLeases).values({
+        threadId: ids.child,
+        executionId: "dead-B",
+        holderId: "worker-B",
+        turnId: next.id,
+        boundTurnIds: [next.id],
+        adoptedMessageIds: [message.id],
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      let reportPage = lane === "child-report" ? staleReports : [];
+      let placeholderPage = stalePlaceholders;
+      const repair = createOrphanReportRepair({
+        repos: {
+          ...repos,
+          turns: {
+            ...repos.turns,
+            async listUnsettledPrimaryTurns() {
+              return [];
+            },
+            async listPendingPlaceholders() {
+              return placeholderPage;
+            },
+          },
+          executionReports: {
+            ...repos.executionReports,
+            async listUnfinalized() {
+              return reportPage;
+            },
+          },
+        },
+        inbox: runDelivery,
+        authority,
+        eventWriter,
+        settleStaleExecution: runDelivery.settleStaleExecution,
+        retireOrphanedReply: runDelivery.retireOrphanedReply,
+        clearOrphanedTurn: runDelivery.clearOrphanedTurn,
+        publisher: {
+          async publish() {
+            return "already" as const;
+          },
+        },
+        eventSink,
+      });
+      await repair.sweep(10);
+      expect(await repos.turns.findById(next.id)).toMatchObject({ status: "streaming" });
+      expect(await db.select().from(schema.threadRunLeases)).toMatchObject([
+        {
+          executionId: "dead-B",
+          turnId: next.id,
+          adoptedMessageIds: [message.id],
+        },
+      ]);
+
+      placeholderPage = [];
+      reportPage = [{ childThreadId: ids.child, executionTurnId: next.id }];
+      await repair.sweep(10);
+      expect(await repos.turns.findById(next.id)).toMatchObject({ status: "error" });
+      expect(await repos.executionReports.findByExecution(ids.child, next.id)).toMatchObject({
+        outcome: "failed",
+        reason: "orphaned",
+      });
+      expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+      expect(await runDelivery.selectPending(ids.child)).toEqual([]);
+      const followup = await authority.startExecution(ids.child, "followup", async () => {});
+      expect(followup).not.toBeNull();
+      if (followup) await authority.release(followup);
+    });
 
     it("publishes exact card replacement, metadata event and compact inbox once", async () => {
       await terminal();
@@ -261,7 +395,6 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
         publisher,
         eventSink,
       });
@@ -505,7 +638,6 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
         publisher,
         eventSink,
       });
@@ -561,7 +693,6 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
         publisher,
         eventSink,
         retireOrphanedReply: delivery.retireOrphanedReply,
@@ -646,7 +777,6 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
         publisher,
         eventSink,
       });
@@ -702,7 +832,6 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
         publisher,
         eventSink,
       });
@@ -831,7 +960,6 @@ else
         repos,
         eventWriter,
         authority,
-        threadLock,
         publisher,
         eventSink,
       });
@@ -897,7 +1025,6 @@ else
         repos,
         eventWriter,
         authority: createDrizzleRunClaim(db, { holderId: "exact-report-walk" }),
-        threadLock,
         publisher,
         eventSink,
       });

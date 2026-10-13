@@ -1,11 +1,15 @@
 import type {
   DocumentAuthorityId,
   DocumentId,
+  DraftCommandId,
+  DraftCommandKind,
+  DraftCommandResult,
   DraftId,
   ModelResponseId,
   ThreadId,
   TurnId,
   UserId,
+  WorkId,
 } from "@meridian/contracts";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
@@ -13,6 +17,7 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -26,14 +31,11 @@ import {
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
-import { documents } from "./content";
+import { documents, works } from "./content";
+import { documentEdits } from "./document-edits";
 import { drafts } from "./drafts";
 import { users } from "./users";
 
-type ReversalStatus = "active" | "reversed" | "redone" | "reconciled" | "expired";
-type MutationStatus = "active" | "reversed";
-type MutationReversedBy = "user" | "agent";
-type ReversalOpDirection = "undo" | "redo";
 type DocumentBranchKind = "work_draft" | "thread_peer";
 type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
@@ -44,7 +46,6 @@ type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_rec
 type ChangeTrailOwnerKind = "turn" | "shared";
 type ChangeTrailState = "building" | "settling" | "settled";
 type ChangeTrailEventKind = "updated" | "settled";
-type TurnTrailWorkState = "pending" | "running" | "complete" | "no_op" | "exhausted";
 
 export const documentBranches = pgTable(
   "document_branches",
@@ -75,6 +76,10 @@ export const documentBranches = pgTable(
     status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
+    /** Current visible effect against the durable last-pulled live cut. */
+    hasEffect: boolean("has_effect").notNull().default(true),
+    blocking: boolean("blocking").notNull().default(false),
+    liveCut: byteaColumn("live_cut"),
     discardedStateVector: byteaColumn("discarded_state_vector"),
     schemaVersion: integer("schema_version")
       .notNull()
@@ -111,6 +116,8 @@ export const branchWriteJournal = pgTable(
       .references(() => documentBranches.id, { onDelete: "cascade" }),
     generation: integer("generation").notNull(),
     wId: integer("w_id"),
+    /** The model's tool call that made this write; the chat transcript row to jump to. */
+    toolCallId: text("tool_call_id"),
     source: text("source").$type<BranchWriteJournalSource>().notNull().default("agent"),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
@@ -470,40 +477,6 @@ export const changeTrailDeliveryOutbox = pgTable(
   ],
 );
 
-/** Durable completion fact for every turn-owned branch journal row. */
-export const turnTrailWork = pgTable(
-  "turn_trail_work",
-  {
-    journalId: bigint("journal_id", { mode: "number" })
-      .primaryKey()
-      .references(() => branchWriteJournal.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .notNull()
-      .references(() => turns.id, { onDelete: "cascade" }),
-    branchId: text("branch_id")
-      .notNull()
-      .references(() => documentBranches.id, { onDelete: "cascade" }),
-    state: text("state").$type<TurnTrailWorkState>().notNull().default("pending"),
-    attempts: integer("attempts").notNull().default(0),
-    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
-    lastError: text("last_error"),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    index("turn_trail_work_ready").on(table.nextAttemptAt).where(sql`${table.state} = 'pending'`),
-    index("turn_trail_work_owner").on(table.threadId, table.turnId, table.state),
-    check(
-      "turn_trail_work_state_valid",
-      sql`${table.state} IN ('pending', 'running', 'complete', 'no_op', 'exhausted')`,
-    ),
-  ],
-);
-
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
   {
@@ -542,6 +515,8 @@ export const documentYjsUpdates = pgTable(
     admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
     batchOrdinal: integer("batch_ordinal").notNull().default(0),
     updateData: byteaColumn("update_data").notNull(),
+    editId: uuid("edit_id").references(() => documentEdits.id, { onDelete: "set null" }),
+    editPartOrdinal: integer("edit_part_ordinal"),
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()
@@ -556,10 +531,6 @@ export const documentYjsUpdates = pgTable(
     authoringResponseId: uuid("authoring_response_id")
       .$type<ModelResponseId>()
       .references(() => modelResponses.id, { onDelete: "restrict" }),
-    reversalActorType: text("reversal_actor_type").$type<"agent" | "user">(),
-    reversalActorUserId: uuid("reversal_actor_user_id")
-      .$type<UserId>()
-      .references(() => users.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -570,130 +541,6 @@ export const documentYjsUpdates = pgTable(
       table.admissionSequence,
       table.batchOrdinal,
     ),
-  ],
-);
-
-export const documentYjsReversals = pgTable(
-  "document_yjs_reversals",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "cascade" }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
-    // Model-facing reversal handle (for example, "w3"), not a durable idempotency key.
-    writeId: text("write_id").notNull(),
-    status: text("status").$type<ReversalStatus>().notNull(),
-    // No FK: compaction can delete the undo update row after expiring reversal metadata.
-    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }).notNull(),
-    // Current redo re-apply update for redone rows; cleared on the next undo cycle.
-    redoUpdateSeq: bigint("redo_update_seq", { mode: "number" }),
-    expiresAt: timestamp("expires_at", { withTimezone: true }),
-    reversedAt: timestamp("reversed_at", { withTimezone: true }),
-    reversedByUserId: uuid("reversed_by_user_id")
-      .$type<UserId>()
-      .references(() => users.id, {
-        onDelete: "set null",
-      }),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    uniqueIndex("document_yjs_reversals_document_thread_write").on(
-      table.documentId,
-      table.threadId,
-      table.writeId,
-    ),
-    index("document_yjs_reversals_document_thread").on(table.documentId, table.threadId),
-    check(
-      "document_yjs_reversals_status_valid",
-      sql`${table.status} IN ('active', 'reversed', 'redone', 'reconciled', 'expired')`,
-    ),
-  ],
-);
-
-export const documentYjsReversalOps = pgTable(
-  "document_yjs_reversal_ops",
-  {
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    // No FK: compaction prunes update rows while retaining reversal history until matching pruning.
-    updateSeq: bigint("update_seq", { mode: "number" }).notNull(),
-    handle: text("handle").notNull(),
-    direction: text("direction").$type<ReversalOpDirection>().notNull(),
-  },
-  (table) => [
-    primaryKey({
-      columns: [table.documentId, table.threadId, table.updateSeq, table.handle],
-    }),
-    index("document_yjs_reversal_ops_document_thread_handle").on(
-      table.documentId,
-      table.threadId,
-      table.handle,
-    ),
-    check("document_yjs_reversal_ops_direction_valid", sql`${table.direction} IN ('undo', 'redo')`),
-  ],
-);
-
-export const agentEditMutations = pgTable(
-  "agent_edit_mutations",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    wId: integer("w_id").notNull(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .notNull()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "cascade" }),
-    authoringResponseId: uuid("authoring_response_id")
-      .$type<ModelResponseId>()
-      .references(() => modelResponses.id, { onDelete: "restrict" }),
-    actorKind: text("actor_kind").$type<"agent" | "human" | "system">().notNull().default("agent"),
-    userId: text("user_id"),
-    // Durable idempotency key for the edit mutation, distinct from reversal handles.
-    writeId: text("write_id").notNull(),
-    status: text("status").$type<MutationStatus>().notNull().default("active"),
-    createdSeq: bigint("created_seq", { mode: "number" }).notNull(),
-    // No FK: compaction can delete the update row while durable mutation metadata remains.
-    undoUpdateSeq: bigint("undo_update_seq", { mode: "number" }),
-    createdAt: createdAt(),
-    reversedAt: timestamp("reversed_at", { withTimezone: true }),
-    reversedBy: text("reversed_by").$type<MutationReversedBy>(),
-  },
-  (table) => [
-    uniqueIndex("agent_edit_mutations_document_thread_write_id")
-      .on(table.documentId, table.threadId, table.writeId)
-      .where(sql`${table.status} = 'active'`),
-    uniqueIndex("agent_edit_mutations_document_thread_w_id").on(
-      table.documentId,
-      table.threadId,
-      table.wId,
-    ),
-    index("agent_edit_mutations_thread_status").on(table.documentId, table.threadId, table.status),
-    index("agent_edit_mutations_turn").on(table.documentId, table.threadId, table.turnId),
-    index("agent_edit_mutations_thread_turn").on(table.threadId, table.turnId),
-    check("agent_edit_mutations_status_valid", sql`${table.status} IN ('active', 'reversed')`),
   ],
 );
 
@@ -740,10 +587,9 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
   schemaVersion: integer("schema_version")
     .notNull()
     .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
+  retiredThroughSeq: bigint("retired_through_seq", { mode: "number" }).notNull().default(0),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
-  // SET NULL is effectively unreachable: checkpoints delete only via document cascade,
-  // which also deletes the head row.
   latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }).references(
     () => documentYjsCheckpoints.id,
     { onDelete: "set null" },
@@ -768,3 +614,71 @@ export const documentDerivations = pgTable("document_derivations", {
   linksLocationVersion: bigint("links_location_version", { mode: "bigint" }),
   linksExtractorVersion: integer("links_extractor_version"),
 });
+
+/** Transaction-local dirty signals; sequence is identity, never commit order. */
+export const changeTrailDirtyLog = pgTable(
+  "change_trail_dirty_log",
+  {
+    seq: bigint("seq", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    turnId: uuid("turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    index("change_trail_dirty_log_owner_seq").on(table.threadId, table.turnId, table.seq),
+  ],
+);
+
+/**
+ * The record of one writer Apply or Discard, keyed by the client's command id so a resend
+ * answers the first command's outcome. It lives beside the batches it points at, which keeps
+ * `drafts.ts` free of an import cycle.
+ */
+export const draftCommands = pgTable(
+  "draft_commands",
+  {
+    id: uuid("id").$type<DraftCommandId>().primaryKey(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .notNull()
+      .references(() => works.id, { onDelete: "cascade" }),
+    draftId: uuid("draft_id")
+      .$type<DraftId>()
+      .references(() => drafts.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .$type<UserId>()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<DraftCommandKind>().notNull(),
+    /** Hash of the canonical command envelope; another digest under this id is a conflict. */
+    requestDigest: text("request_digest").notNull(),
+    /** Set when an Apply stages; completion or withdrawal settles the row with the batch. */
+    settlementBatchId: uuid("settlement_batch_id").references(
+      () => branchPushSettlementBatches.id,
+      { onDelete: "set null" },
+    ),
+    state: text("state").$type<"pending" | "done">().notNull().default("pending"),
+    result: jsonb("result").$type<DraftCommandResult>(),
+    createdAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("draft_commands_work").on(table.workId),
+    index("draft_commands_settlement_batch")
+      .on(table.settlementBatchId)
+      .where(sql`${table.settlementBatchId} IS NOT NULL`),
+    check(
+      "draft_commands_kind_valid",
+      sql`${table.kind} IN ('apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_draft')`,
+    ),
+    check("draft_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
+    check(
+      "draft_commands_done_shape",
+      sql`(${table.state} = 'done') = (${table.completedAt} IS NOT NULL)`,
+    ),
+  ],
+);

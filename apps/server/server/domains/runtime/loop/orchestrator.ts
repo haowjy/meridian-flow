@@ -1,3 +1,4 @@
+import type { ModelResponseIdentity } from "@meridian/contracts";
 /**
  * Ordered model/tool loop. Preparation commits initial turns and report admission;
  * execution publishes through the journal, never a caller-driven event generator.
@@ -258,12 +259,12 @@ export interface OrchestratorDeps {
   shownLinks: Pick<ShownLinkStore, "record">;
   responseWrites: {
     commitResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
       beforeTransactionCommit: (result: ResponseWriteCommitOutcome) => Promise<void>,
     ): Promise<ResponseWriteCommitOutcome>;
     rollbackResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: { threadId: ThreadId; turnId: TurnId },
     ): Promise<void>;
   };
@@ -439,6 +440,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   // New turns require positive balance; the mid-stream gate in turn-accounting
   // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
+    if (isDrainRun(input)) await deps.delivery.blockForUsage(input.lease);
     throw meridianErrorFromSystem(
       "credits_exhausted",
       "Your usage balance is exhausted; add balance before starting a new turn",
@@ -1052,10 +1054,16 @@ async function settleCancelledResponse(input: {
     });
     currentTurn = persistedResponse.updatedTurn;
     input.allBlocks.push(...persistedResponse.createdBlocks);
-    await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
-      threadId: input.runInput.threadId,
-      turnId: currentTurn.id,
-    });
+    await input.deps.responseWrites.rollbackResponse(
+      {
+        providerResponseId: persistedResponse.responseId,
+        editScopeId: persistedResponse.responseId,
+      },
+      {
+        threadId: input.runInput.threadId,
+        turnId: currentTurn.id,
+      },
+    );
   }
   return currentTurn;
 }
@@ -1126,6 +1134,8 @@ async function persistUncommittedWriteResult(input: {
   threadId: ThreadId;
   block: Block;
   text: string;
+  /** Already-rendered per-write failure from the save boundary. */
+  message?: string;
   status?: "internal_error" | "invalid_write";
   /** A file-policy refusal at the save: `permission_denied` with this reason. */
   reason?: PermissionDeniedReason;
@@ -1133,7 +1143,7 @@ async function persistUncommittedWriteResult(input: {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
   const staged = stagedWriteResult(input.block);
-  const message = ["Write did not land.", input.text].join("\n\n");
+  const message = input.message ?? ["Write did not land.", input.text].join("\n\n");
   const { output, result } = writeResultContent(
     modelResult({
       command: staged?.command ?? "unknown",
@@ -1412,10 +1422,12 @@ function buildGenerateRequestFromAssembled(input: {
  */
 function isSaveBoundary(call: { name: string; arguments?: unknown }): boolean {
   const args = call.arguments;
-  if (call.name !== "write" || !args || typeof args !== "object" || !("command" in args)) {
+  if (!args || typeof args !== "object") return false;
+  if (call.name === "read" && "format" in args && args.format === "edits") return true;
+  if (call.name !== "write" || !("command" in args)) {
     return false;
   }
-  return args.command === "undo" || args.command === "redo";
+  return args.command === "undo" || args.command === "redo" || args.command === "revert";
 }
 
 /** Staged edits belong to a response scope, which rotates at a save boundary. */
@@ -1480,6 +1492,15 @@ function createResponseScope(input: {
         write: { block: Block; uri: string | null },
         receipt: ResponseCommitWriteReceipt,
       ) => {
+        if (receipt.result.status !== "success")
+          return persistUncommittedWriteResult({
+            deps,
+            threadId,
+            block: write.block,
+            status: "invalid_write",
+            text: "the user discarded the text it edited. Re-read and retry.",
+            message: receipt.result.message,
+          });
         // The settled receipt replaces the staged echo; both were shown.
         await recordShown(documentId, receipt);
         return persistCommittedWriteResult({
@@ -1492,7 +1513,7 @@ function createResponseScope(input: {
       };
       const finalized: Array<{ write: { block: Block }; block: Block }> = [];
       const outcome = await deps.responseWrites.commitResponse(
-        id,
+        { providerResponseId: input.responseId, editScopeId: id },
         { threadId, turnId },
         async (settled) => {
           for (const [documentId, blocks] of writes) {
@@ -1580,7 +1601,10 @@ function createResponseScope(input: {
     async rollback() {
       if (!active) return;
       active = false;
-      await deps.responseWrites.rollbackResponse(id, { threadId, turnId });
+      await deps.responseWrites.rollbackResponse(
+        { providerResponseId: input.responseId, editScopeId: id },
+        { threadId, turnId },
+      );
     },
   };
 }

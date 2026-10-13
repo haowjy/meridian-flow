@@ -7,7 +7,6 @@ import type { ContextSourceId, DocumentId, FolderId, ThreadId } from "@meridian/
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import {
-  agentEditMutations,
   documentBranches,
   documentDerivations,
   documentLinks,
@@ -15,8 +14,6 @@ import {
   documents,
   documentYjsCheckpoints,
   documentYjsHeads,
-  documentYjsReversalOps,
-  documentYjsReversals,
   documentYjsUpdates,
   folders,
 } from "@meridian/database/schema";
@@ -139,9 +136,6 @@ export async function releaseDocumentStorage(
   if (ids.length === 0) return [];
   const tx = currentDrizzleDb(db);
   const list = [...ids];
-  await tx.delete(documentYjsReversalOps).where(inArray(documentYjsReversalOps.documentId, list));
-  await tx.delete(documentYjsReversals).where(inArray(documentYjsReversals.documentId, list));
-  await tx.delete(agentEditMutations).where(inArray(agentEditMutations.documentId, list));
   await tx.delete(documentYjsHeads).where(inArray(documentYjsHeads.documentId, list));
   await tx.delete(documentYjsCheckpoints).where(inArray(documentYjsCheckpoints.documentId, list));
   await tx.delete(documentYjsUpdates).where(inArray(documentYjsUpdates.documentId, list));

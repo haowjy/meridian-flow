@@ -3,7 +3,6 @@ import * as Y from "yjs";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import {
   type DocumentCoordinator,
-  type DocumentLockOptions,
   isDocumentNotFoundError,
 } from "../ports/document-coordinator.js";
 import { applyYjsUpdateIfEffective } from "../yjs-update.js";
@@ -20,6 +19,7 @@ export interface RuntimeDocumentState {
   doc: Y.Doc;
   session: ActorSession;
   threadId: string;
+  peerBranchId?: string;
 }
 
 export interface RuntimeRecoveryDocument {
@@ -34,10 +34,9 @@ export interface RuntimeStore {
   attachRuntime(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): Promise<void>;
   evictResponseRuntimes(
-    documents: readonly RuntimeRecoveryDocument[],
+    documents: readonly Pick<RuntimeRecoveryDocument, "docId" | "session">[],
     options?: RuntimeEvictOptions,
   ): Promise<void>;
-  /** One thread's runtimes on `docId`, or on every document when `docId` is null. */
   evictThreadRuntimes(
     docId: string | null,
     threadId: string,
@@ -48,12 +47,8 @@ export interface RuntimeStore {
     docId: string,
     runtime: RuntimeDocumentState,
     commandName: DocumentCommandName,
-    lock?: DocumentLockOptions,
   ): Promise<InternalWriteResult | null>;
-  recoverCommittedResponseProjection<D extends RuntimeRecoveryDocument>(
-    documents: readonly D[],
-    lockFor?: (document: D) => DocumentLockOptions,
-  ): Promise<void>;
+  recoverCommittedResponseProjection(documents: readonly RuntimeRecoveryDocument[]): Promise<void>;
   syncLocalFromLive(
     session: ActorSession,
     docId: string,
@@ -71,6 +66,7 @@ export interface RuntimeStore {
 
 export interface RuntimeEvictOptions {
   markLiveDocStale?: boolean;
+  peerBranchId?: string;
 }
 
 export function createRuntimeStore(deps: {
@@ -127,7 +123,7 @@ export function createRuntimeStore(deps: {
   }
 
   async function evictResponseRuntimes(
-    documents: readonly RuntimeRecoveryDocument[],
+    documents: readonly Pick<RuntimeRecoveryDocument, "docId" | "session">[],
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
     await Promise.all(
@@ -151,14 +147,18 @@ export function createRuntimeStore(deps: {
     threadId: string,
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
+    let evicted = false;
     for (const [key, runtime] of [...runtimeDocs]) {
       if (runtime.threadId !== threadId) continue;
       const runtimeDocId = docIdFromRuntimeKey(key);
       if (docId !== null && runtimeDocId !== docId) continue;
+      if (options.peerBranchId && runtime.peerBranchId !== options.peerBranchId) continue;
+      evicted = true;
       runtimeDocs.delete(key);
       runtime.session.documents.delete(runtimeDocId);
     }
-    if (options.markLiveDocStale && docId) staleLiveDocs.add(docId);
+    if (options.markLiveDocStale && docId && (!options.peerBranchId || evicted))
+      staleLiveDocs.add(docId);
   }
 
   async function restoreRuntimeFromLive(
@@ -166,32 +166,24 @@ export function createRuntimeStore(deps: {
     docId: string,
     runtime: RuntimeDocumentState,
     commandName: DocumentCommandName,
-    lock?: DocumentLockOptions,
   ): Promise<InternalWriteResult | null> {
     if (staleLiveDocs.has(docId)) {
       const recovered = await recoverLiveDocFromJournal(docId, commandName);
       if (recovered) return recovered;
     }
-    const response = await withLiveDocument(
-      coordinator,
-      docId,
-      commandName,
-      (liveDoc) => {
-        const restored = createRuntimeDoc();
-        Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
-        runtime.doc = restored;
-        return null;
-      },
-      lock,
-    );
+    const response = await withLiveDocument(coordinator, docId, commandName, (liveDoc) => {
+      const restored = createRuntimeDoc();
+      Y.applyUpdate(restored, Y.encodeStateAsUpdate(liveDoc), { type: "system" });
+      runtime.doc = restored;
+      return null;
+    });
     if (isInternalWriteResult(response)) return response;
     markSynced(session, docId);
     return null;
   }
 
-  async function recoverCommittedResponseProjection<D extends RuntimeRecoveryDocument>(
-    documents: readonly D[],
-    lockFor?: (document: D) => DocumentLockOptions,
+  async function recoverCommittedResponseProjection(
+    documents: readonly RuntimeRecoveryDocument[],
   ): Promise<void> {
     await recoverLiveDocsFromJournal(documents);
     for (const document of documents) {
@@ -200,7 +192,6 @@ export function createRuntimeStore(deps: {
         document.docId,
         document.runtime,
         document.commandName,
-        lockFor?.(document),
       );
       if (isInternalWriteResult(restored)) throw internalResultError(restored);
       attachRuntime(document.session, document.docId, document.runtime);

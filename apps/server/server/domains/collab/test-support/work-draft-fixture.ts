@@ -3,7 +3,6 @@ import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documentBranches,
   documents,
   drafts,
   projects,
@@ -13,7 +12,6 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
 import * as Y from "yjs";
 import {
   DOCUMENT_RUNTIME_RESET_TABLES,
@@ -24,6 +22,7 @@ import { createDrizzleContextCatalog } from "../../context/adapters/context-cata
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
+import { applyDraftDocument } from "./apply-draft-document.js";
 import { createTestDocumentLinkScopes } from "./document-link-scopes.js";
 
 export const USER_ID = "00000000-0000-4000-8000-000000000701";
@@ -140,31 +139,23 @@ export function createWorkDraftFixture(db: Database) {
     collab: ReturnType<typeof createTestCollab>,
     documentId: string,
   ): Promise<void> {
-    const [draft] = await db
-      .select({ id: documentBranches.id })
-      .from(documentBranches)
-      .where(
-        and(
-          eq(documentBranches.documentId, documentId as never),
-          eq(documentBranches.kind, "work_draft"),
-          eq(documentBranches.status, "active"),
-        ),
-      );
-    if (!draft) throw new Error(`missing Work draft for ${documentId}`);
-    await collab.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID as never });
+    await applyDraftDocument(collab.draftReview, {
+      workId: WORK_ID as never,
+      documentId: documentId as never,
+      userId: USER_ID as never,
+    });
   }
 
   async function currentDraftId(
     collab: ReturnType<typeof createTestCollab>,
     documentId: string,
   ): Promise<string> {
-    const drafts = await collab.draftReview.list({
-      projectId: PROJECT_ID as never,
+    const draft = await collab.draftReview.resolveItemByDocument({
       workId: WORK_ID as never,
+      documentId: documentId as never,
     });
-    const draft = drafts.find((candidate) => candidate.documentId === documentId);
-    if (!draft) throw new Error(`missing reviewable draft for ${documentId}`);
-    return draft.draftId;
+    if (!draft?.draftBranchId) throw new Error(`missing reviewable draft for ${documentId}`);
+    return draft.draftBranchId;
   }
 
   return { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId };

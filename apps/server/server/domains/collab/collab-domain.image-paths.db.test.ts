@@ -44,6 +44,11 @@ const DATABASE_URL = process.env.DATABASE_URL;
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("collab image paths (postgres)", () => {});
 } else {
+  const identity = (responseId: string) => ({
+    providerResponseId: responseId,
+    editScopeId: responseId,
+  });
+
   describe("collab image paths (postgres)", () => {
     const queries: string[] = [];
     const db = createDb(DATABASE_URL, {
@@ -213,45 +218,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("keeps one link snapshot when an image moves between preview serializations", async () => {
-      const links = createTestDocumentLinkScopes(db);
-      let moveAfterSerialization = false;
-      const collab = createTestCollab({
-        ...links,
-        within: <T>(key: LinkScopeKey, operation: () => Promise<T>) =>
-          links.within(key, async () => {
-            const result = await operation();
-            // The engine's live serialization completes before preview reads the draft.
-            if (moveAfterSerialization) {
-              moveAfterSerialization = false;
-              await db
-                .update(folders)
-                .set({ name: "art" })
-                .where(eq(folders.contextSourceId, SOURCE_ID));
-            }
-            return result;
-          }),
-      });
-      collab.bindHocuspocus(hocuspocus as never);
-      await seedChapterWithMap(collab);
-      const command = {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID as never,
-        documentId: DOC_ID as never,
-        draftId: await currentDraftId(collab, DOC_ID),
-      };
-      moveAfterSerialization = true;
-      const preview = await collab.draftReview.preview(command);
-      if (preview.status !== "active") throw new Error("missing draft preview");
-      expect(preview.live).toContain("assets/map.png");
-      expect(preview.markdown).toContain("assets/map.png");
-      expect(preview.markdown).not.toContain("art/map.png");
-      const next = await collab.draftReview.preview(command);
-      if (next.status !== "active") throw new Error("missing draft preview");
-      expect(next.live).toContain("art/map.png");
-      expect(next.markdown).toContain("art/map.png");
-    });
-
     it("accepts a draft on a chapter with an image", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
@@ -343,7 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: CREATED_ID as never },
               },
             },
-            responseId: RESPONSE_ID,
+            responseIdentity: identity(RESPONSE_ID),
             createdDocument: true,
           },
         ),
@@ -365,7 +331,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: DOC_ID,
             overwrite: true,
           },
-          { ...ctx, responseId: RESPONSE_ID, createdDocument: false, copiedNodes: [link] },
+          {
+            ...ctx,
+            responseIdentity: identity(RESPONSE_ID),
+            createdDocument: false,
+            copiedNodes: [link],
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
 
@@ -379,7 +350,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const read = await core.read(
         { file: "chapter", documentId: DOC_ID },
-        { ...ctx, responseId: RESPONSE_ID },
+        { ...ctx, responseIdentity: identity(RESPONSE_ID) },
       );
       const markdown = await collab.readEffectiveMarkdown(view);
       const hashlines = await collab.readEffectiveHashlines(view);
@@ -413,7 +384,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Saved, then written again; a fresh process undoes that write in the
       // draft it landed in, so its echo spells there and its token is the
       // draft read's.
-      await collab.finalizeResponseCommit(RESPONSE_ID, {
+      await collab.finalizeResponseCommit(identity(RESPONSE_ID), {
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
       });
@@ -435,10 +406,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.documentDerivations.stop();
       collab.dispose();
       collab = start();
-      const undone = await collab.agentEdit().undo(DOC_ID, THREAD_ID);
+      const undone = await collab
+        .agentEdit()
+        .write(
+          { command: "undo", file: "chapter", documentId: DOC_ID },
+          { ...ctx, turnId: TURN_2_ID },
+        );
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
-      expect(undone.status).toBe("reversed");
+      expect(undone.status).toBe("success");
       expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
       expect.soft(after.value.content.join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
@@ -482,7 +458,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: LIVE_CREATED_ID as never },
               },
             },
-            responseId: LIVE_RESPONSE_ID,
+            responseIdentity: identity(LIVE_RESPONSE_ID),
             createdDocument: true,
           },
         ),

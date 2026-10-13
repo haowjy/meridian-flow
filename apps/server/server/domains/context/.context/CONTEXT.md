@@ -221,12 +221,11 @@ router resolves to exact project-scoped Work authority before dispatch.
   a hidden one, `presence: "draft"` with the draft it reads "in a draft" in
   (the reader's own if it uses it, else the oldest active one) and that
   draft's path; a document that draft created is an ordinary occupant only
-  in its own view. An ahead ref reads, per holder, the holder's own binding
-  (`link_ahead_holder_bindings`, written by Apply), then the view's draft
-  settlement, then the live settlement; a reader door with no holder reads the
-  last two. `holderBinding` exposes the first, for copies (§10.6), and
-  `pinHolder` names the holder a reader door reads bindings for, only one the
-  reader may name and read by the catalog's rule (an id alone is no capability). Readability
+  in its own view. An ahead ref reads one meaning, the live settlement it
+  bound to when a document first went live at its path; a hidden document at
+  the path reads "in a draft" (oldest draft first). `pinHolder` names the holder
+  a reader door reads for, only one the reader may name and read by the
+  catalog's rule (an id alone is no capability), and only to spell relative links. Readability
   comes from the file policy's `listAccess`, a hidden row's facts from the
   draft it reads in. Images are documents: the `asset:` rule reads the same
   rows. Nothing is cached between operations. ContextFS search binds its source document IDs to one snapshot;
@@ -264,7 +263,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant live document ID (a draft's hidden contents split off first and are never named); deleting an empty folder returns none. A move is the overwrite victim, then `tree/node-moves.ts`'s `moveNodes`. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (throws `UnregistrableAheadRefError` for a ref it refuses for good: malformed id, an address `resolveCanonicalAddress` can never resolve, an id already registered elsewhere; independent root transaction: each named draft `FOR SHARE`, then namespace keys only; with a `draftId`, idempotent per (ref, draft), so a ref already registered still settles on the draft's single occupant when it has no live settlement), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `LinkAheadRegistry` | `register` (throws `UnregistrableAheadRefError` for a ref it refuses for good: malformed id, an address `resolveCanonicalAddress` can never resolve, an id already registered elsewhere; independent root transaction: namespace keys only, idempotent per ref), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
 
 ## Live folder operations and hidden nodes
@@ -355,26 +354,17 @@ it. Arrival hooks, each once against the operation's final tree:
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
 | Draft Apply (warm and recovery) | the draft tree step's `afterAdmission`, once for every reveal, restore and relocation of the batch | Work → draft → current and final namespaces → document locks |
 
-A draft's hidden create is no arrival: it settles unsettled refs at its address
-in the draft only (`link_ahead_draft_settlements`). A reveal is an arrival at
-the creator's path, through the creation aggregate. Deleted rows are not
-arrivals.
+A draft's hidden create is no arrival: refs waiting at its address stay paths
+until the document goes live. A reveal is an arrival at the creator's path,
+through the creation aggregate. Deleted rows are not arrivals.
 
-What a ref means in a draft has one writer, `adapters/link-ahead-draft-settlements.ts`,
-which owns the policy (a ref takes a draft's meaning only while it has no live
-settlement, and keeps the first one) and the registry's address predicate: a
-draft's create settles the refs waiting at its address, a registration with a
-`draftId` settles each ref on the draft's single occupant (the registry keeps
-its root transaction and locks and calls in), and closing a draft or ending its
-use of a create drops what it meant. Refs in
-a draft's text register with its id: an agent's mint carries its holder's view
-(`AheadMint.view`); a writer's link typed in the review room registers after the
-room admits it, debounced; and Apply's prerequisite registers every ref in the
-branches it publishes before staging (collab's `draft-branch-ahead-registration.ts`).
-Apply binds each published holder's refs (`link_ahead_holder_bindings`, one
-writer: `adapters/link-ahead-holder-bindings.ts`) from the meanings it staged,
-read at staging through `draftMeaningsOf`; a binding is never deleted, and one
-naming a tombstone reads gone.
+An ahead ref binds once, for every holder (owner amendment 12a): the first
+live document at its path settles it, and nothing is rebound later. There are
+no holder bindings, draft settlements or Apply link cut, and a paste copies the
+ref as is. Refs in a draft's text register globally and best effort: an agent's
+mint, a link typed in the review room (debounced after the room admits it), and
+Apply's prerequisite for the branches it publishes (collab's
+`draft-branch-ahead-registration.ts`); a failed registration never fails Apply.
 
 `adapters/document-address.ts` owns server document addresses: the canonical
 address a document's folder chain spells now, a canonical address resolved to
@@ -646,11 +636,11 @@ and HTTP error data; it is absent when the failure cannot prove an occupant.
 ## Browser review address admission
 
 Ordinary browser addresses resolve only in the live tree. The address request
-may carry a review selector (`reviewWorkId`, `draftBranchId`, optional
-`documentId`). The server matches that branch and canonical path against the
-Work's active review items before selecting the whole draft's `TreeView`.
-The URL's `draft=` and selector branch are per-document branch IDs, never
-tree draft IDs. Candidate and identity availability reads use that same view,
+may carry a review selector (`reviewWorkId`, `itemKey`). The server matches
+that item key against the Work's active review items before selecting the whole
+draft's `TreeView`. The URL's `item=` and the selector's `itemKey` are the item
+key (`${draftId}:${documentId}`), never a branch id or a tree draft id; the old
+`draftBranchId` parameter answers unavailable. Candidate and identity availability reads use that same view,
 and the final read grant names the draft destination. Stale, foreign, or
 mismatched selectors answer unavailable without falling back to live. Mutation
 inspection still defaults to `LIVE_TREE`.

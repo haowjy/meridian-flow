@@ -1,16 +1,15 @@
 /**
  * Work drafts: the `drafts` row a Work's drafted writes share, what one draft says
- * about the document tree (`draft_tree_changes`), and what an ahead ref means in one
- * draft's view (`link_ahead_draft_settlements`). Visibility is read only through the
+ * about the document tree (`draft_tree_changes`). Visibility is read only through the
  * context tree view; nothing here is a live path.
  */
 import type {
   ContextSourceId,
-  DocumentId,
   DraftId,
   FolderId,
   ProjectId,
   ThreadId,
+  TurnId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
@@ -26,8 +25,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, updatedAt } from "./_shared";
-import { threads } from "./agent-threads";
-import { contextSources, documents, folders, linkAheadRefs, projects, works } from "./content";
+import { threads, turns } from "./agent-threads";
+import { contextSources, folders, projects, works } from "./content";
 import { users } from "./users";
 
 export type DraftStatus = "active" | "closed";
@@ -96,6 +95,13 @@ export const draftTreeChanges = pgTable(
       .references(() => folders.id, { onDelete: "cascade" }),
     name: text("name"),
     extension: text("extension"),
+    /** Who created the node: null for a writer's create and for rows before attribution. */
+    createdThreadId: uuid("created_thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "set null" }),
+    createdTurnId: uuid("created_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -124,30 +130,5 @@ export const draftTreeChanges = pgTable(
       "draft_tree_changes_says_something",
       sql`${table.created} OR ${table.contextSourceId} IS NOT NULL`,
     ),
-  ],
-);
-
-/** What an ahead ref means in one draft's view; read only in that view. */
-export const linkAheadDraftSettlements = pgTable(
-  "link_ahead_draft_settlements",
-  {
-    aheadId: uuid("ahead_id")
-      .notNull()
-      .references(() => linkAheadRefs.aheadId, { onDelete: "cascade" }),
-    draftId: uuid("draft_id")
-      .$type<DraftId>()
-      .notNull()
-      .references(() => drafts.id, { onDelete: "cascade" }),
-    // CASCADE only fires on project deletion: no product path hard-deletes a document.
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    settledAt: timestamp("settled_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.aheadId, table.draftId] }),
-    index("link_ahead_draft_settlements_draft").on(table.draftId),
-    index("link_ahead_draft_settlements_document").on(table.documentId),
   ],
 );

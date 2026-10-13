@@ -155,7 +155,7 @@ Transport remains room-scoped; multiplexing is outside this routing contract.
 
 
 Review-only document admission uses the existing address request. Only a route
-with `draftId` and a resolved Work sends its Work and per-document branch
+with `itemKey` and a resolved Work sends its Work and per-document branch
 selector, both included in the address query key. The server alone maps that
 branch to the whole draft tree after validating the review item. A plain
 manuscript address remains live-only; `gateLiveView` is unchanged.

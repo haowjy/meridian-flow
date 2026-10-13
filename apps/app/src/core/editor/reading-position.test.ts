@@ -155,7 +155,7 @@ it("lets pending Changes, heading/position and review targets win over mount mem
   expect(mayRestoreReadingPosition(editor, "chapter", false, address)).toBe(false);
   release();
   expect(mayRestoreReadingPosition(editor, "chapter", false, `${address}#heading`)).toBe(false);
-  expect(mayRestoreReadingPosition(editor, "chapter", false, `${address}?draft=d`)).toBe(false);
+  expect(mayRestoreReadingPosition(editor, "chapter", false, `${address}?item=d`)).toBe(false);
   expect(mayRestoreReadingPosition(editor, "chapter", true, address)).toBe(false);
   editor.commands.showPassageMatches([{ from: 1, to: 3 }]);
   expect(mayRestoreReadingPosition(editor, "chapter", false, address)).toBe(false);

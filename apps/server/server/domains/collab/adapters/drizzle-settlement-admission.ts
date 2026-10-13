@@ -42,30 +42,36 @@ export async function joinAdmissionWithinTx(
           ? undefined
           : ne(branchPushSettlementOutbox.pushId, excludePushId),
       ),
-    );
-  let joined = 0;
-  for (const target of targets) {
-    const inserted = await db
-      .insert(branchPushOutboxUpdates)
-      .values({
+    )
+    .orderBy(branchPushSettlementOutbox.pushId);
+  if (targets.length === 0) return 0;
+  // Three statements however many batches are unresolved, not one INSERT and UPDATE each.
+  const inserted = await db
+    .insert(branchPushOutboxUpdates)
+    .values(
+      targets.map((target) => ({
         pushId: target.pushId,
         ordinal: target.ordinal,
         sourceKind: input.source.kind,
         sourceId,
         update: Buffer.from(input.update),
-      })
-      .onConflictDoNothing()
-      .returning({ pushId: branchPushOutboxUpdates.pushId });
-    if (inserted.length === 0) continue;
-    await db
-      .update(branchPushSettlementOutbox)
-      .set({
-        joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
-        // App-clock → DB-clock convergence for journal admissions is deliberate (2026-07-24 divergence decision).
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(eq(branchPushSettlementOutbox.pushId, target.pushId));
-    joined += 1;
-  }
-  return joined;
+      })),
+    )
+    .onConflictDoNothing()
+    .returning({ pushId: branchPushOutboxUpdates.pushId });
+  if (inserted.length === 0) return 0;
+  await db
+    .update(branchPushSettlementOutbox)
+    .set({
+      joinVersion: sql`${branchPushSettlementOutbox.joinVersion} + 1`,
+      // App-clock → DB-clock convergence for journal admissions is deliberate (2026-07-24 divergence decision).
+      updatedAt: sql`clock_timestamp()`,
+    })
+    .where(
+      inArray(
+        branchPushSettlementOutbox.pushId,
+        inserted.map((row) => row.pushId),
+      ),
+    );
+  return inserted.length;
 }

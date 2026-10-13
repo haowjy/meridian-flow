@@ -8,8 +8,10 @@ import {
 import { useCallback, useEffect, useLayoutEffect } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
+  type ContextTab,
+  editorTabsForWork,
   getContextTabs,
-  isEditorTab,
+  matchesTabInstance,
   replaceOwner,
   useContextTabs,
   useContextTabsActions,
@@ -92,7 +94,7 @@ export function ContextViewerSurfaceController({
   const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
-  const visibleTabs = tabs.filter((tab) => isEditorTab(tab, routeWorkId));
+  const visibleTabs = editorTabsForWork(tabs, routeWorkId);
   const removalState = useContextRemovalProject(projectId);
   const { selectedDocumentId, workspaceRoute, tab: activeTab } = resolvedEditor;
 
@@ -121,7 +123,7 @@ export function ContextViewerSurfaceController({
     const routedFile = routed?.kind === "file" ? routed : null;
     if (workspaceRoute.kind === "owner" && selection.status === "candidate") {
       if (workspaceRoute.identity.kind === "server") {
-        selectTab(projectId, routeWorkId, workspaceRoute.tab.documentId);
+        selectTab(projectId, routeWorkId, workspaceRoute.tab.documentId, workspaceRoute.tab);
       }
       contextRemoval.bindRouteSelection(projectId, selection.revision, workspaceRoute.identity);
     } else if (workspaceRoute.kind === "materialized-local") {
@@ -216,7 +218,7 @@ export function ContextViewerSurfaceController({
       transitionRevision: removalState.transitionRevision,
       locator: removalState.selection.locator,
       identity: removalState.selection.identity,
-      owner: { kind: "workspace", documentId: workspaceRoute.tab.documentId },
+      owner: { kind: "workspace", tab: workspaceRoute.tab },
     });
   }, [active, contextRemoval, workspaceRoute, projectId, removalState]);
 
@@ -271,9 +273,10 @@ export function ContextViewerSurfaceController({
     routeWorkId,
   ]);
 
-  function handleSelectTab(documentId: string) {
-    const tab = tabs.find((candidate) => candidate.documentId === documentId);
-    if (!tab) return;
+  function handleSelectTab(tab: ContextTab) {
+    if (!getContextTabs(projectId).tabs.some((candidate) => matchesTabInstance(candidate, tab)))
+      return;
+    const documentId = tab.documentId;
     if (tab.kind === "new") {
       onOpenContextTarget({ scheme: "unfiled", path: "", workId: routeWorkId, documentId });
       return;
@@ -288,11 +291,14 @@ export function ContextViewerSurfaceController({
       });
       return;
     }
-    onSelectContextPath(tab.path, tab.scheme);
+    void onOpenContextTarget(
+      { scheme: tab.scheme, path: tab.path, workId: routeWorkId, documentId },
+      { tab },
+    );
   }
 
-  function handleCloseTab(documentId: string) {
-    settleWriterClose(contextRemoval.writerClose(projectId, documentId));
+  function handleCloseTab(tab: ContextTab) {
+    settleWriterClose(contextRemoval.writerClose(projectId, tab));
   }
 
   const handleUntitledBecameNonEmpty = useCallback(
@@ -327,7 +333,7 @@ export function ContextViewerSurfaceController({
         continue;
       }
       if (projection.kind === "removed") {
-        settleWriterClose(contextRemoval.writerClose(projectId, tab.documentId));
+        settleWriterClose(contextRemoval.writerClose(projectId, tab));
         continue;
       }
       const routeFollowsTab =
@@ -417,8 +423,8 @@ export function ContextViewerSurfaceController({
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
       onCommitted={(documentId, next, ownership) => {
-        const target = getContextTabs(projectId).tabs.find(
-          (candidate) => candidate.documentId === documentId,
+        const target = getContextTabs(projectId).tabs.find((candidate) =>
+          matchesTabInstance(candidate, ownership.tab),
         );
         if (ownership.isLatest && target?.kind === "viewer") {
           // openTab merges metadata for an already-open tab; the store has no
@@ -430,10 +436,10 @@ export function ContextViewerSurfaceController({
             name: next.name,
             ...replaceOwner(next),
           } as typeof target);
-        } else if (ownership.isLatest) {
+        } else if (ownership.isLatest && target) {
           // Any commit through the identity bar is an explicit writer save:
           // the document graduates out of provisional naming (D8).
-          updateTrackedTab(projectId, documentId, {
+          updateTrackedTab(projectId, target, {
             scheme: next.scheme,
             path: next.path,
             name: next.name,
@@ -442,6 +448,9 @@ export function ContextViewerSurfaceController({
           });
         }
         if (
+          activeTab &&
+          matchesTabInstance(activeTab, ownership.tab) &&
+          next.routeWorkId === routeWorkId &&
           identityCommitMayNavigate(
             ownership,
             getContextTabs(projectId).selectedTabIdByWork[routeWorkId],

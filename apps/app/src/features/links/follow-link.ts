@@ -8,7 +8,9 @@
  * own destination and host rather than by writing a second follow.
  */
 
+import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import {
+  type DocumentAnswer as DocumentEntry,
   type LinkAnswerCache,
   type LinkFollowDisposition,
   type LinkFollowOutcome,
@@ -24,7 +26,19 @@ import {
  */
 export const CHECKING_DELAY_MS = 250;
 
-export type LinkDocumentRef = { documentId: string };
+/**
+ * A found document. `review` is present for one that exists only in a draft:
+ * it opens in that Work's review by item identity, never through the live path.
+ */
+export type LinkDocumentRef = {
+  documentId: string;
+  review?: {
+    workId: string;
+    itemKey: string;
+    contextLocation: { scheme: ContextUriScheme; path: string };
+    documentName: string;
+  };
+};
 
 /**
  * Where a found document goes. The calling surface's policy, never this
@@ -101,7 +115,7 @@ export async function followProjectLink({
   if (known?.state === "document") {
     settle();
     reporter.clear();
-    await open(documentRef(known.document), gesture);
+    await open(documentRef(known), gesture);
     return;
   }
 
@@ -115,7 +129,7 @@ export async function followProjectLink({
   }
   if (entry?.state === "document") {
     reporter.clear();
-    await open(documentRef(entry.document), gesture);
+    await open(documentRef(entry), gesture);
     return;
   }
   if (entry?.state !== "missing") {
@@ -125,6 +139,22 @@ export async function followProjectLink({
   reporter.report(outcome("missing"));
 }
 
-function documentRef(document: { documentId: string }): LinkDocumentRef {
-  return { documentId: document.documentId };
+function documentRef(found: DocumentEntry): LinkDocumentRef {
+  const { document, draft } = found;
+  const workId = draft?.workId ?? document.workId;
+  if (!draft || !workId) return { documentId: document.documentId };
+  return {
+    documentId: document.documentId,
+    review: {
+      workId,
+      // The review's identity: `${draftId}:${documentId}` (contract rev 5.1, vocabulary).
+      itemKey: `${draft.draftId}:${document.documentId}`,
+      // Draft rows and launches spell the path with a leading slash.
+      contextLocation: {
+        scheme: document.scheme,
+        path: document.path.startsWith("/") ? document.path : `/${document.path}`,
+      },
+      documentName: document.title,
+    },
+  };
 }
