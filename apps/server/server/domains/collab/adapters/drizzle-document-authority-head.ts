@@ -227,6 +227,7 @@ export async function replaceDocumentAuthorityHeadGeneration(
       .set({
         authorityGeneration: generation,
         nextAdmissionSequence: 1n,
+        retiredThroughSeq: 0,
         latestUpdateSeq: checkpoint.upToSeq,
         latestStateVector: checkpoint.stateVector,
         latestCheckpointId: installed.id,

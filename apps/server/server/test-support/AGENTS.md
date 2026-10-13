@@ -24,6 +24,10 @@ room stores enqueue checkpoints: unloading a room does not await that checkpoint
 so checkpoints join the same tracker as repairs and runtime work. Rollback cannot isolate
 other connections.
 
+Composed runtimes must unload rooms, shut down background app work, and drain
+`documentSync.drainHocuspocusPersistence()` before the next fixture reset. Room
+unload schedules checkpoint stores; it does not await their persistence.
+
 Hoist immutable large fixtures to `beforeAll` only when each case restores its
 mutations. Keep query-plan fixtures large enough for their stated plan contract.
 Run DB tests through `pnpm test:db`, never against a dev database.
