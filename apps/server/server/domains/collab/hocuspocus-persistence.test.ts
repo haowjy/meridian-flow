@@ -1,11 +1,11 @@
 /** Tests for Hocuspocus room persistence: branch guards and deferred live checkpoints. */
 
 import { Hocuspocus } from "@hocuspocus/server";
-import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { RecentEventsBuffer } from "../observability/adapters/recent/recent-events-buffer.js";
+import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
 import type { BranchSnapshot } from "./domain/branch-coordinator.js";
 import { BranchStaleUpdateError } from "./domain/branch-coordinator.js";
 import {
@@ -13,6 +13,7 @@ import {
   documentAuthority,
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
+import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import { PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { unimplementedBranchMutations } from "./test-support/unimplemented-branch-mutations.js";
@@ -33,7 +34,7 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
     });
     const journal = fakeJournal();
     journal.read = async () => ({
-      authority: { authorityId: "test-authority", generation },
+      authority: { authorityId: DOCUMENT_ID, generation },
       checkpoint: Y.encodeStateAsUpdate(new Y.Doc()),
       updates: [],
     });
@@ -55,7 +56,6 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
       hocuspocus: () => hp,
       readAuthorityHeadGeneration: async () => generation,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => {},
     });
     const loading = hp.openDirectConnection(DOCUMENT_ID, {}).catch((cause: unknown) => cause);
@@ -87,7 +87,6 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
       branchCoordinator: { commitWriterUpdate } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
 
@@ -115,9 +114,11 @@ describe("createHocuspocusPersistenceService branch room storage", () => {
 });
 
 describe("createHocuspocusPersistenceService live checkpoints", () => {
-  function liveCheckpointFixture(input: { checkpoint?: UpdateJournal["checkpoint"] } = {}) {
+  function liveCheckpointFixture(
+    input: { checkpoint?: CheckpointJournal["storeCheckpoint"] } = {},
+  ) {
     const journal = fakeJournal();
-    if (input.checkpoint) journal.checkpoint = vi.fn(input.checkpoint);
+    if (input.checkpoint) journal.storeCheckpoint = vi.fn(input.checkpoint);
     // Stands in for the caller's DB transaction: commit runs the queued
     // callbacks, rollback drops them.
     let queued: Array<() => void> = [];
@@ -126,7 +127,6 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
       journal,
       hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 7,
       afterCallerCommit: (callback) => {
         queued.push(callback);
       },
@@ -144,16 +144,23 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
     };
   }
 
-  it("writes one checkpoint at a time and keeps only the newest queued snapshot", async () => {
+  it("writes one checkpoint at a time and coalesces queued capture requests", async () => {
     let releaseFirst: (() => void) | undefined;
     const firstBlocked = new Promise<void>((resolve) => {
       releaseFirst = resolve;
+    });
+    let notifyFirstStarted: () => void = () => {};
+    const firstStarted = new Promise<void>((resolve) => {
+      notifyFirstStarted = resolve;
     });
     let calls = 0;
     const fixture = liveCheckpointFixture({
       checkpoint: async () => {
         calls += 1;
-        if (calls === 1) await firstBlocked;
+        if (calls === 1) {
+          notifyFirstStarted();
+          await firstBlocked;
+        }
       },
     });
     const first = docWithText("first");
@@ -162,19 +169,26 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
 
     await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, first);
     fixture.commit();
+    await firstStarted;
     await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, second);
     await fixture.persistence.storeHocuspocusDocument(DOCUMENT_ID, third);
     fixture.commit();
-    expect(fixture.journal.checkpoint).toHaveBeenCalledOnce();
+    expect(fixture.journal.storeCheckpoint).toHaveBeenCalledOnce();
 
     releaseFirst?.();
     await fixture.persistence.drainHocuspocusPersistence();
-    expect(fixture.journal.checkpoint).toHaveBeenCalledTimes(2);
-    expect(fixture.journal.checkpoint).toHaveBeenLastCalledWith(
-      DOCUMENT_ID,
-      Y.encodeStateAsUpdate(third),
-      7,
-      { authorityId: "test-authority", generation: 1n },
+    expect(fixture.journal.storeCheckpoint).toHaveBeenCalledTimes(2);
+    expect(fixture.journal.captureCheckpoint).toHaveBeenCalledTimes(2);
+    expect(fixture.journal.captureCheckpoint).toHaveBeenLastCalledWith(DOCUMENT_ID, {
+      authorityId: DOCUMENT_ID,
+      generation: 1n,
+    });
+    expect(fixture.journal.storeCheckpoint).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        documentId: DOCUMENT_ID,
+        authority: { authorityId: DOCUMENT_ID, generation: 1n },
+        upToSeq: 0,
+      }),
     );
   });
 });
@@ -204,7 +218,6 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
       } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
 
@@ -247,7 +260,6 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
       } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
 
@@ -285,7 +297,6 @@ describe("createHocuspocusPersistenceService branch stale gate", () => {
       branchCoordinator: { commitWriterUpdate: vi.fn(async () => undefined) } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
 
@@ -309,7 +320,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
       onLiveUpdatePersisted,
     });
@@ -346,7 +356,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
       onLiveUpdatePersisted,
     });
@@ -386,14 +395,14 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       DOCUMENT_ID,
       insertion,
       expect.anything(),
-      { authorityId: "test-authority", generation: 1n },
+      { authorityId: DOCUMENT_ID, generation: 1n },
     );
     expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
       2,
       DOCUMENT_ID,
       deletion,
       expect.anything(),
-      { authorityId: "test-authority", generation: 1n },
+      { authorityId: DOCUMENT_ID, generation: 1n },
     );
     expect(onLiveUpdatePersisted).toHaveBeenCalledTimes(2);
   });
@@ -412,7 +421,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents, closeConnections }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
 
@@ -443,7 +451,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
     await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
@@ -483,7 +490,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
     const client = cloneDoc(liveDocument);
@@ -511,7 +517,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
 
@@ -535,7 +540,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
     const client = boundDoc();
@@ -572,7 +576,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
     const update = writerUpdate();
@@ -612,7 +615,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
           getConnectionsCount: () => 0,
         }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       eventSink: events,
       emitAgentEditInvariantViolation: () => undefined,
     });
@@ -654,7 +656,6 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      latestUpdateSeq: async () => 0,
       emitAgentEditInvariantViolation: () => undefined,
     });
     const first = persistence.admitLiveWriterUpdate({
@@ -736,7 +737,7 @@ function branchSnapshot(doc: Y.Doc): BranchSnapshot {
   };
 }
 
-function fakeJournal(): UpdateJournal {
+function fakeJournal(): CheckpointJournal {
   return {
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");
@@ -744,13 +745,16 @@ function fakeJournal(): UpdateJournal {
     append: vi.fn(async () => 1),
     appendBatch: vi.fn(async () => []),
     read: vi.fn(async () => ({ checkpoint: null, updates: [] })),
-    checkpoint: vi.fn(async () => undefined),
+    captureCheckpoint: vi.fn(async (docId, authority) =>
+      createInMemoryJournal().captureCheckpoint(docId, authority),
+    ),
+    storeCheckpoint: vi.fn(async () => undefined),
     compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }
 
 function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0], generation = 1n): Y.Doc {
   const doc = new Y.Doc(options);
-  bindDocumentAuthority(doc, { authorityId: "test-authority" as never, generation });
+  bindDocumentAuthority(doc, { authorityId: DOCUMENT_ID, generation });
   return doc;
 }
