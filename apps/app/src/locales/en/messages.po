@@ -221,10 +221,6 @@ msgstr "{before} → {after}"
 msgid "{binary} is a binary file."
 msgstr "{binary} is a binary file."
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
-msgstr "{count, plural, one {{name} is archived, so its # pending change stays frozen. Unarchive it to review that change. AI changes to project files will go live right away.} other {{name} is archived, so its # pending changes stay frozen. Unarchive it to review them. AI changes to project files will go live right away.}}"
-
 #: src/features/chat/DraftDock.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr "{count, plural, one {# change} other {# changes}}"
@@ -240,14 +236,6 @@ msgstr "{count, plural, one {# more} other {# more}}"
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{count, plural, one {Apply it now} other {Apply them now}}"
-msgstr "{count, plural, one {Apply it now} other {Apply them now}}"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{count, plural, one {Keep it for review} other {Keep them for review}}"
-msgstr "{count, plural, one {Keep it for review} other {Keep them for review}}"
 
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{count} changes"
@@ -313,17 +301,9 @@ msgstr "{name} ({skill})"
 msgid "{name} (in the trash)"
 msgstr "{name} (in the trash)"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{name} has {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
-msgstr "{name} has {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
-
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr "{name} source"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "{name} was archived during the switch, so you're still in Draft."
-msgstr "{name} was archived during the switch, so you're still in Draft."
 
 #: src/features/draft-review/ReviewStepper.tsx
 msgid "{position} of {count}"
@@ -558,11 +538,11 @@ msgstr "AI assistant"
 #~ msgid "AI edits wait here for your review."
 #~ msgstr "AI edits wait here for your review."
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "AI write mode: {localizedValue}"
 msgstr "AI write mode: {localizedValue}"
 
@@ -657,17 +637,9 @@ msgstr "Apply couldn't finish"
 msgid "Apply draft"
 msgstr "Apply draft"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Apply is finishing. You're still in Draft."
-msgstr "Apply is finishing. You're still in Draft."
-
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Applying"
 msgstr "Applying"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Applying…"
-msgstr "Applying…"
 
 #: src/features/project/work/WorkActionsMenu.tsx
 msgid "Archive"
@@ -690,7 +662,7 @@ msgstr "Assistant is thinking"
 msgid "Attach file"
 msgstr "Attach file"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Auto-apply"
 msgstr "Auto-apply"
 
@@ -798,7 +770,6 @@ msgstr "Calls"
 msgid "Can't undo"
 msgstr "Can't undo"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/creation/CreationDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/links/FollowOutcomeContent.tsx
@@ -935,10 +906,6 @@ msgstr "Chats in this Work share its goal and scratch files."
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
 msgstr "Checked Work"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Checking pending changes…"
-msgstr "Checking pending changes…"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
@@ -1130,7 +1097,7 @@ msgstr "Compaction"
 msgid "Compaction information"
 msgstr "Compaction information"
 
-#: src/features/chat/compaction/control-copy.ts
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Compaction queued"
 msgstr "Compaction queued"
 
@@ -1139,7 +1106,7 @@ msgstr "Compaction queued"
 msgid "Compaction stopped"
 msgstr "Compaction stopped"
 
-#: src/features/chat/compaction/control-copy.ts
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Compaction withdrawn"
 msgstr "Compaction withdrawn"
 
@@ -1242,10 +1209,6 @@ msgstr "Copying from {source} into"
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Could not load files."
 msgstr "Could not load files."
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Couldn't apply every change, so you're still in Draft."
-msgstr "Couldn't apply every change, so you're still in Draft."
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "Couldn't apply this change."
@@ -1501,7 +1464,7 @@ msgstr "Couldn't open this draft."
 msgid "Couldn't open this draft. Try again."
 msgstr "Couldn't open this draft. Try again."
 
-#: src/features/chat/compaction/control-copy.ts
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
 msgstr "Couldn't queue the compaction."
 
@@ -1631,17 +1594,21 @@ msgstr "Couldn't start this handoff."
 msgid "Couldn't stop the brief. Try again."
 msgstr "Couldn't stop the brief. Try again."
 
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/thread-controls/useThreadControls.ts
 msgid "Couldn't stop the compaction. Try again."
 msgstr "Couldn't stop the compaction. Try again."
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Couldn't switch to auto-apply."
+msgstr "Couldn't switch to auto-apply."
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Couldn't switch to draft mode."
+msgstr "Couldn't switch to draft mode."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
 msgstr "Couldn't switch Work"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Couldn't switch, so you're still in Draft."
-msgstr "Couldn't switch, so you're still in Draft."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't undo"
@@ -1651,8 +1618,8 @@ msgstr "Couldn't undo"
 msgid "Couldn't update that Work"
 msgstr "Couldn't update that Work"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/thread-controls/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/useThreadControls.ts
 msgid "Couldn't withdraw. Try again."
 msgstr "Couldn't withdraw. Try again."
 
@@ -1941,7 +1908,7 @@ msgstr "Download {name}"
 msgid "Download image"
 msgstr "Download image"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr "Draft"
@@ -2187,10 +2154,6 @@ msgstr "finished"
 #: src/features/chat/SubagentHeader.tsx
 msgid "Finished"
 msgstr "Finished"
-
-#: src/features/chat/CreationComposer.tsx
-msgid "Finishing write mode change"
-msgstr "Finishing write mode change"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "First name"
@@ -3303,7 +3266,7 @@ msgstr "Put the caret in a table first."
 msgid "Queued"
 msgstr "Queued"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Queued commands"
 msgstr "Queued commands"
 
@@ -3566,10 +3529,10 @@ msgstr "Resume my documents on any device"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-#: src/features/chat/compaction/QueuedControlRows.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/thread-controls/QueuedControlRows.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
@@ -3596,7 +3559,7 @@ msgstr "Retry loading"
 msgid "Retry Pending drafts"
 msgstr "Retry Pending drafts"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Retry queueing"
 msgstr "Retry queueing"
 
@@ -3607,6 +3570,10 @@ msgstr "Retry save"
 #: src/routes/dev-login.tsx
 msgid "Retry sign-in"
 msgstr "Retry sign-in"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Retry switching"
+msgstr "Retry switching"
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "Retry the handoff brief"
@@ -3988,7 +3955,7 @@ msgid "Stopping"
 msgstr "Stopping"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/compaction/useThreadControls.ts
+#: src/features/chat/thread-controls/useThreadControls.ts
 msgid "Stopping compaction"
 msgstr "Stopping compaction"
 
@@ -4040,14 +4007,6 @@ msgstr "Suggested: {0}"
 msgid "Summarize earlier messages so the model has room to keep going"
 msgstr "Summarize earlier messages so the model has room to keep going"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Switch"
-msgstr "Switch"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Switch {name} to <0>auto-apply?</0>"
-msgstr "Switch {name} to <0>auto-apply?</0>"
-
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Switch chat, currently {title}"
 msgstr "Switch chat, currently {title}"
@@ -4056,21 +4015,41 @@ msgstr "Switch chat, currently {title}"
 msgid "Switch screens or manage your account."
 msgstr "Switch screens or manage your account."
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Switch to <0>auto-apply?</0>"
-msgstr "Switch to <0>auto-apply?</0>"
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Switch to auto-apply queued"
+msgstr "Switch to auto-apply queued"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Switch to draft mode queued"
+msgstr "Switch to draft mode queued"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Switch withdrawn"
+msgstr "Switch withdrawn"
+
+#: src/features/chat/thread-controls/WriteModeDivider.tsx
+msgid "Switched to auto-apply"
+msgstr "Switched to auto-apply"
+
+#: src/features/chat/thread-controls/WriteModeDivider.tsx
+msgid "Switched to draft mode"
+msgstr "Switched to draft mode"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Switched Work"
 msgstr "Switched Work"
 
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Switching to auto-apply"
+msgstr "Switching to auto-apply"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Switching to draft mode"
+msgstr "Switching to draft mode"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Switching Work…"
 msgstr "Switching Work…"
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "Switching…"
-msgstr "Switching…"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -4396,7 +4375,7 @@ msgstr "This chat's Work changed to {0}"
 msgid "This column is already at the edge."
 msgstr "This column is already at the edge."
 
-#: src/features/chat/compaction/control-copy.ts
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "This compaction already started."
 msgstr "This compaction already started."
 
@@ -4553,6 +4532,10 @@ msgstr "This selection holds blocks that keep their own block type."
 #: src/core/editor/asset-image-render-state.ts
 msgid "This stored figure needs a project before it can be rendered."
 msgstr "This stored figure needs a project before it can be rendered."
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "This switch already happened."
+msgstr "This switch already happened."
 
 #: src/features/project/dock/DockDocumentActions.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
@@ -4873,13 +4856,17 @@ msgstr "Where were we?"
 #~ msgid "Why this is marked merged"
 #~ msgstr "Why this is marked merged"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Withdraw"
 msgstr "Withdraw"
 
-#: src/features/chat/compaction/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Withdraw compaction"
 msgstr "Withdraw compaction"
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Withdraw switch"
+msgstr "Withdraw switch"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -4934,7 +4921,7 @@ msgstr "Wrap lines"
 msgid "Write away"
 msgstr "Write away"
 
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "Write mode"
 msgstr "Write mode"
 
@@ -4972,10 +4959,6 @@ msgstr "you answered"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
 msgstr "You can retry when this chat is free."
-
-#: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
-msgid "You have {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
-msgstr "You have {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
