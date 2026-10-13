@@ -4,7 +4,8 @@
  * iOS Safari usually resizes content when `interactive-widget=resizes-content`
  * is present, but standalone/PWA modes have varied historically. This wrapper
  * measures the visual viewport and exposes the obscured bottom inset as
- * `--mobile-keyboard-height` for the pinned chat composer padding.
+ * `--mobile-keyboard-height` for the pinned chat composer padding and the
+ * review's change bar.
  */
 import { type ReactNode, useEffect, useRef } from "react";
 

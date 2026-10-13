@@ -9,8 +9,8 @@
   in document-id order.
 - **One push commit seam**: whole-content and manifest-companion builders
   produce a `CandidateBatch` consumed by the single pipeline in
-  `branch-push.ts`. Content candidates always materialize the whole current
-  branch. Only the internal manifest candidate selects membership rows. Locked
+  `branch-push.ts`. Whole-document content candidates materialize the current branch. Per-change
+  content candidates and manifest companions replay only selected closed rows. Locked
   preparation in `branch-push-preparation.ts` computes one block diff from the
   live lock cut; `branch-trail-projection.ts` turns it into the sole durable
   publication record, while typed `push_lineage.branch_generation` supports
@@ -37,7 +37,7 @@
   push contribution. The aggregate counts inserted/deleted payloads and persists
   per-document word magnitudes; lightweight shells retain document ids/titles
   plus nullable totals so receipt headers never need manuscript-bearing detail.
-  Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
+  Dispatch and reconciliation do not duplicate aggregate SQL.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
@@ -61,7 +61,7 @@
 - **Trail evidence is read-only**: durable Before/After excerpts support
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
-- **Draft Apply settles the whole current branch**: every writer Apply and
+- **Document Apply settles the whole current branch**: whole-document Apply and
   Auto-apply switch push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
   authority; sweep policy uses each AI row's value only as that candidate's
   observation watermark. Each candidate is classified against the pre-push
@@ -71,12 +71,10 @@
   as a `system:reconcile` row so cold replay includes causal dependencies omitted
   from active rows. The row is same-admission causal coverage, not a new author:
   first-birth attribution stays with earlier authored rows, dependency evaluation
-  ignores `system:reconcile`, and the row is not a reversal target. Active agent
-  handles materialize against their corresponding authored rows; reconciliation
-  coverage is not a later semantic dependency.
-  Handles eliminated by Work-draft write reversal remain absent. A later writer row can
-  therefore make producing-turn Undo unavailable through the canonical
-  dependency predicate (`@meridian/agent-edit` `undo/journal-dependencies.ts`).
+  ignores `system:reconcile`, and the row is not an inverse target. Immutable
+  edit parts retain their authored update identity across settlement; no mutable
+  reversal handles are materialized or transferred. Live inverse eligibility
+  follows the forward-turn classifier and certified correspondence.
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
   Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`
@@ -89,12 +87,20 @@
   caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
-- **Trail work retries only an `auto` branch**: the trail-work claim
-  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` for a
-  `manual` branch or a turn that ended `error` or `cancelled`. No branch is
-  `auto` since D59, so every claim settles `no_op` and drafts wait for the
-  writer's Apply. This depends on the read model never rewriting a failed
-  turn's status (see the threads read-model projector).
+- **Durable trail signals**: receipt/part, journal disposition, publication,
+  settlement and turn-lifecycle row triggers append to `change_trail_dirty_log`
+  in the producer transaction. They never update owner rows or enroll commands
+  in another lock protocol. One SQL resolver follows immutable inverse targets;
+  both capture and readiness use its semantic owners. Writer inverses stay ownerless.
+  After sorted aggregate advisory locks, reconciliation deletes exactly the
+  snapshot-visible signals and reads readiness/terminality in one statement.
+  Shell transitions and versioned delivery events commit with that deletion;
+  failure restores all three. Sequence allocation is not commit order: never use
+  a sequence watermark. Unfinished shells keep polling after consumption. Active
+  drafts do not block, but rollback-pending journals and pending live settlements
+  do, including inverse-only publications. Shared signals never create shells;
+  active turns without shells retain their signals outside actionable paging.
+
 - **Apply settles ahead refs per completion because drafts cannot move documents**
   (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
   live and settles in the tree store's move transaction. So the only documents an
@@ -108,11 +114,40 @@
   URIs), `context/links/move-link-count.ts` (the note is counted at Apply), and
   the completion fence here (moved documents become arrivals, and their old and
   new namespaces both lock).
-- **Writer Apply is branch-scoped, not preview-scoped**:
+- **Whole-document Apply is branch-scoped, not preview-scoped**:
   `DraftApplyRequest` names only the draft. The server pushes the
   complete current branch, including writer rows created after preview.
-  Preview operations and revision tokens are presentation evidence, not command
-  selection or freshness authority.
+  Preview operations and revision tokens do not constrain this whole-document command.
+- **Per-change Apply and Discard are preview-scoped**: `DraftApplyChangesRequest` names a
+  nonempty set of operation IDs plus both opaque revision tokens. Under the shared
+  branch critical section, recompute the comparison against a durable live cut
+  and require complete classes. Refuse `stale`, `gone`, `draft_only`, or
+  `incomplete_class` without publishing. Draft-only manifest members expose
+  `isNewDocument` and use whole-document Apply with the existing manifest companion.
+  The live token includes authority identity, generation, and next admission
+  sequence captured with journal bytes under the document mutation lock. Recheck
+  that token inside durable push commit under the same lock, so an admission
+  after selection cannot sneak into a successful stale Apply or Discard. Discard
+  expands a nonempty selection to its complete class; missing tokens refuse
+  `stale`. An absent selection alone chooses whole Discard; present malformed
+  or empty selections are HTTP 400, never whole Discard. The draft token
+  hashes generation, the holder-bound `y2:` view revision (including tree-only
+  link/image moves), and reviewable row identities/status. Preview and selective
+  disposition prepare live and draft holders together in one link snapshot;
+  preview still returns no whole-document Markdown. Branch-state CAS and selected-row settlement predicates fence
+  cross-process draft arrivals; retries recompute selection and tokens.
+  Only the selected rows become `pushed`; the branch retains its content and
+  generation. A later document Apply publishes the remainder once through Yjs
+  idempotence, retaining each selected row's original agent turn or writer user.
+  Success is returned only after the existing settlement completion fence, not
+  after a durable outbox handoff. Per-change Undo is not implemented.
+  After disposition has committed, the application service owns terminal cleanup
+  and its disposition policy. Cleanup failure is diagnosed and leaves
+  `draftClosed: false`; it cannot reject an already committed command. The
+  initial disposition and generation cleanup are still separate transactions.
+  Preview carries anchored hunks, operations, room identity and revisions only,
+  not whole-document Markdown. Presentation types come from the public contract;
+  internal operations add branded source and physical journal IDs.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
@@ -165,10 +200,6 @@
   also drive the real `createProductionAppPorts` + `composeAppServices` +
   Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
   updates, and release probes must verify writer-visible trail flows.
-- **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
-  use an injected schedule. Production obtains its time from PostgreSQL; tests
-  advance a controlled schedule. Do not reintroduce process-clock comparisons or
-  sleep-based lifecycle tests.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
@@ -212,11 +243,20 @@
 
 The process recovery scheduler invokes the change-trail worker as an independent
 lane. Each pass considers at most 100 recoverable live settlements, reconciles
-100 terminal-owner keys and 100 shell IDs, and dispatches at most 100 outbox
-rows. Reconciliation pages only actionable owners/shells (including shared reopen
-work while a turn is active), retaining separate wraparound keyset cursors and acquiring a
-sorted union of the selected trail locks; all updates are restricted to that
+100 owner keys, and dispatches at most 100 outbox rows. Reconciliation pages only actionable owners/shells (including shared reopen
+work while a turn is active), retaining one wraparound owner-key cursor and acquiring
+the selected trail locks in sorted order; all updates are restricted to that
 locked set. It keeps its own root transaction, not the runtime inbox owner.
 
 The change-trail scheduler count is dispatched outbox rows, not reconciliation
 transitions or settlement-recovery attempts. Other lanes report candidate counts.
+
+## Undo-restored publication ownership
+
+`branch-trail-projection.ts` retains physical replay for structural replacement
+operations, but computes owner sets from the net live-to-draft hunks through the
+same clock attribution index used by review (`draftOperationIdsByChangedBlock`).
+Canceled writer delete/restore strokes therefore do not add a shared writer
+owner to an AI-only publication. Certified restoration aliases are replayed from
+journal metadata; physical writer update rows are not relabeled or removed.
+Apply's trail and receipt use the originating AI turn, including on cold replay.

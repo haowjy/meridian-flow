@@ -82,7 +82,7 @@ function fixture(existingUpstream?: Y.Doc) {
       listConcurrentJournalRows: async () => rows,
     },
     liveJournal: {
-      readForReconstruction: async () => ({ checkpoint: null, updates: liveUpdates }),
+      read: async () => ({ checkpoint: null, updates: liveUpdates }),
     },
     afterCommit: () => {},
     enlistResponseParticipant: () => false,
@@ -166,7 +166,7 @@ describe("branch concurrent attribution", () => {
       sessionId: "session",
       threadId: "thread-a",
       turnId: "turn-late",
-      responseId: "reply-late",
+      responseIdentity: { providerResponseId: "reply-late", editScopeId: "reply-late" },
     };
     await ctx.core.read({ file: "chapter.md" }, context);
     await ctx.core.write(

@@ -1,5 +1,9 @@
 /** Projects branch journal ownership and push effects into durable change-trail records. */
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import {
+  type AgentEditModel,
+  toDocHandle,
+  type YProsemirrorDocumentModel,
+} from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -11,6 +15,13 @@ import type {
   TrailContributionReplacement,
 } from "./branch-push-contracts.js";
 import { blockTextMap } from "./branch-push-plan.js";
+import {
+  diffAlignedBlocks,
+  documentDifference,
+  hunkDeletedRanges,
+  hunkInsertedRanges,
+} from "./document-difference.js";
+import { type IndexedDraftUpdate, indexDraftUpdates } from "./draft-review-attribution.js";
 import type {
   ChangeTrailPersistence,
   DurableTrailRecord,
@@ -62,25 +73,6 @@ export function journalAttributionByChangedBlock(input: {
       const after = canonicalSnapshot(input.model, scratch);
       const beforeByIdentity = new Map(before.map((block) => [block.identity, block]));
       const afterByIdentity = new Map(after.map((block) => [block.identity, block]));
-      const owner =
-        row.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
-      for (const identity of new Set([...beforeByIdentity.keys(), ...afterByIdentity.keys()])) {
-        const prior = beforeByIdentity.get(identity);
-        const next = afterByIdentity.get(identity);
-        if (prior?.serialized === next?.serialized) continue;
-        const blockId = next?.hash ?? prior?.hash;
-        if (!blockId) continue;
-        const owners = ownersByBlock.get(blockId) ?? [];
-        if (
-          !owners.some(
-            (existing) =>
-              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
-          )
-        ) {
-          owners.push(owner);
-          ownersByBlock.set(blockId, owners);
-        }
-      }
       const deleted = before.filter((block) => !afterByIdentity.has(block.identity));
       const inserted = after.filter((block) => !beforeByIdentity.has(block.identity));
       if (deleted.length > 0 || inserted.length > 0) {
@@ -95,6 +87,35 @@ export function journalAttributionByChangedBlock(input: {
           journalRowIndex,
         });
       }
+    }
+    const rowsById = new Map(input.rows.map((row) => [String(row.id), row]));
+    const operationIdsByBlock = draftOperationIdsByChangedBlock({
+      liveDoc: input.liveDoc,
+      draftDoc: scratch,
+      model: input.model,
+      draftUpdates: input.rows.map((row) => ({
+        id: row.id,
+        actorTurnId: row.turnId,
+        actorUserId: row.actorUserId,
+        updateData: row.updateData,
+        updateMeta: row.updateMeta,
+      })),
+    });
+    for (const [blockId, operationIds] of operationIdsByBlock) {
+      const owners: Array<{ threadId: ThreadId; turnId: TurnId } | null> = [];
+      for (const operationId of operationIds) {
+        const row = rowsById.get(operationId);
+        const owner =
+          row?.threadId && row.turnId ? { threadId: row.threadId, turnId: row.turnId } : null;
+        if (
+          !owners.some(
+            (existing) =>
+              existing?.threadId === owner?.threadId && existing?.turnId === owner?.turnId,
+          )
+        )
+          owners.push(owner);
+      }
+      ownersByBlock.set(blockId, owners.length > 0 ? owners : [null]);
     }
     const operations: typeof journalOperations = [];
     for (let index = 0; index < journalOperations.length; index += 1) {
@@ -216,21 +237,25 @@ export function preparedTrailChanges(input: {
     }
   }
   const relocatedSourceIds = new Set(contentRelocations.values());
-  const survivingAfterBlockByIdentity = new Map<
-    string,
-    { blockId: string; block: Y.XmlElement; identity: CanonicalBlockIdentityV1 }
-  >();
+  const survivingAfterBlockByIdentity = new Map<string, { blockId: string; block: Y.XmlElement }>();
   for (const [blockId, block] of input.afterById) {
     const identity = input.blockIdentities.get(blockId);
     if (identity) {
-      survivingAfterBlockByIdentity.set(canonicalBlockKey(identity), { blockId, block, identity });
+      survivingAfterBlockByIdentity.set(canonicalBlockKey(identity), { blockId, block });
     }
   }
   return input.changedBlocks.flatMap((block, sequence) => {
     if (relocatedSourceIds.has(block.blockId)) return [];
     if (block.beforeText === null && replacementIds.has(block.blockId)) return [];
-    const beforeIndex = input.before.findIndex((entry) => entry.hash === block.blockId);
-    const beforeSnapshot = input.before[beforeIndex];
+    const beforeIdentity = block.beforeBlockIdentity
+      ? { documentId: input.documentId, ...block.beforeBlockIdentity }
+      : null;
+    const beforeIndex = input.before.findIndex(
+      (entry) =>
+        beforeIdentity &&
+        entry.clientID === beforeIdentity.clientID &&
+        entry.clock === beforeIdentity.clock,
+    );
     const nextId = input.before
       .slice(beforeIndex + 1)
       .find((entry) => input.afterIds.has(entry.hash))?.hash;
@@ -245,34 +270,30 @@ export function preparedTrailChanges(input: {
             next: nextId ? input.afterById.get(nextId) : null,
             previous: previousId ? input.afterById.get(previousId) : null,
           });
-    const beforeIdentity =
-      block.beforeText === null
-        ? null
-        : beforeSnapshot?.clientID !== undefined && beforeSnapshot.clock !== undefined
-          ? {
-              documentId: input.documentId,
-              clientID: beforeSnapshot.clientID,
-              clock: beforeSnapshot.clock,
-            }
-          : (input.blockIdentities.get(block.blockId) ?? null);
-    const sameIdentityAfter =
-      block.beforeText !== null && block.afterText !== null && beforeIdentity
-        ? survivingAfterBlockByIdentity.get(canonicalBlockKey(beforeIdentity))
+    const canonicalAfter =
+      block.beforeText !== null && block.afterBlockIdentity
+        ? survivingAfterBlockByIdentity.get(
+            canonicalBlockKey({ documentId: input.documentId, ...block.afterBlockIdentity }),
+          )
         : undefined;
     const contentRelocated = contentRelocations.has(block.blockId);
-    const replacementId = sameIdentityAfter?.blockId ?? provenReplacements.get(block.blockId);
+    const replacementId = canonicalAfter?.blockId ?? provenReplacements.get(block.blockId);
     const replacement = replacementId
       ? input.changedBlocks.find((candidate) => candidate.blockId === replacementId)
       : undefined;
     const replacementBlock =
-      sameIdentityAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
+      canonicalAfter?.block ?? (replacementId ? input.afterById.get(replacementId) : undefined);
     const beforeBody = bodyFromHashline(block.beforeText);
     const afterBody = bodyFromHashline(block.afterText);
     // A textblock can retain its Yjs identity while its entire body is removed.
     // Project that as a deletion at the surviving empty block, rather than as
     // an invisible modification range over zero text.
     const emptiedSurvivingBlock =
-      sameIdentityAfter !== undefined &&
+      canonicalAfter !== undefined &&
+      beforeIdentity !== null &&
+      block.afterBlockIdentity !== null &&
+      beforeIdentity.clientID === block.afterBlockIdentity.clientID &&
+      beforeIdentity.clock === block.afterBlockIdentity.clock &&
       block.beforeText !== null &&
       beforeBody.status === "available" &&
       beforeBody.markdown.length > 0 &&
@@ -280,16 +301,11 @@ export function preparedTrailChanges(input: {
       afterBody.status === "available" &&
       afterBody.markdown.length === 0;
     const owners = input.ownersByBlock.get(block.blockId) ?? [null];
-    const afterIdentity = emptiedSurvivingBlock
-      ? null
-      : contentRelocated
+    const afterBlockIdentity = replacement?.afterBlockIdentity ?? block.afterBlockIdentity;
+    const afterIdentity =
+      emptiedSurvivingBlock || contentRelocated || !afterBlockIdentity
         ? null
-        : (sameIdentityAfter?.identity ??
-          (replacementId !== undefined
-            ? (input.blockIdentities.get(replacementId) ?? null)
-            : block.afterText === null
-              ? null
-              : (input.blockIdentities.get(block.blockId) ?? null)));
+        : { documentId: input.documentId, ...afterBlockIdentity };
     const location: TrailProjectionLocation = {
       kind:
         emptiedSurvivingBlock || contentRelocated
@@ -307,10 +323,10 @@ export function preparedTrailChanges(input: {
         emptiedSurvivingBlock || contentRelocated
           ? deletionBoundaryTarget({
               doc: input.afterDoc,
-              next: sameIdentityAfter?.block ?? input.afterById.get(block.blockId) ?? null,
+              next: canonicalAfter?.block ?? input.afterById.get(block.blockId) ?? null,
             })
-          : sameIdentityAfter
-            ? liveBlockTarget(input.afterDoc, sameIdentityAfter.block)
+          : canonicalAfter
+            ? liveBlockTarget(input.afterDoc, canonicalAfter.block)
             : replacementBlock
               ? liveBlockTarget(input.afterDoc, replacementBlock)
               : ordinaryNavigation,
@@ -328,7 +344,7 @@ export function preparedTrailChanges(input: {
       beforeText: block.beforeText,
       afterTextAtReceipt: contentRelocated
         ? null
-        : sameIdentityAfter
+        : canonicalAfter
           ? block.afterText
           : (replacement?.afterText ?? block.afterText),
       navigation: location.navigation,
@@ -426,4 +442,32 @@ export function buildDurablePushTrail(input: {
     journalOwners,
     changes: input.prepared.trailChanges,
   };
+}
+
+/** Net publication ownership uses the same clock attribution as review, not canceled keystrokes. */
+function draftOperationIdsByChangedBlock(input: {
+  liveDoc: Y.Doc;
+  draftDoc: Y.Doc;
+  model: AgentEditModel;
+  draftUpdates: readonly IndexedDraftUpdate[];
+}): Map<string, string[]> {
+  const attribution = indexDraftUpdates({ baseDoc: input.liveDoc, updates: input.draftUpdates });
+  const rawHunks = diffAlignedBlocks(
+    documentDifference(input.liveDoc, input.draftDoc, input.model),
+    input.draftDoc,
+  );
+  const result = new Map<string, string[]>();
+  for (const hunk of rawHunks) {
+    const owners = attribution.attributeRanges({
+      insertedRanges: hunkInsertedRanges(hunk),
+      deletedRanges: hunkDeletedRanges(hunk),
+    });
+    const blockKeys = [
+      hunk.blockKey,
+      ...(hunk.kind === "block" && hunk.beforeBlockKey ? [hunk.beforeBlockKey] : []),
+    ];
+    for (const blockKey of blockKeys)
+      result.set(blockKey, [...new Set([...(result.get(blockKey) ?? []), ...owners.operationIds])]);
+  }
+  return result;
 }

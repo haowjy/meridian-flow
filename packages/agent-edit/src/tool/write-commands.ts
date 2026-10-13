@@ -1,21 +1,20 @@
 // Mutating and query write command handlers.
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { applyEdits } from "../apply/apply-edits.js";
 import { snapshotBlocks } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
-import type { AgentEditCodec } from "../codec-adapter.js";
+import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
 import { type BlockRef, toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
-import { renderedItems, shownEvidence } from "../links/shown.js";
+import { renderedItems, shownEvidence, withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import { writeHandle } from "../ports/update-journal.js";
 import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
-import type { ThreadOriginRegistry } from "../undo/thread-origin-registry.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
-import { withLiveDocument } from "./coordinator.js";
-import { copyEdgeLines, copySummary } from "./copy-receipt.js";
+import { copySummary } from "./copy-receipt.js";
 import type { DocumentRenderer, ParseForCommandResult } from "./document-renderer.js";
 import { interactionContextForAttempt, mutationMode } from "./interaction-mode.js";
 import type { InternalWriteResult } from "./internal-result.js";
@@ -25,15 +24,10 @@ import {
   type MutationCommit,
   type PreparedMutation,
 } from "./mutation-commit.js";
-import type { ResponseCommitter } from "./response-committer.js";
-import {
-  formatApplySuccess,
-  formatUnchangedSuccess,
-  isDocumentEmpty,
-  status,
-  truncateCreateEcho,
-} from "./response-format.js";
-import type { RuntimeDocumentState, RuntimeStore } from "./runtime-store.js";
+import { renderReceipt } from "./receipt.js";
+import type { CommandDocumentLease, ResponseCommitter } from "./response-committer.js";
+import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
+import type { RuntimeStore } from "./runtime-store.js";
 import type { MutationActor, ReadCommand, WriteCommand, WriteContext } from "./types.js";
 import type { CreateWriteToolOptions } from "./write-deps.js";
 import {
@@ -44,6 +38,18 @@ import {
   readSuccess,
 } from "./write-helpers.js";
 import { scopedToolUseId } from "./write-idempotency.js";
+
+/** Name the rejected logical write, not its model-facing ordinal. */
+function stagedWriteDescription(command: WriteCommand): string {
+  const before = "find" in command ? JSON.stringify(command.find) : command.command;
+  const after =
+    "content" in command
+      ? JSON.stringify(command.content)
+      : command.command === "remove"
+        ? '""'
+        : undefined;
+  return [before, after].filter(Boolean).join(" → ");
+}
 
 export function createWriteCommands(deps: {
   options: Pick<
@@ -57,64 +63,77 @@ export function createWriteCommands(deps: {
     | "links"
     | "onLinkSpliceFallback"
   >;
-  threadOrigins: ThreadOriginRegistry;
   autoTurnCounter: { value: number };
   autoTurnIdNonce: string;
   renderer: DocumentRenderer;
-  reversalStore: CreateWriteToolOptions["journal"];
+  journal: CreateWriteToolOptions["journal"];
   mutationCommit: MutationCommit;
   runtimeStore: RuntimeStore;
   responseCommitter: ResponseCommitter;
 }) {
   const {
     options,
-    threadOrigins,
     autoTurnCounter,
     autoTurnIdNonce,
     renderer,
-    reversalStore,
+    journal,
     mutationCommit,
     runtimeStore,
     responseCommitter,
   } = deps;
-  const { markSynced, requireSynced, runtimeFor } = runtimeStore;
+  const { markSynced } = runtimeStore;
 
-  return { read, create, mutate };
+  return {
+    read: (command: ReadCommand, session: ActorSession, context: WriteContext) =>
+      run(command, session, context, read),
+    create: (
+      command: Extract<WriteCommand, { command: "create" | "copy" }>,
+      session: ActorSession,
+      context: WriteContext,
+    ) => run(command, session, context, create),
+    mutate: (
+      command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
+      session: ActorSession,
+      context: WriteContext,
+    ) => run(command, session, context, mutate),
+  };
 
-  function emptiedDocument(
-    runtime: { doc: Y.Doc },
-    codec: AgentEditCodec,
-  ): { documentEmpty?: true } {
-    return isDocumentEmpty(options.model, codec, toDocHandle(runtime.doc))
-      ? { documentEmpty: true }
-      : {};
+  async function run<C extends ReadCommand | WriteCommand>(
+    command: C,
+    session: ActorSession,
+    context: WriteContext,
+    handler: (
+      command: C,
+      session: ActorSession,
+      context: WriteContext,
+      lease: CommandDocumentLease,
+    ) => Promise<InternalWriteResult>,
+  ) {
+    const address = parseFileAddress(command);
+    if (!address.ok) return status("invalid_write", address.message);
+    return responseCommitter.stage(
+      {
+        responseId: context.responseIdentity?.editScopeId,
+        docId: address.documentId,
+        session,
+        commandName: "command" in command ? command.command : "read",
+        context,
+      },
+      (lease) => handler(command, session, context, lease),
+    );
   }
 
   async function read(
     command: ReadCommand,
     session: ActorSession,
     context: WriteContext,
+    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    const runtime = runtimeFor(session, address.documentId);
 
-    const stagedUpdates = context.responseId
-      ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
-      : [];
-    const restored = await runtimeStore.restoreRuntimeFromLive(
-      session,
-      address.documentId,
-      runtime,
-      "read",
-    );
-    if (isInternalWriteResult(restored)) {
-      if (restored.status !== "document_not_found" || stagedUpdates.length === 0) return restored;
-      runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    }
-    for (const update of stagedUpdates) {
-      Y.applyUpdate(runtime.doc, update, { type: "system" });
-    }
+    const restored = await runtime.restore();
+    if (isInternalWriteResult(restored)) return restored;
     const links = await openCommandLinks(options, {
       documentId: address.documentId,
       docs: [runtime.doc],
@@ -166,11 +185,11 @@ export function createWriteCommands(deps: {
     command: Extract<WriteCommand, { command: "create" | "copy" }>,
     session: ActorSession,
     context: WriteContext,
+    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
     const actor = mutationActor(session, address.documentId, context);
-    const turnId = actor.kind === "agent" ? actor.turnId : null;
     if (address.fragment) {
       return status("invalid_write", `${command.command} does not accept a #fragment in file.`);
     }
@@ -184,9 +203,9 @@ export function createWriteCommands(deps: {
     if (!options.lifecycle) {
       return status("invalid_write", "document creation is not supported by this deployment");
     }
-    if (context.responseId && actor.kind === "agent") {
+    if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
       responseCommitter.assertCanStage({
-        responseId: context.responseId,
+        responseId: context.responseIdentity?.editScopeId,
         docId: address.documentId,
         session,
         turnId: context.turnId,
@@ -194,14 +213,14 @@ export function createWriteCommands(deps: {
       });
     }
 
-    const runtime = runtimeFor(session, address.documentId);
     const given = copiedNodes ?? boundNodes;
     const parsed: ParseForCommandResult = given
       ? { ok: true, parsed: { blocks: [...given] } }
       : renderer.parseForCommand(content);
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const responseStagedCreate = context.responseId !== undefined && actor.kind === "agent";
+    const responseStagedCreate =
+      context.responseIdentity?.editScopeId !== undefined && actor.kind === "agent";
     if (responseStagedCreate && context.createdDocument === undefined) {
       return status(
         "invalid_write",
@@ -209,27 +228,14 @@ export function createWriteCommands(deps: {
       );
     }
     const deferNewDocumentCreation = responseStagedCreate && context.createdDocument === true;
-    const bufferedResponseUpdates =
-      context.responseId && actor.kind === "agent"
-        ? responseCommitter.bufferedUpdatesForDoc(context.responseId, address.documentId)
-        : [];
     const overwriting =
-      command.overwrite === true ||
-      (deferNewDocumentCreation && bufferedResponseUpdates.length === 0);
+      command.overwrite === true || (deferNewDocumentCreation && !runtime.hasStagedWrites);
     if (!deferNewDocumentCreation) await options.lifecycle.ensureDocument(address.documentId);
     const alreadyExists = status(
       "invalid_write",
       `File already exists: ${address.filePath}. Use overwrite=true to overwrite.`,
     );
-    const liveCheck = await withLiveDocument(
-      options.coordinator,
-      address.documentId,
-      command.command,
-      (liveDoc) =>
-        options.model.getBlocks(toDocHandle(liveDoc)).length > 0 && !overwriting
-          ? alreadyExists
-          : null,
-    );
+    const liveCheck = await runtime.checkEmpty(overwriting, alreadyExists);
     const missingLiveForDeferredNewDocument =
       deferNewDocumentCreation &&
       isInternalWriteResult(liveCheck) &&
@@ -237,21 +243,11 @@ export function createWriteCommands(deps: {
     if (isInternalWriteResult(liveCheck) && !missingLiveForDeferredNewDocument) return liveCheck;
 
     if (!missingLiveForDeferredNewDocument) {
-      const restored = await runtimeStore.restoreRuntimeFromLive(
-        session,
-        address.documentId,
-        runtime,
-        command.command,
-      );
+      const restored = await runtime.restore();
       if (isInternalWriteResult(restored)) return restored;
     }
     if (missingLiveForDeferredNewDocument) {
       runtime.doc = options.createRuntimeDoc?.() ?? new Y.Doc({ gc: false });
-    }
-    if (context.responseId && actor.kind === "agent") {
-      for (const update of bufferedResponseUpdates) {
-        Y.applyUpdate(runtime.doc, update, { type: "system" });
-      }
     }
     const shown = given ? [] : await shownLinksFor(address.documentId, context);
     const links = await openCommandLinks(options, {
@@ -295,212 +291,45 @@ export function createWriteCommands(deps: {
         ? parsed.parsed
         : { blocks: assigner.assignSpan([], parsed.parsed.blocks) };
     await registerMinted(assigner, address.documentId, context);
-    const writeIdentity = await nextWriteIdentity(
-      address.documentId,
+    return finishPreparedEdit({
+      command,
       session,
       context,
-      command.tool_use_id,
-    );
-    const preWriteSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
-    const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    let touchedHashes = new Set<string>();
-    let deletedHashes = new Set<string>();
-    let insertedHashes: string[] = [];
-    let semanticEditIr: SemanticEditIRV1 | undefined;
-    if (overwrite) {
-      semanticEditIr = overwrite.ir;
-      const applied = applyEdits(toDocHandle(runtime.doc), options.model, overwrite.edits, origin);
-      if (!applied.ok) {
-        restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        return errorResponse(applied.error.code, applied.error.message, address.filePath);
-      }
-      writeCertifiedProvenance(runtime, overwrite.ir, beforeVector, preWriteSnapshot);
-      touchedHashes = new Set(applied.changedBlocks);
-      deletedHashes = new Set(applied.deletedBlocks);
-      insertedHashes = applied.insertedBlocks;
-    } else {
-      runtime.doc.transact(() => {
-        insertedHashes = options.model
-          .insertBlocks(toDocHandle(runtime.doc), null, written)
-          .map((block) => options.model.getBlockId(block));
-      }, origin);
-    }
-    const copied = copiedNodes
-      ? copySummary(command.command === "copy" ? command.from.path : "", insertedHashes, {
-          edges: false,
-        })
-      : undefined;
-    const update = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    const meta = mutationMeta(actor);
-
-    if (context.responseId && actor.kind === "agent") {
-      try {
-        const rejected = responseCommitter.stageUpdate({
-          responseId: context.responseId,
-          docId: address.documentId,
-          session,
-          runtime,
-          commandName: command.command,
-          update,
-          meta,
-          liveOrigin: mutationUpdateOrigin(actor),
-          actor,
-          turnId: actor.turnId,
-          writeId: writeIdentity.handle,
-          writeOrdinal: writeIdentity.ordinal,
-          durableWriteId: writeIdentity.durableId,
-          ensureDocumentBeforeCommit: true,
-          createdDocumentBeforeCommit: context.createdDocument === true,
-          touchedHashes,
-          deletedHashes,
-          preOwnSnapshot: preWriteSnapshot,
-          ...(semanticEditIr ? { semanticEditIr } : {}),
-          ...(copied ? { copied } : {}),
-          ...(context.interactionContext ? { interactionContext: context.interactionContext } : {}),
-        });
-        if (rejected) {
-          restorePreWriteSnapshot(runtime, preWriteSnapshot);
-          markSynced(session, address.documentId);
-          return rejected;
-        }
-      } catch (cause) {
-        restorePreWriteSnapshot(runtime, preWriteSnapshot);
-        markSynced(session, address.documentId);
-        throw cause;
-      }
-      markSynced(session, address.documentId);
-      const summary = mutationCommit.summarizeMutationEcho({
-        runtime,
-        links,
-        before,
-        touchedHashes,
-        deletedHashes,
-      });
-      return withShown(
-        links,
-        formatApplySuccess({
-          ...emptiedDocument(runtime, links.codec),
-          phase: "staged",
-          writeId: writeIdentity.handle,
-          settlementId: writeIdentity.durableId,
-          echo:
-            summary.echo.length > 0
-              ? summary.echo
-              : [
-                  {
-                    mode: "truncated",
-                    blocks: truncateCreateEcho(renderer, links.codec, runtime.doc, toDocHandle),
-                  },
-                ],
-          concurrentEdits: summary.concurrentEdits,
-          ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
-        }),
-      );
-    }
-
-    const committed = await submitPreparedMutation(
-      {
-        docId: address.documentId,
-        commandName: command.command,
-        runtime,
-        links,
-        before,
-        updates: [
-          {
-            update,
-            meta,
-            mutation: {
-              threadId: session.threadId,
-              turnId,
-              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-              actorKind: actor.kind,
-              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-              writeId: writeIdentity.durableId,
-              wId: writeIdentity.ordinal,
-              ...(semanticEditIr ? { semanticEditIr } : {}),
-              ...mutationMode(context.interactionContext),
-            },
-          },
-        ],
-        liveOrigin: mutationUpdateOrigin(actor),
-        actor,
-        touchedHashes,
-        deletedHashes,
-        preOwnSnapshot: preWriteSnapshot,
-        // Empty when checked and restored is not empty when admitted: a writer may land between.
-        ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
-        ...(turnId ? { turnId } : {}),
-        interactionContext: interactionContextForAttempt(
-          context.interactionContext,
-          writeIdentity.durableId,
-        ),
-      },
-      session,
-    );
-    if (!committed.ok) {
-      if (committed.journalCommitKind !== "durable") {
-        return committed.response;
-      }
-    }
-
-    runtimeStore.attachRuntime(session, address.documentId, runtime);
-    return withShown(
+      runtime,
       links,
-      formatApplySuccess({
-        ...emptiedDocument(runtime, links.codec),
-        phase: "committed",
-        revision: committed.ok ? committed.revision : null,
-        writeId: writeIdentity.handle,
-        echo:
-          committed.ok && committed.summary.echo.length > 0
-            ? committed.summary.echo
-            : [
-                {
-                  mode: "truncated",
-                  blocks: truncateCreateEcho(renderer, links.codec, runtime.doc, toDocHandle),
-                },
-              ],
-        ...(committed.ok && committed.summary.concurrentEdits
-          ? { concurrentEdits: committed.summary.concurrentEdits }
-          : {}),
-        ...(committed.ok && committed.lateSweep ? { lateSweep: committed.lateSweep } : {}),
-        ...(committed.awarenessDegraded ? { awarenessDegraded: true } : {}),
-        ...(copied ? { copied: { summary: copied, edges: [] } } : {}),
-      }),
-    );
+      actor,
+      docId: address.documentId,
+      filePath: address.filePath,
+      plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
+      creation: {
+        createdDocument: context.createdDocument === true,
+        ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
+      },
+      ...(copiedNodes
+        ? { copy: { from: command.command === "copy" ? command.from.path : "", edges: false } }
+        : {}),
+    });
   }
 
   async function mutate(
     command: Extract<WriteCommand, { command: "insert" | "replace" | "remove" }>,
     session: ActorSession,
     context: WriteContext,
+    runtime: CommandDocumentLease,
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    if (context.responseId) {
+    if (context.responseIdentity?.editScopeId) {
       responseCommitter.assertCanStage({
-        responseId: context.responseId,
+        responseId: context.responseIdentity?.editScopeId,
         docId: address.documentId,
         session,
         turnId: context.turnId,
         writeId: scopedToolUseId(context, command.tool_use_id ?? context.tool_use_id),
       });
     }
-    const runtime = runtimeFor(session, address.documentId);
-    const synced = await requireSynced(session, address.documentId, command.command, runtime);
+    const synced = await runtime.sync();
     if (!synced.ok) return synced.response;
-    if (context.interactionContext) {
-      const merged = await runtimeStore.syncLocalFromLive(
-        session,
-        address.documentId,
-        runtime,
-        command.command,
-      );
-      if (!merged.ok) return merged.response;
-    }
 
     const from = command.command === "remove" ? undefined : command.from;
     const copiedNodes = from ? context.copiedNodes : undefined;
@@ -549,192 +378,233 @@ export function createWriteCommands(deps: {
     if (resolved.edits.length === 0) return formatUnchangedSuccess();
     await registerMinted(assigner, address.documentId, context);
 
-    const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
-    const actor = mutationActor(session, address.documentId, context);
-    const turnId = actor.kind === "agent" ? actor.turnId : null;
-    const writeIdentity = await nextWriteIdentity(
-      address.documentId,
+    return finishPreparedEdit({
+      command,
       session,
       context,
-      command.tool_use_id,
-    );
-    const interactionContext = interactionContextForAttempt(
-      context.interactionContext,
-      writeIdentity.durableId,
-    );
+      runtime,
+      links,
+      actor: mutationActor(session, address.documentId, context),
+      docId: address.documentId,
+      filePath: address.filePath,
+      plan: { edits: resolved.edits, ir: resolved.ir },
+      ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
+    });
+  }
+
+  interface PreparedEdit {
+    command: WriteCommand;
+    session: ActorSession;
+    context: WriteContext;
+    runtime: CommandDocumentLease;
+    links: CommandLinks;
+    actor: MutationActor;
+    docId: string;
+    filePath: string;
+    plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
+    creation?: { createdDocument: boolean; refuseUnlessEmpty?: InternalWriteResult };
+    copy?: { from: string; edges: boolean };
+  }
+
+  /** One acceptance boundary for every edit; report failures cannot enter its restoration path. */
+  async function finishPreparedEdit(edit: PreparedEdit): Promise<InternalWriteResult> {
+    const { command, session, context, runtime, links, actor, docId, filePath, plan } = edit;
+    const identity = await nextWriteIdentity(docId, session, context, command.tool_use_id);
+    const preOwnSnapshot = Y.encodeStateAsUpdate(runtime.doc);
     const before = snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec);
     const beforeVector = Y.encodeStateVector(runtime.doc);
-    const origin = threadOrigins.getThreadOrigin(address.documentId, session.threadId);
-    const applied = applyEdits(toDocHandle(runtime.doc), options.model, resolved.edits, origin);
-    if (!applied.ok) {
+    const origin = "agent-write";
+    const semanticEditIr = "ir" in plan ? plan.ir : undefined;
+    const restore = () => {
       restorePreWriteSnapshot(runtime, preOwnSnapshot);
-      return errorResponse(applied.error.code, applied.error.message, address.filePath);
+      markSynced(session, docId);
+    };
+    let captured: ReturnType<typeof captureWriteUpdate<import("../apply/types.js").ApplyResult>>;
+    try {
+      captured = captureWriteUpdate(runtime.doc, (beforeSegment) => {
+        if ("edits" in plan)
+          return applyEdits(
+            toDocHandle(runtime.doc),
+            options.model,
+            plan.edits,
+            origin,
+            beforeSegment,
+            certifySegment(runtime, plan.ir, beforeVector),
+          );
+        beforeSegment?.();
+        let insertedBlocks: string[] = [];
+        runtime.doc.transact(() => {
+          insertedBlocks = options.model
+            .insertBlocks(toDocHandle(runtime.doc), null, { blocks: [...plan.blocks] })
+            .map((block) => options.model.getBlockId(block));
+        }, origin);
+        return { ok: true, changedBlocks: [], deletedBlocks: [], insertedBlocks };
+      });
+    } catch (cause) {
+      restore();
+      throw cause;
     }
-    writeCertifiedProvenance(runtime, resolved.ir, beforeVector, preOwnSnapshot);
-    const copied =
-      from && copiedNodes
-        ? copySummary(from.path, applied.insertedBlocks, { edges: true })
-        : undefined;
-    const copiedEcho = () =>
-      copied
-        ? {
-            copied: {
-              summary: copied,
-              edges: copyEdgeLines(
-                copied,
-                snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
-              ),
-            },
-          }
-        : {};
-
-    const ownUpdate = Y.encodeStateAsUpdate(runtime.doc, beforeVector);
-    const meta = mutationMeta(actor);
-
-    if (context.responseId && actor.kind === "agent") {
+    const { result: applied, update, parts } = captured;
+    if (!applied.ok) {
+      restore();
+      return errorResponse(applied.error.code, applied.error.message, filePath);
+    }
+    const touchedHashes = new Set(applied.changedBlocks),
+      deletedHashes = new Set(applied.deletedBlocks);
+    const copied = edit.copy
+      ? copySummary(edit.copy.from, applied.insertedBlocks, edit.copy)
+      : undefined;
+    const interactionContext = interactionContextForAttempt(
+      context.interactionContext,
+      identity.durableId,
+    );
+    const meta = mutationMeta(actor),
+      liveOrigin = mutationUpdateOrigin(actor);
+    const turnId = actor.kind === "agent" ? actor.turnId : null;
+    let phase: "staged" | "committed",
+      revision: string | null = null;
+    let concurrentEdits: import("../apply/types.js").ConcurrentEditInfo | undefined;
+    let lateSweep: import("./mutation-commit.js").DestructiveSweepReport | undefined;
+    let awarenessDegraded = false;
+    if (context.responseIdentity?.editScopeId && actor.kind === "agent") {
+      // Await attribution before staging: the lease must still be current at acceptance.
       try {
-        const concurrent = interactionContext
-          ? await mutationCommit.detectConcurrentEdits({
-              docId: address.documentId,
-              runtime,
-              links,
-              agentUpdate: ownUpdate,
-              interactionContext,
-              preOwnSnapshot,
-              ...(turnId ? { ownTurnId: turnId } : {}),
-            })
-          : undefined;
-        const summary = mutationCommit.summarizeMutationEcho(
-          {
+        if (interactionContext) {
+          const concurrent = await mutationCommit.detectConcurrentEdits({
+            docId,
             runtime,
             links,
-            before,
-            touchedHashes: new Set(applied.changedBlocks),
-            deletedHashes: new Set(applied.deletedBlocks),
-          },
-          concurrent,
-        );
-        const result = formatApplySuccess({
-          ...emptiedDocument(runtime, links.codec),
-          phase: "staged",
-          writeId: writeIdentity.handle,
-          settlementId: writeIdentity.durableId,
-          echo: summary.echo,
-          concurrentEdits: summary.concurrentEdits,
-          deletedBlocks: applied.deletedBlocks,
-          ...copiedEcho(),
-        });
+            reportingOnly: runtime.reportingOnly,
+            interactionContext,
+            preOwnSnapshot,
+            ownTurnId: actor.turnId,
+          });
+          concurrentEdits = concurrent.info;
+        }
+      } catch {
+        awarenessDegraded = true;
+      }
+      try {
         const rejected = responseCommitter.stageUpdate({
-          responseId: context.responseId,
-          docId: address.documentId,
+          responseId: context.responseIdentity?.editScopeId,
+          docId,
           session,
           runtime,
           commandName: command.command,
-          update: ownUpdate,
+          documentLabel: command.file,
+          description: stagedWriteDescription(command),
+          update,
+          editParts: parts,
           meta,
-          liveOrigin: mutationUpdateOrigin(actor),
+          liveOrigin,
           actor,
           turnId: actor.turnId,
-          writeId: writeIdentity.handle,
-          writeOrdinal: writeIdentity.ordinal,
-          durableWriteId: writeIdentity.durableId,
-          createdDocumentBeforeCommit: false,
-          touchedHashes: new Set(applied.changedBlocks),
-          deletedHashes: new Set(applied.deletedBlocks),
+          writeId: identity.handle,
+          writeOrdinal: identity.ordinal,
+          durableWriteId: identity.durableId,
+          toolCallId: identity.toolCallId,
+          ensureDocumentBeforeCommit: Boolean(edit.creation),
+          createdDocumentBeforeCommit: edit.creation?.createdDocument ?? false,
+          touchedHashes,
+          deletedHashes,
           preOwnSnapshot,
-          semanticEditIr: resolved.ir,
-          ...(copied ? { copied } : {}),
-          ...(interactionContext ? { interactionContext } : {}),
+          semanticEditIr,
+          copied,
+          interactionContext,
         });
         if (rejected) {
-          restorePreWriteSnapshot(runtime, preOwnSnapshot);
-          markSynced(session, address.documentId);
+          restore();
           return rejected;
         }
-        markSynced(session, address.documentId);
-        return withShown(links, result);
       } catch (cause) {
-        restorePreWriteSnapshot(runtime, preOwnSnapshot);
-        markSynced(session, address.documentId);
+        restore();
         throw cause;
       }
-    }
-
-    let syncedMutation = await submitPreparedMutation(
-      {
-        docId: address.documentId,
-        commandName: command.command,
-        runtime,
-        links,
-        updates: [
-          {
-            update: ownUpdate,
-            meta,
-            mutation: {
-              threadId: session.threadId,
-              turnId,
-              ...(actor.kind === "agent" ? { authoringResponseId: actor.responseId } : {}),
-              actorKind: actor.kind,
-              ...(actor.kind === "human" ? { userId: actor.userId } : {}),
-              ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
-              ...(actor.kind === "agent" ? { semanticEditIr: resolved.ir } : {}),
-              writeId: writeIdentity.durableId,
-              wId: writeIdentity.ordinal,
-              ...mutationMode(interactionContext),
-            },
-          },
-        ],
-        liveOrigin: mutationUpdateOrigin(actor),
-        actor,
-        before,
-        touchedHashes: new Set(applied.changedBlocks),
-        deletedHashes: new Set(applied.deletedBlocks),
-        ...(turnId ? { turnId } : {}),
-        preOwnSnapshot,
-        ...(interactionContext ? { interactionContext } : {}),
-      },
-      session,
-    );
-    if (!syncedMutation.ok) {
-      if (syncedMutation.journalCommitKind !== "durable") {
-        return syncedMutation.response;
-      }
-      const awarenessDegraded = syncedMutation.awarenessDegraded;
-      syncedMutation = {
-        ok: true,
-        journalCommitKind: "durable",
-        revision: null,
-        ...(awarenessDegraded ? { awarenessDegraded: true } : {}),
-        summary: mutationCommit.summarizeMutationEcho({
+      markSynced(session, docId);
+      phase = "staged";
+    } else {
+      const committed = await submitPreparedMutation(
+        {
+          docId,
+          commandName: command.command,
           runtime,
           links,
-          before,
-          touchedHashes: new Set(applied.changedBlocks),
-          deletedHashes: new Set(applied.deletedBlocks),
-        }),
-      };
+          updates: [
+            {
+              update,
+              meta,
+              mutation: {
+                editParts: parts,
+                threadId: session.threadId,
+                turnId,
+                ...(actor.kind === "agent"
+                  ? { authoringResponseId: actor.responseId, editScopeId: actor.editScopeId }
+                  : {}),
+                actorKind: actor.kind,
+                ...(actor.kind === "human" ? { userId: actor.userId } : {}),
+                ...(actor.kind === "system" ? { systemOrigin: actor.origin } : {}),
+                writeId: identity.durableId,
+                wId: identity.ordinal,
+                toolCallId: identity.toolCallId,
+                semanticEditIr,
+                ...mutationMode(interactionContext),
+              },
+            },
+          ],
+          liveOrigin,
+          actor,
+          touchedHashes,
+          deletedHashes,
+          preOwnSnapshot,
+          refuseUnlessEmpty: edit.creation?.refuseUnlessEmpty,
+          ...(turnId ? { turnId } : {}),
+          interactionContext,
+        },
+        session,
+      );
+      if (!committed.ok && committed.journalCommitKind !== "durable") return committed.response;
+      if (committed.ok) {
+        revision = committed.revision;
+        concurrentEdits = committed.concurrentEdits;
+        lateSweep = committed.lateSweep;
+        awarenessDegraded = Boolean(committed.awarenessDegraded);
+      } else awarenessDegraded = true;
+      runtime.attach();
+      phase = "committed";
     }
-
-    runtimeStore.attachRuntime(session, address.documentId, runtime);
-    return withShown(
-      links,
-      formatApplySuccess({
-        ...emptiedDocument(runtime, links.codec),
-        phase: "committed",
-        revision: syncedMutation.revision,
-        writeId: writeIdentity.handle,
-        echo: syncedMutation.summary.echo,
-        concurrentEdits: syncedMutation.summary.concurrentEdits,
-        deletedBlocks: applied.deletedBlocks,
-        ...(syncedMutation.lateSweep ? { lateSweep: syncedMutation.lateSweep } : {}),
-        ...(syncedMutation.awarenessDegraded ? { awarenessDegraded: true } : {}),
-        ...copiedEcho(),
-      }),
-    );
+    const outcome = {
+      phase,
+      revision,
+      writeId: identity.handle,
+      ...(phase === "staged" ? { settlementId: identity.durableId } : {}),
+      concurrentEdits,
+      lateSweep,
+      awarenessDegraded,
+    };
+    try {
+      return withShown(
+        links,
+        renderReceipt(
+          {
+            commandName: command.command,
+            writeId: identity.handle,
+            durableWriteId: identity.durableId,
+            touchedHashes,
+            deletedHashes,
+            copied,
+          },
+          before,
+          snapshotBlocks(toDocHandle(runtime.doc), options.model, links.codec),
+          { ...outcome, concurrentEdits: withRunShownLinks(concurrentEdits, links) },
+        ),
+      );
+    } catch {
+      return formatApplySuccess({ ...outcome, echo: [], awarenessDegraded: true });
+    }
   }
 
   async function submitPreparedMutation(
-    input: PreparedMutation & { runtime: RuntimeDocumentState },
+    input: PreparedMutation & { runtime: CommandDocumentLease },
     session: ActorSession,
   ) {
     let result: Awaited<ReturnType<MutationCommit["submitMutation"]>>;
@@ -758,14 +628,7 @@ export function createWriteCommands(deps: {
       await runtimeStore.evictRuntime(session, input.docId);
       return result;
     }
-    await runtimeStore.recoverCommittedResponseProjection([
-      {
-        docId: input.docId,
-        session,
-        runtime: input.runtime,
-        commandName: input.commandName,
-      },
-    ]);
+    await input.runtime.recover();
     return { ...result, awarenessDegraded: true };
   }
 
@@ -833,17 +696,19 @@ export function createWriteCommands(deps: {
     session: ActorSession,
     context: WriteContext,
     commandToolUseId?: string,
-  ): Promise<{ durableId: string; ordinal: number; handle: string }> {
-    const ordinal = await reversalStore.reserveWriteOrdinal(
-      docId,
-      session.threadId,
-      context.responseId ?? context.turnId,
-    );
+  ): Promise<{ durableId: string; ordinal: number; handle: string; toolCallId?: string }> {
+    const ordinal = await journal.reserveWriteOrdinal(docId, session.threadId);
     const durableId =
       scopedToolUseId(context, commandToolUseId ?? context.tool_use_id) ??
       globalThis.crypto?.randomUUID?.() ??
       `${session.threadId}:${docId}:write-${ordinal}`;
-    return { durableId, ordinal, handle: writeHandle(ordinal) };
+    const toolCallId = commandToolUseId ?? context.tool_use_id;
+    return {
+      durableId,
+      ordinal,
+      handle: writeHandle(ordinal),
+      ...(toolCallId ? { toolCallId } : {}),
+    };
   }
 
   function nextTurnId(session: ActorSession, docId: string, context: WriteContext): string {
@@ -863,27 +728,36 @@ export function createWriteCommands(deps: {
       kind: "agent",
       turnId,
       threadId: session.threadId,
-      responseId: context.responseId ?? turnId,
+      responseId: context.responseIdentity?.providerResponseId,
+      editScopeId: context.responseIdentity?.editScopeId,
     };
   }
 
-  function writeCertifiedProvenance(
+  /** Certify inside the segment's prose transaction, before capture rotates its fresh client. */
+  function certifySegment(
     runtime: { doc: Y.Doc },
     ir: SemanticEditIRV1,
     beforeStateVector: Uint8Array,
-    preWriteSnapshot: Uint8Array,
-  ): void {
-    if (!options.semanticProvenance) return;
-    try {
-      options.semanticProvenance.writeCertifiedFacts(
+  ): (segment: readonly ResolvedEdit[]) => void {
+    return (segment) => {
+      const intent = ir.intent;
+      if (intent.kind === "fullScopeFreshReplacement") return;
+      const edits = intent.edits.filter(({ edit }) =>
+        segment.some(
+          (part) =>
+            part === edit ||
+            (part.kind === "textRanges" &&
+              edit.kind === "textRanges" &&
+              part.block === edit.block &&
+              part.replacements.some((replacement) => edit.replacements.includes(replacement))),
+        ),
+      );
+      options.semanticProvenance?.writeCertifiedFacts(
         toDocHandle(runtime.doc),
-        ir,
+        { ...ir, intent: { ...intent, edits } },
         beforeStateVector,
       );
-    } catch (error) {
-      restorePreWriteSnapshot(runtime, preWriteSnapshot);
-      throw error;
-    }
+    };
   }
 }
 
@@ -892,9 +766,42 @@ const MISSING_COPIED_NODES_MESSAGE = "This deployment can't copy: the source blo
 function restorePreWriteSnapshot(runtime: { doc: Y.Doc }, snapshot: Uint8Array): void {
   const restored = new Y.Doc({ gc: false });
   Y.applyUpdate(restored, snapshot, { type: "system" });
+  const previous = runtime.doc;
   runtime.doc = restored;
+  previous.destroy();
 }
 
 function documentBlocksDetail(details: Record<string, unknown> | undefined): number | undefined {
   return typeof details?.documentBlocks === "number" ? details.documentBlocks : undefined;
+}
+
+/**
+ * Capture the synchronous content and certification transactions, not a state-vector
+ * diff: that diff includes every old tombstone and couples otherwise independent writes.
+ */
+function captureWriteUpdate<T>(
+  doc: Y.Doc,
+  write: (beforeSegment?: () => void) => T,
+): { result: T; update: Uint8Array; parts: Uint8Array[] } {
+  const updates: Uint8Array[] = [];
+  const segments: Uint8Array[] = [];
+  const flush = () => {
+    if (updates.length) {
+      segments.push(Y.mergeUpdates(updates.splice(0)));
+    }
+  };
+  const beforeSegment = () => {
+    flush();
+    doc.clientID = allocateDocumentClient(doc);
+  };
+  const collect = (update: Uint8Array) => updates.push(update);
+  doc.on("update", collect);
+  try {
+    const result = write(beforeSegment);
+    flush();
+    const update = Y.mergeUpdates(segments);
+    return { result, update, parts: segments };
+  } finally {
+    doc.off("update", collect);
+  }
 }

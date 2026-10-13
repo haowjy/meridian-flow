@@ -26,7 +26,7 @@ import {
   canOpenContextUri as isContextUriRoutable,
 } from "@/lib/context-uri";
 import { BesideChatContext, useOpenChatDocument } from "../context/open-chat-document";
-import { useDockViewStore } from "../dock/dock-view-store";
+import { useDockDocumentStore } from "../dock/dock-document-store";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { canonicalDoorUri } from "./canonical-door-uri";
 import { usePassageDoors } from "./usePassageDoors";
@@ -95,7 +95,7 @@ export function ProjectChatContextNavigationProvider({
       }
       // The chat is in the middle: the document opens beside it and the route stays on the
       // chat. The door claims the dock now, so the lookup is inside the claim.
-      const dock = useDockViewStore.getState();
+      const dock = useDockDocumentStore.getState();
       const claim = dock.claim();
       void lookupContextCatalogFile(
         projectId,

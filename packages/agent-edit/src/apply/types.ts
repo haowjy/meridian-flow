@@ -24,7 +24,12 @@ export function inlineReplacementText(replacement: ResolvedInlineReplacement): s
  * Resolver → apply seam. Block references are live objects from one local document;
  * a ResolvedEdit must never escape the call that created it or cross process/doc boundaries.
  */
-export type ResolvedEdit = { documentId: string; file: string } & (
+export type ResolvedEdit = {
+  documentId: string;
+  file: string;
+  /** Shared only by edits crossing a recognized adjacent paragraph boundary. */
+  structuralBoundary?: object;
+} & (
   | {
       kind: "textRanges";
       block: BlockRef;
@@ -35,6 +40,8 @@ export type ResolvedEdit = { documentId: string; file: string } & (
   | {
       kind: "insert";
       after?: BlockRef;
+      /** Ordered insertions sharing an old anchor chain through their newly inserted tail. */
+      insertionRun?: object;
       /** Provenance text for the semantic IR; it never drives the insert. */
       newText: string;
       /**

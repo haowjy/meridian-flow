@@ -213,24 +213,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("keeps one link snapshot when an image moves between preview serializations", async () => {
+    it("prepares preview links without whole-document serialization and fences a tree-only move", async () => {
       const links = createTestDocumentLinkScopes(db);
-      let moveAfterSerialization = false;
+      let scopes = 0;
       const collab = createTestCollab({
         ...links,
-        within: <T>(key: LinkScopeKey, operation: () => Promise<T>) =>
-          links.within(key, async () => {
-            const result = await operation();
-            // The engine's live serialization completes before preview reads the draft.
-            if (moveAfterSerialization) {
-              moveAfterSerialization = false;
-              await db
-                .update(folders)
-                .set({ name: "art" })
-                .where(eq(folders.contextSourceId, SOURCE_ID));
-            }
-            return result;
-          }),
+        within: <T>(key: LinkScopeKey, operation: () => Promise<T>) => {
+          scopes += 1;
+          return links.within(key, operation);
+        },
       });
       collab.bindHocuspocus(hocuspocus as never);
       await seedChapterWithMap(collab);
@@ -240,16 +231,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         draftId: await currentDraftId(collab, DOC_ID),
       };
-      moveAfterSerialization = true;
+      scopes = 0;
       const preview = await collab.draftReview.preview(command);
-      if (preview.status !== "active") throw new Error("missing draft preview");
-      expect(preview.live).toContain("assets/map.png");
-      expect(preview.markdown).toContain("assets/map.png");
-      expect(preview.markdown).not.toContain("art/map.png");
+      expect(preview.status).toBe("active");
+      if (preview.status !== "active") throw new Error("expected active preview");
+      expect(preview).not.toHaveProperty("live");
+      expect(preview).not.toHaveProperty("markdown");
+      expect(scopes).toBe(1);
+      await db.update(folders).set({ name: "art" }).where(eq(folders.contextSourceId, SOURCE_ID));
       const next = await collab.draftReview.preview(command);
-      if (next.status !== "active") throw new Error("missing draft preview");
-      expect(next.live).toContain("art/map.png");
-      expect(next.markdown).toContain("art/map.png");
+      expect(next.status).toBe("active");
+      if (next.status !== "active") throw new Error("expected active preview after move");
+      expect(next.draftRevisionToken).not.toBe(preview.draftRevisionToken);
+      const operation = preview.operations[0];
+      await expect(
+        collab.draftReview.applyWorkDraftChanges({
+          ...command,
+          userId: USER_ID as never,
+          operationIds: preview.operations
+            .filter((op) => op.closureClassId === operation.closureClassId)
+            .map((op) => op.operationId),
+          liveRevisionToken: preview.liveRevisionToken,
+          draftRevisionToken: preview.draftRevisionToken,
+        }),
+      ).resolves.toMatchObject({ status: "stale" });
     });
 
     it("accepts a draft on a chapter with an image", async () => {
@@ -278,7 +283,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(trail).not.toContain("asset:");
     });
 
-    it("spells a reply's own create alike at every door, and in its draft after a cold undo", async () => {
+    it("spells a reply's own create alike at every door, and in its draft after a cold read", async () => {
       // The real manifest authority: the created chapter exists only in this
       // reply's draft until it saves, and only for this thread.
       const manifest = lateBoundManifestMembership();
@@ -330,7 +335,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: CREATED_ID as never },
               },
             },
-            responseId: RESPONSE_ID,
+            responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
             createdDocument: true,
           },
         ),
@@ -352,7 +357,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             documentId: DOC_ID,
             overwrite: true,
           },
-          { ...ctx, responseId: RESPONSE_ID, createdDocument: false, copiedNodes: [link] },
+          {
+            ...ctx,
+            responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+            createdDocument: false,
+            copiedNodes: [link],
+          },
         ),
       ).resolves.toMatchObject({ status: "success", phase: "staged" });
 
@@ -366,7 +376,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       const read = await core.read(
         { file: "chapter", documentId: DOC_ID },
-        { ...ctx, responseId: RESPONSE_ID },
+        { ...ctx, responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID } },
       );
       const markdown = await collab.readEffectiveMarkdown(view);
       const hashlines = await collab.readEffectiveHashlines(view);
@@ -402,13 +412,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft([markdown.value.revision, hashlines.value.revision, hit?.revision], "one view")
         .toEqual([read.revision, read.revision, read.revision]);
 
-      // Saved, then written again; a fresh process undoes that write in the
-      // draft it landed in, so its echo spells there and its token is the
-      // draft read's.
-      await collab.finalizeResponseCommit(RESPONSE_ID, {
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
+      // A fresh process reads the saved draft in its own link scope.
+      await collab.finalizeResponseCommit(
+        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        },
+      );
       await collab.recordManifestDocumentCreated(CREATED_ID as never, {
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
@@ -432,13 +443,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.documentDerivations.stop();
       collab.dispose();
       collab = start();
-      const undone = await collab.agentEdit().undo(DOC_ID, THREAD_ID);
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
-      expect(undone.status).toBe("reversed");
-      expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
       expect.soft(after.value.content.join("\n")).toContain(spelled);
-      expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
 
       // The same comparison in live: a reply that creates a chapter live sees it
       // in its own live view, never in baseline live or its draft view.
@@ -478,7 +485,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 target: { kind: "document", documentId: LIVE_CREATED_ID as never },
               },
             },
-            responseId: LIVE_RESPONSE_ID,
+            responseIdentity: {
+              providerResponseId: LIVE_RESPONSE_ID,
+              editScopeId: LIVE_RESPONSE_ID,
+            },
             createdDocument: true,
           },
         ),

@@ -110,7 +110,7 @@ going blind to a concurrent human edit.
   the runtime, rebuilds from canonical (live), and replays pending buffered updates:
   `runtime = canonical ⊕ replay(pending)`. It never trusts accumulated local state,
   so `read` can never carry runtime drift forward or corrupt the doc. At turn start
-  (no pending) it is exactly canonical. The reversal path uses the delta merge
+  (no pending) it is exactly canonical. Forward inverse application uses the delta merge
   `syncLocalFromLive`; `read` does not.
 - **`read` and `find` read the same doc.** Both resolve against the runtime, so the
   model can always `find` what `read` showed it. This is *why* `read` replays

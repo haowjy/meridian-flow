@@ -90,7 +90,7 @@ export function createStandaloneEditor({
  * `relative` and `main-pane` utilities resolve to exactly these declarations,
  * and a class name in jsdom resolves to nothing at all.
  */
-function createManuscriptPane(): HTMLElement {
+export function createManuscriptPane(): HTMLElement {
   const pane = document.createElement("div");
   pane.setAttribute("data-stable-layout-scroll", "");
   pane.style.position = "relative";

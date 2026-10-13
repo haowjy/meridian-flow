@@ -40,7 +40,8 @@ receipts recomputed against the settled projection for host publication. Without
 a response id, the same command path appends and projects immediately. Undo/redo
 never buffer, and they never save buffered writes either: the host treats a
 `write` `undo` or `redo` as a save boundary and commits the reply before it, so
-buffered writes at a reversal are an invariant error (`internal_error`).
+the prepared-lease gate requires the host to save buffered writes before an
+inverse command.
 
 Lifecycle ownership is exclusive: `Buffered | Committing | Closed`.
 
@@ -175,20 +176,14 @@ accidental UUID interpolation fails loudly.
 
 ## Testing
 
-Package tests cover block-hash stability, markup round-trip, resolver with
-cross-block find, edit apply preflight + edge cases, echo computation, cold
-undo/redo reconstruction (including the 8-case reconcile matrix, subset redo,
-drift invariants, and availability), response
-commit/recovery, and create lifecycle.
+Package tests protect markup, resolution, prepared edit admission, receipt
+rendering, response commit/recovery and the forward inverse primitive. Host DB
+matrices protect placement, restoration holds, model stack policy and rollback.
 
-### Write handles and selective reversal
+### Write handles and document history
 
-Every successful mutating result carries `write: { id: "w<N>" }`. The ordinal
-is allocated per `(document, thread)`, persisted on the mutation row, and never
-reused or renumbered by undo/redo. `WriteContext.tool_use_id` remains the durable
-idempotency id in mutation metadata; `w<N>` is the model-facing range key.
-
-Undo/redo use the same versioned result envelope as writes, with typed reversal
-metadata and block records.
-
-Undo/redo defaults to the latest write. The command surface also accepts one write (`to`), inclusive ranges (`since` + `to`; `from` always names a source), the last N writes (`last`; for redo, the N handles undone most recently), or all (`all`). Group atomicity and dependency closure can widen a selection; results list the handles actually reversed (`reversal.writes`). One dependency rule, `undo/journal-dependencies.ts`, decides both what `planUndo` offers (the receipt chip) and what the host's persisted undo accepts: a later row depends on a write when it anchors on, parents into or deletes what the write inserted, or anchors on what it deleted. An insertion inside agent text therefore blocks undo. Undo plans a selection at once; redo plans one undo group at a time, oldest undo first, and keeps going for `since`/`to`, `last`, `all` and turn selections. A reversal is `reconciled` only when its result differs from the text just before the reversed writes (undo) or the reversed undo (redo); a sweep alone doesn't make it reconciled. The cold reconstruction algorithm is unchanged except that its selected target is a set of write seqs rather than one turn id; non-selected and concurrent updates still replay untracked through Yjs UndoManager, preserving same-area merge behavior.
+Successful edits carry a model-facing `w<N>` reserved per document/thread before
+staging. `read(format: "edits", before?: "w<N>")` pages immutable entries.
+`undo` and `redo` accept `count` (1–20); `revert` names one `edit` handle and makes
+an ordinary new edit. There are no `to`, `since`, `last` or `all` selectors.
+The host owns policy and notices; handles never reach the writer's card.

@@ -34,7 +34,7 @@ import { treeFolderIds } from "../context/tree-expansion-state";
 import { type CatalogMenuSource, useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
 import { useTreeExpansion } from "../context/use-tree-expansion";
-import { useDockDocument } from "../dock/dock-view-store";
+import { useDockDocument } from "../dock/dock-document-store";
 import { useOpenScratchNote } from "../dock/use-open-scratch-note";
 import { ResizeHandle } from "../layout/ResizeHandle";
 import { useProjectSurfacePrefsStore } from "../layout/surface-prefs-store";

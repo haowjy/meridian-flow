@@ -5,6 +5,7 @@
  * Editor's Work is that file's Work. Archiving here freezes them at once; the
  * server's own read-only scope follows.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
   type ContextOwner,
@@ -16,7 +17,9 @@ import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
@@ -42,8 +45,8 @@ export type ContextViewerProps = {
   editorWork: Work | null;
   tabs: ContextTab[];
   paneState: ContextPaneState;
-  onSelectTab: (documentId: string) => void;
-  onCloseTab: (documentId: string) => void;
+  onSelectTab: (tab: ContextTab) => void;
+  onCloseTab: (tab: ContextTab) => void;
   sidebarToggle?: PaneHeaderRailToggle;
   /**
    * Project right-dock expand toggle (pinned at the tab strip's trailing
@@ -104,6 +107,7 @@ export function ContextViewer({
   }, [active, openedDocumentId, projectId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
+  const name = activeTab?.name;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
   // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it.
   const activeFileInWork =
@@ -112,11 +116,12 @@ export function ContextViewer({
     isWorkScopedProjectContextScheme(activeTab.scheme) &&
     activeTab.rootThreadId === undefined;
 
-  // Draft review state — the banner sits above the identity bar so review
-  // chrome is the first thing the writer sees when entering review mode.
+  // Draft review state: the review's controls live in the identity bar.
   const { controller } = useDraftReview();
   const activeReviewDraftId =
-    activeTab && controller.inlineReview?.documentId === activeTab.documentId
+    activeTab &&
+    controller.inlineReview?.documentId === activeTab.documentId &&
+    controller.inlineReview.shown
       ? controller.inlineReview.draftId
       : null;
   const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
@@ -139,6 +144,7 @@ export function ContextViewer({
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
+        activeTabInstanceId={activeTab?.tabInstanceId}
         reviewingTabId={activeReviewDraftId ? activeTabId : null}
         optimisticTab={optimisticTab}
         onSelect={onSelectTab}
@@ -151,12 +157,15 @@ export function ContextViewer({
       />
       {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
-      <div className="page-sheet relative">
+      <PaintHold
+        status={name ? t`Opening ${name}` : t`Opening draft`}
+        className="page-sheet relative"
+      >
+        <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
         {activeTab ? (
           <DocumentPaneChrome
             projectId={projectId}
             tab={activeTab}
-            reviewDraftId={activeReviewDraftId}
             archivedWork={editorFrozen ? archivedEditorWork : null}
             onCloseTab={onCloseTab}
             identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
@@ -167,21 +176,23 @@ export function ContextViewer({
             editors aren't torn down on a quick image/PDF detour. We just
             hide the whole host when the active tab isn't tracked. */}
         {trackedTabs.length > 0 ? (
-          <div
-            className={
-              activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
-            }
-          >
-            <ContextEditorMountHost
-              projectId={projectId}
-              trackedTabs={trackedTabs}
-              activeTabId={activeIsEditable ? activeTabId : null}
-              active={active}
-              // Warm editors are hidden, so following the front tab is enough.
-              readOnly={editorFrozen}
-              onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
-            />
-          </div>
+          <PaintScope active={activeIsEditable}>
+            <div
+              className={
+                activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+              }
+            >
+              <ContextEditorMountHost
+                projectId={projectId}
+                trackedTabs={trackedTabs}
+                activeTabId={activeIsEditable ? activeTabId : null}
+                active={active}
+                // Warm editors are hidden, so following the front tab is enough.
+                readOnly={editorFrozen}
+                onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+              />
+            </div>
+          </PaintScope>
         ) : null}
         {activeTab?.kind === "viewer" ? (
           <div className="flex min-h-0 flex-1 flex-col">
@@ -207,7 +218,10 @@ export function ContextViewer({
           />
         ) : null}
         {paneState.kind === "route-error" ? <RouteErrorState /> : null}
-      </div>
+        {controller.inlineReview?.shown ? (
+          <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
+        ) : null}
+      </PaintHold>
     </div>
   );
 }

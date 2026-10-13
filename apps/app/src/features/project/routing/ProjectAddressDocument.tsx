@@ -64,7 +64,7 @@ export function ProjectAddressDocument({
     if (!ticket) return;
     if (draftOnlyId) {
       // No tab and no live room: the address carries the draft and
-      // EditorReviewAddressOwner opens its review.
+      // ReviewAddressOwner opens its review.
       if (address.draftId !== draftOnlyId)
         void navigation.replaceIfCurrent(ticket, { ...address, draftId: draftOnlyId });
       return;

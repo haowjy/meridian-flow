@@ -65,6 +65,7 @@
   --color-destructive: oklch(0.66 0.16 17);
   --color-destructive-tint: oklch(0.3 0.06 22);
   --color-destructive-border: oklch(0.44 0.1 20);
+  --color-review-writer-removed-foreground: oklch(0.82 0.1 84);
 
   --color-warning-bg: oklch(0.3 0.045 80);
   --color-warning-border: oklch(0.44 0.07 80);

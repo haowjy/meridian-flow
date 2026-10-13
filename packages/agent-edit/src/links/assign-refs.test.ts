@@ -880,20 +880,4 @@ const doors: DoorCase[] = [
 
 it("A1-5: no write door loses or churns refs", async () => {
   for (const door of doors) await door.run();
-  // Undo restores recorded bytes; it never assigns (no mint, the edited ref returns).
-  const ctx = linkHarness({
-    holder: { id: H, uri: HOLDER },
-    documents: [catalogDocument(D, target)],
-    blocks: [paragraph(docLink("Target", D, target), " waits.")],
-  });
-  await ctx.write({ command: "replace", in: [1, 1], content: "Target waits." });
-  await ctx.write({ command: "undo" });
-  expect
-    .soft(
-      storedLinks(ctx.live()).map((link) => link.ref),
-      "undo restores",
-    )
-    .toEqual([documentRef(D)]);
-  expect.soft(ctx.links.minted, "undo never mints").toEqual([]);
-  expect.soft(prosemirrorBlocksForDoc(ctx.live(), schema).length).toBe(1);
 });

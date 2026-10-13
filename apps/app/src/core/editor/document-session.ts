@@ -119,13 +119,17 @@ export type DocumentSessionResetReason =
   | typeof WS_CLOSE.BRANCH_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | "branch-generation-stale";
+  | typeof WS_CLOSE.BRANCH_GENERATION_STALE.reason;
+
+/** How a terminal room reset treats its unacknowledged writer updates. */
+export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
   | {
       kind: "reset";
       reason: DocumentSessionResetReason;
+      disposition: ResetDisposition;
       code?: number;
     };
 
@@ -139,6 +143,8 @@ export type DocumentSessionConnectionState =
  * value and `offline` could never fire.
  */
 export type DocumentSessionTransportProvider = {
+  /** Local updates not acknowledged on this connection, merged; null when none. */
+  unacknowledgedUpdates(): Uint8Array | null;
   synced?: boolean;
   whenSynced?: Promise<void>;
   /**
@@ -146,7 +152,8 @@ export type DocumentSessionTransportProvider = {
    * document update sent on the current connection. False on any local change,
    * on disconnect, and in terminal states; never inferred from the provider's
    * `unsyncedChanges` counter, which a reconnect resets mid-flight. Emits the
-   * current value synchronously on subscribe, then on every change.
+   * current value synchronously on subscribe, then on every change and when
+   * the local outbox becomes non-empty (with those bytes already visible).
    */
   subscribeServerAcknowledgement?: (listener: (acknowledged: boolean) => void) => () => void;
   /**
@@ -218,6 +225,7 @@ export class DocumentSession {
   private transportAcknowledged = false;
   private status: DocumentSessionStatus = "detached";
   private serverHasLocalChanges = false;
+  private observedOutboxPresence = false;
   /**
    * Latest live connection-state from the transport. When the transport is
    * pre-`whenSynced` we treat the session as syncing; this field lets us
@@ -347,7 +355,7 @@ export class DocumentSession {
     if (this.destroyed) {
       throw new Error(`Cannot restart transport for destroyed room: ${this.roomKey}`);
     }
-    if (this.refusedLocalEdits()) {
+    if (this.resetDisposition === "refused") {
       // A reconnect would replay the refused edits from this Y.Doc.
       throw new Error(`Cannot restart a room whose local edits were refused: ${this.roomKey}`);
     }
@@ -373,12 +381,16 @@ export class DocumentSession {
     this.startLocalPeers();
   }
 
-  /** The server refused this Y.Doc's pending edits; only a rebuilt room may sync again. */
-  refusedLocalEdits(): boolean {
-    return (
-      this.transportState?.kind === "reset" &&
-      this.transportState.reason === WS_CLOSE.ACCESS_CHANGED.reason
-    );
+  get resetDisposition(): ResetDisposition | null {
+    return this.transportState?.kind === "reset" ? this.transportState.disposition : null;
+  }
+
+  unacknowledgedUpdates(): Uint8Array | null {
+    return this.transportProvider?.unacknowledgedUpdates() ?? null;
+  }
+
+  hasUnacknowledgedEdits(): boolean {
+    return this.unacknowledgedUpdates() !== null;
   }
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {
@@ -633,7 +645,7 @@ export class DocumentSession {
           run: () =>
             removeAwarenessStates(
               this.awareness,
-              [this.document.clientID],
+              [this.awareness.clientID],
               "document-session-destroy",
             ),
         },
@@ -735,7 +747,14 @@ export class DocumentSession {
     if (this.destroyed) return;
     const next = this.deriveStatus();
     const acknowledged = next === "synced" && this.transportAcknowledged;
-    if (next === this.status && acknowledged === this.serverHasLocalChanges) return;
+    const outboxPresent = this.hasUnacknowledgedEdits();
+    if (
+      next === this.status &&
+      acknowledged === this.serverHasLocalChanges &&
+      outboxPresent === this.observedOutboxPresence
+    )
+      return;
+    this.observedOutboxPresence = outboxPresent;
     this.status = next;
     this.serverHasLocalChanges = acknowledged;
     this.emit();

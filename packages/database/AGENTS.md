@@ -52,5 +52,9 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   SQL. Yjs checkpoints are append-only and disappear only with their parent
   document cascade.
 
+- Forward-turn inverses use immutable `document_edits` and `document_edit_parts`.
+  Legacy reconstruction reversal tables and the unused mutation provenance sink
+  are retired; immutable edits own write provenance and inverse state.
+
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for migration workflow and the
 Yjs head FK contract.

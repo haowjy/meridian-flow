@@ -28,7 +28,11 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       import.meta.dirname,
       "../../../../packages/database/src/migrations",
     );
-    const journal = JSON.parse(await readFile(path.join(migrations, "meta/_journal.json"), "utf8"));
+    const currentJournal = JSON.parse(
+      await readFile(path.join(migrations, "meta/_journal.json"), "utf8"),
+    );
+    // This fixture owns the 0032-to-0035 upgrade, not later schema changes.
+    const journal = { ...currentJournal, entries: currentJournal.entries.slice(0, 36) };
     let isolated = false;
     try {
       await target.begin(async (tx) => {
@@ -39,7 +43,7 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       });
       isolated = true;
       await cp(migrations, directory, { recursive: true });
-      for (const entry of journal.entries.slice(33))
+      for (const entry of currentJournal.entries.slice(33))
         await rm(path.join(directory, `${entry.tag}.sql`));
       await writeFile(
         path.join(directory, "meta/_journal.json"),

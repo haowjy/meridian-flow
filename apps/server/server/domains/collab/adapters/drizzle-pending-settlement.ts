@@ -2,7 +2,6 @@
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  agentEditMutations,
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
   branchWriteJournal,
@@ -16,7 +15,6 @@ import {
   COLLAB_SCHEMA_VERSION,
   createCollabYDoc,
   packCollabSchemaVersion,
-  unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -27,7 +25,6 @@ import { lockWorksInIdOrder } from "../../../shared/work-lifecycle-lock.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { BranchSnapshot } from "../domain/branch-coordinator.js";
 import type {
   BranchJournalRow,
   PendingLiveSettlement,
@@ -35,7 +32,6 @@ import type {
   PushLineageRow,
   SettlementClaim,
 } from "../domain/branch-push-contracts.js";
-import { activeBranchAgentWriteRows } from "../domain/branch-reversal-history.js";
 import { deriveDocument } from "../domain/document-derivations.js";
 import { manifestMembershipRowDocumentId } from "../domain/manifest-membership-journal.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
@@ -54,6 +50,7 @@ import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
+import { placeDraftRows } from "./drizzle-document-edits.js";
 import { createDrizzleJournal } from "./drizzle-journal.js";
 
 export async function stagePendingSettlementWithinTx(
@@ -439,9 +436,14 @@ async function completeStagedPush(
   derivationStore: DocumentDerivationStore,
 ): Promise<void> {
   const [staged] = await db
-    .select({ outbox: branchPushSettlementOutbox, push: pushLineage })
+    .select({
+      outbox: branchPushSettlementOutbox,
+      push: pushLineage,
+      workId: documentBranches.workId,
+    })
     .from(branchPushSettlementOutbox)
     .innerJoin(pushLineage, eq(pushLineage.id, branchPushSettlementOutbox.pushId))
+    .leftJoin(documentBranches, eq(documentBranches.id, pushLineage.branchId))
     .where(
       and(
         eq(branchPushSettlementOutbox.pushId, pushId),
@@ -495,6 +497,11 @@ async function completeStagedPush(
           )
           .returning({ id: documentYjsUpdates.id })
       : [];
+  for (const [i, row] of journalRows.entries())
+    await placeDraftRows(db, row.branchId, row.generation, [row.id], {
+      kind: "live",
+      seq: authoredRows[i].id,
+    });
   const [canonicalRow] = await db
     .insert(documentYjsUpdates)
     .values({
@@ -519,32 +526,6 @@ async function completeStagedPush(
     .returning({ id: pushLineage.id });
   if (!updated) throw new Error(`Staged push ${pushId} was completed concurrently`);
 
-  const [branchRow] = staged.push.branchId
-    ? await db
-        .select()
-        .from(documentBranches)
-        .where(eq(documentBranches.id, staged.push.branchId))
-        .limit(1)
-    : [];
-  if (branchRow) {
-    const branch: BranchSnapshot = {
-      branchId: branchRow.id,
-      documentId: branchRow.documentId,
-      kind: branchRow.kind,
-      upstreamBranchId: branchRow.upstreamBranchId,
-      workId: branchRow.workId,
-      threadId: branchRow.threadId,
-      status: branchRow.status,
-      generation: branchRow.generation,
-      state: new Uint8Array(branchRow.state),
-      stateVector: new Uint8Array(branchRow.stateVector),
-      discardedStateVector: branchRow.discardedStateVector
-        ? new Uint8Array(branchRow.discardedStateVector)
-        : null,
-      schemaVersion: unpackCollabSchemaVersion(branchRow.schemaVersion),
-    };
-    await writeMutationRows(db, branch, journalRows, authoredRows);
-  }
   const derivation = await deriveDocument(
     {
       store: derivationStore,
@@ -560,7 +541,7 @@ async function completeStagedPush(
   await upsertHead(db, documentId, canonicalRow.id, stateVector);
   await projectionEffects.applyPushCompletion({
     documentId,
-    ...(branchRow?.workId ? { workId: branchRow.workId } : {}),
+    ...(staged.workId ? { workId: staged.workId } : {}),
     at: new Date(),
   });
 
@@ -599,38 +580,6 @@ async function upsertHead(
     });
 }
 
-async function writeMutationRows(
-  db: DrizzleDb,
-  branch: BranchSnapshot,
-  rows: BranchJournalRow[],
-  authoredRows: Array<{ id: number }>,
-): Promise<void> {
-  // Apply materializes only handles whose folded branch-reversal state remains
-  // active; inactive handles must not reappear as live mutations.
-  const mutationRows = activeBranchAgentWriteRows(rows);
-  if (mutationRows.length === 0) return;
-  await db
-    .insert(agentEditMutations)
-    .values(
-      mutationRows.map((row) => {
-        const rowIndex = rows.findIndex((candidate) => candidate.id === row.id);
-        const updateSeq = rowIndex < 0 ? undefined : authoredRows[rowIndex]?.id;
-        if (!updateSeq)
-          throw new Error(`Missing live attribution for branch journal row ${row.id}`);
-        return {
-          wId: row.wId,
-          documentId: branch.documentId,
-          threadId: row.threadId,
-          turnId: row.turnId,
-          writeId: `push:${branch.branchId}:${row.id}`,
-          status: "active" as const,
-          createdSeq: updateSeq,
-        };
-      }),
-    )
-    .onConflictDoNothing();
-}
-
 function _representativeThreadId(rows: BranchJournalRow[]): ThreadId | null {
   const ids = new Set(rows.map((row) => row.threadId));
   const [id] = ids;
@@ -643,6 +592,7 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
     branchId: row.branchId,
     generation: row.generation,
     wId: row.wId,
+    toolCallId: row.toolCallId,
     source: row.source,
     threadId: row.threadId,
     turnId: row.turnId,

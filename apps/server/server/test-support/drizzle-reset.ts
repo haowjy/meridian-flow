@@ -218,16 +218,12 @@ export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]
 export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
   schema.branchPushOutboxUpdates,
   schema.branchPushSettlementOutbox,
-  schema.turnTrailWork,
   schema.changeTrailDeliveryOutbox,
   schema.changeTrailDocumentDetails,
   schema.changeTrailDocumentOccurrences,
   schema.changeTrailShells,
   schema.pendingNotices,
-  schema.documentYjsReversalOps,
-  schema.documentYjsReversals,
   schema.agentEditWidCounters,
-  schema.agentEditMutations,
   schema.branchWriteJournal,
   schema.pushLineage,
   schema.documentBranches,
@@ -260,6 +256,7 @@ export function useRollbackTestDatabase(
   databaseUrl: string,
   options?: {
     max?: number;
+    postgres?: NonNullable<Parameters<typeof createDb>[1]>["postgres"];
     /** Durable worker baseline; must be safe for later suites sharing the worker DB. */
     prepareSuite?: (db: Database) => Promise<void>;
   },

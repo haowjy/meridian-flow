@@ -18,6 +18,9 @@ import {
 const DOC_ID = "doc.md";
 
 class MemoryJournal implements UpdateJournal {
+  async reserveWriteOrdinal(): Promise<number> {
+    throw new Error("Transport does not allocate edit ordinals");
+  }
   private readonly entries = new Map<
     string,
     { checkpoint: Uint8Array | null; checkpointUpToSeq: number; updates: PersistedUpdate[] }
@@ -58,17 +61,7 @@ class MemoryJournal implements UpdateJournal {
   }
 
   async compact() {
-    return { updatesFolded: 0, reversalsExpired: 0 };
-  }
-
-  async persistReversal(): Promise<void> {}
-
-  async persistRedo() {
-    return { consumed: false };
-  }
-
-  async readReversals() {
-    return [];
+    return { updatesFolded: 0 };
   }
 
   private entry(docId: string) {

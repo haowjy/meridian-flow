@@ -261,7 +261,10 @@ export async function dispatchToolCall(
     {
       threadId: ctx.state.threadId,
       turnId: ctx.state.currentTurn.id,
-      responseId: ctx.editResponseId ?? ctx.responseId,
+      responseIdentity: {
+        providerResponseId: ctx.responseId,
+        editScopeId: ctx.editResponseId ?? ctx.responseId,
+      },
       agentSlug: ctx.agentSlug,
       signal: ctx.state.signal,
       interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,

@@ -2,6 +2,7 @@
 
 import type {
   AgentEditCodecFactory,
+  CanonicalBlockIdentity,
   DocumentCoordinator,
   UpdateJournal,
   YProsemirrorDocumentModel,
@@ -43,6 +44,8 @@ export type BranchJournalRow = {
   branchId: string;
   generation: number;
   wId: number | null;
+  /** The model's tool call that made this write; null for writer rows and legacy rows. */
+  toolCallId?: string | null;
   source: "agent" | "writer";
   threadId: ThreadId | null;
   turnId: TurnId | null;
@@ -52,6 +55,8 @@ export type BranchJournalRow = {
   draftBaseUpdateSeq: number;
   status: "active" | "pushed" | "discarded" | "rollback_pending";
   updateMeta?: unknown;
+  /** Immutable edit evidence, never inferred from actor or missing text. */
+  editKind?: "write" | "undo" | "redo" | "revert" | "rollback" | null;
 };
 
 export function branchJournalRevision(
@@ -65,6 +70,8 @@ export function branchJournalRevision(
 
 export type PublicationBlockChange = {
   blockId: string;
+  beforeBlockIdentity: CanonicalBlockIdentity | null;
+  afterBlockIdentity: CanonicalBlockIdentity | null;
   beforeText: string | null;
   afterText: string | null;
 };
@@ -98,7 +105,14 @@ export type PushToLiveResult =
       reason: "no_active_rows";
     };
 
+export class DraftChangeRefusal extends Error {
+  constructor(readonly status: "stale" | "gone" | "draft_only" | "incomplete_class") {
+    super(status);
+  }
+}
+
 export type PreparedPushCommit = {
+  expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   pushUpdate: Uint8Array;
@@ -159,13 +173,17 @@ export type TrailContributionReplacement = {
   documentTitles: ReadonlyMap<string, string>;
 };
 
+export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
+
 export type PreparedDiscardCommit = {
+  /** Present only for per-change Discard: identical survivor deltas in the next generation. */
+  survivors?: BranchJournalRow[];
+  retireSurvivors?: boolean;
+  expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   state: Uint8Array;
   stateVector: Uint8Array;
-  replacementUpdateData?: Uint8Array;
-  replacementUpdateDataByJournalId?: ReadonlyMap<number, Uint8Array>;
   reviewedByUserId?: UserId;
 };
 
@@ -173,13 +191,15 @@ export type PushCandidate = {
   branchId: string;
   documentId: DocumentId;
   rows: BranchJournalRow[];
-  /** Content publishes whole-branch state; manifest publishes only the selected membership rows. */
+  /** Selective content and manifest candidates replay only their selected rows. */
   kind: "content" | "manifest";
+  materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
   candidates: PushCandidate[];
   receiptId: string;
+  expectedLiveRevision?: string;
   resetPolicy?: "auto";
   pushedByUserId?: UserId;
 };
@@ -218,19 +238,12 @@ export type PushCommitStore = {
   commitPushBatch(input: { pushes: PreparedPushCommit[] }): Promise<{
     pushes: PushLineageRow[];
   }>;
-  commitTurnRedo(input: PreparedDiscardCommit): Promise<void>;
   /**
    * Seam B for a review that changes several drafts in one transaction: locks
    * their Works (file-access §5) and names the branches whose Work is no longer
    * active, so their drafts stay frozen (D30).
    */
   lockDraftWorks(branchIds: readonly string[]): Promise<ReadonlySet<string>>;
-  markRollbackPending(input: {
-    branchId: string;
-    generation: number;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<number>;
 };
 
 export type WorkPushPolicyStore = {
@@ -251,6 +264,12 @@ export type BranchPushService = {
     pushedByUserId?: UserId;
     signal?: AbortSignal;
     resetPolicy?: "auto";
+  }): Promise<PushToLiveResult>;
+  pushSelectedToLive(input: {
+    branchId: string;
+    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
+    pushedByUserId?: UserId;
+    signal?: AbortSignal;
   }): Promise<PushToLiveResult>;
   pushToLiveWithManifestEntry(input: {
     branchId: string;
@@ -275,38 +294,20 @@ export type SetWorkPushPolicyResult =
   | { status: "updated"; policy: "manual" | "auto" }
   | { status: "confirmation_required"; unpushedCount: number; reason: string };
 
-export type BranchTurnReversal =
-  | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-  | {
-      status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo" | "permission_denied";
-      branchId: string;
-      journalIds: number[];
-    };
-
 export type BranchReviewService = {
   discardSelected(input: {
     branchId: string;
-    journalIds: readonly number[];
+    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
     reviewedByUserId?: UserId;
   }): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
+    | {
+        status: "discarded";
+        branchId: string;
+        journalIds: number[];
+        draftClosed?: boolean;
+        draftDisposition?: "applied" | "discarded";
+      }
     | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
-  >;
-  /** Reverses one turn on each branch; a branch whose Work is archived is refused. */
-  reverseBranchTurns(input: {
-    branchIds: readonly string[];
-    threadId: ThreadId;
-    turnId: TurnId;
-    direction: "undo" | "redo";
-    reviewedByUserId?: UserId;
-  }): Promise<BranchTurnReversal[]>;
-  markFailedResponseRollbackPending(input: {
-    branchId: string;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
-    | { status: "rollback_pending"; rowsMarked: number }
   >;
 };
 

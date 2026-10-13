@@ -123,6 +123,14 @@ export function apiProjectWorkDocumentDraftApplyPath(
   return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply`;
 }
 
+export function apiProjectWorkDocumentDraftApplyChangesPath(
+  projectId: string,
+  workId: string,
+  documentId: string,
+): string {
+  return `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}/apply-changes`;
+}
+
 export function apiProjectWorkDocumentDraftDiscardPath(
   projectId: string,
   workId: string,

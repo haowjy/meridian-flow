@@ -14,7 +14,7 @@ import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import type { ResolvedDocumentAddress, ToolWiringDeps } from "./tool-context.js";
 
 /** Which blocks a read renders, as the `read` tool's selector fields. */
-export type ReadSelection = Pick<ReadToolInput, "in" | "around">;
+export type ReadSelection = Pick<ReadToolInput, "in" | "around" | "before">;
 
 /**
  * Omitted `version` reads where this thread's writes go; `live` never touches
@@ -31,7 +31,7 @@ export async function readDocument(
     /** A copy's source read also returns the selected blocks as nodes. */
     includeNodes?: boolean;
   },
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId" | "toolCallId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity" | "toolCallId">,
 ): Promise<WriteOutcome> {
   return deps.documentSync.agentEdit().read(
     {
@@ -47,7 +47,7 @@ export async function readDocument(
       grant,
       ...(options.version === "live" ? { liveVersion: true } : {}),
       ...(options.includeNodes ? { includeNodes: true } : {}),
-      ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
+      ...(ctx.responseIdentity?.editScopeId ? { responseIdentity: ctx.responseIdentity } : {}),
       ...(ctx.toolCallId ? { tool_use_id: ctx.toolCallId } : {}),
     },
   );

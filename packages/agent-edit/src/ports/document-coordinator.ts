@@ -1,6 +1,22 @@
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
 
+/** The helper's authority base, independent of the generations its staged writes name. */
+export interface StagedHelperCut {
+  generation: number;
+  state: Uint8Array;
+}
+
+export type StagedWriteRejectionReason = "discard" | "inverse" | "integration";
+
+export interface StagedWriteReplayResult {
+  rejectedWrites?: readonly { writeId: string; reason: StagedWriteRejectionReason }[];
+  keptEntries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
+  helperState: Uint8Array;
+  helperCut: StagedHelperCut;
+  beforeState: Uint8Array;
+}
+
 export class DocumentNotFoundError extends Error {
   readonly docId: string;
 
@@ -20,6 +36,18 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
  * Mutations through other transports require the host's separate concurrency fence.
  */
 export interface DocumentCoordinator {
+  /** Rebuild/replay staged writes under the host's existing generation lock.
+   * The host admits only whole logical writes and returns an isolated accepted replay result.
+   * commit=true journals survivors in the ambient response transaction.
+   */
+  withStagedWrites?(input: {
+    docId: string;
+    sourceDoc: Y.Doc;
+    helperCut: StagedHelperCut;
+    entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
+    commit: boolean;
+  }): Promise<StagedWriteReplayResult>;
+
   /** Immutable host generation bound to this canonical document, when supported. */
   documentAuthority?(doc: Y.Doc): import("./update-journal.js").JournalAuthority;
   /**
@@ -47,6 +75,7 @@ export interface DocumentCoordinator {
     afterJournalId?: number;
     liveJournalSeq?: number;
     attemptId?: string;
+    reportingCut?: Uint8Array;
   }): Promise<ConcurrentUpdate[]>;
 
   /**

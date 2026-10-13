@@ -84,6 +84,8 @@ export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" 
 export type ProjectTabsSlice = {
   tabs: ContextTab[];
   selectedTabIdByWork: Record<string, string>;
+  /** Transient review selection; durable selections retain document identity. */
+  selectedTabInstanceIdByWork?: Record<string, string>;
 };
 
 /**
@@ -102,6 +104,8 @@ export type EditorTabCandidate =
       scheme: ProjectContextTreeScheme;
       workId?: string | null;
       rootThreadId?: string | null;
+      draftOnly?: boolean;
+      reviewWorkId?: string;
     };
 
 /**
@@ -111,6 +115,7 @@ export type EditorTabCandidate =
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
+  if (tab.draftOnly && tab.reviewWorkId !== workId) return false;
   if (!isEditorScheme(tab.scheme)) return false;
   if (tab.rootThreadId) return true;
   return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;
@@ -122,4 +127,52 @@ export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boo
  */
 export function isEditorContextTab(tab: ContextTab): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
+}
+
+/** A review draft's semantic address, separate from its mounted instance fence. */
+export type ReviewDraftTabIdentity = {
+  documentId: string;
+  reviewWorkId: string;
+  reviewDraftId: string;
+};
+
+export function matchesReviewDraft(tab: ContextTab, identity: ReviewDraftTabIdentity): boolean {
+  return (
+    tab.kind !== "new" &&
+    Boolean(tab.draftOnly) &&
+    tab.documentId === identity.documentId &&
+    tab.reviewWorkId === identity.reviewWorkId &&
+    tab.reviewDraftId === identity.reviewDraftId
+  );
+}
+
+/** Capture the mounted tab before asynchronous navigation or metadata work. */
+export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): boolean {
+  return (
+    Boolean(addressed.tabInstanceId) &&
+    tab.tabInstanceId === addressed.tabInstanceId &&
+    tab.documentId === addressed.documentId &&
+    (addressed.kind === "new" ||
+      !addressed.draftOnly ||
+      (tab.kind !== "new" &&
+        matchesReviewDraft(tab, {
+          documentId: addressed.documentId,
+          reviewWorkId: addressed.reviewWorkId ?? "",
+          reviewDraftId: addressed.reviewDraftId ?? "",
+        }) &&
+        tab.tabInstanceToken === addressed.tabInstanceToken))
+  );
+}
+
+/** One Work's strip: its own overlays shadow only that Work's durable document. */
+export function editorTabsForWork(
+  tabs: readonly ContextTab[],
+  workId: string | null,
+): ContextTab[] {
+  const overlays = new Set(
+    tabs.filter((tab) => tab.draftOnly && isEditorTab(tab, workId)).map((tab) => tab.documentId),
+  );
+  return tabs.filter(
+    (tab) => isEditorTab(tab, workId) && (tab.draftOnly || !overlays.has(tab.documentId)),
+  );
 }

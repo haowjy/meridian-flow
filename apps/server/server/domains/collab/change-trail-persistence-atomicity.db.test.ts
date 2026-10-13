@@ -71,7 +71,6 @@ describe("change trail (postgres)", () => {
       schema.changeTrailDocumentDetails,
       schema.changeTrailShells,
       schema.pendingNotices,
-      schema.agentEditMutations,
       schema.branchWriteJournal,
       schema.pushLineage,
       schema.documentBranches,
