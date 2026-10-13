@@ -218,16 +218,10 @@ async function followToOutcome(
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendFields["interrupt"];
-  // The shared reducer follows the same events the log prints, from the state at admission.
-  // Without a snapshot it still builds this send's turn from its own events.
+  // The shared reducer follows the same events the log prints, from admission's
+  // cursor. There is deliberately no snapshot read here: this send's turns are
+  // built from their own events, and a read would sit outside the deadline.
   const reduced = new ReducedThread(threadId);
-  try {
-    reduced.hydrate(
-      await session.request<ThreadSnapshotResponse>("GET", apiThreadSnapshotPath(threadId)),
-    );
-  } catch {
-    // Events alone still build this send's turn; the final comparison reports any gap.
-  }
   const transport = createThreadClient(session);
   const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
   try {

@@ -67,8 +67,11 @@ describe("thread", () => {
   });
 
   it("send --json streams NDJSON ending in the result envelope, with its live view against the stored reply", async () => {
+    const readsBefore = stack.snapshotReads();
     const result = await mf(["thread", "send", THREAD_ID, "hi again", "--json"]);
     expect(result.code).toBe(EXIT.ok);
+    // Only the confirming snapshot: nothing outside the send's deadline.
+    expect(stack.snapshotReads() - readsBefore).toBe(1);
     const lines = result.stdout
       .trim()
       .split("\n")
