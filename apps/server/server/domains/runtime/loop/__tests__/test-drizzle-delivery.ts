@@ -47,7 +47,10 @@ export function createTestDrizzleDelivery(
 /** The repair lane over a production delivery that shares its deps, as composition wires them. */
 export function createTestOrphanRepair(
   db: Database,
-  deps: Omit<Parameters<typeof createOrphanReportRepair>[0], "settleStaleExecution"> & {
+  {
+    publishStatus,
+    ...deps
+  }: Omit<Parameters<typeof createOrphanReportRepair>[0], "settleStaleExecution"> & {
     publishStatus?(threadId: ThreadId): Promise<void>;
   },
 ) {
@@ -56,7 +59,7 @@ export function createTestOrphanRepair(
     eventWriter: deps.eventWriter,
     runClaim: deps.authority,
     ...(deps.toolRegistry ? { toolRegistry: deps.toolRegistry } : {}),
-    ...(deps.publishStatus ? { publishStatus: deps.publishStatus } : {}),
+    ...(publishStatus ? { publishStatus } : {}),
     async publishFinalizedReports(reports) {
       for (const report of reports)
         await deps.publisher.publish(report.childThreadId, report.executionTurnId);
