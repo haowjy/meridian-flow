@@ -325,6 +325,8 @@ it.each([
       reason,
       idle: true,
       turns: [{ turnId: "A", status: "complete" }],
+      // A replay gap leaves nothing fair to compare.
+      ...(gap ? { liveView: "not_observed" } : {}),
     });
   } finally {
     await stack.close();

@@ -30,12 +30,22 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     its turns (`transcript.ts` and `block-timing.ts` are renderers over `Turn[]`).
     `send` and `tail --until-idle` follow with a hydrated store and compare each
     followed turn's reduced status and final text with the confirming snapshot's;
-    the result carries `liveView: "matches" | "differs"` (and a compact `liveDiff`
-    when it differs), absent when nothing was followed. A difference never changes
-    the claim or exit code, since the claim is about the server; it means the app's
-    live view would have shown something other than what the server stored. The
-    claims themselves (`status`, `finalText`, outcome) still come from the
-    confirming snapshot.
+    the result carries `liveView: "matches" | "differs" | "not_observed"` (and a
+    compact `liveDiff` when it differs), absent when nothing was followed.
+    `not_observed` means the follow had a replay gap, or a compared turn's events
+    were not seen from its start. `liveView` compares this CLI follower's reduced
+    status and final text with the stored turn. It is not a certificate of any
+    browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI
+    and the visible-turn policy, and the app reconciles to the server at turn end.
+    `differs` is a lead to investigate, `matches` does not prove the screen was
+    right, and it never changes the claim or exit code. The owner ruled (TL-MF-20)
+    that once the chat session's sync is shared, a live disagreement will fail
+    with exit 6; that is not true yet. The claims themselves (`status`,
+    `finalText`, outcome) still come from the confirming snapshot. `send` reads no
+    snapshot before its deadline: it follows from the admission's `resumeAfterSeq`
+    and builds its turn from its own events. `tail --until-idle` hydrates a
+    snapshot and follows from that snapshot's `resumeAfterSeq`; `nextSeq` is only
+    snapshot freshness and never filters events.
   - **The event log is a log.** `events-map.ts` (`RunEventMapper`) folds events into
     the dotted lines `thread events`, `send` and `tail` print, including both
     `tool.completed` and `tool.settled`. It decides when a command looks (stop

@@ -51,8 +51,9 @@ reduce chat the same way; neither keeps its own interpretation of events.
   sequence (sorted, identical writes are no-ops) and status patching. The app's
   Zustand adapter and `InMemoryTurnStore` both call it. `InMemoryTurnStore` adds
   `hydrate(threadId, turns, nextSeq)` (rejects a snapshot older than the accepted
-  floor, like `acceptsThreadSnapshot`) and `acceptEventSeq` (false for an event the
-  floor already covers).
+  floor, like `acceptsThreadSnapshot`). The floor is snapshot freshness only; it
+  never filters events. Replay coverage is the caller's subscription cursor
+  (`liveState.resumeAfterSeq`, or the admission's for a send).
 - **Parity rule.** `apps/app/.../turn-store-parity.test.ts` runs one fixture
   (`test-support/turn-events.ts`) through the app store and `InMemoryTurnStore` and
   requires equal turns. A new event family goes into that fixture; a store change

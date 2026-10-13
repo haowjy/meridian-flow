@@ -51,8 +51,8 @@ export type SendFields = {
   finalText: string | null;
   error: string | null;
   interrupt?: { turnId: string; interruptId: string };
-  /** Whether the reduced events agree with the confirming snapshot; absent when nothing was followed. */
-  liveView?: "matches" | "differs";
+  /** This CLI follower's reduced status and text against the stored turn (`reduced-thread.ts`); absent when nothing was followed. */
+  liveView?: "matches" | "differs" | "not_observed";
   liveDiff?: LiveDiff[];
 };
 
@@ -217,6 +217,7 @@ async function followToOutcome(
   const { threadId } = input;
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
+  let truncated = false;
   let interrupt: SendFields["interrupt"];
   // The shared reducer follows the same events the log prints, from admission's
   // cursor. There is deliberately no snapshot read here: this send's turns are
@@ -249,6 +250,7 @@ async function followToOutcome(
         },
       });
       lastSeq = followed.lastSeq;
+      truncated ||= followed.truncated;
       if (followed.stoppedBy?.type !== "turn.failed") break;
 
       // A previous run can fail while this send's user turn is still queued.
@@ -294,7 +296,7 @@ async function followToOutcome(
     apiThreadSnapshotPath(threadId),
   );
   const turn = snapshot.turns.find((candidate) => candidate.id === ourTurn);
-  const liveView = reduced.compare(snapshot, ourTurn ? [ourTurn] : []);
+  const liveView = reduced.compare(snapshot, ourTurn ? [ourTurn] : [], truncated);
   const status: SendFields["status"] = interrupt
     ? "waiting_interrupt"
     : (turn?.status ?? "unknown");

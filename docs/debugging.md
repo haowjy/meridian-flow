@@ -84,14 +84,23 @@ at its final snapshot; it does not attribute replies to messages.
 - Content comes from the app's own event processing. `thread view` hydrates the
   snapshot into the shared `@meridian/thread-client` turn store and prints its
   turns. `send` and `tail --until-idle` reduce every followed event through the
-  same reducer the browser runs, then compare the followed turns' status and
-  final text with the confirming snapshot. The result gains `liveView`:
-  `matches`, or `differs` with a compact `liveDiff` of `{ turnId, field, live,
-  server }` rows (text mode prints one line). It is absent when nothing was
-  followed. A difference never changes the outcome or exit code (the claim is the
-  server's stored state); it means the chat would have displayed something else
-  while the run streamed, which is a bug to chase. `thread events` stays an event
-  log and prints both `tool.completed` and `tool.settled`.
+  same shared reducer, then compare this CLI follower's reduced status and final
+  text for the followed turns with the confirming snapshot. The result gains
+  `liveView`: `matches`, `differs` with a compact `liveDiff` of `{ turnId, field,
+  live, server }` rows (text mode prints one line), or `not_observed` when the
+  follow had a replay gap or a compared turn's events were not seen from its
+  start. It is absent when nothing was followed.
+  - It is not a certificate of any browser screen. It leaves out tools,
+    reasoning, interrupts, the optimistic UI and the visible-turn policy, and the
+    app reconciles to the server at turn end.
+  - `differs` is a lead to investigate, and `matches` does not prove the screen
+    was right. Neither changes the outcome or exit code (the claim is the
+    server's stored state).
+  - The owner ruled (TL-MF-20) that once the chat session's sync is shared, a
+    live disagreement will fail with exit 6. That is not true yet.
+
+  `thread events` stays an event log and prints both `tool.completed` and
+  `tool.settled`.
 - Compact text by default. `--json` prints one object, or NDJSON for streams.
   Every live claim (`send`, `tail --until-idle`, `respond`, `cancel`, and each seed send)
   and `events` ends in a `result` envelope. Seed embeds its sends' envelopes in
