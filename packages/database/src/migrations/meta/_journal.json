@@ -302,6 +302,13 @@
       "when": 1791909132896,
       "tag": "0042_pretty_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791915415119,
+      "tag": "0043_mighty_paper_doll",
+      "breakpoints": true
     }
   ]
 }

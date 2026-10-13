@@ -707,7 +707,7 @@ checkpoint plus every later row of the same generation".
   <tr><th>Table</th><th>Holds</th></tr>
   <tr><td><code>document_yjs_updates</code></td><td>One row per admitted update: bytes, authority ID, generation, admission sequence, batch ordinal, origin (<code>human</code>, <code>agent</code>, <code>system</code>, <code>reconcile</code>), actor user or turn, authoring response.</td></tr>
   <tr><td><code>document_yjs_checkpoints</code></td><td>Full encoded state at <code>up_to_seq</code>, its authority generation, and an attribution manifest that freezes first-birth attribution so compaction cannot lose it.</td></tr>
-  <tr><td><code>document_yjs_heads</code></td><td>The authority head, plus the schema stamp and latest checkpoint and state vector.</td></tr>
+  <tr><td><code>document_yjs_heads</code></td><td>The authority head, plus the schema stamp, latest checkpoint and state vector, and <code>retired_through_seq</code>: the highest row compaction has deleted in this generation.</td></tr>
   <tr><td><code>document_edits</code>, <code>document_edit_parts</code></td><td>Immutable edit identity and part bytes, with placement on each part; retained independently of journal compaction.</td></tr>
 </table>
 </div>
@@ -725,17 +725,19 @@ without a row.
     initialize-only; a later attempt on a document with any admission or
     checkpoint is a successful no-op. <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>createServerDocumentLifecycle</code>, <code>domain/markdown-document.ts</code> <code>seedFromMarkdown</code></span></li>
   <li><strong>Room store.</strong> Hocuspocus <code>onStoreDocument</code>
-    snapshots the room and the latest row ID, then writes the checkpoint after
-    the caller's transaction commits (dropped on rollback or when the
-    generation was retired), one queued write per document, newest wins. A
+    queues the room's authority binding. After the caller's transaction commits,
+    the worker captures a durable cut and writes it (dropped on rollback or when
+    the generation was retired), one queued request per document, newest wins. A
     checkpoint at a cut no newer than the existing one is skipped.
-    <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>adapters/drizzle-journal.ts</code> <code>checkpoint</code></span></li>
+    <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>adapters/drizzle-journal.ts</code> <code>captureCheckpoint</code> and <code>storeCheckpoint</code></span></li>
   <li><strong>Explicit.</strong> <code>CollabDomain.checkpoint(documentId, reason)</code>.
     <span class="ref"><code>checkpoints.ts</code></span></li>
   <li><strong>Compaction.</strong> <code>journal.compact(docId, before)</code>
     folds the contiguous prefix of current-generation rows older than
-    <code>before</code> into a <code>compact</code> checkpoint, deletes those rows
-    only; immutable forward edit parts retain inverse authority.
+    <code>before</code> into a <code>compact</code> checkpoint (or folds nothing
+    when an ordinary checkpoint already covers them), deletes those rows only,
+    and raises <code>retired_through_seq</code> in the same transaction.
+    Immutable forward edit parts retain inverse authority.
     It is implemented and tested, but no production scheduler calls it on this
     checkout, so live rows are never deleted.
     <span class="ref"><code>adapters/drizzle-journal.ts</code> <code>compact</code></span></li>
@@ -744,8 +746,18 @@ without a row.
 The rule for every checkpoint writer: it may under-claim but must never
 over-claim. A row at or below <code>up_to_seq</code> is never replayed again, so
 if the state lacked it the row is lost; a row above it replays harmlessly on
-top. That is why the writers read <code>up_to_seq</code> before encoding the
-state. <span class="ref"><code>hocuspocus-persistence.ts</code> <code>storeHocuspocusDocument</code>, <code>checkpoints.ts</code> <code>checkpoint</code></span>
+top. So no writer encodes the room. Seed, room and explicit writers all persist an
+opaque <code>CapturedCheckpointCut</code> that only the journal adapters mint.
+Under the document mutation lock, <code>journal.captureCheckpoint</code> records
+only references: the current-generation base checkpoint and the last committed
+row, including admissions Hocuspocus has not yet applied to the room. The lock is
+released before any bytes are read. Persistence then replays base plus suffix
+outside the lock, and under its own lock rechecks the generation and that
+compaction has not retired the suffix. A stale cut is dropped (an explicit
+checkpoint returns <code>stale_generation</code>). A cut whose suffix compaction
+retired fails the write: the room worker emits <code>checkpoint.failed</code>,
+and the next store captures afresh. Unresolved Yjs dependencies refuse the cut.
+<span class="ref"><code>domain/checkpoint-cut.ts</code>, <code>adapters/drizzle-checkpoint-capture.ts</code>, <code>adapters/drizzle-journal.ts</code> <code>storeCheckpoint</code>, <code>checkpoints.ts</code> <code>checkpoint</code></span>
 </p>
 
 <figure aria-label="Read and reconstruct path">

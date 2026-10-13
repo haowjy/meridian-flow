@@ -1366,17 +1366,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     return liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       let before = Y.encodeStateVector(doc);
       replaceMarkdown(doc, "Restored base.");
-      const baseSeq = await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+      await testJournal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
         origin: `agent:${TURN_ID}`,
         actorTurnId: TURN_ID,
         seq: 0,
       });
-      await persistence.journal.checkpoint(
-        ALPHA_ID,
-        Y.encodeStateAsUpdate(doc),
-        baseSeq,
-        documentAuthority(doc),
-      );
+      const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, documentAuthority(doc));
+      if (!cut) throw new Error("Replacement probe checkpoint cut is unavailable");
+      await persistence.journal.storeCheckpoint(cut);
       const [checkpoint] = await db
         .select({ id: schema.documentYjsCheckpoints.id })
         .from(schema.documentYjsCheckpoints)
@@ -1618,22 +1615,13 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       initialMarkdown: restored,
       carriedMarkdown: restored,
     });
-    const { state, upToSeq, authorityHead } = await liveCoordinator.withDocument(
-      ALPHA_ID,
-      async (doc) => {
-        const authorityHead = documentAuthority(doc);
-        const upToSeq = await persistence.store.latestUpdateSeq(ALPHA_ID);
-        return { state: Y.encodeStateAsUpdate(doc), upToSeq, authorityHead };
-      },
+    const authorityHead = await liveCoordinator.withDocument(ALPHA_ID, async (doc) =>
+      documentAuthority(doc),
     );
+    const cut = await persistence.journal.captureCheckpoint(ALPHA_ID, authorityHead);
+    if (!cut) throw new Error("Restoration checkpoint cut is unavailable");
     const checkpointId = Number(
-      await persistence.store.createCheckpoint(
-        ALPHA_ID,
-        state,
-        "oracle-explicit-restoration",
-        upToSeq,
-        authorityHead,
-      ),
+      await persistence.store.createCheckpoint(cut, "oracle-explicit-restoration"),
     );
     const replaced = await replaceDocumentAuthorityHeadGeneration(db, {
       documentId: ALPHA_ID,

@@ -81,7 +81,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       async seedInitialDocument(documentId, state) {
         const snapshot = await journal.read(documentId);
         if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.checkpoint(documentId, state, 0);
+        await journal.seedInitialDocument(documentId, state);
         return true;
       },
     },
@@ -109,7 +109,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     journal,
     hocuspocus: hocuspocusBinding.current,
     metaForOrigin,
-    latestUpdateSeq: store.latestUpdateSeq,
     emitAgentEditInvariantViolation() {},
   });
   const authorityHeads = createInMemoryAuthorityHeads(journal);
@@ -131,7 +130,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const checkpoints = createCheckpointService({
     coordinator,
     store,
-    latestUpdateSeq: store.latestUpdateSeq,
+    journal: journal,
     markdownDocuments: runtime.markdownDocuments,
   });
 
@@ -346,8 +345,7 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
 
 function inMemoryStore(journal: InMemoryJournal) {
   return {
-    createCheckpoint: (docId: string, state: Uint8Array, reason: string, upToSeq: number) =>
-      journal.createCheckpoint(docId, state, reason, upToSeq),
+    createCheckpoint: journal.createCheckpoint.bind(journal),
     getCheckpoint: (id: string) => journal.getCheckpoint(id),
     listCheckpoints: (docId: string) => journal.listCheckpoints(docId),
     latestUpdate: (docId: string) => journal.latestUpdate(docId),

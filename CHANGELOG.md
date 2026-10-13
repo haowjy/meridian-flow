@@ -177,6 +177,8 @@
 
 ### Fixed
 
+- Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
+
 - Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
 
 - After a server restart interrupts a reply, the chat returns to idle when recovery finishes and accepts your next message without waiting.
