@@ -29,12 +29,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { branchWriteJournal, documentBranches, documentYjsUpdates, documents, modelResponses } =
-      await import("@meridian/database/schema");
+    const {
+      branchWriteJournal,
+      documentBranches,
+      documentMarkdownProjections,
+      documentYjsUpdates,
+      documents,
+      modelResponses,
+    } = await import("@meridian/database/schema");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
-      createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
     afterEach(dispose);
 
     beforeEach(reset);
@@ -64,6 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheReason: "facts_unavailable",
       });
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
@@ -99,10 +105,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ok: true,
         });
         const [row] = await db
-          .select()
+          .select({
+            sizeBytes: documents.sizeBytes,
+            markdown: documentMarkdownProjections.markdown,
+          })
           .from(documents)
+          .leftJoin(
+            documentMarkdownProjections,
+            eq(documentMarkdownProjections.documentId, documents.id),
+          )
           .where(eq(documents.id, created.value.documentId));
-        expect(row?.markdownProjection).toBe("Current café.\n");
+        expect(row?.markdown).toBe("Current café.\n");
         expect(row?.sizeBytes).toBe(Buffer.byteLength("Current café.\n", "utf8"));
       } finally {
         await collab.documentDerivations.stop();
@@ -442,10 +455,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(branchWriteJournal.id);
       expect(rows).toHaveLength(2);
       expect(rows[0]).toEqual(expect.objectContaining({ status: "active" }));
-      const pending = await collab.draftReview.preview({
+      const item = await collab.draftReview.resolveItemByDocument({
         workId: WORK_ID as never,
         documentId: DOC_ID as never,
-        draftId: await currentDraftId(collab, DOC_ID as never as string),
+      });
+      if (!item) throw new Error("Missing review item");
+      const pending = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        itemKey: item.itemKey,
       });
       expect(pending.status).toBe("active");
       expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");

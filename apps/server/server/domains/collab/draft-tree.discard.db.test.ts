@@ -466,6 +466,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           documentId: chapter,
         })
       )?.draftBranchId;
+      if (!branchId) throw new Error("No draft branch for the chapter");
       await db
         .update(documentBranches)
         .set({ state: Buffer.from([255, 255, 255, 255]) })

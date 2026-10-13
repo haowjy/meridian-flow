@@ -26,7 +26,7 @@ function createHarness() {
   const list = vi.fn(async (): Promise<DraftReviewItem[]> => []);
   const applyItems = vi.fn<DraftPublication["applyItems"]>(async (): Promise<ApplyResult> => {
     events.push("apply");
-    return { status: "completed", draftId: DRAFT_ID, draftClosed: true, items: [] };
+    return { status: "completed", draftId: DRAFT_ID, items: [] };
   });
   const policy = createWorkPushPolicy({
     workPushPolicyStore,
@@ -96,6 +96,7 @@ function pendingItems(count: number): DraftReviewItem[] {
       itemKey: `${DRAFT_ID}:${documentId}`,
       documentId,
       draftBranchId: `branch-${index}`,
+      branchGeneration: 1,
       origin: "edited",
       isNew: false,
       binary: false,
@@ -106,6 +107,9 @@ function pendingItems(count: number): DraftReviewItem[] {
       deletedLive: false,
       tokens: { locationToken: "1", liveTextToken: null, branchGenerationToken: "1" },
       pendingRows: 1,
+      wholeItem: false,
+      settling: false,
+      actorThreadIds: [],
       lastActorTurnId: null,
       updatedAt: new Date(0),
     };
