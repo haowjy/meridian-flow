@@ -71,7 +71,7 @@
    A dotted outline at reading contrast sets it apart from a published target
    (filled) and from nothing (dashed, muted). */
 [data-link-chip="draft"] {
-  border-color: var(--color-border);
+  border-color: var(--color-muted-foreground);
   border-style: dotted;
 }
 
