@@ -118,6 +118,10 @@ reply or stop before the reply that answers yours: check run outcomes against
 
 ## Build and test
 
+**Keep tests minimal and behavioral.** Each retained test must protect a distinct,
+consequential risk. Delete duplicates and scaffolding; prefer outcomes over log
+wording or internal-step assertions. Coverage and test counts are not goals.
+
 `pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
 `pnpm test:all` runs unit and managed DB tests together. Keep automated tests
 below 2,000 expanded cases (including `it.each` rows and browser-device
