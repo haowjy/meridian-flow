@@ -544,10 +544,19 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
   });
 
-  it.each([
-    { name: "last use deletes the branch rows", other: false },
-    { name: "another Work's draft still uses the create, so its rows close", other: true },
-  ])("23b: Discard of a hidden create between a write's capture and its pull names the document ($name)", async ({
+  // The last-use Discard lands at each phase boundary of the peer pull, not only before its leases.
+  const pullPhases = [
+    "after the first ensure",
+    "before the second ensure",
+    "before the leases",
+  ] as const;
+  it.each(
+    pullPhases.flatMap((phase) => [
+      { phase, other: false, name: "last use deletes the branch rows" },
+      { phase, other: true, name: "another Work's draft still uses the create, so its rows close" },
+    ]),
+  )("23b: Discard of a hidden create $phase of a write's pull names the document ($name)", async ({
+    phase,
     other,
   }) => {
     const { second, review, fixture, core } = await createdThenStaged();
@@ -556,12 +565,23 @@ describe("reply save refusals (postgres)", () => {
       await shareHiddenCreate(fixture);
     }
     const withLeases = fixture.branchCoordinator.withLeases;
+    const ensure = fixture.branchStore.ensureThreadPeerBranch;
     let once = true;
+    let ensures = 0;
+    const discardOnce = async () => {
+      if (!once) return;
+      once = false;
+      await review.discardItem(NEW_ID);
+    };
+    fixture.branchStore.ensureThreadPeerBranch = (async (...args: Parameters<typeof ensure>) => {
+      ensures += 1;
+      if (phase === "before the second ensure" && ensures === 2) await discardOnce();
+      const peer = await ensure.apply(fixture.branchStore, args);
+      if (phase === "after the first ensure" && ensures === 1) await discardOnce();
+      return peer;
+    }) as typeof ensure;
     fixture.branchCoordinator.withLeases = (async (...args: Parameters<typeof withLeases>) => {
-      if (once && args[0].length === 2) {
-        once = false;
-        await review.discardItem(NEW_ID);
-      }
+      if (phase === "before the leases" && args[0].length === 2) await discardOnce();
       return withLeases.apply(fixture.branchCoordinator, args);
     }) as typeof withLeases;
     let late: Awaited<ReturnType<typeof core.write>>;
@@ -579,9 +599,13 @@ describe("reply save refusals (postgres)", () => {
       );
     } finally {
       fixture.branchCoordinator.withLeases = withLeases;
+      fixture.branchStore.ensureThreadPeerBranch = ensure;
     }
-    expect(late).toMatchObject({ isError: true, status: "invalid_write" });
-    expect(JSON.stringify(late.result)).toContain(DOC);
+    // An early Discard may let the write run against a fresh peer and fail as a missing
+    // find, but the reply still names the discarded document; none crash.
+    expect(late.isError).toBe(true);
+    if (phase === "before the leases") expect(late.status).toBe("invalid_write");
+    expect(JSON.stringify(late.result)).toContain("the user discarded this new document");
     expect(refused(await harness.commit(second))).toEqual([[NEW_ID, DOC]]);
   });
 
