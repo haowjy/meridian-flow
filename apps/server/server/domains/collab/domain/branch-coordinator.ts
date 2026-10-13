@@ -119,6 +119,14 @@ export class BranchCasConflictError extends Error {
   }
 }
 
+/** A load named a branch whose rows are gone (a last-use Discard deleted them). */
+export class BranchMissingError extends Error {
+  constructor(readonly branchId: string) {
+    super(`Branch ${branchId} does not exist`);
+    this.name = "BranchMissingError";
+  }
+}
+
 type CachedBranchDoc = {
   generation: number;
   state: Uint8Array;
@@ -269,7 +277,7 @@ export function createBranchCoordinator(input: {
 
   async function loadSnapshot(branchId: string): Promise<BranchSnapshot> {
     const snapshot = await input.store.getBranch(branchId);
-    if (!snapshot) throw new Error(`Branch ${branchId} does not exist`);
+    if (!snapshot) throw new BranchMissingError(branchId);
     assertReadableBranch(snapshot);
     return snapshot;
   }
