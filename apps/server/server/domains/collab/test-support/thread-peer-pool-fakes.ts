@@ -7,6 +7,8 @@ import type {
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { vi } from "vitest";
+import type { BranchSnapshot } from "../domain/branch-coordinator.js";
+import type { Draft } from "../domain/ports/draft-store.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -101,12 +103,13 @@ export function createFakeDrafts() {
       kind: "draft" as const,
       draftId: FAKE_DRAFT_ID,
     })),
-    ensureActiveForWrite: vi.fn(async (_input: unknown) => ({ id: FAKE_DRAFT_ID })),
-    shareActive: vi.fn(async (_draftId: DraftId) => ({ id: FAKE_DRAFT_ID })),
+    ensureActiveForWrite: vi.fn(async (_input: unknown) => ({ id: FAKE_DRAFT_ID }) as Draft),
+    shareActive: vi.fn(async (_draftId: DraftId) => ({ id: FAKE_DRAFT_ID }) as Draft | null),
   };
 }
 
 type FakeBranch = {
+  generation?: number;
   status: "active" | "closed";
   kind: "thread_peer" | "work_draft";
   draftId: DraftId;
@@ -127,8 +130,11 @@ export function createFakeBranchTable(input: { documentId: string; threadId: str
       const row = overrides.get(branchId) ?? defaultRow(branchId);
       if (row) overrides.set(branchId, { ...row, status: "closed" });
     },
-    getBranch: vi.fn(async (branchId: string) =>
-      overrides.has(branchId) ? overrides.get(branchId) : defaultRow(branchId),
+    getBranch: vi.fn(
+      async (branchId: string) =>
+        (overrides.has(branchId)
+          ? overrides.get(branchId)
+          : defaultRow(branchId)) as BranchSnapshot | null,
     ),
   };
   function defaultRow(branchId: string): FakeBranch | null {

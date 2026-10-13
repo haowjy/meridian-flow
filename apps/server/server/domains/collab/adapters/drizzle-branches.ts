@@ -4,9 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   captureEditParts,
   type DocumentLifecycle,
-  effectiveYjsUpdate,
   type UpdateJournal,
-  yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
 import type { DraftId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
@@ -28,6 +26,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   currentDrizzleDb,
@@ -35,7 +34,6 @@ import {
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import {
   branchDraftWork,
@@ -833,15 +831,6 @@ function materializeBranch(row: BranchSnapshot, threadId: ThreadId): Y.Doc {
       threadId,
       cause,
     });
-  }
-}
-
-function updateChangesState(state: Uint8Array, update: Uint8Array): boolean {
-  const doc = yjsUpdateFromState(state);
-  try {
-    return Boolean(effectiveYjsUpdate(doc, update));
-  } finally {
-    doc.destroy();
   }
 }
 

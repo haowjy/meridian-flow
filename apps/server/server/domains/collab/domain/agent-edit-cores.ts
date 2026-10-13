@@ -1,10 +1,10 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type {
   AgentEditCore,
-  StagedWriteRejectionReason,
   DiscardedWriteReason,
   ReadCommand,
   ResponseCommitSuccessResult,
+  StagedWriteRejectionReason,
   WriteCommand,
   WriteContext,
   WriteOutcome,

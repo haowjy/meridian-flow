@@ -1,36 +1,20 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
-  type AgentEditCodecFactory,
   type AgentEditCore,
-  createAgentEditCore,
-  type DocumentCoordinator,
-  type DocumentEdits,
-  type DocumentLifecycle,
   modelResult,
   parseDocumentAddress,
   type ReadCommand,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
-  type SemanticProvenanceWriter,
   splitDocumentFile,
-  type UpdateJournal,
   type WriteCommand,
   type WriteContext,
   type WriteOutcome,
-  type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
-import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
-import { markReplyConfirmed, runWithEditGrants } from "../../file-policy/edit-confirmation.js";
-import type {
-  FileAccess,
-  FileAccessDenied,
-  FileDestination,
-  FileGrant,
-} from "../../file-policy/index.js";
+import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
+import type { FileAccess, FileDestination, FileGrant } from "../../file-policy/index.js";
 import {
   asThreadPeerAgentEditCore,
   type LiveAgentEditCore,
@@ -42,20 +26,6 @@ import {
   sameDestination,
   type ThreadPeerAgentEditCore,
 } from "./agent-edit-cores.js";
-import {
-  type BranchAgentEditDiagnostics,
-  type BranchConcurrentJournalWatermarks,
-  createBranchAgentEditCoordinator,
-  createBranchAgentEditJournal,
-  createBranchPendingJournalEntries,
-  type EnlistResponseParticipant,
-} from "./branch-agent-edit.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
-import type { BranchPullService } from "./branch-pulls.js";
-import type { BranchJournalReadStore } from "./branch-push-contracts.js";
-import { createScopedDocumentLinks } from "./document-links-port.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
-import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type {
   ResponseCommitParticipant,
   ResponseTransactionSettlement,
@@ -70,23 +40,8 @@ export type ResponseTransactionHooks = {
   ): Promise<T>;
 };
 
-type AgentEditObservability = Pick<
-  Parameters<typeof createAgentEditCore>[0],
-  | "onResponseLifecycleError"
-  | "onResponseClaimDiscarded"
-  | "onResponseCommitterTransition"
-  | "onIdempotencyHit"
-  | "onUnexpectedWriteError"
-  | "onLinkSpliceFallback"
->;
-
 import type { Drafts } from "./drafts.js";
-import {
-  pinStaged,
-  type ReplyDocument,
-  type ReplyRecord,
-  type ReplySaveFences,
-} from "./reply-save-fences.js";
+import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
 
 type PulledThreadPeer = {
   peerBranchId: string;
@@ -97,11 +52,6 @@ type PulledThreadPeer = {
   attributionBaseline: Uint8Array;
 };
 
-/**
- * One document's place in a reply: its grant, and with it its destination,
- * is pinned at its first write.
- */
-type PinnedDocument = ReplyDocument;
 type ResponseRecord = ReplyRecord;
 
 /**
@@ -376,10 +326,10 @@ export function createThreadPeerCorePool(input: {
     const routedContext = await routedTo(context, destination, pinned?.linkView ?? draftView);
     let entry = pinned;
     if (record && documentId && !pinned && !immediateInverse) {
-      entry = { core, grant, linkView: routedContext.linkView! };
+      entry = { core, grant, linkView: routedContext.linkView };
       record.documents.set(documentId, entry);
     }
-    let callContext = routedContext;
+    let callContext: WriteContext = routedContext;
     const call = async () => {
       if (!immediateInverse) callContext = await threadPeerContext(core, documentId, callContext);
       if (!immediateInverse) pinStaged(entry, callContext);
@@ -474,7 +424,7 @@ export function createThreadPeerCorePool(input: {
     context: WriteContext,
     destination: FileDestination,
     pinnedView?: LinkView,
-  ): Promise<WriteContext> {
+  ): Promise<WriteContext & { linkView: LinkView }> {
     const linkView =
       pinnedView ??
       (destination.kind === "live"

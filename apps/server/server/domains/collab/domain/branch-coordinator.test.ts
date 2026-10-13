@@ -9,12 +9,12 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
-import { BranchLeaseScopeError, createBranchCriticalSections } from "./branch-critical-sections.js";
 import {
   type BranchSnapshot,
   type BranchStore,
   createBranchCoordinator,
 } from "./branch-coordinator.js";
+import { BranchLeaseScopeError, createBranchCriticalSections } from "./branch-critical-sections.js";
 import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;

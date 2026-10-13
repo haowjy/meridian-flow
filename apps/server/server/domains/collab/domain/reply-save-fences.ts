@@ -6,9 +6,9 @@ import type {
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
-import type { FileAccess, FileGrant } from "../../file-policy/index.js";
-import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.js";
+import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
+import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
 import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
 import { collabHook } from "./collab-test-hooks.js";
