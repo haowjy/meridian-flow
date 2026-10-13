@@ -6,6 +6,7 @@
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
+import { groupDeliveryEvents } from "./delivery-groups";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
 import { placeStandIns } from "./retry-stand-ins";
 import {
@@ -21,6 +22,13 @@ import { projectWriterText, type WriterText } from "./writer";
 export type TranscriptViewInput = {
   /** Stored turns in order, local writer turns included. */
   turns: Turn[];
+  /**
+   * The seed card of a handoff whose destination the server hasn't created yet. It leads the
+   * transcript, ahead of stand-in placement. Today's stand-in producers never anchor to it:
+   * a Retry follows a stored turn or a reply, so placement never has to order a stand-in
+   * against this seed.
+   */
+  opening?: Turn | null;
   /** A fork's frozen prefix from its source, or omitted when none is known. */
   inherited?: InheritedTranscript | null;
   activity: {
@@ -37,7 +45,7 @@ export type TranscriptViewInput = {
 
 /** What comparisons use: the server's turn id, the row kind and the occurrence within the turn. */
 export type RowIdentity = {
-  /** Null for a local writer turn the server hasn't named. */
+  /** Null for a row the server hasn't stated: a local writer turn, the opening seed, or a stand-in with no stored turn behind it. */
   turnId: string | null;
   kind: TranscriptRow["kind"];
   occurrence: number;
@@ -47,11 +55,18 @@ export type ViewRow = TranscriptRow & {
   identity: RowIdentity;
   /** The React key. It is not identity: nothing compares render keys. */
   renderKey: string;
-  /** Subagent notifications and other deliveries that belong to this reply. */
-  deliveryEvents: readonly DeliveryEvent[];
+  /**
+   * Subagent notifications and other deliveries that belong to this reply, in order, grouped as
+   * drawn: contiguous completions are one group (one merged row), anything else stands alone.
+   */
+  deliveries: readonly (readonly DeliveryEvent[])[];
   /** The reply continues in a later row, so this one has no settled action row. */
   continuing: boolean;
-  /** Present on the last part of a reply: the parts that make it and their usage numbers. */
+  /**
+   * On every reply-shaped row (a reply, a custom-block system card): the parts that make its
+   * response and their usage numbers. A row outside a response group is its own single part.
+   * Null on writer messages and special rows.
+   */
   response: { parts: readonly Turn[]; stats: TurnStats } | null;
   /** An accepted writer turn the model hasn't read yet. */
   queued: boolean;
@@ -69,10 +84,26 @@ export type TranscriptView = {
   revealTurnByChildThreadId: ReadonlyMap<string, string>;
 };
 
-const NO_EVENTS: readonly DeliveryEvent[] = [];
+function groupsOf(events: readonly DeliveryEvent[] | undefined) {
+  return events ? groupDeliveryEvents(events) : NO_DELIVERIES;
+}
+
+function responseOf(parts: readonly Turn[]): NonNullable<ViewRow["response"]> {
+  return { parts, stats: turnStats(parts) };
+}
+
+const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
 
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
-  const turns = placeStandIns(input.turns, input.standIns ?? []);
+  const standIns = input.standIns ?? [];
+  const turns = placeStandIns(
+    input.opening ? [input.opening, ...input.turns] : input.turns,
+    standIns,
+  );
+  // Provenance is stated, never read from an id's shape: only the server's own turns are named.
+  const stored = new Set(input.turns.map((turn) => turn.id));
+  const unconfirmed = new Set(standIns.map((turn) => turn.id).filter((id) => !stored.has(id)));
+  if (input.opening) unconfirmed.add(input.opening.id);
   const model = buildTranscriptModel(
     turns,
     input.activity.awaitingSubagents,
@@ -96,14 +127,14 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
     return {
       ...row,
       identity: {
-        turnId: isOptimisticTurnId(turn.id) ? null : turn.id,
+        turnId: isOptimisticTurnId(turn.id) || unconfirmed.has(turn.id) ? null : turn.id,
         kind: row.kind,
         occurrence,
       },
       renderKey: turn.id,
-      deliveryEvents: model.deliveryEventsByAssistantTurnId.get(turn.id) ?? NO_EVENTS,
+      deliveries: groupsOf(model.deliveryEventsByAssistantTurnId.get(turn.id)),
       continuing: model.continuing[index] ?? false,
-      response: parts ? { parts, stats: turnStats(parts) } : null,
+      response: row.kind === "turn" && turn.role !== "user" ? responseOf(parts ?? [turn]) : null,
       queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
     };
   });

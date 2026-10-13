@@ -41,10 +41,6 @@ export function instructionsText(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
-export function isCompactionTurn(turn: Turn): boolean {
-  return turn.role === "compaction";
-}
-
 export function readCompactionFacts(turn: Turn): CompactionFacts {
   const metadata = record(turn.metadata);
   const controlMessageId = text(metadata?.controlMessageId);

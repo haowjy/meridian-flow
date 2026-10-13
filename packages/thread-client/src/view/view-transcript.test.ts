@@ -34,17 +34,44 @@ function turn(
   } as unknown as Turn;
 }
 
-it("keys a local turn by its id but names no server identity, and places a stand-in after its source", () => {
+it("keys every row but names a server identity only for turns the server stated, and gives every reply-shaped row a response", () => {
   const local = `${OPTIMISTIC_TURN_ID_PREFIX}1`;
+  const card = turn("c1", "system", "a1", {
+    blocks: [{ ...turn("c1", "system", null).blocks[0], blockType: "custom" } as Block],
+  });
   const view = viewTranscript({
-    turns: [turn("u1", "user", null), turn("a1", "assistant", "u1"), turn(local, "user", "a1")],
+    opening: turn("optimistic-seed:t", "system", null, {
+      blocks: [],
+      metadata: {
+        kind: "derivation_seed",
+        derivation: "handoff",
+        sourceThreadId: "s",
+        cutoffTurnId: "x",
+      },
+    }),
+    turns: [
+      turn("u1", "user", null),
+      turn("a1", "assistant", "u1"),
+      card,
+      turn(local, "user", "c1"),
+    ],
     activity: { awaitingSubagents: false },
-    standIns: [turn("a2", "assistant", "a1", { status: "pending", blocks: [] })],
+    standIns: [turn("a2", "assistant", "c1", { status: "pending", blocks: [] })],
     queued: new Set([local]),
   });
-  expect(view.rows.map((row) => row.renderKey)).toEqual(["u1", "a1", "a2", local]);
-  expect(view.rows.map((row) => row.identity.turnId)).toEqual(["u1", "a1", "a2", null]);
-  expect(view.rows.map((row) => row.queued)).toEqual([false, false, false, true]);
+  expect(view.rows.map((row) => row.renderKey)).toEqual([
+    "optimistic-seed:t",
+    "u1",
+    "a1",
+    "c1",
+    "a2",
+    local,
+  ]);
+  // The opening seed, a Retry stand-in and a local writer turn have no server identity.
+  expect(view.rows.map((row) => row.identity.turnId)).toEqual([null, "u1", "a1", "c1", null, null]);
+  expect(view.rows.map((row) => row.queued)).toEqual([false, false, false, false, false, true]);
   expect([...view.writer.keys()]).toEqual(["u1", local]);
   expect(view.items.get("a1")?.items.map((item) => item.kind)).toEqual(["text"]);
+  // A system card is its own single response part, so it keeps the settled action row.
+  expect(view.rows[3]?.response?.parts.map((part) => part.id)).toEqual(["c1"]);
 });
