@@ -647,18 +647,23 @@ msgstr "Apply"
 msgid "Apply all changes"
 msgstr "Apply all changes"
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Apply couldn't finish"
+msgstr "Apply couldn't finish"
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Apply draft"
 msgstr "Apply draft"
 
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "Applying"
-msgstr "Applying"
-
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Apply is finishing. You're still in Draft."
 msgstr "Apply is finishing. You're still in Draft."
+
+#: src/features/draft-review/ReviewCompletion.tsx
+msgid "Applying"
+msgstr "Applying"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Applying…"
@@ -887,7 +892,6 @@ msgstr "chart"
 #: src/features/chat/ChatView.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/ProjectView.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
 msgstr "Chat"
@@ -1302,6 +1306,10 @@ msgstr "Couldn't confirm whether this applied. Check what is left before you try
 #: src/features/chat/ReviewMessageText.tsx
 #~ msgid "Couldn't confirm whether this applied. It will update when you're back online."
 #~ msgstr "Couldn't confirm whether this applied. It will update when you're back online."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Couldn't confirm whether this discarded. Check what is left before you try again."
+msgstr "Couldn't confirm whether this discarded. Check what is left before you try again."
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "Couldn't confirm whether this was discarded. Check what is left before you try again."
@@ -4871,7 +4879,6 @@ msgstr "Withdraw compaction"
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/ProjectView.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work"

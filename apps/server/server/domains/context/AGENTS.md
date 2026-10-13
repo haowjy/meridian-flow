@@ -128,10 +128,9 @@ reader cannot reach answers `gone` with no location, because a ref is not a
 capability. A hidden document answers `inDraft` with the `draft` that names it
 and that draft's path. The route pins the holder (`holderDocumentId` wherever it
 now sits, else the one document at `baseUri`), only one the reader may name and
-read, so its own bindings answer its ahead refs first (`holderBound`), and returns
-`holderUri` when the holder moved. One it can't pin (unknown, ambiguous, or not
-the reader's) answers ahead refs without bindings and says `holderUnresolved`,
-with no holder location, never silently. Ref-less links keep the address resolver; previous locations
+read, and returns `holderUri` when the holder moved; the holder only spells
+relative links. An ahead ref stays a path until a document goes live at it, then
+binds once for every holder; there are no per-holder bindings. Ref-less links keep the address resolver; previous locations
 apply only when `baseUri` is null (chat).
 
 **A move writes nothing into any document.** Links name documents, so a rename
