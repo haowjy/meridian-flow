@@ -54,11 +54,23 @@ export type {
   ActorSession,
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
-export type { DocumentCoordinator, DocumentLockOptions } from "./ports/document-coordinator.js";
+export type {
+  DocumentCoordinator,
+  DocumentLockOptions,
+  StagedHelperCut,
+  StagedWriteRejectionReason,
+  StagedWriteReplayResult,
+} from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
+export type {
+  DocumentEditRequest,
+  DocumentEditResult,
+  DocumentEdits,
+  ModelInverseCommand,
+} from "./ports/document-edits.js";
 export type { DocumentLifecycle } from "./ports/document-lifecycle.js";
 export type {
   AheadMint,
@@ -84,23 +96,15 @@ export type {
   CompactionResult,
   JournalSnapshot,
   PersistedUpdate,
-  ReversalActor,
-  ReversalRecord,
-  ReversalStatus,
   UpdateMeta,
   UpdateOrigin,
 } from "./ports/types.js";
 export type {
-  ActiveWriteSummary,
   JournalAuthority,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
-  PersistRedoEntry,
-  PersistUndoResult,
-  ReversalStore,
   UpdateJournal,
-  WriteMutationRow,
 } from "./ports/update-journal.js";
 export { parseWriteHandle, writeHandle } from "./ports/update-journal.js";
 export type {
@@ -121,33 +125,46 @@ export type {
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
+export { isResponseLifecycleError } from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
-export type { ReversalNoticeFailedDetail, ReversalNoticePort } from "./tool/write-reversal.js";
-export { commandSelection } from "./tool/write-reversal-endpoints.js";
-export type { UndoAvailability } from "./undo/availability.js";
+export type {
+  CapturedPart,
+  ComputedInverse,
+  ComputedInverseEdit,
+  EditAlias,
+  EditEffect,
+  EditFrontier,
+  EditKind,
+  EditRange,
+  EditTarget,
+  InversePart,
+  InverseSelection,
+  PartClassification,
+  PartState,
+  PreparedEditRoots,
+} from "./undo/forward-inverse.js";
+export {
+  admitInverseReceipt,
+  captureEditFrontier,
+  captureEditParts,
+  classifyEditParts,
+  computeInverse,
+  inspectEditRoots,
+  prepareEditRoots,
+} from "./undo/forward-inverse.js";
 export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
 export {
   decodeUpdateForDependencies,
   deleteRanges,
   dependsOnRows,
-  hasDependentLaterRows,
+  laterDependencyClosure,
   rangeCovers,
+  rangesOverlap,
+  structDependencies,
   suppliedRanges,
 } from "./undo/journal-dependencies.js";
-export type {
-  PersistUndoWatermarkRecord,
-  PersistUndoWatermarkUpdate,
-} from "./undo/persist-undo-watermark.js";
-export {
-  hasLaterWriterUpdateAfterWatermark,
-  isLaterWriterUpdateAfterWatermark,
-  persistUndoPlanWatermark,
-} from "./undo/persist-undo-watermark.js";
-export type { ReconstructionOptions, UndoReconstructionResult } from "./undo/reconstruction.js";
-export { reconstructUndoUpdateFromSnapshot } from "./undo/reconstruction.js";
-export type { ReversalPlan, ReversalSelection } from "./undo/reversal-plan.js";
-export { planRedo, planUndo } from "./undo/reversal-plan.js";
+export { wordHunks } from "./word-hunks.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,

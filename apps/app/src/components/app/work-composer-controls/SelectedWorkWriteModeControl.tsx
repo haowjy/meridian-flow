@@ -9,11 +9,7 @@ import type {
 import { type AiWriteMode, isWorkArchived } from "@meridian/contracts/works";
 import { type RefObject, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
-import {
-  activeWorkDraftGroups,
-  useUpdateWorkWriteMode,
-  useWorkDrafts,
-} from "@/client/query/useWorkDrafts";
+import { useUpdateWorkWriteMode, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
@@ -60,7 +56,7 @@ export function useSelectedWorkWriteModeToolbarControl({
 }): ComposerToolbarControl {
   const update = useUpdateWorkWriteMode(projectId, work.id);
   const drafts = useWorkDrafts(projectId, work.id);
-  const groups = activeWorkDraftGroups(drafts.groups);
+  const files = drafts.files ?? [];
   const draftRef = useRef<HTMLButtonElement | null>(null);
   const directRef = useRef<HTMLButtonElement | null>(null);
   const applyRef = useRef<HTMLButtonElement | null>(null);
@@ -74,16 +70,16 @@ export function useSelectedWorkWriteModeToolbarControl({
     interaction.phase === "checking" ||
     interaction.phase === "submitting";
   const archived = isWorkArchived(work) || confirmation?.phase === "archivedMidway";
-  const loaded = drafts.groups !== null;
+  const loaded = drafts.files !== null;
   const requestAuto = async (
     choice: PendingChangesChoice | null,
     settle: (outcome: "close" | "stay") => void,
   ) => {
     if (requesting) return;
-    const confirming = confirmation !== null || groups.length > 0;
+    const confirming = confirmation !== null || files.length > 0;
     const confirm = (
       phase: ConfirmationPhase,
-      count = confirmation?.count ?? groups.length,
+      count = confirmation?.count ?? files.length,
     ): WriteModeInteraction => ({ workId: work.id, page: "confirmation", phase, count, choice });
     setInteraction(
       confirming
@@ -136,7 +132,7 @@ export function useSelectedWorkWriteModeToolbarControl({
     confirmation === null
       ? {
           pageId,
-          repairRevision: [value, loaded, choicesDisabled, groups.length].join(":"),
+          repairRevision: [value, loaded, choicesDisabled, files.length].join(":"),
           candidates: [
             ...(value === "draft" && loaded && !choicesDisabled
               ? [{ key: "selected:draft", ref: draftRef }]
@@ -172,7 +168,7 @@ export function useSelectedWorkWriteModeToolbarControl({
           disabled={choicesDisabled}
           failed={interaction.phase === "failed"}
           loaded={loaded}
-          pending={loaded ? groups.length : null}
+          pending={loaded ? files.length : null}
           draftRef={draftRef}
           directRef={directRef}
           onDraft={() => chooseDraft(context.terminalClose)}
