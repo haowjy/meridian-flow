@@ -156,6 +156,15 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
    and the switch is admitted before the message.
 5. Two tabs on one chat during a reply: switch in the typing tab. When the driving tab's answer
    retires the record, the other tab keeps the row and the chosen mode through the retirement.
-6. A refused first send (`**/threads` returns 4xx) with a switch queued behind it: Edit returns to
-   New chat with the message's draft and clears the switch.
+6. A refused first send with a switch queued behind it: abort the create route, send, switch,
+   then set the message record's `state` to `rejected` in `localStorage` (the route tool can't
+   return a 4xx). Edit returns to New chat with the message's draft and clears the switch.
 7. New chat: pick a mode in the new-chat composer and send. The chat starts in it.
+8. Two chats in one Work: switch A, then B, with A's snapshot held
+   (`agent-browser network route "**/snapshot*" --abort`, then remove the route): the
+   new-chat composer shows B's choice after A's divider arrives, because the Work's
+   default is refetched, never patched from a divider.
+9. Steer, then switch, during a reply: once the later reply ends, the earlier one
+   shows Copy and its actions (the divider ends continuation).
+10. Read the live region (`[role=status]`) through a queued switch, its apply and a
+    switch back: "Switch to … queued", then "Switched to …", then nothing for the switch back.

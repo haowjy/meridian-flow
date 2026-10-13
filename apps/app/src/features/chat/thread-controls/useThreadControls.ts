@@ -25,7 +25,7 @@ import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import type { JournalSwitch, SwitchAnswer } from "@/client/chat-submissions/owner";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { applyWriteModeSwitch } from "@/client/query/write-mode-cache";
+import { applyWriteModeAnswer } from "@/client/query/write-mode-cache";
 import { announce, announceError } from "@/client/stores";
 import { useTurnStop } from "../useTurnStop";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
@@ -38,6 +38,7 @@ import {
   type QueuedControl,
   switchesCancelledBy,
 } from "./thread-controls";
+import { useSwitchAnnouncements } from "./useSwitchAnnouncements";
 
 /** What the chat's submission journal offers the controls: its switches and their order. */
 export type SwitchJournal = {
@@ -71,15 +72,13 @@ export type ThreadControls = {
 export function useThreadControls(input: {
   threadId: string;
   projectId: string;
-  /** The chat's Work; null for No Work. */
-  workId: string | null;
   /** The chat's mode as the server last said it. */
   writeMode: AiWriteMode;
   pending: ThreadPendingInbox;
   answeredControlIds: ReadonlySet<string>;
   switches: SwitchJournal;
 }): ThreadControls {
-  const { threadId, projectId, workId, pending, answeredControlIds, switches } = input;
+  const { threadId, projectId, pending, answeredControlIds, switches } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
   localRef.current = local;
@@ -103,8 +102,8 @@ export function useThreadControls(input: {
   );
   const mergeInputRef = useRef(mergeInput);
   mergeInputRef.current = mergeInput;
-  const latest = useRef({ switches, projectId, workId });
-  latest.current = { switches, projectId, workId };
+  const latest = useRef({ switches, projectId });
+  latest.current = { switches, projectId };
 
   const { settle: settleWitnesses } = switches;
   useEffect(() => {
@@ -130,11 +129,11 @@ export function useThreadControls(input: {
         });
         // The switch applied: the mode is the server's now, before the divider arrives.
         if (response.turnId) {
-          applyWriteModeSwitch(queryClient, {
+          applyWriteModeAnswer(queryClient, {
             projectId: latest.current.projectId,
             threadId,
-            workId: latest.current.workId,
             mode,
+            turnId: response.turnId,
           });
         }
         revalidate();
@@ -184,9 +183,7 @@ export function useThreadControls(input: {
     const control = { kind: "write_mode", mode } as const;
     if (!latest.current.switches.submit(crypto.randomUUID(), mode)) {
       announceError(controlStatusCopy(control, "failed"));
-      return;
     }
-    announce(controlStatusCopy(control, "sending"));
   }, []);
 
   const retry = useCallback(
@@ -194,7 +191,6 @@ export function useThreadControls(input: {
       const journaled = latest.current.switches.pending.find((entry) => entry.id === controlId);
       if (journaled) {
         latest.current.switches.retry(controlId);
-        announce(controlStatusCopy({ kind: "write_mode", mode: journaled.mode }, "sending"));
         return;
       }
       const entry = localRef.current.sends.find((candidate) => candidate.id === controlId);
@@ -256,6 +252,7 @@ export function useThreadControls(input: {
   );
 
   const queued = useMemo(() => mergeQueuedControls(mergeInput), [mergeInput]);
+  useSwitchAnnouncements(queued);
   const writeMode = useMemo(
     () => overlaidWriteMode(input.writeMode, queued),
     [input.writeMode, queued],

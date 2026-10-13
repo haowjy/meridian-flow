@@ -26,7 +26,7 @@ it("never groups a reply across a write-mode divider, even after a steer", () =>
   ];
   const model = buildTranscriptModel(turns, false);
   expect(model.rows.map((row) => row.kind)).toEqual(["turn", "turn", "write-mode", "turn"]);
-  expect(model.continuing).toEqual([true, false, false, false]);
+  expect(model.continuing).toEqual([false, false, false, false]);
   expect(model.partsByFinalTurnId.get("a")?.map((part) => part.id)).toEqual(["a"]);
   expect(model.partsByFinalTurnId.get("b")?.map((part) => part.id)).toEqual(["b"]);
 });

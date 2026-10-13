@@ -7,6 +7,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ControlBody } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { QueuedControlStatus } from "./thread-controls";
 
 /** What the queued row says in each status. */
@@ -31,6 +32,11 @@ export function controlStatusCopy(control: ControlBody, status: QueuedControlSta
     case "failed":
       return t`Couldn't queue the compaction.`;
   }
+}
+
+/** What a write-mode divider says, and the announcer says as it lands. */
+export function writeModeSwitchedCopy(mode: AiWriteMode): string {
+  return mode === "draft" ? t`Switched to draft mode` : t`Switched to auto-apply`;
 }
 
 /** What the announcer says when Withdraw came after the command began. */
