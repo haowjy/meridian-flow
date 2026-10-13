@@ -133,6 +133,7 @@ describe("reply ErrorBlock", () => {
       ...failedTurn,
       role: "assistant" as const,
       blocks: [],
+      responses: [],
       metadata: {
         retryable: false,
         providerError: { status: 404, message: "retired model" },
