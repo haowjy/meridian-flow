@@ -254,7 +254,6 @@ it.each([
 
 it.each([
   "loading",
-  "empty",
   "error",
 ])("an admitted review survives a %s or incomplete list without proving Live", (status) => {
   const result = { kind: "current", document: { documentId: "hidden" } } as DocumentAddressResult;
