@@ -29,7 +29,21 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { threadQueryKeys } from "./thread-query-keys";
 
-type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
+/** The wire snapshot, with the reading of the request counter taken when its fetch started. */
+export type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot> & {
+  requestSeq?: number;
+};
+
+let snapshotRequestsStarted = 0;
+
+/**
+ * How many snapshot fetches this tab has started. A snapshot proves something
+ * absent only when its `requestSeq` is above the reading taken when that thing
+ * was last seen, so a failed, skipped or joined-older fetch proves nothing.
+ */
+export function snapshotRequestCount(): number {
+  return snapshotRequestsStarted;
+}
 
 class StaleThreadSnapshot extends Error {}
 
@@ -62,7 +76,8 @@ export type ThreadSnapshotSyncStatus = {
 export function threadSnapshotQueryOptions(threadId: string) {
   return queryOptions({
     queryKey: threadQueryKeys.snapshot(threadId),
-    queryFn: async () => deserializeThreadSnapshot(await getThreadSnapshot({ data: { threadId } })),
+    queryFn: async (): Promise<DeserializedThreadSnapshot> =>
+      deserializeThreadSnapshot(await getThreadSnapshot({ data: { threadId } })),
   });
 }
 
@@ -80,7 +95,9 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     // Always revalidate on activation: the thread may have advanced while the
     // writer was elsewhere (for example a background child's report waking the
     // parent). Cached turns still render first, so this stays navigate-first.
-    queryFn: async ({ signal }) => {
+    queryFn: async ({ signal }): Promise<DeserializedThreadSnapshot> => {
+      snapshotRequestsStarted += 1;
+      const requestSeq = snapshotRequestsStarted;
       const requestSignal = AbortSignal.any([accountSignal, signal]);
       // The source check runs before TanStack Query can publish this response.
       // An obsolete HTTP success cannot become history or handoff authority.
@@ -94,7 +111,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
         throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
       }
-      return snapshot;
+      return { ...snapshot, requestSeq };
     },
     staleTime: 0,
     refetchOnMount: "always",

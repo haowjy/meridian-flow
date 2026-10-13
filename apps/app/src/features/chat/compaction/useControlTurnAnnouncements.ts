@@ -1,7 +1,6 @@
 /**
  * useControlTurnAnnouncements — speaks the state changes of placeholder turns
- * with no reply stream: compaction dividers, write-mode dividers (announced as
- * they land) and handoff brief seeds (the
+ * with no reply stream: compaction dividers and handoff brief seeds (the
  * first, and each Retry's, including one that exists only on the client until
  * the server has it).
  *
@@ -15,8 +14,6 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { useEffect, useRef } from "react";
 import { announce } from "@/client/stores";
 import { isHandoffSeed } from "../derivation/handoff-seed";
-import { writeModeSwitchedCopy } from "../thread-controls/control-copy";
-import { readWriteModeSwitch } from "../thread-controls/write-mode-model";
 import { compactionFailureCopy, readCompactionFacts } from "./compaction-model";
 
 function announcementFor(turn: Turn): string | null {
@@ -35,8 +32,6 @@ function announcementFor(turn: Turn): string | null {
         return null;
     }
   }
-  const mode = readWriteModeSwitch(turn)?.mode;
-  if (mode) return writeModeSwitchedCopy(mode);
   if (isHandoffSeed(turn)) {
     switch (turn.status) {
       case "pending":
@@ -56,7 +51,7 @@ function announcementFor(turn: Turn): string | null {
 }
 
 function isControlTurn(turn: Turn): boolean {
-  return turn.role === "compaction" || isHandoffSeed(turn) || readWriteModeSwitch(turn) !== null;
+  return turn.role === "compaction" || isHandoffSeed(turn);
 }
 
 export function useControlTurnAnnouncements(turns: readonly Turn[]): void {

@@ -1,16 +1,12 @@
 /**
- * Optimistic writer commands: the local half of `/compact` and write-mode
- * switches, merged with the server's pending inbox.
+ * Optimistic writer commands: the local half of `/compact`, merged with the
+ * server's pending inbox. (A write-mode switch is the switch ledger's.)
  *
  * Local state, each piece small:
  * - `sends`: commands this tab asked for that the server inbox has not listed
  *   yet. The writer sees one the moment they ask; a failed enqueue stays on
  *   the item with Retry (same id, so the server treats a retry as a no-op).
  *   Once the inbox lists the id the server owns it, and the send is dropped.
- *   A `/compact` is posted from here. A switch is posted by the submission
- *   journal's driver, so it only lands here once the server has answered.
- * - `journaled`: switches still in the journal, unposted or failed. They are
- *   the "Switching" and "Couldn't switch" rows, the same after a reload.
  * - `withdrawals`: Withdraw hides a row at once, whichever side owns it, and
  *   always asks the server. A withdrawal the server confirmed (withdrawn, or
  *   already started, whose divider carries the state) keeps the id
@@ -21,18 +17,12 @@
  *
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
- *
- * A chat has at most one queued switch: a switch to the other mode cancels it
- * on the server. Until the server says so, a switch back that has not been
- * answered hides both rows at once (the writer's mode is where they started),
- * and the server's `null`/`null` answer confirms it.
  */
 import type {
   ControlBody,
   PendingInboxItem,
   ThreadPendingInbox,
 } from "@meridian/contracts/threads";
-import type { AiWriteMode } from "@meridian/contracts/works";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 export type WriteModeControl = Extract<ControlBody, { kind: "write_mode" }>;
@@ -41,17 +31,6 @@ export type LocalSend = {
   id: string;
   control: ControlBody;
   request: "sending" | "sent" | "failed" | "finished";
-};
-
-/** A switch the submission journal still holds: not yet admitted by the server. */
-export type JournaledSwitch = {
-  id: string;
-  mode: AiWriteMode;
-  failed: boolean;
-  /** Posted and not refused: the server may hold it, so the row offers Retry and no Withdraw. */
-  awaitingServer?: boolean;
-  /** Left the journal; this tab's projection has not shown it yet. Stands in like a sending row. */
-  witness?: boolean;
 };
 
 /** `settled`: the server confirmed it, either withdrawn or already started. */
@@ -71,7 +50,7 @@ export type QueuedControl = {
   id: string;
   control: ControlBody;
   status: QueuedControlStatus;
-  /** The server may hold it and hasn't answered: Retry only, no local Withdraw. */
+  /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
   awaitingServer?: boolean;
 };
 
@@ -79,18 +58,6 @@ export type ControlAction =
   | { type: "enqueue"; id: string; control: ControlBody }
   | { type: "retry"; id: string }
   | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
-  /**
-   * The journal's driver got the server's answer to a switch. `cancels` are the
-   * queued switches to the other mode that answer withdrew (`null`/`null`).
-   */
-  | {
-      type: "switch_answered";
-      id: string;
-      control: WriteModeControl;
-      pending: PendingInboxItem | null;
-      turnId: string | null;
-      cancels: readonly string[];
-    }
   | { type: "enqueue_failed"; id: string }
   | { type: "withdraw"; id: string }
   | { type: "withdrawn"; id: string }
@@ -121,16 +88,6 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     case "enqueued":
       // No pending row: it already ran (turn id) or was withdrawn earlier.
       return patchSend(action.id, action.pending ? "sent" : "finished");
-    case "switch_answered": {
-      const request: LocalSend["request"] = action.pending ? "sent" : "finished";
-      const withdrawals = new Map(state.withdrawals);
-      for (const id of action.cancels) withdrawals.set(id, "settled");
-      const known = state.sends.some((entry) => entry.id === action.id);
-      const sends = known
-        ? state.sends.map((entry) => (entry.id === action.id ? { ...entry, request } : entry))
-        : [...state.sends, { id: action.id, control: action.control, request }];
-      return { sends, withdrawals };
-    }
     case "enqueue_failed":
       return patchSend(action.id, "failed");
     case "withdraw":
@@ -154,8 +111,6 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
 export type MergeInput = {
   local: LocalControls;
   pending: ThreadPendingInbox;
-  /** Switches the journal still holds, oldest first. */
-  journaled?: readonly JournaledSwitch[];
   /** Commands a divider already names. */
   executedControlIds: ReadonlySet<string>;
 };
@@ -165,30 +120,18 @@ export type MergeInput = {
  * then local ones the server has not listed yet.
  */
 export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
-  return foldSwitchBack(listControls(input)).map((row) => row.control);
-}
-
-type Listed = { control: QueuedControl; unanswered: boolean };
-
-function listControls(input: MergeInput): Listed[] {
   const { local, pending, executedControlIds } = input;
-  const result: Listed[] = [];
+  const result: QueuedControl[] = [];
   const listed = new Set<string>();
   for (const item of pending.items) {
-    if (item.intent !== "control" || !item.control) continue;
+    if (item.intent !== "control" || item.control?.kind !== "compact") continue;
     listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
     const withdrawal = local.withdrawals.get(item.id);
     if (!withdrawal) {
-      result.push({
-        control: { id: item.id, control: item.control, status: "queued" },
-        unanswered: false,
-      });
+      result.push({ id: item.id, control: item.control, status: "queued" });
     } else if (withdrawal === "failed") {
-      result.push({
-        control: { id: item.id, control: item.control, status: "withdraw_failed" },
-        unanswered: false,
-      });
+      result.push({ id: item.id, control: item.control, status: "withdraw_failed" });
     }
   }
   for (const entry of local.sends) {
@@ -197,98 +140,12 @@ function listControls(input: MergeInput): Listed[] {
     const status = requestStatus(entry, executedControlIds);
     if (!status) continue;
     result.push({
-      control: {
-        id: entry.id,
-        control: entry.control,
-        status: withdrawal && status !== "failed" ? "withdraw_failed" : status,
-      },
-      unanswered: entry.request === "sending",
-    });
-  }
-  for (const entry of input.journaled ?? []) {
-    const withdrawal = local.withdrawals.get(entry.id);
-    // The inbox, a divider, or this tab's own answer already shows it.
-    if (
-      listed.has(entry.id) ||
-      executedControlIds.has(entry.id) ||
-      local.sends.some((send) => send.id === entry.id) ||
-      (withdrawal && withdrawal !== "failed")
-    )
-      continue;
-    result.push({
-      control: {
-        id: entry.id,
-        control: { kind: "write_mode", mode: entry.mode },
-        status: entry.failed ? "failed" : "sending",
-        ...(entry.awaitingServer ? { awaitingServer: true } : {}),
-      },
-      unanswered: !entry.failed && !entry.witness,
+      id: entry.id,
+      control: entry.control,
+      status: withdrawal && status !== "failed" ? "withdraw_failed" : status,
     });
   }
   return result;
-}
-
-/**
- * The server keeps one queued switch: a switch to the other mode withdraws it,
- * and a repeat of the same mode changes nothing. Show that before the answer.
- * Only a switch the server has not answered is predicted; one it has listed or
- * answered is its word.
- */
-function foldSwitchBack(rows: readonly Listed[]): Listed[] {
-  const dropped = new Set<Listed>();
-  let open: Listed | null = null;
-  for (const row of rows) {
-    const { control } = row.control;
-    if (control.kind !== "write_mode" || row.control.status === "failed") continue;
-    if (open && open.control.control.kind === "write_mode") {
-      const same = open.control.control.mode === control.mode;
-      if (row.unanswered && !same) {
-        dropped.add(open);
-        dropped.add(row);
-        open = null;
-        continue;
-      }
-      if (row.unanswered && same) {
-        dropped.add(row);
-        continue;
-      }
-    }
-    open = row;
-  }
-  return rows.filter((row) => !dropped.has(row));
-}
-
-/**
- * The queued switches to the other mode that the server's `null`/`null` answer
- * to `entry` withdrew: the ones asked before it. A queued switch to the same
- * mode stays.
- */
-export function switchesCancelledBy(
-  input: MergeInput,
-  entry: { id: string; mode: AiWriteMode },
-): string[] {
-  const rows = listControls(input).map((row) => row.control);
-  const at = rows.findIndex((row) => row.id === entry.id);
-  return (at < 0 ? rows : rows.slice(0, at))
-    .filter(
-      (row) =>
-        row.status !== "failed" &&
-        row.control.kind === "write_mode" &&
-        row.control.mode !== entry.mode,
-    )
-    .map((row) => row.id);
-}
-
-/** The chat's mode as the writer should see it: the last live queued switch wins. */
-export function overlaidWriteMode(
-  base: AiWriteMode,
-  queued: readonly QueuedControl[],
-): AiWriteMode {
-  let mode = base;
-  for (const row of queued) {
-    if (row.control.kind === "write_mode" && row.status !== "failed") mode = row.control.mode;
-  }
-  return mode;
 }
 
 function requestStatus(

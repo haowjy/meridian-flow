@@ -211,30 +211,6 @@ it("a cross-tab retirement removes an unresolved optimistic row, not just reject
   expect(mounted.dissolved).not.toHaveBeenCalled();
 });
 
-it("a switch that leaves the journal stays this tab's row until a refetch started at its removal resolves", async () => {
-  recordChatSubmission(account, {
-    ...entry("mode", ""),
-    state: undefined,
-    posted: true,
-    blocks: [],
-    references: [],
-    text: "",
-    draft: undefined,
-    control: { kind: "write_mode", mode: "direct" },
-  });
-  const mounted = await mount(new ThreadRunScenario());
-  const refetch = scenarioGate<void>();
-  const invalidate = vi.spyOn(mounted.client, "invalidateQueries").mockReturnValue(refetch.promise);
-  // The driving tab's answer retired the record; this tab's projection has not caught up.
-  const key = chatSubmissionStorageKey(account, "mode");
-  window.localStorage.removeItem(key);
-  window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
-  expect(mounted.read().switches).toEqual([expect.objectContaining({ id: "mode", witness: true })]);
-  expect(invalidate).toHaveBeenCalledOnce();
-  refetch.resolve();
-  await vi.waitFor(() => expect(mounted.read().switches).toEqual([]));
-});
-
 it("dissolves this pane without retiring a message recorded after the transfer read", async () => {
   const creation = {
     title: "Opening",
