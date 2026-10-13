@@ -105,7 +105,7 @@ draft, Esc leaves the run alone) only ends the turn; the same rule picks what
 runs next. The client special-cases none of it and just shows the server's
 state.
 
-`useThreadControls` is the shell over `compaction/thread-controls.ts`. It mints
+`useThreadControls` is the shell over `thread-controls/thread-controls.ts` (kind-aware: `/compact` and write-mode switches). It mints
 the id, shows the item as queued before the network answers, and keeps a
 failed enqueue on the item with Retry under the same id (the server treats a
 repeat as the original) and Withdraw beside it. A queued command is a dashed
@@ -135,7 +135,7 @@ One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each
 turn-driven one (dividers and brief seeds), through the global
 polite announcer, which reaches rows the virtualized list has scrolled away.
-Status words come from `compaction/control-copy.ts`, so the announcement and
+Status words come from `thread-controls/control-copy.ts`, so the announcement and
 the row say the same thing.
 
 Compaction turns have no AG-UI stream, and a cancelled one ends without

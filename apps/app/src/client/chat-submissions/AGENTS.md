@@ -44,6 +44,16 @@ attempts and the shared recovery eligibility/status snapshot for every mounted p
 - Codec rejects wrong-version and foreign envelopes without throwing. Unreadable
   records and unavailable enumeration retain the last complete snapshot and never sweep rows.
 
+A write-mode switch is a record too (`control: { kind: "write_mode", mode }`, empty
+message fields, `recordId` = its control id). The one driver posts it to the controls
+route in `createdAt` order with the messages around it, so a switch waits behind a
+chat's in-flight creation and a message never overtakes it, reload included. A
+transient failure leaves it unresolved (same id on retry); a refusal stores
+`state: "rejected"` and holds the records after it until Withdraw (`withdrawControl`
+drops it under the lock) or an admitted Retry. It has no writer row: its queued row,
+Retry and Withdraw come from `useThreadControls`, and the server's answer reaches it
+through `onSwitchAnswered` before the record is retired.
+
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
 Account bind rewrites v1 under the driver thread lock. A v2 copy is not
 drivable or retirable until its v1 key is gone; failed deletion leaves words in v1. The

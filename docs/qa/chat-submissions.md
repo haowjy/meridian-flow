@@ -137,3 +137,19 @@ deleted project: the real error envelope reads "This project was deleted."
 Capture the titled and untitled note in desktop Chat, a 360px dock, and a 390px
 phone, each in light and dark. Crop out account identity and hide the TanStack
 launcher. These captures verify real responsive wrapping, not fixture markup.
+
+## Write-mode switch order
+
+Start with `MODEL_PROVIDER=mock pnpm dev`, open a chat in the browser, and script a
+reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`).
+
+1. Idle chat: choose the other mode in the composer. The control changes at once and
+   the "Switched to…" divider follows.
+2. During the reply: choose the other mode. A dashed "Switch to … queued" row with
+   Withdraw sits at the tail; the divider replaces it after the reply ends.
+3. During the reply: switch and switch back. Both rows disappear, no divider is
+   written, and `GET /api/threads/<id>/snapshot` shows an empty pending inbox.
+4. Abort `**/controls` in the browser (`agent-browser network route "**/controls" --abort`),
+   switch, then send a message: the row says "Couldn't switch…" with Retry and Withdraw, and the
+   message stays "Sending". Remove the route and reload: the switch is admitted before the message.
+5. New chat: pick a mode in the new-chat composer and send. The chat starts in it.
