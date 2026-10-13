@@ -4,6 +4,7 @@
  * command record (resend, conflict, blocked).
  */
 import { randomUUID } from "node:crypto";
+import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { branchPushSettlementBatches } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { createError } from "nitro/h3";
@@ -17,6 +18,7 @@ import {
   handleWorkDraftPreviewRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
+import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
 import { type DraftTreeStart, describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
@@ -200,7 +202,27 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     expect(await handleDiscardAllWorkDraftRequest(c.deps, { ...c.scope, request })).toEqual(closed);
   });
 
-  it("12b: a twin that lost the race to its own command's effect answers the stored outcome when its grant is refused", async () => {
+  it.each([
+    {
+      name: "not found",
+      refuse: () => createError({ statusCode: 404, message: "Draft not found" }),
+    },
+    {
+      name: "archived",
+      refuse: () => {
+        try {
+          throwHttpInterrupt(
+            meridianErrorFromSystem("work_archived", "This Work is archived and read-only."),
+            403,
+          );
+        } catch (refusal) {
+          return refusal;
+        }
+      },
+    },
+  ])("12b: a twin that lost the race to its own command's effect answers the stored outcome when its grant is refused ($name)", async ({
+    refuse,
+  }) => {
     const c = await twoChanges(start);
     const { itemKey, draftId } = await c.item();
     const request = {
@@ -224,7 +246,7 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
               documentId: c.chapter,
               request,
             });
-            throw createError({ statusCode: 404, message: "Draft not found" });
+            throw refuse();
           }
           return authorize(...args);
         },
