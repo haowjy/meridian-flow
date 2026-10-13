@@ -46,7 +46,28 @@ function fixture() {
     workRepo: {
       findById: async (id: string) => (id === state.work.id ? (state.work as never) : null),
     },
-    draftReview: { items: async () => ({ draftId: state.draftId, items: state.items }) as never },
+    // The resolver's answer: an item key of the Work's active draft names its one item.
+    draftReview: {
+      resolveItem: async ({ workId, itemKey }: { workId: string; itemKey: string }) => {
+        const named = state.items.filter(
+          (candidate) =>
+            workId === state.work.id &&
+            candidate.draftId === state.draftId &&
+            candidate.itemKey === itemKey,
+        );
+        const [item] = named;
+        return named.length === 1 && item
+          ? ({
+              draftId: item.draftId,
+              itemKey,
+              documentId: item.documentId,
+              draftBranchId: item.draftBranchId,
+              item,
+              listed: true,
+            } as never)
+          : null;
+      },
+    },
     documentAddresses,
     fileAccess: {
       authorize: async () =>

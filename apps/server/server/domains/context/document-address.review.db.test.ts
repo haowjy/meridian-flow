@@ -22,8 +22,12 @@ describeDraftTreeDb("review address identity", (start, db) => {
       .returning({ id: documents.id });
     if (!unusedRow) throw new Error("Expected an orphan hidden document");
     const unused = unusedRow.id;
-    const row = (await s.review(work)).drafts.find((draft) => draft.documentId === hidden);
-    if (!row) throw new Error("Expected draft branch");
+    const row = (await s.items(work)).find((item) => item.documentId === hidden);
+    if (!row) throw new Error("Expected draft item");
+    const { branchId } = await s.draftBranch(work, hidden);
+    const rival = await s.work("rival", "draft");
+    await s.model(rival).create("kb://Rival", "Rival words.");
+    const [rivalItem] = await s.items(rival);
     const input = {
       projectId: s.project.id,
       userId: s.project.userId,
@@ -31,7 +35,7 @@ describeDraftTreeDb("review address identity", (start, db) => {
       workId: null,
       path: "Withern",
     };
-    const review = { workId: work.id, itemKey: `${row.draftId}:${hidden}` };
+    const review = { workId: work.id, itemKey: row.itemKey };
     const deps = { ...runtime.app, draftReview: runtime.app.documentSync.draftReview };
     await expect(handleDocumentAddressRequest(deps, input, review)).resolves.toMatchObject({
       kind: "current",
@@ -49,7 +53,10 @@ describeDraftTreeDb("review address identity", (start, db) => {
     });
     for (const selector of [
       { ...review, itemKey: "bad" },
-      { ...review, workId: (await s.work("rival", "draft")).id },
+      { ...review, workId: rival.id },
+      { ...review, itemKey: branchId },
+      { ...review, itemKey: row.draftId },
+      { ...review, itemKey: rivalItem?.itemKey ?? "missing" },
       { ...review, itemKey: `${row.draftId}:${live}` },
       { ...review, itemKey: `${row.draftId}:${unused}` },
     ]) {
