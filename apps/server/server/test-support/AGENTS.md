@@ -20,6 +20,10 @@ and manually composed DB-test runtimes use that same tracker; don't create an
 isolated tracker that the reset helper cannot drain. Rollback cannot isolate
 other connections.
 
+Composed runtimes must unload rooms, shut down background app work, and drain
+`documentSync.drainHocuspocusPersistence()` before the next fixture reset. Room
+unload schedules checkpoint stores; it does not await their persistence.
+
 Hoist immutable large fixtures to `beforeAll` only when each case restores its
 mutations. Keep query-plan fixtures large enough for their stated plan contract.
 Run DB tests through `pnpm test:db`, never against a dev database.
