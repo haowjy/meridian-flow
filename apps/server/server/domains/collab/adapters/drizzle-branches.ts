@@ -31,6 +31,7 @@ import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
+  isInDrizzleTransaction,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
@@ -373,49 +374,55 @@ export function createDrizzleBranchStore(
     draftId: DraftId;
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
+    const ensurePeer = async (): Promise<BranchSnapshot> => {
+      if (!(await drafts.shareActive(input.draftId))) {
+        throw new BranchStaleUpdateError(`draft:${input.draftId}`);
+      }
+      const existing = await findActiveThreadPeer(input.documentId, input.threadId);
+      if (existing?.draftId === input.draftId) return existing;
+      if (existing) {
+        await currentDrizzleDb(db)
+          .update(documentBranches)
+          .set({ status: "closed", updatedAt: new Date() })
+          .where(
+            and(eq(documentBranches.id, existing.branchId), eq(documentBranches.status, "active")),
+          );
+      }
+      const workDraft = await ensureDraftBranch({
+        documentId: input.documentId,
+        draftId: input.draftId,
+        liveDoc: input.liveDoc,
+      });
+      const upstreamDoc = materializeBranch(workDraft, input.threadId);
+      try {
+        return await insertBranch({
+          id: `branch_${randomUUID()}`,
+          documentId: input.documentId,
+          kind: "thread_peer",
+          upstreamBranchId: workDraft.branchId,
+          draftId: input.draftId,
+          threadId: input.threadId,
+          status: "active",
+          ...(await replicatedSnapshotFrom(upstreamDoc)),
+          schemaVersion: workDraft.schemaVersion,
+        });
+      } finally {
+        upstreamDoc.destroy();
+      }
+    };
+    // Alone, the root transaction takes the thread lock itself: one connection, never a
+    // lock-holding connection waiting for a second one from a drained pool.
+    if (!isInDrizzleTransaction()) {
+      return runInRootDrizzleTransaction(db, async () => {
+        await lockThreadForMutation(db, input.threadId);
+        return ensurePeer();
+      });
+    }
     return runInDrizzleTransaction(db, async () => {
       await lockThreadForMutation(db, input.threadId);
       // Keep authority stable with the caller's thread lock. The branch writes
       // commit independently; reacquiring this row in the root would self-deadlock.
-      return runInRootDrizzleTransaction(db, async () => {
-        if (!(await drafts.shareActive(input.draftId))) {
-          throw new BranchStaleUpdateError(`draft:${input.draftId}`);
-        }
-        const existing = await findActiveThreadPeer(input.documentId, input.threadId);
-        if (existing?.draftId === input.draftId) return existing;
-        if (existing) {
-          await currentDrizzleDb(db)
-            .update(documentBranches)
-            .set({ status: "closed", updatedAt: new Date() })
-            .where(
-              and(
-                eq(documentBranches.id, existing.branchId),
-                eq(documentBranches.status, "active"),
-              ),
-            );
-        }
-        const workDraft = await ensureDraftBranch({
-          documentId: input.documentId,
-          draftId: input.draftId,
-          liveDoc: input.liveDoc,
-        });
-        const upstreamDoc = materializeBranch(workDraft, input.threadId);
-        try {
-          return await insertBranch({
-            id: `branch_${randomUUID()}`,
-            documentId: input.documentId,
-            kind: "thread_peer",
-            upstreamBranchId: workDraft.branchId,
-            draftId: input.draftId,
-            threadId: input.threadId,
-            status: "active",
-            ...(await replicatedSnapshotFrom(upstreamDoc)),
-            schemaVersion: workDraft.schemaVersion,
-          });
-        } finally {
-          upstreamDoc.destroy();
-        }
-      });
+      return runInRootDrizzleTransaction(db, ensurePeer);
     });
   }
 
