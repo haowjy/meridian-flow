@@ -93,10 +93,12 @@ at its final snapshot; it does not attribute replies to messages.
   `viewTranscript` over it, and prints that view model's rows (`you:`,
   `reply: 3 steps, read 2 docs`, `compaction:`, `queued:`), or `--json` as the
   versioned `chatView: 2` envelope with row identity, kind and items (`--full --json` adds
-  tool inputs and results, card content, report payloads, the handoff brief, delivery bodies
-  and writer occurrences; text mode summarizes and omits them). Its `inputs`
-  field says what the view was computed from: the snapshot only, with no local
-  records, stand-ins or live activity, and inherited history omitted. The app draws
+  tool inputs, results and metadata, Work receipts, raw card content, report payloads, the
+  handoff brief, delivery bodies and writer occurrences; text mode summarizes and omits
+  them). Its `inputs` field says what the view was computed from: the snapshot only, with
+  no local records, stand-ins, opening seed or live activity, inherited history omitted,
+  and background report bodies and change trails not fetched. Card wording and failure
+  copy are drawn by React, so compare cards as raw props only. The app draws
   the same function's output, so compare a chat in the browser by row identity, row
   kind, item kinds and visible text with [the chat-session recipe](qa/chat-session.md). `send` and `tail --until-idle` reduce every followed event through the
   same shared reducer, then compare this CLI follower's reduced status and final
