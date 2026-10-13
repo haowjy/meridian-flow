@@ -406,10 +406,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await collab.documentDerivations.stop();
       collab.dispose();
       collab = start();
-      const undone = await collab.agentEdit().undo(DOC_ID, THREAD_ID);
+      const undone = await collab
+        .agentEdit()
+        .write(
+          { command: "undo", file: "chapter", documentId: DOC_ID },
+          { ...ctx, turnId: TURN_2_ID },
+        );
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
-      expect(undone.status).toBe("reversed");
+      expect(undone.status).toBe("success");
       expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
       expect.soft(after.value.content.join("\n")).toContain(spelled);
       expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
