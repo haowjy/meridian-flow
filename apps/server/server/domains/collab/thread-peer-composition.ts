@@ -89,6 +89,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
       branches: input.branches,
       criticalSections: input.criticalSections,
       drafts: input.drafts,
+      diagnostics: input.diagnostics,
       fileAccess: input.fileAccess,
       lockWorks: input.lockWorks,
       lockLiveDocuments: input.lockLiveDocuments,

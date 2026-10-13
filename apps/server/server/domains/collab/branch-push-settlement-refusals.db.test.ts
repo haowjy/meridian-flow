@@ -355,7 +355,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     // A second batch crashes after staging. The check's text hold and refined
     // payload must reconstruct under another owner, even after the blocker leaves.
     const peer = await harness.stagePeerReply(BETA_ID, "held-cold-peer");
-    const peerBefore = await harness.stagedReplyMarkdown("held-cold-peer", BETA_ID, peer);
+    const peerBefore = await harness.stagedReplyMarkdown("held-cold-peer", BETA_ID);
     expect(peerBefore).toContain("Outstanding peer reply.");
     const betaBefore = await harness.branchMarkdown(beta);
     const coldSeen: unknown[] = [];
@@ -417,7 +417,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     ]);
     expect(await liveDurableState(db, [BETA_ID])).toEqual(heldBefore.slice(0, 1));
     expect(await cold.branchMarkdown(beta)).toBe(betaBefore);
-    expect(await harness.stagedReplyMarkdown("held-cold-peer", BETA_ID, peer)).toBe(peerBefore);
+    expect(await harness.stagedReplyMarkdown("held-cold-peer", BETA_ID)).toBe(peerBefore);
     expect(await cold.branchGeneration(beta)).toBe(generations[1]);
     expect((await journalStatuses([beta])).flat()).toEqual(["active"]);
     expect((await pushTraces()).trailDocuments).toEqual([ALPHA_ID, GAMMA_ID].sort());
@@ -494,11 +494,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
       publicationSteps: [imageStep(seenWarm, () => warm)],
     });
     expect(await warm.stagePeerReply(ALPHA_ID, "payload-outstanding")).toBe(alphaBranch);
-    const stagedPeerBefore = await warm.stagedReplyMarkdown(
-      "payload-outstanding",
-      ALPHA_ID,
-      alphaBranch,
-    );
+    const stagedPeerBefore = await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID);
     expect(stagedPeerBefore).toContain("Outstanding peer reply.");
     await expect(warm.pushBranches([], undefined, { test_image: payload })).rejects.toThrow(
       "needs branch leases its caller doesn't hold",
@@ -516,9 +512,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
       expect.objectContaining({ itemKey: "poster", decidedIn: "check" }),
     ]);
     expect(await db.select().from(schema.branchPushSettlementOutbox)).toEqual([]);
-    expect(await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID, alphaBranch)).toBe(
-      stagedPeerBefore,
-    );
+    expect(await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID)).toBe(stagedPeerBefore);
 
     await expireAllPendingClaims(db);
     const seen: unknown[] = [];
@@ -531,9 +525,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     expect(await db.select().from(schema.branchPushSettlementBatches)).toEqual([
       expect.objectContaining({ state: "completed" }),
     ]);
-    expect(await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID, alphaBranch)).toBe(
-      stagedPeerBefore,
-    );
+    expect(await warm.stagedReplyMarkdown("payload-outstanding", ALPHA_ID)).toBe(stagedPeerBefore);
     warm.destroyWarmState();
     expect(await db.select().from(schema.branchWriteJournal)).toEqual(journalBefore);
     recoverer.destroyWarmState();

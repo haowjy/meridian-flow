@@ -97,7 +97,7 @@ export function responseContext(responseId: string) {
 }
 
 /** The grant names this project and its owner, as the file policy would, so a write can make a draft. */
-function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
+export function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
   return {
     ...grant,
     principal: { ...grant.principal, accountId: USER_ID },

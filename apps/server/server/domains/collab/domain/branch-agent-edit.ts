@@ -61,6 +61,7 @@ export type BranchAgentEditDiagnostics = {
     writeId: string | null;
   }): void;
   mutationLessPendingEntry(payload: { documentId: string; origin: string }): void;
+  replyPinMismatch(payload: { documentId: DocumentId; threadId?: ThreadId; pin: unknown }): void;
 };
 
 export type AfterCommit = (callback: () => void | Promise<void>) => void;
