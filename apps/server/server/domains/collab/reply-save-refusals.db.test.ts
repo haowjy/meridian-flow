@@ -422,14 +422,14 @@ describe("reply save refusals (postgres)", () => {
     const azure = preview.operations.find((op) => op.afterExcerpt === "azure");
     const readBranch = fixture.branchCoordinator.readBranch;
     let armed = true;
-    fixture.branchCoordinator.readBranch = async (branchId, fn) => {
+    fixture.branchCoordinator.readBranch = (async (branchId, fn) => {
       const result = await readBranch.call(fixture.branchCoordinator, branchId, fn);
       if (armed && branchId === peer.branchId) {
         armed = false;
         await review.discardChanges(ALPHA_ID, preview, [azure?.operationId as string]);
       }
       return result;
-    };
+    }) as typeof readBranch;
     try {
       const read = await core.read(
         { file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "read-16" },
@@ -646,6 +646,7 @@ describe("reply save refusals (postgres)", () => {
       .set({ archivedAt: new Date() })
       .where(eq(schema.works.id, WORK_ID));
     const saved = await harness.commit(responseId);
+    if (!("refused" in saved)) throw new Error("the save carries no refusals");
     expect(saved.refused).toHaveLength(1);
     expect(saved.refused[0]).toMatchObject({
       documentId: ALPHA_ID,

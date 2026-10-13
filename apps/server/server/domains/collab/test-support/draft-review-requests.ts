@@ -4,6 +4,7 @@ import type { DraftCommandId, DraftId, UserId, WorkId } from "@meridian/contract
 import type { DraftCommandKind } from "@meridian/contracts/drafts";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import type { DraftReviewApi } from "../contracts.js";
 import { commandDigest, type DraftCommandEnvelope } from "../domain/draft-commands.js";
 import {
   type createHarness,
