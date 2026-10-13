@@ -236,6 +236,16 @@ export function createHocuspocusPersistenceService(
           }
           try {
             await deps.journal.checkpoint(documentId, state, upToSeq, authority);
+            if (deps.eventSink)
+              emitEvent(deps.eventSink, {
+                level: "debug",
+                source: "collab.hocuspocus",
+                name: "checkpoint.clients",
+                payload: {
+                  documentId,
+                  clientCount: Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)).size,
+                },
+              });
           } catch (cause) {
             emitCheckpointFailure(documentId, cause);
           }

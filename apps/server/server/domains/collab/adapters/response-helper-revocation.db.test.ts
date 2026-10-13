@@ -196,9 +196,6 @@ describe("response helper revocation (Postgres)", () => {
     const roomB = branchRoomName(peerB.id, peerB.generation);
     await fixture.hocuspocus.openDirectConnection(roomA);
     await fixture.hocuspocus.openDirectConnection(roomB);
-    // The route runs on an existing project catalog; provision it before its transaction.
-    await fixture.branchStore.resolveManifestMembership({ projectId: PROJECT_ID });
-    await fixture.branchStore.resolveManifestMembership({ projectId: PROJECT_ID, workId: WORK_ID });
     await runInDrizzleTransaction(db, async () => {
       expect(await discard()).toMatchObject({ status: "discarded" });
       // The route's enclosing transaction still owns the decision until commit.
