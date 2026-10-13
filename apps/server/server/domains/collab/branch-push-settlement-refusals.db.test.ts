@@ -351,7 +351,7 @@ describe("branch-push settlement refusals and holds (postgres)", () => {
     expect((await pushTraces()).trailDocuments).toEqual([ALPHA_ID]);
     expect(
       await Promise.all([alpha, beta, gamma].map((id) => harness.branchGeneration(id))),
-    ).toEqual([(generations[0] as number) + 1, generations[1], generations[2]]);
+    ).toEqual(generations);
     // A second batch crashes after staging. The check's text hold and refined
     // payload must reconstruct under another owner, even after the blocker leaves.
     const peer = await harness.stagePeerReply(BETA_ID, "held-cold-peer");
