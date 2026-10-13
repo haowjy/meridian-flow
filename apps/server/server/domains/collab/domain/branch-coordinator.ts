@@ -162,26 +162,11 @@ export type OwnedBranchSession = {
 };
 
 export type BranchCoordinator = {
-  withBranch<T>(
-    branchId: string,
-    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-  ): Promise<T>;
-  pullFromDoc(branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
-  pullFromBranch(branchId: string, upstreamBranchId?: string): Promise<Uint8Array>;
-  resetFromDoc(
-    branchId: string,
-    upstream: Y.Doc,
-    schemaVersion?: CollabSchemaVersion,
-  ): Promise<void>;
-  resetFromDocIfUnchanged(input: {
-    branchId: string;
-    upstream: Y.Doc;
-    expectedGeneration: number;
-    expectedStateVector: Uint8Array;
-    expectedState: Uint8Array;
-    schemaVersion?: CollabSchemaVersion;
-    editDisposition?: "discarded" | "retired";
-  }): Promise<boolean>;
+  /**
+   * Merges `upstream` into the branch under a lease the caller holds (a pull takes its
+   * branches' leases before its transaction); throws for a branch the lease does not cover.
+   */
+  pullFromDoc(lease: BranchLockLease, branchId: string, upstream: Y.Doc): Promise<Uint8Array>;
   resetFromDocIfUnchangedWithLease(
     lease: BranchLockLease,
     input: {
@@ -194,8 +179,6 @@ export type BranchCoordinator = {
       editDisposition?: "discarded" | "retired";
     },
   ): Promise<boolean>;
-  resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
-  checkpointBranch(branchId: string): Promise<void>;
   /**
    * These branches' leases in one ordered acquisition, for an operation that touches
    * several (a peer and its draft branch) and runs every step under the one lease.
@@ -204,31 +187,10 @@ export type BranchCoordinator = {
     branchIds: readonly string[],
     run: (lease: BranchLockLease) => Promise<T>,
   ): Promise<T>;
-  withBranchTransient<T>(
-    branchId: string,
-    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-  ): Promise<T>;
-  /**
-   * `withBranchTransient` under a lease the caller already holds (a reply's save takes its
-   * branches' leases before its transaction, contract §2.5); asserts the lease covers it.
-   */
-  withBranchTransientWithLease<T>(
-    lease: BranchLockLease,
-    branchId: string,
-    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-  ): Promise<T>;
   readBranch<T>(
     branchId: string,
     fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
   ): Promise<T>;
-  readBranchWithLease<T>(
-    lease: BranchLockLease,
-    branchId: string,
-    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-  ): Promise<T>;
-  commitUpdate(
-    input: Omit<AppendBranchJournalInput, "generation"> & { expectedGeneration?: number },
-  ): Promise<void>;
   commitWriterUpdate(input: {
     branchId: string;
     expectedGeneration: number;
@@ -253,7 +215,6 @@ export type BranchCoordinator = {
    * throws `BranchLeaseScopeError` for a branch the lease does not cover.
    */
   ownedSession(lease: BranchLockLease): OwnedBranchSession;
-  appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
   notifyReset(input: { branchId: string; generation: number }): void;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
 };
@@ -530,20 +491,6 @@ export function createBranchCoordinator(input: {
     }
   }
 
-  function runWithRetry<T>(
-    branchId: string,
-    operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
-    updateToPublish?: (result: T) => Uint8Array,
-    kind: "mutation" | "pull" = "mutation",
-    upstream?: Y.Doc,
-  ): Promise<T> {
-    return retryCas(() =>
-      criticalSections.withBranches([branchId], () =>
-        runUnder(branchId, operation, updateToPublish, kind, upstream),
-      ),
-    );
-  }
-
   async function replicateFrozenSource(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
     let admittedUpdate: Uint8Array | undefined;
     const frozenSource = cloneDoc(source);
@@ -726,42 +673,13 @@ export function createBranchCoordinator(input: {
     }
   }
 
-  function assertThreadPeerResetLineage(child: BranchSnapshot, upstream: BranchSnapshot): void {
-    if (child.kind !== "thread_peer" || child.status !== "active") {
-      throw new Error(`Branch ${child.branchId} is not an active thread peer reset target`);
-    }
-    if (
-      upstream.kind !== "work_draft" ||
-      upstream.status !== "active" ||
-      upstream.documentId !== child.documentId
-    ) {
-      throw new Error(
-        `Branch ${child.branchId} reset upstream ${upstream.branchId} is not its active same-document work draft`,
-      );
-    }
-  }
-
   return {
     notifyReset,
-    withBranch(branchId, fn) {
-      return runWithRetry(branchId, (snapshot, doc) => fn(doc, snapshot));
-    },
-
     readBranch(branchId, fn) {
       return criticalSections.withBranches([branchId], (lease) => readUnder(lease, branchId, fn));
     },
 
-    readBranchWithLease: readUnder,
-
     withLeases: (branchIds, run) => criticalSections.withBranches(branchIds, run),
-
-    withBranchTransient(branchId, fn) {
-      return criticalSections.withBranches([branchId], (lease) =>
-        transientUnder(lease, branchId, fn),
-      );
-    },
-
-    withBranchTransientWithLease: transientUnder,
 
     ownedSession,
 
@@ -777,96 +695,20 @@ export function createBranchCoordinator(input: {
       );
     },
 
-    checkpointBranch(branchId) {
-      return runWithRetry(branchId, async () => undefined);
-    },
-
-    pullFromDoc(branchId, upstream) {
-      return runWithRetry(
-        branchId,
-        async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
-        (update) => update,
-        "pull",
-        upstream,
-      );
-    },
-
-    async pullFromBranch(branchId, upstreamBranchId) {
-      const child = await loadSnapshot(branchId);
-      const parentId = upstreamBranchId ?? child.upstreamBranchId;
-      if (!parentId) throw new Error(`Branch ${branchId} has no upstream branch`);
-      const upstreamState = await criticalSections.withBranches([parentId], async () => {
-        const upstream = await loadSnapshot(parentId);
-        const { doc: upstreamDoc } = await materialize(upstream);
-        return Y.encodeStateAsUpdate(upstreamDoc);
-      });
-      const upstreamDoc = createCollabYDoc({ gc: false });
-      try {
-        Y.applyUpdate(upstreamDoc, upstreamState);
-        return this.pullFromDoc(branchId, upstreamDoc);
-      } finally {
-        upstreamDoc.destroy();
-      }
-    },
-
-    async resetFromDoc(branchId, upstream, schemaVersion) {
-      let attempt = 0;
-      while (true) {
-        try {
-          return await criticalSections.withBranches([branchId], async () => {
-            const snapshot = await loadSnapshot(branchId);
-            assertWorkDraftResetTarget(snapshot);
-            await persistReset(snapshot, upstream, schemaVersion ?? snapshot.schemaVersion);
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
-        }
-      }
-    },
-
-    resetFromDocIfUnchanged(resetInput) {
-      return criticalSections.withBranches([resetInput.branchId], (lease) =>
-        resetFromDocIfUnchangedWithLease(lease, resetInput),
+    pullFromDoc(lease, branchId, upstream) {
+      assertBranchLeaseCovers(lease, branchId);
+      return retryCas(() =>
+        runUnder(
+          branchId,
+          async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
+          (update) => update,
+          "pull",
+          upstream,
+        ),
       );
     },
 
     resetFromDocIfUnchangedWithLease,
-
-    async resetFromBranch(branchId, upstreamBranchId) {
-      return runWithRetry(branchId, async (child) => {
-        const parentId = upstreamBranchId ?? child.upstreamBranchId;
-        if (!parentId) throw new Error(`Branch ${branchId} has no upstream branch`);
-        const upstream = await loadSnapshot(parentId);
-        assertThreadPeerResetLineage(child, upstream);
-        const { doc: upstreamDoc } = await materialize(upstream);
-        await persistReset(child, upstreamDoc, upstream.schemaVersion);
-      });
-    },
-
-    async appendJournaledUpdate(inputJournal) {
-      let attempt = 0;
-      while (true) {
-        try {
-          return await criticalSections.withBranches([inputJournal.branchId], async () => {
-            const snapshot = await loadSnapshot(inputJournal.branchId);
-            if (snapshot.generation !== inputJournal.generation) {
-              throw new Error(
-                `Branch ${snapshot.branchId} generation ${snapshot.generation} did not match journal generation ${inputJournal.generation}`,
-              );
-            }
-            const { doc: cachedDoc } = await materialize(snapshot);
-            // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
-            // failed CAS/rollback must never mutate the cached branch doc.
-            const doc = cloneDoc(cachedDoc);
-            assertFreshAgentClient(doc, inputJournal);
-            Y.applyUpdate(doc, inputJournal.updateData);
-            await persist(snapshot, doc, [inputJournal]);
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
-        }
-      }
-    },
 
     broadcastUpdate(update) {
       const current = cached.get(update.branchId);
@@ -876,26 +718,6 @@ export function createBranchCoordinator(input: {
         current.stateVector = Y.encodeStateVector(current.doc);
       }
       input.onBranchUpdate?.(update);
-    },
-
-    async commitUpdate(inputJournal) {
-      let attempt = 0;
-      while (true) {
-        try {
-          return await criticalSections.withBranches([inputJournal.branchId], async () => {
-            const snapshot = await loadSnapshot(inputJournal.branchId);
-            if (
-              inputJournal.expectedGeneration !== undefined &&
-              snapshot.generation !== inputJournal.expectedGeneration
-            ) {
-              throw new BranchStaleUpdateError(inputJournal.branchId);
-            }
-            await persistJournaledUpdate(snapshot, inputJournal);
-          });
-        } catch (cause) {
-          if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
-        }
-      }
     },
 
     async commitWriterUpdate(inputWriter) {

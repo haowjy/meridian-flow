@@ -1,4 +1,5 @@
 /** PostgreSQL proof for dependency-closed partial Apply settlement. */
+
 import { randomUUID } from "node:crypto";
 import { toDocHandle } from "@meridian/agent-edit/integration";
 import { branchRoomName } from "@meridian/contracts/protocol";
@@ -19,6 +20,7 @@ import {
   schema,
   USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
+import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import {
   BETA_ID,
   PROJECT_ID,
@@ -193,10 +195,9 @@ describe("per-change Apply (postgres)", () => {
           replacement,
         );
         // Retained/other-producer cumulative rows must still close together.
-        await fixture.branchCoordinator.appendJournaledUpdate({
+        await commitJournaledUpdate(fixture.branchCoordinator, {
           branchId: branch.branchId,
           updateData: Y.encodeStateAsUpdate(staged.clone, beforeVector),
-          generation: staged.generation,
           source: "agent",
           actorUserId: null,
           threadId: THREAD_ID,

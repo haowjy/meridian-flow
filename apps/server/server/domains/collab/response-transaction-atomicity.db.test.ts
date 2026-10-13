@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { applyDraftDocument } from "./test-support/apply-draft-document.js";
+import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -41,13 +42,15 @@ describe("change trail (postgres)", () => {
   it.each([
     false,
     true,
-  ])("a post-root checkpoint failure cannot reopen committed response (mixed=%s)", async (liveBeta) => {
+  ])("a post-root refresh failure cannot reopen or skip later documents in committed response (mixed=%s)", async (liveBeta) => {
     const harness = createHarness(db);
     const responseId = "00000000-0000-4000-8000-000000000832";
     await harness.seedAndStage(responseId, { liveBeta });
-    harness.failCheckpoint = true;
+    harness.failFirstRefresh = true;
     await expect(harness.commit(responseId)).resolves.toMatchObject({ status: "committed" });
-    expect(harness.checkpointObservedDurability).toBe(true);
+    expect(harness.refreshObservedDurability).toBe(true);
+    // The failed first refresh must not stop the second document's.
+    expect(new Set(harness.refreshedDocuments)).toEqual(new Set([ALPHA_ID, BETA_ID]));
     expect(harness.responseEvents(responseId)).toContainEqual(
       expect.objectContaining({ transition: "closed" }),
     );
@@ -157,7 +160,7 @@ describe("change trail (postgres)", () => {
         null,
         fixture.markupCodec.parse(`Created document ${index + 1}.`),
       );
-      await fixture.branchCoordinator.commitUpdate({
+      await commitJournaledUpdate(fixture.branchCoordinator, {
         branchId: branch.branchId,
         updateData: Y.encodeStateAsUpdate(content),
         source: "agent",

@@ -112,13 +112,17 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       listActiveWorkDraftBranchIds: async () => [a.id, secondId],
     } as unknown as Parameters<typeof createBranchPullService>[0]["branches"],
     branchCoordinator: {
-      pullFromDoc: async (id: string) => {
-        if (id === secondId) {
+      // The pull parks just before taking the second branch's lease, after the first
+      // branch's transaction committed; a receipt then owns both leases and the Work row.
+      withLeases: async (ids: readonly string[], run: (lease: never) => Promise<unknown>) => {
+        if (ids[0] === secondId) {
           secondReached.resolve();
           await receiptAcquired.promise;
         }
-        await locks.withBranches([id], async () => {
-          if (id === secondId) return;
+        return locks.withBranches([...ids], run as never);
+      },
+      pullFromDoc: async (_lease: unknown, id: string) => {
+        if (id !== secondId) {
           expect(
             await branches.updateBranchSnapshot({
               branchId: id,
@@ -130,7 +134,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
               liveCut: a.state,
             }),
           ).toBe(true);
-        });
+        }
         return new Uint8Array();
       },
     } as unknown as Parameters<typeof createBranchPullService>[0]["branchCoordinator"],
@@ -166,5 +170,46 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
     live.destroy();
     harness.cancelScheduledPulls();
     harness.destroyWarmState();
+  }
+});
+
+it("a pull waiting for a branch lease holds no pooled connection", async () => {
+  const { createDb } = await import("@meridian/database");
+  const single = createDb(process.env.DATABASE_URL ?? "", { max: 1 });
+  const locks = createBranchCriticalSections();
+  const live = new Y.Doc({ gc: false });
+  const branchId = "pulled-branch";
+  const pulls = createBranchPullService({
+    outsideTransaction: runOutsideDrizzleTransaction,
+    rootTransaction: (op) => runInRootDrizzleTransaction(single, op),
+    liveCoordinator: {
+      withDocument: async (_id: string, op: (doc: Y.Doc) => Promise<unknown>) => op(live),
+    } as unknown as Parameters<typeof createBranchPullService>[0]["liveCoordinator"],
+    branches: {
+      listActiveWorkDraftBranchIds: async () => [branchId],
+    } as unknown as Parameters<typeof createBranchPullService>[0]["branches"],
+    branchCoordinator: {
+      withLeases: (ids: readonly string[], run: (lease: never) => Promise<unknown>) =>
+        locks.withBranches([...ids], run as never),
+      pullFromDoc: async () => new Uint8Array(),
+    } as unknown as Parameters<typeof createBranchPullService>[0]["branchCoordinator"],
+  });
+  const release = gate();
+  const held = locks.withBranches([branchId], () => release.promise);
+  try {
+    const pull = pulls.flushLivePull(ALPHA_ID);
+    // Let the pull reach the held lease before probing the pool.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const outcome = await Promise.race([
+      single.execute(sql`select 1`).then(() => "connection free"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pool held"), 1500)),
+    ]);
+    expect(outcome).toBe("connection free");
+    release.resolve();
+    await Promise.all([held, pull]);
+  } finally {
+    release.resolve();
+    live.destroy();
+    await closeDatabase(single);
   }
 });
