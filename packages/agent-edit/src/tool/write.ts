@@ -49,6 +49,18 @@ export interface WriteTool {
   prepare: ResponseCommitter["prepare"];
   responseDocuments: ResponseCommitter["responseDocuments"];
   /** Drop one thread/document pair; a peerBranchId restricts this to that peer's state. */
+  refuseStaged(
+    responseId: string,
+    documentId: string,
+    reason: import("../ports/document-coordinator.js").StagedWriteRejectionReason,
+    peerBranchId?: string,
+  ): void;
+  retirePeer(input: {
+    documentId: string;
+    threadId: string;
+    peerBranchId: string;
+    reason: import("../ports/document-coordinator.js").StagedWriteRejectionReason;
+  }): Promise<void>;
   invalidateThreadDocument(docId: string, threadId: string, peerBranchId?: string): Promise<void>;
   /** Evict one thread's runtimes without revoking its response buffers. */
   evictThread(threadId: string): Promise<void>;
@@ -239,6 +251,16 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     hasResponseDocument: responseCommitter.hasResponseDocument,
     prepare: responseCommitter.prepare,
     responseDocuments: responseCommitter.responseDocuments,
+    refuseStaged: responseCommitter.refuseStaged,
+    async retirePeer(input) {
+      if (!input.documentId || !input.threadId || !input.peerBranchId)
+        throw new Error("Retirement requires a document, thread and peer");
+      responseCommitter.retirePeer(input);
+      await runtimeStore.evictThreadRuntimes(input.documentId, input.threadId, {
+        markLiveDocStale: true,
+        peerBranchId: input.peerBranchId,
+      });
+    },
     async invalidateThreadDocument(docId, threadId, peerBranchId) {
       if (!docId || !threadId || peerBranchId === "")
         throw new Error("invalidateThreadDocument names one document and one thread");

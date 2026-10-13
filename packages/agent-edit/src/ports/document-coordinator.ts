@@ -1,6 +1,12 @@
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
 
+export const hostSaveLeaseBrand: unique symbol = Symbol("HostSaveLease");
+export interface HostSaveLease {
+  readonly [hostSaveLeaseBrand]: true;
+}
+export type DiscardedWriteReason = Extract<StagedWriteRejectionReason, `discarded_${string}`>;
+
 /** The helper's authority base, independent of the generations its staged writes name. */
 export interface StagedHelperCut {
   generation: number;
@@ -56,6 +62,7 @@ export interface DocumentCoordinator {
     helperCut: StagedHelperCut;
     entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
     commit: boolean;
+    access?: DocumentLockOptions;
   }): Promise<StagedWriteReplayResult>;
 
   /** Immutable host generation bound to this canonical document, when supported. */
@@ -86,6 +93,7 @@ export interface DocumentCoordinator {
     liveJournalSeq?: number;
     attemptId?: string;
     reportingCut?: Uint8Array;
+    access?: DocumentLockOptions;
   }): Promise<ConcurrentUpdate[]>;
 
   /**
@@ -109,5 +117,5 @@ export interface DocumentLockOptions {
    * branches' locks before its transaction); the coordinator runs under it instead of
    * acquiring its own. Opaque to this package.
    */
-  lease?: unknown;
+  lease?: HostSaveLease;
 }
