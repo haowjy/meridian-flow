@@ -6,6 +6,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DraftReviewApi } from "../contracts.js";
 import { commandDigest, type DraftCommandEnvelope } from "../domain/draft-commands.js";
+import { commitSegmentRows } from "./branch-update-writes.js";
 import {
   type createHarness,
   THREAD_ID,
@@ -35,7 +36,7 @@ export async function commitBranchEdit(
   try {
     if (author.clientId !== undefined) staged.clone.clientID = author.clientId;
     mutate(staged.clone);
-    await fixture.branchCoordinator.commitSegmentRows({
+    await commitSegmentRows(fixture.branchCoordinator, {
       branchId: branchId,
       sourceDoc: staged.clone,
       expectedGeneration: staged.generation,
