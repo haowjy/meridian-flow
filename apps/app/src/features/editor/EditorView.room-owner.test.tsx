@@ -145,7 +145,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetDraftCommandRecords();
   review = null;
-  mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  mocks.listWorkDrafts.mockResolvedValue({ items: [listed] });
 });
 
 afterEach(() => {
@@ -213,7 +213,7 @@ it.each([
         branchGeneration: 2,
         reviewRoomName: room,
       });
-      mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, branchGeneration: 2 }] });
+      mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
       await act(async () =>
         read.resolve({ ...previewOf("3"), branchGeneration: 2, reviewRoomName: room }),
       );
@@ -243,7 +243,7 @@ it.each([
 
 it("draft-only has no live fallback, including closed completion and terminal failure", async () => {
   draftOnly = true;
-  mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, isNew: true }] });
+  mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
   await run(async (_client, room) => {
     const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
     mocks.applyDraftChanges.mockReturnValue(answer.promise);
@@ -257,7 +257,7 @@ it("draft-only has no live fallback, including closed completion and terminal fa
       branchGeneration: 2,
       reviewRoomName: branchRoomName("review-owner", 2),
     });
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
+    mocks.listWorkDrafts.mockResolvedValue({ items: [] });
     await act(async () => {
       answer.resolve(applied(true));
       await done;
@@ -350,7 +350,7 @@ it("a retired rebuild answer cannot replace a later review", async () => {
       reviewRoomName: nextRoom,
     });
     const rows = [{ ...listed, itemKey: "draft-b" }];
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: rows });
+    mocks.listWorkDrafts.mockResolvedValue({ items: rows });
     await act(async () => {
       client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), rows);
       review?.controller.enterInlineReview(documentId, "draft-b");
@@ -423,7 +423,7 @@ it("an incoming proposal holds the painted chrome across the room observation pr
       branchGeneration: 2,
       reviewRoomName: room,
     });
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, branchGeneration: 2 }] });
+    mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
     await act(async () =>
       client.setQueryData(
         projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
@@ -475,9 +475,7 @@ it("schema-stale is terminal before marks or the marks wait", async () => {
 });
 
 it("offers addressed whole Discard when a corrupt draft cannot open", async () => {
-  await run(async (client) => {
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
-    client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), []);
+  await run(async (_client) => {
     mocks.getDraftPreview.mockResolvedValue({
       status: "corrupt",
       itemKey: draftA.itemKey,
@@ -493,6 +491,8 @@ it("offers addressed whole Discard when a corrupt draft cannot open", async () =
     mocks.discardDraft.mockReturnValue(answer.promise);
     await act(async () => discardButton()?.click());
     expect(mocks.discardDraft).toHaveBeenCalledWith("project-a", "work-a", documentId, {
+      commandId: expect.any(String),
+      draftId: expect.any(String),
       itemKey: draftA.itemKey,
     });
     expect(discardButton()?.disabled).toBe(true);

@@ -1,8 +1,10 @@
 /** Bind a listed draft's domain view to its caller's Work authority, without joining a room. */
 
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import {
   type DraftRef,
   useChangeCommandRecords,
+  wholeDraftDisposition,
   wholeDraftPending,
 } from "@/client/query/draft-command-record";
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
@@ -13,7 +15,7 @@ import {
   listablePreview,
   useChangeItems,
 } from "./draft-changes";
-import { type ReviewChange, reviewChangesOfPreview } from "./review-changes";
+import { type ReviewChange, reviewChangesOfPreview, wholeItemChange } from "./review-changes";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 import type { WorkDraftCommands } from "./useWorkDraftCommands";
 
@@ -25,9 +27,11 @@ export function useDraftView(
   {
     controller,
     enabled = true,
+    item,
   }: {
     controller: Pick<WorkDraftCommands, "commandChange" | "changesLocked">;
     enabled?: boolean;
+    item?: ThreadDraftListItem;
   },
 ): DraftChangesView {
   const records = useChangeCommandRecords();
@@ -41,21 +45,34 @@ export function useDraftView(
     open?.documentId === draft.documentId &&
     open.itemKey === draft.itemKey;
   const painted = useOpenReviewChanges(presented, { enabled: sharing });
-  const entry = useDraftPreviews(enabled && !sharing ? [draft] : [], { openReview: open })[0];
+  const branchless = item?.branchGeneration === null;
+  const entry = useDraftPreviews(enabled && !sharing && !branchless ? [draft] : [], {
+    openReview: open,
+  })[0];
   const preview = entry?.status === "ready" ? listablePreview(entry.preview) : null;
   const { items, hiding } = useChangeItems(
     draft,
-    preview ? reviewChangesOfPreview(preview) : EMPTY,
-  );
-  const status = !entry
-    ? "idle"
-    : entry.status === "error" || (entry.status === "ready" && entry.preview.status === "corrupt")
-      ? "error"
+    branchless && item && enabled
+      ? wholeDraftDisposition(records, draft, undefined, item) === null
+        ? [wholeItemChange(item)]
+        : EMPTY
       : preview
-        ? "ready"
-        : entry.status === "ready" && entry.preview.status === "gone"
-          ? "gone"
-          : "loading";
+        ? reviewChangesOfPreview(preview)
+        : EMPTY,
+  );
+  const status =
+    branchless && enabled
+      ? "ready"
+      : !entry
+        ? "idle"
+        : entry.status === "error" ||
+            (entry.status === "ready" && entry.preview.status === "corrupt")
+          ? "error"
+          : preview
+            ? "ready"
+            : entry.status === "ready" && entry.preview.status === "gone"
+              ? "gone"
+              : "loading";
   const data: DraftChangesData = sharing
     ? {
         documentId: painted.documentId,
@@ -69,7 +86,7 @@ export function useDraftView(
         itemKey: draft.itemKey,
         status,
         items: status === "ready" ? items : [],
-        unlisted: status === "ready" && items.length === 0 && !hiding,
+        unlisted: !branchless && status === "ready" && items.length === 0 && !hiding,
         ...(entry?.status === "error" ? { retry: entry.retry } : {}),
       };
   return {

@@ -2,8 +2,10 @@
  * The change command record: what a preview read may bring back after the
  * writer applied or discarded a change, and what a held failure follows.
  */
+
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { beforeEach, describe, expect, it } from "vitest";
+import { listed } from "@/test-support/draft-review-scope";
 import {
   beginChangeCommand,
   changeCommandState,
@@ -29,6 +31,8 @@ function preview(): DraftPreviewResponse {
   });
   return {
     status: "active",
+    draftId: "d",
+    item: { ...listed, itemKey: "x" },
     itemKey: "x",
     branchGeneration: 1,
     reviewRoomName: "room",

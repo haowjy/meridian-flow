@@ -12,6 +12,7 @@ import {
   deferredReviewAnswer,
   discarded,
   draftA,
+  itemApplied,
   listed,
   previewOf,
   type ScopeProbe,
@@ -34,7 +35,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
   fixture = createReviewScopeFixture();
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-b" ? ["3"] : ["1", "2"])),
     itemKey: id,
@@ -64,7 +65,7 @@ it("Chat whole Apply hides the draft and excludes presented review selection", a
     expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     expect(p().header.view.items).toEqual([]);
     await act(async () => {
-      answer.resolve({ status: "applied", itemKey: "draft-a" });
+      answer.resolve(itemApplied());
       await done;
     });
   });
@@ -176,7 +177,7 @@ it.each([
 });
 
 it("a slow refused whole command on chapter A leaves chapter B actionable", async () => {
-  const answer = deferredReviewAnswer<{ status: "applied"; itemKey: string }>();
+  const answer = deferredReviewAnswer<ReturnType<typeof itemApplied>>();
   fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     const viewB = await p().mountDraftChanges(target(draftB));
