@@ -1,38 +1,16 @@
 /** Durable response settlement with post-commit participants and per-part failed-response inverses. */
 import { isResponseLifecycleError } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ResponseWriteCommitFinalizeResult, ResponseWriteFinalizer } from "../contracts.js";
 import type { ResponseSaveResult, ThreadPeerAgentEditCore } from "./agent-edit-cores.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
 import type { DocumentProjectionRefreshService } from "./document-projection-refresher.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { enlistResponseParticipant } from "./response-transaction.js";
 import type { PostDurabilityNoticeService } from "./reversal-notices.js";
 
-export type ResponseBranchFinalization = {
-  checkpointThreadPeer(documentId: DocumentId, threadId: ThreadId): Promise<void>;
-};
-
-export function createResponseBranchFinalization(input: {
-  branches: Pick<ApplicationBranchStore, "resolveThreadBranch">;
-  branchCoordinator: Pick<BranchCoordinator, "checkpointBranch">;
-}): ResponseBranchFinalization {
-  return {
-    async checkpointThreadPeer(documentId, threadId) {
-      const peer = await input.branches.resolveThreadBranch(documentId, threadId);
-      try {
-        await input.branchCoordinator.checkpointBranch(peer.branchId);
-      } finally {
-        peer.doc.destroy();
-      }
-    },
-  };
-}
-
 export function createResponseWriteFinalizer(input: {
   agentEdit: ThreadPeerAgentEditCore;
   rollback: Pick<import("./turn-inverse-service.js").TurnInverseService, "rollbackResponse">;
-  branches: ResponseBranchFinalization;
   projections: DocumentProjectionRefreshService;
   notices: PostDurabilityNoticeService;
 }): ResponseWriteFinalizer {
@@ -63,22 +41,22 @@ export function createResponseWriteFinalizer(input: {
                   documentIds: saved.documents.map((document) => document.documentId),
                 });
               }
-              const drafted = new Set(saved.draftedDocumentIds);
+              // The save's owned session already checkpointed every drafted peer.
+              // Refreshes are independent: one document's failure skips no other.
+              const failures: unknown[] = [];
               for (const document of saved.documents) {
                 try {
-                  if (drafted.has(document.documentId)) {
-                    await input.branches.checkpointThreadPeer(
-                      document.documentId as DocumentId,
-                      ctx.threadId,
-                    );
-                  }
-                } finally {
                   await input.projections.refresh(
                     { documentId: document.documentId as DocumentId, threadId: ctx.threadId },
                     "collab.response_finalize",
                   );
+                } catch (cause) {
+                  failures.push(cause);
                 }
               }
+              if (failures.length === 1) throw failures[0];
+              if (failures.length > 1)
+                throw new AggregateError(failures, "Response finalize refreshes failed");
             },
           });
         },

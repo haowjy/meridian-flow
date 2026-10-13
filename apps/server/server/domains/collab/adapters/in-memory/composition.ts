@@ -145,7 +145,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
         throw new Error("Durable inverse rollback requires the receipt-backed Postgres adapter");
       },
     },
-    branches: { async checkpointThreadPeer() {} },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
   });

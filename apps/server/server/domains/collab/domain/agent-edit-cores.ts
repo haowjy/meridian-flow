@@ -51,8 +51,6 @@ export type RoutedWriteOutcome = WriteOutcome & {
 
 /** One reply's save across every destination it wrote (D42). */
 export type ResponseSaveResult = ResponseCommitSuccessResult & {
-  /** Documents saved to this thread's Work draft copy; the rest went live. */
-  draftedDocumentIds: DocumentId[];
   refused: RefusedResponseDocument[];
 };
 
