@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   commitJournaledUpdate,
+  commitSegmentRows,
   resetBranchFromDoc,
 } from "../../test-support/branch-update-writes.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
@@ -333,7 +334,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       try {
         const coordinator = createBranchCoordinator({ store: measuredStore });
         expect(
-          await coordinator.commitSegmentRows({
+          await commitSegmentRows(coordinator, {
             branchId: branch.branchId,
             expectedGeneration: snapshot.generation,
             sourceDoc: source,

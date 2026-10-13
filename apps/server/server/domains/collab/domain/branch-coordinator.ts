@@ -206,18 +206,6 @@ export type BranchCoordinator = {
     actorUserId?: string;
     roomDocument: Y.Doc;
   }): Promise<{ admitted: boolean }>;
-  withStagedRows<T>(
-    branchId: string,
-    run: (
-      doc: Y.Doc,
-      snapshot: BranchSnapshot,
-    ) => Promise<{
-      result: T;
-      rows: readonly Omit<AppendBranchJournalInput, "generation">[];
-    }>,
-    commit: boolean,
-  ): Promise<T>;
-  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   /**
    * A save's one door to branch state: every call runs under `lease`, acquires nothing, and
    * throws `BranchLeaseScopeError` for a branch the lease does not cover.
@@ -690,18 +678,6 @@ export function createBranchCoordinator(input: {
     withLeases: (branchIds, run) => criticalSections.withBranches(branchIds, run),
 
     ownedSession,
-
-    withStagedRows(branchId, run, commit) {
-      return criticalSections.withBranches([branchId], () =>
-        stagedRowsUnder(branchId, run, commit),
-      );
-    },
-
-    commitSegmentRows(batch) {
-      return retryCas(() =>
-        criticalSections.withBranches([batch.branchId], () => segmentRowsUnder(batch)),
-      );
-    },
 
     pullFromDoc(lease, branchId, upstream) {
       assertBranchLeaseCovers(lease, branchId);
