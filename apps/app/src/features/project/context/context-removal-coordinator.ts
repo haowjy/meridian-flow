@@ -710,7 +710,6 @@ export class ContextRemovalCoordinator {
       if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewItemKey || !tab.tabInstanceToken)
         return { kind: "noop" };
       const preview = this.workspace.previewReviewTab(projectId, {
-        documentId,
         tabInstanceId: tab.tabInstanceId,
         reviewWorkId: tab.reviewWorkId,
         reviewItemKey: tab.reviewItemKey,
@@ -775,7 +774,6 @@ export class ContextRemovalCoordinator {
       if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewItemKey || !tab.tabInstanceToken)
         return { kind: "noop" };
       const identity = {
-        documentId,
         tabInstanceId: tab.tabInstanceId,
         reviewWorkId: tab.reviewWorkId,
         reviewItemKey: tab.reviewItemKey,
@@ -911,7 +909,6 @@ export class ContextRemovalCoordinator {
   discardDraft(
     projectId: string,
     reviewWorkId: string,
-    documentId: string,
     reviewItemKey: string,
   ): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
@@ -930,7 +927,6 @@ export class ContextRemovalCoordinator {
     )
       return { kind: "noop" };
     const identity = {
-      documentId,
       tabInstanceId: tab.tabInstanceId,
       reviewWorkId,
       reviewItemKey,
@@ -941,7 +937,7 @@ export class ContextRemovalCoordinator {
     const state = this.project(projectId);
     const transition = reduceRepresentedRemoval(state.selection, [tab], {
       cause: "draft-discard",
-      documentIds: [documentId],
+      documentIds: [tab.documentId],
       tabInstanceId: tab.tabInstanceId,
     });
     state.selection = transition.selection;
@@ -981,7 +977,6 @@ export class ContextRemovalCoordinator {
     )
       return false;
     const identity = {
-      documentId: tab.documentId,
       tabInstanceId: tab.tabInstanceId,
       reviewWorkId: tab.reviewWorkId,
       reviewItemKey: tab.reviewItemKey,

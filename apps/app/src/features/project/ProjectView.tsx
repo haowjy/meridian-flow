@@ -102,7 +102,11 @@ import {
   type MobileDocumentRoute,
   useMobileDocumentRoute,
 } from "./mobile/mobile-document-route";
-import { PresentedDocumentContext, resolvePresentedDocument } from "./presented-document";
+import {
+  PresentedDocumentContext,
+  type ReviewAddressAdmission,
+  resolvePresentedDocument,
+} from "./presented-document";
 import { ReviewAddressOwner, type ReviewAddressPort } from "./ReviewAddressOwner";
 import {
   type ChatDisplay,
@@ -180,6 +184,8 @@ export type ProjectViewProps = {
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
+  /** The route's verdict on an explicit review selector; the owner acts only when admitted. */
+  reviewAddressAdmission?: ReviewAddressAdmission;
   onSelectScreen: (screen: ScreenKey) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
@@ -575,7 +581,12 @@ function HydratedReviewControllers({
     <PresentedDocumentContext.Provider value={presented}>
       <PresentedReviewScope value={presentedReview}>
         <DraftOnlySettlement projectId={props.projectId} />
-        <ReviewAddressOwner review={presentedReview} presented={presented} port={port} />
+        <ReviewAddressOwner
+          review={presentedReview}
+          presented={presented}
+          admission={props.reviewAddressAdmission ?? "pending"}
+          port={port}
+        />
         {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
       </PresentedReviewScope>
     </PresentedDocumentContext.Provider>

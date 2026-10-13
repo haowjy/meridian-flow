@@ -4,6 +4,8 @@ import { createContext, useContext } from "react";
 import type { DockDocument } from "./dock/dock-document-store";
 import type { ScreenKey } from "./shell/screens";
 
+/** The route's verdict on an explicit review selector, asked of the server by `{ workId, itemKey }`. */
+export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
 export type ReviewAddress = { workId: string; itemKey: string; changeId?: string };
 export type PresentedDocument = {
   container: "editor" | "dock";
