@@ -25,11 +25,13 @@ function scenario() {
   const drafts = { shareActive: vi.fn(async (_id: DraftId) => ({ id: FAKE_DRAFT_ID }) as never) };
   const fileAccess = createFakeFileAccess();
   const criticalSections = createBranchCriticalSections();
+  const diagnostics = { replyPinMismatch: vi.fn() };
   const fences = createReplySaveFences({
     liveUtilityCore: live,
     branches,
     criticalSections,
     drafts,
+    diagnostics,
     fileAccess,
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
@@ -56,7 +58,16 @@ function scenario() {
       ],
     ]),
   };
-  return { fences, record, branches, drafts, fileAccess, threadCore, criticalSections };
+  return {
+    fences,
+    record,
+    branches,
+    drafts,
+    fileAccess,
+    threadCore,
+    criticalSections,
+    diagnostics,
+  };
 }
 
 describe("reply save fence", () => {
@@ -125,9 +136,8 @@ describe("reply save fence", () => {
     ]);
   });
 
-  it("logs an invariant break and refuses as integration for a peer of another draft", async () => {
+  it("reports an invariant break and refuses as integration for a peer of another draft", async () => {
     const s = scenario();
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     s.branches.set("peer-1", {
       ...(await s.branches.getBranch("peer-1"))!,
       draftId: "another-draft" as DraftId,
@@ -136,8 +146,9 @@ describe("reply save fence", () => {
     await expect(s.fences.confirm(s.record)).resolves.toEqual([
       { documentId: DOCUMENT, reason: "integration" },
     ]);
-    expect(error).toHaveBeenCalled();
-    error.mockRestore();
+    expect(s.diagnostics.replyPinMismatch).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: DOCUMENT, threadId: THREAD }),
+    );
   });
 
   it("a denied grant drops the document's writes with the policy's copy and keeps no receipt owner", async () => {
