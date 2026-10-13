@@ -46,13 +46,7 @@ import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
 import { reconcileSnapshotTurns } from "./reconcile-snapshot-turns";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
-import type {
-  EnsureAssistantTurnOptions,
-  LiveTurnMeta,
-  ThreadStoreActions,
-  ThreadStoreState,
-  TurnStatusPatch,
-} from "./types";
+import type { LiveTurnMeta, ThreadStoreActions, ThreadStoreState } from "./types";
 
 type PendingCreationState = {
   threadIds: Record<string, true>;
