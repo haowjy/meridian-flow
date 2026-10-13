@@ -62,7 +62,7 @@ function groupBy<T, K>(items: T[], keyFor: (item: T) => K): Map<K, T[]> {
 
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
-  hub: ThreadEventHub,
+  hub: Pick<ThreadEventHub, "headSeq" | "readModelProjectionWatermark">,
   statusReader: ThreadStatusReader & ThreadPendingInboxReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {

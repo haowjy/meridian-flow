@@ -8,10 +8,10 @@ End-to-end checks for `@meridian/model-gateway` via the smoke mini-server (`test
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `DEEPSEEK_API_KEY` | Optional | Enables live DeepSeek scenarios |
-| `ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
-| `OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
-| `OPENROUTER_API_KEY` | Optional | Enables live OpenRouter scenarios |
+| `FLOW_DEEPSEEK_API_KEY` | Optional | Enables live DeepSeek scenarios |
+| `FLOW_ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
+| `FLOW_OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
+| `FLOW_OPENROUTER_API_KEY` | Optional | Enables live OpenRouter scenarios |
 | `MODEL_PROVIDER` | Optional | Set to `mock` to force in-process mock even if keys exist |
 | `PORT` | Optional | Fixed listen port; default is OS-assigned ephemeral |
 
@@ -233,7 +233,7 @@ curl -sS -X POST "${BASE}/generate" \
 
 ## 7. DeepSeek live (optional)
 
-**Requires:** `DEEPSEEK_API_KEY` set to a real key in `.env`. Restart server.
+**Requires:** `FLOW_DEEPSEEK_API_KEY` set to a real key in `.env`. Restart server.
 
 Repeat scenarios **3**, **4**, and **5** with `"model": "deepseek-chat"` in the JSON body.
 
@@ -252,31 +252,59 @@ curl -sS -X POST "${BASE}/generate" \
 
 **Fail:** Auth/network errors, or mock provider used instead of DeepSeek.
 
-**Skip** if `DEEPSEEK_API_KEY` is unset.
+**Skip** if `FLOW_DEEPSEEK_API_KEY` is unset.
 
 ---
 
 ## 8. Anthropic live (optional)
 
-**Requires:** `ANTHROPIC_API_KEY` in `.env`.
+**Requires:** `FLOW_ANTHROPIC_API_KEY` in `.env`.
 
-**Note:** Anthropic adapter is scaffold-only in v1; `buildProviderConfigs` does not register Anthropic yet. Expect failure or skip until the adapter lands.
+Anthropic is enabled by a real key. With no explicit model selection, General
+uses the registry default `claude-sonnet-4-6`.
 
-If enabled in a future release, repeat scenarios 3–5 with:
-
-```json
-"model": "claude-sonnet-4-20250514"
+```bash
+pnpm dev
+pnpm portless:list
+THREAD=$(./mf thread create --title 'Current Claude probe')
+./mf thread send "$THREAD" 'Describe a moonlit mountain in one sentence. Do not use tools.' --json
+./mf thread view "$THREAD" --json
+./mf log --thread "$THREAD" --source gateway --full --json
+pnpm dev --stop
 ```
 
-**Pass (when supported):** HTTP 200; `provider` reflects Anthropic; valid completion/stream/tool response.
+**Pass:** text deltas and a completed reply; the durable transcript includes
+that reply. Gateway `stream.open` / successful `stream.close` correlation names
+`anthropic` and `claude-sonnet-4-6`. Command-union tools (write and work) must
+not cause Anthropic's root `oneOf` / `anyOf` schema rejection.
 
-**Skip** until adapter is implemented.
+Also exercise valid command selection, not just a text reply:
+
+```bash
+pnpm dev
+THREAD=$(./mf thread create --title 'Claude command probe' --json | jq -r .threadId)
+PROBE="Command projection $(date +%s)"
+./mf thread send "$THREAD" "List my works. Create a manuscript document named '$PROBE' containing exactly 'Moonlight silvered the peaks.' Do not change other documents." --json
+./mf thread send "$THREAD" "List my works. Copy '$PROBE' to '$PROBE copy'. Do not change the original." --json
+./mf doc read "manuscript://$PROBE copy"
+./mf thread view "$THREAD" --json
+./mf log --thread "$THREAD" --source gateway --full --json
+pnpm dev --stop
+```
+
+**Pass:** Work `list` and Write `create` / `copy` succeed on their first tool
+calls, with no `invalid_arguments` correction loop. Copy includes its required
+`from.path`. Read-back matches the original sentence; gateway closes are `ok`.
+The projection's command guidance must retain branch purposes, required and
+allowed fields; shared field descriptions identify their commands.
+
+**Skip** only if `FLOW_ANTHROPIC_API_KEY` is unset.
 
 ---
 
 ## 9. OpenAI live (optional)
 
-**Requires:** `OPENAI_API_KEY` in `.env`.
+**Requires:** `FLOW_OPENAI_API_KEY` in `.env`.
 
 **Note:** OpenAI Responses adapter is scaffold-only in v1; provider is not registered yet.
 

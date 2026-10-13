@@ -282,10 +282,10 @@ function status(error: unknown): string {
 }
 
 const providerKeys = [
-  ["anthropic", process.env.ANTHROPIC_API_KEY],
-  ["openai", process.env.OPENAI_API_KEY],
-  ["deepseek", process.env.DEEPSEEK_API_KEY],
-  ["openrouter", process.env.OPENROUTER_API_KEY],
+  ["anthropic", process.env.FLOW_ANTHROPIC_API_KEY],
+  ["openai", process.env.FLOW_OPENAI_API_KEY],
+  ["deepseek", process.env.FLOW_DEEPSEEK_API_KEY],
+  ["openrouter", process.env.FLOW_OPENROUTER_API_KEY],
 ] as const;
 const corpusFile = JSON.parse(await readFile(corpusUrl, "utf8")) as CorpusFile;
 const png = makeProbePng(1024, 1024);
@@ -312,10 +312,10 @@ for (const [provider, key] of providerKeys) {
   }
 
   const env = {
-    ...(provider === "anthropic" ? { ANTHROPIC_API_KEY: key } : {}),
-    ...(provider === "openai" ? { OPENAI_API_KEY: key } : {}),
-    ...(provider === "deepseek" ? { DEEPSEEK_API_KEY: key } : {}),
-    ...(provider === "openrouter" ? { OPENROUTER_API_KEY: key } : {}),
+    ...(provider === "anthropic" ? { FLOW_ANTHROPIC_API_KEY: key } : {}),
+    ...(provider === "openai" ? { FLOW_OPENAI_API_KEY: key } : {}),
+    ...(provider === "deepseek" ? { FLOW_DEEPSEEK_API_KEY: key } : {}),
+    ...(provider === "openrouter" ? { FLOW_OPENROUTER_API_KEY: key } : {}),
   };
   const { gateway, cleanup } = await createGatewayFromEnv(env);
   const models = gateway.listModels?.() ?? [];

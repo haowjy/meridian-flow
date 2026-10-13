@@ -44,6 +44,13 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   only control is an X (`onDismiss`) that dismisses it and returns to the editor.
   Pressing Send again is the retry, and the next recorded send clears it.
 - Every note above the box is a `NoticeCard` in one stack the Composer draws:
-  the host's own (`notices`, such as the info-tone deleted-chat note) and then
-  the Composer's failure. The stack sits above the strips joined to the box's
-  top edge (`attached`, the draft dock), never between a strip and the box.
+  the host's own (`notices`, such as the dismissible deleted-chat note and the
+  nondismissible usage note) and then the Composer's failure. The stack sits
+  above the strips joined to the box's top edge (`attached`, the draft dock),
+  never between a strip and the box.
+- Usage waiting is the server inbox projection (`blocked.reason:
+  credits_exhausted`), not an account-balance guess. ChatView supplies its
+  info-tone note through `notices`; waiting writer rows say "Waiting for usage".
+  The server clears the fact through the ordinary inbox event (at run start, or
+  when no message or control remains pending). The box stays editable, and the
+  client never polls.

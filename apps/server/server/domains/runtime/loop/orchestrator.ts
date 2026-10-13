@@ -444,6 +444,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
   // New turns require positive balance; the mid-stream gate in turn-accounting
   // allows zero grace only after an already-started turn is in flight.
   if (!(await deps.billingUsage.canStartTurn(thread.userId))) {
+    if (isDrainRun(input)) await deps.delivery.blockForUsage(input.lease);
     throw meridianErrorFromSystem(
       "credits_exhausted",
       "Your usage balance is exhausted; add balance before starting a new turn",

@@ -33,7 +33,7 @@ flowchart LR
 | [controls.md](controls.md) | Queued writer controls, run-start queue order, Stop behavior, withdrawal, and one-command-per-run consumption. |
 | [handoff.md](handoff.md) | Handoff brief ownership of the destination run claim, Stop/Retry, and release wake. |
 | [summarizer.md](summarizer.md) | The shared summarizer port (owner and source), branch/rolling paths, and paid-row settlement. |
-| [recovery.md](recovery.md) | Run-owned placeholder repair and independent process recovery lanes. |
+| [recovery.md](recovery.md) | Run-owned placeholder repair, stale-lease settlement and release rules, and independent process recovery lanes. |
 | [gateway context](../gateway/.context/CONTEXT.md) | The provider-neutral gateway: routing, retry, deadlines, usage, instrumentation, registry, cache descriptors. |
 
 Deferred work: [TODO](TODO) and [FUTURE](FUTURE).

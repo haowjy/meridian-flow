@@ -12,6 +12,8 @@ const ADD_TAB = 18;
 /** Gaps between the frame and the chrome hovering beside it. */
 const COLUMN_GRIP_GAP = 4;
 const ROW_GRIP_GAP = 6;
+// The Add column tab reaches ADD_TAB_GAP + ADD_TAB past a full-width table, into the
+// trailing gutter; `editor-column.ts` sizes that gutter's floor from these two.
 const ADD_TAB_GAP = 9;
 /** The add-row tab hangs INSIDE the bottom edge rather than below it. */
 const ADD_TAB_INSET = 6;

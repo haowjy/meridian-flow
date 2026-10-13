@@ -36,7 +36,7 @@ export const COMMANDS: readonly CommandSpec[] = GROUPS.flatMap((group) => group.
 
 const EXIT_CODE_LINES = [
   "0 ok (empty results included)",
-  "1 run failed or server error",
+  "1 run failed, waiting for usage, or server error",
   "2 usage",
   "3 not found",
   "4 stack not running or dev login failed",

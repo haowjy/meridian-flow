@@ -15,10 +15,11 @@ const APP_ENV_PASSTHROUGH_KEYS = [
   "MODEL_CALL_STALL_MS",
   "APP_DEBUG",
   "OBS_VERBOSE",
-  "ANTHROPIC_API_KEY",
-  "OPENAI_API_KEY",
-  "DEEPSEEK_API_KEY",
-  "OPENROUTER_API_KEY",
+  "FLOW_ANTHROPIC_API_KEY",
+  "FLOW_OPENAI_API_KEY",
+  "FLOW_DEEPSEEK_API_KEY",
+  "FLOW_OPENROUTER_API_KEY",
+  "FLOW_OPENROUTER_BASE_URL",
 ] as const;
 
 export function resolveAppEnvPassthroughKeys(env: NodeJS.ProcessEnv): string[] {

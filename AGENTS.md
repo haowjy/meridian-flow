@@ -102,6 +102,11 @@ Dev uses Portless HTTPS routes. Never assume raw ports, bind ports manually, or
 probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
 `pnpm portless:list`.
 
+The dev server doesn't watch `node_modules`: pnpm hardlinks its shared store into
+every worktree, so another worktree's install would otherwise restart this one's
+server and kill in-flight replies ([#817](https://github.com/haowjy/meridian-flow/issues/817)).
+After installing, upgrading, or patching a package, run `pnpm dev:restart`.
+
 Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 

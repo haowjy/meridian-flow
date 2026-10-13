@@ -48,6 +48,9 @@ Local-dev-only utilities. Not loaded by the application runtime.
     that needs more (e.g. a live Yjs editor peer needing prosemirror-schema,
     markup, agent-edit) is the trigger to move `./mf` into its own workspace
     package rather than widening the tools/dev import rule.
+  - Usage refusals are current pending state, not terminal run events. Send
+    reconciles a replayed block with the durable snapshot before returning exit 1;
+    an already recovered reply wins over an obsolete refusal for that message.
   - Tests share `cli/test-support/fake-stack.ts` (fake API + thread socket on the
     real contracts); `cli/main.test.ts` also boots the real `./mf` shim.
 

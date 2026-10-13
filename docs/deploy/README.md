@@ -59,8 +59,10 @@ Provider-conditioned model variables:
 
 | Variable | When needed |
 |---|---|
-| `ANTHROPIC_API_KEY` | Anthropic model provider |
-| `OPENAI_API_KEY` | OpenAI model provider |
-| `DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
+| `FLOW_ANTHROPIC_API_KEY` | Anthropic model provider |
+| `FLOW_OPENAI_API_KEY` | OpenAI model provider |
+| `FLOW_DEEPSEEK_API_KEY` | DeepSeek/OpenAI-compatible provider |
+| `FLOW_OPENROUTER_API_KEY` | OpenRouter model provider |
+| `FLOW_OPENROUTER_BASE_URL` | Optional OpenRouter base URL override |
 
 No external package-execution provider is part of the Meridian Flow v3 deployment contract.
