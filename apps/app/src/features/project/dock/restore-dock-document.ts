@@ -1,12 +1,14 @@
 /** Restores a hidden dock candidate only after replica hydration and identity validation. */
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DocumentAddressResult, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { resourcePlacementForSnapshot, resourceVisibleInProject } from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect } from "react";
+import { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
-import type { ContextTab, ReviewItemTabIdentity } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { validateServerRoute } from "../browser-editor-tab-validation";
 import { useAccountId, useAccountResourceReplica } from "../context/account-feature-context";
@@ -15,32 +17,54 @@ import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { projectResourceTab } from "../context/context-tab-from-file";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 
+type ReviewSelector = { workId: string; itemKey: string };
+
+export type DockRestorePorts = {
+  resources: Pick<AccountResourceReplica, "readProjection" | "acquireCatalog">;
+  /** Asks the server selector for the saved review's document: the only authority for it. */
+  admitReview: (
+    projectId: string,
+    review: ReviewSelector,
+    locator: { scheme: ProjectContextTreeScheme; path: string },
+  ) => Promise<DocumentAddressResult>;
+  /** Labels and whole-item state only; a failed or incomplete list proves nothing. */
+  readWorkDrafts: (projectId: string, workId: string) => Promise<ThreadDraftListItem[]>;
+};
+
+/**
+ * A saved review asks the server selector with its `{ workId, itemKey }` before any list or
+ * catalog restoration. An unavailable answer keeps the saved address for the pane to show; an
+ * omitted list row never turns a review into Live.
+ */
 export async function restoreDockDocument(
   document: DockDocument,
-  {
-    resources,
-    readWorkDrafts,
-  }: {
-    resources: Pick<AccountResourceReplica, "readProjection" | "acquireCatalog">;
-    readWorkDrafts: (projectId: string, workId: string) => Promise<ThreadDraftListItem[]>;
-  },
+  { resources, admitReview, readWorkDrafts }: DockRestorePorts,
 ): Promise<DockDocument | null> {
-  let review = document.review;
-  if (review) {
-    const identity: ReviewItemTabIdentity = {
-      reviewWorkId: review.workId,
-      reviewItemKey: review.itemKey,
-    };
-    const rows = await readWorkDrafts(document.projectId, identity.reviewWorkId);
-    const row = rows.find((row) => row.itemKey === identity.reviewItemKey);
-    if (row?.isNew) {
-      const tab = contextTabFromDraftGroup({ ...row, workId: review.workId });
-      return tab ? { ...document, tab, review } : null;
-    }
-    if (!row) review = null;
+  const { review } = document;
+  if (!review || document.tab.kind === "new") {
+    const tab = await restoreLiveTab(document, resources);
+    return tab ? { ...document, tab, review } : null;
   }
-  const tab = await restoreLiveTab(document, resources);
-  return tab ? { ...document, tab, review } : null;
+  const { tab } = document;
+  const answer = await admitReview(document.projectId, review, {
+    scheme: tab.scheme,
+    path: tab.path,
+  });
+  if (answer.kind === "unavailable") return document;
+  const documentId = answer.document.documentId;
+  const bound: DockDocument = { ...document, tab: { ...tab, documentId } };
+  const row = (await readWorkDrafts(document.projectId, review.workId).catch(() => [])).find(
+    (candidate) => candidate.itemKey === review.itemKey && candidate.documentId === documentId,
+  );
+  if (row?.isNew) {
+    const fromRow = contextTabFromDraftGroup({ ...row, workId: review.workId });
+    return fromRow ? { ...bound, tab: fromRow } : null;
+  }
+  // A hidden created item the list lacks keeps the draft-only tab it was saved with.
+  if (tab.draftOnly && tab.reviewItemKey === review.itemKey && tab.reviewWorkId === review.workId)
+    return bound;
+  const live = await restoreLiveTab(bound, resources);
+  return live ? { ...bound, tab: live } : null;
 }
 
 async function restoreLiveTab(
@@ -110,6 +134,8 @@ export function useDockDocumentRestoration(projectId: string, workspaceHydrated:
     let live = true;
     void restoreDockDocument(restoring, {
       resources,
+      admitReview: (project, review, locator) =>
+        getProjectDocumentAddress(project, locator.scheme, locator.path, { review }),
       readWorkDrafts: (project, work) =>
         queryClient.fetchQuery(workDraftsQueryOptions(project, work)),
     }).then(

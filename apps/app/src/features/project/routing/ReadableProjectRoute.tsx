@@ -38,6 +38,11 @@ import {
   useProjectChatNavigation,
 } from "./chat-navigation";
 import {
+  bindDocumentAddressReview,
+  reviewAddressRouteBinding,
+  reviewBoundAddressResult,
+} from "./document-address-review";
+import {
   DocumentSwitchFailureProvider,
   destinationFailure,
   useDocumentSwitchFailures,
@@ -351,6 +356,8 @@ function ReadableProjectDestination({
         isError: false,
         refetch: () => undefined,
       };
+  const addressBinding = bindDocumentAddressReview(address.itemKey, addressWorkId);
+  const addressReview = addressBinding.kind === "review" ? addressBinding.review : undefined;
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
     queryKey: [
@@ -358,6 +365,8 @@ function ReadableProjectDestination({
       documentDestination?.scheme,
       documentDestination?.path,
       addressOwner.rootThreadId ?? addressOwner.workId,
+      address.itemKey ? addressWorkId : null,
+      address.itemKey,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -367,10 +376,13 @@ function ReadableProjectDestination({
         projectId,
         documentDestination.scheme,
         documentDestination.path,
-        addressOwner,
+        { ...addressOwner, review: addressReview },
       );
     },
-    enabled: !!documentDestination && editorWork.status === "present",
+    enabled:
+      !!documentDestination &&
+      editorWork.status === "present" &&
+      (addressBinding.kind === "plain" || addressBinding.kind === "review"),
     staleTime: 0,
     retry: false,
   });
@@ -384,7 +396,7 @@ function ReadableProjectDestination({
   });
   const localDocumentAddress = useMemo(
     () =>
-      documentDestination
+      documentDestination && addressBinding.kind === "plain"
         ? resolveLocalDocumentAddress(
             projectId,
             documentDestination,
@@ -396,6 +408,7 @@ function ReadableProjectDestination({
         : undefined,
     [
       addressCatalog,
+      addressBinding.kind,
       documentDestination,
       addressOwner.workId,
       addressOwner.rootThreadId,
@@ -406,7 +419,8 @@ function ReadableProjectDestination({
   const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
-    documentLookup.data,
+    reviewBoundAddressResult(addressBinding, documentLookup.data),
+    addressBinding.kind === "plain" ? "live" : "review",
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
@@ -418,8 +432,23 @@ function ReadableProjectDestination({
     },
     editorDrafts,
     (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
+    reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
+  const reviewRouteBinding = reviewAddressRouteBinding(
+    addressBinding,
+    documentResult,
+    selection,
+    documentDestination,
+    workId,
+  );
+  useLayoutEffect(() => {
+    if (!reviewRouteBinding) return;
+    contextRemoval.bindRouteSelection(projectId, reviewRouteBinding.revision, {
+      kind: "server",
+      documentId: reviewRouteBinding.documentId,
+    });
+  }, [contextRemoval, projectId, reviewRouteBinding?.revision, reviewRouteBinding?.documentId]);
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
   const addressDocumentId =
     documentResult && documentResult.kind !== "unavailable"
@@ -806,6 +835,15 @@ function ReadableProjectDestination({
             reviewItemKey={address.itemKey}
             reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
+            reviewAddressAdmission={
+              documentIssue === "error"
+                ? "failed"
+                : documentIssue === "unavailable"
+                  ? "unavailable"
+                  : addressDocumentId
+                    ? "admitted"
+                    : "pending"
+            }
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}
             onExitContextScheme={() => browse(null)}
