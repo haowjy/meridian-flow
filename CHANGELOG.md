@@ -178,6 +178,18 @@
 ### Fixed
 
 - Message box: in an existing chat, the agent shows as grey text instead of a dimmed chip that looked disabled, and the Work picker uses the same text size as the other pickers.
+- Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
+
+- Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
+
+- After a server restart interrupts a reply, the chat returns to idle when recovery finishes and accepts your next message without waiting.
+
+- A reply the AI provider turned down now offers Retry, so you can try it again after fixing the cause without retyping.
+
+- Documents in a narrow pane (the side panel, a narrow Editor window, the phone) give more of their width to the text. Margins follow the pane rather than the screen, and the right margin narrows first while the left keeps room for the drag handle.
+- Settings fits a narrow desktop window. Its sections become tabs along the top and each setting sits under its label, as on a phone, with a margin from the window edge.
+
+- Phone: opening Manuscript, Knowledge Base or Unfiled from Files lists its files again, instead of "This folder no longer exists."
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.

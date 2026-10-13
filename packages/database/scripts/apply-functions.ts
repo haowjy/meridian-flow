@@ -30,6 +30,7 @@ const files = [
   "update_updated_at.sql",
   "validate_turn_thread_integrity.sql",
   "consume_credit_lots_fifo.sql",
+  "capture_document_checkpoint_range.sql",
 ];
 
 const sql = postgres(databaseUrl, { max: 1 });

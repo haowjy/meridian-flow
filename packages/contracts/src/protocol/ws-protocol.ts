@@ -166,6 +166,7 @@ const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInb
 
 const threadPendingInboxSchema: z.ZodType<import("../threads/index.js").ThreadPendingInbox> =
   z.object({
+    blocked: z.object({ reason: z.literal("credits_exhausted") }).optional(),
     items: z.array(pendingInboxItemSchema),
   });
 
