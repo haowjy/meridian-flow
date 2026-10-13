@@ -39,7 +39,12 @@ import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-l
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
 import { draftPublicationHttpAnswer } from "./draft-publication-http.js";
-import { documentTarget, requireFileGrant, withEditGrants } from "./file-access-http.js";
+import {
+  documentTarget,
+  isFileAccessRefusal,
+  requireFileGrant,
+  withEditGrants,
+} from "./file-access-http.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
 
 type DraftRouteServices = {
@@ -435,7 +440,7 @@ async function commandIngress(
   try {
     prepared = await prepare();
   } catch (cause) {
-    if (!isNotFoundRefusal(cause)) throw cause;
+    if (!isFileAccessRefusal(cause)) throw cause;
     const stored = await recorded(deps, envelope, options);
     if (stored) return stored;
     throw cause;
@@ -448,14 +453,6 @@ async function commandIngress(
     outcome,
     { draftId: envelope.draftId ?? "", commandId: envelope.commandId },
     options,
-  );
-}
-
-function isNotFoundRefusal(cause: unknown): boolean {
-  return (
-    typeof cause === "object" &&
-    cause !== null &&
-    (cause as { statusCode?: unknown }).statusCode === 404
   );
 }
 
