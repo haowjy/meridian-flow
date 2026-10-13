@@ -131,9 +131,7 @@ const { createDocumentWriteHookRunner } = await import(
 const { enlistResponseParticipant, runResponseTransaction } = await import(
   "../domain/response-transaction.js"
 );
-const { createResponseBranchFinalization, createResponseWriteFinalizer } = await import(
-  "../domain/response-write-finalizer.js"
-);
+const { createResponseWriteFinalizer } = await import("../domain/response-write-finalizer.js");
 const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
 const { createBranchThreadPeerAgentEditCore } = await import("../thread-peer-composition.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
@@ -365,8 +363,9 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   // Which branch journal insert of the next save fails, counting from 1.
   const state = {
     failJournalInsertAt: null as number | null,
-    failCheckpoint: false,
-    checkpointObservedDurability: false,
+    failFirstRefresh: false,
+    refreshedDocuments: [] as string[],
+    refreshObservedDurability: false,
   };
   function injectSecondJournalFailure(): void {
     if (++journalInsertCount === state.failJournalInsertAt) {
@@ -637,7 +636,21 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     observability,
     inTransaction: isInDrizzleTransaction,
   });
-  const projections = { refresh: runDocumentWriteHook };
+  const projections = {
+    // Records each post-commit refresh so a test can prove one failure skips no later document.
+    async refresh(...args: Parameters<typeof runDocumentWriteHook>) {
+      state.refreshedDocuments.push(args[0].documentId);
+      if (state.failFirstRefresh && state.refreshedDocuments.length === 1) {
+        const rows = await db
+          .select()
+          .from(schema.branchWriteJournal)
+          .where(eq(schema.branchWriteJournal.source, "agent"));
+        state.refreshObservedDurability = rows.length > 0 && !isInDrizzleTransaction();
+        throw new Error("injected post-root-commit refresh failure");
+      }
+      return runDocumentWriteHook(...args);
+    },
+  };
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
@@ -690,22 +703,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
     rollback: turnInverse,
-    branches: createResponseBranchFinalization({
-      branches: branchStore,
-      branchCoordinator: {
-        async checkpointBranch(branchId) {
-          if (state.failCheckpoint) {
-            const rows = await db
-              .select()
-              .from(schema.branchWriteJournal)
-              .where(eq(schema.branchWriteJournal.source, "agent"));
-            state.checkpointObservedDurability = rows.length > 0 && !isInDrizzleTransaction();
-            throw new Error("injected post-root-commit checkpoint failure");
-          }
-          return branchCoordinator.checkpointBranch(branchId);
-        },
-      },
-    }),
     projections,
     notices: createPostDurabilityNoticeService({
       notices,
@@ -1964,11 +1961,14 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   }
 
   return {
-    set failCheckpoint(value: boolean) {
-      state.failCheckpoint = value;
+    set failFirstRefresh(value: boolean) {
+      state.failFirstRefresh = value;
     },
-    get checkpointObservedDurability() {
-      return state.checkpointObservedDurability;
+    get refreshObservedDurability() {
+      return state.refreshObservedDurability;
+    },
+    get refreshedDocuments() {
+      return [...state.refreshedDocuments];
     },
     get failSecondJournalInsert() {
       return state.failJournalInsertAt === 2;

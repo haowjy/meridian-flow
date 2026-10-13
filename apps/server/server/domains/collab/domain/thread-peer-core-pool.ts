@@ -462,7 +462,7 @@ export function createThreadPeerCorePool(input: {
       if (!record) {
         // A reply that wrote nothing has nothing to save; it only closes.
         const closed = await input.liveUtilityCore.commitResponse(responseId);
-        const saved = mergeSaveResults(responseId, [closed], new Set(), []);
+        const saved = mergeSaveResults(responseId, [closed], []);
         await options?.beforeTransactionCommit?.(saved);
         return saved;
       }
@@ -487,7 +487,7 @@ export function createThreadPeerCorePool(input: {
                 .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
                 .map(([documentId]) => documentId),
             );
-            const saved = mergeSaveResults(responseId, results, drafted, refused);
+            const saved = mergeSaveResults(responseId, results, refused);
             await options?.beforeTransactionCommit?.(saved);
             input.responseTransactions.enlist({
               commit: async () => {
@@ -571,7 +571,6 @@ export function createThreadPeerCorePool(input: {
 function mergeSaveResults(
   responseId: string,
   results: readonly ResponseCommitSuccessResult[],
-  drafted: ReadonlySet<DocumentId>,
   refused: RefusedResponseDocument[],
 ): ResponseSaveResult {
   const documents = results.flatMap((result) => result.documents);
@@ -588,9 +587,6 @@ function mergeSaveResults(
     },
     ...(results.some((result) => result.awarenessDegraded) ? { awarenessDegraded: true } : {}),
     ...(discardedClaims.length > 0 ? { discardedClaims } : {}),
-    draftedDocumentIds: documents
-      .map((document) => document.documentId as DocumentId)
-      .filter((documentId) => drafted.has(documentId)),
     refused,
   };
 }
