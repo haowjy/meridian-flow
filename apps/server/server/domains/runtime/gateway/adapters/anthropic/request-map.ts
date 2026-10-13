@@ -39,6 +39,7 @@ import type {
 } from "../../domain/index.js";
 import { thinkingBudgetTokens } from "../../domain/thinking-budget.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
+import { anthropicToolSchema } from "./tool-schema.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;
 
@@ -330,56 +331,10 @@ function extractSystem(
 // breakpoint already covers them (see the file header).
 //
 
-/**
- * Anthropic rejects root command unions. Advertise their property envelope;
- * the tool executor still validates the original, stricter command schema.
- * Nested property unions remain supported, so each field retains its variants.
- */
-function anthropicToolSchema(
-  schema: FunctionTool["inputSchema"],
-): Anthropic.Messages.Tool.InputSchema {
-  const { oneOf, anyOf, ...root } = schema;
-  const alternatives = oneOf ?? anyOf;
-  if (!Array.isArray(alternatives)) return schema as Anthropic.Messages.Tool.InputSchema;
-
-  const variants = alternatives as Array<{
-    properties?: Record<string, unknown>;
-    required?: string[];
-  }>;
-  const fields = new Map<string, unknown[]>();
-  for (const variant of variants) {
-    for (const [name, field] of Object.entries(variant.properties ?? {})) {
-      const options = fields.get(name) ?? [];
-      if (!options.some((option) => JSON.stringify(option) === JSON.stringify(field))) {
-        options.push(field);
-      }
-      fields.set(name, options);
-    }
-  }
-  return {
-    ...root,
-    type: "object",
-    properties: {
-      ...(root.properties as Record<string, unknown> | undefined),
-      ...Object.fromEntries(
-        [...fields].map(([name, options]) => [
-          name,
-          options.length === 1 ? options[0] : { anyOf: options },
-        ]),
-      ),
-    },
-    required: [
-      ...new Set([
-        ...((root.required as string[] | undefined) ?? []),
-        ...(variants[0]?.required ?? []).filter((name) =>
-          variants.every((variant) => variant.required?.includes(name)),
-        ),
-      ]),
-    ],
-  } as Anthropic.Messages.Tool.InputSchema;
-}
-
-function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | undefined {
+function mapTools(
+  tools: Tool[] | undefined,
+  providerId: string,
+): Anthropic.Messages.ToolUnion[] | undefined {
   if (!tools?.length) return undefined;
 
   const mapped: Anthropic.Messages.ToolUnion[] = [];
@@ -389,7 +344,9 @@ function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | u
       mapped.push({
         name: ft.name,
         description: ft.description,
-        input_schema: anthropicToolSchema(ft.inputSchema),
+        input_schema: (providerId === "anthropic"
+          ? anthropicToolSchema(ft.inputSchema)
+          : ft.inputSchema) as Anthropic.Messages.Tool.InputSchema,
       });
     } else if (tool.type === "hosted") {
       if (tool.kind === "web_search" || tool.kind.startsWith("anthropic.web_search")) {
@@ -444,6 +401,7 @@ export function toAnthropicMessageParams(
   const cacheControl = cacheControlForTtl(promptCacheTtlMs);
   const maxTokens = request.maxTokens ?? maxOutputTokens;
   const system = extractSystem(request.messages, cacheControl);
+  const tools = mapTools(request.tools, providerId);
   const messages = mergeConsecutiveSameRole(
     request.messages
       .map((message) => mapMessage(message, providerId, modelId, cacheControl))
@@ -462,7 +420,7 @@ export function toAnthropicMessageParams(
     messages: repaired,
     stream: true,
     ...(system !== undefined ? { system } : {}),
-    ...(mapTools(request.tools) ? { tools: mapTools(request.tools) } : {}),
+    ...(tools ? { tools } : {}),
     ...(mapToolChoice(request.toolChoice)
       ? { tool_choice: mapToolChoice(request.toolChoice) }
       : {}),

@@ -1,4 +1,7 @@
+import { WriteToolInputSchema } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
+import { WorkCommandSchema } from "../../../tools/core-tools.js";
+import { modelToolSchema } from "../../../tools/model-tool-schema.js";
 import { assistant, system, toolResult, user } from "../../helpers/messages.js";
 import { toAnthropicMessageParams } from "./request-map.js";
 
@@ -249,39 +252,46 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
   expect(capped).toEqual({ ...original, max_tokens: 4396 });
 });
 
-it("advertises command unions as an object schema accepted by Anthropic", () => {
-  const inputSchema = {
-    type: "object",
-    oneOf: [
-      {
-        type: "object",
-        properties: { command: { const: "create" }, path: { type: "string" } },
-        required: ["command", "path"],
-      },
-      {
-        type: "object",
-        properties: { command: { const: "list" }, verbose: { type: "boolean" } },
-        required: ["command"],
-      },
-    ],
-  };
-  const params = toAnthropicMessageParams(
-    { messages: [user("Hello")], tools: [{ ...skillTool, inputSchema }] },
-    "claude-sonnet-4-6",
-    64_000,
-    "anthropic",
-  );
-  expect(params.tools?.[0]).toMatchObject({
-    input_schema: {
-      type: "object",
-      properties: {
-        command: { anyOf: [{ const: "create" }, { const: "list" }] },
-        path: { type: "string" },
-        verbose: { type: "boolean" },
-      },
-      required: ["command"],
-    },
-  });
-  expect(params.tools?.[0]).not.toHaveProperty("input_schema.oneOf");
-  expect(inputSchema.oneOf).toHaveLength(2);
+it("preserves real Work and Write command instructions only when projecting for Anthropic", () => {
+  for (const input of [WorkCommandSchema, WriteToolInputSchema]) {
+    const inputSchema = modelToolSchema(input);
+    const original = structuredClone(inputSchema);
+    const request = { messages: [user("Hello")], tools: [{ ...skillTool, inputSchema }] };
+    const params = toAnthropicMessageParams(request, "claude-sonnet-4-6", 128_000, "anthropic");
+    const advertised = params.tools?.[0] as {
+      input_schema: { properties: Record<string, { description: string }>; required: string[] };
+    };
+    const branches = inputSchema.oneOf as Array<{
+      description: string;
+      required: string[];
+      properties: Record<string, { const?: string; description?: string }>;
+    }>;
+    for (const branch of branches) {
+      const command = branch.properties.command.const;
+      const guidance = advertised.input_schema.properties.command.description;
+      expect(guidance).toContain(`${command}: ${branch.description}`);
+      expect(guidance).toContain(`Required fields: ${branch.required.join(", ")}.`);
+      expect(guidance).toContain(`Allowed fields: ${Object.keys(branch.properties).join(", ")}.`);
+      for (const [field, schema] of Object.entries(branch.properties)) {
+        expect(advertised.input_schema.properties[field].description).toContain(`[${command}]`);
+        if (schema.description)
+          expect(advertised.input_schema.properties[field].description).toContain(
+            schema.description,
+          );
+      }
+    }
+    expect(advertised.input_schema).not.toHaveProperty("oneOf");
+    const { oneOf, ...root } = inputSchema;
+    const anyOfRequest = {
+      ...request,
+      tools: [{ ...skillTool, inputSchema: { ...root, anyOf: oneOf } }],
+    };
+    expect(
+      toAnthropicMessageParams(anyOfRequest, "claude-sonnet-4-6", 128_000, "anthropic").tools?.[0],
+    ).toHaveProperty("input_schema", advertised.input_schema);
+    expect(
+      toAnthropicMessageParams(request, "deepseek-flash", 65_536, "deepseek").tools?.[0],
+    ).toHaveProperty("input_schema", original);
+    expect(inputSchema).toEqual(original);
+  }
 });
