@@ -14,18 +14,14 @@ const transport = vi.hoisted(() => ({ cancel: vi.fn() }));
 vi.mock("@/client/providers/TransportProvider", () => ({ useThreadTransport: () => transport }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
-vi.mock("@/client/query/write-mode-cache", () => ({ applyWriteModeAnswer: vi.fn() }));
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
 vi.mock("@/client/stores", () => announcements);
 
-import type { Turn } from "@meridian/contracts/protocol";
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
-import type { JournalSwitch } from "@/client/chat-submissions/owner";
-import { useControlTurnAnnouncements } from "../compaction/useControlTurnAnnouncements";
-import type { QueuedControl } from "./thread-controls";
+import type { SwitchLedgerView } from "./useSwitchLedger";
 import { type ThreadControls, useThreadControls } from "./useThreadControls";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -38,33 +34,24 @@ afterAll(() => {
 });
 
 const EMPTY: ThreadPendingInbox = { items: [] };
-const NO_JOURNAL = {
-  pending: [],
-  submit: () => true,
+const NO_SWITCHES: SwitchLedgerView = {
+  rows: [],
+  writeMode: "direct",
+  switchWriteMode: () => undefined,
   retry: () => undefined,
-  withdraw: () => Promise.resolve("admitted" as const),
-  settle: () => undefined,
-  onAnswered: () => () => undefined,
+  withdraw: () => undefined,
 };
 const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
 let latest: ThreadControls;
-function Probe(props: {
-  pending?: ThreadPendingInbox;
-  journaled?: readonly JournalSwitch[];
-  turns?: readonly Turn[];
-  answered?: ReadonlySet<string>;
-}) {
+function Probe(props: { pending?: ThreadPendingInbox }) {
   latest = useThreadControls({
     threadId: "thread-1",
-    projectId: "project-1",
-    writeMode: "direct",
     pending: props.pending ?? EMPTY,
-    answeredControlIds: props.answered ?? NONE,
-    switches: { ...NO_JOURNAL, pending: props.journaled ?? [] },
+    answeredControlIds: NONE,
+    switches: NO_SWITCHES,
   });
-  useControlTurnAnnouncements(props.turns ?? []);
   return null;
 }
 
@@ -227,65 +214,6 @@ describe("useThreadControls", () => {
     };
     await act(async () => root.render(<Probe pending={committed} />));
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
-  });
-
-  it("announces a switch as it queues and as it applies, and nothing for a switch back", async () => {
-    const inbox = (id: string, mode: "draft" | "direct"): ThreadPendingInbox => ({
-      items: [
-        {
-          id,
-          seq: 1,
-          intent: "control",
-          control: { kind: "write_mode", mode },
-          provenance: { kind: "writer", actorId: "w" },
-          deliveryState: "waiting",
-          summary: "",
-          enqueuedAt: "2026-09-28T00:00:00.000Z",
-        },
-      ],
-    });
-    const turn = (id: string, position: number, metadata: Turn["metadata"] = null) =>
-      ({
-        id,
-        threadId: "thread-1",
-        position,
-        role: metadata ? "system" : "user",
-        status: "complete",
-        blocks: [],
-        metadata,
-      }) as unknown as Turn;
-    const history = [turn("u", 0)];
-    const sending = [{ id: "s1", mode: "draft", failed: false, awaitingServer: false }] as const;
-    await act(async () => root.render(<Probe journaled={sending} turns={history} />));
-    expect(announcements.announce).not.toHaveBeenCalled();
-    // The server answers: queued behind a reply.
-    await act(async () => root.render(<Probe pending={inbox("s1", "draft")} turns={history} />));
-    expect(announcements.announce).toHaveBeenLastCalledWith("Switch to draft mode queued");
-    expect(latest.writeMode).toBe("draft");
-    // Its divider lands: the applied state.
-    const divider = turn("sw", 1, {
-      kind: "write_mode_switch",
-      mode: "draft",
-      controlMessageId: "s1",
-    });
-    await act(async () =>
-      root.render(<Probe turns={[...history, divider]} answered={new Set(["s1"])} />),
-    );
-    expect(announcements.announce).toHaveBeenLastCalledWith("Switched to draft mode");
-    announcements.announce.mockClear();
-    // A queued auto-apply switch, and a switch back to draft before the server answers: both vanish.
-    await act(async () =>
-      root.render(
-        <Probe
-          pending={inbox("s2", "direct")}
-          journaled={[{ id: "s3", mode: "draft", failed: false, awaitingServer: false }]}
-          turns={[...history, divider]}
-        />,
-      ),
-    );
-    expect(latest.queued).toEqual([]);
-    expect(announcements.announce).not.toHaveBeenCalled();
-    expect(announcements.announceError).not.toHaveBeenCalled();
   });
 
   it("stops a pending divider through the cancel route and marks it stopping", async () => {

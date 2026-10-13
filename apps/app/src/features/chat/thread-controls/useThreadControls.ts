@@ -1,20 +1,20 @@
 /**
- * useThreadControls — the imperative shell around `thread-controls.ts`.
+ * useThreadControls — the imperative shell around `thread-controls.ts`, and the
+ * one list of queued commands the transcript shows.
  *
- * Mints command ids, shows the queued row before the network answers,
- * enqueues and withdraws through the threads API, and asks the snapshot to
- * revalidate so the new state reaches the transcript. Withdraw removes the row
- * at once and, once any in-flight enqueue settles, always asks the server: an
- * enqueue that looked failed may still have landed. A 404 means the server
- * did not have it yet: the local send goes, and the row shows again if the
- * inbox lists it later. Also stops a running compaction
- * divider through the turn cancel route. Announces each state change the
- * writer caused.
+ * `/compact` posts from this hook: it mints the command id, shows the queued
+ * row before the network answers, enqueues and withdraws through the threads
+ * API, and asks the snapshot to revalidate so the new state reaches the
+ * transcript. Withdraw removes the row at once and, once any in-flight enqueue
+ * settles, always asks the server: an enqueue that looked failed may still
+ * have landed. A 404 means the server did not have it yet: the local send
+ * goes, and the row shows again if the inbox lists it later. Also stops a
+ * running compaction divider through the turn cancel route, and announces each
+ * state change the writer caused.
  *
- * Two kinds ride here. `/compact` posts from this hook. A write-mode switch is
- * a record in the chat's submission journal, posted in order with the messages
- * around it by the journal's one driver; this hook shows its rows, takes the
- * driver's answer, and keeps the composer's mode honest while it is queued.
+ * A write-mode switch is the switch ledger's (`useSwitchLedger`): its rows,
+ * Retry, Withdraw and the chat's mode come from there and are listed after the
+ * compaction rows.
  */
 import { t } from "@lingui/core/macro";
 import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
@@ -23,9 +23,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
-import type { JournalSwitch, SwitchAnswer } from "@/client/chat-submissions/owner";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { applyWriteModeAnswer } from "@/client/query/write-mode-cache";
 import { announce, announceError } from "@/client/stores";
 import { useTurnStop } from "../useTurnStop";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
@@ -34,31 +32,14 @@ import {
   controlsReducer,
   mergeQueuedControls,
   NO_LOCAL_CONTROLS,
-  overlaidWriteMode,
   type QueuedControl,
-  switchesCancelledBy,
 } from "./thread-controls";
-import { useSwitchAnnouncements } from "./useSwitchAnnouncements";
-
-/** What the chat's submission journal offers the controls: its switches and their order. */
-export type SwitchJournal = {
-  pending: readonly JournalSwitch[];
-  submit(id: string, mode: AiWriteMode): boolean;
-  retry(id: string): void;
-  /**
-   * `removed`: the server can't have it (never posted, or refused). `admitted`: it has it,
-   * so the server's Withdraw is the way. `kept`: it may have it and hasn't said.
-   */
-  withdraw(id: string): Promise<"removed" | "admitted" | "kept">;
-  /** The inbox or a divider shows these switches: tabs that stood in for them let go. */
-  settle(ids: Iterable<string>): void;
-  onAnswered(listener: (answer: SwitchAnswer) => void): () => void;
-};
+import type { SwitchLedgerView } from "./useSwitchLedger";
 
 export type ThreadControls = {
   queued: readonly QueuedControl[];
   stoppingTurnIds: ReadonlySet<string>;
-  /** The chat's mode as the writer should see it: queued and local switches laid over the server's. */
+  /** The chat's mode as the writer should see it: the ledger's switches laid over the snapshot's. */
   writeMode: AiWriteMode;
   enqueue: (control: CompactControl) => string;
   /** Switch the chat's write mode; the row shows at once and the journal posts it in order. */
@@ -71,14 +52,11 @@ export type ThreadControls = {
 
 export function useThreadControls(input: {
   threadId: string;
-  projectId: string;
-  /** The chat's mode as the server last said it. */
-  writeMode: AiWriteMode;
   pending: ThreadPendingInbox;
   answeredControlIds: ReadonlySet<string>;
-  switches: SwitchJournal;
+  switches: SwitchLedgerView;
 }): ThreadControls {
-  const { threadId, projectId, pending, answeredControlIds, switches } = input;
+  const { threadId, pending, answeredControlIds, switches } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
   localRef.current = local;
@@ -91,55 +69,9 @@ export function useThreadControls(input: {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   }, [queryClient, threadId]);
 
-  const mergeInput = useMemo(
-    () => ({
-      local,
-      pending,
-      journaled: switches.pending,
-      executedControlIds: answeredControlIds,
-    }),
-    [answeredControlIds, local, pending, switches.pending],
-  );
-  const mergeInputRef = useRef(mergeInput);
-  mergeInputRef.current = mergeInput;
-  const latest = useRef({ switches, projectId });
-  latest.current = { switches, projectId };
-
-  const { settle: settleWitnesses } = switches;
   useEffect(() => {
-    const ids = new Set(pending.items.map((item) => item.id));
-    dispatch({ type: "listed", pendingIds: ids });
-    settleWitnesses(ids);
-  }, [pending, settleWitnesses]);
-  useEffect(() => settleWitnesses(answeredControlIds), [answeredControlIds, settleWitnesses]);
-
-  // The driver may be any pane's: the answer reaches whichever pane shows this chat.
-  const { onAnswered } = switches;
-  useEffect(
-    () =>
-      onAnswered(({ id, mode, response }) => {
-        const cancelled = response.pending === null && response.turnId === null;
-        dispatch({
-          type: "switch_answered",
-          id,
-          control: { kind: "write_mode", mode },
-          pending: response.pending,
-          turnId: response.turnId,
-          cancels: cancelled ? switchesCancelledBy(mergeInputRef.current, { id, mode }) : [],
-        });
-        // The switch applied: the mode is the server's now, before the divider arrives.
-        if (response.turnId) {
-          applyWriteModeAnswer(queryClient, {
-            projectId: latest.current.projectId,
-            threadId,
-            mode,
-            turnId: response.turnId,
-          });
-        }
-        revalidate();
-      }),
-    [onAnswered, queryClient, revalidate, threadId],
-  );
+    dispatch({ type: "listed", pendingIds: new Set(pending.items.map((item) => item.id)) });
+  }, [pending]);
 
   const send = useCallback(
     (id: string, control: ControlBody) => {
@@ -179,39 +111,29 @@ export function useThreadControls(input: {
     [send],
   );
 
-  const switchWriteMode = useCallback((mode: AiWriteMode) => {
-    const control = { kind: "write_mode", mode } as const;
-    if (!latest.current.switches.submit(crypto.randomUUID(), mode)) {
-      announceError(controlStatusCopy(control, "failed"));
-    }
-  }, []);
-
+  const { retry: retrySwitch, withdraw: withdrawSwitch } = switches;
   const retry = useCallback(
     (controlId: string) => {
-      const journaled = latest.current.switches.pending.find((entry) => entry.id === controlId);
-      if (journaled) {
-        latest.current.switches.retry(controlId);
-        return;
-      }
       const entry = localRef.current.sends.find((candidate) => candidate.id === controlId);
-      if (entry?.request !== "failed") return;
+      if (!entry) return retrySwitch(controlId);
+      if (entry.request !== "failed") return;
       dispatch({ type: "retry", id: controlId });
       announce(controlStatusCopy(entry.control, "queued"));
       // Same id: the server treats a repeat as the original request.
       send(controlId, entry.control);
     },
-    [send],
+    [retrySwitch, send],
   );
 
   const withdraw = useCallback(
     (queued: QueuedControl) => {
+      if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
       dispatch({ type: "withdraw", id: queued.id });
       announce(controlWithdrawnCopy(queued.control));
-      const settle = () => dispatch({ type: "withdrawn", id: queued.id });
       const withdrawOnServer = async () => {
         try {
           const { outcome } = await withdrawThreadControl(threadId, queued.id);
-          settle();
+          dispatch({ type: "withdrawn", id: queued.id });
           // The row goes either way; the divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(queued.control));
           revalidate();
@@ -225,20 +147,9 @@ export function useThreadControls(input: {
           announceError(t`Couldn't withdraw. Try again.`);
         }
       };
-      // A switch the journal holds that the server can't have (never posted, or
-      // refused): taking it out of the journal is the withdrawal, and releases what
-      // waited behind it. One the server may hold stays, and offers Retry only.
-      if (latest.current.switches.pending.some((entry) => entry.id === queued.id)) {
-        void latest.current.switches.withdraw(queued.id).then((result) => {
-          if (result === "removed") settle();
-          else if (result === "admitted") return withdrawOnServer();
-          else dispatch({ type: "withdraw_not_found", id: queued.id });
-        });
-        return;
-      }
       void (inflight.current.get(queued.id) ?? Promise.resolve()).then(withdrawOnServer);
     },
-    [revalidate, threadId],
+    [revalidate, threadId, withdrawSwitch],
   );
 
   const { stop: stopTurn } = turnStop;
@@ -251,19 +162,18 @@ export function useThreadControls(input: {
     [stopTurn],
   );
 
-  const queued = useMemo(() => mergeQueuedControls(mergeInput), [mergeInput]);
-  useSwitchAnnouncements(queued);
-  const writeMode = useMemo(
-    () => overlaidWriteMode(input.writeMode, queued),
-    [input.writeMode, queued],
+  const compactRows = useMemo(
+    () => mergeQueuedControls({ local, pending, executedControlIds: answeredControlIds }),
+    [answeredControlIds, local, pending],
   );
+  const queued = useMemo(() => [...compactRows, ...switches.rows], [compactRows, switches.rows]);
 
   return {
     queued,
     stoppingTurnIds: turnStop.stopping,
-    writeMode,
+    writeMode: switches.writeMode,
     enqueue,
-    switchWriteMode,
+    switchWriteMode: switches.switchWriteMode,
     retry,
     withdraw,
     stop,

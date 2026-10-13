@@ -74,8 +74,8 @@ import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
+import { useSwitchLedger } from "./thread-controls/useSwitchLedger";
 import { useThreadControls } from "./thread-controls/useThreadControls";
-import { useWriteModeSync } from "./thread-controls/useWriteModeSync";
 import { answeredControlIds } from "./thread-controls/write-mode-model";
 import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
@@ -249,15 +249,21 @@ export function ChatView({
     },
   );
   const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
-  const controls = useThreadControls({
+  const switches = useSwitchLedger({
     threadId,
     projectId,
     writeMode: activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
     pending: pendingInbox,
-    answeredControlIds: answeredControls,
-    switches: submissions.switches,
+    turns,
+    historySettled,
+    journal: submissions.switches,
   });
-  useWriteModeSync({ projectId, threadId, turns, settled: historySettled });
+  const controls = useThreadControls({
+    threadId,
+    pending: pendingInbox,
+    answeredControlIds: answeredControls,
+    switches,
+  });
   useControlTurnAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live
   // state is fresher here than the subscription seed.

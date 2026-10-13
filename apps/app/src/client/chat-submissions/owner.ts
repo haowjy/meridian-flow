@@ -16,7 +16,6 @@ import {
   invalidateProjectThreadData,
   invalidateWorkThreads,
 } from "@/client/query/project-invalidation";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
@@ -53,19 +52,18 @@ type RecoveryState = {
   busy?: boolean;
   moving?: boolean;
 };
-/** A write-mode switch the journal still holds: the server has not admitted it. */
+/** A write-mode switch the journal still holds: the server has not yet been heard from on it. */
 export type JournalSwitch = {
   id: string;
   mode: AiWriteMode;
+  /** The record's place in the chat's order. */
+  seq: number;
+  /** Marked posted before its first request left. */
+  posted: boolean;
+  /** The server refused it: nothing is held there, so Withdraw is local. */
+  refused: boolean;
+  /** The last attempt did not succeed (refused, or lost in this tab). */
   failed: boolean;
-  /** Posted and not refused: the server may hold it, so it offers Retry and no local Withdraw. */
-  awaitingServer: boolean;
-  /**
-   * The record left storage but this tab's own projection has not shown the outcome yet.
-   * It stands in for the row, like a sending one, until the inbox lists it, a divider
-   * names it, or a refetch started at its removal resolves.
-   */
-  witness?: true;
 };
 export type SwitchAnswer = {
   id: string;
@@ -80,10 +78,6 @@ type ThreadModel = {
   /** Records of switches whose last attempt in this tab did not reach the server. */
   failedSwitches: Set<string>;
   switches: readonly JournalSwitch[];
-  /** The last state this tab saw of each switch record still in storage. */
-  seen: Map<string, { entry: JournalSwitch; rejected: boolean }>;
-  /** Switches that left storage and have not yet shown up in this tab's projection. */
-  witnesses: Map<string, JournalSwitch>;
   answerListeners: Set<(answer: SwitchAnswer) => void>;
 };
 const models = new Map<string, ThreadModel>();
@@ -98,8 +92,6 @@ function threadModel(accountId: string, threadId: string): ThreadModel {
       bindings: new Set(),
       failedSwitches: new Set(),
       switches: [],
-      seen: new Map(),
-      witnesses: new Map(),
       answerListeners: new Set(),
     };
     models.set(id, model);
@@ -475,68 +467,37 @@ export class ChatSubmissionOwner {
   private rebuildSwitches(records: readonly ChatSubmission[]) {
     const found = records.filter((entry) => entry.control).sort(compareSubmissions);
     const failed = this.model.failedSwitches;
-    for (const id of failed) if (!found.some((entry) => entry.recordId === id)) failed.delete(id);
-    const live: JournalSwitch[] = found.map((entry) => ({
+    for (const id of failed) {
+      if (found.some((entry) => entry.recordId === id)) continue;
+      // Withdrawn or retired: its "Couldn't switch" announcement ends with it.
+      failed.delete(id);
+      this.options.clear(id);
+    }
+    const next: JournalSwitch[] = found.map((entry) => ({
       id: entry.recordId,
       mode: entry.control?.mode ?? "direct",
+      seq: entry.seq,
+      posted: !!entry.posted,
+      refused: entry.state === "rejected",
       failed: entry.state === "rejected" || failed.has(entry.recordId),
-      awaitingServer: !!entry.posted && entry.state !== "rejected",
     }));
-    const { seen, witnesses } = this.model;
-    const liveIds = new Set(live.map((entry) => entry.id));
-    for (const [id, last] of seen) {
-      if (liveIds.has(id)) continue;
-      seen.delete(id);
-      // A refused switch leaves by Withdraw or Edit and never reached the server. Any other
-      // one left because the server answered it, and this tab's projection may lag.
-      if (!last.rejected) this.keepWitness(last.entry);
-    }
-    for (const entry of live) {
-      seen.set(entry.id, {
-        entry,
-        rejected: found.some((r) => r.recordId === entry.id && r.state === "rejected"),
-      });
-      witnesses.delete(entry.id);
-    }
-    const next = [...witnesses.values(), ...live];
     const previous = this.model.switches;
     const same =
       previous.length === next.length &&
-      previous.every(
-        (entry, index) =>
-          entry.id === next[index]?.id &&
-          entry.mode === next[index]?.mode &&
-          entry.failed === next[index]?.failed &&
-          entry.awaitingServer === next[index]?.awaitingServer &&
-          entry.witness === next[index]?.witness,
-      );
+      previous.every((entry, index) => {
+        const other = next[index];
+        return (
+          other !== undefined &&
+          entry.id === other.id &&
+          entry.mode === other.mode &&
+          entry.seq === other.seq &&
+          entry.posted === other.posted &&
+          entry.refused === other.refused &&
+          entry.failed === other.failed
+        );
+      });
     if (!same) this.model.switches = next;
   }
-
-  /** Hold a departed switch as a witness, and refetch: the refetch's end retires it. */
-  private keepWitness(entry: JournalSwitch) {
-    const { queryClient, threadId } = this.options;
-    this.model.witnesses.set(entry.id, {
-      ...entry,
-      failed: false,
-      awaitingServer: false,
-      witness: true,
-    });
-    void queryClient
-      .invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) })
-      .then(() => this.settleSwitches([entry.id]))
-      .catch((error) => reportError(error));
-  }
-
-  /** The projection shows these switches (listed, divided or refetched): their witnesses retire. */
-  settleSwitches = (ids: Iterable<string>) => {
-    const { witnesses } = this.model;
-    let settled = false;
-    for (const id of ids) settled = witnesses.delete(id) || settled;
-    if (!settled) return;
-    const binding = [...this.model.bindings].find((owner) => owner.options.current());
-    binding?.rebuild();
-  };
 
   /** Absence is not dissolution. Resolve remote Edit versus acceptance from the server. */
   private async reconcileDestination() {
