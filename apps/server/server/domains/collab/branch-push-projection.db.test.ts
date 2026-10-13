@@ -52,6 +52,7 @@ import { createBranchCoordinator } from "./domain/branch-coordinator.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
+import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -201,7 +202,7 @@ describe("branch-push durable projection", () => {
     });
     const branchDoc = createCollabYDoc({ gc: false });
     model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Recovered projection"));
-    await branchCoordinator.commitUpdate({
+    await commitJournaledUpdate(branchCoordinator, {
       branchId: branch.branchId,
       updateData: Y.encodeStateAsUpdate(branchDoc),
       source: "agent",
@@ -403,7 +404,7 @@ describe("branch-push durable projection", () => {
     });
     const branchDoc = createCollabYDoc({ gc: false });
     model.insertBlocks(toDocHandle(branchDoc), null, codec.parse("Never completed"));
-    await branchCoordinator.commitUpdate({
+    await commitJournaledUpdate(branchCoordinator, {
       branchId: branch.branchId,
       updateData: Y.encodeStateAsUpdate(branchDoc),
       source: "agent",

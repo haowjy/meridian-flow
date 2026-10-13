@@ -137,8 +137,12 @@ that safe:
   stops when there are none. Otherwise it takes its live snapshot before
   opening its root transaction, never while holding it: the snapshot needs its
   own connection, and pulls that each hold one while waiting for another
-  exhaust the pool and deadlock. The root transaction lists the branches again,
-  since one can close in between.
+  exhaust the pool and deadlock. The branch list is read again, since one can
+  close in between. Every pull takes its branch leases first and its root
+  transaction second, the save's order, and keeps the leases through the
+  write: a live pull leases one branch at a time; a thread-peer pull leases the
+  peer and its upstream together, so a per-change Discard cannot refork the
+  upstream between capture and peer persistence.
 - **Room loads read in the caller's transaction.** A room opened under a
   command transaction loads its journal snapshot and validates its handle's
   authority generation through that transaction. The transaction may already
