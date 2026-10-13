@@ -17,7 +17,7 @@ import {
   retireChatSubmission,
 } from "./index";
 import type { SubmissionLock } from "./lock";
-import type { ChatSubmission } from "./store";
+import { type ChatSubmission, compareSubmissions } from "./store";
 import { probeChatDestination, type ThreadAvailability } from "./thread-availability";
 
 export type DeletedChatSurface = {
@@ -102,9 +102,7 @@ export async function cleanDeletedChat(
     let moved = false;
     if (visible && projectId) {
       const shown = visible.recordIds();
-      const drafts = records
-        .filter((entry) => shown.has(entry.recordId))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const drafts = records.filter((entry) => shown.has(entry.recordId)).sort(compareSubmissions);
       const snapshots = drafts.map(
         (entry) => entry.draft ?? serializeComposerDraft(plainComposerDoc(entry.text)).draft,
       );

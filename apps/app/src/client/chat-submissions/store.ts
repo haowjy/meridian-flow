@@ -19,8 +19,8 @@ import {
 } from "@/components/app/composer/composer-document";
 import { submissionLockName } from "./lock";
 
-export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 2;
-export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v2:";
+export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 3;
+export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v3:";
 
 export type ChatSubmissionStorage = {
   getItem(key: string): string | null;
@@ -36,6 +36,12 @@ export type ChatSubmission = {
   threadId: string;
   projectId: string | null;
   createdAt: string;
+  /**
+   * The record's place in its chat's order: the chat's largest `seq` plus one, allocated
+   * when the record is first appended. Drain order and refusal barriers sort by it, then by
+   * `recordId`; `createdAt` is display only.
+   */
+  seq: number;
   text: string;
   blocks: UserMessageBlock[];
   references: SubmittedReference[];
@@ -43,10 +49,15 @@ export type ChatSubmission = {
   state?: "rejected";
   /**
    * A write-mode switch, not a message. It is posted to the chat's controls route in
-   * `createdAt` order with the messages around it; `recordId` and `submissionId` are
+   * `seq` order with the messages around it; `recordId` and `submissionId` are
    * the control's own id, and the message fields are empty.
    */
   control?: { kind: "write_mode"; mode: AiWriteMode };
+  /**
+   * Set before the control's first POST. A control without it never reached the server,
+   * so the writer may withdraw it locally; with it, only the server's Withdraw is safe.
+   */
+  posted?: true;
   draft?: ComposerDraftSnapshot;
   creation?: {
     title: string;
@@ -60,6 +71,14 @@ export type ChatSubmission = {
     agentSlug: string;
   };
 };
+
+/** A record as callers build it: the journal allocates `seq` when the record is first appended. */
+export type NewChatSubmission = Omit<ChatSubmission, "seq"> & { seq?: number };
+
+/** The chat's durable order. Equal `seq` (two tabs appending in one tick) breaks on the id. */
+export function compareSubmissions(a: ChatSubmission, b: ChatSubmission): number {
+  return a.seq - b.seq || (a.recordId < b.recordId ? -1 : a.recordId > b.recordId ? 1 : 0);
+}
 
 export function chatSubmissionStorageKey(accountId: string, recordId: string): string {
   return `${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:${recordId}`;
@@ -96,13 +115,16 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     !value.threadId ||
     (value.projectId !== null && typeof value.projectId !== "string") ||
     typeof value.createdAt !== "string" ||
+    typeof value.seq !== "number" ||
+    !Number.isSafeInteger(value.seq) ||
     typeof value.text !== "string" ||
     !Array.isArray(value.blocks) ||
     !value.blocks.every(isObject) ||
     !Array.isArray(value.references) ||
     !value.references.every(isObject) ||
     !isStringArray(value.activatedSkillSlugs) ||
-    (value.state !== undefined && value.state !== "rejected")
+    (value.state !== undefined && value.state !== "rejected") ||
+    (value.posted !== undefined && value.posted !== true)
   )
     return null;
   const control = value.control;
@@ -132,18 +154,20 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     threadId: value.threadId,
     projectId: value.projectId,
     createdAt: value.createdAt,
+    seq: value.seq,
     text: value.text,
     blocks: value.blocks as UserMessageBlock[],
     references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
     ...(value.state === "rejected" ? { state: "rejected" } : {}),
     ...(control ? { control: { kind: "write_mode", mode: control.mode as AiWriteMode } } : {}),
+    ...(value.posted ? { posted: true as const } : {}),
     ...(draft ? { draft } : {}),
     ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
   };
 }
 
-/** Remove after the first production deploy shipping v2 has been live for a release. */
+/** Remove after the first production deploy shipping v3 has been live for a release. */
 function rewriteV1ChatSubmissions(
   storage: ChatSubmissionStorage,
   accountId: string,
@@ -165,6 +189,7 @@ function rewriteV1ChatSubmissions(
             parseSubmission({
               ...value,
               recordId: value.submissionId,
+              seq: 0,
               creation:
                 value.kind === "first-send"
                   ? {
@@ -201,7 +226,7 @@ function rewriteV1ChatSubmissions(
           },
           (value) => parseSubmission(value) ?? undefined,
         );
-        // Until deletion succeeds, the v2 copy is deliberately invisible to commands.
+        // Until deletion succeeds, the v3 copy is deliberately invisible to commands.
         if (target.read() || target.write(current)) old.write(undefined);
         completed();
       };
@@ -317,17 +342,26 @@ export class DeviceChatSubmissionJournal {
     }
   }
 
-  record(accountId: string, entry: ChatSubmission): boolean {
+  /**
+   * Write a record. A new one gets the chat's next `seq`, read and written in this one
+   * synchronous step (localStorage has no await between them); an existing one keeps its
+   * `seq`. Two tabs appending in the same tick can tie, and the id breaks that tie.
+   */
+  record(accountId: string, entry: NewChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
     try {
       if (this.hasLegacy(accountId, entry.recordId)) return false;
     } catch {
       return false;
     }
-    const written = this.recordFor(
-      accountId,
-      chatSubmissionStorageKey(accountId, entry.recordId),
-    ).write(entry);
+    const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));
+    const existing = stored.read();
+    const seq =
+      existing?.seq ??
+      this.entries()
+        .filter((other) => other.threadId === entry.threadId)
+        .reduce((largest, other) => Math.max(largest, other.seq), 0) + 1;
+    const written = stored.write({ ...entry, seq });
     if (written) this.notify();
     return written;
   }

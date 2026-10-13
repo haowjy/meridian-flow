@@ -53,6 +53,24 @@ it("goes from sending to queued to nothing once the divider answers it", () => {
   });
   expect(queued.map((row) => row.status)).toEqual(["queued"]);
   expect(overlaidWriteMode("draft", queued)).toBe("direct");
+  // This tab only saw the record leave the journal: it stands in for the row, with the
+  // mode, until the inbox lists it or a divider names it.
+  const witness = { ...switchTo("s1", "direct"), witness: true };
+  const standIn = mergeQueuedControls({
+    local: NO_LOCAL_CONTROLS,
+    pending: EMPTY,
+    journaled: [witness],
+    executedControlIds: NONE,
+  });
+  expect(overlaidWriteMode("draft", standIn)).toBe("direct");
+  expect(
+    mergeQueuedControls({
+      local: NO_LOCAL_CONTROLS,
+      pending: EMPTY,
+      journaled: [witness],
+      executedControlIds: new Set(["s1"]),
+    }),
+  ).toEqual([]);
   // Its divider arrives: the row is the divider now.
   expect(
     mergeQueuedControls({ local: answered, pending: EMPTY, executedControlIds: new Set(["s1"]) }),
@@ -83,7 +101,12 @@ it("hides both rows of a switch back at once, and the server's null answer confi
     [],
   );
   // A switch back that failed to reach the server cancels nothing.
-  const failed = mergeQueuedControls({ ...input, journaled: [switchTo("s2", "draft", true)] });
+  const failed = mergeQueuedControls({
+    ...input,
+    journaled: [{ ...switchTo("s2", "draft", true), awaitingServer: true }],
+  });
+  // Posted and unanswered: the row offers Retry only.
+  expect(failed.at(-1)?.awaitingServer).toBe(true);
   expect(failed.map((row) => [row.id, row.status])).toEqual([
     ["s1", "queued"],
     ["s2", "failed"],

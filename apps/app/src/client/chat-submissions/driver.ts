@@ -4,7 +4,7 @@ import type { EnqueueThreadControlResponse } from "@meridian/contracts/threads";
 import type { SubmissionOutcome, ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { classifyWriteFailure } from "@/client/copilot/ThreadRunController";
 import { abortable, type SubmissionLock } from "./lock";
-import type { ChatSubmission } from "./store";
+import { type ChatSubmission, compareSubmissions } from "./store";
 import { threadAvailability } from "./thread-availability";
 
 export type SubmissionJournal = {
@@ -70,7 +70,7 @@ export class ChatSubmissionDriver {
           other.control &&
           other.state === "rejected" &&
           other.recordId !== record.recordId &&
-          other.createdAt.localeCompare(record.createdAt) <= 0,
+          compareSubmissions(other, record) < 0,
       );
   }
 
@@ -110,7 +110,7 @@ export class ChatSubmissionDriver {
     const waiting = this.options.journal
       .entries()
       .filter((entry) => entry.threadId === threadId && !entry.state)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+      .sort(compareSubmissions)[0];
     const driving = this.locked(
       threadId,
       async (derived) => {
@@ -127,7 +127,7 @@ export class ChatSubmissionDriver {
                 !tried.has(record.recordId) &&
                 !this.behindRejectedSwitch(record),
             )
-            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+            .sort(compareSubmissions)[0];
           if (!entry) break;
           tried.add(entry.recordId);
           await this.guard(entry, () => this.attempt(entry, false, derived));
@@ -265,7 +265,8 @@ export class ChatSubmissionDriver {
               .entries()
               .filter(
                 (record) =>
-                  record.threadId === moving.threadId && this.options.transferReceived(record),
+                  record.threadId === moving.threadId &&
+                  (record.control || this.options.transferReceived(record)),
               )
           : [entry],
       );
@@ -375,7 +376,12 @@ export class ChatSubmissionDriver {
    * is the original request. A refusal is stored; anything else leaves the record
    * unresolved and holds the records after it.
    */
-  private async postControl(entry: ChatSubmission) {
+  private async postControl(original: ChatSubmission) {
+    // The mark is durable before the request leaves: from here the server may hold the
+    // switch, so only its own Withdraw may remove it. A mark that cannot be written means
+    // no request, and the writer keeps Retry and Withdraw.
+    const entry = original.posted ? original : { ...original, posted: true as const };
+    if (entry !== original && !this.write(entry)) return;
     let response: EnqueueThreadControlResponse;
     try {
       response = await this.request((signal) => this.options.postControl(entry, signal));
@@ -393,20 +399,29 @@ export class ChatSubmissionDriver {
   }
 
   /**
-   * Withdraw a switch before the server has it: take it out of the journal under the
-   * chat's lock, so no driver is posting it meanwhile. `admitted` means the record is
-   * gone because the server already has it, and the server's own Withdraw is the way.
+   * Withdraw a switch the server can't have: take it out of the journal under the chat's
+   * lock, so no driver is posting it meanwhile. That holds only when it was never posted or
+   * the server refused it. `admitted` means the record is gone because the server has it,
+   * and the server's own Withdraw is the way. `kept` means the server may have it and
+   * hasn't said: a local removal could let a late request apply it, so it stays for Retry.
    */
-  async withdrawControl(recordId: string, threadId: string): Promise<"removed" | "admitted"> {
-    let removed = false;
+  async withdrawControl(
+    recordId: string,
+    threadId: string,
+  ): Promise<"removed" | "admitted" | "kept"> {
+    let result = "admitted" as "removed" | "admitted" | "kept";
     await this.locked(threadId, async () => {
       const entry = this.read(recordId);
       if (!entry?.control || !this.current()) return;
-      if (this.options.journal.retire(recordId)) removed = true;
-      else this.localFailure(entry);
+      if (entry.posted && entry.state !== "rejected") result = "kept";
+      else if (this.options.journal.retire(recordId)) result = "removed";
+      else {
+        this.localFailure(entry);
+        result = "kept";
+      }
     });
-    if (removed) await this.drive(threadId);
-    return removed ? "removed" : "admitted";
+    if (result === "removed") await this.drive(threadId);
+    return result;
   }
 
   private async reconcileAmbiguous(
@@ -518,9 +533,9 @@ export class ChatSubmissionDriver {
               .filter(
                 (record) =>
                   record.threadId === entry.threadId &&
-                  (!received || this.options.transferReceived(record)),
+                  (!received || record.control || this.options.transferReceived(record)),
               )
-              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+              .sort(compareSubmissions)
           : [entry];
         if (!received && !this.options.transferForEdit(entry, cohort)) return;
         this.finishEdit(entry, cohort);

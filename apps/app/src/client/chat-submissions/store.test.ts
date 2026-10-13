@@ -39,6 +39,7 @@ function existingThread(overrides: Partial<ChatSubmission> = {}): ChatSubmission
     threadId: "thread-1",
     projectId: "project-1",
     createdAt: "2026-09-22T12:00:00.000Z",
+    seq: 1,
     text: "Hello",
     blocks: [{ type: "text", text: "Hello" }],
     references: [],
@@ -92,20 +93,14 @@ describe("device chat submission journal", () => {
     expect(journal.entries()).toEqual([existingThread()]);
   });
 
-  it("refuses a write from a stale or foreign bind", () => {
-    const { journal } = bound();
-    journal.setUser("account-b");
-    expect(journal.record("account", existingThread())).toBe(false);
-    expect(journal.retire("account", "sub-1")).toBe(false);
-    expect(journal.entries()).toEqual([]);
-  });
-
-  it("refuses a stale-epoch retire after an A→B→A bind", () => {
+  it("refuses a write from a stale or foreign bind, and a stale-epoch retire after A→B→A", () => {
     const { journal } = bound();
     journal.record("account", existingThread());
     const epochA = journal.epoch;
 
     journal.setUser("account-b");
+    expect(journal.record("account", existingThread({ recordId: "late" }))).toBe(false);
+    expect(journal.retire("account", "sub-1")).toBe(false);
     journal.setUser("account");
 
     // The live send that started under the first bind must not delete the
@@ -168,6 +163,10 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
   journal.record("account", { ...entry, submissionId: "reminted" });
   expect(storage.length).toBe(1);
   expect(journal.get(entry.recordId)).toEqual({ ...entry, submissionId: "reminted" });
+  // A new record takes the chat's next place in order; a rewrite keeps its own.
+  journal.record("account", { ...entry, recordId: "later", submissionId: "later", seq: 99 });
+  journal.record("account", { ...entry, submissionId: "again" });
+  expect([entry.recordId, "later"].map((id) => journal.get(id)?.seq)).toEqual([1, 2]);
 });
 
 it("rewrites only the bound account's v1 words before deleting its old keys", () => {

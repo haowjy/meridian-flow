@@ -40,6 +40,7 @@ const NO_JOURNAL = {
   submit: () => true,
   retry: () => undefined,
   withdraw: () => Promise.resolve("admitted" as const),
+  settle: () => undefined,
   onAnswered: () => () => undefined,
 };
 const NONE: ReadonlySet<string> = new Set();

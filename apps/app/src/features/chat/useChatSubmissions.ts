@@ -152,6 +152,7 @@ export function useChatSubmissions(
     (listener: (answer: SwitchAnswer) => void) => onSwitchAnswered(accountId, threadId, listener),
     [accountId, threadId],
   );
+  const settle = useCallback((ids: Iterable<string>) => driver.current?.settleSwitches(ids), []);
   return {
     presentation: driver.current?.presentation,
     submit: (envelope: ComposerSubmitEnvelope) =>
@@ -162,6 +163,7 @@ export function useChatSubmissions(
       submit: (id: string, mode: AiWriteMode) => driver.current?.submitSwitch(id, mode) ?? false,
       retry: (id: string) => driver.current?.retrySwitch(id),
       withdraw: (id: string) => driver.current?.withdrawSwitch(id) ?? Promise.resolve("admitted"),
+      settle,
       onAnswered,
     },
   };

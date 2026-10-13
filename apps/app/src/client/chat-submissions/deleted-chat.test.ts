@@ -73,6 +73,7 @@ function fixture() {
       threadId: "chat",
       projectId: "project",
       createdAt: "2026-10-11",
+      seq: 1,
       draft: snapshot("Make the elder colder"),
     },
   ];
