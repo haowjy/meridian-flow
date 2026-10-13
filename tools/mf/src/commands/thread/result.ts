@@ -65,7 +65,11 @@ export function terminalResult<T extends Record<string, unknown> & { threadId: s
   };
 }
 
-export function finishResult(out: Output, terminal: TerminalResult): ExitCode {
+export function finishResult(
+  out: Output,
+  terminal: TerminalResult,
+  options: { full?: boolean } = {},
+): ExitCode {
   const { result } = terminal;
   out.record(result, null, "err");
   if ((result.outcome === "complete" || result.outcome === "failed") && result.finalText)
@@ -88,7 +92,8 @@ export function finishResult(out: Output, terminal: TerminalResult): ExitCode {
           ? "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed"
           : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
-  if (result.liveView === "differs" && result.liveDiff) out.note(renderLiveDiff(result.liveDiff));
+  if (result.liveView === "differs" && result.liveDiff)
+    out.note(renderLiveDiff(result.liveDiff, options.full ?? false));
   for (const next of result.next ?? []) out.note(next);
   return terminal.exitCode;
 }

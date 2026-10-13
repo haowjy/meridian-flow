@@ -14,6 +14,8 @@ export const COOKIE = "wos-session=test";
 export const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 export const PROJECT_ID = "22222222-2222-4222-8222-222222222222";
 export const DOCUMENT_ID = "44444444-4444-4444-8444-444444444444";
+/** Longer than the text-mode diff clip, so `--full` is observable. */
+export const DIVERGED_STORED_TEXT = `Stored answer ${"x".repeat(200)}`;
 export const CHILD_ID = "33333333-3333-4333-8333-333333333333";
 
 type Journal = { seq: string; event: AGUIEvent }[];
@@ -302,7 +304,7 @@ function createFake() {
       publish({ type: "TEXT_MESSAGE_END", messageId } as AGUIEvent);
       assistant.status = "complete";
       // "diverge" stores other text than the events streamed: a live view that disagrees.
-      assistant.text = text.includes("diverge") ? "Stored answer" : "Hello there";
+      assistant.text = text.includes("diverge") ? DIVERGED_STORED_TEXT : "Hello there";
       if (snapshotPolicy.releaseDelayMs) {
         leaseReleasePending = true;
         setTimeout(() => {

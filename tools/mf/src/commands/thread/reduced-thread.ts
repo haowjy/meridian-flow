@@ -9,8 +9,6 @@ import { createTurnReducer, InMemoryTurnStore, type TurnReducer } from "@meridia
 import { truncate } from "../../core/output";
 import { assistantText } from "./transcript";
 
-const DIFF_LIMIT = 120;
-
 export type LiveDiff = {
   turnId: string;
   field: "status" | "finalText";
@@ -63,7 +61,6 @@ export class ReducedThread {
       compared += 1;
       const live = this.turn(turnId);
       const server = snapshot.turns.find((turn) => turn.id === turnId);
-      const clip = (text: string | null) => (text === null ? null : truncate(text, DIFF_LIMIT));
       if ((live?.status ?? null) !== (server?.status ?? null))
         diffs.push({
           turnId,
@@ -77,8 +74,8 @@ export class ReducedThread {
         diffs.push({
           turnId,
           field: "finalText",
-          live: clip(liveText),
-          server: clip(serverText),
+          live: liveText,
+          server: serverText,
         });
     }
     if (compared === 0) return {};
@@ -86,10 +83,14 @@ export class ReducedThread {
   }
 }
 
-export function renderLiveDiff(diffs: readonly LiveDiff[]): string {
+const DIFF_TEXT_LIMIT = 120;
+
+/** Text-mode note; the JSON `liveDiff` always carries the full values. */
+export function renderLiveDiff(diffs: readonly LiveDiff[], full: boolean): string {
+  const show = (value: string | null) =>
+    JSON.stringify(value === null || full ? value : truncate(value, DIFF_TEXT_LIMIT));
   const shown = diffs.map(
-    (diff) =>
-      `${diff.turnId} ${diff.field} live=${JSON.stringify(diff.live)} server=${JSON.stringify(diff.server)}`,
+    (diff) => `${diff.turnId} ${diff.field} live=${show(diff.live)} server=${show(diff.server)}`,
   );
   return `live view differs from the server (${shown.join("; ")}); the server's state is what was stored`;
 }

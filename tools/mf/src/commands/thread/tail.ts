@@ -110,6 +110,7 @@ export const threadTailCommand: CommandSpec = {
           truncated: result.truncated,
           liveView: reduced.compare(lastSnapshot, turnIds),
         }),
+        { full: flag(ctx, "full") },
       );
     } catch (error) {
       // A bounded tail that simply ran out of time is a normal stop, not a failure.
