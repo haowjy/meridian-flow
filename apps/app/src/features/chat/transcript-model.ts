@@ -1,11 +1,15 @@
 /** One indexed interpretation of transcript rows, response boundaries, delivery rows, and reveal targets. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
-import { isOverflowShell, readCompactionFacts } from "./compaction/compaction-model";
-import { isHandoffSeed } from "./derivation/handoff-seed";
-import { readThreadReferences, type ThreadReference } from "./derivation/thread-reference";
+import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
+import {
+  isHandoffSeed,
+  isOverflowShell,
+  readCompactionFacts,
+  readThreadReferences,
+  type ThreadReference,
+} from "@meridian/contracts/threads";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
-import { readSubagentUpdateMetadata } from "./subagent/update";
 
 export type TurnClass = "bubble" | "delivery" | "context" | "plumbing";
 const emptyEvents: DeliveryEvent[] = [];
@@ -14,7 +18,7 @@ export type DeliveryEvent = {
   childThreadId?: string;
   agentName?: string;
   title?: string;
-  subagentUpdate: ReturnType<typeof readSubagentUpdateMetadata>;
+  subagentUpdate: ReturnType<typeof parseSubagentUpdateMetadata>;
 };
 
 /**
@@ -115,7 +119,7 @@ export function buildTranscriptModel(
   markInheritedRuns(rows);
   // Index-aligned with `rows`: response grouping and reveal landing read turns.
   const visibleTurns = rows.map((row) => row.turn);
-  const subagentUpdateByTurnId = new Map<string, ReturnType<typeof readSubagentUpdateMetadata>>();
+  const subagentUpdateByTurnId = new Map<string, ReturnType<typeof parseSubagentUpdateMetadata>>();
   const invocationByExecution = new Map<
     string,
     { threadId?: string; agentName: string; title?: string }
@@ -126,7 +130,7 @@ export function buildTranscriptModel(
         ? (turn.metadata as Record<string, unknown>)
         : null;
     if (metadata?.kind === "subagent_update") {
-      const update = readSubagentUpdateMetadata(metadata);
+      const update = parseSubagentUpdateMetadata(metadata);
       subagentUpdateByTurnId.set(turn.id, update);
       if (!update) {
         reportPersistedContractFailure({

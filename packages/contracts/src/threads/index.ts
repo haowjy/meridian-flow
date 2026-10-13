@@ -421,6 +421,7 @@ export { type ProviderErrorResponse, replyProviderError } from "./provider-error
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
 export { formatThreadRef, parseThreadRef } from "./thread-ref.js";
+export * from "./turn-readers.js";
 
 export interface ModelResponse {
   id: string;

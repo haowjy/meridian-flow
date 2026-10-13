@@ -14,6 +14,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Turn } from "@meridian/contracts/protocol";
+import { readHandoffSeed } from "@meridian/contracts/threads";
 import { CircleAlert, Forward } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { ClippedProse } from "../ClippedExpand";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { type BriefCardView, briefCardView, readHandoffSeed } from "./handoff-seed";
+import { type BriefCardView, briefCardView } from "./handoff-seed";
 import { SourceChatLink, useSourceThread } from "./SourceChatLink";
 
 export type HandoffBriefCardProps = {

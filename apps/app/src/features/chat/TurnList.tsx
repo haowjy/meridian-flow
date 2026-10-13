@@ -2,6 +2,7 @@
 
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import { answeredControlIds } from "@meridian/contracts/threads";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
@@ -13,7 +14,6 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
-import { answeredControlIds } from "./compaction/compaction-model";
 import { QueuedControlRows } from "./compaction/QueuedControlRows";
 import type { QueuedControl } from "./compaction/thread-controls";
 import type { ThreadControls } from "./compaction/useThreadControls";
