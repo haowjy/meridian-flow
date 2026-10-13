@@ -10,7 +10,12 @@ import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
-import type { BranchCoordinator } from "./branch-coordinator.js";
+import {
+  BranchCasConflictError,
+  type BranchCoordinator,
+  BranchMissingError,
+  BranchStaleUpdateError,
+} from "./branch-coordinator.js";
 import type { BranchLockLease } from "./branch-critical-sections.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
@@ -42,6 +47,22 @@ export type BranchPullService = {
     attributionBaseline: Uint8Array;
   }>;
 };
+
+/**
+ * A thread-peer pull whose branch work lost to a Discard (stale, CAS-lost or missing branch),
+ * carrying the peer and upstream it had captured so a caller can say which one went. Any
+ * other failure of the pull is not wrapped.
+ */
+export class ThreadPeerPullLost extends Error {
+  constructor(
+    readonly peerBranchId: string,
+    readonly upstreamBranchId: string,
+    cause: unknown,
+  ) {
+    super(`Thread peer ${peerBranchId} pull lost its branches`, { cause });
+    this.name = "ThreadPeerPullLost";
+  }
+}
 
 export type BranchPullDiagnostics = {
   backgroundFailed(input: { documentId: DocumentId; cause: unknown }): void;
@@ -236,9 +257,8 @@ export function createBranchPullService(input: {
           // The peer's and its upstream's leases are held from capture through persisting
           // the peer, so a per-change Discard cannot refork the upstream in between and a
           // stale capture is never merged back. Leases come before the transaction.
-          const upstream = await input.branchCoordinator.withLeases(
-            [peer.branchId, upstreamBranchId],
-            (lease) =>
+          const upstream = await input.branchCoordinator
+            .withLeases([peer.branchId, upstreamBranchId], (lease) =>
               input.rootTransaction(async () => {
                 const read = await input.branchCoordinator
                   .ownedSession(lease)
@@ -251,7 +271,16 @@ export function createBranchPullService(input: {
                 await pullPeerFromCapturedUpstream(lease, peer.branchId, read.state);
                 return read;
               }),
-          );
+            )
+            .catch((cause) => {
+              if (
+                cause instanceof BranchStaleUpdateError ||
+                cause instanceof BranchCasConflictError ||
+                cause instanceof BranchMissingError
+              )
+                throw new ThreadPeerPullLost(peer.branchId, upstreamBranchId, cause);
+              throw cause;
+            });
           return {
             peerBranchId: peer.branchId,
             upstreamBranchId,

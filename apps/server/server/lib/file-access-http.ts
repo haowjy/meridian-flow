@@ -16,7 +16,11 @@ import {
   type Principal,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
-import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
+import {
+  HTTP_INTERRUPT_ENVELOPE_KEY,
+  isHttpInterruptEnvelope,
+  throwHttpInterrupt,
+} from "../shared/interrupt-boundary.js";
 
 export { containerTarget, documentTarget } from "./file-targets.js";
 
@@ -39,6 +43,22 @@ function throwFileAccessDenied(denial: Pick<FileAccessDenied, "reason">): never 
       // Agent terms; a person never meets them.
       throw createError({ statusCode: 403, message: denial.reason });
   }
+}
+
+/**
+ * Whether a thrown error is one of the policy refusals `throwFileAccessDenied` raises (not
+ * found, archived, read-only) rather than a fault. A replay boundary may re-look-up its
+ * command before keeping such a refusal; no other exception qualifies.
+ */
+export function isFileAccessRefusal(cause: unknown): boolean {
+  if (typeof cause !== "object" || cause === null) return false;
+  const { statusCode, message } = cause as { statusCode?: unknown; message?: unknown };
+  if (statusCode === 404) return true;
+  if (statusCode !== 403) return false;
+  if (message === "agent_read_only" || message === "uploads_read_only") return true;
+  const data = (cause as { data?: Record<string, unknown> }).data;
+  const envelope = data?.[HTTP_INTERRUPT_ENVELOPE_KEY];
+  return isHttpInterruptEnvelope(envelope) && envelope.error.code === "work_archived";
 }
 
 /** The person's grant on a target, or the route's refusal. */

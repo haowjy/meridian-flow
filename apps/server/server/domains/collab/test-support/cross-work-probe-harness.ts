@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import { applyDraftDocument } from "./apply-draft-document.js";
+import { commitSegmentRows } from "./branch-update-writes.js";
 import type { createHarness } from "./change-trail-postgres-harness.js";
 import {
   ALPHA_ID,
@@ -179,7 +180,7 @@ export async function runCrossWorkProbe(
         null,
         markupCodec.parse("Work B stale replacement."),
       );
-      const bCommitted = await branchCoordinator.commitSegmentRows({
+      const bCommitted = await commitSegmentRows(branchCoordinator, {
         branchId: branchB.branchId,
         sourceDoc: branchB.doc,
         expectedGeneration: branchB.generation,
@@ -211,7 +212,7 @@ export async function runCrossWorkProbe(
       { from: "Shared opening.".length, to: "Shared opening.".length },
       " Writer-approved Work A text.",
     );
-    const aCommitted = await branchCoordinator.commitSegmentRows({
+    const aCommitted = await commitSegmentRows(branchCoordinator, {
       branchId: branchA.branchId,
       sourceDoc: branchA.doc,
       expectedGeneration: branchA.generation,
