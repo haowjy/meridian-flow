@@ -1,6 +1,7 @@
 /**
  * A plain `TurnStore` for clients with no UI store (`./mf`): turns per thread,
- * the reducer's event counter, and the snapshot floor. It shares its turn
+ * the reducer's event counter, and the snapshot freshness floor (never an event
+ * filter: replay coverage is the caller's subscription cursor). It shares its turn
  * operations with the app's store adapter (`turn-ops.ts`); the parity test in
  * the app keeps the two behind one semantics.
  */
@@ -34,14 +35,9 @@ export class InMemoryTurnStore implements TurnStore {
     return this.turnsByThread.get(threadId);
   }
 
-  /** The lowest event seq the store has not yet covered; undefined before any hydrate or event. */
-  nextSeq(threadId: string): string | undefined {
-    return this.floors.get(threadId);
-  }
-
   /**
-   * Replaces the thread's turns with a snapshot's and raises the floor to its
-   * `nextSeq`. False when the snapshot is older than the accepted floor.
+   * Replaces the thread's turns with a snapshot's and raises the freshness floor
+   * to its `nextSeq`. False when the snapshot is older than the accepted floor.
    */
   hydrate(threadId: string, turns: readonly Turn[], nextSeq: string): boolean {
     if (!this.acceptsSnapshot(threadId, nextSeq)) return false;
@@ -54,18 +50,6 @@ export class InMemoryTurnStore implements TurnStore {
     if (parseSeq(nextSeq) === null) return false;
     const floor = this.floors.get(threadId);
     return floor === undefined || compareSeq(nextSeq, floor) >= 0;
-  }
-
-  /**
-   * Admits one sequenced event: false when the hydrated snapshot or an earlier
-   * event already covers it. Accepting raises the floor to `seq + 1`.
-   */
-  acceptEventSeq(threadId: string, seq: string): boolean {
-    if (parseSeq(seq) === null) return false;
-    const floor = this.floors.get(threadId);
-    if (floor !== undefined && compareSeq(seq, floor) < 0) return false;
-    this.floors.set(threadId, (BigInt(seq) + 1n).toString());
-    return true;
   }
 
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void {
