@@ -408,7 +408,7 @@ export const threadSendCommand: CommandSpec = {
       const { submissionId, admitted, mockScriptId } = admission;
       const terminal = terminalResult(
         "thread.send",
-        { outcome: "complete", reason: null },
+        { outcome: "accepted", reason: null },
         {
           threadId,
           submissionId,

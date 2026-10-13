@@ -4,7 +4,14 @@ import { EXIT, type ExitCode } from "../../core/cli-error";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 
-export type Outcome = "complete" | "failed" | "cancelled" | "interrupt" | "timeout" | "unproven";
+export type Outcome =
+  | "accepted"
+  | "complete"
+  | "failed"
+  | "cancelled"
+  | "interrupt"
+  | "timeout"
+  | "unproven";
 export type Reason =
   | "owed"
   | "running"
@@ -14,8 +21,9 @@ export type Reason =
   | "unconfirmed"
   | "deliverer_unknown"
   | "snapshot_disagrees";
+/** `accepted` is admission only and is built solely by `thread send --no-wait`; no wait produces it. */
 export type Claim =
-  | { outcome: "complete" | "failed" | "cancelled" | "interrupt"; reason: null }
+  | { outcome: "accepted" | "complete" | "failed" | "cancelled" | "interrupt"; reason: null }
   | { outcome: "unproven" | "timeout"; reason: Reason };
 export type Result = Claim & {
   type: "result";
@@ -30,6 +38,7 @@ export type TerminalResult<T extends Record<string, unknown> = Record<string, un
   exitCode: ExitCode;
 };
 const EXITS: Record<Outcome, ExitCode> = {
+  accepted: EXIT.ok,
   complete: EXIT.ok,
   failed: EXIT.failed,
   cancelled: EXIT.cancelled,

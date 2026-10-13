@@ -665,6 +665,20 @@ describe("thread", () => {
     }
   });
 
+  it("send --no-wait proves admission only, never complete", async () => {
+    const isolated = await startFakeStack();
+    try {
+      isolated.replyPolicy.holdUntilSubscribed = true;
+      const result = await isolated.mf(["thread", "send", THREAD_ID, "hi", "--no-wait", "--json"]);
+      expect(result.code).toBe(EXIT.ok);
+      const record = JSON.parse(result.stdout);
+      expect(record).toMatchObject({ command: "thread.send", outcome: "accepted", reason: null });
+      expect(record.outcome).not.toBe("complete");
+    } finally {
+      await isolated.close();
+    }
+  });
+
   it("send --no-wait also reports admission uncertainty", async () => {
     const isolated = await startFakeStack();
     try {
