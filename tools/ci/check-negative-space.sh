@@ -161,4 +161,19 @@ if (( ${#local_presence_bypass[@]} > 0 )); then
   exit 1
 fi
 
+# Model-provider env vars carry a FLOW_ prefix so agent CLIs in the same shell
+# never read the app's keys, and SDKs never fall back to their default names.
+bare_provider_env=()
+while IFS= read -r hit; do
+  [[ -n "$hit" ]] && bare_provider_env+=("$hit")
+done < <(
+  git grep -n -E '\b(ANTHROPIC|OPENAI|DEEPSEEK|OPENROUTER)_(API_KEY|BASE_URL)\b' -- \
+    ':!.meridian/**' ':!tools/ci/check-negative-space.sh' 2>/dev/null || true
+)
+if (( ${#bare_provider_env[@]} > 0 )); then
+  echo "ERROR: bare provider env names found; use the FLOW_ prefix (e.g. FLOW_ANTHROPIC_API_KEY):"
+  printf '  %s\n' "${bare_provider_env[@]}"
+  exit 1
+fi
+
 printf 'Negative-space guard passed.\n'

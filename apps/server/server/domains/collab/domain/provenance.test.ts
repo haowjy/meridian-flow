@@ -41,7 +41,16 @@ const emptyManifest = (): AttributionManifestV1 => ({
 
 describe("provenance materialization", () => {
   it("writes restoration facts alongside a retained output run", () => {
-    const doc = proseDoc("cat and cat");
+    // A retained pre-v2 dev snapshot cold-loads without interpreting its old facts.
+    const legacy = proseDoc("cat and cat");
+    legacy
+      .getArray("__meridian_provenance_targets_v1")
+      .push([
+        { version: 1, target: textRange(legacy), root: { clientID: 999, clock: 0, length: 11 } },
+      ]);
+    const doc = new Y.Doc({ gc: false });
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(legacy));
+    legacy.destroy();
     const source = textRange(doc);
     const retained = { ...source, clock: source.clock + 3, length: 5 };
     const restoredRoot = { ...source, clock: source.clock + 8, length: 3 };
@@ -282,7 +291,7 @@ describe("provenance materialization", () => {
         before,
       ),
     ).toThrow(ProvenanceMaterializationError);
-    expect(doc.getArray(PROVENANCE_TARGETS_TYPE)).toHaveLength(0);
+    expect(doc.getMap(PROVENANCE_TARGETS_TYPE).size).toBe(0);
   });
 
   it("attributes a pending insertion to the row that originated its clocks", () => {

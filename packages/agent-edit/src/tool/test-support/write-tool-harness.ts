@@ -2,7 +2,6 @@
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
-  AGENT_EDIT_UNDO_CLIENT_ID,
   buildDocumentSchema,
   PROSEMIRROR_FRAGMENT_NAME,
   RESERVED_CLIENT_ID_MAX,
@@ -21,8 +20,7 @@ import type { DocumentLinksPort } from "../../ports/document-links.js";
 import type { AgentEditModel } from "../../ports/model.js";
 import type { SemanticProvenanceWriter } from "../../ports/semantic-provenance.js";
 import { createStaticDocumentLinks } from "../../ports/static-document-links.js";
-import type { ReversalStore, UpdateJournal } from "../../ports/update-journal.js";
-import type { ReversalNoticePort } from "../write-reversal.js";
+import type { UpdateJournal } from "../../ports/update-journal.js";
 import { MemoryJournal } from "./recording-journal.js";
 
 export const schema = buildDocumentSchema();
@@ -32,16 +30,13 @@ export const codec = codecFactory.forScope(UNSCOPED_DOCUMENT_LINKS);
 export const model = yProsemirrorModel(schema);
 export const THREAD_ID = "thread-a";
 export const context = { sessionId: "session-a", threadId: THREAD_ID };
-export const REVERSAL_CLIENT_ID = AGENT_EDIT_UNDO_CLIENT_ID;
 const FIRST_FAKE_LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
 
 export function harness(
   initialDocs: Record<string, string> = {},
   options: {
     lifecycle?: boolean;
-    undoClientId?: number;
     createRuntimeDoc?: () => Y.Doc;
-    reversalNoticePort?: ReversalNoticePort;
     onResponseLifecycleError?: Parameters<
       typeof createAgentEditCore
     >[0]["onResponseLifecycleError"];
@@ -53,13 +48,11 @@ export function harness(
     >[0]["onResponseCommitterTransition"];
     onIdempotencyHit?: Parameters<typeof createAgentEditCore>[0]["onIdempotencyHit"];
     onUnexpectedWriteError?: Parameters<typeof createAgentEditCore>[0]["onUnexpectedWriteError"];
-    onReversalNoticeFailed?: Parameters<typeof createAgentEditCore>[0]["onReversalNoticeFailed"];
-    deferUntilCommit?: Parameters<typeof createAgentEditCore>[0]["deferUntilCommit"];
     closedResponseTombstoneCap?: Parameters<
       typeof createAgentEditCore
     >[0]["closedResponseTombstoneCap"];
     afterResponsePreflight?: Parameters<typeof createAgentEditCore>[0]["afterResponsePreflight"];
-    journalOverride?: (journal: MemoryJournal) => UpdateJournal & ReversalStore;
+    journalOverride?: (journal: MemoryJournal) => UpdateJournal;
     model?: AgentEditModel;
     semanticProvenance?: SemanticProvenanceWriter;
     links?: DocumentLinksPort;
@@ -81,9 +74,7 @@ export function harness(
     links: options.links ?? createStaticDocumentLinks(),
     model: agentEditModel,
     semanticProvenance: options.semanticProvenance,
-    undoClientId: options.undoClientId,
     ...(options.createRuntimeDoc ? { createRuntimeDoc: options.createRuntimeDoc } : {}),
-    ...(options.reversalNoticePort ? { reversalNoticePort: options.reversalNoticePort } : {}),
     ...(options.onResponseLifecycleError
       ? { onResponseLifecycleError: options.onResponseLifecycleError }
       : {}),
@@ -97,10 +88,6 @@ export function harness(
     ...(options.onUnexpectedWriteError
       ? { onUnexpectedWriteError: options.onUnexpectedWriteError }
       : {}),
-    ...(options.onReversalNoticeFailed
-      ? { onReversalNoticeFailed: options.onReversalNoticeFailed }
-      : {}),
-    ...(options.deferUntilCommit ? { deferUntilCommit: options.deferUntilCommit } : {}),
     ...(options.closedResponseTombstoneCap !== undefined
       ? { closedResponseTombstoneCap: options.closedResponseTombstoneCap }
       : {}),
@@ -127,15 +114,6 @@ export function harness(
         });
       }
       return rawCore.write(command, writeContext);
-    },
-    reverse(input: Parameters<typeof rawCore.reverse>[0]) {
-      return rawCore.reverse({
-        ...input,
-        actor:
-          input.actor.type === "agent" && !("responseId" in input.actor)
-            ? { ...input.actor, responseId: "test-observed-response" }
-            : input.actor,
-      });
     },
   };
   return {
