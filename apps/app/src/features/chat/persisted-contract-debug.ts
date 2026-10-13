@@ -3,13 +3,7 @@
 import type { EventRecord } from "@meridian/contracts/observability";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { appendTraceEvent } from "../debug/trace/trace-store";
-
-type PersistedContractFailure = {
-  contract: "invocation_card" | "subagent_update";
-  threadId?: string;
-  turnId?: string;
-  blockId?: string;
-};
+import type { PersistedContractFailure } from "./transcript-model";
 
 const reported = new Set<string>();
 

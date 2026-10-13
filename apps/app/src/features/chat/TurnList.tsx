@@ -22,6 +22,7 @@ import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMark
 import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
+import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
 import type { ReplyRetry } from "./useReplyRetry";
 
@@ -114,7 +115,13 @@ export function TurnList({
   const bottomInset = useChatSurfaceBottomInset();
   const inheritedTranscript = inherited?.transcript ?? null;
   const transcript = useMemo(
-    () => buildTranscriptModel(turns, awaitingSubagents, inheritedTranscript),
+    () =>
+      buildTranscriptModel(
+        turns,
+        awaitingSubagents,
+        inheritedTranscript,
+        reportPersistedContractFailure,
+      ),
     [turns, awaitingSubagents, inheritedTranscript],
   );
   const visibleTurns = transcript.visibleTurns;
