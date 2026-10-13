@@ -10,6 +10,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
+import { AssistantTurn } from "./AssistantTurn";
 import { ErrorBlock } from "./ErrorBlock";
 import { UserTurn } from "./UserTurn";
 
@@ -24,6 +25,11 @@ vi.mock("./derivation/DeriveTurnActions", () => ({
 vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: React.ReactNode }) => children,
 }));
+
+vi.mock("@/client/query/useTurnLiveLineage", () => ({
+  useTurnLiveLineage: () => ({ documents: [], receipt: null }),
+}));
+vi.mock("./AssistantTurnActions", () => ({ AssistantTurnActions: () => null }));
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -105,13 +111,28 @@ describe("writer-row failure card", () => {
 });
 
 describe("reply ErrorBlock", () => {
-  it("stays a live alert whose Retry sits beside the sentence and wraps in a narrow column", async () => {
+  it("lets the writer retry a provider-declined reply in the current alert, not history or read-only", async () => {
     const onRetry = vi.fn();
+    const turn = {
+      ...failedTurn,
+      role: "assistant" as const,
+      blocks: [],
+      metadata: {
+        retryable: false,
+        providerError: { status: 404, message: "retired model" },
+      },
+    };
+    const replyRetry = { onRetry, refused: false, requestLost: false };
     const host = await render(
-      createElement(ErrorBlock, { isLatest: true, onRetry, retryRefused: true }),
+      createElement(AssistantTurn, {
+        turn,
+        endsTranscript: true,
+        replyRetry: { ...replyRetry, refused: true },
+      }),
     );
 
     const card = host.querySelector("[data-slot='alert']");
+    expect(card?.querySelector("p")?.textContent).toBe("The AI provider turned this request down.");
     expect(card?.getAttribute("role")).toBe("alert");
     expect(card?.className).not.toContain("w-fit");
     const retry = host.querySelector("[data-reply-retry]");
@@ -124,6 +145,14 @@ describe("reply ErrorBlock", () => {
 
     await act(async () => (retry as HTMLButtonElement).click());
     expect(onRetry).toHaveBeenCalledTimes(1);
+
+    const history = await render(
+      createElement(AssistantTurn, { turn, endsTranscript: false, replyRetry }),
+    );
+    expect(history.textContent).toBe("The AI provider turned this request down.");
+    expect(history.querySelector("[data-reply-retry]")).toBeNull();
+    const readOnly = await render(createElement(AssistantTurn, { turn, endsTranscript: true }));
+    expect(readOnly.querySelector("[data-reply-retry]")).toBeNull();
   });
 
   it("is a quiet muted line, not a card, once history has moved on", async () => {
