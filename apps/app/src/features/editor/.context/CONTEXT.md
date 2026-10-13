@@ -263,7 +263,8 @@ editability as the caller's `editable` input AND the absence of
 `useMountedEditor()` surface-options seam, which calls `setEditable(false)`
 without rebuilding the editor or its UndoManager.
 
-A fence disables the mounted editor and renders `SchemaFenceNotice`. A
+A fence disables the mounted editor and renders `SchemaFenceNotice`, an error
+`NoticeCard` with a Refresh button. A
 `document-schema-stale` reset unmounts the editor and renders the unavailable
 state.
 
@@ -277,7 +278,12 @@ continues into an editable mount.
 never gates editing. It coalesces the session's
 `DocumentSessionSnapshot.schemaRepairs`, shows every recovered excerpt in full
 with a copy button, and dismisses locally until another verdict arrives. The
-surface is deliberately unstyled and has no reinsertion or approval action.
+notice is an info `NoticeCard`; each excerpt sits in a bounded scrolling box.
+Copy goes through `clipboard.ts`, with refused writes reported in place, never
+shown as Copied. There is no reinsertion or approval action.
+
+Both notices reach `EditorSurfaceFrame` through its `notices` slot, aligned to
+the prose column above the toolbar rather than rendered beside the frame.
 
 ## Peer mark popover
 
