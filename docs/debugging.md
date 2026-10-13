@@ -50,15 +50,16 @@ Start from your symptom in [Strategies](#strategies), or scan the
 
 Repeatable verification recipes live in the [runtime probe catalog](qa/README.md).
 
-`./mf` (repo root) is a thin wrapper over this worktree's own API: every command
-maps to an existing HTTP route or thread-socket message, authenticated exactly
-like the browser through dev login. Run `./mf` for the command tree with the
-route each command wraps, and `./mf <noun> <verb> --help` for flags and examples.
-Its thread socket and message body come from `@meridian/thread-client`, the same
-code the app runs, so a `./mf` run is evidence of the app's socket client and
-composer serialization against the real server. It never covers what the writer
-sees: rendering, the thread store, the TipTap composer, the submission journal,
-optimistic UI, and navigation are the browser's to verify.
+`./mf` (repo root) drives this worktree's own API: every command maps to an
+existing HTTP route or thread-socket message, authenticated exactly like the
+browser through dev login. Run `./mf` for the command tree with the route each
+command wraps, and `./mf <noun> <verb> --help` for flags and examples. Its
+thread socket, message body and chat event processing come from
+`@meridian/thread-client`, the same code the app runs, so a `./mf` run is
+evidence of that shared code against the real server. A command with no shared
+client code behind it is evidence of the server only. It never covers what the
+writer sees: rendering, the app's thread store, the TipTap composer, the
+submission journal, optimistic UI, and navigation are the browser's to verify.
 
 ```bash
 ./mf seed tools/mf/fixtures/basic.json        # docs + thread + an opening message
@@ -96,8 +97,9 @@ at its final snapshot; it does not attribute replies to messages.
   - `differs` is a lead to investigate, and `matches` does not prove the screen
     was right. Neither changes the outcome or exit code (the claim is the
     server's stored state).
-  - The owner ruled (TL-MF-20) that once the chat session's sync is shared, a
-    live disagreement will fail with exit 6. That is not true yet.
+  - The owner has ruled that once the chat session's sync is shared, a live
+    disagreement will fail with exit 6 (`live_disagrees`). That is not true
+    yet ([`./mf`'s claims][mf-claims]).
 
   `thread events` stays an event log and prints both `tool.completed` and
   `tool.settled`.
@@ -505,3 +507,5 @@ not removing and inspect the plan before confirming it:
 pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
 pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
 ```
+
+[mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md

@@ -6,9 +6,11 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
 ## Architecture and contracts
 
 - **`./mf` dev CLI** — `src/` is the agent-facing CLI behind the repo-root `./mf`
-  shim: a thin wrapper over the app's own HTTP routes and thread WebSocket. It
-  never reads Postgres and holds no business logic; when the API cannot answer a
-  question, add a server route behind the debug gate instead of a CLI-side query.
+  shim. It drives the shared client core (`@meridian/thread-client`) against the
+  app's own HTTP routes and thread WebSocket, and calls the routes directly where
+  no core exists yet. It never reads Postgres and holds no business logic of its
+  own; when the API cannot answer a question, add a server route behind the
+  debug gate instead of a CLI-side query.
   - `src/core/` is the framework and knows no domain: `command.ts` (`CommandSpec`,
     `CommandGroup`, strict flat-arg parsing, option helpers), `output.ts` (text /
     `--json` / NDJSON), `cli-error.ts` (the exit-code contract), `session.ts`
@@ -95,9 +97,9 @@ add CLI socket timers or tune the package's deadlines to a command's
 `--timeout` (see the
 [package's deadline contract](../../../packages/thread-client/.context/CONTEXT.md)).
 Terminal/auth closes remain exit 4. `stream.ts` only
-maps events, prints them and runs the existing CLI follow predicates. Those
-predicates are not yet the shared follow session, so send still cannot prove which
-reply answered its message. `tail --until-idle` reads an initial snapshot and
+maps events, prints them and runs the existing CLI follow predicates. They don't
+read design A's run state yet, so send still cannot prove which reply answered
+its message. `tail --until-idle` reads an initial snapshot and
 returns at once if idle. After a turn finish/failure, journaled lease/pending update or idle subscription state it
 confirms a snapshot: null `liveState.runningTurnId`, `status.kind: "asleep"`
 (no awake lease), and no writer-provenance message in `liveState.pending.items`.
