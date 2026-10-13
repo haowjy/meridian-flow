@@ -46,7 +46,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
   it("prepends empty thinking on DeepSeek when tool_use has none", () => {
     const params = toAnthropicMessageParams(
       requestWithToolPair(),
-      "deepseek-v4-flash",
+      "deepseek-flash",
       256,
       "deepseek",
     );
@@ -74,7 +74,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
               type: "reasoning",
               text: "load it",
               providerOptions: {
-                meridian: { provider: "deepseek", model: "deepseek-v4-flash" },
+                meridian: { provider: "deepseek", model: "deepseek-flash" },
                 anthropic: { signature: "sig" },
               },
             },
@@ -89,7 +89,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
         ],
         tools: [skillTool],
       },
-      "deepseek-v4-flash",
+      "deepseek-flash",
       256,
       "deepseek",
     );
@@ -119,7 +119,7 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
         ],
         tools: [skillTool],
       },
-      "deepseek-v4-flash",
+      "deepseek-flash",
       256,
       "deepseek",
     );
@@ -274,14 +274,14 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
   };
   const original = toAnthropicMessageParams(
     request,
-    "claude-sonnet-4-20250514",
+    "claude-sonnet-4-6",
     16384,
     "anthropic",
     3600000,
   );
   const capped = toAnthropicMessageParams(
     { ...request, maxTokens: 4096 + 300 },
-    "claude-sonnet-4-20250514",
+    "claude-sonnet-4-6",
     16384,
     "anthropic",
     3600000,
