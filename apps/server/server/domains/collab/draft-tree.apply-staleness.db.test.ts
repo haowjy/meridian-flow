@@ -59,7 +59,7 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
       .toEqual(staleAnswer);
     expect.soft(await vector(), "it inserted nothing (V2-H1)").toEqual(before);
     expect.soft(await s.batchStates(), "nothing staged").toEqual([]);
-    expect.soft((await s.review(ascension)).drafts, "rows reviewable").toHaveLength(1);
+    expect.soft((await s.review(ascension)).items, "rows reviewable").toHaveLength(1);
   });
 
   it("abandons a staged batch a live change raced or that recovery found stale, rows reviewable (E-6b)", async () => {
@@ -87,8 +87,8 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
     await s.expirePendingClaims();
     await s.recover();
     expect.soft(await s.batchStates(), "recovery abandons it").toEqual(["abandoned", "abandoned"]);
-    expect.soft(itemFor(await s.items(ascension), chapter).draftBranchId).not.toBeNull();
-    expect.soft((await s.review(ascension)).drafts, "rows reviewable").toHaveLength(1);
+    expect.soft(itemFor(await s.items(ascension), chapter).branchGeneration).not.toBeNull();
+    expect.soft((await s.review(ascension)).items, "rows reviewable").toHaveLength(1);
     const live = s.view("live");
     expect.soft(await live.text("chapter-2.md"), "nothing published").not.toContain("drafted");
     expect.soft((await s.applyAll(ascension)).status, "a fresh review applies").toBe("completed");
