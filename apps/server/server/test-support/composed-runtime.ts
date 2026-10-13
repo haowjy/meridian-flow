@@ -27,7 +27,7 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
   const ports = await createProductionAppPorts({
     db,
     eventSink,
-    environment: { OPENAI_API_KEY: "sk-test-runtime-composition" },
+    environment: { FLOW_OPENAI_API_KEY: "sk-test-runtime-composition" },
   });
   const hocuspocus = new Hocuspocus({
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -123,10 +123,17 @@ export function useComposedRuntimes(db: () => Database) {
       const call: ToolCall = (name, args) =>
         runtime.app.toolExecutor.executeTool(
           { id: randomUUID(), name, arguments: args },
-          { ...thread, responseId, agentSlug: null },
+          {
+            ...thread,
+            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+            agentSlug: null,
+          },
         );
       const save = () =>
-        runtime.ports.documentSync.finalizeResponseCommit(responseId, thread as never);
+        runtime.ports.documentSync.finalizeResponseCommit(
+          { providerResponseId: responseId, editScopeId: responseId },
+          thread as never,
+        );
       return { responseId, call, save };
     };
     const reply = async (steps: (call: ToolCallText) => Promise<void>) => {

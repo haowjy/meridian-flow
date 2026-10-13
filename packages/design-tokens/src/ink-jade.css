@@ -247,10 +247,14 @@
   --color-review-removed-ring: color-mix(in oklab, var(--color-destructive) 42%, transparent);
   --color-review-removed-foreground: var(--color-destructive);
 
-  --color-review-writer-tint: color-mix(in oklab, var(--color-gold) 14%, transparent);
+  --color-review-writer-tint: color-mix(in oklab, var(--color-gold) 20%, transparent);
   --color-review-writer-border: color-mix(in oklab, var(--color-gold) 40%, transparent);
-  --color-review-writer-emphasis: color-mix(in oklab, var(--color-gold) 24%, transparent);
+  --color-review-writer-emphasis: color-mix(in oklab, var(--color-gold) 32%, transparent);
   --color-review-writer-ring: color-mix(in oklab, var(--color-gold) 48%, transparent);
+  /* The writer's removal of live text: struck in gold, not crimson, so
+     everything the writer did reads as gold. Gold fill is too pale to carry
+     struck text on paper, so the ink is the deep gold (>4.5:1); dark re-points it. */
+  --color-review-writer-removed-foreground: oklch(0.5 0.1 80);
 
   --color-review-warning-tint: color-mix(in oklab, var(--color-status-warning) 16%, transparent);
   --color-review-warning-border: color-mix(

@@ -23,13 +23,10 @@ Affected paths: `apps/app/src/core/editor/document-session.ts` and
 
 - **Cursor preservation across live ↔ draft remount.** Scroll uses best-effort
   layout restoration, but selection/cursor restoration is still not deliberate.
-- **Review ownership consolidation.** Review entry/exit, preview fetching,
-  fallback routing, inline model sync, sidebar state, and discard commands are
-  still spread across provider/hooks/components. Collapse them behind one deep
-  controller when the interaction model settles.
-- **Narrow viewport review parity.** The right rail intentionally hides below
-  `lg`; make sure the docked diff panel keeps feature parity for any new
-  Discard-class actions.
+- **Review ownership consolidation.** Review entry/exit, preview fetching and
+  fallback routing are still spread across provider/hooks/components. Per-change
+  commands, focus and the change list now go through the one controller and
+  `features/draft-review`; the rest remains to collapse.
 
 Design reference: [inline-diff-decoration-architecture.md].
 
