@@ -42,6 +42,7 @@ export function drawLinkAnswer(
     const attributes = chip ? linkChipAttributes(chip) : null;
     draw(element, "data-link-chip", attributes?.["data-link-chip"] ?? null);
     draw(element, "data-link-chip-icon", attributes?.["data-link-chip-icon"] ?? null);
+    const inDraft = entry?.state === "document" && entry.draft ? t`In a draft` : null;
     draw(
       element,
       "aria-description",
@@ -49,10 +50,10 @@ export function drawLinkAnswer(
         ? t`No longer available`
         : entry?.state === "missing"
           ? t`Doesn't exist yet`
-          : entry?.state === "document" && entry.draft
-            ? t`In a draft`
-            : null,
+          : inDraft,
     );
+    // The sighted writer reads the same words on hover.
+    draw(element, "title", inDraft);
     // Nothing follows a gone link, so it also loses the pointer and the hover.
     draw(element, "aria-disabled", entry?.state === "gone" ? "true" : null);
   };
