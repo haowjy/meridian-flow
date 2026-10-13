@@ -2383,6 +2383,7 @@ msgid "Images need a project before they can be uploaded."
 msgstr ""
 
 #: src/core/editor/links/link-mark-view.ts
+#: src/rich-content/TranscriptReference.tsx
 msgid "In a draft"
 msgstr ""
 

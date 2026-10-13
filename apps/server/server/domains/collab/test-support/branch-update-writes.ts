@@ -5,12 +5,23 @@ import type {
   AppendBranchJournalInput,
   BranchCoordinator,
   BranchStore,
+  SegmentRowsInput,
 } from "../domain/branch-coordinator.js";
 
 type SessionDoors = Pick<
   BranchCoordinator,
   "withLeases" | "ownedSession" | "resetFromDocIfUnchangedWithLease"
 >;
+
+/** Commits segment rows to one branch through its owned session, taking the lease the way a save does. */
+export function commitSegmentRows(
+  coordinator: SessionDoors,
+  input: SegmentRowsInput,
+): Promise<boolean> {
+  return coordinator.withLeases([input.branchId], (lease) =>
+    coordinator.ownedSession(lease).commitSegmentRows(input),
+  );
+}
 
 /** Journals `updateData` as one row on the branch's current generation. */
 export function commitJournaledUpdate(

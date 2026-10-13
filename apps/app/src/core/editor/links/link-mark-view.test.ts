@@ -147,3 +147,46 @@ it("marks a gone link present at mount on its <a>, and hands its presses to the 
     editor.destroy();
   }
 });
+
+it("draws a link whose answer is a draft-only document with a visible draft state, never from the mark", async () => {
+  const ref = "doc:00000000-0000-4000-8000-0000000000bb";
+  const editor = new Editor({
+    element: document.body.appendChild(document.createElement("div")),
+    extensions: createStandaloneEditorExtensions({}),
+    content: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Hidden", marks: [{ type: "link", attrs: { href: KAEL, ref } }] },
+          ],
+        },
+      ],
+    },
+  });
+  try {
+    editor.storage[LINK_SURFACE_NAME].resolution.registerResolver({
+      remote: async (questions) =>
+        questions.map(() => ({
+          state: "document" as const,
+          document: {
+            documentId: "00000000-0000-4000-8000-0000000000bb",
+            title: "Hidden",
+            scheme: "manuscript" as const,
+            path: "Kael.md",
+            uri: KAEL,
+            workId: null,
+          },
+          draft: { draftId: "d1", workId: "w1" },
+        })),
+    });
+    const anchor = () => editor.view.dom.querySelector("a");
+    await vi.waitFor(() => expect(anchor()?.getAttribute("data-link-chip")).toBe("draft"));
+    expect(anchor()?.getAttribute("title")).toBe("In a draft");
+    expect(anchor()?.getAttribute("aria-description")).toBe("In a draft");
+    expect(anchor()?.hasAttribute("aria-disabled")).toBe(false);
+  } finally {
+    editor.destroy();
+  }
+});

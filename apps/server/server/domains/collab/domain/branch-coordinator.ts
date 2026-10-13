@@ -119,6 +119,14 @@ export class BranchCasConflictError extends Error {
   }
 }
 
+/** A load named a branch whose rows are gone (a last-use Discard deleted them). */
+export class BranchMissingError extends Error {
+  constructor(readonly branchId: string) {
+    super(`Branch ${branchId} does not exist`);
+    this.name = "BranchMissingError";
+  }
+}
+
 type CachedBranchDoc = {
   generation: number;
   state: Uint8Array;
@@ -198,18 +206,6 @@ export type BranchCoordinator = {
     actorUserId?: string;
     roomDocument: Y.Doc;
   }): Promise<{ admitted: boolean }>;
-  withStagedRows<T>(
-    branchId: string,
-    run: (
-      doc: Y.Doc,
-      snapshot: BranchSnapshot,
-    ) => Promise<{
-      result: T;
-      rows: readonly Omit<AppendBranchJournalInput, "generation">[];
-    }>,
-    commit: boolean,
-  ): Promise<T>;
-  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
   /**
    * A save's one door to branch state: every call runs under `lease`, acquires nothing, and
    * throws `BranchLeaseScopeError` for a branch the lease does not cover.
@@ -269,7 +265,7 @@ export function createBranchCoordinator(input: {
 
   async function loadSnapshot(branchId: string): Promise<BranchSnapshot> {
     const snapshot = await input.store.getBranch(branchId);
-    if (!snapshot) throw new Error(`Branch ${branchId} does not exist`);
+    if (!snapshot) throw new BranchMissingError(branchId);
     assertReadableBranch(snapshot);
     return snapshot;
   }
@@ -682,18 +678,6 @@ export function createBranchCoordinator(input: {
     withLeases: (branchIds, run) => criticalSections.withBranches(branchIds, run),
 
     ownedSession,
-
-    withStagedRows(branchId, run, commit) {
-      return criticalSections.withBranches([branchId], () =>
-        stagedRowsUnder(branchId, run, commit),
-      );
-    },
-
-    commitSegmentRows(batch) {
-      return retryCas(() =>
-        criticalSections.withBranches([batch.branchId], () => segmentRowsUnder(batch)),
-      );
-    },
 
     pullFromDoc(lease, branchId, upstream) {
       assertBranchLeaseCovers(lease, branchId);

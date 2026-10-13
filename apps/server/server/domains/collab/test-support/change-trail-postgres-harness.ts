@@ -48,6 +48,7 @@ import { createPeerRetirement } from "../domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
 import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
 import { writeMarkdown } from "./bound-writes.js";
+import { commitSegmentRows } from "./branch-update-writes.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
 const { createDb } = await import("@meridian/database");
@@ -878,7 +879,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       const draft = await branchStore.resolveWorkDraftBranchForThread(documentId, THREAD_ID);
       const last = model.getBlocks(toDocHandle(draft.doc)).at(-1) ?? null;
       model.insertBlocks(toDocHandle(draft.doc), last, markupCodec.parse("Writer concurrent."));
-      await branchCoordinator.commitSegmentRows({
+      await commitSegmentRows(branchCoordinator, {
         branchId: draft.branchId,
         sourceDoc: draft.doc,
         expectedGeneration: draft.generation,
@@ -1066,7 +1067,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     if (replace) {
       model.insertBlocks(toDocHandle(branch.doc), null, markupCodec.parse("Agent replacement."));
     }
-    const committed = await branchCoordinator.commitSegmentRows({
+    const committed = await commitSegmentRows(branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
@@ -1131,7 +1132,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     const doomed = model.getBlocks(toDocHandle(branch.doc))[0];
     if (!doomed) throw new Error("draft block missing before sweep classification push");
     model.deleteBlock(toDocHandle(branch.doc), doomed);
-    const committed = await branchCoordinator.commitSegmentRows({
+    const committed = await commitSegmentRows(branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
@@ -1272,7 +1273,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
             beforeStateVector,
           );
         }
-        const committed = await branchCoordinator.commitSegmentRows({
+        const committed = await commitSegmentRows(branchCoordinator, {
           branchId: branch.branchId,
           sourceDoc: branch.doc,
           expectedGeneration: branch.generation,
@@ -1348,7 +1349,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       const block = model.getBlocks(toDocHandle(staged.doc))[0];
       if (!block) throw new Error("pending-dependency draft block is unavailable");
       model.deleteBlock(toDocHandle(staged.doc), block);
-      await branchCoordinator.commitSegmentRows({
+      await commitSegmentRows(branchCoordinator, {
         branchId: branch.branchId,
         sourceDoc: staged.doc,
         expectedGeneration: staged.generation,
@@ -1869,7 +1870,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     if (!block) throw new Error("dependency draft block missing");
     const end = model.getText(block).length;
     model.applyTextEdit(toDocHandle(branch.doc), block, { from: end, to: end }, " discarded");
-    await branchCoordinator.commitSegmentRows({
+    await commitSegmentRows(branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
@@ -1920,7 +1921,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         { from: currentEnd, to: currentEnd },
         " survivor",
       );
-      await branchCoordinator.commitSegmentRows({
+      await commitSegmentRows(branchCoordinator, {
         branchId: branch.branchId,
         sourceDoc: current.sourceDoc,
         expectedGeneration: current.generation,
@@ -2165,7 +2166,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         const block = model.getBlocks(toDocHandle(doc))[0];
         if (!block) throw new Error("draft block missing before subsequent edit");
         model.deleteBlock(toDocHandle(doc), block);
-        await branchCoordinator.commitSegmentRows({
+        await commitSegmentRows(branchCoordinator, {
           branchId: branchId,
           sourceDoc: doc,
           expectedGeneration: staged.generation,
