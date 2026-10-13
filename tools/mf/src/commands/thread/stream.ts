@@ -90,7 +90,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
           if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;
         case "event": {
-          options.reduced?.apply(message.event.seq, message.event.event);
+          options.reduced?.apply(message.event.event);
           const stop = consume(message.event.seq, message.event);
           if (stop) {
             stopRequested = true;

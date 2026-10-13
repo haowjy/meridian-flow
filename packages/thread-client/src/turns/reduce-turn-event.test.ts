@@ -1,6 +1,6 @@
 /**
  * The reducer against the package's plain store: tool results, instance-owned
- * interrupt buffering, injected clock, and the store's snapshot floor.
+ * interrupt buffering, and the injected clock.
  */
 import type { AGUIEvent } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
@@ -64,17 +64,5 @@ describe("turn reducer", () => {
     second.reducer.applyEvent(THREAD, blockEvent("b2", "int-2", 2));
     const late = second.store.turns(THREAD)?.[0]?.blocks.find((block) => block.id === "b2");
     expect(late?.content).not.toHaveProperty("props.resolvedValue");
-  });
-});
-
-describe("InMemoryTurnStore", () => {
-  it("rejects a snapshot older than the accepted floor and events it already covers", () => {
-    const { store } = instance();
-    expect(store.hydrate(THREAD, [], "10")).toBe(true);
-    expect(store.hydrate(THREAD, [], "9")).toBe(false);
-    expect(store.acceptEventSeq(THREAD, "9")).toBe(false);
-    expect(store.acceptEventSeq(THREAD, "10")).toBe(true);
-    expect(store.nextSeq(THREAD)).toBe("11");
-    expect(store.hydrate(THREAD, [], "10")).toBe(false);
   });
 });

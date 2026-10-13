@@ -39,10 +39,13 @@ export class ReducedThread {
     return this.store.hydrate(this.threadId, snapshot.turns, snapshot.nextSeq);
   }
 
-  /** Events the hydrated snapshot already covers are skipped, not re-applied. */
-  apply(seq: string, event: AGUIEvent): void {
-    if (this.store.acceptEventSeq(this.threadId, seq))
-      this.reducer.applyEvent(this.threadId, event);
+  /**
+   * Applies every delivered event. Which events arrive is the subscription's
+   * cursor (`resumeAfterSeq`); `nextSeq` only decides which snapshot is fresh
+   * enough to hydrate, so it never filters events here.
+   */
+  apply(event: AGUIEvent): void {
+    this.reducer.applyEvent(this.threadId, event);
   }
 
   turns(): Turn[] {
