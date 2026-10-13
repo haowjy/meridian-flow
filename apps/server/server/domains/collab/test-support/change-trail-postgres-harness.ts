@@ -24,10 +24,7 @@ import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
-import {
-  createDocumentLastAddress,
-  createDocumentUrisResolver,
-} from "../../context/document-uri-resolver.js";
+import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { FileGrant } from "../../file-policy/index.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
@@ -298,6 +295,8 @@ export function markdownFromUpdate(update: Uint8Array): string {
 }
 export type ChangeTrailHarnessOptions = {
   ids?: ChangeTrailScenarioIds;
+  /** Default: every grant is confirmed. */
+  fileAccess?: import("../../file-policy/index.js").FileAccess;
   /** Default: a static scope, whose tokens ignore the tree. */
   links?: DocumentLinkScopes;
   reviewCut?: (
@@ -646,7 +645,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     createBranchThreadPeerAgentEditCore({
       documentEdits: modelDocumentEdits,
       drafts: workDrafts,
-      fileAccess: createAllowAllFileAccess(),
+      fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
@@ -718,7 +717,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   });
   const turnReversal = createTurnReversalService({
     ...UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
-    fileAccess: createAllowAllFileAccess(),
+    fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
     turnInverse,
     resolveDocumentUri,
   });
