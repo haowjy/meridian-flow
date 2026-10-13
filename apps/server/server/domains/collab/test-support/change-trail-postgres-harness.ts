@@ -29,6 +29,7 @@ import {
   createDocumentUrisResolver,
 } from "../../context/document-uri-resolver.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
+import type { FileGrant } from "../../file-policy/index.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
 import { createDrizzleDraftDiscard } from "../adapters/drizzle-draft-discard.js";
@@ -796,8 +797,32 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       push: realBranchPush,
     }),
   });
+  // Tests mint a destination grant without a target; a write's grant names its document.
+  const grantedAgentEdit = new Proxy(agentEdit, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (property !== "write" || typeof value !== "function") return value;
+      return (command: { documentId?: string }, context: { grant: FileGrant<"edit"> }) =>
+        value.call(
+          target,
+          command,
+          command.documentId
+            ? {
+                ...context,
+                grant: {
+                  ...context.grant,
+                  facts: {
+                    ...context.grant.facts,
+                    target: { kind: "document", documentId: command.documentId },
+                  },
+                },
+              }
+            : context,
+        );
+    },
+  });
   const collab = {
-    agentEdit: () => agentEdit,
+    agentEdit: () => grantedAgentEdit,
     reverseTurn: turnReversal.reverseTurn,
     getTurnReceiptChip: turnInverse.getTurnReceiptChip,
     writeDocument: runtime.markdownDocuments.writeDocument,

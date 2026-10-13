@@ -59,6 +59,11 @@ function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
   };
 }
 
+const identity = (responseId: string) => ({
+  providerResponseId: responseId,
+  editScopeId: responseId,
+});
+
 async function fixture(
   db: Database,
   harnesses: Array<ReturnType<typeof createHarness>>,
@@ -142,7 +147,7 @@ async function fixture(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
         ...context,
-        responseId,
+        ...(responseId ? { responseIdentity: identity(responseId) } : {}),
         ...(destination ? { grant: inProject(testFileGrant(destination)) } : {}),
       },
     );
@@ -181,7 +186,7 @@ async function fixture(
         overwrite: true,
         content: "Agent revision.",
       },
-      { ...context, responseId, createdDocument: false },
+      { ...context, responseIdentity: identity(responseId), createdDocument: false },
     );
     expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
