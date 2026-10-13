@@ -194,6 +194,7 @@ function ChatScreenLoaded({
             threadId={threadId}
             projectId={projectId}
             activeThread={thread}
+            snapshotWriteMode={snapshotThread?.aiWriteMode}
             activeWork={activeWork}
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}

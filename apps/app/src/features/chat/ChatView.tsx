@@ -17,6 +17,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { SnapshotLiveState, Thread, Turn, Work } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
@@ -98,6 +99,8 @@ export type ChatViewProps = {
   threadId: string;
   projectId: string;
   activeThread?: Thread | null;
+  /** The rendered snapshot's write mode: the ledger's base, consistent with the transcript it reads. */
+  snapshotWriteMode?: AiWriteMode;
   activeWork?: Work | null;
   snapshotLiveState?: SnapshotLiveState | null;
   snapshotNextSeq?: string | null;
@@ -127,6 +130,7 @@ export function ChatView({
   threadId,
   projectId,
   activeThread = null,
+  snapshotWriteMode,
   activeWork = null,
   snapshotLiveState = null,
   snapshotThreadUsage = null,
@@ -252,7 +256,8 @@ export function ChatView({
   const switches = useSwitchLedger({
     threadId,
     projectId,
-    writeMode: activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
+    writeMode:
+      snapshotWriteMode ?? activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
     pending: pendingInbox,
     turns,
     historySettled,
