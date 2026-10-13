@@ -135,7 +135,24 @@ provider call. Catalog selection and child spawning also reject unavailable
 models. Turn/response model fields are historical accounting, not routing
 authority. No local-data migration or retired-ID mapping is needed.
 
-Anthropic rejects root tool-schema unions. Its request mapper advertises the
-union of command properties with only common required fields and preserves
-nested field alternatives. Tool execution validates the unchanged original
-schema; provider advertisement is not argument-validation authority.
+Anthropic rejects root tool-schema unions. Its request mapper derives a
+property envelope only for object command unions (`oneOf` / `anyOf`), retaining
+branch purposes, required and allowed fields as generated command guidance,
+and command-tagged field descriptions. Nested field constraints remain intact.
+Unsupported branch shapes fail locally rather than losing constraints. Root
+`allOf` is outside the core tool publication contract and fails at registration
+with the tool name; direct Anthropic requests also reject it before dispatch.
+Tool execution validates the unchanged original Zod contract: provider
+advertisement is not argument-validation authority.
+
+DeepSeek receives the canonical union, not the Anthropic projection. A direct
+`/anthropic/v1/messages` probe with the real Work `oneOf` schema returned HTTP
+200 and `work({command: "list"})` on 2026-10-13. OpenRouter still receives the
+canonical schema; its Claude route's root-union support is unverified without
+a key and remains an explicit verification risk.
+
+Unavailable stored model selections are blocked before provider dispatch, but
+currently persist a generic failed reply with a misleading Retry action. The
+writer decision on adopting the Agent's current model versus a durable
+nonretryable unavailable-model outcome is pending; routing rejection alone
+is not a complete writer-facing recovery contract.
