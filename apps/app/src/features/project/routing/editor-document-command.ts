@@ -82,13 +82,19 @@ export function createEditorDocumentCommand({
       // Re-opening the document the address names (a rename or move following
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
+      // A draft-only tab has no live document: its own review identity is the only
+      // destination that resolves, so every re-select or restore of it carries that.
+      const itemKey =
+        options?.itemKey ??
+        (options?.tab ? reviewItemKeyOf(options.tab) : undefined) ??
+        (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
         target,
         preparedTab,
-        options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined),
+        itemKey,
         options?.changeId ??
-          (sameDocument && (!options?.itemKey || options.itemKey === current.address.itemKey)
+          (sameDocument && (!itemKey || itemKey === current.address.itemKey)
             ? current.address.changeId
             : undefined),
       );
@@ -260,6 +266,10 @@ export function prepareEditorDestination(
     state,
   };
 }
+function reviewItemKeyOf(tab: ContextTab): string | undefined {
+  return tab.kind === "tracked" && tab.draftOnly === true ? tab.reviewItemKey : undefined;
+}
+
 /** A prepared tab states the locator the route will use, not the one it was built from. */
 function tabAtLocator(tab: ContextTab, locator: ContextRouteRequest): ContextTab {
   if (tab.kind === "new" || (tab.scheme === locator.scheme && tab.path === locator.path))
