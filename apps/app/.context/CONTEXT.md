@@ -144,9 +144,13 @@ and reducer evolution stay contained.
 
 ## Unified live block reducer
 
-`core/session/reduce-turn-event.ts` maps the live sequenced `AGUIEvent` stream
-straight into ThreadStore actions: `ensureAssistantTurn`, `upsertAssistantBlock`,
-and `patchTurnStatus`. There is no separate live-turn view model; live and
+The turn reducer lives in `@meridian/thread-client` (`src/turns/`) and is shared
+with `./mf`. It maps the live sequenced `AGUIEvent` stream into ThreadStore
+actions (`ensureAssistantTurn`, `upsertAssistantBlock`, `patchTurnStatus`)
+through the `TurnStore` port; the thread store is its adapter and owns one
+reducer instance (`applyTurnEvent`, `applyDurableBlockEvent` actions). Optimistic
+reconciliation, cache invalidation, thread-list patches, `liveMeta`, seq floors,
+and the interrupt response UI stay here. There is no separate live-turn view model; live and
 settled assistant turns are the same `Turn` rows in `turnsByThread`, with
 in-flight blocks marked `status: "partial"`.
 

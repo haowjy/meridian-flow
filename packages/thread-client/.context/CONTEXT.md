@@ -33,6 +33,37 @@ occurrence remains in the blocks. The canonical walk exposes each source referen
 through `onReference`; the app projects its owned uploads from those visits without
 walking the document again. Draft snapshots and upload lifecycle ownership stay in the app.
 
+## Turn reduction (`src/turns/`)
+
+`createTurnReducer({ store, now })` turns accepted AG-UI events into `Turn` and
+`Block` changes on a `TurnStore`: `turns`, `ensureAssistantTurn`,
+`upsertAssistantBlock`, `patchTurnStatus`, `bumpEventsApplied`, and
+`settleInterruptResponse`, plus an optional `invalidateThreadSnapshot` that an
+adapter may use to refetch (reduction never depends on it). The app and `./mf`
+reduce chat the same way; neither keeps its own interpretation of events.
+
+- **Instance state.** Buffered interrupt resolutions (a resolution can arrive
+  before its component block) live in the reducer instance, with
+  `clearPendingInterruptPatchesFor{Thread,Turn}`. Make one reducer per store.
+- **No ambient clock.** `now()` returns an ISO timestamp; the reducer never reads
+  `Date`, and the package touches no browser or Node global at module load.
+- **One store semantics.** `turn-ops.ts` owns turn creation, block upsert by
+  sequence (sorted, identical writes are no-ops) and status patching. The app's
+  Zustand adapter and `InMemoryTurnStore` both call it. `InMemoryTurnStore` adds
+  `hydrate(threadId, turns, nextSeq)` (rejects a snapshot older than the accepted
+  floor, like `acceptsThreadSnapshot`) and `acceptEventSeq` (false for an event the
+  floor already covers).
+- **Parity rule.** `apps/app/.../turn-store-parity.test.ts` runs one fixture
+  (`test-support/turn-events.ts`) through the app store and `InMemoryTurnStore` and
+  requires equal turns. A new event family goes into that fixture; a store change
+  that the other store does not share fails there.
+- **Stays in the host.** Optimistic rows and `reconcileSnapshotTurns`, cache
+  invalidation, thread-list patches, `liveMeta`, account checks, durable-seq
+  cursors, and the interrupt response UI. Visible-turn and transcript partition
+  policy is also the app's.
+- **A new server CUSTOM name** needs a decision in `reduce-turn-event.ts` (apply,
+  leave to the snapshot, or ignore) and a reducer test.
+
 ## Thread wire protocol and recovery
 
 The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,

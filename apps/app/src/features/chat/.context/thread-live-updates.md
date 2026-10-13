@@ -62,7 +62,7 @@ updates for a background child's report.
 
 ## Live CUSTOM events
 
-`core/session/reduce-turn-event.ts` reduces AG-UI `CUSTOM` frames by name.
+`@meridian/thread-client`'s turn reducer (`src/turns/reduce-turn-event.ts`) reduces AG-UI `CUSTOM` frames by name.
 Every name the server's orchestrator event projector emits has an explicit
 branch there: apply it to the store, leave it to the snapshot sync above
 (`meridian.block.upserted`, `meridian.inbox.changed`, `meridian.usage`), or

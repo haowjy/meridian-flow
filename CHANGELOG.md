@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `./mf thread view`, `send` and `tail --until-idle` build turns with the app's own event reducer, now shared through `@meridian/thread-client`. `send` and `tail --until-idle` results add `liveView` (`matches` or `differs`, with a compact `liveDiff`) when the followed events disagree with the stored reply; the outcome and exit code do not change.
+
 ### Fixed
 
 - `./mf thread send --no-wait` reports `outcome: "accepted"` (admission only) instead of `complete`.

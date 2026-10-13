@@ -230,7 +230,7 @@ owns only the SQL predicate beside its partial index.
   recomputed `ThreadActivity`; the producer computed it at emit time so the
   projector stays a pure function of the journal. **Every CUSTOM name this
   projector emits needs an explicit client decision** in the app's
-  `core/session/reduce-turn-event.ts` (apply, refetch, or ignore) and a
+  `@meridian/thread-client`'s `src/turns/reduce-turn-event.ts` (apply, refetch, or ignore) and a
   reducer test. An unknown name falls through to an opaque custom block in the
   streaming reply, which renders "Unknown component"; a server test that the
   event is projected does not catch that.

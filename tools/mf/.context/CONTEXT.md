@@ -16,13 +16,30 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
   - `src/commands/<group>/` holds one command group each (`thread`, `doc`,
     `project`, `mock`, `log`, `seed`, `api`): one file per command, an `index.ts`
     exporting the `CommandGroup`, and the group's own helpers (thread:
-    `transport.ts`, `stream.ts`, `events-map.ts`, `transcript.ts`, `resolve.ts`;
+    `transport.ts`, `stream.ts`, `events-map.ts`, `reduced-thread.ts`, `transcript.ts`,
+    `resolve.ts`;
     project: `resolve.ts`; doc: `uri.ts`; mock: `queue.ts`). Groups may import
     another group's helper module (`thread/send` uses `mock/queue`, `doc/uri`),
     never `main.ts`; `core/` imports no group.
   - **Adding a group:** create `src/commands/<group>/` with its commands and an
     `index.ts` exporting a `CommandGroup`, then list it in `GROUPS` in
     `src/main.ts`. Help, parsing, output, and errors come from `core/`.
+  - **Views derive from the shared reducer.** `reduced-thread.ts` hydrates a snapshot
+    into `@meridian/thread-client`'s `InMemoryTurnStore` and applies each sequenced
+    event through the same `createTurnReducer` the app uses. `thread view` renders
+    its turns (`transcript.ts` and `block-timing.ts` are renderers over `Turn[]`).
+    `send` and `tail --until-idle` follow with a hydrated store and compare each
+    followed turn's reduced status and final text with the confirming snapshot's;
+    the result carries `liveView: "matches" | "differs"` (and a compact `liveDiff`
+    when it differs), absent when nothing was followed. A difference never changes
+    the claim or exit code, since the claim is about the server; it means the app's
+    live view would have shown something other than what the server stored. The
+    claims themselves (`status`, `finalText`, outcome) still come from the
+    confirming snapshot.
+  - **The event log is a log.** `events-map.ts` (`RunEventMapper`) folds events into
+    the dotted lines `thread events`, `send` and `tail` print, including both
+    `tool.completed` and `tool.settled`. It decides when a command looks (stop
+    triggers) and what to print, never what a turn contains.
   - **Output contract:** compact text by default; `--json` prints exactly one
     object, or NDJSON for streams. Live claims and journal replay end with one
     `type: "result"` envelope (`command`, `threadId`, `outcome`, `reason`, then
