@@ -17,7 +17,6 @@ import {
   type ComposerDraftSnapshot,
   parseRestorableComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { submissionLockName } from "./lock";
 
 export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 3;
 export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v3:";
@@ -167,83 +166,6 @@ function parseSubmission(value: unknown): ChatSubmission | null {
   };
 }
 
-/** Remove after the first production deploy shipping v3 has been live for a release. */
-function rewriteV1ChatSubmissions(
-  storage: ChatSubmissionStorage,
-  accountId: string,
-  completed: () => void,
-): Promise<void> {
-  const pending: Promise<unknown>[] = [];
-  const prefix = `meridian:chat-submissions:v1:${accountId}:`;
-  try {
-    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
-    for (const key of keys) {
-      if (!key?.startsWith(prefix)) continue;
-      const old = browserRecord(
-        () => storage,
-        { key, version: 1, accountId },
-        (value) => {
-          if (!isObject(value) || !["first-send", "existing-thread"].includes(String(value.kind)))
-            return undefined;
-          return (
-            parseSubmission({
-              ...value,
-              recordId: value.submissionId,
-              seq: 0,
-              creation:
-                value.kind === "first-send"
-                  ? {
-                      title: value.title,
-                      workId: value.workId,
-                      // v1 predates the per-chat mode; the server default is direct.
-                      workAiWriteMode: isAiWriteMode(value.workAiWriteMode)
-                        ? value.workAiWriteMode
-                        : "direct",
-                      ...(isAiWriteMode(value.aiWriteMode)
-                        ? { aiWriteMode: value.aiWriteMode }
-                        : {}),
-                      agentSelection: value.agentSelection,
-                      agentName: value.agentName,
-                      agentSlug: value.agentSlug,
-                    }
-                  : undefined,
-            }) ?? undefined
-          );
-        },
-      );
-      const entry = old.read();
-      if (!entry) continue;
-      const migrate = () => {
-        // Re-read under the same thread lock as every drive/remint/retire.
-        const current = old.read();
-        if (!current) return;
-        const target = browserRecord(
-          () => storage,
-          {
-            key: chatSubmissionStorageKey(accountId, current.recordId),
-            version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
-            accountId,
-          },
-          (value) => parseSubmission(value) ?? undefined,
-        );
-        // Until deletion succeeds, the v3 copy is deliberately invisible to commands.
-        if (target.read() || target.write(current)) old.write(undefined);
-        completed();
-      };
-      if (typeof navigator !== "undefined" && navigator.locks) {
-        pending.push(
-          navigator.locks
-            .request(submissionLockName(accountId, entry.threadId), migrate)
-            .catch(reportError),
-        );
-      } else migrate();
-    }
-  } catch {
-    /* Preserve v1 when storage is unavailable. */
-  }
-  return Promise.all(pending).then(() => undefined);
-}
-
 export class DeviceChatSubmissionJournal {
   private state: { accountId: string } | null = null;
   /** Session fence: bumped on every account bind. Not a durable revision. */
@@ -257,11 +179,7 @@ export class DeviceChatSubmissionJournal {
   };
 
   notifyStorageChange(key: string | null): void {
-    if (
-      key === null ||
-      key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`) ||
-      key.startsWith(`meridian:chat-submissions:v1:${this.accountId}:`)
-    ) {
+    if (key === null || key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`)) {
       this.notify();
     }
   }
@@ -286,18 +204,14 @@ export class DeviceChatSubmissionJournal {
     return this.bindEpoch;
   }
 
-  setUser(accountId: string): Promise<void> {
-    if (this.state?.accountId === accountId) return Promise.resolve();
+  setUser(accountId: string): void {
+    if (this.state?.accountId === accountId) return;
     this.bindEpoch += 1;
     // Per-account storage keys mean another account's records are never read
     // or removed here; they remain for that account's next bind.
     this.state = { accountId };
     this.lastKnown = [];
-    const ready = rewriteV1ChatSubmissions(this.storage, accountId, () => {
-      if (this.accountId === accountId) this.notify();
-    });
     this.notify();
-    return ready;
   }
 
   entries(): ChatSubmission[] {
@@ -314,7 +228,6 @@ export class DeviceChatSubmissionJournal {
       for (let index = 0; index < this.storage.length; index += 1) {
         const key = this.storage.key(index);
         if (!key?.startsWith(prefix)) continue;
-        if (this.hasLegacy(accountId, key.slice(prefix.length))) continue;
         let failed = false;
         const parsed = this.recordFor(accountId, key, () => {
           failed = true;
@@ -333,7 +246,6 @@ export class DeviceChatSubmissionJournal {
     const accountId = this.state?.accountId;
     if (!accountId) return null;
     try {
-      if (this.hasLegacy(accountId, recordId)) return null;
       return (
         this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).read() ?? null
       );
@@ -349,11 +261,6 @@ export class DeviceChatSubmissionJournal {
    */
   record(accountId: string, entry: NewChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
-    try {
-      if (this.hasLegacy(accountId, entry.recordId)) return false;
-    } catch {
-      return false;
-    }
     const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));
     const existing = stored.read();
     const seq =
@@ -364,10 +271,6 @@ export class DeviceChatSubmissionJournal {
     const written = stored.write({ ...entry, seq });
     if (written) this.notify();
     return written;
-  }
-
-  private hasLegacy(accountId: string, recordId: string): boolean {
-    return this.storage.getItem(`meridian:chat-submissions:v1:${accountId}:${recordId}`) !== null;
   }
 
   private recordFor(accountId: string, key: string, onError?: (error: unknown) => void) {
@@ -386,11 +289,6 @@ export class DeviceChatSubmissionJournal {
    */
   retire(accountId: string, recordId: string, expectedEpoch?: number): boolean {
     if (this.state?.accountId !== accountId) return false;
-    try {
-      if (this.hasLegacy(accountId, recordId)) return false;
-    } catch {
-      return false;
-    }
     if (expectedEpoch !== undefined && this.bindEpoch !== expectedEpoch) return false;
     const retired = this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).write(
       undefined,

@@ -169,44 +169,6 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
   expect([entry.recordId, "later"].map((id) => journal.get(id)?.seq)).toEqual([1, 2]);
 });
 
-it("rewrites only the bound account's v1 words before deleting its old keys", () => {
-  const storage = memory();
-  const legacy = {
-    ...existingThread(),
-    kind: "first-send",
-    title: "Hello",
-    workId: null,
-    agentSelection: { catalogEntryId: "entry", definitionRevisionId: "revision" },
-    agentName: "Agent",
-    agentSlug: "agent",
-  };
-  for (const accountId of ["account", "account-other"]) {
-    storage.setItem(
-      `meridian:chat-submissions:v1:${accountId}:sub-1`,
-      JSON.stringify({ version: 1, accountId, payload: legacy }),
-    );
-  }
-  const journal = new DeviceChatSubmissionJournal(storage);
-  journal.setUser("account");
-  expect(journal.get("sub-1")).toMatchObject({
-    recordId: "sub-1",
-    submissionId: "sub-1",
-    creation: { title: "Hello" },
-  });
-  expect(storage.getItem("meridian:chat-submissions:v1:account:sub-1")).toBeNull();
-  expect(storage.getItem("meridian:chat-submissions:v1:account-other:sub-1")).not.toBeNull();
-  const rewritten = journal.get("sub-1");
-  if (!rewritten) throw new Error("Expected rewritten record");
-  journal.record("account", { ...rewritten, submissionId: "reminted" });
-  storage.setItem(
-    "meridian:chat-submissions:v1:account:sub-1",
-    JSON.stringify({ version: 1, accountId: "account", payload: legacy }),
-  );
-  journal.setUser("account-other");
-  journal.setUser("account");
-  expect(journal.get("sub-1")?.submissionId).toBe("reminted");
-});
-
 it("notifies subscribers on writes, retirement and matching cross-tab storage changes", () => {
   const { journal } = bound();
   let notifications = 0;
@@ -221,40 +183,6 @@ it("notifies subscribers on writes, retirement and matching cross-tab storage ch
   unsubscribe();
   journal.notifyStorageChange(null);
   expect(notifications).toBe(3);
-});
-
-it("keeps migration unavailable until legacy deletion succeeds, then never resurrects acceptance", () => {
-  const storage = memory();
-  const legacyKey = "meridian:chat-submissions:v1:account:sub-1";
-  storage.setItem(
-    legacyKey,
-    JSON.stringify({
-      version: 1,
-      accountId: "account",
-      payload: { ...existingThread(), kind: "existing-thread", state: "rejected" },
-    }),
-  );
-  const remove = storage.removeItem;
-  let fail = true;
-  storage.removeItem = (key) => {
-    if (key === legacyKey && fail) throw new Error("delete refused");
-    remove(key);
-  };
-  const journal = new DeviceChatSubmissionJournal(storage);
-  journal.setUser("account");
-  expect(journal.entries()).toEqual([]);
-  expect(journal.record("account", { ...existingThread(), submissionId: "premature" })).toBe(false);
-  expect(journal.retire("account", "sub-1")).toBe(false);
-  expect(storage.getItem(legacyKey)).not.toBeNull();
-  fail = false;
-  journal.setUser("other");
-  journal.setUser("account");
-  expect(journal.get("sub-1")?.state).toBe("rejected");
-  expect(journal.record("account", { ...existingThread(), submissionId: "reminted" })).toBe(true);
-  expect(journal.retire("account", "sub-1")).toBe(true);
-  journal.setUser("other");
-  journal.setUser("account");
-  expect(journal.entries()).toEqual([]);
 });
 
 it("unavailable record reads retain the last complete snapshot", () => {
