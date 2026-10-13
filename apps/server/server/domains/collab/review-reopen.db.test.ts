@@ -6,9 +6,8 @@ import {
   createHarness,
   createTestDatabase,
   resetSettlementFixture,
-  USER_ID,
 } from "./test-support/branch-push-settlement-fixture.js";
-import { WORK_ID } from "./test-support/change-trail-postgres-harness.js";
+import { reviewDriver } from "./test-support/draft-review-requests.js";
 
 const db = createTestDatabase();
 beforeEach(() => resetSettlementFixture(db));
@@ -27,27 +26,17 @@ it.each([
   try {
     await harness.seedWriterDocument("The sacred dawn.", "review-reopen");
     const f = harness.crossWorkProbeFixture();
-    const draftId = await harness.stageCertifiedReplace({
+    await harness.stageCertifiedReplace({
       responseId: "reopen-first",
       find: "sacred ",
       content: effect === "replacement" ? "ruined " : "",
     });
-    const command = { workId: WORK_ID, documentId: ALPHA_ID, draftId, userId: USER_ID };
-    const preview = await f.collab.draftReview.preview(command);
-    if (preview.status !== "active") throw new Error("missing preview");
-    const selection = {
-      ...command,
-      operationIds: preview.operations.map((op) => op.operationId),
-      admissionTokens: [...new Set(preview.operations.map((op) => op.admissionToken))],
-      memberPartKeys: preview.operations.flatMap((op) => (op.partKey ? [op.partKey] : [])),
-      closureClassIds: [...new Set(preview.operations.map((op) => op.closureClassId))],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const review = reviewDriver(f.collab.draftReview);
+    const preview = await review.activePreview(ALPHA_ID);
     expect(
       await (action === "discard"
-        ? f.collab.draftReview.discardWorkDraft(selection)
-        : f.collab.draftReview.applyWorkDraftChanges(selection)),
+        ? review.discardChanges(ALPHA_ID, preview)
+        : review.applyChanges(ALPHA_ID, preview)),
     ).toMatchObject({ status: action === "discard" ? "discarded" : "applied", itemClosed: true });
     const adjective = action === "discard" ? "sacred " : effect === "replacement" ? "ruined " : "";
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(`The ${adjective}dawn.\n`);
@@ -56,10 +45,9 @@ it.each([
       find: "dawn",
       content: "dusk",
     });
-    const reopened = { ...command, draftId: reopenedId };
-    const nextPreview = await f.collab.draftReview.preview(reopened);
+    const nextPreview = await review.preview(ALPHA_ID);
     const nextDraft = await f.draftMarkdown(reopenedId);
-    expect(await f.collab.draftReview.applyWorkDraft(reopened)).toMatchObject({
+    expect(await review.applyItem(ALPHA_ID)).toMatchObject({
       status: "applied",
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(`The ${adjective}dusk.\n`);

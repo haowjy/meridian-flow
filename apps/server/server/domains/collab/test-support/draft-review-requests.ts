@@ -10,6 +10,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_ID,
 } from "./change-trail-postgres-harness.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
@@ -110,4 +111,88 @@ export function fencedSelection(
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
   };
+}
+
+type ActivePreview = Extract<Awaited<ReturnType<DraftReviewApi["preview"]>>, { status: "active" }>;
+
+/**
+ * The writer's review commands by document, each under a fresh command id, answering the
+ * command's stored body. The facade names items by `itemKey`; suites name documents.
+ */
+export function reviewDriver(
+  review: DraftReviewApi,
+  scope: { workId?: WorkId; userId?: UserId } = {},
+) {
+  const workId = scope.workId ?? (WORK_ID as WorkId);
+  const userId = scope.userId ?? (USER_ID as UserId);
+  const body = (outcome: Awaited<ReturnType<DraftReviewApi["applyItem"]>>) =>
+    outcome.kind === "result" ? outcome.result : outcome;
+  async function resolved(documentId: string) {
+    const found = await review.resolveItemByDocument({ workId, documentId: documentId as never });
+    if (!found) throw new Error(`No review item for ${documentId}`);
+    return found;
+  }
+  const driver = {
+    resolved,
+    async preview(documentId: string) {
+      return review.preview({ workId, itemKey: (await resolved(documentId)).itemKey });
+    },
+    async activePreview(documentId: string): Promise<ActivePreview> {
+      const preview = await driver.preview(documentId);
+      if (preview.status !== "active") throw new Error(`No active review of ${documentId}`);
+      return preview;
+    },
+    async list() {
+      return (await review.items({ workId })).items;
+    },
+    async applyItem(documentId: string) {
+      const { item, draftId } = await resolved(documentId);
+      return body(
+        await review.applyItem({
+          workId,
+          item,
+          userId,
+          envelope: testEnvelope({ workId, kind: "apply_items", draftId, userId }),
+        }),
+      );
+    },
+    async discardItem(documentId: string) {
+      const { item, draftId } = await resolved(documentId);
+      return body(
+        await review.discardItem({
+          workId,
+          item,
+          userId,
+          envelope: testEnvelope({ workId, kind: "discard_items", draftId, userId }),
+        }),
+      );
+    },
+    async applyChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
+      const { itemKey, draftId } = await resolved(documentId);
+      const ids = operationIds ?? preview.operations.map((op) => op.operationId);
+      return body(
+        await review.applyChanges({
+          workId,
+          itemKey,
+          userId,
+          envelope: testEnvelope({ workId, kind: "apply_changes", draftId, userId }),
+          selection: { kind: "apply", ...fencedSelection(preview, ids) },
+        }),
+      );
+    },
+    async discardChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
+      const { itemKey, draftId } = await resolved(documentId);
+      const ids = operationIds ?? preview.operations.map((op) => op.operationId);
+      return body(
+        await review.discardChanges({
+          workId,
+          itemKey,
+          userId,
+          envelope: testEnvelope({ workId, kind: "discard_changes", draftId, userId }),
+          selection: { kind: "discard", ...fencedSelection(preview, ids) },
+        }),
+      );
+    },
+  };
+  return driver;
 }
