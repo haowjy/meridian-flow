@@ -9,7 +9,14 @@ import {
   readThreadReferences,
   type ThreadReference,
 } from "@meridian/contracts/threads";
-import { reportPersistedContractFailure } from "./persisted-contract-debug";
+
+/** A persisted record that missed its contract. The caller decides where this is reported. */
+export type PersistedContractFailure = {
+  contract: "invocation_card" | "subagent_update";
+  threadId?: string;
+  turnId?: string;
+  blockId?: string;
+};
 
 export type TurnClass = "bubble" | "delivery" | "context" | "plumbing";
 const emptyEvents: DeliveryEvent[] = [];
@@ -84,6 +91,7 @@ export function buildTranscriptModel(
   localTurns: Turn[],
   awaitingSubagents: boolean,
   inherited: InheritedTranscript | null = null,
+  onContractFailure: (failure: PersistedContractFailure) => void = () => {},
 ) {
   const turns = inherited?.turns.length ? [...inherited.turns, ...localTurns] : localTurns;
   const nextByPrev = new Map<string, Turn>();
@@ -133,7 +141,7 @@ export function buildTranscriptModel(
       const update = parseSubagentUpdateMetadata(metadata);
       subagentUpdateByTurnId.set(turn.id, update);
       if (!update) {
-        reportPersistedContractFailure({
+        onContractFailure({
           contract: "subagent_update",
           turnId: turn.id,
         });
@@ -147,7 +155,7 @@ export function buildTranscriptModel(
       if (content?.kind !== "helper-result") continue;
       const card = parseInvocationCard(block.content);
       if (!card) {
-        reportPersistedContractFailure({
+        onContractFailure({
           contract: "invocation_card",
           turnId: turn.id,
           blockId: block.id,
