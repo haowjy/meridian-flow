@@ -103,6 +103,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const fileAccess = createAllowAllFileAccess();
   const agentEdit = createThreadPeerCorePool({
     drafts,
+    branches: { getBranch: async () => null },
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
     pullThreadPeer: async () => undefined,

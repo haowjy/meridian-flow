@@ -84,6 +84,7 @@ export function createBranchThreadPeerAgentEditCore(input: {
 }): ThreadPeerAgentEditCore {
   return createThreadPeerCorePool({
     drafts: input.drafts,
+    branches: input.branches,
     fences: createReplySaveFences({
       liveUtilityCore: input.liveUtilityCore,
       branches: input.branches,

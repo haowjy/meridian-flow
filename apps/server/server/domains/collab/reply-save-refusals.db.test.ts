@@ -536,6 +536,43 @@ describe("reply save refusals (postgres)", () => {
     });
   });
 
+  it("22: a write landing between Discard all's commit and its retirement gets the named refusal, not an internal error", async () => {
+    const { responseId, review, write } = await setup();
+    expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
+    let late: Awaited<ReturnType<typeof write>> | undefined;
+    const remove = setCollabHook("discard.beforeRetirement", async () => {
+      remove();
+      late = await write("blue", "navy", "w-late");
+    });
+    expect(await review.discardAll()).toMatchObject({ status: "discarded" });
+    expect(late).toMatchObject({ isError: true, status: "invalid_write" });
+    expect(JSON.stringify(late?.result)).toContain(DRAFT);
+    expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, DRAFT]]);
+  });
+
+  it("23: an item Discard retiring the peer between a write's capture and its pull is named, not an internal error", async () => {
+    const { responseId, review, write, fixture } = await setup();
+    expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
+    const withLeases = fixture.branchCoordinator.withLeases;
+    let once = true;
+    fixture.branchCoordinator.withLeases = (async (...args: Parameters<typeof withLeases>) => {
+      if (once && args[0].length === 2) {
+        once = false;
+        await review.discardItem(ALPHA_ID);
+      }
+      return withLeases.apply(fixture.branchCoordinator, args);
+    }) as typeof withLeases;
+    let late: Awaited<ReturnType<typeof write>>;
+    try {
+      late = await write("blue", "navy", "w-late");
+    } finally {
+      fixture.branchCoordinator.withLeases = withLeases;
+    }
+    expect(late).toMatchObject({ isError: true, status: "invalid_write" });
+    expect(JSON.stringify(late.result)).toContain(EDIT);
+    expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
+  });
+
   it("19: a new reply writes through a fresh peer while the old retirement is held", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });

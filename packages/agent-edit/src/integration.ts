@@ -128,6 +128,7 @@ export type {
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
 export type { DestructiveSweepReport } from "./tool/mutation-commit.js";
+export { rejectedWriteExplanation } from "./tool/receipt.js";
 export { isResponseLifecycleError } from "./tool/response-committer.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail } from "./tool/write-deps.js";
