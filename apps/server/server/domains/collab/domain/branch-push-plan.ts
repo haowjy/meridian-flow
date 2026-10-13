@@ -1,8 +1,52 @@
 /** Pure document materialization and integration primitives for branch pushes. */
 import { createHash } from "node:crypto";
-import { toDocHandle, type YProsemirrorDocumentModel } from "@meridian/agent-edit/integration";
+import {
+  type BlockRef,
+  decodeUpdateForDependencies,
+  deleteRanges,
+  rangeCovers,
+  suppliedRanges,
+  toDocHandle,
+  type YProsemirrorDocumentModel,
+} from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
-import type { PublicationBlockChange } from "./branch-push-contracts.js";
+import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
+import { documentDifference } from "./document-difference.js";
+
+export class BranchPushEffectVerificationError extends Error {
+  constructor(
+    readonly operation: string,
+    readonly journalIds: readonly number[],
+    readonly reason: string,
+  ) {
+    super(
+      `${operation} did not integrate selected Yjs effects (${reason}) for journal rows ${journalIds.join(",")}`,
+    );
+    this.name = "BranchPushEffectVerificationError";
+  }
+}
+
+export function assertRowsIntegrated(
+  doc: Y.Doc,
+  rows: readonly BranchJournalRow[],
+  operation: string,
+): void {
+  const stateVector = Y.decodeStateVector(Y.encodeStateVector(doc));
+  const docDeleteRanges = deleteRanges(decodeUpdateForDependencies(Y.encodeStateAsUpdate(doc)));
+  for (const row of rows) {
+    const decoded = decodeUpdateForDependencies(row.updateData);
+    for (const range of suppliedRanges(decoded)) {
+      if ((stateVector.get(range.client) ?? 0) < range.clock + range.length) {
+        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_struct_range");
+      }
+    }
+    for (const range of deleteRanges(decoded)) {
+      if (!docDeleteRanges.some((candidate) => rangeCovers(candidate, range))) {
+        throw new BranchPushEffectVerificationError(operation, [row.id], "missing_delete_range");
+      }
+    }
+  }
+}
 
 export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
   return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
@@ -12,18 +56,34 @@ export function publicationBlockChanges(input: {
   model: YProsemirrorDocumentModel;
   beforeDoc: Y.Doc;
   afterDoc: Y.Doc;
+  renderBlock?(doc: Y.Doc, block: BlockRef): string;
 }): PublicationBlockChange[] {
-  const before = blockTextMap(input.model, input.beforeDoc);
-  const after = blockTextMap(input.model, input.afterDoc);
-  const blockIds = new Set([...before.keys(), ...after.keys()]);
-  return [...blockIds]
-    .filter((blockId) => before.get(blockId) !== after.get(blockId))
-    .sort()
-    .map((blockId) => ({
-      blockId,
-      beforeText: before.get(blockId) ?? null,
-      afterText: after.get(blockId) ?? null,
-    }));
+  return documentDifference(input.beforeDoc, input.afterDoc, input.model)
+    .flatMap((entry) => {
+      if (entry.kind === "equal") return [];
+      return [
+        {
+          blockId: entry.kind === "delete" ? entry.live.id : entry.draft.id,
+          beforeBlockIdentity:
+            entry.kind === "insert"
+              ? null
+              : input.model.getCanonicalBlockIdentity(entry.live.block),
+          afterBlockIdentity:
+            entry.kind === "delete"
+              ? null
+              : input.model.getCanonicalBlockIdentity(entry.draft.block),
+          beforeText:
+            entry.kind === "insert"
+              ? null
+              : (input.renderBlock?.(input.beforeDoc, entry.live.block) ?? entry.live.text),
+          afterText:
+            entry.kind === "delete"
+              ? null
+              : (input.renderBlock?.(input.afterDoc, entry.draft.block) ?? entry.draft.text),
+        },
+      ];
+    })
+    .sort((a, b) => a.blockId.localeCompare(b.blockId));
 }
 
 export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<string, string> {

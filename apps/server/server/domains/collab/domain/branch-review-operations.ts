@@ -109,7 +109,19 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           survivors.map((row) => row.id),
         );
         const itemClosed = documentEffectsEqual(live, peer);
+        const itemDisposition = history.some((row) => row.status === "pushed")
+          ? ("applied" as const)
+          : ("discarded" as const);
+        const outcome = { itemClosed, ...(itemClosed ? { itemDisposition } : {}) };
         await deps.commitStore.commitDiscard({
+          ...(discardInput.command
+            ? {
+                command: {
+                  envelope: discardInput.command.envelope,
+                  result: discardInput.command.result(outcome),
+                },
+              }
+            : {}),
           branch,
           journalRows: rows,
           survivors,
@@ -127,14 +139,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           status: "discarded",
           branchId: branch.branchId,
           journalIds: [...selected].sort((a, b) => a - b),
-          itemClosed,
-          ...(itemClosed
-            ? {
-                itemDisposition: history.some((row) => row.status === "pushed")
-                  ? ("applied" as const)
-                  : ("discarded" as const),
-              }
-            : {}),
+          ...outcome,
         };
       } finally {
         live.destroy();

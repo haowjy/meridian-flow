@@ -9,20 +9,20 @@
  * Purge runs the kernel in its own transaction after its own lifecycle proof (§2.6).
  */
 import type { DraftId, UserId, WorkId } from "@meridian/contracts";
+import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { NodeRef } from "../../context/tree/tree-view.js";
 import { BranchCasConflictError } from "./branch-coordinator.js";
 import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
 import { collabHook } from "./collab-test-hooks.js";
+import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { DraftBranchLeases } from "./draft-branch-leases.js";
-import type { DraftItemKey } from "./draft-publication.js";
-import type { DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
 import type { PeerRetirement, RetiredBranch } from "./peer-retirement.js";
 
 export type DiscardSelection =
-  | { kind: "items"; itemKeys: readonly DraftItemKey[] }
+  | { kind: "items"; items: readonly DiscardItem[] }
   | { kind: "whole" };
 
 export type DiscardResult =
@@ -36,6 +36,8 @@ export interface DraftDiscard {
     draftId: DraftId;
     selection: DiscardSelection;
     userId?: UserId;
+    /** The writer's command, claimed `done` in the kernel's transaction with this result (§4.6). */
+    command?: { envelope: DraftCommandEnvelope; result: DraftCommandResult };
   }): Promise<DiscardResult>;
 }
 
@@ -85,6 +87,7 @@ export interface DraftDiscardStore {
     workId: WorkId;
     kernel: DiscardKernelInput;
     leased: ReadonlySet<string>;
+    command?: { envelope: DraftCommandEnvelope; result: DraftCommandResult };
   }): Promise<DiscardKernelResult | null>;
 }
 
@@ -101,9 +104,10 @@ export class DraftDiscardScopeChangedError extends Error {
 
 const ATTEMPTS = 4;
 
+type CommandClaim = { envelope: DraftCommandEnvelope; result: DraftCommandResult };
+
 export function createDraftDiscard(deps: {
   drafts: Pick<Drafts, "byIds">;
-  reviewItems: Pick<DraftReviewItems, "list">;
   draftLeases: DraftBranchLeases;
   criticalSections: BranchCriticalSections;
   liveCoordinator: {
@@ -145,13 +149,18 @@ export function createDraftDiscard(deps: {
     }
   }
 
-  async function whole(workId: WorkId, draftId: DraftId): Promise<DiscardKernelResult | null> {
+  async function whole(
+    workId: WorkId,
+    draftId: DraftId,
+    command: CommandClaim | undefined,
+  ): Promise<DiscardKernelResult | null> {
     return deps.draftLeases.withDraftBranches(draftId, async (_lease, branchIds) => {
       await collabHook("discard.afterLeases");
       return deps.store.discardLocked({
         workId,
         kernel: { draftId, selection: { kind: "whole" } },
         leased: new Set(branchIds),
+        ...(command ? { command } : {}),
       });
     });
   }
@@ -160,6 +169,7 @@ export function createDraftDiscard(deps: {
     workId: WorkId,
     draftId: DraftId,
     selected: readonly DiscardItem[],
+    command: CommandClaim | undefined,
   ): Promise<DiscardKernelResult | null> {
     const documentIds = selected.map((item) => item.documentId);
     const branches = await deps.store.activeBranches(draftId, documentIds);
@@ -172,6 +182,7 @@ export function createDraftDiscard(deps: {
           workId,
           kernel: { draftId, selection: { kind: "items", items: selected }, lease, liveDocs },
           leased: new Set(branchIds),
+          ...(command ? { command } : {}),
         }),
       );
     });
@@ -185,26 +196,16 @@ export function createDraftDiscard(deps: {
       if (draft?.status !== "active" || draft.originWorkId !== workId) return gone;
 
       if (input.selection.kind === "whole") {
-        const ended = await retrying(() => whole(workId, draftId));
+        const ended = await retrying(() => whole(workId, draftId, input.command));
         if (!ended) return gone;
         await deps.retire(ended.retired);
         await deps.releaseObjects(ended.releasedObjects);
         return { status: "discarded", draftId, draftClosed: true };
       }
 
-      // Items the writer saw that are no longer pending were discarded or applied already.
-      const keys = new Set(input.selection.itemKeys);
-      const selected = (await deps.reviewItems.list(draftId))
-        .filter((item) => keys.has(item.itemKey))
-        .map(
-          (item): DiscardItem => ({
-            documentId: item.documentId,
-            draftBranchId: item.draftBranchId,
-            origin: item.origin,
-          }),
-        );
+      const selected = input.selection.items;
       if (selected.length === 0) return { status: "discarded", draftId, draftClosed: false };
-      const ended = await retrying(() => items(workId, draftId, selected));
+      const ended = await retrying(() => items(workId, draftId, selected, input.command));
       if (!ended) return gone;
       await deps.retire(ended.retired);
       await deps.releaseObjects(ended.releasedObjects);

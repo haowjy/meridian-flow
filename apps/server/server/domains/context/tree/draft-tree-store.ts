@@ -3,7 +3,14 @@
  * writes only `created` document rows, at the draft's location (§6.2); folders are
  * implied by what a draft places under them (O-2).
  */
-import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/contracts";
+import type {
+  ContextSourceId,
+  DocumentId,
+  DraftId,
+  FolderId,
+  ThreadId,
+  TurnId,
+} from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { draftTreeChanges } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -20,7 +27,12 @@ export type DraftDocumentLocation = {
 /** The draft created (or joined) this document at `location`. The draft can't already have the row. */
 export async function recordCreated(
   db: Database,
-  input: { draftId: DraftId; documentId: DocumentId; location: DraftDocumentLocation },
+  input: {
+    draftId: DraftId;
+    documentId: DocumentId;
+    location: DraftDocumentLocation;
+    createdBy?: { threadId: ThreadId; turnId?: TurnId };
+  },
 ): Promise<void> {
   await currentDrizzleDb(db).insert(draftTreeChanges).values({
     draftId: input.draftId,
@@ -31,6 +43,8 @@ export async function recordCreated(
     parentFolderId: input.location.parentFolderId,
     name: input.location.name,
     extension: input.location.extension,
+    createdThreadId: input.createdBy?.threadId ?? null,
+    createdTurnId: input.createdBy?.turnId ?? null,
   });
 }
 
