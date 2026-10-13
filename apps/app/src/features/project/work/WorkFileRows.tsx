@@ -21,7 +21,7 @@ import {
   useEntryInteraction,
 } from "../context/use-entry-interaction";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
-import { useDockDocument } from "../dock/dock-view-store";
+import { useDockDocument } from "../dock/dock-document-store";
 import { useOpenDocumentInDock } from "../dock/use-open-document-in-dock";
 import { RowIcon } from "../RuledList";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";

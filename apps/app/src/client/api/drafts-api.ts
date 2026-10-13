@@ -6,6 +6,8 @@
  * strings to query hooks.
  */
 import type {
+  DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
   DraftApplyRequest,
   DraftApplyResponse,
   DraftDiscardRequest,
@@ -14,6 +16,7 @@ import type {
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import {
+  apiProjectWorkDocumentDraftApplyChangesPath,
   apiProjectWorkDocumentDraftApplyPath,
   apiProjectWorkDocumentDraftDiscardPath,
   apiProjectWorkDocumentDraftPath,
@@ -34,13 +37,18 @@ export async function getDraftPreview(
   workId: string,
   documentId: string,
   draftId: string,
+  signal?: AbortSignal,
 ): Promise<DraftPreviewResponse> {
   const params = new URLSearchParams({ draftId });
   const preview = await getJson<DraftPreviewResponse>(
     `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
+    { signal },
   );
   if (preview.status === "active" && !preview.reviewRoomName) {
     throw new Error("Draft preview response is missing reviewRoomName");
+  }
+  if (preview.status === "active" && typeof preview.draftGeneration !== "number") {
+    throw new Error("Draft preview response is missing draftGeneration");
   }
   return preview;
 }
@@ -66,6 +74,33 @@ export async function applyDraft(
     throw new Error("Draft Apply response did not prove the requested draft was applied");
   }
   return response as DraftApplyResponse;
+}
+
+export async function applyDraftChanges(
+  projectId: string,
+  workId: string,
+  documentId: string,
+  request: DraftApplyChangesRequest,
+): Promise<DraftApplyChangesResponse> {
+  const response = await postJson<DraftApplyChangesResponse>(
+    apiProjectWorkDocumentDraftApplyChangesPath(projectId, workId, documentId),
+    request,
+  );
+  if (
+    response.draftId !== request.draftId ||
+    !["applied", "stale", "gone", "draft_only", "incomplete_class"].includes(response.status)
+  )
+    throw new Error("Draft change Apply response did not identify the requested draft");
+  if (
+    response.status === "applied" &&
+    (!Array.isArray(response.operationIds) ||
+      response.operationIds.length !== new Set(request.operationIds).size ||
+      request.operationIds.some((id) => !response.operationIds.includes(id)) ||
+      !Array.isArray(response.closureClassIds) ||
+      response.closureClassIds.length === 0)
+  )
+    throw new Error("Draft change Apply response did not prove the requested changes were applied");
+  return response;
 }
 
 export async function discardDraft(

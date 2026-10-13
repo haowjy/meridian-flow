@@ -116,16 +116,20 @@ else
       let selector: TurnId;
       let terminal: TurnId | null = null;
       let splitState: unknown;
+      const cleanupWakes: ThreadId[] = [];
+      let failSplit = boundary === "rollback";
       const splitWriter: typeof eventWriter = {
         async appendEvent(threadId, event) {
           if (
-            boundary === "rollback" &&
+            failSplit &&
             selector &&
             event.type === "turn.created" &&
             event.turn.role === "assistant" &&
             event.turn.id !== selector
-          )
+          ) {
+            failSplit = false;
             throw new Error("split journal failed");
+          }
           return eventWriter.appendEvent(threadId, event);
         },
       };
@@ -133,6 +137,13 @@ else
         backgroundTasks: processDetachedWork,
         repos,
         eventWriter: splitWriter,
+        ...(boundary === "rollback"
+          ? {
+              wakeIfRunnable: async (threadId: ThreadId) => {
+                cleanupWakes.push(threadId);
+              },
+            }
+          : {}),
         delivery: createTestDrizzleDelivery(db, {
           repos,
           eventWriter: splitWriter,
@@ -249,6 +260,10 @@ else
         expect(outcome.status).toBe(boundary === "rollback" ? "error" : "complete");
         const turns = await repos.turns.listByThread(ids.child);
         if (boundary === "rollback") {
+          // The fixture gates the cleanup wake: assert the released lease and pending
+          // messages at that barrier, then drive the successor separately.
+          await processDetachedWork.drain();
+          expect(cleanupWakes).toEqual([ids.child]);
           expect(terminal).toBeNull();
           expect((await repos.turns.findById(selector))?.status).toBe("error");
           expect(await repos.executionReports.findByExecution(ids.child, selector)).toMatchObject({
@@ -260,6 +275,25 @@ else
           expect((await inbox.selectPending(ids.child)).map((message) => message.id)).toEqual(
             messageIds,
           );
+          expect(await authority.holder(ids.child)).toBeNull();
+          const { createWakeIfRunnable } = await import("./wake-if-runnable.js");
+          const wake = createWakeIfRunnable({
+            delivery: harness.deps.delivery,
+            runStarter: {
+              async start(threadId) {
+                const successor = await harness.orchestrator.prepare({ threadId, drain: true });
+                expect(successor.runId).not.toBe(run.runId);
+                expect(await authority.holder(threadId)).toBe(successor.runId);
+                expect((await successor.execute()).status).toBe("complete");
+              },
+            },
+          });
+          while (cleanupWakes.length) {
+            const threadId = cleanupWakes.shift();
+            if (threadId) await wake(threadId);
+            await processDetachedWork.drain();
+          }
+          expect(await inbox.selectPending(ids.child)).toEqual([]);
           expect(await authority.holder(ids.child)).toBeNull();
           return;
         }

@@ -1,13 +1,13 @@
 // Dispatches validated mutation commands to their owning handlers.
 import type { ActorSession } from "../ports/actor-session-store.js";
+import type { createDocumentEditCommands } from "./document-edits.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import type { WriteCommand, WriteContext } from "./types.js";
 import type { createWriteCommands } from "./write-commands.js";
-import type { createWriteReversalEndpoints } from "./write-reversal-endpoints.js";
 
 export function createWriteDispatch(input: {
   commands: ReturnType<typeof createWriteCommands>;
-  reversal: ReturnType<typeof createWriteReversalEndpoints>;
+  documentEdits: ReturnType<typeof createDocumentEditCommands>;
 }) {
   return async function dispatch(
     command: WriteCommand,
@@ -24,7 +24,8 @@ export function createWriteDispatch(input: {
         return input.commands.mutate(command, session, context);
       case "undo":
       case "redo":
-        return input.reversal.undoOrRedo(command, session, command.command, context);
+      case "revert":
+        return input.documentEdits(command, session, context);
     }
   };
 }
