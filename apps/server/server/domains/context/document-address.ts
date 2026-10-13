@@ -7,6 +7,16 @@ export function createDocumentAddressResolver(deps: {
   availability: ProjectContextAvailabilityPort;
 }): DocumentAddressResolver {
   return {
+    async resolveById(input) {
+      const result = await deps.availability.lookup(
+        { projectId: input.projectId, documentIds: [input.documentId], view: input.view },
+        { userId: input.userId },
+      );
+      const document = result.resolutions[0];
+      return document?.kind === "available"
+        ? { kind: "current", document }
+        : { kind: "unavailable" };
+    },
     async resolve(input) {
       const candidate = await deps.locations.candidate(input);
       if (!candidate) return { kind: "unavailable" };

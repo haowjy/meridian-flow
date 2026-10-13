@@ -2,8 +2,8 @@
  * Discard and purge leave nothing live and release storage (contract §12, §2.6, ledger
  * D-1 to D-3): a hidden document drafts share stays while any of them uses it, and the
  * last one's Discard tombstones it and its hidden folders, releasing its live Yjs, every
- * branch on it and a picture's bytes, while links that named it read gone and capture
- * nothing; two drafts discarding it at once leave one tombstone; a purged Work's drafts go
+ * branch on it and a picture's bytes, while links written ahead of it read "Doesn't exist yet"
+ * and bind to the next live document; two drafts discarding it at once leave one tombstone; a purged Work's drafts go
  * through the locked kernel, never the active-Work command. And a read that meets a
  * hidden node no draft uses repairs it (§12.4).
  */
@@ -18,7 +18,6 @@ import {
   documentYjsUpdates,
   draftTreeChanges,
   folders,
-  linkAheadDraftSettlements,
   linkAheadRefs,
   users,
   works,
@@ -167,7 +166,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await s.work("Beacon", "draft"),
       ];
       const ORI = "manuscript://lore/deep/ori";
-      // A live ahead ref at the path before any draft creates it: Ascension's create settles it.
+      // A live ahead ref at the path before any draft creates it: a draft's document binds nothing.
       const one = await s.writer.createDocument("chapter-one", "[Ori](lore/deep/ori) waits.");
       const [registered] = await db
         .select({ aheadId: linkAheadRefs.aheadId })
@@ -180,14 +179,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .toBe(ori);
       expect
         .soft(
-          await db
-            .select({ documentId: linkAheadDraftSettlements.documentId })
-            .from(linkAheadDraftSettlements)
-            .where(eq(linkAheadDraftSettlements.aheadId, waiting)),
-          "the live ref settles in the drafts that made Ori",
+          await s.liveMeaning({
+            ref: `ahead:${waiting}`,
+            href: ORI,
+            holder: { uri: "manuscript://chapter-one", id: one },
+          }),
+          "the live ref reads Ori in a draft, bound to nothing",
         )
-        .toContainEqual({ documentId: ori });
-      // A live holder bound to Ori: chapter two, edited in Beacon, applied alone.
+        .toEqual({ id: ori, inDraft: true });
+      // A holder whose link was written ahead: chapter two, edited in Beacon, applied alone.
       const two = await s.writer.createDocument("chapter-two", "Two.");
       await s.model(beacon).edit("chapter-two", "Two.", "Two, drafted.");
       const bound = crypto.randomUUID();
@@ -198,9 +198,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(
           await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
-          "bound, in a draft",
+          "still ahead, read in a draft",
         )
-        .toEqual({ id: ori, inDraft: true, bound: true });
+        .toEqual({ id: ori, inDraft: true });
       // A picture of Beacon's own, with its own bytes (12b-Q2).
       await livePicture(runtime, s, "charts/chart.png");
       await s.model(beacon).copy("charts/chart.png", "lore/map.png");
@@ -212,7 +212,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Ascension discards Ori: Beacon still uses it, so it stays hidden for Beacon.
       expect
         .soft(await s.discard(ascension, [ori]))
-        .toEqual([{ status: "discarded", draftId: expect.any(String) }]);
+        .toMatchObject([{ status: "discarded", draftId: expect.any(String), itemClosed: true }]);
       expect
         .soft(await row(ori), "kept for Beacon")
         .toMatchObject({ hidden: true, tombstone: false });
@@ -233,7 +233,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const beaconDraft = (await s.review(beacon)).items[0]?.draftId ?? "";
       expect
         .soft(await s.discard(beacon, "all"), "Discard all")
-        .toEqual({ status: "discarded", draftId: beaconDraft, draftClosed: true });
+        .toEqual({ status: "discarded", draftId: beaconDraft });
       expect.soft(await s.draftStatuses(beacon), "closed").toEqual(["closed"]);
       expect
         .soft(await row(ori), "tombstoned once, still hidden")
@@ -252,19 +252,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect
         .soft(
-          await db
-            .select()
-            .from(linkAheadDraftSettlements)
-            .where(eq(linkAheadDraftSettlements.documentId, ori)),
-          "no settlement names it",
-        )
-        .toEqual([]);
-      expect
-        .soft(
           await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
-          "the bound link reads gone",
+          "the applied link: Doesn't exist yet",
         )
-        .toBe("gone");
+        .toBe("missing");
       expect
         .soft(
           await s.liveMeaning({ ref: `ahead:${waiting}`, href: ORI, holder: chapterOne }),
@@ -276,9 +267,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(
           await s.liveMeaning({ ref: `ahead:${bound}`, href: ORI, holder: chapterTwo }),
-          "which doesn't capture the bound link",
+          "which the applied link now reads",
         )
-        .toBe("gone");
+        .toEqual({ id: later });
+      expect
+        .soft(
+          await s.liveMeaning({ ref: `ahead:${waiting}`, href: ORI, holder: chapterOne }),
+          "and so does the live ref",
+        )
+        .toEqual({ id: later });
     });
 
     it("leaves one tombstone and no orphan when two drafts discard a shared document at once (D-2)", async () => {
@@ -440,7 +437,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
     });
 
-    it("repairs a corrupt draft branch in review without touching another Work's staged reply (corrupt reset)", async () => {
+    it("refuses a corrupt draft branch's preview, and Discard repairs it without touching another Work's staged reply (corrupt reset)", async () => {
       const { runtime, s } = await start();
       const [ascension, beacon] = [
         await s.work("Ascension", "draft"),
@@ -460,21 +457,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
       // The seam: Ascension's draft branch row no longer decodes.
       const item = (await s.review(ascension)).items.find((each) => each.documentId === chapter);
-      const branchId = item?.draftBranchId ?? "";
+      const branchId = (
+        await runtime.ports.documentSync.draftReview.resolveItemByDocument({
+          workId: ascension.id,
+          documentId: chapter,
+        })
+      )?.draftBranchId;
+      if (!branchId) throw new Error("No draft branch for the chapter");
       await db
         .update(documentBranches)
         .set({ state: Buffer.from([255, 255, 255, 255]) })
         .where(eq(documentBranches.id, branchId));
 
-      const preview = await runtime.ports.documentSync.draftReview.preview({
-        workId: ascension.id,
-        documentId: chapter,
-        draftId: branchId,
-      });
-      expect.soft(preview, "the review repaired it").toMatchObject({
-        status: "active",
-        notice: { code: "branch_corrupt_reset" },
-      });
+      const review = runtime.ports.documentSync.draftReview;
+      const itemKey = item?.itemKey ?? "";
+      expect
+        .soft(await review.preview({ workId: ascension.id, itemKey }), "the preview refuses")
+        .toMatchObject({ status: "corrupt", draftId: item?.draftId, itemKey });
+      expect
+        .soft(await s.discard(ascension, [chapter]), "Discard repairs it")
+        .toMatchObject([{ status: "discarded" }]);
+      expect
+        .soft(await review.preview({ workId: ascension.id, itemKey }), "the review is whole again")
+        .toMatchObject({ status: "active", operations: [] });
       const saved = (await staged.save()) as {
         status: string;
         receipts: { documentId: string }[];

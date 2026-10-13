@@ -52,7 +52,8 @@ export type EditorMountIdentity =
       surface: "review";
       /** Generation-fenced branch review room from the preview DTO. */
       roomName: string;
-      draftId: string;
+      itemKey: string;
+      workId: string;
     });
 
 /** Values that may change while the same editor keeps running. */
@@ -79,7 +80,7 @@ export function editorRoomKey(identity: EditorMountIdentity): string {
 export function editorMountKey(identity: EditorMountIdentity): string {
   const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
   return identity.surface === "review"
-    ? `review|${identity.roomName}|${identity.draftId}|${shared}`
+    ? `review|${identity.roomName}|${identity.itemKey}|${shared}`
     : `live|${shared}`;
 }
 

@@ -466,27 +466,3 @@ export const linkAheadRefs = pgTable(
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
   ],
 );
-
-/** What one published holder's ahead ref means; written by Apply, read only for that holder. */
-export const linkAheadHolderBindings = pgTable(
-  "link_ahead_holder_bindings",
-  {
-    aheadId: uuid("ahead_id")
-      .notNull()
-      .references(() => linkAheadRefs.aheadId, { onDelete: "cascade" }),
-    holderDocumentId: uuid("holder_document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    boundAt: timestamp("bound_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    // One binding per (ref, holder): a later Apply's binding wins.
-    primaryKey({ columns: [table.aheadId, table.holderDocumentId] }),
-    index("link_ahead_holder_bindings_document").on(table.documentId),
-  ],
-);

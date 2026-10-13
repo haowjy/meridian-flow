@@ -142,12 +142,12 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
       await db.insert(userRecentDocuments).values({ userId, documentId: harbor });
 
       // A live ref at harbor's address and an arrival of harbor, which must not settle
-      // it; and an editor's mint in D's text, registered in D.
+      // it; and an editor's mint in D's text, which stays a path until a document goes live.
       const liveRef = randomUUID();
       const draftRef = randomUUID();
       await ports.linkAheadRegistry.register([
         { aheadId: liveRef, holderProjectId: projectId, address: HARBOR_URI },
-        { aheadId: draftRef, holderProjectId: projectId, address: HARBOR_URI, draftId: draft.id },
+        { aheadId: draftRef, holderProjectId: projectId, address: HARBOR_URI },
       ]);
       await ports.linkAheadRegistry.settleArrivals([harbor]);
 
@@ -484,9 +484,15 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
           expected: [true, { draftId: s.draft.id, workId: s.ascension.id }, HARBOR_URI],
         },
         {
-          surface: "hidden address occupancy",
-          run: async () => (await s.link({ kind: "live" }, s.liveRef)).occupant.kind === "document",
-          expected: false,
+          // Owner amendment 12a: an unbound ref at a draft's hidden path reads "in a draft".
+          surface: "hidden address reads in a draft",
+          run: async () => {
+            const { occupant } = await s.link({ kind: "live" }, s.liveRef);
+            return occupant.kind === "document"
+              ? [occupant.document.documentId, occupant.inDraft, occupant.settled]
+              : occupant.kind;
+          },
+          expected: [s.harbor, true, undefined],
         },
         {
           surface: "still hidden live",
@@ -674,15 +680,17 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
               s.link(view, s.draftRef),
               s.link({ kind: "live" }, s.draftRef),
             ]);
-            return [
-              inDraft.occupant.kind === "document" && [
-                inDraft.occupant.document.documentId,
-                inDraft.occupant.settled,
-              ],
-              live.occupant.kind,
-            ];
+            // Read by address in both views: nothing binds it until harbor goes live.
+            return [inDraft, live].map(({ occupant }) =>
+              occupant.kind === "document"
+                ? [occupant.document.documentId, occupant.settled]
+                : occupant.kind,
+            );
           },
-          expected: [[s.harbor, true], "ahead"],
+          expected: [
+            [s.harbor, undefined],
+            [s.harbor, undefined],
+          ],
         },
         {
           surface: "draft revision",

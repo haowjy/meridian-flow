@@ -11,8 +11,13 @@ export type PendingInboxRun = { turnId: string | null; messageIds: readonly stri
 export function projectPendingInbox(
   messages: readonly InboxMessage[],
   run: PendingInboxRun = null,
+  blocked?: ThreadPendingInbox["blocked"],
 ): ThreadPendingInbox {
   return {
+    ...(blocked &&
+    messages.some((message) => message.intent === "message" || message.intent === "control")
+      ? { blocked }
+      : {}),
     items: messages
       .filter((message) => message.body.kind !== "work_context_refresh")
       .map((message): PendingInboxItem => {
@@ -43,5 +48,5 @@ export async function readPendingInbox(
   threadId: ThreadId,
 ): Promise<ThreadPendingInbox> {
   const projection = await inbox.readPendingProjection(threadId);
-  return projectPendingInbox(projection.messages, projection.run);
+  return projectPendingInbox(projection.messages, projection.run, projection.blocked);
 }

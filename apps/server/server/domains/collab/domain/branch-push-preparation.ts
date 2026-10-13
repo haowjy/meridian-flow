@@ -75,10 +75,24 @@ export async function preparePushUnderLiveLock(
           ] as const,
       ),
     );
+    const beforeBodies = new Map(
+      before.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
+    );
+    const afterBodies = new Map(
+      after.map((block) => [`${block.clientID}:${block.clock}`, block.serialized]),
+    );
     const changedBlocks = publicationBlockChanges({
       model: input.model,
       beforeDoc: lockCutDoc,
       afterDoc,
+      renderBlock(doc, block) {
+        const identity = input.model.getCanonicalBlockIdentity(block);
+        const body = (doc === lockCutDoc ? beforeBodies : afterBodies).get(
+          `${identity.clientID}:${identity.clock}`,
+        );
+        if (body === undefined) throw new Error("Publication block is missing its rich snapshot");
+        return body;
+      },
     });
     const changes: RawTrailChange[] = preparedTrailChanges({
       documentId: phase.branch.documentId,

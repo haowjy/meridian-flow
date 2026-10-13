@@ -214,6 +214,11 @@ export type PendingInboxItem = {
 
 /** A thread's unacknowledged inbox, ordered by `seq`; snapshots replace state wholesale. */
 export type ThreadPendingInbox = {
+  /**
+   * A saved start refusal. Present only while a message or control is pending;
+   * cleared at run start.
+   */
+  blocked?: { reason: "credits_exhausted" };
   items: PendingInboxItem[];
 };
 

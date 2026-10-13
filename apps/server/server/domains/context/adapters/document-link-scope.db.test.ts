@@ -409,7 +409,7 @@ if (!RUN) {
       expect.soft(registered).toEqual([PROJECT]);
     });
 
-    it("names the reader's own draft else the oldest, reads binding then draft then live, and never drops a binding silently (L-1)", async () => {
+    it("names the reader's own draft else the oldest, reads an unbound ahead ref by address in each view, and pins only a holder the reader may name (L-1)", async () => {
       const s = await draftTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
       const [atlas, beacon, cove] = [
         await s.work("Atlas", "draft"),
@@ -443,81 +443,90 @@ if (!RUN) {
         .soft(await named(beacon), "the reader's own draft, where it has it")
         .toEqual([true, beaconDraft.id, "manuscript://places/kael"]);
 
-      // One ref, three meanings: live, in Atlas's draft, and bound in the chapter.
-      const liveShip = await s.seedLive("ship");
-      const draftShip = await s.seedHidden(atlas, "drafts/ship");
-      const boundShip = await s.seedLive("bound");
-      const ahead = await s.seedAhead("ship", { settledTo: liveShip });
-      await s.seedDraftSettlement(atlas, ahead, draftShip);
-      await s.seedHolderBinding(ahead, chapter, boundShip);
+      // An ahead ref reads by address in the reader's view until a live document binds it:
+      // a draft's hidden document there reads "in a draft" from every view.
+      const draftShip = await s.seedHidden(atlas, "ship");
+      const unbound = await s.seedAhead("ship");
+      const liveAnchor = await s.seedLive("anchor");
+      const bound = await s.seedAhead("anchor", { settledTo: liveAnchor });
       const read = async (
         view: typeof atlas | "live",
+        ahead: string,
+        href: string,
         baseUri: string | null,
         holderDocumentId?: typeof chapter,
       ) => {
         const { answer, holderUri } = await s.linkAnswer({
           view,
           ref: `ahead:${ahead}`,
-          href: "manuscript://ship",
+          href,
           baseUri,
           ...(holderDocumentId ? { holderDocumentId } : {}),
         });
         return {
           id: answer.state === "document" ? answer.document.id : answer.state,
-          ...(answer.state === "document" && answer.holderBound ? { bound: true } : {}),
-          ...(answer.state !== "unresolvable" && answer.holderUnresolved
-            ? { unresolved: true }
-            : {}),
+          ...(answer.state === "document" && answer.inDraft ? { inDraft: true } : {}),
           ...(holderUri ? { holderUri } : {}),
         };
       };
+      const SHIP = "manuscript://ship";
+      const ANCHOR = "manuscript://anchor";
       const CHAPTER = "manuscript://chapter";
-      const NOTES = "manuscript://notes";
+      const inShip = { id: draftShip, inDraft: true };
+      for (const view of [atlas, beacon, "live"] as const) {
+        expect
+          .soft(await read(view, unbound, SHIP, CHAPTER), "unbound: in a draft, from any view")
+          .toEqual(inShip);
+        expect
+          .soft(await read(view, bound, ANCHOR, CHAPTER), "bound: the live document")
+          .toEqual({ id: liveAnchor });
+      }
+      expect.soft(await read("live", unbound, SHIP, null), "chat: the same").toEqual(inShip);
+      await s.seedHidden(beacon, "ship", { join: draftShip });
       expect
-        .soft(await read(atlas, CHAPTER), "the holder's binding first")
-        .toEqual({ id: boundShip, bound: true });
-      expect
-        .soft(await read("live", CHAPTER), "bound live too")
-        .toEqual({ id: boundShip, bound: true });
-      expect
-        .soft(await read(atlas, NOTES), "then the draft's settlement")
-        .toEqual({ id: draftShip });
-      expect
-        .soft(await read(atlas, null), "chat: the draft's settlement")
-        .toEqual({ id: draftShip });
-      expect.soft(await read("live", NOTES), "then live").toEqual({ id: liveShip });
-      expect.soft(await read(beacon, NOTES), "another draft: live").toEqual({ id: liveShip });
+        .soft(await read(beacon, unbound, SHIP, CHAPTER), "joined by another draft")
+        .toEqual(inShip);
 
-      // Atlas's draft also made a chapter.md: the base names two documents in its view.
-      await s.seedHidden(atlas, "chapter");
-      expect
-        .soft(await read(atlas, CHAPTER), "ambiguous holder: no binding, and it says so")
-        .toEqual({ id: draftShip, unresolved: true });
-      expect
-        .soft(await read(atlas, CHAPTER, chapter), "pinned by id")
-        .toEqual({ id: boundShip, bound: true });
       // A stale base: the id still pins the holder, and the answer names where it is now.
       expect
-        .soft(await read("live", "manuscript://old-chapter", chapter), "moved holder")
-        .toEqual({ id: boundShip, bound: true, holderUri: CHAPTER });
-      expect
-        .soft(await read("live", "manuscript://old-chapter"), "stale base, no id")
-        .toEqual({ id: liveShip, unresolved: true });
+        .soft(
+          await read("live", bound, ANCHOR, "manuscript://old-chapter", chapter),
+          "moved holder",
+        )
+        .toEqual({ id: liveAnchor, holderUri: CHAPTER });
 
-      // Another account's document is no holder here: knowing its id names nothing, so
-      // neither its location nor its bindings reach this reader.
+      // Another account's document is no holder here: knowing its id names nothing, so its
+      // location never reaches this reader.
       const stranger = await draftTreeScenario(db);
       const foreign = await stranger.seedLive("unannounced-private-book-title");
-      await s.seedHolderBinding(ahead, foreign, boundShip);
       expect
-        .soft(await read("live", null, foreign), "another account's holder, by id")
-        .toEqual({ id: liveShip, unresolved: true });
+        .soft(await read("live", bound, ANCHOR, null, foreign), "another account's holder, by id")
+        .toEqual({ id: liveAnchor });
       expect
         .soft(
-          await read(atlas, "manuscript://unannounced-private-book-title", foreign),
+          await read(atlas, bound, ANCHOR, "manuscript://unannounced-private-book-title", foreign),
           "by id and by its own address",
         )
-        .toEqual({ id: draftShip, unresolved: true });
+        .toEqual({ id: liveAnchor });
+    });
+
+    it("answers a direct ahead ref (unregistered, no holder) at a model-created hidden document as in a draft, from live and a draft view", async () => {
+      const s = await draftTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
+      const atlas = await s.work("Atlas", "draft");
+      const ship = await s.model(atlas).create("ship2", "A ship.");
+      for (const view of ["live", atlas] as const) {
+        const { answer } = await s.linkAnswer({
+          view,
+          ref: `ahead:${crypto.randomUUID()}`,
+          href: "manuscript://ship2",
+          baseUri: null,
+        });
+        expect.soft(answer).toMatchObject({
+          state: "document",
+          inDraft: true,
+          document: { id: ship },
+        });
+      }
     });
 
     it("reuses one snapshot in nested scopes, reloads an inherited settled one, and fails a door that never prepared", async () => {

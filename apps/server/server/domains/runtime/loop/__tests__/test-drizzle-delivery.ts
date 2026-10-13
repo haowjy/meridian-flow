@@ -1,4 +1,5 @@
 /** PostgreSQL delivery fixture using the production lock, inbox and lease implementation. */
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
@@ -46,7 +47,9 @@ export function createTestDrizzleDelivery(
 /** The repair lane over a production delivery that shares its deps, as composition wires them. */
 export function createTestOrphanRepair(
   db: Database,
-  deps: Omit<Parameters<typeof createOrphanReportRepair>[0], "settleStaleExecution">,
+  deps: Omit<Parameters<typeof createOrphanReportRepair>[0], "settleStaleExecution"> & {
+    publishStatus?(threadId: ThreadId): Promise<void>;
+  },
 ) {
   const delivery = createTestDrizzleDelivery(db, {
     repos: deps.repos,

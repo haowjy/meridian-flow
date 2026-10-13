@@ -102,6 +102,8 @@ export type AdoptedBatch<TCurrent = undefined> = {
 export interface RuntimeDelivery
   extends WorkContextNotices,
     Pick<InboxReader, "selectPending" | "readPendingProjection" | "pendingMessageThreads"> {
+  /** Save a credit-gated start refusal under the current run claim. */
+  blockForUsage(lease: Lease): Promise<void>;
   /** Append a transcript command to the thread's ordinary ordered inbox. */
   enqueueControl(input: {
     threadId: ThreadId;
@@ -132,7 +134,15 @@ export interface RuntimeDelivery
    * lease row's execution (journal `execution.ended` when a turn carries it) and
    * delete the row in one transaction. A no-op on a settled thread.
    */
-  settleStaleExecution(threadId: ThreadId): Promise<void>;
+  settleStaleExecution<T = void>(
+    threadId: ThreadId,
+    /**
+     * A sweep lane's own repair, under an exclusive session claim: only the
+     * turns it names settle, and the row is released (its end journaled) only
+     * when the repair retired its receipt or the receipt was already empty.
+     */
+    repair?: () => Promise<T>,
+  ): Promise<T | void>;
   /**
    * The run owner's cleanup: unlock only when the row is gone, end the
    * execution when every turn it reserved is terminal, else abandon it for

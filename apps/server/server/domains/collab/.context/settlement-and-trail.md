@@ -7,17 +7,18 @@
   cycles) and do not split push/coordinator mutexes (that creates inversion).
   Callers acquire branch locks in branch-id order, then live coordinator locks
   in document-id order.
-- **One push commit seam**: `buildWholeBranchCandidates` produces a
-  `CandidateBatch` consumed by the single pipeline in `branch-push.ts`.
-  Candidates always materialize the whole current branch. Locked
+- **One push commit seam**: whole-content and manifest-companion builders
+  produce a `CandidateBatch` consumed by the single pipeline in
+  `branch-push.ts`. Whole-document content candidates materialize the current branch. Per-change
+  content candidates and manifest companions replay only selected closed rows. Locked
   preparation in `branch-push-preparation.ts` computes one block diff from the
   live lock cut; `branch-trail-projection.ts` turns it into the sole durable
   publication record, while typed `push_lineage.branch_generation` supports
   generation-local idempotency queries without duplicating that diff.
   `branch-push-transition.ts` alone orders capture
-  through batch completion. The transition projects the aggregate writer's exact
+  through fenced completion. The transition projects the aggregate writer's exact
   committed replace-set and delivers it to connected bare-document rooms only
-  after the batch's completion transaction commits. Delivery is a
+  after the completion fence reports applied/already-applied. Delivery is a
   session-local hint: it is not queued or replayed, and a vanished room cannot
   fail an otherwise durable push. A durable commit requires its trail bundle. Review
   reversal is a separately composed
@@ -36,100 +37,7 @@
   push contribution. The aggregate counts inserted/deleted payloads and persists
   per-document word magnitudes; lightweight shells retain document ids/titles
   plus nullable totals so receipt headers never need manuscript-bearing detail.
-  Dispatch, work claiming, and reconciliation do not duplicate aggregate SQL.
-- **One settlement batch per commit**: every push one commit stages shares one
-  `branch_push_settlement_batches` row, which owns the claim, lease, backoff and
-  pending/blocked/completed state; `branch_push_settlement_outbox` members keep
-  each push's lock cut, push update, trail seed and join versions. A single push
-  is a batch of one; there is no per-push settlement path. `completeBatch`
-  settles every member in one transaction, in the global order: Work rows, then
-  namespace keys, then every document mutation lock sorted, then the batch's
-  trail settlement in one pass per trail (members whose join version moved
-  publish one new version; the rest refine the version their commit
-  published), then text admission per member, then a synchronous warm-state
-  recheck of every member against cuts read inside the transaction. Any retry,
-  fault or recheck mismatch rolls the whole batch back. Settlement is
-  root-owned: staging (`commitPushBatch`), recovery claims and completion each
-  reject an ambient transaction before writing, because a retry must roll back
-  and the warm apply must outlive the coordinator locks it closes over. Once
-  the completion transaction has returned, one batch-owned sequence applies the
-  admitted updates to warm rooms and then awaits each publication step's
-  `afterCommit` in declared order; a failing effect is logged
-  (`settlement.after_commit_failed`) and the later, independent ones still run.
-  Nothing reaches a room before commit. Recovery claims a batch with one
-  `UPDATE` on its row, so two recoverers cannot split it, and completes it
-  whole. Ownership is the credentials a claim wrote: every batch load is
-  conditioned on the caller's token and epoch and returns nothing once a
-  successor (or the same token at a later epoch, after backoff) holds the row.
-  The batch owner (`adapters/drizzle-pending-settlement.ts`) keeps claims, lock
-  order and the completion transaction; per-member staging, journal admission,
-  attribution, derivation and sweep-evidence reconstruction live in
-  `adapters/drizzle-settlement-member.ts`, which takes the owner's transaction
-  and the members it read once under the locks. Commit takes every
-  document lock before any trail lock, as completion does, and records every
-  push's trail in one pass: one trail version per commit. Per-push trail writes
-  against a shared turn trail were quadratic and dominated a 40-chapter batch.
-- **Publication steps are the ordered extension point**
-  (`domain/ports/settlement-publication.ts`, contract §11.1): a step owns a
-  payload `kind` and plans from immutable inputs: the scope's members
-  (`PublicationMember` before staging; `StagedPublicationMember`, with its push
-  id, reconstructed from lineage for completion), the payloads staged with the
-  batch, each member's lock-cut full-state fingerprint (`liveTextFingerprints`,
-  the same `fullStateFingerprint` a rendered-text token takes; deletions count,
-  which a state vector would miss), and at completion the items already held. It
-  names extra Works, drafts, namespace documents, explicit namespace sources and
-  document locks. `adapters/drizzle-settlement-publication.ts` plans and locks
-  in the global order (Works, draft rows `FOR NO KEY UPDATE` in id order, one
-  sorted namespace acquisition over documents' sources and explicit sources,
-  documents); the pre-staging
-  check and completion both call it, so they lock the same set in the same
-  order.
-  - **Outer leases first:** a step's `prepare(payload)` names the branches whose
-    critical-section leases the batch needs. Warm execution (with the pushed
-    drafts) and recovery (with the members' branches, read from the staged rows
-    before any claim) acquire them before coordinator leases and any
-    transaction. Completion asks again under its locks; a grown set answers
-    `rediscover`. The warm call keeps its claim, releases its leases, leases the
-    grown set in global order and continues the same batch (`continueStaged`,
-    at most three times, F22), so the writer gets the real result; past that, or
-    in recovery, it records a failure and the next owner discovers again.
-    Leases are never taken from `beforeAdmission`.
-  - **Check before staging:** `checkPublication` runs every step's `check()` in
-    one short transaction under those leases. `refuse` stages nothing. Holds are
-    per item (`itemKey`, with the text member's `documentId` when it has one):
-    a holding step returns its payload refined to exclude them, the refined
-    payload is what is staged, the held items' text leaves the batch, and the
-    holds are staged as `branch_push_settlement_holds` rows. Completion never
-    sees an excluded item, so it can't promote one. Payloads never change once
-    staged.
-  - **Decide in completion:** `beforeAdmission` returns `proceed` (optionally
-    holding more items) or `refuse`. A held member is withdrawn in the same
-    transaction (no admission, trail contribution retired, notices retracted,
-    lineage and outbox gone, journal rows `active` again, no warm room, no
-    recheck, no auto reset) and its hold is written. Everything the publication
-    writes runs in a savepoint inside completion's root transaction: a refusal
-    rolls back to it and, still holding every lock, withdraws every member the
-    same way and ends the batch `abandoned` (terminal; never listed for
-    recovery) before that transaction commits. The terminal UPDATE is
-    owner-fenced and checked: if the lease ran out meanwhile, the whole
-    transaction rolls back and the next attempt decides again. No committed
-    state has the publication undone without a durable refusal, or a
-    withdrawal without its terminal state. Withdrawal (refused or held) goes
-    through `WorkProjectionMutation.mutatePendingBranches`, so the Works whose
-    drafts are pending again publish their snapshot, revision and authority
-    like the staging that made them pushed. `afterAdmission` receives the
-    admitted documents. Every hold of the batch, branchless items included,
-    comes back with the result and survives recovery as rows.
-  - **Payloads:** `branch_push_settlement_payloads` rows are staged with the
-    batch and loaded on every claim; a batch with payloads and no pushes (a
-    branchless Apply) stages and settles through the same order.
-  - The one production step is Apply's draft tree step
-    (`adapters/drizzle-draft-tree-step.ts`, kind `draft_tree`). It declares its
-    draft in `draftIds` and every current and final source in
-    `namespaceSourceIds`, and refines its payload at the check (held items out,
-    holder meanings in). Completion's text tokens are each member's lock cut
-    plus every admission that joined it since staging, so a writer's change
-    after the cut (a deletion too) refuses a stale Apply.
+  Dispatch and reconciliation do not duplicate aggregate SQL.
 - **Trail detail authorization precedes detail materialization**: the reader
   resolves each occurrence to `available`, `deleted`, or denied before selecting
   manuscript-bearing title/prose. Denied occurrences disappear; authorized
@@ -153,8 +61,8 @@
 - **Trail evidence is read-only**: durable Before/After excerpts support
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
-- **Draft Apply settles the whole current branch**: every writer Apply and
-  Auto-apply switch push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
+- **Document Apply settles the whole current branch**: whole-document Apply
+  integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
   authority; sweep policy uses each AI row's value only as that candidate's
   observation watermark. Each candidate is classified against the pre-push
   document plus earlier selected branch rows, and recipient/change elevations
@@ -163,12 +71,10 @@
   as a `system:reconcile` row so cold replay includes causal dependencies omitted
   from active rows. The row is same-admission causal coverage, not a new author:
   first-birth attribution stays with earlier authored rows, dependency evaluation
-  ignores `system:reconcile`, and the row is not a reversal target. Active agent
-  handles materialize against their corresponding authored rows; reconciliation
-  coverage is not a later semantic dependency.
-  Handles eliminated by Work-draft write reversal remain absent. A later writer row can
-  therefore make producing-turn Undo unavailable through the canonical
-  dependency predicate (`@meridian/agent-edit` `undo/journal-dependencies.ts`).
+  ignores `system:reconcile`, and the row is not an inverse target. Immutable
+  edit parts retain their authored update identity across settlement; no mutable
+  reversal handles are materialized or transferred. Live inverse eligibility
+  follows the forward-turn classifier and certified correspondence.
   Push-time and immediate-path sweep detection derive their live-session hint
   from durable attribution, not push metadata or a separate protection table.
   Branch settlement keeps compact `{userId, rootsAfterObservationWatermark}`
@@ -181,30 +87,67 @@
   caches first-birth replay per checkpoint floor.
   Trail rows persist every edit without classification; missing evidence
   suppresses elevation and never blocks Apply.
-- **Trail work retries only an `auto` branch**: the trail-work claim
-  (`adapters/drizzle-turn-trail-work.ts`) settles pending work `no_op` for a
-  `manual` branch or a turn that ended `error` or `cancelled`. No branch is
-  `auto` since D59, so every claim settles `no_op` and drafts wait for the
-  writer's Apply. This depends on the read model never rewriting a failed
-  turn's status (see the threads read-model projector).
-- **Apply settles arrivals once, against the final tree** (contract §11.2). The
-  draft tree step's `beforeAdmission` places every document the Apply brings to
-  an address (a reveal, a restore, a relocation named back) before text admits;
-  its `afterAdmission` settles them in one `arrivals.settle` call, then binds
-  each admitted holder's ahead refs from the meanings staged in the payload,
-  never from the draft's settlement table: a target discarded after staging
-  still binds and reads gone. It reconciles the catalog for every source it
-  touched in the same transaction (F23), so no route refreshes after Apply. All under Work → draft → namespace → document
-  locks taken once by `planAndLock`.
-- **Writer Apply is item-scoped and token-fenced**: a request names items
-  (`${draftId}:${documentId}`) with the tokens their review rendered; a token
-  the request lacks (the legacy per-document Apply) is filled from the read
-  `applyItems` makes, and such a selection reads again once when it turns out
-  stale. The server pushes each item's complete current branch, including
-  writer rows created after preview, when the tokens still match, else answers
-  `stale`. Receipt notes come out of completion with the batch's result
-  (`PublicationItemOutcome`), so they say what was done. The legacy numeric
-  revision tokens on the preview are presentation evidence only.
+- **Durable trail signals**: receipt/part, journal disposition, publication,
+  settlement and turn-lifecycle row triggers append to `change_trail_dirty_log`
+  in the producer transaction. They never update owner rows or enroll commands
+  in another lock protocol. One SQL resolver follows immutable inverse targets;
+  both capture and readiness use its semantic owners. Writer inverses stay ownerless.
+  After sorted aggregate advisory locks, reconciliation deletes exactly the
+  snapshot-visible signals and reads readiness/terminality in one statement.
+  Shell transitions and versioned delivery events commit with that deletion;
+  failure restores all three. Sequence allocation is not commit order: never use
+  a sequence watermark. Unfinished shells keep polling after consumption. Active
+  drafts do not block, but rollback-pending journals and pending live settlements
+  do, including inverse-only publications. Shared signals never create shells;
+  active turns without shells retain their signals outside actionable paging.
+
+- **Apply settles ahead refs per completion because drafts cannot move documents**
+  (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
+  live and settles in the tree store's move transaction. So the only documents an
+  Apply brings to an address are draft creates the manifest push publishes, their
+  SQL address is already final, and the completion fence (`withCompletionFence`
+  in `adapters/drizzle-pending-settlement.ts`, `arrivingDocumentIds`) settles them
+  under Work → namespace → holder locks. Draft-held moves would break that: a
+  document's address would depend on the view. Building them changes
+  `context/adapters/document-address.ts` (current address and exact occupant
+  become view-dependent), `context/adapters/document-link-scope.ts` (per-view
+  URIs), `context/links/move-link-count.ts` (the note is counted at Apply), and
+  the completion fence here (moved documents become arrivals, and their old and
+  new namespaces both lock).
+- **Whole-document Apply is branch-scoped, not preview-scoped**:
+  `DraftApplyRequest` names only the draft. The server pushes the
+  complete current branch, including writer rows created after preview.
+  Preview operations and revision tokens do not constrain this whole-document command.
+- **Per-change Apply and Discard are preview-scoped**: `DraftApplyChangesRequest` names a
+  nonempty set of operation IDs plus both opaque revision tokens. Under the shared
+  branch critical section, recompute the comparison against a durable live cut
+  and require complete classes. Refuse `stale`, `gone`, `whole_item`, or
+  `incomplete_class` without publishing. Draft-only manifest members expose
+  `isNewDocument` and use whole-document Apply with the existing manifest companion.
+  The live token includes authority identity, generation, and next admission
+  sequence captured with journal bytes under the document mutation lock. Recheck
+  that token inside durable push commit under the same lock, so an admission
+  after selection cannot sneak into a successful stale Apply or Discard. Discard
+  expands a nonempty selection to its complete class; missing tokens refuse
+  `stale`. An absent selection alone chooses whole Discard; present malformed
+  or empty selections are HTTP 400, never whole Discard. The draft token
+  hashes generation, the holder-bound `y2:` view revision (including tree-only
+  link/image moves), and reviewable row identities/status. Preview and selective
+  disposition prepare live and draft holders together in one link snapshot;
+  preview still returns no whole-document Markdown. Branch-state CAS and selected-row settlement predicates fence
+  cross-process draft arrivals; retries recompute selection and tokens.
+  Only the selected rows become `pushed`; the branch retains its content and
+  generation. A later document Apply publishes the remainder once through Yjs
+  idempotence, retaining each selected row's original agent turn or writer user.
+  Success is returned only after the existing settlement completion fence, not
+  after a durable outbox handoff. Per-change Undo is not implemented.
+  After disposition has committed, the application service owns terminal cleanup
+  and its disposition policy. Cleanup failure is diagnosed and leaves
+  `itemClosed: false`; it cannot reject an already committed command. The
+  initial disposition and generation cleanup are still separate transactions.
+  Preview carries anchored hunks, operations, room identity and revisions only,
+  not whole-document Markdown. Presentation types come from the public contract;
+  internal operations add branded source and physical journal IDs.
 - **Writer ingress barrier**: `beforeSync` consumes Hocuspocus's decoded sync
   type/payload once. After fencing and provenance validation, a cached,
   mutation-invalidated Yjs snapshot performs exact delete-set-aware containment;
@@ -217,12 +160,11 @@
   `pnpm --filter @meridian/server perf:writer-admission` is the manual performance
   gate; cached containment must retain at least a 10x p50 advantage over rebuilding
   a history-sized Yjs snapshot.
-- **Push settlement state**: each outbox member stores binary `lock_cut_update`
-  and `push_update`, validated trail JSON and its join versions; its batch row
-  holds the fenced ownership fields and typed pending/blocked/completed state.
-  `PendingSettlementStore` is the required persistence authority for batch
-  settlement, claims, failure backoff, blocking, trail refinement, and
-  completion. Exact post-cut Yjs admissions live in the
+- **Push settlement state**: the outbox stores binary `lock_cut_update` and
+  `push_update`, validated trail JSON, fenced ownership fields, and typed
+  pending/blocked/completed state. `PendingSettlementStore` is the required
+  persistence authority for settlement, claims, failure backoff, blocking, trail
+  refinement, and fenced completion. Exact post-cut Yjs admissions live in the
   normalized `branch_push_outbox_updates` relation. Journal and staged-push
   admission both call the single `joinAdmissionWithinTx` writer inside their
   document-mutation transaction; source identity and completing-push exclusion
@@ -249,12 +191,8 @@
   time; add new matrix cases there. The PostgreSQL killed-process oracle
   (`branch-push-settlement-oracle.db.test.ts`) keeps only what an in-memory port
   cannot prove: the cold lock cut with post-cut joins, stale-claim fencing
-  against a live holder, commit-fault durability inside the completion
-  transaction, and batch atomicity (a fault between admissions leaves nothing
-  live, one of two concurrent recoverers settles the batch whole, warm rooms
-  see it only after commit). Refusals, holds, lease-set hand-offs and the
-  pre-staging check have their PostgreSQL proofs in
-  `branch-push-settlement-refusals.db.test.ts`. `branch-push-durable-projection.db.test.ts` owns SQL-dependent
+  against a live holder, and commit-fault durability inside the completion
+  transaction. `branch-push-durable-projection.db.test.ts` owns SQL-dependent
   replay, aggregate row version, fold restoration, and journal attribution
   assertions; do not move them to fakes. Pure provenance and policy semantics
   belong to their focused owners rather than to a second PostgreSQL replay graph.
@@ -262,10 +200,6 @@
   also drive the real `createProductionAppPorts` + `composeAppServices` +
   Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
   updates, and release probes must verify writer-visible trail flows.
-- **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
-  use an injected schedule. Production obtains its time from PostgreSQL; tests
-  advance a controlled schedule. Do not reintroduce process-clock comparisons or
-  sleep-based lifecycle tests.
 - **Response-scoped thread-peer atomicity**: `domain/response-transaction.ts`
   settles cache publication, watermarks, facade ownership, and response lifecycle
   against the actual ambient Drizzle commit or rollback. The real-Postgres
@@ -309,11 +243,20 @@
 
 The process recovery scheduler invokes the change-trail worker as an independent
 lane. Each pass considers at most 100 recoverable live settlements, reconciles
-100 terminal-owner keys and 100 shell IDs, and dispatches at most 100 outbox
-rows. Reconciliation pages only actionable owners/shells (including shared reopen
-work while a turn is active), retaining separate wraparound keyset cursors and acquiring a
-sorted union of the selected trail locks; all updates are restricted to that
+100 owner keys, and dispatches at most 100 outbox rows. Reconciliation pages only actionable owners/shells (including shared reopen
+work while a turn is active), retaining one wraparound owner-key cursor and acquiring
+the selected trail locks in sorted order; all updates are restricted to that
 locked set. It keeps its own root transaction, not the runtime inbox owner.
 
 The change-trail scheduler count is dispatched outbox rows, not reconciliation
 transitions or settlement-recovery attempts. Other lanes report candidate counts.
+
+## Undo-restored publication ownership
+
+`branch-trail-projection.ts` retains physical replay for structural replacement
+operations, but computes owner sets from the net live-to-draft hunks through the
+same clock attribution index used by review (`draftOperationIdsByChangedBlock`).
+Canceled writer delete/restore strokes therefore do not add a shared writer
+owner to an AI-only publication. Certified restoration aliases are replayed from
+journal metadata; physical writer update rows are not relabeled or removed.
+Apply's trail and receipt use the originating AI turn, including on cold replay.

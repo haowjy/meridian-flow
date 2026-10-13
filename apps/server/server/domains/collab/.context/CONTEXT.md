@@ -5,13 +5,17 @@ The server collab domain supplies concrete Postgres/Hocuspocus adapters around
 and WebSocket callers.
 
 Model reads and writes go through `agentEdit()`, the thread-peer core pool,
-with a destination per document (below). A `live` destination selects the
+with a destination per document (below). Open response records own their pinned
+core participants independently of the resident-core cache. Invalidation visits
+the deduplicated resident and response-pinned owners; residency eviction never
+forgets an open reply. Idle-core protection derives from those response records,
+not a second active-response index. First-write lookup, creation and enrollment
+are synchronous before cache maintenance yields, so response close reaches the
+owner and its existing lifecycle rejects resumed staging. A `live` destination selects the
 live core and creates no Work draft or thread-peer branch: Auto-apply,
 Auto-apply on No Work, and `scratch://` and `uploads://` in every mode. A
-`draft` destination selects the thread-peer core once the Work has an active
-draft: branches key by `(documentId, draftId)`, and only a write makes the draft
-(a read with none reads live through the live core, contract §2.5). Draft on No
-Work owns a draft like any Work.
+`draft` destination selects the thread-peer core; Draft on No Work owns a Work
+draft keyed `(documentId, workId)`.
 
 ## Document revision identity
 
@@ -37,13 +41,50 @@ thread peer flushes live into the shared Work draft and reads it; it never
 creates a peer, so search stays read-only in branch topology while seeing the
 state a later `read` forks from.
 
+## Review authority cut
+
+Preview and selective disposition consume the same `ReadReviewCut` port and
+pure `domain/review-cut.ts` derivation. The adapter's first branch read fixes a
+root read-only repeatable-read snapshot. Branch generation/bytes, all history
+statuses, live journal/head, manifest memberships, thread titles and prepared
+link scopes join that snapshot. It uses no room reads, pulls, provisioning or
+repair. Missing manifest drafts inherit the captured live membership without
+creating a branch. Pinned memberships open a fresh link scope rather than
+joining a caller's older tree snapshot. Returned bytes and scopes are detached;
+the snapshot closes before rich-difference derivation.
+
+The draft token hashes this observation, including both link views and history
+statuses. Apply fences that token; Discard fences the displayed class IDs and
+closed-row/rich-effect admission evidence instead, so independent draft typing
+cannot invalidate its selected class.
+Selection also compares the cut with the branch and review rows supplied
+by the existing admission protocol; a mismatch refuses Apply as stale and
+retries Discard through its snapshot-CAS owner. Admission's
+current authority and live revision fences remain unchanged. Corrupt preview
+reads return a typed `corrupt` refusal without resetting any state. The review
+error surface offers the addressed whole **Discard draft** command. Its existing
+fenced reset from live does not decode the old branch, and also recovers corrupt
+branches with no pending rows. Healthy rowless branches remain unchanged.
+Whole Discard closes only thread peers whose upstream is the addressed Work draft's
+per-document branch, in the reset transaction (`closeThreadPeersOf`). After commit,
+`peer-retirement.ts` closes their rooms and invalidates only their (document, thread)
+states bound to each returned peer branch, including response-pinned owners evicted
+from the resident cache. A fresh peer in the same thread survives older retirement;
+pull contexts, lease epochs, runtime replicas and staged mutation entries carry
+`peerBranchId` independently of the existing generation fence. Other Works'
+peers and staged replies survive. Healthy rowless Discard still retires its own peers;
+corrupt rowless Discard also resets from live. Per-change Discard and generation
+replay retain their separate fences. Agent-edit offers `invalidateThreadDocument` for
+one pair and `evictThread` for runtime eviction, never an empty-ID wildcard.
+Thread cores are invalidated after Discard, never as a preview side effect.
+
 ## One save per reply
 
 The thread-peer pool is the only model read/write entry point. Each call
 carries the `FileGrant` the caller got from `domains/file-policy`; its
 destination routes the call. A write that commits now runs under
-`runWithEditGrants`; a reversal whose writes landed in the other journal gets
-a fresh grant at that destination (`authorizeAt`). A reply pins each document to its
+`runWithEditGrants`. Model inverse commands use the current destination grant
+and immutable edit policy, never split a selection across legacy journals. A reply pins each document to its
 first grant (reads follow the pin, except a `liveVersion` read, which is
 `version: "live"` and always reads live; results report the version read in
 `read.version`), may
@@ -58,6 +99,15 @@ confirmed for the journal's no-grant guard. The pool
 also records each document's last read version per thread (`live` or
 `draft` of a Work); a write against another version returns `read_required`.
 
+Prepared response replay admits ordinary concurrent chat edits and writer deletions
+as Yjs peers. A missing planning-visible item is not Discard evidence. Only
+physically absent structs supplied by a retired generation, or removals by
+immutable inverse edits after the helper cut, revoke a staged write. The host
+reads inverse kind from immutable edit origins, not actor or text similarity.
+Replay drops the whole logical write and its later dependency closure, retains
+independent writes, and checks physical integration and unexplained residuals.
+Its typed refusal evidence follows the write into notices and settled receipts.
+
 ## Write mode and drafts
 
 A chat's write mode decides only where its new AI writes go (D62); chats in
@@ -65,28 +115,8 @@ one Work may differ. A draft write never pushes itself live (D59): a draft
 that an auto-apply chat leaves behind, or another chat keeps writing, waits
 there like a kept change, and the dock shows it. Switching a chat to
 auto-apply touches no draft; Apply stays the writer's command. Branches carry no push
-policy: turn trail work never pushes, and a due work row settles `no_op`
-(`adapters/drizzle-turn-trail-work.ts`); a push or discard completes it
-through the journal trigger.
-
-A model call's link view is resolved where the pool routes it
-(`thread-peer-core-pool.ts`): a draft destination reads in its Work's active
-draft (`{ kind: "draft", draftId }`), a Work with no draft yet reads live, and a
-reply's pinned document keeps the view of its first write; `viewFor` and
-`scopeFor` stay synchronous and never resolve drafts. Refs in a draft's text are
-registered in the draft (`draft-branch-ahead-registration.ts`): a writer's
-review-room edit schedules it after admission, debounced like pulls, and Apply
-calls `prepareDraftLinkPublication` before staging. It registers every ref in
-the branches it reads and returns their cut: each branch's full-state
-fingerprint, read under its lease with the refs (F18: a live pull writes no
-journal row and no generation, a deletion moves no state vector). Staging
-compares the same fingerprint and repeats on a change. A ref the registry
-refuses for good (its typed `UnregistrableAheadRefError`: a Work that doesn't
-exist, an inadmissible address) is listed `unregistrable` in a ready cut and
-publishes unbound (F20); any other failure answers `registration_failed`, never
-a cut. Review-room registration stays best effort. A model copy out of a holder carries
-`doc:<id>` for each ref the holder's own binding answers
-(`LinkBinder.rebindHolderBoundRefs`).
+policy. Trail reconciliation consumes transactional dirty signals and never
+publishes a draft. Active unapplied rows do not delay a terminal receipt.
 
 ## Pull and provisioning transactions
 
@@ -105,8 +135,12 @@ that safe:
   stops when there are none. Otherwise it takes its live snapshot before
   opening its root transaction, never while holding it: the snapshot needs its
   own connection, and pulls that each hold one while waiting for another
-  exhaust the pool and deadlock. The root transaction lists the branches again,
-  since one can close in between.
+  exhaust the pool and deadlock. The branch list is read again, since one can
+  close in between. Every pull takes its branch leases first and its root
+  transaction second, the save's order, and keeps the leases through the
+  write: a live pull leases one branch at a time; a thread-peer pull leases the
+  peer and its upstream together, so a per-change Discard cannot refork the
+  upstream between capture and peer persistence.
 - **Room loads read in the caller's transaction.** A room opened under a
   command transaction loads its journal snapshot and validates its handle's
   authority generation through that transaction. The transaction may already
@@ -122,12 +156,19 @@ that safe:
   `BranchPullDiagnostics.backgroundFailed`.
 - **Provisioning splits authority from infrastructure.**
   `ensureThreadPeerBranch` takes the canonical thread row lock in the caller's
-  (or its own enclosing) transaction, then commits the draft's branch and thread
-  peer in a root transaction under the draft `FOR SHARE` (closed is stale); it
-  is given the draft and never ensures one. The root must not relock the thread row, since
+  (or its own enclosing) transaction, then commits the Work draft and thread
+  peer in a root transaction. The root must not relock the thread row, since
   the caller may already hold it. It resolves committed Work membership, not a
   caller's uncommitted rebind. Callers release live/branch access before taking
   the thread lock (they pass detached snapshots); pull callbacks never take it.
+- **Referenced rows commit first.** `ensureProjectManifest` creates manifest
+  identity and its durable live head in a root transaction, so a root-committed
+  peer never references a row only the caller's transaction can see. Live
+  manifest writes (`mutateLiveManifest`, `reconcileProjectManifest`) instead
+  call `loadProjectManifest` in the caller's transaction: during cold project
+  bootstrap the project and source are uncommitted, and identity, content, and
+  membership must roll back together. Live-only membership reads use that same
+  ambient loader to see the caller's writes. Neither path provisions a root peer.
 - **FK references must not wait on the caller's locks.** A root insert that
   references a row the caller locked waits on a transaction that is itself
   awaiting the root in JavaScript; Postgres never detects that cycle. Work
@@ -211,13 +252,52 @@ checkpoint selection, earliest retained-update selection, and replay to that ide
 and generation. Sequence bounds do not authorize retired-generation history; only
 explicit checkpoint lookup/listing and restore expose historical checkpoints.
 
-The store captures checkpoint plus current-generation journal under the document
+A checkpoint's state must contain every row at or below its `up_to_seq`; a cold
+load never replays those rows. Seed, room and explicit checkpoints therefore
+persist only a `CapturedCheckpointCut`, never a free state/watermark pair and
+never the warm room's bytes (a writer row can be durable before Hocuspocus applies
+it). See the [checkpoint capture decision][checkpoint-capture].
+
+- **Minting.** Only the journal adapters mint a cut
+  (`adapters/drizzle-checkpoint-capture.ts`, the in-memory journal). The type is
+  nominal, so a spread copy does not type-check, and persistence resolves the
+  payload through an adapter-private identity registry, so a forged or cloned
+  object fails at runtime too. Do not add a raw constructor. Agent-edit's generic
+  journal port does not produce checkpoints; compaction remains host-owned.
+- **Capture is short.** Under the mutation lock, the single-statement
+  `capture_document_checkpoint_range` SQL function records the generation's base
+  checkpoint ID and the closed suffix range, reading no bytes. Its exception
+  subtransaction releases the locks it took even inside an ambient transaction;
+  caller-owned locks stay with the caller. Keep it one statement: a client
+  savepoint spanning awaits can roll back sibling statements queued on the same
+  connection.
+- **Materialization is unlocked.** Persistence replays base plus suffix before
+  taking its own lock, yielding between replay batches. Base hydration and final
+  encoding remain synchronous Yjs work.
+- **Persistence revalidates under lock.** It rechecks authority generation and
+  input retention, even for an already materialized cut. Explicit persistence
+  joins its caller's transaction, so it never waits on itself through a second
+  connection.
+- **Retention is `retired_through_seq`.** Every compaction, including one that
+  folds nothing because an ordinary checkpoint already covers the prefix, raises
+  the head's generation-local `retired_through_seq` in its delete transaction.
+  Generation replacement resets it. A cut whose suffix floor is below it is
+  rejected; the room worker emits `checkpoint.failed` and the next store
+  recaptures. Never infer retention from checkpoint `reason`. Document cascade
+  removes the head and invalidates its cuts.
+- **Attribution is still slow.** Writing the checkpoint row rebuilds attribution
+  from all retained rows under the mutation lock, with quadratic range
+  accumulation ([#805][issue-805]).
+
+[checkpoint-capture]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/concurrent-safety/journal/checkpoint-capture-from-journal.md
+[issue-805]: https://github.com/haowjy/meridian-flow/issues/805
+
+The derivation store captures checkpoint plus current-generation journal under the document
 mutation lock. Never substitute a warm room: a socket admission can already be
 durable while Hocuspocus has not applied it. Certification retakes the mutation
 lock, checks generation and `next_admission_sequence`, and conditionally updates
-the document at the captured `location_version`. Every tree lifecycle change
-(move, delete, restore, reveal) increments that counter through context's
-`bumpLocationVersions` (`tree/node-locations.ts`).
+the document at the captured `location_version`. A move increments that counter
+at the common `recordDocumentMove` seam, including same-source folder renames.
 Serialization runs outside the lock unless the caller already owns a transaction.
 For an initialized live document, lifecycle ensure is read-only: retaining an
 ambient head-row update lock would deadlock the subsequent root journal batch.
@@ -236,8 +316,8 @@ canonical URI captured under the journal lock. Rows are keyed by
 `(source_document_id, link_key)`: `doc:<id>` and `asset:<id>` keys carry the
 target id, `ahead:<uuid>` keys the ahead id and its decoded address, and a
 contextual link keys by its href. It is a hint from a certified cut, never link
-authority. A holder with no live address (deleted, or under a deleted folder or
-Work) certifies with no link rows. Changing the extractor must bump its
+authority. Manifests (and already soft-deleted staged-push holders without a
+live URI) certify with no link rows. Changing the extractor must bump its
 version to invalidate older output; never add a second post-write publisher.
 
 A certified derive whose rows hold `ahead:` refs registers the ones the registry
@@ -274,7 +354,7 @@ that keep failing rotate through instead of starving the rest.
 ## Reference map
 
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
-- [Branch model, provenance, and durable records](branch-model-and-records.md)
+- [Branch model, provenance, manifests, and durable records](branch-model-and-records.md)
 - [Reversal](reversal.md)
 - [Push settlement and change trail](settlement-and-trail.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
@@ -291,16 +371,231 @@ Image and figure `src` attributes are occurrences with their own `ref`. Derive
 and the view-revision digest share it. It is the Yjs twin of
 `walkLinkOccurrences`, which ref assignment walks; a parity row in agent-edit's
 `assign-refs.test.ts` pins the two to the same sequence. Nothing rewrites stored links.
+### Preview chat attribution
 
-Certified derivation retains its location CAS on `documents` and upserts
-`document_markdown_projections` only on a hit, in the same transaction as links and
-watermarks. Location-only writes therefore leave the projection GIN indexes alone.
+Agent preview operations carry `actorThreadId` and the thread title at preview
+time (`actorThreadTitle`). The application service collects journal thread IDs
+and resolves titles with one batched lookup, never one query per operation.
+Writer operations carry neither field. The same operations carry `actorTurnId`
+and `actorToolCallId` (the journal row's `turn_id` and `tool_call_id`, the
+model's own unscoped tool call id), so the app can open the chat at the write.
+Rows written before the column existed have no tool call id.
 
-## Detached room checkpoints
+### Empty per-change reviews
 
-A room store captures its cut and enqueues its checkpoint; completing the store
-or unloading the room does not mean that checkpoint committed. Checkpoint queues
-join the composition's detached-work tracker, so shutdown and DB fixture resets
-await them through the tracker. Standalone collab adapters default to the shared
-tracker; production composition supplies its own and DB compositions supply the
-worker's shared tracker.
+After a successful per-change Apply or Discard, the command re-checks the draft
+under the same branch/live/Work locking order as full Discard. A draft whose
+complete document effect equals live (see "Complete-effect terminal settlement")
+uses the existing generation-reset path, closing old review rooms
+and clearing current pending journal evidence through the Work projection mutation
+seam (the catalog wake hint). The infrastructure branch remains reusable, as for
+full Discard; future AI writes populate the new generation. Pushed history stays
+pushed. The terminal `itemDisposition` is `applied` when any current-generation
+journal row reached live, otherwise `discarded`, even if the last action was
+Discard. Success responses expose `itemClosed`; only closed responses expose
+`itemDisposition`. Whole Apply is unchanged.
+
+### Live writes versus CLI replacement
+
+Live writer SET and agent writes routed to live preserve a pending Work draft:
+parent-to-child pulls merge live edits into the existing draft without resetting
+its generation or settling its authored rows. `./mf doc put --overwrite` is not
+this path: it deletes the document and creates a new one at the same URI, and
+the new identity inherits no drafts.
+
+### Cumulative-delete Apply closure
+
+Review classes close over overlapping branch delete sets as well as supplied
+struct references and same-client clock prefixes. Agent-edit writes now journal
+transaction deltas containing only their own deletions, so independent writes
+with distinct insertion clients no longer join through inherited tombstones.
+Thread-peer publication applies ordered per-segment journal rows to a
+provisional target clone, admits each logical write, and asserts an empty sync
+residual before one snapshot CAS and broadcast. It must not regenerate durable Work
+journal rows with a raw source state-vector diff, which reintroduces the
+tombstones. An unresolved sync dependency is an integrity failure, never a
+partially journaled update. Manifest membership mutations in
+`adapters/drizzle-branches.ts` still journal `sync(peerDoc, workDoc)` bytes, which
+carry the peer's cumulative delete set. Candidate selection takes the membership
+row alone, so after a new document is discarded in a Work, a later Apply can fail
+`assertNoPendingIntegration` with pending Yjs dependencies
+([#753](https://github.com/haowjy/meridian-flow/issues/753), the manifest variant
+of [#738](https://github.com/haowjy/meridian-flow/issues/738)). Fix the authoring
+seam (journal the transaction's own update); keep the guard.
+Keep cumulative-delete closure: other producers and retained state-vector rows
+can still carry old branch deletions targeting live-base structs. Apply must
+show their operations before replaying those bytes. Delete ranges already
+present on the current live cut are excluded from this edge. Draft agent writes
+preserve unchanged words and journal each paragraph of a logical write under a
+fresh client. Recognized adjacent split/merge boundaries and contiguous inserted
+or removed block runs form one structural segment. Each segment is one transaction
+and one row; all rows of a reply publish atomically. Sharing a paragraph never joins
+independent writes. Edits inside pending inserted text join that insertion.
+
+### Draft writer client boundaries
+
+Only the review editor rotates the writer's content client across independent
+change boundaries (including disjoint untouched typing sites). Class membership
+comes from the server model's relative anchors, regardless of mark visibility;
+contiguous local typing stays together before a model refetch. Pauses and
+selection moves alone allocate nothing. The awareness owner follows the new
+identity, removing the old cursor and retaining current or suspended fields.
+This avoids the upstream provider/cursor assumption that awareness and content
+client IDs agree. Normal live editors keep their existing identity lifecycle.
+Browser Undo still introduces writer structs: its local `redone` link is not
+encoded in the transaction update, so it does not establish original AI
+attribution on cold replay. Do not infer authorship from matching text.
+
+### Surviving-text review anchors
+
+Within aligned blocks, pin common live/draft Yjs text identities before semantic
+text diffing the gaps. Text-only alignment may match an identical deleted full
+stop instead of the surviving one, producing a fictitious deletion without an
+author. Tombstone attribution must not invent an author for that survivor.
+Missing ownership preserves the complete hunk as `unclassified`, including wholly
+unattributed insertions/removals. The attribution index returns explicit coverage;
+partial deletion coverage drops all author spans, not any removed text. Every
+class touching such a hunk carries `canApplyOrDiscard: false`; both selectors
+refuse it as `incomplete_class`. Only document-level Apply/Discard can handle it.
+Preview diagnostics reach the domain's event-sink adapter as a warning with the
+document correlation and affected hunk count, never document content.
+
+`domain/draft-review-attribution.ts` owns replay, restoration aliases, range
+ownership and completeness. `domain/document-difference.ts` owns block alignment,
+identity-aware semantic changes with complete effect evidence, text gaps and
+anchors, without review authority.
+`domain/document-content.ts` owns both equality scopes. `documentProseEqual`
+compares text, marks, node types, attributes and ordered children for review hunks
+and publication differences. `documentEffectsEqual` adds managed `documents` map
+membership for pending effects and terminal settlement; manifest changes have
+separate review operations and never become prose hunks.
+Yjs history and attribute-object prototypes do not change content. Alignment uses
+canonical block identities, not scope-dependent display hash widths. Rich-only
+changes are whole-block hunks attributed through changed format/attribute clocks;
+unchanged prose is not an inserted or removed text effect. Attribution intersects
+changed mark intervals and reads winning attribute items. Semantic no-op detection
+is not provenance: fresh formatting copies keep their supplying row unless
+certified restoration metadata proves correspondence. Nested paragraph boundaries are content too. Their formatting facts
+are localized by the client, in the same row as text changes.
+`domain/draft-review-hunks.ts` composes the raw difference with review attribution; publication consumes the raw difference directly. Recreated identical blocks
+and rich-equal ordered replacement runs are equal at that shared semantic boundary,
+not hidden by a review-only cancellation rule. Same-text replacements with different
+immutable identities retain both structural effects and supplying rows in one
+canonical change; only same-identity changes use rich-field-only evidence.
+Review removal block keys come from the live side of this canonical difference,
+not a second alignment or a display excerpt; rich-effect ranges stay unchanged.
+Publication carries explicit before/after canonical block identities through to
+the durable trail; display hashes and serialized prose never supply identity.
+The model-undo engine still needs legacy text/tombstone restoration inference.
+That text inference cannot transfer novel format, attribute or node ownership,
+including deletions. Rich removals keep their supplying row alongside the
+restored prose through co-located effect coverage, without changing text ownership.
+The text/tombstone guesses retire with the old model-undo engine in undo step 4.
+`domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
+that grouping unchanged; missing authorship never filters out a hunk.
+
+Browser Undo restoration claims are untrusted. `domain/writer-restoration.ts`
+certifies new claims/targets against retained tombstones, exact content and
+structural anchors under the admission lock. Same-parent map overwrites stay
+writer-authored even after honest Undo: overwrite ancestry plus equal value
+cannot distinguish restoration from a manual re-set. Recreated-container
+copies use the pre-widening conservative rule: a certified parent identity and
+a directly certified left-sibling slot (or an actual first slot), not a claimed
+inventory or skipped-sibling trace. Browser claims cannot supply coverage when
+their own content, range, live target or parent fails certification. Rich
+restorations may lose AI attribution on unproved formatting/text slots; this is
+the deliberate fallback, not grounds to infer correspondence. Ambiguous
+correspondence must never credit writer text to the AI. Only certified journal
+metadata enters cold attribution replay; the claims map itself remains untrusted.
+
+### Complete-effect terminal settlement
+
+No visible review operations is not permission to reset a draft. Empty settlement
+compares the visible ProseMirror tree (text deltas including marks, element types,
+attributes, and ordered children), ignoring Yjs identities/history. Review and publication use that same rich comparison. Cancelled history settles
+when its complete document effect equals live; incomplete attribution never makes
+a semantically changed draft empty. A semantically unchanged retype may recreate
+mark boundaries: replay carries that physical correspondence so a later formatting
+removal belongs to the row that actually removed it.
+
+### Preview-scoped selective Discard
+
+Apply and Discard use required-field `ReviewSelectionCommand` variants rather
+than an optional bag or mode flag. Route parsers validate their input; the service
+threads the typed selection through the branch critical section and each
+snapshot-CAS retry. The shared selector checks cut consistency and the live
+fence, delegates protocol-specific admission, then projects the selected rows.
+Apply retains stale refusal on an inconsistent cut; Discard throws a commit
+conflict so its CAS owner retries. Per-change Discard now
+requires the displayed live revision, stable `closureClassIds`, clicked
+`memberPartKeys` (empty for fallback-only classes), and server-vended
+`admissionTokens` for each class's complete closed rows and rich replay effect; missing
+admission evidence, a changed live revision, or changed class evidence returns
+`stale` without modifying the draft. The draft revision is still carried as the
+displayed observation, but unrelated journal admissions do not veto Discard.
+Discard selects the clicked class IDs directly and compares their complete
+admission tokens before selecting current operations and journal rows. If a
+clicked class is absent, its retained `memberPartKeys` distinguish growth
+(`stale` if an immutable member survives) from disappearance (`gone` otherwise).
+These keys classify refusals only; they never admit a replacement class. Operation IDs are not part of the Discard request.
+An unchanged AI class admits even after another Discard re-journals its rows.
+Ordinary captured writer operations also retain immutable part keys. Writer
+operations without immutable part keys still use row IDs in class identity:
+a re-fork replaces that class and the held request returns `gone`. Tokens hash
+the class ID too, so cannot substitute for that missing identity. Row fingerprints preserve
+identical bytes and immutable metadata through re-journaling; all closed rows,
+including invisible deletions, contribute with multiplicity. Apply requires all class members
+and unchanged live/draft revision tokens.
+Whole-document Discard remains unfenced.
+
+### Review read efficiency
+
+Review classes have opaque stable `closure:v1:` SHA-256 identities, not admission
+evidence or encoded
+operation lists. One typed graph joins visible operation and journal-row nodes;
+physical rows always join their operation, while logical source rows join only
+when supplied in the journal cut. Dependency closure decodes each row once and indexes ranges
+per Yjs client; same-client prefix and overlapping-delete edges preserve the
+same connected components without pairwise row comparison. Block alignment
+peels matching ID prefixes and unambiguous suffixes before allocating an LCS
+matrix, retaining its duplicate-ID tie rule.
+
+Preview and selection use the [review authority cut](#review-authority-cut).
+Draft lists bulk-resolve document paths with one document
+query and one shared folder graph, and expose persisted branch update times.
+
+### Selective Discard and response replay
+
+Buffered draft helpers are private to agent-edit's response committer, never
+runtime-store replicas. Every tool and scoped content read obtains a prepare
+lease; effective readers prepare before taking their branch-read lock. Peer
+pulls cannot reconstruct or merge into the owned helper. Reporting uses
+disposable replicas, and only tool results drain dropped-write notices.
+Rollback defers disposal until transaction commit; abort keeps the view intact.
+
+Per-change Discard re-forks the next generation from live plus surviving rows,
+re-journaled with identical bytes and immutable edit/part metadata. It journals
+no restoration and creates no copy. Selective Apply publishes only its class's
+rows. The re-fork owns the generation change; an empty selective Discard does
+not invoke another empty settlement. Existing generation/handoff and unsent
+writer carry recovery own the editor transition.
+
+A staged write is refused only on retired-generation or inverse evidence; text
+that merely disappeared merges like any peer's edit.
+
+Responses replay staged segment rows onto the current generation under the
+existing branch lock, then check integration and the generation residual.
+Only retired-row structs and deletions may remain in the old helper. The helper
+records its actual base generation/state even when no staged writes remain;
+retired evidence comes from that cut, never inferred from historical write metadata.
+Host replay returns an isolated typed result after admission/CAS, and the buffer
+replaces kept writes, failed receipts and helper/cut in one synchronous transition. A write
+that cannot integrate, and its later dependent logical writes, are dropped
+atomically per write; independent writes commit. The helper is replaced with
+the current generation plus surviving stages before subsequent tool resolution.
+Dropped writes are named once per document/handle in the next tool result,
+with partial versus whole rejection distinguished; their save receipts use the
+existing per-result failure path. Whole Discard does not roll the reply back: its
+peer retirement drops only that thread's staged writes on the discarded draft's
+peer, and the reply's other documents still commit.
+No settlement deferral or second retirement state machine exists.

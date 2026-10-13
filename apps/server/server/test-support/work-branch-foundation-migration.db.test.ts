@@ -1,12 +1,15 @@
 /**
- * Populated upgrade contract for 0040/0041: the Work-branch foundation's data moves and
+ * Populated upgrade contract for 0044/0045: the Work-branch foundation's data moves and
  * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
- * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037) and the
- * namespace observation versions (0038/0039) run over them first, as they do in a deploy.
+ * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037), the namespace
+ * observation versions (0038/0039) and #713's edit ledger and dirty signals (0040/0041) run
+ * over them first, as they do in a deploy; #713's edit rows are seeded after 0041.
  */
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ContextSourceId, DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
@@ -28,12 +31,16 @@ const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 const id = (n: number) => `73600000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const NAMES = "0037_old_adam_destine";
-const OBSERVATIONS = [
+const MAIN_BETWEEN = [
   "0038_namespace_observation_schema",
   "0039_backfill_namespace_observation_versions",
+  "0040_brainy_mimic",
+  "0041_trail_dirty_signals",
+  "0042_pretty_ricochet",
+  "0043_mighty_paper_doll",
 ];
-const FOUNDATION = "0040_work_branch_foundation";
-const ONLINE = "0041_work_branch_foundation_online";
+const FOUNDATION = "0044_work_branch_foundation";
+const ONLINE = "0045_work_branch_foundation_online";
 const SCOPE_KEY = `project:${id(2)}`;
 
 /** Rows in `main`'s 0036 shape (prose stored as `.md`): every kind of row the foundation migration moves. */
@@ -60,7 +67,8 @@ async function seedMainShape(sql: postgres.Sql) {
     ('draft-closed', ${id(12)}, 'work_draft', NULL, ${id(3)}, NULL, NULL, 'closed', ${bytes}, ${bytes}),
     ('peer', ${id(10)}, 'thread_peer', 'draft-live', NULL, NULL, ${id(20)}, 'active', ${bytes}, ${bytes}),
     ('draft-deleted-work', ${id(10)}, 'work_draft', NULL, ${id(4)}, ${id(4)}, NULL, 'closed', ${bytes}, ${bytes}),
-    ('orphan-peer', ${id(12)}, 'thread_peer', NULL, NULL, NULL, ${id(20)}, 'active', ${bytes}, ${bytes})`;
+    ('orphan-peer', ${id(12)}, 'thread_peer', NULL, NULL, NULL, ${id(20)}, 'active', ${bytes}, ${bytes}),
+    ('manifest-draft', ${id(13)}, 'work_draft', NULL, ${id(3)}, NULL, NULL, 'active', ${bytes}, ${bytes})`;
   for (let n = 1; n <= 4; n++) {
     const state = n === 3 ? "blocked" : n === 4 ? "completed" : "pending";
     const claimed = n === 2;
@@ -69,6 +77,31 @@ async function seedMainShape(sql: postgres.Sql) {
     await sql`INSERT INTO branch_push_settlement_outbox (push_id, document_id, document_title, lock_cut_update, push_update, trail_seed, state, claim_token, claim_epoch, claim_kind, claimed_at, lease_expires_at, attempt_count, last_error_code, last_error, blocked_at, completed_at, join_version, classified_join_version, settled_join_version) VALUES
       (${n}, ${id(10)}, 'Title', ${bytes}, ${bytes}, '{}', ${state}, ${claimed ? id(30) : null}, ${n + 2}, ${claimed ? "warm" : null}, ${claimed ? "2026-09-01T00:00:00Z" : null}, ${claimed ? "2026-10-11T00:00:00Z" : null}, ${n}, ${n === 3 ? "probe_blocked" : null}, ${n === 3 ? "retained error" : null}, ${n === 3 ? "2026-09-04T00:00:00Z" : null}, ${n === 4 ? "2026-09-05T00:00:00Z" : null}, 10, 8, ${n === 4 ? 10 : null})`;
   }
+}
+
+/**
+ * #713's rows on a Work draft branch (pending edits and parts, dirty signals), in the shape
+ * 0040/0041 leave: parts on branches the foundation deletes retire, the rest keep their branch.
+ */
+async function seedEditLedger(sql: postgres.Sql) {
+  const bytes = Buffer.from([0, 0]);
+  const parts = [
+    ["live", id(10), "draft-live"],
+    ["peer", id(10), "peer"],
+    ["orphan", id(12), "orphan-peer"],
+    ["manifest", id(13), "manifest-draft"],
+  ] as const;
+  for (const [index, [name, documentId, branchId]] of parts.entries()) {
+    const edit = id(60 + index);
+    await sql`INSERT INTO document_edits (id, document_id, thread_id, actor, kind)
+      VALUES (${edit}, ${documentId}, ${id(20)}, 'agent', 'write')`;
+    await sql`INSERT INTO document_edit_parts (edit_id, ordinal, update, effect, frontier, origin, placement)
+      VALUES (${edit}, 0, ${bytes}, ${sql.json({ name })}, ${sql.json([])}, ${sql.json({ kind: "pending" })},
+        ${sql.json({ kind: "pending", branchId, generation: 1 })})`;
+  }
+  await sql`INSERT INTO document_edit_parts (edit_id, ordinal, update, effect, frontier, origin, placement)
+    VALUES (${id(60)}, 1, ${bytes}, ${sql.json({ name: "live-done" })}, ${sql.json([])}, ${sql.json({ kind: "pending" })},
+      ${sql.json({ kind: "discarded" })})`;
 }
 
 /**
@@ -86,6 +119,30 @@ async function seedObservationEvidence(sql: postgres.Sql) {
   await sql`INSERT INTO context_operation_receipts (user_id, project_id, operation_id, receipt) VALUES
     (${id(1)}, ${id(2)}, ${id(41)}, ${sql.json({ operationId: id(41), command: { kind: "move" }, result: { ok: true } })})`;
   await sql`INSERT INTO context_availability_heads (authority_key, generation) VALUES (${SCOPE_KEY}, 7)`;
+}
+
+const FUNCTIONS_DIRECTORY = fileURLToPath(
+  new URL("../../../../packages/database/src/functions/", import.meta.url),
+);
+
+/** pg_dump's session guard is random; all schema and data statements remain comparable. */
+function dump(mode: "--schema-only" | "--data-only") {
+  // libpq URIs reject the runner's session parameters (`synchronous_commit`).
+  const url = new URL(databaseUrl ?? "");
+  url.search = "";
+  return execFileSync(
+    "pg_dump",
+    [
+      url.toString(),
+      mode,
+      "--schema=public",
+      "--schema=drizzle",
+      "--no-owner",
+      "--no-privileges",
+      "--no-comments",
+    ],
+    { encoding: "utf8" },
+  ).replace(/^\\(?:un)?restrict .*$/gm, "");
 }
 
 /** The repository's journal, where the foundation sits, and where the name migration does. */
@@ -107,8 +164,9 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
     const { journal, names, foundation } = await foundationJournal();
     expect(journal.entries[foundation + 1]?.tag).toBe(ONLINE);
     expect(journal.entries.slice(names + 1, foundation).map((entry) => entry.tag)).toEqual(
-      OBSERVATIONS,
+      MAIN_BETWEEN,
     );
+    const freshSchema = dump("--schema-only");
     let isolated = false;
     try {
       await isolateSchemas(target);
@@ -121,12 +179,19 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         FROM documents WHERE kind = 'content' ORDER BY id`;
       const outbox = await target`SELECT * FROM branch_push_settlement_outbox ORDER BY push_id`;
 
-      // The document-name migration, the observation migrations over evidence it left, then
-      // the foundation's transactional half.
+      // The document-name migration, the observation migrations over evidence it left, #713's
+      // ledger over its own rows, then the foundation's transactional half.
       await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, names + 1);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
       await seedObservationEvidence(target);
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(migrations, directory, journal, foundation);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      await seedEditLedger(target);
+      const dirtyBefore =
+        await target`SELECT thread_id, turn_id FROM change_trail_dirty_log ORDER BY seq`;
+      expect(dirtyBefore.length).toBeGreaterThan(0);
       await rm(directory, { recursive: true, force: true });
       await stageThrough(migrations, directory, journal, foundation + 1);
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
@@ -171,6 +236,48 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         await target`SELECT conname FROM pg_constraint
           WHERE connamespace = 'public'::regnamespace AND NOT convalidated`,
       ).toEqual([]);
+
+      // Preserve #713's signals; retiring two pending parts appends their owner signals.
+      expect(
+        await target`SELECT thread_id, turn_id FROM change_trail_dirty_log ORDER BY seq`,
+      ).toEqual([
+        ...dirtyBefore,
+        { thread_id: id(20), turn_id: null },
+        { thread_id: id(20), turn_id: null },
+      ]);
+      // Parts pending on a branch the migration deleted (orphan peer, manifest) retire; the rest stay.
+      expect(
+        await target`SELECT edit_id, ordinal, placement FROM document_edit_parts ORDER BY edit_id, ordinal`,
+      ).toEqual([
+        {
+          edit_id: id(60),
+          ordinal: 0,
+          placement: { kind: "pending", branchId: "draft-live", generation: 1 },
+        },
+        { edit_id: id(60), ordinal: 1, placement: { kind: "discarded" } },
+        {
+          edit_id: id(61),
+          ordinal: 0,
+          placement: { kind: "pending", branchId: "peer", generation: 1 },
+        },
+        { edit_id: id(62), ordinal: 0, placement: { kind: "retired" } },
+      ]);
+      // The manifest document went with its edits; every other edit stays.
+      expect(await target`SELECT id FROM document_edits ORDER BY id`).toEqual([
+        { id: id(60) },
+        { id: id(61) },
+        { id: id(62) },
+      ]);
+      // Settlement state lives on the batch: the outbox trigger watches inserts, the batch trigger state.
+      expect(
+        await target`SELECT tgname, tgrelid::regclass::text AS relation FROM pg_trigger
+          WHERE tgrelid IN ('public.branch_push_settlement_batches'::regclass, 'public.branch_push_settlement_outbox'::regclass)
+            AND tgname IN ('capture_change_trail_settlement', 'capture_change_trail_batch')
+          ORDER BY tgname`,
+      ).toEqual([
+        { tgname: "capture_change_trail_batch", relation: "branch_push_settlement_batches" },
+        { tgname: "capture_change_trail_settlement", relation: "branch_push_settlement_outbox" },
+      ]);
 
       // main's observation backfill ran over the seeded evidence before the foundation.
       expect(
@@ -260,6 +367,17 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
           WHERE table_schema = 'public' AND table_name = 'document_branches'
             AND column_name IN ('work_id', 'deleted_by_work_id')`,
       ).toEqual([]);
+      // The repository's SQL functions follow its migrations, as `db:migrate` applies them.
+      for (const file of (await readdir(FUNCTIONS_DIRECTORY))
+        .filter((f) => f.endsWith(".sql"))
+        .sort()) {
+        await target.unsafe(await readFile(path.join(FUNCTIONS_DIRECTORY, file), "utf8"));
+      }
+      expect(dump("--schema-only")).toBe(freshSchema);
+      const beforeRerun = dump("--data-only");
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      expect(dump("--data-only")).toBe(beforeRerun);
+      expect(dump("--schema-only")).toBe(freshSchema);
     } finally {
       await writer.end();
       if (isolated) await restoreSchemas(target);
@@ -305,6 +423,10 @@ async function seedPendingCreates(sql: postgres.Sql) {
     (${id(12)}, ${id(6)}, 'shared', 'content'),
     (${id(13)}, ${id(6)}, 'gone', 'content'),
     (${id(14)}, ${id(6)}, 'kept', 'content')`;
+  await sql`INSERT INTO documents (id, context_source_id, name, extension, kind) VALUES
+    (${id(15)}, ${id(6)}, 'new', 'txt', 'content'),
+    (${id(16)}, ${id(6)}, 'Lore.md', 'md', 'content')`;
+  await sql`INSERT INTO folders (id, context_source_id, name) VALUES (${id(17)}, ${id(6)}, 'Lore')`;
   // Each content row's empty Yjs authority, as a create installs it: no update rows yet.
   for (const n of [11, 12, 13, 14]) {
     const [checkpoint] = await sql`INSERT INTO document_yjs_checkpoints

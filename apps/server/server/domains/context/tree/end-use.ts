@@ -11,7 +11,6 @@ import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/c
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { lockDocumentNamespaces } from "../adapters/context-fs/document-locations.js";
-import { dropDraftSettlements } from "../adapters/link-ahead-draft-settlements.js";
 import { dropDocumentRows } from "./draft-tree-store.js";
 import {
   lockDocuments,
@@ -47,7 +46,7 @@ const NOTHING_ENDED: EndedUse = Object.freeze({
 });
 
 /**
- * The draft stops using these documents: its rows and its settlements naming them go,
+ * The draft stops using these documents: its rows go,
  * then each hidden document no active draft uses any more is tombstoned (`tombstoneUnused`).
  * A revealed document is live and stays.
  */
@@ -58,7 +57,6 @@ export async function endUse(
   const ids = [...new Set(input.documentIds)].sort();
   if (ids.length === 0) return NOTHING_ENDED;
   await dropDocumentRows(db, { draftId: input.draftId, documentIds: ids });
-  await dropDraftSettlements(db, { draftId: input.draftId, documentIds: ids });
   return tombstoneUnused(db, ids);
 }
 
@@ -138,6 +136,19 @@ export class EndUseScopeChangedError extends Error {
 }
 
 /** The scope as it reads now, unlocked. */
+/**
+ * Which of `ids` are hidden now, read in the caller's transaction. Under the caller's
+ * document locks this is the visibility an end of use acts on (another Work's Apply may
+ * have revealed a draft's create since the caller resolved it).
+ */
+export async function hiddenDocumentIds(
+  db: Database,
+  ids: readonly DocumentId[],
+): Promise<ReadonlySet<DocumentId>> {
+  const rows = await loadDocumentIdentityRows(currentDrizzleDb(db), [...new Set(ids)]);
+  return new Set(rows.filter((row) => row.hidden).map((row) => row.id));
+}
+
 export async function readEndUseScope(db: Database, request: EndUseRequest): Promise<EndUseScope> {
   const tx = currentDrizzleDb(db);
   const documentIds = new Set<DocumentId>();

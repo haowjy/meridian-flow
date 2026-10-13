@@ -169,6 +169,7 @@ function draftPlacement(
             filetype,
             ...(options?.metadata ? { metadata: options.metadata } : {}),
           },
+          createdBy: { threadId: placement.threadId },
         });
         if (!created.ok) return Err(createFault(created.error));
         if (created.value.kind === "created") {
@@ -199,6 +200,7 @@ function draftPlacement(
             sizeBytes: options.sizeBytes,
             ...(options.metadata ? { metadata: options.metadata } : {}),
           },
+          createdBy: { threadId: placement.threadId },
         });
         if (!created.ok) return Err(createFault(created.error));
         return Ok({ documentId: created.value.documentId, placement: "draft" as const });

@@ -96,11 +96,19 @@ export function createDrizzleRuntimeDelivery(
         .select({
           ids: schema.threadRunLeases.adoptedMessageIds,
           turnId: schema.threadRunLeases.turnId,
+          executionId: schema.threadRunLeases.executionId,
+          holderId: schema.threadRunLeases.holderId,
         })
         .from(schema.threadRunLeases)
         .where(and(eq(schema.threadRunLeases.threadId, threadId)))
         .for("update");
-      return row ?? null;
+      return row
+        ? {
+            ids: row.ids,
+            turnId: row.turnId,
+            lease: { threadId, executionId: row.executionId, holderId: row.holderId },
+          }
+        : null;
     },
     async lockStaleExecution(threadId) {
       const [row] = await db_()

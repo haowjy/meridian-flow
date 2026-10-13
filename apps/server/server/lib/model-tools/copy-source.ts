@@ -15,8 +15,7 @@ import {
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import { documentPathKey, type LinkView } from "@meridian/contracts";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import { documentPathKey } from "@meridian/contracts";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
 import type { CopiedFrom } from "../../domains/context/document-metadata.js";
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
@@ -54,7 +53,7 @@ export async function readCopySource(
   principal: Principal,
   command: "insert" | "replace" | "copy",
   source: CopySource,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity">,
 ): Promise<CopiedSource | WriteToolErrorOutput> {
   const resolved = await resolveCopySource(deps, command, source, ctx);
   if (isToolError(resolved)) return resolved;
@@ -72,10 +71,15 @@ export async function resolveCopySource(
   deps: ToolWiringDeps,
   command: "insert" | "replace" | "copy",
   source: CopySource,
-  ctx: Pick<ToolHandlerContext, "threadId" | "responseId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "responseIdentity">,
 ): Promise<{ ref: FileRef; address: ResolvedDocumentAddress } | WriteToolErrorOutput> {
   // A live source resolves its path against live membership, as a live read does.
-  const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, source.version);
+  const context = await resolveContextPort(
+    deps,
+    ctx.threadId,
+    ctx.responseIdentity?.editScopeId,
+    source.version,
+  );
   if (isToolError(context))
     return writeToolError(command, fromMessage(source, context.output.message));
   const { filePath: basePath, fragment } = splitDocumentFile(source.path);
@@ -110,7 +114,7 @@ export async function readTrackedCopySource(
   command: "insert" | "replace" | "copy",
   source: CopySource,
   address: ResolvedDocumentAddress,
-  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseId">,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId" | "responseIdentity">,
 ): Promise<CopiedSource | WriteToolErrorOutput> {
   const grant = await documentGrant(deps, principal, command, address, "read");
   if (isToolError(grant)) {
@@ -126,7 +130,7 @@ export async function readTrackedCopySource(
       includeNodes: true,
     },
     // Never the write's tool call id: it keys the write's idempotency cache.
-    { threadId: ctx.threadId, turnId: ctx.turnId, responseId: ctx.responseId },
+    { threadId: ctx.threadId, turnId: ctx.turnId, responseIdentity: ctx.responseIdentity },
   );
   if (outcome.isError) {
     return {
@@ -139,18 +143,8 @@ export async function readTrackedCopySource(
     };
   }
   const version = outcome.result.read?.version ?? grant.destination.kind;
-  // A published ref means its binding only in the source holder: the copy carries the
-  // document it was bound to (contract §10.6).
-  const view: LinkView =
-    version === "draft" && grant.destination.kind === "draft"
-      ? await deps.documentSync.drafts.viewForWork(grant.destination.workId)
-      : { kind: "live" };
-  const nodes = await deps.documentSync.rebindHolderBoundRefs(outcome.nodes ?? [], {
-    holderId: address.documentId as DocumentId,
-    view,
-  });
   return {
-    nodes: [...nodes],
+    nodes: [...(outcome.nodes ?? [])],
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }

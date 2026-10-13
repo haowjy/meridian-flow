@@ -173,7 +173,9 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
   and prompt epoch, and paid summary rows settle successfully with C.
 - A live unexpected error while C is current uses a fresh failure
   transaction: C `error`, settled summary rows, failed B below the latest
-  arrivals, and receipt acknowledgment. Notices remain queued.
+  arrivals, receipt acknowledgment, and release of this run’s lease in the same
+  transaction. No later failure-close is required to retire the terminal
+  successor’s receipt. Notices remain queued.
 - If that transaction also fails, orphan recovery owns C and this run makes
   no further settlement attempt. Paid rows still in memory are uncommitted
   and the orphan finalizer cannot recover them, exactly as at a process

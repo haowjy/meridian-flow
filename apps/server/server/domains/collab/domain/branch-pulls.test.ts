@@ -8,6 +8,10 @@ import { createBranchPullService } from "./branch-pulls.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000701" as DocumentId;
 
+/** A lease double: these cases exercise pull cadence, not lease ownership. */
+const heldLeases = async (_branchIds: readonly string[], run: (lease: never) => Promise<unknown>) =>
+  run(undefined as never);
+
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   doc.getText("content").insert(0, value);
@@ -26,7 +30,8 @@ describe("BranchPullService", () => {
         rootTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(live),
         branchCoordinator: {
-          pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
+          withLeases: heldLeases,
+          pullFromDoc: async (_lease: unknown, _branchId: string, upstream: Y.Doc) => {
             if (fail) {
               fail = false;
               throw new Error("pull failed");
@@ -77,7 +82,8 @@ describe("BranchPullService", () => {
         },
         liveCoordinator: coordinatorFor(live),
         branchCoordinator: {
-          pullFromDoc: async (_branchId: string, upstream: Y.Doc) => {
+          withLeases: heldLeases,
+          pullFromDoc: async (_lease: unknown, _branchId: string, upstream: Y.Doc) => {
             if (++pulls === 2) throw new Error("queued pull failed");
             Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
             return emptyYjsUpdate();
@@ -123,6 +129,7 @@ describe("BranchPullService", () => {
         rootTransaction: (operation) => operation(),
         liveCoordinator: coordinatorFor(docWithText("writer edit")),
         branchCoordinator: {
+          withLeases: heldLeases,
           pullFromDoc: async () => {
             if (failures-- > 0) throw new Error("timer pull failed");
             return emptyYjsUpdate();

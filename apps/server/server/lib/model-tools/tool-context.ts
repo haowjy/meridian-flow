@@ -22,10 +22,8 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
-  CollabDraftResolver,
   CollabDrafts,
   DocumentProjectionRefresher,
-  MarkdownDocumentStore,
   ResponseWriteFinalizer,
 } from "../../domains/collab/index.js";
 import {
@@ -65,11 +63,7 @@ import type { AgentEditResponseWriteLifecycle } from "./response-write-lifecycle
 export interface ToolWiringDeps {
   threads: ThreadRepository;
   contextPorts: UnifiedContextPortFactory;
-  documentSync: AgentEditAccess &
-    DocumentProjectionRefresher &
-    ResponseWriteFinalizer &
-    Pick<MarkdownDocumentStore, "rebindHolderBoundRefs"> &
-    Pick<CollabDraftResolver, "drafts">;
+  documentSync: AgentEditAccess & DocumentProjectionRefresher & ResponseWriteFinalizer;
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: WorkRepository;
@@ -153,10 +147,15 @@ export function isToolError(value: unknown): value is ToolErrorOutput | WriteToo
  */
 export async function resolveToolCall(
   deps: ToolWiringDeps,
-  ctx: { threadId: string; responseId?: string },
+  ctx: { threadId: string; responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
   version?: DocumentVersion,
 ): Promise<ToolCall | ToolErrorOutput> {
-  const context = await resolveContextPort(deps, ctx.threadId, ctx.responseId, version);
+  const context = await resolveContextPort(
+    deps,
+    ctx.threadId,
+    ctx.responseIdentity?.editScopeId,
+    version,
+  );
   if (isToolError(context)) return context;
   const { primaryWorkId } = context.resolution;
   if (!primaryWorkId) throw new Error(`Thread primary Work is missing: ${ctx.threadId}`);

@@ -57,12 +57,9 @@ export function EditorRouteChrome({
       <ContextTabBar
         tabs={visibleTabs}
         activeTabId={null}
-        onSelect={(documentId) => {
-          const tab = visibleTabs.find((candidate) => candidate.documentId === documentId);
-          if (tab) open(tab);
-        }}
-        onClose={(documentId) => {
-          const result = removal.writerClose(projectId, documentId);
+        onSelect={open}
+        onClose={(tab) => {
+          const result = removal.writerClose(projectId, tab);
           if (result instanceof Promise)
             void result.then(
               (settlement) => {

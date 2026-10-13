@@ -24,8 +24,6 @@ import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  linkAheadDraftSettlements,
-  linkAheadHolderBindings,
   linkAheadRefs,
   projects,
   threads,
@@ -94,10 +92,6 @@ export interface DraftTreeWorld {
   ): Promise<DocumentId>;
   /** A registry row for an ahead ref at `path`, settled live to `settledTo` if given. */
   seedAhead(path: string, options?: { settledTo?: DocumentId }): Promise<string>;
-  /** What the ahead ref means in the Work's draft. */
-  seedDraftSettlement(work: ScenarioWork, aheadId: string, documentId: DocumentId): Promise<void>;
-  /** What the ahead ref means in this holder (an Apply's binding). */
-  seedHolderBinding(aheadId: string, holder: DocumentId, documentId: DocumentId): Promise<void>;
 }
 
 const SOURCES = ["manuscript", "kb", "unfiled"] as const;
@@ -350,15 +344,6 @@ export function draftTreeWorldOver(
           : {}),
       });
       return aheadId;
-    },
-    async seedDraftSettlement(work, aheadId, documentId) {
-      const draft = await draftOf(work);
-      await db.insert(linkAheadDraftSettlements).values({ aheadId, draftId: draft.id, documentId });
-    },
-    async seedHolderBinding(aheadId, holder, documentId) {
-      await db
-        .insert(linkAheadHolderBindings)
-        .values({ aheadId, holderDocumentId: holder, documentId });
     },
   };
 }

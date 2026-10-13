@@ -72,9 +72,12 @@ export const projectQueryKeys = {
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
   /** Client-only: this project's Work command records (`work-command-store`). */
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
+  /** Client-only, account-cache lifetime: undisplayed/dismissible handoff loss on this document. */
+  writerHandoffLoss: (projectId: string, documentId: string) =>
+    ["projects", projectId, "documents", documentId, "writer-handoff-loss"] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,
-  workDraftPreview: (projectId: string, workId: string, documentId: string, draftId?: string) =>
+  workDraftPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
     [
       "projects",
       projectId,
@@ -83,7 +86,7 @@ export const projectQueryKeys = {
       "documents",
       documentId,
       "draft",
-      draftId ?? null,
+      itemKey ?? null,
     ] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,

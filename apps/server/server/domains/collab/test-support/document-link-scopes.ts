@@ -5,12 +5,7 @@ import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-l
 import { createAllowAllFileAccess, type FileAccess } from "../../file-policy/index.js";
 import type { EventSink } from "../../observability/index.js";
 import { createLinkScopeObserver } from "../adapters/agent-edit-observability.js";
-import {
-  createDrizzleDraftStore,
-  createDrizzleDraftWriteBoundary,
-} from "../adapters/drizzle-drafts.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
-import { createDrafts } from "../domain/drafts.js";
 
 export function createTestDocumentLinkScopes(
   db: Database,
@@ -27,13 +22,9 @@ export function createTestDocumentLinkScopes(
   });
 }
 
-/** The production ahead-ref registry over a DB suite's database, with its own drafts resolver. */
+/** The production ahead-ref registry over a DB suite's database,. */
 export function createTestLinkAheadRegistry(db: Database, eventSink?: EventSink) {
-  const drafts = createDrafts({
-    store: createDrizzleDraftStore(db),
-    boundary: createDrizzleDraftWriteBoundary(db),
-  });
-  return createDrizzleLinkAheadRegistry(db, { drafts, ...(eventSink ? { eventSink } : {}) });
+  return createDrizzleLinkAheadRegistry(db, eventSink ? { eventSink } : {});
 }
 
 /** The collab deps a DB suite passes for links: real scopes, no ahead-ref minting. */

@@ -1,5 +1,11 @@
 # collab TODO
 
+## Per-change Apply Undo
+
+Expose a per-change Apply Undo action through the existing immutable edit-part
+and forward-turn inverse authority. Apply currently confirms settlement only;
+this does not require a separate reversal planner or mutable reversal receipt.
+
 ## Paths that hold a pooled connection while taking another
 
 The live-pull deadlock (10 concurrent pulls each held a root transaction and
@@ -7,8 +13,9 @@ waited for a second connection) is fixed by snapshotting first. These paths
 still hold one connection while acquiring another, on purpose for lock
 order, so enough concurrent callers can exhaust the pool the same way:
 
-- `pullThreadPeer` in `domain/branch-pulls.ts`, called inside a caller's
-  transaction: its live snapshots and its `run(...)` each need a connection.
+- `pullThreadPeer` in `domain/branch-pulls.ts`: its live snapshots and its
+  `run(...)` each need a connection (it takes its branch leases before its
+  own transaction).
 - `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: locks the
   thread in one transaction, then opens a separate root transaction.
 - `createDeferredLiveProjectionCoordinator.withDocument` in

@@ -17,6 +17,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
+import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
 type CrossWorkProbeFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 
@@ -69,6 +70,54 @@ function serializeMarkdown(fixture: CrossWorkProbeFixture, doc: Y.Doc): string {
   );
 }
 
+/** A second Work in the project with its own primary chat and one assistant turn. */
+export async function seedSecondWork(fixture: CrossWorkProbeFixture): Promise<void> {
+  const { db, schema } = fixture;
+  await db
+    .insert(schema.works)
+    .values({
+      id: WORK_B_ID,
+      projectId: PROJECT_ID,
+      createdByUserId: USER_ID,
+      name: "Work B",
+      slug: "work-b",
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.threads)
+    .values({
+      rootThreadId: THREAD_B_ID,
+      id: THREAD_B_ID,
+      projectId: PROJECT_ID,
+      createdByUserId: USER_ID,
+      title: "Work B primary chat",
+      kind: "primary",
+      status: "idle",
+      aiWriteMode: "draft",
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.turns)
+    .values({
+      id: TURN_B_ID,
+      threadId: THREAD_B_ID,
+      position: 1,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.threadWorks)
+    .values({
+      threadId: THREAD_B_ID,
+      workId: WORK_B_ID,
+      projectId: PROJECT_ID,
+      isPrimary: true,
+    })
+    .onConflictDoNothing();
+}
+
 export async function runCrossWorkProbe(
   fixture: CrossWorkProbeFixture,
   probeCase: "manual" | "auto",
@@ -87,37 +136,7 @@ export async function runCrossWorkProbe(
     markupCodec,
     deliveredEvents,
   } = fixture;
-  await db.insert(schema.works).values({
-    id: WORK_B_ID,
-    projectId: PROJECT_ID,
-    createdByUserId: USER_ID,
-    name: "Work B",
-    slug: "work-b",
-  });
-  await db.insert(schema.threads).values({
-    rootThreadId: THREAD_B_ID,
-    id: THREAD_B_ID,
-    projectId: PROJECT_ID,
-    createdByUserId: USER_ID,
-    title: "Work B primary chat",
-    kind: "primary",
-    status: "idle",
-    aiWriteMode: "draft",
-  });
-  await db.insert(schema.turns).values({
-    id: TURN_B_ID,
-    threadId: THREAD_B_ID,
-    position: 1,
-    role: "assistant",
-    origin: "assistant",
-    status: "complete",
-  });
-  await db.insert(schema.threadWorks).values({
-    threadId: THREAD_B_ID,
-    workId: WORK_B_ID,
-    projectId: PROJECT_ID,
-    isPrimary: true,
-  });
+  await seedSecondWork(fixture);
 
   await persistence.lifecycle.ensureDocument(ALPHA_ID);
   await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -133,14 +152,14 @@ export async function runCrossWorkProbe(
     sessionId: THREAD_ID,
     threadId: THREAD_ID,
     turnId: TURN_ID,
-    responseId: undefined,
+    responseIdentity: undefined,
   };
   const contextB = {
     grant: testFileGrant({ kind: "draft", workId: WORK_B_ID, workSlug: "work-b" }),
     sessionId: THREAD_B_ID,
     threadId: THREAD_B_ID,
     turnId: TURN_B_ID,
-    responseId: undefined,
+    responseIdentity: undefined,
   };
   await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextA);
   await collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, contextB);
@@ -160,16 +179,26 @@ export async function runCrossWorkProbe(
         null,
         markupCodec.parse("Work B stale replacement."),
       );
-      const bCommitted = await branchCoordinator.commitSyncFromDoc({
+      const bCommitted = await branchCoordinator.commitSegmentRows({
         branchId: branchB.branchId,
         sourceDoc: branchB.doc,
         expectedGeneration: branchB.generation,
-        source: "agent",
-        actorUserId: null,
-        threadId: THREAD_B_ID,
-        turnId: TURN_B_ID,
-        wId: null,
-        updateMeta: null,
+        rows: [
+          {
+            branchId: branchB.branchId,
+            updateData: await captureHistoricalBranchRow(
+              branchCoordinator,
+              branchB.branchId,
+              branchB.doc,
+            ),
+            source: "agent",
+            actorUserId: null,
+            threadId: THREAD_B_ID,
+            turnId: TURN_B_ID,
+            wId: null,
+            updateMeta: null,
+          },
+        ],
       });
       if (!bCommitted) throw new Error("Work B stale edit did not commit");
     }
@@ -182,16 +211,26 @@ export async function runCrossWorkProbe(
       { from: "Shared opening.".length, to: "Shared opening.".length },
       " Writer-approved Work A text.",
     );
-    const aCommitted = await branchCoordinator.commitSyncFromDoc({
+    const aCommitted = await branchCoordinator.commitSegmentRows({
       branchId: branchA.branchId,
       sourceDoc: branchA.doc,
       expectedGeneration: branchA.generation,
-      source: "agent",
-      actorUserId: null,
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branchA.branchId,
+          updateData: await captureHistoricalBranchRow(
+            branchCoordinator,
+            branchA.branchId,
+            branchA.doc,
+          ),
+          source: "agent",
+          actorUserId: null,
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     if (!aCommitted) throw new Error("Work A reviewed edit did not commit");
   } finally {
@@ -245,10 +284,13 @@ export async function runCrossWorkProbe(
   const reviewedPreview =
     probeCase === "manual"
       ? await collab.draftReview.preview({
-          projectId: PROJECT_ID,
           workId: WORK_B_ID,
-          documentId: ALPHA_ID,
-          draftId: branchB.branchId,
+          itemKey: (
+            await collab.draftReview.resolveItemByDocument({
+              workId: WORK_B_ID,
+              documentId: ALPHA_ID,
+            })
+          )?.itemKey as string,
         })
       : null;
   const bResult =

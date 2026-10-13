@@ -31,8 +31,9 @@ export function replyProviderError(
 }
 
 /**
- * The provider turned the request down and the gateway judged a retry futile:
- * the failed reply's `metadata.retryable` is false and the provider answered.
+ * The provider turned the request down and the gateway ruled out an automatic
+ * retry: `metadata.retryable` is false and the provider answered. A writer
+ * may still retry once the cause is fixed.
  */
 export function isProviderDeclined(metadata: JsonValue | null | undefined): boolean {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;

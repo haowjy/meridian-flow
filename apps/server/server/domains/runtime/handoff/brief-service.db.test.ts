@@ -772,7 +772,10 @@ else
         inbox: createDrizzleInbox(db),
         eventWriter: createDrizzleEventJournalWriter(db),
         authority,
-        threadLock: createDrizzleThreadLock(db),
+        async publishStatus(threadId) {
+          expect(threadId).toBe(fixture.destination.id);
+          statusPublishes += 1;
+        },
         publisher: {
           async publish() {
             return "already" as const;
@@ -783,10 +786,6 @@ else
           getRegistration(name: string) {
             return name === "thread_history" ? ({} as never) : undefined;
           },
-        },
-        async publishStatus(threadId: string) {
-          expect(threadId).toBe(fixture.destination.id);
-          statusPublishes += 1;
         },
       });
       const liveClaim = required(await authority.hold(fixture.destination.id));

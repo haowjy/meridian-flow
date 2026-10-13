@@ -1,3 +1,4 @@
+import type { ModelResponseIdentity } from "@meridian/contracts";
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { LinkView } from "@meridian/contracts";
@@ -171,11 +172,9 @@ export type InteractionContext =
       /** Thread-peer writes must carry the branch-generation fence captured with the baseline. */
       mode: "threadPeer";
       branchGeneration: number;
-      /**
-       * The host branch the write was staged against, captured with the fence. Its save
-       * resolves exactly this branch and never provisions another.
-       */
-      branchId: string;
+      /** Host peer identity, for exact retirement independently of generation replay. */
+      peerBranchId?: string;
+      upstreamBranchId?: string;
     });
 
 /** Hidden host/session context; not part of the LLM command params. */
@@ -194,8 +193,8 @@ export interface WriteContext {
   turnId?: string;
   /** Host/tool-call idempotency key. Replays return the original outcome. */
   tool_use_id?: string;
-  /** Host model-response id. Mutating writes buffer until commitResponse when set. */
-  responseId?: string;
+  /** Immutable provider authorship and the independently rotated prepared scope. */
+  responseIdentity?: ModelResponseIdentity;
   /**
    * Host-captured interaction identity: baseline, journal floor, branch
    * generation, and optional attempt guard travel as one object.
@@ -233,7 +232,7 @@ export interface WriteContext {
 }
 
 export type MutationActor =
-  | { kind: "agent"; turnId: string; threadId: string; responseId?: string }
+  | { kind: "agent"; turnId: string; threadId: string; responseId?: string; editScopeId?: string }
   | { kind: "human"; userId: string; threadId?: string }
   | { kind: "system"; origin: string };
 
@@ -242,13 +241,6 @@ export type WriteFunction = (
   command: WriteCommand,
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
-
-export type UndoResult = WriteOutcome & { command: "undo" };
-export type RedoResult = WriteOutcome & { command: "redo" };
-export type WriteUndoResult = UndoResult;
-export type WriteRedoResult = RedoResult;
-export type TurnUndoResult = UndoResult;
-export type TurnRedoResult = RedoResult;
 
 export interface ResponseCommitDocumentResult {
   documentId: string;
@@ -291,9 +283,7 @@ export interface ResponseCommitSuccessResult {
 }
 
 export interface ResponseRollbackResult {
-  status: "rolledBack" | "rolledBackDegraded";
+  status: "rolledBack";
   responseId: string;
   stagedCreates: ResponseStagedCreateOutcome;
-  /** Runtime restoration failed, so affected runtimes were evicted and will rebuild on demand. */
-  restorationFailed?: true;
 }

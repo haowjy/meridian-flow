@@ -1,16 +1,14 @@
 /**
  * PostgreSQL proof for ahead registration, the namespace race with arrival, settlement CAS,
- * and registration in a draft: idempotent per (ref, draft) (L-2), and the writer's own
- * links registered from the review room, never outliving a closed draft (L-3).
+ * and refs written in a draft: registered globally and left unbound until a live document
+ * arrives (12a), the writer's own links registered from the review room (L-3).
  */
 
-import type { DocumentId, DraftId } from "@meridian/contracts";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
   documents,
-  linkAheadDraftSettlements,
   linkAheadRefs,
   projects,
   threads,
@@ -21,21 +19,11 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import {
-  runInDrizzleTransaction,
-  runInRootDrizzleTransaction,
-  runOutsideDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
 import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { createDrizzleBranchStore } from "../../collab/adapters/drizzle-branches.js";
-import { createBranchCoordinator } from "../../collab/domain/branch-coordinator.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
-import {
-  aheadRefsIn,
-  createDraftBranchAheadRegistration,
-} from "../../collab/domain/draft-branch-ahead-registration.js";
 import {
   createTestDocumentLinkScopes,
   createTestLinkAheadRegistry,
@@ -424,7 +412,7 @@ if (!RUN) {
         .toEqual([[long, null]]);
     });
 
-    describe("in a draft", () => {
+    describe("written in a draft", () => {
       // Commands publish after commit and registration opens root transactions: commit for real.
       const db = createDb(DATABASE_URL, { max: 12 });
       afterAll(() => db.close());
@@ -437,255 +425,84 @@ if (!RUN) {
         const work = await scenario.work("Ascension", "draft");
         // The model's create is a hidden row in the Work's draft.
         const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
-        const draft = await scenario.draftOf(work);
-        return { runtime, scenario, work, kael, draft };
+        return { runtime, scenario, work, kael };
       }
 
-      /** The ref's registry row, its live settlement, and every draft meaning it has. */
-      async function meanings(aheadId: string) {
+      /** The ref's registry row: registered, and the one live document it is bound to. */
+      async function registryRow(aheadId: string) {
         const [ref] = await db
           .select({ settled: linkAheadRefs.settledDocumentId })
           .from(linkAheadRefs)
           .where(eq(linkAheadRefs.aheadId, aheadId));
-        const drafted = await db
-          .select({
-            draftId: linkAheadDraftSettlements.draftId,
-            documentId: linkAheadDraftSettlements.documentId,
-          })
-          .from(linkAheadDraftSettlements)
-          .where(eq(linkAheadDraftSettlements.aheadId, aheadId));
-        return { registered: ref !== undefined, live: ref?.settled ?? null, drafted };
+        return { registered: ref !== undefined, live: ref?.settled ?? null };
       }
-      const inDraft = (draftId: DraftId, documentId: string) => [{ draftId, documentId }];
 
-      it("registers per (ref, draft): a ref already registered live still settles on the draft's occupant, never live; an agent mint keeps its view (L-2)", async () => {
-        const { scenario, kael, draft } = await start();
+      it("registers a draft's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
+        const { scenario, kael } = await start();
         const registry = createTestLinkAheadRegistry(db);
         const at = { holderProjectId: scenario.project.id, address: KAEL };
-        // A live editor's mint at the path, before it ever reached the draft's text.
-        const pasted = crypto.randomUUID();
-        await registry.register([{ ...at, aheadId: pasted }]);
+        // The draft's hidden document at the path binds nothing, for any holder or mint.
+        const typed = crypto.randomUUID();
+        await registry.register([{ ...at, aheadId: typed }]);
+        await registry.register([{ ...at, aheadId: typed }]);
         expect
-          .soft(await meanings(pasted), "live mint: nothing live there, no draft named")
-          .toEqual({ registered: true, live: null, drafted: [] });
-        // Pasted into the draft's text: its existing row doesn't skip the draft, twice over.
-        await registry.register([{ ...at, aheadId: pasted, draftId: draft.id }]);
-        await registry.register([{ ...at, aheadId: pasted, draftId: draft.id }]);
-        expect
-          .soft(await meanings(pasted), "the draft's occupant, once; live untouched")
-          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
-
-        // A model's mint carries its holder's view to the registry (B7).
+          .soft(await registryRow(typed), "registered once, not bound to the draft's document")
+          .toEqual({ registered: true, live: null });
+        // A model's mint in the draft's view registers the same way.
         const links = createScopedDocumentLinks({
           scopes: createTestDocumentLinkScopes(db),
           registrar: registry,
-          viewFor: () => ({ kind: "draft", draftId: draft.id }),
+          viewFor: () => ({ kind: "live" }),
         });
-        const [minted, liveMinted] = [crypto.randomUUID(), crypto.randomUUID()];
-        await links.registerAhead([
-          { ref: `ahead:${minted}`, ...at, view: { kind: "draft", draftId: draft.id } },
-          { ref: `ahead:${liveMinted}`, ...at, view: { kind: "live" } },
-        ]);
-        expect
-          .soft(await meanings(minted), "minted in the draft's view")
-          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
-        expect
-          .soft(await meanings(liveMinted), "minted live")
-          .toEqual({ registered: true, live: null, drafted: [] });
+        const minted = crypto.randomUUID();
+        await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);
+        expect.soft(await registryRow(minted)).toEqual({ registered: true, live: null });
+        // The first live arrival at the path (a Create reveals the draft's document, 12b)
+        // binds every waiting ref, once.
+        const live = await scenario.writer.createDocument("lore/kael", "Kael, live.");
+        for (const aheadId of [typed, minted]) {
+          expect.soft(await registryRow(aheadId), "bound to the live document").toEqual({
+            registered: true,
+            live,
+          });
+        }
+        expect.soft(live, "the revealed draft document").toBe(kael);
       });
 
-      it("registers the writer's link typed in the draft's review room, and leaves no row past a close it waited on (L-3)", async () => {
-        const { runtime, scenario, work, kael, draft } = await start();
+      it("registers the writer's link typed in the draft's review room, best effort and globally (L-3)", async () => {
+        const { runtime, scenario, work } = await start();
         const chapter = await scenario.model(work).create("chapter-two", "The forge was cold.");
         // The client mints the ahead ref as the writer types; the server has never seen it.
-        const typeLink = (aheadId: string) => (doc: Y.Doc) => {
-          const paragraph = new Y.XmlElement("paragraph");
-          const text = new Y.XmlText();
-          text.insert(0, "Kael", { link: { href: KAEL, ref: `ahead:${aheadId}`, title: null } });
-          paragraph.insert(0, [text]);
-          doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
-        };
+        const link =
+          (aheadId: string, href = KAEL) =>
+          (doc: Y.Doc) => {
+            const paragraph = new Y.XmlElement("paragraph");
+            const text = new Y.XmlText();
+            text.insert(0, "Kael", { link: { href, ref: `ahead:${aheadId}`, title: null } });
+            paragraph.insert(0, [text]);
+            doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
+          };
         const draftLinks = runtime.ports.documentSync.draftLinks;
         const typed = crypto.randomUUID();
-        await scenario.writer.editDraft(work, chapter, typeLink(typed));
+        await scenario.writer.editDraft(work, chapter, link(typed));
         await draftLinks.flush();
         expect
-          .soft(await meanings(typed), "after the debounce, the draft reads it")
-          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
+          .soft(await registryRow(typed), "after the debounce, registered and unbound")
+          .toEqual({ registered: true, live: null });
 
-        // Apply right after typing, before the debounce: its prerequisite registers the cut.
-        const applied = crypto.randomUUID();
-        const { branchId } = await scenario.writer.editDraft(work, chapter, typeLink(applied));
-        const cut = await draftLinks.prepareDraftLinkPublication({
-          draftId: draft.id,
-          branchIds: [branchId],
-        });
-        expect.soft(cut, "the cut Apply's staging fences").toEqual({
-          status: "ready",
-          cut: {
-            draftId: draft.id,
-            branches: [{ branchId, documentId: chapter, fingerprint: expect.any(String) }],
-          },
-          unregistrable: [],
-        });
-        expect
-          .soft(await meanings(applied), "registered in the draft before staging")
-          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
-        await draftLinks.flush();
-
-        // A live save the draft pulls in, with no journal row and no new generation (F18):
-        // the text Apply would publish changed, so the cut must say so.
-        const one = await scenario.writer.create("chapter-one", { content: "One." });
-        const chapterOne = one.documentId as DocumentId;
-        const edit = await scenario.model(work).reply();
-        await edit.call("write", {
-          command: "insert",
-          path: "manuscript://chapter-one",
-          find: "One.",
-          content: " Two.",
-        });
-        await edit.save();
-        const pulledBranch = await scenario.draftBranch(work, chapterOne);
-        const beforePull = await draftLinks.prepareDraftLinkPublication({
-          draftId: draft.id,
-          branchIds: [pulledBranch.branchId],
-        });
-        await scenario.writer.write("chapter-one", "One.\n\n[Kael](lore/kael)");
-        await runtime.ports.documentSync.flushBranchLivePull(chapterOne);
-        const pulledState = await runtime.ports.documentSync.loadHocuspocusBranchState(
-          pulledBranch.branchId,
-          pulledBranch.generation,
-        );
-        const pulledDoc = new Y.Doc({ gc: false });
-        if (pulledState) Y.applyUpdate(pulledDoc, pulledState.state);
-        const [pulled] = aheadRefsIn(pulledDoc);
-        expect(pulled, "the live save's ref reached the draft's branch").toBeDefined();
-        const afterPull = await draftLinks.prepareDraftLinkPublication({
-          draftId: draft.id,
-          branchIds: [pulledBranch.branchId],
-        });
-        const fingerprints = [beforePull, afterPull].map((answer) =>
-          answer.status === "ready" ? answer.cut.branches[0]?.fingerprint : answer.status,
-        );
-        expect.soft(fingerprints[0], "the cut before the pull").toEqual(expect.any(String));
-        expect
-          .soft(fingerprints[1], "a journal-free pull changes the cut")
-          .not.toEqual(fingerprints[0]);
-        expect
-          .soft(await meanings(pulled?.aheadId ?? ""), "re-registered, the pulled ref means D's")
-          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
-
-        // A ref that can never register (its Work doesn't exist) never blocks Apply (F20):
-        // the cut is ready and names it unregistrable, and the valid one beside it registers.
+        // A ref that can never register (its Work doesn't exist) never keeps the valid one
+        // beside it from registering.
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
         await scenario.writer.editDraft(work, chapter, (doc) => {
-          typeLink(beside)(doc);
-          const paragraph = new Y.XmlElement("paragraph");
-          const text = new Y.XmlText();
-          text.insert(0, "Notes", {
-            link: { href: "scratch://@ghost-work/notes", ref: `ahead:${ghost}`, title: null },
-          });
-          paragraph.insert(0, [text]);
-          doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
+          link(beside)(doc);
+          link(ghost, "scratch://@ghost-work/notes")(doc);
         });
-        const unregistrable = await draftLinks.prepareDraftLinkPublication({
-          draftId: draft.id,
-          branchIds: [branchId],
-        });
-        expect.soft(unregistrable, "a ready cut that names the unregistrable ref").toMatchObject({
-          status: "ready",
-          cut: { draftId: draft.id, branches: [{ branchId }] },
-          unregistrable: [{ aheadId: ghost, address: "scratch://@ghost-work/notes" }],
-        });
-        expect
-          .soft(await meanings(beside), "the independent valid ref still registers")
-          .toEqual({ registered: true, live: null, drafted: inDraft(draft.id, kael) });
-        expect.soft((await meanings(ghost)).registered, "the refused one has no row").toBe(false);
         await draftLinks.flush();
-
-        // A failure that may pass (a dropped connection) still fails the prerequisite loudly.
-        const flaky = crypto.randomUUID();
-        await scenario.writer.editDraft(work, chapter, typeLink(flaky));
-        await draftLinks.flush();
-        await db.delete(linkAheadRefs).where(eq(linkAheadRefs.aheadId, flaky));
-        const registry = createTestLinkAheadRegistry(db);
-        const interrupted = createDraftBranchAheadRegistration({
-          branches: createBranchCoordinator({
-            store: createDrizzleBranchStore(db, { drafts: scenario.drafts }),
-          }),
-          drafts: scenario.drafts,
-          registrar: {
-            async register(rows) {
-              if (rows.some((row) => row.aheadId === flaky)) {
-                throw new Error("Connection terminated unexpectedly");
-              }
-              await registry.register(rows);
-            },
-          },
-          outsideTransaction: runOutsideDrizzleTransaction,
-        });
+        expect.soft((await registryRow(beside)).registered, "the valid ref registers").toBe(true);
         expect
-          .soft(
-            await interrupted.prepareDraftLinkPublication({
-              draftId: draft.id,
-              branchIds: [branchId],
-            }),
-            "no publication-ready cut after a transient failure",
-          )
-          .toMatchObject({
-            status: "registration_failed",
-            failed: [{ aheadId: flaky, reason: "Connection terminated unexpectedly" }],
-          });
-        expect
-          .soft((await meanings(flaky)).registered, "the interrupted ref is unregistered")
+          .soft((await registryRow(ghost)).registered, "the refused one has no row")
           .toBe(false);
-
-        // A close holds the draft while the registration of another typed link waits on it.
-        const late = crypto.randomUUID();
-        await scenario.writer.editDraft(work, chapter, typeLink(late));
-        let release!: () => void;
-        const held = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        let locked!: () => void;
-        const lockTaken = new Promise<void>((resolve) => {
-          locked = resolve;
-        });
-        const closing = runInRootDrizzleTransaction(db, async () => {
-          await scenario.drafts.lockActive(draft.id);
-          await scenario.drafts.close(draft.id, new Date());
-          locked();
-          await held;
-        });
-        await lockTaken;
-        const before = await lockWaiters();
-        const registering = draftLinks.flush();
-        const waited = await waitFor(async () => (await lockWaiters()) > before);
-        release();
-        await closing;
-        await registering;
-        expect.soft(waited, "the registration queued behind the close").toBe(true);
-        expect
-          .soft(await meanings(late), "registered, naming no closed draft")
-          .toEqual({ registered: true, live: null, drafted: [] });
-        expect
-          .soft((await meanings(typed)).drafted, "the close dropped the earlier meaning too")
-          .toEqual([]);
       });
-
-      async function lockWaiters(): Promise<number> {
-        const [row] = await db.execute<{ waiting: number }>(sql`
-          SELECT count(*)::int AS waiting FROM pg_stat_activity
-          WHERE datname = current_database() AND wait_event_type = 'Lock'`);
-        return Number(row?.waiting ?? 0);
-      }
-      async function waitFor(condition: () => Promise<boolean>): Promise<boolean> {
-        for (let attempt = 0; attempt < 150; attempt++) {
-          if (await condition()) return true;
-          await new Promise((resolve) => setTimeout(resolve, 20));
-        }
-        return false;
-      }
     });
   });
 }

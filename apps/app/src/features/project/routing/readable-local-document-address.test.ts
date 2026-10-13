@@ -4,7 +4,7 @@ import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import {
   gateLiveView,
   reconcileDocumentAddress,
@@ -131,9 +131,10 @@ it("uses local content through lookup failure, then yields to a successful canon
       },
     },
   };
-  expect(reconcileDocumentAddress(local, canonical)).toEqual({
+  expect(reconcileDocumentAddress(local, canonical, "live")).toEqual({
     result: canonical,
     localFile: undefined,
+    view: "live",
   });
 });
 
@@ -152,6 +153,7 @@ it("keeps the path of the writer's unconfirmed move over a server alias for the 
   expect(reconcileDocumentAddress(pending, alias)).toEqual({
     result: local.result,
     localFile: pending.file,
+    view: "local",
   });
   expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
 });
@@ -168,64 +170,60 @@ describe("gateLiveView", () => {
       isFetching: false,
       isError: false,
       ...state,
-    }) as unknown as Parameters<typeof gateLiveView>[2];
-  const group = (isNewDocument: boolean) =>
+    }) as unknown as Parameters<typeof gateLiveView>[1];
+  const group = (isNew: boolean) =>
     ({
       documentId: "document-id",
-      draft: { draftId: "draft-id", status: "active", isNewDocument },
-    }) as unknown as ThreadDraftGroup;
-  const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
+      isNew,
+      draft: { itemKey: "draft-id", status: "active", isNew },
+    }) as unknown as ReviewFileTarget;
+  const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });
   const noTab = () => false;
 
-  it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
-    expect(gateLiveView(resolved, "manuscript", manifest(["document-id"]), ready(), noTab)).toEqual(
-      { outcome: "ready", result: resolved },
-    );
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([]), ready(group(true)), noTab),
-    ).toMatchObject({
+  it("opens a document missing from the live manifest as its pending new-document draft, never live", () => {
+    expect(gateLiveView(resolved, manifest(["document-id"]), ready(), noTab)).toEqual({
       outcome: "ready",
       result: resolved,
-      draftOnly: { draft: { draftId: "draft-id" } },
+    });
+    expect(gateLiveView(resolved, manifest([]), ready(group(true)), noTab)).toMatchObject({
+      outcome: "ready",
+      result: resolved,
+      draftOnly: { draft: { itemKey: "draft-id" } },
     });
     // Discarded, or a draft of an existing document: no live view and no review.
-    expect(gateLiveView(resolved, "manuscript", manifest([]), ready(), noTab).result).toEqual({
+    expect(gateLiveView(resolved, manifest([]), ready(), noTab).result).toEqual({
       kind: "unavailable",
     });
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([]), ready(group(false)), noTab).result,
-    ).toEqual({ kind: "unavailable" });
+    expect(gateLiveView(resolved, manifest([]), ready(group(false)), noTab).result).toEqual({
+      kind: "unavailable",
+    });
   });
 
   it("calls absence unavailable only on an authoritative read, and keeps a promoted tab live", () => {
     // A stored checkpoint stays complete while its refresh is in flight: still pending.
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), noTab),
-    ).toEqual({ outcome: "pending", result: undefined });
-    expect(
-      gateLiveView(
-        resolved,
-        "manuscript",
-        manifest([]),
-        { status: "loading", groups: null },
-        noTab,
-      ),
-    ).toEqual({ outcome: "pending", result: undefined });
+    expect(gateLiveView(resolved, manifest([], { isFetching: true }), ready(), noTab)).toEqual({
+      outcome: "pending",
+      result: undefined,
+    });
+    expect(gateLiveView(resolved, manifest([]), { status: "loading", files: null }, noTab)).toEqual(
+      { outcome: "pending", result: undefined },
+    );
     // Apply promoted the tab; the lagging catalog does not get to veto it.
     expect(
-      gateLiveView(resolved, "manuscript", manifest([], { isFetching: true }), ready(), () => true)
-        .result,
+      gateLiveView(resolved, manifest([], { isFetching: true }), ready(), () => true).result,
     ).toBe(resolved);
   });
 
   it("reports a failed prerequisite as failed, distinct from one still loading", () => {
     // A failed read is not evidence of no draft, and it must not wait forever.
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([], { isError: true }), ready(), noTab),
-    ).toEqual({ outcome: "failed", result: undefined });
-    expect(
-      gateLiveView(resolved, "manuscript", manifest([]), { status: "error", groups: [] }, noTab),
-    ).toEqual({ outcome: "failed", result: undefined });
+    expect(gateLiveView(resolved, manifest([], { isError: true }), ready(), noTab)).toEqual({
+      outcome: "failed",
+      result: undefined,
+    });
+    expect(gateLiveView(resolved, manifest([]), { status: "error", files: [] }, noTab)).toEqual({
+      outcome: "failed",
+      result: undefined,
+    });
   });
 });
 
@@ -252,4 +250,20 @@ it.each([
       selection: bound(selectionWork),
     }),
   ).toBe(expected);
+});
+
+it.each([
+  "loading",
+  "error",
+])("an admitted review survives a %s or incomplete list without proving Live", (status) => {
+  const result = { kind: "current", document: { documentId: "hidden" } } as DocumentAddressResult;
+  const gated = gateLiveView(
+    result,
+    { catalog: null, isComplete: false, isFetching: true, isError: true },
+    { status, files: null },
+    () => false,
+    "review",
+  );
+  expect(gated).toEqual({ outcome: "ready", result });
+  expect(gated).not.toHaveProperty("draftOnly");
 });

@@ -4,6 +4,8 @@
  * decides from; `verbose` adds dates. Ids never reach the text, and
  * `historySummary` reads the typed value.
  */
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -24,7 +26,11 @@ export interface ModelWork {
 export interface WorkShowResult {
   work: ModelWork;
   recentThreads: { title: string | null; updatedAt: string | Date; status: string }[];
-  drafts: { documentName: string | null; contextPath: string | null; createdDocument?: boolean }[];
+  drafts: {
+    documentName: string | null;
+    contextLocation: ThreadDraftListItem["contextLocation"];
+    createdDocument?: boolean;
+  }[];
 }
 
 /** How far a listed goal runs before it is cut. `show` prints it in full. */
@@ -83,8 +89,8 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
       [
         "Drafts:",
         ...result.drafts.map((draft) => {
-          const name = draft.contextPath
-            ? `manuscript:/${draft.contextPath}`
+          const name = draft.contextLocation
+            ? `${draft.contextLocation.scheme}://${draft.contextLocation.path.replace(/^\/+/, "")}`
             : (draft.documentName ?? "Untitled");
           return `  ${name}${draft.createdDocument ? " (new document)" : ""}`;
         }),

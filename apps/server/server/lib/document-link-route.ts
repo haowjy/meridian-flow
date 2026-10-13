@@ -2,11 +2,9 @@
  * Route core for batched stored-link resolution (contract §13): ref links through the
  * reader's prepared link scope, ref-less links through the address resolver.
  *
- * A holder document's ahead refs read its own bindings first (contract §10.4), so the
- * route pins the holder: by `holderDocumentId` wherever that document now sits, else by
- * the one document at `baseUri`, and only one the reader may name and read. One it
- * can't pin answers its ahead refs without bindings and says so (`holderUnresolved`),
- * never silently.
+ * The route pins the holder (by `holderDocumentId` wherever that document now sits, else
+ * by the one document at `baseUri`, and only one the reader may name and read) so its
+ * relative links spell from where it is now.
  */
 
 import {
@@ -112,23 +110,11 @@ export async function handleDocumentLinkResolveRequest(
         : deps.linkScopes.reader({ uri: request.baseUri, view });
       for (const { link, index } of refLinks) {
         const resolution = reader.resolve(link);
-        const parsed = parseLinkRef(link.ref);
-        const ahead = parsed?.kind === "ahead" ? parsed.aheadId : null;
         // Rule 3: the client keeps the settlement and never answers this ref by address again.
-        const marks: AheadMarks = {
-          ...("settled" in resolution ? { settled: true as const } : {}),
-          ...(ahead && holderNamed && !holder ? { holderUnresolved: true as const } : {}),
-        };
+        const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
         if (resolution.kind === "document") {
           const { document, inDraft } = resolution;
           const described = describeDocument(document);
-          const bound =
-            ahead && holder
-              ? deps.linkScopes.holderBinding({
-                  holderDocumentId: holder.documentId,
-                  aheadId: ahead,
-                })
-              : null;
           answers[index] = described
             ? {
                 state: "document",
@@ -136,8 +122,6 @@ export async function handleDocumentLinkResolveRequest(
                 inDraft,
                 ...(document.draft ? { draft: document.draft } : {}),
                 ...marks,
-                // A copy of this link carries `doc:<id>`: the binding stays with this holder.
-                ...(bound === document.documentId ? { holderBound: true as const } : {}),
               }
             : { state: "gone", ...marks };
         } else if (resolution.kind === "ahead") {
@@ -205,7 +189,7 @@ export async function handleDocumentLinkResolveRequest(
 }
 
 /** What an answer says about how a ref was read: settled, or without its holder's bindings. */
-type AheadMarks = { settled?: true; holderUnresolved?: true };
+type AheadMarks = { settled?: true };
 
 /** The address a ref-less href names, or null for external and malformed hrefs. */
 function addressTarget(

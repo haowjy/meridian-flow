@@ -1,12 +1,15 @@
 /**
- * The review list (contract §13.1): a draft's items are its tree state (every document it
- * created, listed with no text yet, and the documents it edited) merged by document with
- * its `work_draft` branches with reviewable rows. A branch with no rows and no change row
- * is not an item. Every item is keyed `${draftId}:${documentId}` (F12) and carries the
+ * The review list (contract §13.1, sync 8 §3.1): a draft's items are its tree state (every
+ * document it created, listed with no text yet, and the documents it edited) merged by
+ * document with its `work_draft` branches. A created document is always an item; an edited
+ * one is when its branch has reviewable rows and `hasEffect OR blocking`, so a write and its
+ * undo net to no item and a held restoration stays. That one predicate feeds the list, the
+ * Work counts and the D40 confirmation. A branch with no effect is still addressable
+ * (`resolve`), unlisted, so its next proposal keeps the same room. Every item is keyed `${draftId}:${documentId}` (F12) and carries the
  * tokens Apply checks (§11.3): its location version from the same tree read that spells
  * its path, the live document's full-state fingerprint, and the branch generation.
  */
-import type { DraftId, TurnId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeReader, TreeStateNode } from "../../context/tree/tree-view.js";
 import { type DraftItemKey, draftItemKey } from "./draft-publication.js";
@@ -17,8 +20,10 @@ export type DraftReviewItem = {
   draftId: DraftId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** The draft's branch on the document; null for a created image (no Yjs, 12b-Q2). */
+  /** The draft's branch on the document; null for an image or a create with no text yet. */
   draftBranchId: string | null;
+  /** The branch's generation; null without a branch. */
+  branchGeneration: number | null;
   /** created: the draft has a `created` row; edited: branch rows only. */
   origin: "created" | "edited";
   /** Created and still hidden: derived on read, nothing rewrites it. */
@@ -44,17 +49,26 @@ export type DraftReviewItem = {
    * authorizes through the draft's branch on it and its final location (F9, §13.3).
    */
   deletedLive: boolean;
-  /** Reviewable journal rows on its branch: the legacy list shows only items with some. */
-  pendingRows: number;
-  lastActorTurnId: TurnId | null;
+  /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only (§3.3). */
+  wholeItem: boolean;
+  /** A staged batch holds the item: progress only, never a settlement signal (§4.5). */
+  settling: boolean;
+  /** Chats with pending writes on the branch, latest first, then the creating chat. */
+  actorThreadIds: string[];
   updatedAt: Date;
 };
 
+/** One document the draft has a view of: its item, and whether the list shows it. */
+export type ResolvedDraftItem = { item: DraftReviewItem; listed: boolean };
+
 export interface DraftReviewItems {
-  /** The draft's items, live text tokens unread (null). */
+  /** The draft's listed items, live text tokens unread (null). */
   list(draftId: DraftId): Promise<DraftReviewItem[]>;
-  /** One document's item in the draft, or null when it isn't one. */
-  item(draftId: DraftId, documentId: DocumentId): Promise<DraftReviewItem | null>;
+  /**
+   * One document's item and whether it is listed, for every document the draft has a view
+   * of (an active branch, or a change row); null only when it is not addressable.
+   */
+  resolve(draftId: DraftId, documentId: DocumentId): Promise<ResolvedDraftItem | null>;
   /**
    * The review list's enrichment: each live document's full-state fingerprint read under
    * its lease, for an item with text that live readers see. Apply compares the tokens a
@@ -73,24 +87,43 @@ export function createDraftReviewItems(deps: {
     draftId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<readonly WorkDraftPendingEvidence[]>;
+  /** The chat that created each document the draft created; absent for a writer's create. */
+  creators(
+    draftId: DraftId,
+    documentIds?: readonly DocumentId[],
+  ): Promise<ReadonlyMap<DocumentId, string>>;
+  /** The item keys a staged, unfinished batch of the draft holds. */
+  settling(draftId: DraftId): Promise<ReadonlySet<string>>;
   /** The live document's full-state fingerprint, read under its coordinator lease. */
   liveFingerprint(documentId: DocumentId): Promise<string>;
 }): DraftReviewItems {
-  async function items(draftId: DraftId, documentIds?: readonly DocumentId[]) {
+  async function items(
+    draftId: DraftId,
+    documentIds?: readonly DocumentId[],
+  ): Promise<ResolvedDraftItem[]> {
     const branches = await deps.branches(draftId, documentIds);
     const branchOf = new Map(branches.map((evidence) => [evidence.branch.documentId, evidence]));
-    const edited = branches
-      .filter((evidence) => evidence.rows.length > 0)
-      .map((evidence) => evidence.branch.documentId);
-    const nodes = await deps.tree.treeState(draftId, edited, documentIds);
+    const nodes = await deps.tree.treeState(
+      draftId,
+      branches.map((evidence) => evidence.branch.documentId),
+      documentIds,
+    );
+    const creators = await deps.creators(draftId, documentIds);
+    const settling = await deps.settling(draftId);
     return nodes
-      .map((node) => toItem(draftId, node, branchOf.get(node.nodeId)))
-      .sort((a, b) => (a.path ?? "").localeCompare(b.path ?? ""));
+      .map((node) => {
+        const evidence = branchOf.get(node.nodeId);
+        const item = toItem(draftId, node, evidence, creators.get(node.nodeId), settling);
+        return { item, listed: node.origin === "created" || isEdited(evidence) };
+      })
+      .sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
   }
 
   return {
-    list: (draftId) => items(draftId),
-    async item(draftId, documentId) {
+    async list(draftId) {
+      return (await items(draftId)).flatMap(({ item, listed }) => (listed ? [item] : []));
+    },
+    async resolve(draftId, documentId) {
       return (await items(draftId, [documentId]))[0] ?? null;
     },
     withLiveTextTokens: (listed) =>
@@ -111,11 +144,21 @@ export function createDraftReviewItems(deps: {
   };
 }
 
+/** The §3.1 predicate for a document the draft only edited. */
+function isEdited(evidence: WorkDraftPendingEvidence | undefined): boolean {
+  return Boolean(evidence?.hasRows && (evidence.branch.hasEffect || evidence.branch.blocking));
+}
+
 function toItem(
   draftId: DraftId,
   node: TreeStateNode,
   evidence: WorkDraftPendingEvidence | undefined,
+  creatorThreadId: string | undefined,
+  settling: ReadonlySet<string>,
 ): DraftReviewItem {
+  const deletedLive = !node.hidden && node.live.deleted;
+  const isNew = node.origin === "created" && node.hidden;
+  const writers = evidence?.agentThreadIds ?? [];
   const path = node.target.uri;
   const livePath = node.live.uri !== path && !node.hidden ? node.live.uri : null;
   return {
@@ -124,21 +167,26 @@ function toItem(
     documentId: node.nodeId,
     draftBranchId: evidence?.branch.branchId ?? null,
     origin: node.origin,
-    isNew: node.origin === "created" && node.hidden,
+    isNew,
     binary: node.binary,
+    wholeItem: isNew || node.binary || deletedLive,
+    settling: settling.has(draftItemKey(draftId, node.nodeId)),
+    branchGeneration: evidence?.branch.generation ?? null,
     documentName: documentTitleFromUri(path),
     path,
     livePath,
     conflict: conflictOf(node),
-    deletedLive: !node.hidden && node.live.deleted,
+    deletedLive,
     tokens: {
       locationToken: node.locationVersion.toString(),
       liveTextToken: null,
       branchGenerationToken: evidence ? String(evidence.branch.generation) : null,
     },
-    pendingRows: evidence?.rows.length ?? 0,
-    lastActorTurnId: (evidence?.rows.find((row) => row.turnId)?.turnId ?? null) as TurnId | null,
-    updatedAt: new Date(),
+    actorThreadIds:
+      creatorThreadId && !writers.includes(creatorThreadId)
+        ? [...writers, creatorThreadId]
+        : writers,
+    updatedAt: evidence?.branch.updatedAt ?? new Date(),
   };
 }
 
