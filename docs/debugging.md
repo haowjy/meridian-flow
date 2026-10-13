@@ -212,14 +212,21 @@ instead of `console.log`.
   128 MiB (`LOG_MAX_BYTES` overrides the byte cap). Allocation, append, and
   pruning share a worktree lock so overlapping server generations keep both
   ceilings hard. This is not an audit log.
-- The dev Vite and Nitro watchers exclude the repository `logs/` tree. Log
-  writes must not reload either process; a reload during a long-running turn is
-  a bug, not expected dev behavior.
+- Nitro's active dev watcher is Rolldown's module-graph watcher
+  (`rolldownConfig.watch` in `apps/server/nitro.config.ts`); it excludes
+  `logs/` and `**/node_modules/**`. App Vite has its own ignore predicate for
+  `logs/`. A reload during a long-running turn is a bug, not expected dev
+  behavior. A rebuild can also come from inside the checkout (a source edit).
+  These are written by the dev stack and are not watched inputs:
+  `logs/portless.log`, `logs/events/**`, `.meridian/dev-session.json`, and
+  Nitro output under `apps/server/node_modules/.nitro/dev/**`.
   `logs/portless.log` shows a rebuild (`[nitro] Server built` followed by a
   fresh `startup.complete`) but not what triggered it. Before blaming product
   code, confirm the running Nitro process belongs to this checkout and config,
   then capture the triggering path with a recursive `inotifywait` over the
-  checkout (excluding `.git` and `node_modules`).
+  checkout (excluding `.git` only). Keep `node_modules`: a sibling worktree's
+  `pnpm install` hardlinks shared store files and fires `IN_ATTRIB` there, which
+  hid #817 when it was excluded.
 - Each event is at most 8 KiB. The local output sink holds at most 5,000 pending
   events or 16 MiB. Output backpressure drops oldest first; the next successful
   write reports lost record and byte counts. The recent ring uses the same dual
