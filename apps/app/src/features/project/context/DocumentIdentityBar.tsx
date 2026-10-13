@@ -121,6 +121,9 @@ export function DocumentIdentityBar({
   const review = controller.inlineReview;
   const reviewItemKey =
     review?.documentId === tab.documentId && review.shown ? review.itemKey : null;
+  // A review that has been entered but not yet painted is a review destination in flight:
+  // it must not read as the live document's chip until its preview answers.
+  const reviewPending = review?.documentId === tab.documentId && !review.shown;
   const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.workId);
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
@@ -213,7 +216,7 @@ export function DocumentIdentityBar({
             <NamespaceFailureMark failure="set-location" message={passiveFailure} />
           )
         ) : null}
-        {!reviewItemKey ? <DraftReviewChip documentId={tab.documentId} /> : null}
+        {!reviewItemKey && !reviewPending ? <DraftReviewChip documentId={tab.documentId} /> : null}
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
