@@ -24,7 +24,7 @@ export const threadViewCommand: CommandSpec = {
     full: {
       type: "boolean",
       description:
-        "No truncation, all rows. With --json it is the inspectable form: tool input/result/output, card content, report payloads, handoff brief, delivery bodies, writer occurrences. Text mode summarizes and omits them",
+        "No truncation, all rows. With --json it is the inspectable form: tool input/result/output/metadata and Work receipts, raw card content (a card prints only its kind; the app words a card's title and outcome itself), report payloads, handoff brief, delivery bodies, writer occurrences. Text mode summarizes and omits them",
     },
     blocks: {
       type: "boolean",

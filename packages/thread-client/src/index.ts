@@ -44,7 +44,6 @@ export {
 } from "./turns/turn-ops";
 export type { AssistantView, ViewItem, ViewRun } from "./view/assistant-view";
 export { isImageBlock, isToolDeliveryBlock } from "./view/block-kind";
-export type { CardSummary } from "./view/card-summary";
 export { componentBlockContent } from "./view/component-block-content";
 export {
   type DeliverySegment,
