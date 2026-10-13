@@ -54,6 +54,7 @@ import {
   useLinkFollower,
 } from "@/features/links";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
+import { useReviewingLinkDestination } from "@/features/project/dock/useAiDraftLauncher";
 import type { TranscriptLinkNavigation } from "@/rich-content/TranscriptReference";
 
 import { createReferenceAvailability, type ReferenceAvailability } from "./reference-availability";
@@ -127,7 +128,7 @@ export function useChatLinkFollowing({
   );
 
   const openReferenceDocument = useOpenChatDocument(projectId);
-  const open = useCallback<LinkDestination>(
+  const openLive = useCallback<LinkDestination>(
     (document, gesture) =>
       openReferenceDocument({
         documentId: document.documentId,
@@ -135,6 +136,7 @@ export function useChatLinkFollowing({
       }),
     [openReferenceDocument],
   );
+  const open = useReviewingLinkDestination(openLive);
 
   const { outcome, reporter } = useFollowOutcomeState();
   const [resolution] = useState(createLinkAnswerCache);
