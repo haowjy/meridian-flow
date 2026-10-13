@@ -1,55 +1,89 @@
-/** Wire view-models for listing and reviewing AI document drafts. */
+/**
+ * Wire contracts for reviewing AI document drafts: the one list row, the preview, the operations a
+ * change is made of, and every Apply and Discard command with its outcome.
+ *
+ * Vocabulary (D68): `draftId` is a `drafts` row (the Work's whole draft), `itemKey`
+ * (`${draftId}:${documentId}`) is the client's only identity for one reviewed document, and a
+ * document's text branch never crosses the wire. `branchGeneration` is that branch's generation.
+ * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
+ */
+import { z } from "zod";
 import type { ParsedContextUri } from "../context-uri.js";
+import type { DraftCommandId, DraftId, DraftItemKey } from "../ids.js";
 
+/** A UUID the client mints once per writer command; resends reuse it (contract §4.6). */
+export const DraftCommandIdSchema = z.string().uuid();
+
+/** Why an item cannot be applied as-is: another live change collided with it. */
+export type DraftItemConflict =
+  | { code: "path_taken"; path: string }
+  | { code: "rename_replaced"; livePath: string }
+  | { code: "deleted_live" };
+
+/** Freshness evidence a client echoes back on an item command. */
+export type DraftItemTokens = {
+  locationToken: string;
+  liveTextToken: string | null;
+  branchGenerationToken: string | null;
+};
+
+/**
+ * One review item of the Work's active draft: a created or edited document, text or binary.
+ * The list, Work counts and the open review all read this one row.
+ */
 export interface ThreadDraftListItem {
-  draftId: string;
+  /** The whole draft (a `drafts` row). */
+  draftId: DraftId;
+  /** `${draftId}:${documentId}`: the review identity for list rows, address, commands and queries. */
+  itemKey: DraftItemKey;
   documentId: string;
-  documentName: string | null;
-  /** The document URI's scheme and leading-slash path, independent of its review Work. */
-  contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
-  status: "active";
   /**
-   * The draft's generation: it rises with each close, and the same `draftId`
-   * carries the next proposal at the higher generation. Never decreases.
+   * The item's branch generation: it rises with each reset or refork, and the same `itemKey`
+   * carries the next proposal at the higher generation. Null for an item with no branch (a created
+   * image, or a create whose first text write has not happened).
    */
-  draftGeneration: number;
-  /** Chats with pending agent writes in this draft, latest first. Candidates: a chat's writes may be overwritten. */
+  branchGeneration: number | null;
+  origin: "created" | "edited";
+  /** Created and still hidden from the manuscript. */
+  isNew: boolean;
+  binary: boolean;
+  /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only. */
+  wholeItem: boolean;
+  documentName: string | null;
+  /** The document URI's scheme and leading-slash path in the draft's view, independent of the Work. */
+  contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
+  /** The live URI when it differs from `contextLocation` (revealed, then moved live). */
+  livePath: string | null;
+  conflict: DraftItemConflict | null;
+  tokens: DraftItemTokens;
+  /** True while a staged batch holds the item: progress only, never a settlement signal. */
+  settling: boolean;
+  /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;
-  /**
-   * the draft contains a document outside the writer's live project manifest.
-   * Drives the dock row `New` badge and the review
-   * card's `New document` variant. Derived server-side from the branching
-   * model; consumed here. Absent/false = edit of a live document.
-   */
-  isNewDocument?: boolean;
 }
 
 export interface ThreadDraftListResponse {
-  drafts: ThreadDraftListItem[];
+  items: ThreadDraftListItem[];
 }
 
 type ActiveDraftPreviewBase = {
   status: "active";
-  draftId: string;
-  /** The draft's generation (see `ThreadDraftListItem.draftGeneration`) that `reviewRoomName` and the tokens belong to. */
-  draftGeneration: number;
-  /** Hocuspocus room name for inline branch review; already generation-fenced. */
+  draftId: DraftId;
+  itemKey: DraftItemKey;
+  /** The branch generation (see `ThreadDraftListItem.branchGeneration`) that `reviewRoomName` and the tokens belong to. */
+  branchGeneration: number;
+  /** Hocuspocus room name for inline branch review; already generation-fenced. Opaque to the client. */
   reviewRoomName: string;
   liveRevisionToken: string;
   draftRevisionToken: string;
-  /**
-   * mirrors `ThreadDraftListItem.isNewDocument` (spec §5.5) so the
-   * open review can render the all-additions `New document` card variant
-   * without a second lookup. Produced by the server preview builder.
-   * Per-change Apply is unavailable when true; use whole-document Apply.
-   */
-  isNewDocument?: boolean;
+  /** The item as the server resolved it for this preview, whether or not it is listed. */
+  item: ThreadDraftListItem;
 };
 
 export type DraftPreviewRefusal =
-  | { status: "gone"; draftId: string }
-  | { status: "corrupt"; draftId: string; draftGeneration: number };
+  | { status: "gone"; itemKey: DraftItemKey }
+  | { status: "corrupt"; itemKey: DraftItemKey; branchGeneration: number };
 
 export type DraftPreviewResponse =
   | (ActiveDraftPreviewBase & {
@@ -59,7 +93,7 @@ export type DraftPreviewResponse =
   | DraftPreviewRefusal;
 
 /**
- * The change an operation is across draft generations: its part key, which a
+ * The change an operation is across branch generations: its part key, which a
  * re-fork keeps while it gives the row a new `operationId`. An operation with no
  * part key is only the row it is.
  */
@@ -70,10 +104,10 @@ export function operationKey(operation: Pick<ReviewOperation, "operationId" | "p
 export type ReviewOperationClassification = "rename" | "addition" | "removal" | "rewrite";
 
 export interface ReviewOperation {
-  /** The journal row carrying this change in the draft's current generation. Admission names rows; it is not continuity. */
+  /** The journal row carrying this change in the item's current branch generation. Admission names rows; it is not continuity. */
   operationId: string;
   /**
-   * The change's identity across draft generations: `<editId>:<ordinal>` of the
+   * The change's identity across branch generations: `<editId>:<ordinal>` of the
    * recorded edit part the row carries. A re-fork re-journals surviving rows
    * under new `operationId`s with the same part key, so this is what a queued
    * click, a focus or a held failure finds its change by. Absent for a row that
@@ -133,7 +167,10 @@ export type ReviewDeletedSpan = {
 export type ReviewTextHunk = ReviewHunkBase & {
   kind: "text";
   spans: ReviewHunkSpan[];
-  /** Complete inserted run for list excerpts, whether attributed or unclassified. */
+  /**
+   * The hunk's full insertion, including when it sits beside a removal; never only the part an
+   * author is attributed. List excerpts render it whether attributed or unclassified.
+   */
   insertedText?: string;
   deletedText?: string;
   deletedSpans?: ReviewDeletedSpan[];
@@ -170,42 +207,188 @@ export type ReviewBlockHunk = ReviewHunkBase & {
 
 export type ReviewHunk = ReviewTextHunk | ReviewBlockHunk;
 
-export type DraftApplyResponse = { status: "applied"; draftId: string };
-export type DraftApplyRequest = { draftId: string };
+// --- Commands and outcomes (contract §4.5, §4.6) ---------------------------------------------
+//
+// Every Apply and Discard carries a client `commandId`. One outcome matrix serves them all:
+//   applied / discarded -> 200 (per-change and item results say whether the item closed)
+//   held (5a)           -> per-item `held` inside an item or Apply-all result, or 409 on item Apply
+//   stale / gone        -> 409 on Apply, 200 body on per-change commands; the review refreshes
+//   pending             -> 202 `{ status: "pending", draftId, commandId }`; observe the command
+//   blocked             -> observed `{ state: "blocked" }`, never a 200; terminal for the client
+//   unknown (transport) -> resend the same `commandId` and body; the server deduplicates
+// The client never infers a command's settlement from the list.
 
-export type DraftDiscardResponse = {
-  status: "discarded" | "stale" | "gone" | "draft_only" | "incomplete_class";
-  draftId: string;
-  draftClosed?: boolean;
-  draftDisposition?: "applied" | "discarded";
+/** Which writer command a `commandId` was recorded for. */
+export const DRAFT_COMMAND_KINDS = [
+  "apply_items",
+  "apply_changes",
+  "discard_items",
+  "discard_changes",
+  "discard_draft",
+] as const;
+export type DraftCommandKind = (typeof DRAFT_COMMAND_KINDS)[number];
+
+/** HTTP 409 code: the `commandId` was already used for a different command. */
+export const DRAFT_COMMAND_CONFLICT_CODE = "command_conflict";
+/** HTTP 404 code on observation: nothing committed under this `commandId`, so the client resends. */
+export const DRAFT_COMMAND_UNKNOWN_CODE = "unknown_command";
+
+/** Why a drafted item stays in review after Apply (5a). */
+export type DraftHeldReason = { code: "path_taken"; path: string };
+export type DraftApplyNote =
+  | { code: "rename_replaced"; replacedPath: string; path: string }
+  | { code: "restored"; path: string };
+export type DraftApplyItemResult =
+  | { itemKey: DraftItemKey; status: "applied"; notes: DraftApplyNote[] }
+  | { itemKey: DraftItemKey; status: "held"; reason: DraftHeldReason };
+
+/** 202 without a client command: the D40 write-mode switch stages its own Apply. */
+export type DraftApplyPending = { status: "pending"; draftId: DraftId };
+/** 202: the batch is staged and recovery is finishing it. Observe `commandId` for the result. */
+export type DraftApplyPendingResponse = DraftApplyPending & { commandId: DraftCommandId };
+
+/** Whether a settled item left review, and how (applied if anything reached live). */
+export type DraftItemSettlement = {
+  itemClosed: boolean;
+  /** Present when `itemClosed`. */
+  itemDisposition?: "applied" | "discarded";
 };
+
+// Item Apply and Discard: one whole item, by `itemKey`.
+
+export type DraftApplyRequest = {
+  draftId: DraftId;
+  itemKey: DraftItemKey;
+  commandId: DraftCommandId;
+} & Partial<DraftItemTokens>;
+/** Item Apply's 200. `item` is the settled item's result (applied notes). */
+export type DraftApplyResponse = {
+  status: "applied";
+  draftId: DraftId;
+  itemKey: DraftItemKey;
+  item: DraftApplyItemResult;
+};
+/** Item Apply: confirmed 200 or staged 202. */
+export type DraftApplyHttpResponse = DraftApplyResponse | DraftApplyPendingResponse;
+/** A held or stale item Apply answers 409 with this body. */
+export type DraftApplyRefusalBody =
+  | { status: "held"; draftId: DraftId; itemKey: DraftItemKey; reason: DraftHeldReason }
+  | { status: "stale"; draftId: DraftId; itemKey: DraftItemKey };
+
+export type DraftDiscardRefusalStatus = "stale" | "gone" | "whole_item" | "incomplete_class";
+
+export type DraftDiscardResponse =
+  | ({
+      status: "discarded";
+      draftId: DraftId;
+      itemKey: DraftItemKey;
+    } & DraftItemSettlement)
+  | { status: DraftDiscardRefusalStatus; draftId: DraftId; itemKey: DraftItemKey };
+/**
+ * Item Discard sends no selection. Per-change Discard admits by class: `closureClassIds` with
+ * `admissionTokens` over the clicked classes' closed rows and rich effect, and `memberPartKeys`
+ * (immutable part keys, empty for fallback-only classes) that only classify an absent class.
+ * Physical journal ids never cross the wire, and `operationIds` are not part of the request.
+ */
 export type DraftDiscardRequest = {
-  draftId: string;
-  /** Required for per-change Discard; absent for whole-document Discard. */
+  draftId: DraftId;
+  itemKey: DraftItemKey;
+  commandId: DraftCommandId;
+  /** Required for per-change Discard; absent for item Discard. */
   liveRevisionToken?: string;
   draftRevisionToken?: string;
   /** Required for per-change Discard: stable server-vended class identities at click. */
   closureClassIds?: string[];
-  /** Required for per-change Discard: unchanged closed-row/rich-effect evidence at click. */
+  /** Required for per-change Discard: unchanged closed-row and rich-effect evidence at click. */
   admissionTokens?: string[];
   /** Clicked immutable members classify a missing class, never authorize a replacement. */
   memberPartKeys?: string[];
 };
 
-/** Select complete server-vended classes. Physical journal IDs never cross the wire. */
+// Per-change Apply: complete server-vended classes. Physical journal ids never cross the wire
+// except as the preview's operation ids, which name the selected classes.
+
 export type DraftApplyChangesRequest = {
-  draftId: string;
+  draftId: DraftId;
+  itemKey: DraftItemKey;
+  commandId: DraftCommandId;
   operationIds: string[];
   liveRevisionToken: string;
   draftRevisionToken: string;
 };
 export type DraftApplyChangesResponse =
-  | {
+  | ({
       status: "applied";
-      draftId: string;
+      draftId: DraftId;
+      itemKey: DraftItemKey;
       operationIds: string[];
       closureClassIds: string[];
-      draftClosed?: boolean;
-      draftDisposition?: "applied" | "discarded";
-    }
-  | { status: "stale" | "gone" | "draft_only" | "incomplete_class"; draftId: string };
+    } & DraftItemSettlement)
+  | { status: "stale" | "gone" | "whole_item" | "incomplete_class"; draftId: DraftId; itemKey: DraftItemKey }
+  | DraftApplyPendingResponse;
+
+// Apply all and Discard all: one server command over the Work's whole draft.
+
+export const DraftApplyItemRefSchema = z.object({
+  itemKey: z.string().max(80),
+  locationToken: z.string().max(40),
+  liveTextToken: z.string().max(100).optional(),
+  branchGenerationToken: z.string().max(40).optional(),
+});
+export type DraftApplyItemRef = z.infer<typeof DraftApplyItemRefSchema>;
+
+export const DraftApplyAllRequestSchema = z.object({
+  /** The whole draft the dock rendered (a drafts row; D68). */
+  draftId: z.string().uuid(),
+  commandId: DraftCommandIdSchema,
+  /** Each item once: a selection is a set. */
+  items: z
+    .array(DraftApplyItemRefSchema)
+    .min(1)
+    .max(500)
+    .refine((items) => new Set(items.map((item) => item.itemKey)).size === items.length, {
+      message: "Each item can be applied once per request",
+    }),
+});
+export type DraftApplyAllRequest = z.infer<typeof DraftApplyAllRequestSchema>;
+
+/**
+ * `completed` means the command settled, including selections whose items were all held. Apply never
+ * closes the draft, so the result carries no draft closure.
+ */
+export type DraftApplyAllResponse =
+  | DraftApplyPendingResponse
+  | { status: "completed"; draftId: DraftId; items: DraftApplyItemResult[] }
+  | { status: "stale"; draftId: DraftId; staleItemKeys: DraftItemKey[] }
+  | { status: "gone"; draftId: DraftId };
+
+export const DraftDiscardAllRequestSchema = z.object({
+  /** A drafts row (D68), never a branch id. */
+  draftId: z.string().uuid(),
+  commandId: DraftCommandIdSchema,
+});
+export type DraftDiscardAllRequest = z.infer<typeof DraftDiscardAllRequestSchema>;
+/** `discarded` closes the draft (the only wire signal of closure); `gone` names one that is not the Work's active draft. */
+export type DraftDiscardAllResponse =
+  | { status: "discarded"; draftId: DraftId }
+  | { status: "gone"; draftId: DraftId };
+
+// Observing a command: `GET …/works/:w/drafts/commands/:commandId`.
+
+/** The terminal body of a command, exactly what its 200 carried. */
+export type DraftCommandResult =
+  | DraftApplyResponse
+  | DraftApplyChangesResponse
+  | DraftApplyAllResponse
+  | DraftDiscardResponse
+  | DraftDiscardAllResponse
+  | DraftApplyRefusalBody;
+/**
+ * `pending` keeps the claim and polling; `done` settles it as the 200 would; `blocked` is terminal
+ * (stop polling, show the failure on the item, never retry automatically). A missing command answers
+ * 404 `unknown_command`: nothing committed, so the client resends.
+ */
+export type DraftCommandObservation =
+  | { state: "pending" }
+  | { state: "done"; result: DraftCommandResult }
+  | { state: "blocked" };

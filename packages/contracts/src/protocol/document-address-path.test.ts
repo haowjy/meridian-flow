@@ -2,17 +2,16 @@
 import { expect, it } from "vitest";
 import { apiProjectDocumentAddressPath } from "./paths.js";
 
-it("serializes the Work and branch selector without changing the manuscript owner", () => {
+it("serializes the Work and item selector without changing the manuscript owner", () => {
   const address = apiProjectDocumentAddressPath("project", "manuscript", "chapters/one", {
     workId: null,
-    review: { workId: "review-work", draftBranchId: "document-branch", documentId: "document" },
+    review: { workId: "review-work", itemKey: "draft:document" },
   });
   const query = new URL(address, "https://example.test").searchParams;
   expect(Object.fromEntries(query)).toEqual({
     path: "chapters/one",
     reviewWorkId: "review-work",
-    draftBranchId: "document-branch",
-    documentId: "document",
+    itemKey: "draft:document",
   });
   expect(
     apiProjectDocumentAddressPath("project", "manuscript", "chapters/one", { workId: null }),
