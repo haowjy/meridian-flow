@@ -1,5 +1,5 @@
 /**
- * Populated upgrade contract for 0042/0043: the Work-branch foundation's data moves and
+ * Populated upgrade contract for 0044/0045: the Work-branch foundation's data moves and
  * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
  * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037), the namespace
  * observation versions (0038/0039) and #713's edit ledger and dirty signals (0040/0041) run
@@ -36,9 +36,11 @@ const MAIN_BETWEEN = [
   "0039_backfill_namespace_observation_versions",
   "0040_brainy_mimic",
   "0041_trail_dirty_signals",
+  "0042_pretty_ricochet",
+  "0043_mighty_paper_doll",
 ];
-const FOUNDATION = "0042_work_branch_foundation";
-const ONLINE = "0043_work_branch_foundation_online";
+const FOUNDATION = "0044_work_branch_foundation";
+const ONLINE = "0045_work_branch_foundation_online";
 const SCOPE_KEY = `project:${id(2)}`;
 
 /** Rows in `main`'s 0036 shape (prose stored as `.md`): every kind of row the foundation migration moves. */

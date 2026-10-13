@@ -10,6 +10,7 @@ import {
   decodeImageInclusionMetadata,
   skillBodyMetadata,
 } from "../../../threads/index.js";
+import { createInMemoryRunClaim } from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway, GenerateResult, Message } from "../../gateway/index.js";
 import { ImageAssetResolutionError } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
@@ -18,6 +19,7 @@ import {
   createToolExecutor,
   createToolRegistry,
 } from "../../tools/index.js";
+import { failCompactionSuccessor } from "../compaction-successor.js";
 import type { MessageDraft } from "../ports.js";
 import type { ReferenceReader } from "../reference-context.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
@@ -197,6 +199,53 @@ async function execute(run: import("../run-turn-port.js").PreparedRun) {
 }
 
 describe("inbox drain", () => {
+  it("releases the in-memory receipt with a failed compaction successor", async () => {
+    const runClaim = createInMemoryRunClaim();
+    const rig = await runtimeScenario({ gateway: scriptedGateway({ results: [] }), runClaim });
+    const threadId = rig.thread.id as ThreadId;
+    const adopted = await rig.delivery.enqueue(message("failed-summary", threadId));
+    await rig.repos.turns.create({
+      id: adopted.id,
+      threadId,
+      role: "user",
+      origin: "writer",
+      status: "complete",
+    });
+    const placeholder = await rig.repos.turns.create({
+      threadId,
+      prevTurnId: adopted.id,
+      role: "compaction",
+      origin: "system",
+      status: "pending",
+    });
+    const lease = await runClaim.startExecution(threadId, "failed-summary");
+    if (!lease) throw new Error("Expected compaction lease");
+    await runClaim.bindTurn(lease, placeholder.id, [adopted.id], "compaction");
+
+    const failed = await failCompactionSuccessor({
+      deps: rig.deps,
+      threadId,
+      placeholder,
+      settleResponses: async () => {},
+      failure: new Error("Summary provider failed"),
+      boundary: {
+        lease,
+        currentTurn: placeholder,
+        continueTask: true,
+        knownTurnIds: new Set([adopted.id, placeholder.id]),
+        expectedLeafTurnId: placeholder.id,
+        current: { kind: "assistant" },
+        prepareNextContext: async () => {
+          throw new Error("Unexpected optional compaction path");
+        },
+      },
+    });
+    expect((await rig.repos.turns.findById(placeholder.id))?.status).toBe("error");
+    expect(failed.next.status).toBe("error");
+    expect(await runClaim.read(threadId)).toEqual({ kind: "asleep" });
+    expect(await rig.delivery.readPendingProjection(threadId)).toEqual({ messages: [], run: null });
+  });
+
   it("consumes canceled reversal notices without splitting the running reply", async () => {
     const notices = createTestNoticePort();
     const rig = await setup({

@@ -108,6 +108,11 @@ export function browseDestination(
   return { kind: "browse", scheme, path: path.replace(/^\/+/, "") };
 }
 
+/** The browsed folder as `/a/b`, or null at a scheme root (the scheme's top level). */
+export function browsedFolder(destination: ProjectDestination): string | null {
+  return destination.kind === "browse" && destination.path ? `/${destination.path}` : null;
+}
+
 /** The path names the screen, then what is open on it. */
 function parseDestination(parts: string[]): ProjectDestination | null {
   const [screen, ...rest] = parts;
