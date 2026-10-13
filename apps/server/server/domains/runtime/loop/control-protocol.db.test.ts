@@ -1735,6 +1735,52 @@ else
         expect(await switchTurns(rig)).toHaveLength(1);
       });
 
+      it("blocks a saved message and its queued switch for usage, then answers both once usage returns", async () => {
+        const rig = await manualFixture();
+        const canStart = vi.spyOn(rig.deps.billingUsage, "canStartTurn").mockResolvedValue(false);
+        const message = await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Wait for usage." },
+          idempotencyKey: "blocked-with-switch",
+        });
+        await switchMode(rig, "draft");
+        const turnsBefore = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        await expect(
+          rig.orchestrator.prepare({ threadId: rig.threadId, drain: true }),
+        ).rejects.toMatchObject({ code: "credits_exhausted" });
+
+        // The refusal reserves nothing: no turn, no lease, no execution, no switch.
+        expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toEqual({
+          reason: "credits_exhausted",
+        });
+        expect((await rig.repos.turns.listByThread(rig.threadId)).length).toBe(turnsBefore);
+        expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+        expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+        expect(await threadMode(rig)).toBe("direct");
+        expect(await switchTurns(rig)).toEqual([]);
+
+        canStart.mockRestore();
+        const outcome = await drainControls(rig);
+        const tail = (await settled(rig)).slice(turnsBefore);
+
+        expect(outcome.status).toBe("complete");
+        const reply = tail.find((turn) => turn.role === "assistant");
+        expect(reply).toMatchObject({ status: "complete" });
+        expect(await switchTurns(rig)).toHaveLength(1);
+        expect(await threadMode(rig)).toBe("draft");
+        // Usage returning clears the block with the last waiting row, and the reply's
+        // execution ended once with its delivery recorded.
+        expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toBeUndefined();
+        const execution = await identity(reply?.id);
+        expect(execution.executionId).not.toBeNull();
+        expect(await endsOf(execution.executionId)).toBe(1);
+        expect(await deliveredBy(message.id)).toBe(reply?.id);
+        expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+      });
+
       it("keeps Retry available after a switch and chains the retry after it", async () => {
         const gateway = scriptedGateway({ usage: lowUsage });
         let fail = true;
