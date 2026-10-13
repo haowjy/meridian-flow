@@ -30,6 +30,7 @@ function makeDeps() {
     subscriptions,
     toError: vi.fn((error) => Object.assign(new Error(error.message), { code: error.code })),
     dispatchSequencedEvent: vi.fn(),
+    resubscribe: vi.fn(),
     handleGap: vi.fn(),
     send: vi.fn(),
     onConnected: vi.fn(),
@@ -79,17 +80,47 @@ describe("dispatchWsServerMessage", () => {
     expect(onThreadError).toHaveBeenCalledWith("thread-1", expect.any(Error));
   });
 
-  it("delivers live state after catch-up frames", () => {
+  it("gives each handler every event after its own cursor once, in order, across a rewind race", () => {
     const subscriptions = new WsThreadSubscriptionRegistry();
+    const seen = { current: [] as string[], late: [] as string[] };
     const order: string[] = [];
-    subscriptions.ensure("thread-1", {
-      onEvent: () => order.push("event"),
+    const current = {
+      onEvent: (e: { seq: string }) => {
+        seen.current.push(e.seq);
+        order.push("event");
+      },
       onLiveState: () => order.push("live-state"),
+    };
+    const late = {
+      onEvent: (e: { seq: string }) => {
+        seen.late.push(e.seq);
+        order.push("event");
+      },
+      onLiveState: () => order.push("live-state"),
+    };
+    subscriptions.ensure("thread-1", current, "3000");
+    // The late handler rewinds to 1000: the client sends a subscribe and fences it.
+    const rewind = subscriptions.ensure("thread-1", late, "1000");
+    subscriptions.holdForReplay(rewind.subscription, rewind.waiters);
+    rewind.subscription.replayInFlight = true;
+
+    // Live frames land before the server answers; the catch-up covers them.
+    const frame = (seq: string) => ({
+      seq,
+      event: { type: "RAW", event: {} },
+      sourceThreadId: "thread-1",
     });
-    dispatchWsServerMessage(subscribedMessage(), {
+    for (const seq of ["4000", "5000", "6000", "7000"]) {
+      subscriptions.accept("thread-1", frame(seq) as never);
+    }
+    expect(seen.late).toEqual([]);
+    const catchup = ["2000", "3000", "4000", "5000", "6000", "7000"].map(frame);
+    const message = { ...subscribedMessage(), catchup } as unknown as WsServerMessage;
+    dispatchWsServerMessage(message, {
       subscriptions,
       toError: (error) => Object.assign(new Error(error.message), { code: error.code }),
-      dispatchSequencedEvent: () => order.push("event"),
+      dispatchSequencedEvent: vi.fn(),
+      resubscribe: vi.fn(),
       handleGap: vi.fn(),
       send: vi.fn(),
       onConnected: vi.fn(),
@@ -97,6 +128,10 @@ describe("dispatchWsServerMessage", () => {
       onGlobalError: vi.fn(),
       onInterruptResponseError: vi.fn(),
     });
-    expect(order).toEqual(["event", "live-state"]);
+    expect(seen.late).toEqual(["2000", "3000", "4000", "5000", "6000", "7000"]);
+    expect(seen.current).toEqual(["4000", "5000", "6000", "7000"]);
+    // Live state lands after every catch-up frame.
+    expect(order.slice(-2)).toEqual(["live-state", "live-state"]);
+    expect(order.indexOf("live-state")).toBe(order.length - 2);
   });
 });

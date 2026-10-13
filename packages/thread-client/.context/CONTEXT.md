@@ -101,6 +101,16 @@ The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
 operation through the injected `cancelTurn` port, not a WebSocket message. Keep
 these names aligned with `@meridian/contracts/protocol` rather than inferring them from UI actions.
 
+Delivery contract: each handler receives every sequenced event after its own
+`after` exactly once and in `seq` order, whatever the timing between live frames
+and a replay. Each handler has its own cursor (the cursors are the dedupe), and
+subscribe/resume ask from the oldest cursor any handler still needs. From sending
+a rewind or reconnect request until its `subscribed` frame, the handlers waiting
+on that replay are fenced: live frames are held, then merged with the `catchup`,
+sorted by `seq`, and delivered through the cursor rule. Handlers already current
+keep receiving live frames meanwhile. One replay is in flight per thread; a
+request made meanwhile is sent when `subscribed` arrives.
+
 A `gap` means the server could not replay from the client's cursor. Its frame
 carries `fromSeq`/`toSeq`; the transport advances the subscription's resume point
 to `toSeq` after notifying `onGap` consumers and before re-subscribing, so the
