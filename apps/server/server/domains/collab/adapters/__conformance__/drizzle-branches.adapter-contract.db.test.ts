@@ -19,6 +19,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       documentYjsCheckpoints,
       documentYjsHeads,
       documents,
+      draftCommands,
       drafts,
       projects,
       pushLineage,
@@ -549,6 +550,82 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ),
       ).rejects.toThrow("changed before its push could commit");
       await expect(db.select().from(pushLineage)).resolves.toHaveLength(0);
+    });
+
+    it("commitPushBatch leaves no pending command behind when a lineage conflict ends staging", async () => {
+      const pushStore = createDrizzlePushCommitStore(
+        db,
+        stageSettlementBatchWithinTx,
+        createDrizzleChangeTrailAggregateWriter(db),
+      );
+      const journalReadStore = createDrizzleBranchJournalReadStore(db);
+      const branch = await store.ensureDraftBranch({
+        documentId: DOC_ID as never,
+        draftId: DRAFT_ID as never,
+        liveDoc: docWithText("live"),
+      });
+      const update = Y.encodeStateAsUpdate(
+        docWithText("draft"),
+        Y.encodeStateVector(docWithText("live")),
+      );
+      await db.insert(branchWriteJournal).values({
+        branchId: branch.branchId,
+        generation: branch.generation,
+        updateData: Buffer.from(update),
+        draftBaseUpdateSeq: 0,
+        source: "agent",
+      });
+      const journalRows = await journalReadStore.listActiveJournalRows(
+        branch.branchId,
+        branch.generation,
+      );
+      const command = (commandId: string, batchId: string) => ({
+        ...batchOfOne({
+          branch,
+          journalRows,
+          pushUpdate: update,
+          idempotencyKey: "one-cut",
+          trail: {
+            documentId: DOC_ID,
+            documentTitle: "document",
+            receiptId: "receipt",
+            threadIds: [],
+            journalOwners: [],
+            changes: [],
+          },
+          documentTitle: "document",
+          lockCutUpdate: update,
+        }),
+        settlement: {
+          batchId,
+          claimToken: "00000000-0000-4000-8000-0000000006f9",
+        },
+        command: {
+          commandId: commandId as never,
+          workId: WORK_ID as never,
+          accountId: USER_ID as never,
+          kind: "apply_items" as const,
+          draftId: DRAFT_ID as never,
+          digest: commandId,
+        },
+      });
+      // Another process already staged this exact cut under its own command.
+      await db.insert(pushLineage).values({
+        branchId: branch.branchId,
+        branchGeneration: branch.generation,
+        documentId: DOC_ID as never,
+        journalIds: journalRows.map((row) => row.id),
+        idempotencyKey: "one-cut",
+      });
+      const second = command(
+        "00000000-0000-4000-8000-0000000006c2",
+        "00000000-0000-4000-8000-0000000006b2",
+      );
+      expect(await pushStore.commitPushBatch(second as never)).toMatchObject({
+        status: "conflict",
+      });
+      const claimed = await db.select().from(draftCommands);
+      expect(claimed).toEqual([]);
     });
 
     it("G2 §6.1 entry corrupt snapshot fails loudly at branch-room load", async () => {
