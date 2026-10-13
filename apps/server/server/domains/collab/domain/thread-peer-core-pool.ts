@@ -371,6 +371,11 @@ export function createThreadPeerCorePool(input: {
         const reason = await discardLossReason(cause, entry?.linkView ?? routedContext.linkView);
         // The reply's earlier staged writes stay: the retirement refuses them with their own receipts.
         if (!reason) throw cause;
+        // An entry this attempt installed and never pinned routes the reply to the closed
+        // draft, and retirement matches pins only: drop it so the retry ensures a fresh draft.
+        if (record && documentId && entry && entry !== pinned && !entry.pin) {
+          if (record.documents.get(documentId) === entry) record.documents.delete(documentId);
+        }
         return discardedWrite(command, reason);
       }
     };

@@ -544,6 +544,33 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
   });
 
+  it("22b: a first write losing to Discard all leaves no pin, so the instructed read and retry land in a fresh draft", async () => {
+    const { responseId, review, write, core, context, fixture } = await setup();
+    const withLeases = fixture.branchCoordinator.withLeases;
+    let once = true;
+    fixture.branchCoordinator.withLeases = (async (...args: Parameters<typeof withLeases>) => {
+      if (once && args[0].length === 2) {
+        once = false;
+        await review.discardAll();
+      }
+      return withLeases.apply(fixture.branchCoordinator, args);
+    }) as typeof withLeases;
+    let first: Awaited<ReturnType<typeof write>>;
+    try {
+      first = await write("green", "lime", "w-first");
+    } finally {
+      fixture.branchCoordinator.withLeases = withLeases;
+    }
+    expect(first).toMatchObject({ isError: true, status: "invalid_write" });
+    expect(JSON.stringify(first.result)).toContain(DRAFT);
+    expect(
+      await core.read({ file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "r" }, context),
+    ).toMatchObject({ status: "success" });
+    expect(await write("green", "lime", "w-retry")).toMatchObject({ phase: "staged" });
+    expect(refused(await harness.commit(responseId))).toEqual([]);
+    expect(await review.list()).not.toEqual([]);
+  });
+
   it("19: a new reply writes through a fresh peer while the old retirement is held", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
