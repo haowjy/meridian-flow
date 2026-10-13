@@ -18,17 +18,14 @@ import type {
 } from "../contracts.js";
 import { type BranchReviewService, DraftChangeRefusal } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
-import type { DraftDiscard } from "./draft-discard.js";
 import {
   type CommandLookup,
-  DraftCommandExistsError,
   type DraftCommandEnvelope,
+  DraftCommandExistsError,
   type DraftCommands,
 } from "./draft-commands.js";
-import {
-  DraftApplyPendingError,
-  type DraftPublication,
-} from "./draft-publication.js";
+import type { DraftDiscard } from "./draft-discard.js";
+import { DraftApplyPendingError, type DraftPublication } from "./draft-publication.js";
 import type { DraftReviewIdentity } from "./draft-review-identity.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
@@ -210,11 +207,13 @@ export function createWorkDraftReviewService(input: {
             };
           },
         });
-        if (result.status === "command_exists") throw new DraftCommandExistsError(envelope.commandId);
+        if (result.status === "command_exists")
+          throw new DraftCommandExistsError(envelope.commandId);
         if (result.status === "stale") {
           return { status: "stale", draftId: item.draftId, itemKey: item.itemKey };
         }
-        if (result.status === "gone") return { status: "gone", draftId: item.draftId, itemKey: item.itemKey };
+        if (result.status === "gone")
+          return { status: "gone", draftId: item.draftId, itemKey: item.itemKey };
         // A completed command stored its own body; `answer` reads it back over this one.
         return { status: "gone", draftId: item.draftId, itemKey: item.itemKey };
       });
@@ -279,7 +278,8 @@ export function createWorkDraftReviewService(input: {
     item: DraftReviewItem | null,
     draftId: DraftId,
   ): DraftCommandResult {
-    if (result.status === "command_exists") throw new DraftCommandExistsError(item?.itemKey as never);
+    if (result.status === "command_exists")
+      throw new DraftCommandExistsError(item?.itemKey as never);
     if (!item || result.status !== "completed") return result;
     const [applied] = result.items;
     if (!applied) return { status: "gone", draftId };

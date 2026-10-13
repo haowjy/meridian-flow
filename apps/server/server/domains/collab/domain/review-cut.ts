@@ -241,9 +241,7 @@ function classAdmissionTokens(
       tokens.set(
         operation.closureClassId,
         `admission:v1:${createHash("sha256")
-          .update(
-            JSON.stringify([operation.closureClassId, membership, richEffect]),
-          )
+          .update(JSON.stringify([operation.closureClassId, membership, richEffect]))
           .digest("base64url")}`,
       );
     } finally {

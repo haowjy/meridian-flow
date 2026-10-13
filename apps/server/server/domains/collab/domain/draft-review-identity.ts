@@ -10,8 +10,8 @@
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
 import { isUuid } from "../../../shared/uuid.js";
-import { type DraftItemKey, draftItemKey } from "./draft-tree-payload.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
+import { type DraftItemKey, draftItemKey } from "./draft-tree-payload.js";
 import type { Drafts } from "./drafts.js";
 
 export type ResolvedReviewItem = {
@@ -25,10 +25,7 @@ export type ResolvedReviewItem = {
 };
 
 export interface DraftReviewIdentity {
-  resolveReviewItem(input: {
-    workId: WorkId;
-    itemKey: string;
-  }): Promise<ResolvedReviewItem | null>;
+  resolveReviewItem(input: { workId: WorkId; itemKey: string }): Promise<ResolvedReviewItem | null>;
   resolveReviewItemByDocument(input: {
     workId: WorkId;
     documentId: DocumentId;

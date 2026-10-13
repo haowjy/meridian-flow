@@ -16,14 +16,12 @@ import type { NodeRef } from "../../context/tree/tree-view.js";
 import { BranchCasConflictError } from "./branch-coordinator.js";
 import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
 import { collabHook } from "./collab-test-hooks.js";
-import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { DraftBranchLeases } from "./draft-branch-leases.js";
+import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { Drafts } from "./drafts.js";
 import type { PeerRetirement, RetiredBranch } from "./peer-retirement.js";
 
-export type DiscardSelection =
-  | { kind: "items"; items: readonly DiscardItem[] }
-  | { kind: "whole" };
+export type DiscardSelection = { kind: "items"; items: readonly DiscardItem[] } | { kind: "whole" };
 
 export type DiscardResult =
   | { status: "discarded"; draftId: DraftId; draftClosed: boolean }
