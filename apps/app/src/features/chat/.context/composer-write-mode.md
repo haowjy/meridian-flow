@@ -3,7 +3,7 @@
 This page defines the Work-scoped composer write-mode and sizing contracts.
 
 The compact current-value write-mode trigger lives in the composer footer beside
-Agent and Work because write mode is a property of the conversation's Work, not
+Agent and Work because write mode is a property of the conversation, not
 workspace navigation. It opens the toolbar's write-mode page for the Draft and
 Auto-apply choices instead of spending persistent width on both choices.
 `ProjectView` resolves the displayed thread’s Work once at the project
@@ -38,48 +38,33 @@ that behavior through cache convergence and durable projection. Only the writer
 rebinds; the model's `work switch` never does
 ([rule](../../../../../server/server/domains/runtime/.context/tools.md#permissions)).
 
-The neutral `useSelectedWorkWriteModeToolbarControl` owns the selected-Work
-mutation and uses the active-draft count only to open confirmation quickly.
-Mode and pending changes are separate (D40): the mode decides where new AI
-writes go, and pending changes stay until the writer applies or discards them.
-Every Auto-apply selection first sends a request with no `pending` choice; the
-server-vended count of reviewable content branches is the number shown in the
-confirmation. It is not a raw journal-row or active branch count:
-manifest-membership bookkeeping does not represent prose waiting for review.
-
-Moving Draft → Auto-apply with pending changes keeps Draft selected and opens
-the switch dialog. Its choices send `pending: "apply"` (apply the canonical
-pending set, including any manifest companion, then switch) or
-`pending: "keep"` (switch and leave the drafts for review in the dock); Cancel
-preserves the mode. Keep takes focus first. An archived Work's drafts are
-frozen, so its dialog offers only Switch (keep). A `work_archived` refusal during
-the switch turns the dialog into that archived variant. A failed Apply leaves
-Draft selected, and drafts it already pushed stay applied. Loading draft data
-never disables the Auto-apply choice; a nondismissible write-mode request
-temporarily disables page actions while the toolbar retains a focusable dialog
-fallback. The sidebar has no write-mode control.
+The neutral `useWriteModeToolbarControl` shows a value and reports a choice:
+no dialog, no draft query. In an existing chat the value is the chat's mode
+(`thread.aiWriteMode`) with queued and local switches laid over it
+(`useThreadControls().writeMode`), and a choice dispatches a `write_mode`
+control: a record in the chat's submission journal, posted in order with the
+messages around it. In the new-chat composer the value is the selected Work's
+`defaultAiWriteMode`, and `aiWriteMode` is sent with the first message only if
+the writer picked one there. Switching never touches drafts: the dock keeps
+showing pending changes in either mode, and its generating state reads the
+running turn's own mode.
 
 The dock projection is tri-state while its query loads: pending count and review
-availability are `null`, distinct from loaded zero/false. If a client fast path
-opens the confirmation before the authoritative response returns, the popover
-keeps the existing **Checking pending changes…** copy and disables actions that
-need the unresolved projection. Auto-apply remains selectable so its
-choice-less request can ask the server; loading client state must never imply
-that nothing is pending.
+availability are `null`, distinct from loaded zero/false; loading client state
+must never imply that nothing is pending.
 
 The shared Work picker and selected-Work write-mode presentation live in the
 neutral `components/app/work-composer-controls` boundary. The Chat landing and
 chat detail adapt that presentation to different commands: the landing edits
 prospective creation state, while chat detail can durably rebind an idle existing
-thread. The landing's selected Work is already durable, so its write-mode
-control reads and mutates that Work's real policy before thread creation; it does not invent a provisional mode. Draft
+thread. The landing's write-mode control edits prospective creation state. Draft
 review launch behavior is injected by each project-shell adapter rather than
 imported into the neutral controls.
 
-Each assistant turn durably records the Work write mode read when that turn is
+Each assistant turn durably records the chat's write mode read when that turn is
 created. Tool vocabulary and receipt interpretation use the turn's recorded
-mode, not the Work's current mutable policy, so a later mode switch cannot
-rewrite history after reload.
+mode, not the chat's current mode, so a later switch cannot rewrite history
+after reload.
 
 ### Composer placeholder and sizing contracts
 
