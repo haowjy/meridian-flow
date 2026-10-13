@@ -49,6 +49,14 @@ the writer picked one there. Switching never touches drafts: the dock keeps
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
+A switch row's actions follow what the server can hold. One never posted, or refused,
+offers Retry and a local Withdraw. One posted whose answer is unresolved (lost
+response, 5xx, abort) offers Retry only: a local Withdraw could let a late request
+apply it. Once it answers and the server queues it, Withdraw calls the server's. A
+tab that only saw the record leave the journal keeps it as a witness row, with its mode
+on the toolbar, until its own inbox lists the id, a divider names it, or the refetch
+started at the removal resolves.
+
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state
 must never imply that nothing is pending.

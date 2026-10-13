@@ -96,7 +96,7 @@ function QueuedControlRow({
             <Trans>Retry</Trans>
           </Button>
         ) : null}
-        {onWithdraw ? (
+        {onWithdraw && !control.awaitingServer ? (
           <Button
             type="button"
             variant="quiet"

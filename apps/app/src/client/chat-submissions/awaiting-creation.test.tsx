@@ -7,8 +7,9 @@ import { expect, it } from "vitest";
 import { ThreadStoreProvider, useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 import {
   bindChatSubmissions,
+  CHAT_SUBMISSIONS_SCHEMA_VERSION,
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
-  type ChatSubmission,
+  type NewChatSubmission,
   recordChatSubmission,
   retireChatSubmission,
 } from "./index";
@@ -20,12 +21,13 @@ import {
 it("reads creation synchronously on reload and updates on local writes, storage events and pending flags", async () => {
   window.localStorage.clear();
   bindChatSubmissions("awaiting-account");
-  const entry: ChatSubmission = {
+  const entry: NewChatSubmission = {
     recordId: "record",
     submissionId: "submission",
     threadId: "thread",
     projectId: "project",
     createdAt: "2026-10-11T12:00:00Z",
+    seq: 1,
     text: "Unsent words",
     blocks: [{ type: "text", text: "Unsent words" }],
     references: [],
@@ -77,7 +79,11 @@ it("reads creation synchronously on reload and updates on local writes, storage 
     await act(async () => {
       window.localStorage.setItem(
         key,
-        JSON.stringify({ version: 2, accountId: "awaiting-account", payload: entry }),
+        JSON.stringify({
+          version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
+          accountId: "awaiting-account",
+          payload: entry,
+        }),
       );
       window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
     });

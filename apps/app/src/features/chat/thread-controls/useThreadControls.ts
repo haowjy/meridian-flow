@@ -44,8 +44,13 @@ export type SwitchJournal = {
   pending: readonly JournalSwitch[];
   submit(id: string, mode: AiWriteMode): boolean;
   retry(id: string): void;
-  /** `removed`: it never reached the server. `admitted`: it did, so the server's Withdraw is the way. */
-  withdraw(id: string): Promise<"removed" | "admitted">;
+  /**
+   * `removed`: the server can't have it (never posted, or refused). `admitted`: it has it,
+   * so the server's Withdraw is the way. `kept`: it may have it and hasn't said.
+   */
+  withdraw(id: string): Promise<"removed" | "admitted" | "kept">;
+  /** The inbox or a divider shows these switches: tabs that stood in for them let go. */
+  settle(ids: Iterable<string>): void;
   onAnswered(listener: (answer: SwitchAnswer) => void): () => void;
 };
 
@@ -101,9 +106,13 @@ export function useThreadControls(input: {
   const latest = useRef({ switches, projectId, workId });
   latest.current = { switches, projectId, workId };
 
+  const { settle: settleWitnesses } = switches;
   useEffect(() => {
-    dispatch({ type: "listed", pendingIds: new Set(pending.items.map((item) => item.id)) });
-  }, [pending]);
+    const ids = new Set(pending.items.map((item) => item.id));
+    dispatch({ type: "listed", pendingIds: ids });
+    settleWitnesses(ids);
+  }, [pending, settleWitnesses]);
+  useEffect(() => settleWitnesses(answeredControlIds), [answeredControlIds, settleWitnesses]);
 
   // The driver may be any pane's: the answer reaches whichever pane shows this chat.
   const { onAnswered } = switches;
@@ -220,12 +229,14 @@ export function useThreadControls(input: {
           announceError(t`Couldn't withdraw. Try again.`);
         }
       };
-      // A switch the journal still holds never reached the server: taking it out
-      // of the journal is the withdrawal, and releases what waited behind it.
+      // A switch the journal holds that the server can't have (never posted, or
+      // refused): taking it out of the journal is the withdrawal, and releases what
+      // waited behind it. One the server may hold stays, and offers Retry only.
       if (latest.current.switches.pending.some((entry) => entry.id === queued.id)) {
         void latest.current.switches.withdraw(queued.id).then((result) => {
           if (result === "removed") settle();
-          else return withdrawOnServer();
+          else if (result === "admitted") return withdrawOnServer();
+          else dispatch({ type: "withdraw_not_found", id: queued.id });
         });
         return;
       }

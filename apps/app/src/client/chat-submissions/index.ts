@@ -9,6 +9,7 @@ import {
   type ChatSubmission,
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
+  type NewChatSubmission,
 } from "./store";
 
 export {
@@ -16,6 +17,7 @@ export {
   CHAT_SUBMISSIONS_STORAGE_PREFIX,
   type ChatSubmission,
   chatSubmissionStorageKey,
+  type NewChatSubmission,
 } from "./store";
 
 let journal: DeviceChatSubmissionJournal | null = null;
@@ -75,7 +77,7 @@ export function readChatSubmissionSnapshot(accountId: string): ChatSubmission[] 
   return current?.accountId === accountId ? current.snapshot() : null;
 }
 
-export function recordChatSubmission(accountId: string, entry: ChatSubmission): boolean {
+export function recordChatSubmission(accountId: string, entry: NewChatSubmission): boolean {
   return browserJournal()?.record(accountId, entry) ?? false;
 }
 

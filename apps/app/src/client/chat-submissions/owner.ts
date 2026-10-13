@@ -16,6 +16,7 @@ import {
   invalidateProjectThreadData,
   invalidateWorkThreads,
 } from "@/client/query/project-invalidation";
+import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { whenDerived } from "@/features/chat/derivation/derive-conversation";
@@ -32,7 +33,7 @@ import {
 } from "./index";
 import { abortable } from "./lock";
 import type { UserTurnRecovery } from "./presentation";
-import type { ChatSubmission } from "./store";
+import { type ChatSubmission, compareSubmissions, type NewChatSubmission } from "./store";
 import { threadAvailability } from "./thread-availability";
 
 type Row = {
@@ -53,7 +54,19 @@ type RecoveryState = {
   moving?: boolean;
 };
 /** A write-mode switch the journal still holds: the server has not admitted it. */
-export type JournalSwitch = { id: string; mode: AiWriteMode; failed: boolean };
+export type JournalSwitch = {
+  id: string;
+  mode: AiWriteMode;
+  failed: boolean;
+  /** Posted and not refused: the server may hold it, so it offers Retry and no local Withdraw. */
+  awaitingServer: boolean;
+  /**
+   * The record left storage but this tab's own projection has not shown the outcome yet.
+   * It stands in for the row, like a sending one, until the inbox lists it, a divider
+   * names it, or a refetch started at its removal resolves.
+   */
+  witness?: true;
+};
 export type SwitchAnswer = {
   id: string;
   mode: AiWriteMode;
@@ -67,6 +80,10 @@ type ThreadModel = {
   /** Records of switches whose last attempt in this tab did not reach the server. */
   failedSwitches: Set<string>;
   switches: readonly JournalSwitch[];
+  /** The last state this tab saw of each switch record still in storage. */
+  seen: Map<string, { entry: JournalSwitch; rejected: boolean }>;
+  /** Switches that left storage and have not yet shown up in this tab's projection. */
+  witnesses: Map<string, JournalSwitch>;
   answerListeners: Set<(answer: SwitchAnswer) => void>;
 };
 const models = new Map<string, ThreadModel>();
@@ -81,6 +98,8 @@ function threadModel(accountId: string, threadId: string): ThreadModel {
       bindings: new Set(),
       failedSwitches: new Set(),
       switches: [],
+      seen: new Map(),
+      witnesses: new Map(),
       answerListeners: new Set(),
     };
     models.set(id, model);
@@ -99,7 +118,7 @@ export function onSwitchAnswered(
 }
 const key = (accountId: string, recordId: string) => `${accountId}:${recordId}`;
 
-function projectRow(accountId: string, entry: ChatSubmission, actions: ThreadStoreActions): Row {
+function projectRow(accountId: string, entry: NewChatSubmission, actions: ThreadStoreActions): Row {
   const rows = threadModel(accountId, entry.threadId).rows;
   const id = key(accountId, entry.recordId);
   let row = rows.get(id);
@@ -117,7 +136,7 @@ function projectRow(accountId: string, entry: ChatSubmission, actions: ThreadSto
 /** The durable write is the commit point. Projection faults cannot return the words to Send. */
 export function recordAndProjectSubmission(
   accountId: string,
-  entry: ChatSubmission,
+  entry: NewChatSubmission,
   actions: ThreadStoreActions,
   scope: ComposerDraftScope,
 ): boolean {
@@ -310,8 +329,10 @@ export class ChatSubmissionOwner {
       },
       transferReceived: (entry) => this.transferDestination(entry).hasReceived(entry.recordId),
       transferForEdit: (entry, cohort) => {
-        const snapshots = cohort.flatMap((record) => (record.draft ? [record.draft] : []));
-        if (snapshots.length !== cohort.length) return false;
+        // Only messages carry words; a switch in the cohort leaves with them and has no draft.
+        const messages = cohort.filter((record) => !record.control);
+        const snapshots = messages.flatMap((record) => (record.draft ? [record.draft] : []));
+        if (snapshots.length !== messages.length) return false;
         const source = composerSessionDraft(accountId, { kind: "chat", id: threadId });
         const target = this.transferDestination(entry);
         if (
@@ -323,7 +344,7 @@ export class ChatSubmissionOwner {
         if (
           !target.prependSnapshots(
             snapshots,
-            cohort.map((record) => record.recordId),
+            messages.map((record) => record.recordId),
           )
         )
           return false;
@@ -364,7 +385,7 @@ export class ChatSubmissionOwner {
   submitSwitch = (id: string, mode: AiWriteMode): boolean => {
     const { accountId, threadId, projectId, current } = this.options;
     if (!current()) return false;
-    const entry: ChatSubmission = {
+    const entry: NewChatSubmission = {
       recordId: id,
       submissionId: id,
       threadId,
@@ -452,16 +473,32 @@ export class ChatSubmissionOwner {
 
   /** The switches still in the journal, oldest first. A new array only when one changed. */
   private rebuildSwitches(records: readonly ChatSubmission[]) {
-    const found = records
-      .filter((entry) => entry.control)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const found = records.filter((entry) => entry.control).sort(compareSubmissions);
     const failed = this.model.failedSwitches;
     for (const id of failed) if (!found.some((entry) => entry.recordId === id)) failed.delete(id);
-    const next = found.map((entry) => ({
+    const live: JournalSwitch[] = found.map((entry) => ({
       id: entry.recordId,
       mode: entry.control?.mode ?? "direct",
       failed: entry.state === "rejected" || failed.has(entry.recordId),
+      awaitingServer: !!entry.posted && entry.state !== "rejected",
     }));
+    const { seen, witnesses } = this.model;
+    const liveIds = new Set(live.map((entry) => entry.id));
+    for (const [id, last] of seen) {
+      if (liveIds.has(id)) continue;
+      seen.delete(id);
+      // A refused switch leaves by Withdraw or Edit and never reached the server. Any other
+      // one left because the server answered it, and this tab's projection may lag.
+      if (!last.rejected) this.keepWitness(last.entry);
+    }
+    for (const entry of live) {
+      seen.set(entry.id, {
+        entry,
+        rejected: found.some((r) => r.recordId === entry.id && r.state === "rejected"),
+      });
+      witnesses.delete(entry.id);
+    }
+    const next = [...witnesses.values(), ...live];
     const previous = this.model.switches;
     const same =
       previous.length === next.length &&
@@ -469,10 +506,37 @@ export class ChatSubmissionOwner {
         (entry, index) =>
           entry.id === next[index]?.id &&
           entry.mode === next[index]?.mode &&
-          entry.failed === next[index]?.failed,
+          entry.failed === next[index]?.failed &&
+          entry.awaitingServer === next[index]?.awaitingServer &&
+          entry.witness === next[index]?.witness,
       );
     if (!same) this.model.switches = next;
   }
+
+  /** Hold a departed switch as a witness, and refetch: the refetch's end retires it. */
+  private keepWitness(entry: JournalSwitch) {
+    const { queryClient, threadId } = this.options;
+    this.model.witnesses.set(entry.id, {
+      ...entry,
+      failed: false,
+      awaitingServer: false,
+      witness: true,
+    });
+    void queryClient
+      .invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) })
+      .then(() => this.settleSwitches([entry.id]))
+      .catch((error) => reportError(error));
+  }
+
+  /** The projection shows these switches (listed, divided or refetched): their witnesses retire. */
+  settleSwitches = (ids: Iterable<string>) => {
+    const { witnesses } = this.model;
+    let settled = false;
+    for (const id of ids) settled = witnesses.delete(id) || settled;
+    if (!settled) return;
+    const binding = [...this.model.bindings].find((owner) => owner.options.current());
+    binding?.rebuild();
+  };
 
   /** Absence is not dissolution. Resolve remote Edit versus acceptance from the server. */
   private async reconcileDestination() {
@@ -537,7 +601,7 @@ export class ChatSubmissionOwner {
     const { accountId, threadId, projectId, actions, current } = this.options;
     if (!current()) return false;
     const creation = this.entries().find((entry) => entry.creation)?.creation;
-    const entry: ChatSubmission = {
+    const entry: NewChatSubmission = {
       recordId: envelope.submissionId,
       submissionId: envelope.submissionId,
       threadId,

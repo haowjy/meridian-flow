@@ -44,7 +44,15 @@ export type LocalSend = {
 };
 
 /** A switch the submission journal still holds: not yet admitted by the server. */
-export type JournaledSwitch = { id: string; mode: AiWriteMode; failed: boolean };
+export type JournaledSwitch = {
+  id: string;
+  mode: AiWriteMode;
+  failed: boolean;
+  /** Posted and not refused: the server may hold it, so the row offers Retry and no Withdraw. */
+  awaitingServer?: boolean;
+  /** Left the journal; this tab's projection has not shown it yet. Stands in like a sending row. */
+  witness?: boolean;
+};
 
 /** `settled`: the server confirmed it, either withdrawn or already started. */
 export type Withdrawal = "withdrawing" | "failed" | "settled";
@@ -63,6 +71,8 @@ export type QueuedControl = {
   id: string;
   control: ControlBody;
   status: QueuedControlStatus;
+  /** The server may hold it and hasn't answered: Retry only, no local Withdraw. */
+  awaitingServer?: boolean;
 };
 
 export type ControlAction =
@@ -197,14 +207,22 @@ function listControls(input: MergeInput): Listed[] {
   }
   for (const entry of input.journaled ?? []) {
     const withdrawal = local.withdrawals.get(entry.id);
-    if (listed.has(entry.id) || (withdrawal && withdrawal !== "failed")) continue;
+    // The inbox, a divider, or this tab's own answer already shows it.
+    if (
+      listed.has(entry.id) ||
+      executedControlIds.has(entry.id) ||
+      local.sends.some((send) => send.id === entry.id) ||
+      (withdrawal && withdrawal !== "failed")
+    )
+      continue;
     result.push({
       control: {
         id: entry.id,
         control: { kind: "write_mode", mode: entry.mode },
         status: entry.failed ? "failed" : "sending",
+        ...(entry.awaitingServer ? { awaitingServer: true } : {}),
       },
-      unanswered: !entry.failed,
+      unanswered: !entry.failed && !entry.witness,
     });
   }
   return result;

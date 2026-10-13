@@ -43,6 +43,7 @@ function entry(id = "one", text = "First rejected"): ChatSubmission {
     threadId: "thread_1",
     projectId: "project-1",
     createdAt: `2026-10-11T00:00:0${id === "one" ? 1 : 2}Z`,
+    seq: id === "one" ? 1 : 2,
     blocks: [...envelope.blocks],
     references: [...envelope.references],
     activatedSkillSlugs: [...envelope.activatedSkillSlugs],
@@ -83,6 +84,7 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
   };
   return {
     read: () => owner,
+    client,
     dissolved,
     focused,
     dispose: () => {
@@ -163,6 +165,17 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   };
   recordChatSubmission(account, { ...entry(), creation });
   recordChatSubmission(account, { ...entry("two", "Second rejected"), creation });
+  // A switch queued behind the refused creation has no words; Edit takes it with the cohort.
+  recordChatSubmission(account, {
+    ...entry("mode", ""),
+    state: undefined,
+    blocks: [],
+    references: [],
+    text: "",
+    draft: undefined,
+    control: { kind: "write_mode", mode: "draft" },
+    creation,
+  });
   composerSessionDraft(account, { kind: "chat", id: "thread_1" }).prependSnapshots([
     serializeComposerDraft(plainComposerDoc("Third unsent")).draft,
   ]);
@@ -196,6 +209,30 @@ it("a cross-tab retirement removes an unresolved optimistic row, not just reject
   window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
   expect(scenario.turns()).toEqual([]);
   expect(mounted.dissolved).not.toHaveBeenCalled();
+});
+
+it("a switch that leaves the journal stays this tab's row until a refetch started at its removal resolves", async () => {
+  recordChatSubmission(account, {
+    ...entry("mode", ""),
+    state: undefined,
+    posted: true,
+    blocks: [],
+    references: [],
+    text: "",
+    draft: undefined,
+    control: { kind: "write_mode", mode: "direct" },
+  });
+  const mounted = await mount(new ThreadRunScenario());
+  const refetch = scenarioGate<void>();
+  const invalidate = vi.spyOn(mounted.client, "invalidateQueries").mockReturnValue(refetch.promise);
+  // The driving tab's answer retired the record; this tab's projection has not caught up.
+  const key = chatSubmissionStorageKey(account, "mode");
+  window.localStorage.removeItem(key);
+  window.dispatchEvent(new StorageEvent("storage", { key, storageArea: window.localStorage }));
+  expect(mounted.read().switches).toEqual([expect.objectContaining({ id: "mode", witness: true })]);
+  expect(invalidate).toHaveBeenCalledOnce();
+  refetch.resolve();
+  await vi.waitFor(() => expect(mounted.read().switches).toEqual([]));
 });
 
 it("dissolves this pane without retiring a message recorded after the transfer read", async () => {

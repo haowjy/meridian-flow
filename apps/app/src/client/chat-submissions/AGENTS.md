@@ -27,7 +27,7 @@ attempts and the shared recovery eligibility/status snapshot for every mounted p
   live or recovered row keeps each reference's document like the snapshot does.
 - The journal owns every displayed unadmitted writer message. `creation` carries
   create-or-get inputs on every record until the server confirms the chat.
-  `ChatSubmissionDriver` serializes requests in `createdAt` order under
+  `ChatSubmissionDriver` serializes requests in `seq` order (then record id) under
   `meridian:chat-submissions:<accountId>:<threadId>`. Derivation waits stay outside
   that lock. Account/lifetime cancellation abandons work without presenting failure;
   each request has a timeout so a departed owner cannot block takeover.
@@ -38,24 +38,38 @@ attempts and the shared recovery eligibility/status snapshot for every mounted p
 - Retry looks up the same submission id first. Acceptance bridges without a POST;
   not-seen posts the same id; only a durable rejection re-mints the id in the same
   record key. Edit fences an existing chat's submission before transferring its
-  structured draft ahead of newer writing. Never-created chat Edit transfers all
-  its journal drafts and this tab's unsent writing to New chat before retirement.
+  structured draft ahead of newer writing. Never-created chat Edit transfers its messages'
+  journal drafts and this tab's unsent writing to New chat, and retires the whole cohort,
+  queued switches included, in one step.
 - Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
 - Codec rejects wrong-version and foreign envelopes without throwing. Unreadable
   records and unavailable enumeration retain the last complete snapshot and never sweep rows.
 
+Every record carries `seq`: its place in the chat's order, the chat's largest `seq` plus
+one, allocated in the same synchronous step as the first write (`localStorage` has no await
+between the read and the write). Drain order and the refusal barrier sort by `seq`, then by
+record id; `createdAt` is display only. Two tabs appending in one tick can tie, and the id
+breaks that tie: the writer cannot have made an order between actions in the same
+millisecond. A rewrite keeps its `seq`. The schema is v3; older keys are not read.
+
 A write-mode switch is a record too (`control: { kind: "write_mode", mode }`, empty
 message fields, `recordId` = its control id). The one driver posts it to the controls
-route in `createdAt` order with the messages around it, so a switch waits behind a
+route in `seq` order with the messages around it, so a switch waits behind a
 chat's in-flight creation and a message never overtakes it, reload included. A
-transient failure leaves it unresolved (same id on retry); a refusal stores
-`state: "rejected"` and holds the records after it until Withdraw (`withdrawControl`
-drops it under the lock) or an admitted Retry. It has no writer row: its queued row,
-Retry and Withdraw come from `useThreadControls`, and the server's answer reaches it
-through `onSwitchAnswered` before the record is retired.
+record is marked `posted` durably before its first request leaves. A transient failure
+leaves it unresolved (same id on retry); a refusal stores `state: "rejected"` and holds
+the records after it until Withdraw or an admitted Retry. `withdrawControl` drops a
+record under the lock only when the server can't have it (never posted, or refused);
+a posted unresolved one is kept (Retry only), and a record already gone is the
+server's to withdraw. It has no writer row: its queued row, Retry and Withdraw come
+from `useThreadControls`, and the server's answer reaches it through `onSwitchAnswered`
+before the record is retired. A tab that saw the record keeps an in-memory witness
+(`JournalSwitch.witness`) after it leaves storage, and starts a thread refetch; the
+witness retires when the inbox lists the id, a divider names it (`settleSwitches`), or
+that refetch resolves. A refused record's removal leaves no witness.
 
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
-Account bind rewrites v1 under the driver thread lock. A v2 copy is not
+Account bind rewrites v1 under the driver thread lock. A v3 copy is not
 drivable or retirable until its v1 key is gone; failed deletion leaves words in v1. The
 bounded rewrite removal trigger is in `.context/TODO`.
 

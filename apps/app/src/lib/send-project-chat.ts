@@ -1,7 +1,7 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { ChatSubmission } from "@/client/chat-submissions";
+import type { NewChatSubmission } from "@/client/chat-submissions";
 import { recordAndProjectSubmission } from "@/client/chat-submissions/owner";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerDraftSnapshot } from "@/components/app/composer/composer-document";
@@ -58,7 +58,7 @@ export function sendProjectChat({
     // Durable witness before any display or navigation: if the intent cannot be
     // persisted, do not show a destination or dispatch it. Keep the draft so
     // the composer can report the local failure.
-    const submission: ChatSubmission = {
+    const submission: NewChatSubmission = {
       recordId: submissionId,
       submissionId,
       threadId,

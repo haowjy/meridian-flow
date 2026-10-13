@@ -150,6 +150,12 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
 3. During the reply: switch and switch back. Both rows disappear, no divider is
    written, and `GET /api/threads/<id>/snapshot` shows an empty pending inbox.
 4. Abort `**/controls` in the browser (`agent-browser network route "**/controls" --abort`),
-   switch, then send a message: the row says "Couldn't switch…" with Retry and Withdraw, and the
-   message stays "Sending". Remove the route and reload: the switch is admitted before the message.
-5. New chat: pick a mode in the new-chat composer and send. The chat starts in it.
+   switch, then send a message: the row says "Couldn't switch…" with Retry and no Withdraw (the
+   request left, so the server may hold it), and the message stays "Sending". Remove the route and
+   Retry: the row becomes queued and Withdraw appears; it withdraws on the server. Reload instead
+   and the switch is admitted before the message.
+5. Two tabs on one chat during a reply: switch in the typing tab. When the driving tab's answer
+   retires the record, the other tab keeps the row and the chosen mode through the retirement.
+6. A refused first send (`**/threads` returns 4xx) with a switch queued behind it: Edit returns to
+   New chat with the message's draft and clears the switch.
+7. New chat: pick a mode in the new-chat composer and send. The chat starts in it.
