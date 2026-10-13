@@ -49,8 +49,13 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   only the current checkout's own dev database. Never reset another
   developer's database. Legacy imports are a separate ETL.
 - `document_yjs_heads.latest_checkpoint_id` is a Drizzle-declared FK, not custom
-  SQL. Yjs checkpoints are append-only and disappear only with their parent
-  document cascade.
+  SQL. Compaction retires update prefixes through the generation-local head
+  `retired_through_seq`. Checkpoints persist until document cascade except for
+  the initial zero-sequence seed, which routine persistence may replace.
+
+- Forward-turn inverses use immutable `document_edits` and `document_edit_parts`.
+  Legacy reconstruction reversal tables and the unused mutation provenance sink
+  are retired; immutable edits own write provenance and inverse state.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md) for migration workflow and the
 Yjs head FK contract.

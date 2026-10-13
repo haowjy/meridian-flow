@@ -8,7 +8,8 @@ export function modelToolSchema(schema: z.ZodType): Record<string, unknown> {
       unknown
     >,
   ) as Record<string, unknown>;
-  // Every gateway adapter forwards this object as the provider JSON Schema.
+  // This is the canonical advertised schema. Adapters may derive a provider
+  // projection; execution validation always uses the original Zod contract.
   // Anthropic's SDK requires an object root, which z.toJSONSchema doesn't emit
   // for a discriminated union. Mark the root only; sealing the union wrapper
   // with additionalProperties would make every strict branch unsatisfiable.

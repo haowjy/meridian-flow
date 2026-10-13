@@ -15,12 +15,11 @@ import {
   requireThreadOwner,
   ThreadConversationContextError,
 } from "../domains/threads/index.js";
+import { throwHttpInterruptForStatus } from "../shared/interrupt-boundary.js";
 import type { ThreadRepositories } from "./compose.js";
-import { throwHttpInterruptForStatus } from "./interrupt-boundary.js";
 
 export interface TurnContextPreviewRouteDeps {
   repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks" | "promptBakes">;
-  projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
   modelRequestDebug: ModelRequestDebugStore;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
   toolRegistry: ToolRegistry;
@@ -38,7 +37,7 @@ export async function handleGetTurnContextPreview(
   }
 
   const thread = await requireThreadOwner(
-    { threads: deps.repos.threads, projects: deps.projectRepo },
+    { threads: deps.repos.threads },
     input.threadId,
     input.userId,
   );

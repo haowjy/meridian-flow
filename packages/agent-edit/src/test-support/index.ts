@@ -12,5 +12,4 @@ export { harness as createWriteToolHarness } from "../tool/test-support/write-to
 export {
   InMemoryAgentEditJournal,
   type InMemoryAgentEditJournalOptions,
-  type StoredAgentEditMutation,
 } from "./in-memory-agent-edit.js";

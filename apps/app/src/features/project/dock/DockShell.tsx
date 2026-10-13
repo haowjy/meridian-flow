@@ -1,10 +1,10 @@
 /**
- * DockShell — the tabbed container both dock occupants render through.
+ * DockShell — the container both dock occupants render through.
  *
- * Gives the dock its one header row (view switch + close, via a caller-supplied
+ * Gives the dock its one header row (occupant identity + close, via a caller-supplied
  * header slot) and swaps the body between the occupant's native content
- * (`children`), the work-scoped Changes view, and the one document the dock
- * can hold (`DockDocumentView`), which covers both views until it is closed.
+ * (`children`), the one document the dock
+ * can hold (`DockDocumentView`), which covers its native body until closed.
  * The header only appears in
  * `dock` placement; in `center` the shell is a passthrough so the chat surface
  * can move center↔dock without its live subtree ever reconciling to a
@@ -13,10 +13,10 @@
  *
  * The header is a slot, not a fixed component: the desktop dock renders
  * `DockHeader`, and the phone chat sheet renders its own header built from
- * `MobileTopBar` chrome. `DockShell` owns only the view-switch state
- * (`useDockView`) and hands it to whichever header the caller supplies.
+ * `MobileTopBar` chrome. `DockShell` owns only the document slot (`useDockDocument`)
+ * and hands it to whichever header the caller supplies.
  *
- * The primary body stays MOUNTED when Changes or a document covers it: chat
+ * The primary body stays MOUNTED when a document covers it: chat
  * must survive a view switch the same way it survives a collapsed dock, so it
  * is hidden and `inert` rather than unmounted. The overlay covers it, so
  * nothing reflows.
@@ -24,17 +24,13 @@
 
 import type { ReactNode } from "react";
 
-import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { hasDockChanges } from "@/features/chat/docked-drafts";
 import { cn } from "@/lib/utils";
 
 import { usePresentedDockDocument } from "../DesktopProjectController";
 import type { ScreenKey } from "../shell/screens";
-import { DockChangesView } from "./DockChangesView";
 import { DockDocumentView } from "./DockDocumentView";
 import type { DockHeaderSlotArgs } from "./DockHeader";
-import { useDockView } from "./dock-view-store";
-import { withoutEmptyChanges } from "./dock-views";
+import { useDockDocument } from "./dock-document-store";
 
 export type DockShellProps = {
   projectId: string;
@@ -42,7 +38,7 @@ export type DockShellProps = {
   screen: ScreenKey;
   /** Whether the dock is on screen (not collapsed); a hidden dock's document editor stands down. */
   visible?: boolean;
-  /** Renders the dock's header from the current view-switch state; called only in `dock` placement. */
+  /** Renders the dock's header from the current document; called only in `dock` placement. */
   renderHeader: (args: DockHeaderSlotArgs) => ReactNode;
   children: ReactNode | ((showPrimary: boolean) => ReactNode);
 };
@@ -55,21 +51,11 @@ export function DockShell({
   renderHeader,
   children,
 }: DockShellProps) {
-  const dockView = useDockView(screen, projectId);
-  const { groups } = useDraftReview();
-  const hasChanges = hasDockChanges(groups);
-  const { view, views } = withoutEmptyChanges(dockView, hasChanges);
-  const { setView } = dockView;
+  const storedDocument = useDockDocument(screen, projectId);
   const presentedDocument = usePresentedDockDocument(screen);
-  const dockDocument = presentedDocument === undefined ? dockView.document : presentedDocument;
+  const dockDocument = presentedDocument === undefined ? storedDocument : presentedDocument;
   const inDock = placement === "dock";
-  const overlay = !inDock
-    ? null
-    : dockDocument
-      ? "document"
-      : view === "changes"
-        ? "changes"
-        : null;
+  const overlay = inDock && dockDocument ? "document" : null;
   const showPrimary = overlay === null;
 
   return (
@@ -77,9 +63,7 @@ export function DockShell({
       {inDock
         ? renderHeader({
             projectId,
-            view,
-            views,
-            onSelectView: setView,
+            screen,
             document: dockDocument,
           })
         : null}
@@ -94,7 +78,6 @@ export function DockShell({
         >
           {typeof children === "function" ? children(showPrimary) : children}
         </div>
-        {overlay === "changes" ? <DockChangesView className="absolute inset-0" /> : null}
         {overlay === "document" && dockDocument ? (
           <div className="absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden">
             <DockDocumentView projectId={projectId} document={dockDocument} visible={visible} />

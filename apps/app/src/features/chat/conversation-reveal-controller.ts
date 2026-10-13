@@ -18,6 +18,8 @@ export type ConversationRevealTarget =
       subagentThreadId?: string;
       /** Which of the subagent's blocks to land on: its latest point (default) or its launch card. */
       subagentBlock?: SubagentRevealBlock;
+      /** A tool call inside the turn to bring into view: its row, or the fold that holds it. */
+      toolCallId?: string;
     }
   | { kind: "change"; threadId: string; turnId: string; changeId: string };
 
@@ -44,6 +46,7 @@ export type TurnRevealRequest = StageOutcome & {
   turnId: string;
   subagentThreadId?: string;
   subagentBlock?: SubagentRevealBlock;
+  toolCallId?: string;
 };
 export type ChangeRevealRequest = StageOutcome & {
   threadId: string;
@@ -135,6 +138,9 @@ function createConversationRevealController(): ConversationRevealController {
                       subagentThreadId: target.subagentThreadId,
                       ...(target.subagentBlock ? { subagentBlock: target.subagentBlock } : {}),
                     }
+                  : {}),
+                ...(target.kind === "turn" && target.toolCallId
+                  ? { toolCallId: target.toolCallId }
                   : {}),
                 landed,
                 unavailable,

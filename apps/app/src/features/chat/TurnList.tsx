@@ -49,6 +49,7 @@ export type TurnListProps = {
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
+  waitingForUsage?: boolean;
   /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
   controls?: ThreadControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
@@ -101,6 +102,7 @@ export function TurnList({
   changeTrails = {},
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
+  waitingForUsage,
   controls = null,
   brief = null,
   replyRetry = null,
@@ -176,6 +178,18 @@ export function TurnList({
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem) =>
     item.end <= (viewportRef.current?.scrollTop ?? 0);
 
+  // Follow policy. `getTotalSize()` is the content height AND the revision: it is
+  // the height the virtualized list scrolls over, and it changes on turn append,
+  // on measured streaming-row growth, and on composer-inset change — each change
+  // re-renders this component, so the follow pin fires before paint. Passing the
+  // height (not a bare counter) lets the pin compute the bottom without reading
+  // `scrollHeight`, which would force a layout on every revision.
+  // The thread opens in `follow`, so the very first pin anchors to the newest turn.
+  const { mode, enterFollow, releaseFollow } = useChatFollowScroll({
+    scrollRef: viewportRef,
+    contentHeight: virtualizer.getTotalSize(),
+  });
+
   // Turn stage of a conversation reveal. The transcript owns the landing (and
   // the verdict when the turn isn't here); the scroll capability stays here.
   useTurnRevealLanding({
@@ -188,19 +202,12 @@ export function TurnList({
         : turnId,
     historySettled,
     viewportRef,
-    scrollToIndex: (index) => virtualizer.scrollToIndex(index + rowOffset, { align: "center" }),
-  });
-
-  // Follow policy. `getTotalSize()` is the content height AND the revision: it is
-  // the height the virtualized list scrolls over, and it changes on turn append,
-  // on measured streaming-row growth, and on composer-inset change — each change
-  // re-renders this component, so the follow pin fires before paint. Passing the
-  // height (not a bare counter) lets the pin compute the bottom without reading
-  // `scrollHeight`, which would force a layout on every revision.
-  // The thread opens in `follow`, so the very first pin anchors to the newest turn.
-  const { mode, enterFollow } = useChatFollowScroll({
-    scrollRef: viewportRef,
-    contentHeight: virtualizer.getTotalSize(),
+    scrollToIndex: (index) => {
+      // A transcript that has just mounted is still following the live edge,
+      // and would pin back to the bottom once the target's rows are measured.
+      releaseFollow();
+      virtualizer.scrollToIndex(index + rowOffset, { align: "center" });
+    },
   });
 
   // Reacquire follow when the user submits (each local message bumps the revision).
@@ -253,6 +260,7 @@ export function TurnList({
             turn={turn}
             submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
             queued={local && queuedWriterTurnIds?.has(turn.id)}
+            waitingForUsage={waitingForUsage}
           />
         );
       }
@@ -311,6 +319,7 @@ export function TurnList({
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
       queuedWriterTurnIds,
+      waitingForUsage,
       threadId,
       threadUsage,
       transcript,
@@ -427,15 +436,6 @@ export function TurnList({
       />
     </div>
   );
-}
-
-/** Latest transcript location for a child: its finished line, else its launch card. */
-export function resolveSubagentRevealTurnId(
-  turns: Turn[],
-  childThreadId: string,
-  originTurnId: string,
-): string {
-  return buildTranscriptModel(turns, false).resolveRevealTurnId(childThreadId, originTurnId);
 }
 
 function JumpToLatestButton({

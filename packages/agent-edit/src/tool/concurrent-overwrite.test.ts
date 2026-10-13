@@ -146,7 +146,12 @@ describe("concurrent structural mutation matrix", () => {
       {
         ...context,
         turnId: `turn-code-overwrite-${responseId ?? "immediate"}`,
-        ...(responseId ? { responseId, createdDocument: false } : {}),
+        ...(responseId
+          ? {
+              responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+              createdDocument: false,
+            }
+          : {}),
       },
     );
     expectOutcome(result, "success");
@@ -171,7 +176,12 @@ describe("concurrent structural mutation matrix", () => {
     const result = await ctx.core.write(command, {
       ...context,
       turnId: `turn-concurrent-overwrite-${responseId ?? "immediate"}`,
-      ...(responseId ? { responseId, createdDocument: false } : {}),
+      ...(responseId
+        ? {
+            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+            createdDocument: false,
+          }
+        : {}),
     });
     expectOutcome(result, "success");
 
@@ -220,7 +230,12 @@ describe("concurrent structural mutation matrix", () => {
       {
         ...context,
         turnId: `turn-residual-window-${responseId ?? "immediate"}`,
-        ...(responseId ? { responseId, createdDocument: false } : {}),
+        ...(responseId
+          ? {
+              responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+              createdDocument: false,
+            }
+          : {}),
       },
     );
     expectOutcome(result, "success");
