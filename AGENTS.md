@@ -118,9 +118,12 @@ Driving or inspecting the running app (threads, docs, mock model, logs): use
 [docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli); 6 means `./mf`
 could not tell. Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s
 second phase lands, a 0 from `./mf thread send` does not prove which reply answered
-your message: check it against `./mf thread view` (the durable transcript). `./mf`
-shares the app's socket client and message serializer, not its screen: check what
-the writer sees (rendering, the composer, optimistic UI, client state) in the browser.
+your message: check it against `./mf thread view` (the durable transcript). `tail --until-idle`
+now waits for a snapshot that confirms idle. `./mf` shares the
+app's socket client, message serializer and chat event processing (the turn
+reducer), not its screen: check what the writer sees (rendering, the composer,
+optimistic UI, client state) in the browser. See
+[`./mf` drives shared client cores][mf-shared-cores].
 
 ## Build and test
 
@@ -170,4 +173,5 @@ git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 - Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
+[mf-shared-cores]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-drives-shared-client-cores.md
 [model-work-switch]: apps/server/server/domains/runtime/.context/tools.md#permissions
