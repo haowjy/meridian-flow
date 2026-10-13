@@ -113,6 +113,21 @@ export function fencedSelection(
   };
 }
 
+export type ClickedChanges = {
+  documentId: string;
+  preview: ActivePreview;
+  operationIds: string[];
+};
+
+/** What a click on `operationIds` of a previewed item sends. */
+export function fencedRequest(
+  command: { documentId: string },
+  preview: ActivePreview,
+  operationIds: string[],
+): ClickedChanges {
+  return { documentId: command.documentId, preview, operationIds };
+}
+
 type ActivePreview = Extract<Awaited<ReturnType<DraftReviewApi["preview"]>>, { status: "active" }>;
 
 /**
@@ -134,6 +149,19 @@ export function reviewDriver(
   }
   const driver = {
     resolved,
+    /** The wire-less shape of a click: the document, its preview and the operations chosen. */
+    applyRequest: (request: ClickedChanges) =>
+      driver.applyChanges(request.documentId, request.preview, request.operationIds),
+    discardRequest: (request: ClickedChanges) =>
+      driver.discardChanges(request.documentId, request.preview, request.operationIds),
+    async actorThreads(documentId: string) {
+      const listed = await review.listItems({ workId });
+      const item = listed.items.find((candidate) => candidate.documentId === documentId);
+      return (item?.actorThreadIds ?? []).map((threadId) => ({
+        threadId,
+        title: listed.threadTitles.get(threadId) ?? null,
+      }));
+    },
     async preview(documentId: string) {
       return review.preview({ workId, itemKey: (await resolved(documentId)).itemKey });
     },
