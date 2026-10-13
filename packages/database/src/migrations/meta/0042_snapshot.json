@@ -1,5 +1,5 @@
 {
-  "id": "30c9eea0-3d9a-4140-975f-8cf1a90de12f",
+  "id": "ea798ddd-82c8-4cb8-92a8-f305010106b3",
   "prevId": "1ff6024c-cb94-4678-9bc4-d007fa319565",
   "version": "7",
   "dialect": "postgresql",
@@ -2645,6 +2645,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'0'"
+        },
+        "inbox_blocked_reason": {
+          "name": "inbox_blocked_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "next_seq": {
           "name": "next_seq",
@@ -9348,13 +9354,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1000000
-        },
-        "retired_through_seq": {
-          "name": "retired_through_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         },
         "latest_update_seq": {
           "name": "latest_update_seq",
