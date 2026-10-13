@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 /** Unavailable draft review selectors stay selected without falling back to live documents. */
-import { CONTEXT_URI_SCHEMES, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { act, useState } from "react";
 import { expect, it } from "vitest";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
@@ -16,9 +15,11 @@ import {
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ReviewAddressOwner } from "../ReviewAddressOwner";
 
-it.each(
-  CONTEXT_URI_SCHEMES.filter(isDraftedScheme),
-)("an unavailable %s review selector stays selected and never admits the live occupant", async (scheme) => {
+// The locator is passed through unparsed; the default scheme and the cross-source one witness it.
+it.each([
+  "manuscript",
+  "user",
+] as const)("an unavailable %s review selector stays selected and never admits the live occupant", async (scheme) => {
   const transitions: string[] = [];
   function Harness() {
     const [branch, setBranch] = useState<string | null>("unknown");
