@@ -207,6 +207,7 @@ describe("branch-push durable projection", () => {
       source: "agent",
       threadId: threadId as never,
       turnId: turnId as never,
+      wId: 1,
     });
     const branchPush = createBranchPushService({
       links: createStaticDocumentLinkScopes(),
@@ -408,6 +409,7 @@ describe("branch-push durable projection", () => {
       source: "agent",
       threadId: threadId as never,
       turnId: turnId as never,
+      wId: 1,
     });
     const branchPush = createBranchPushService({
       links: createStaticDocumentLinkScopes(),
