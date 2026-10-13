@@ -196,6 +196,7 @@ export function createDraftDiscard(deps: {
       if (input.selection.kind === "whole") {
         const ended = await retrying(() => whole(workId, draftId, input.command));
         if (!ended) return gone;
+        await collabHook("discard.beforeRetirement");
         await deps.retire(ended.retired);
         await deps.releaseObjects(ended.releasedObjects);
         return { status: "discarded", draftId, draftClosed: true };
@@ -205,6 +206,7 @@ export function createDraftDiscard(deps: {
       if (selected.length === 0) return { status: "discarded", draftId, draftClosed: false };
       const ended = await retrying(() => items(workId, draftId, selected, input.command));
       if (!ended) return gone;
+      await collabHook("discard.beforeRetirement");
       await deps.retire(ended.retired);
       await deps.releaseObjects(ended.releasedObjects);
       return { status: "discarded", draftId, draftClosed: false };
