@@ -46,11 +46,10 @@ state a later `read` forks from.
 Preview and selective disposition consume the same `ReadReviewCut` port and
 pure `domain/review-cut.ts` derivation. The adapter's first branch read fixes a
 root read-only repeatable-read snapshot. Branch generation/bytes, all history
-statuses, live journal/head, manifest memberships, thread titles and prepared
-link scopes join that snapshot. It uses no room reads, pulls, provisioning or
-repair. Missing manifest drafts inherit the captured live membership without
-creating a branch. Pinned memberships open a fresh link scope rather than
-joining a caller's older tree snapshot. Returned bytes and scopes are detached;
+statuses, live journal/head, the resolved review item, thread titles and the
+live and draft link views join that snapshot. It uses no room reads, pulls,
+provisioning or repair. A review item with no work-draft branch refuses `gone`
+rather than creating one. Returned bytes and scopes are detached;
 the snapshot closes before rich-difference derivation.
 
 The draft token hashes this observation, including both link views and history
