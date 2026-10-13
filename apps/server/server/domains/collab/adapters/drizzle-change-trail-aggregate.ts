@@ -522,8 +522,9 @@ async function reconcileTerminalOwners(
             AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id
         ) AND NOT EXISTS (
           SELECT 1 FROM branch_push_settlement_outbox pending
+          JOIN branch_push_settlement_batches batch ON batch.id = pending.batch_id
           CROSS JOIN LATERAL change_trail_owners('{}', '{}', ARRAY[pending.push_id]) affected
-          WHERE pending.state = 'pending' AND affected.thread_id = shell.thread_id
+          WHERE batch.state = 'pending' AND affected.thread_id = shell.thread_id
             AND affected.turn_id IS NOT DISTINCT FROM shell.turn_id
         ) AS ready
       FROM change_trail_shells shell JOIN threads thread ON thread.id = shell.thread_id
