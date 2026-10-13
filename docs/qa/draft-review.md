@@ -100,8 +100,8 @@ no scheme whitelist; each row opens its own location.
 ## Rich-only paragraph changes (CLI and visual)
 
 With this worktree's mock stack running, seed `## Scene` followed by
-`The red gate opens.`. Create a named Work, set its `aiWriteMode` to `draft`,
-and bind a thread to it. Through `./mf thread send --mock`, read the document,
+`The red gate opens.`. Create a named Work and a thread bound to it with
+`aiWriteMode: "draft"` in the create body. Through `./mf thread send --mock`, read the document,
 then replace its two blocks with `### Scene` and `The **red** gate opens.`.
 Use tool `path` arguments, not the agent-edit core's internal `file` name.
 
@@ -903,7 +903,7 @@ smoke verification.
 ## Review commands against a replying model (CLI, mock stack)
 
 These probes cover the item, per-change and whole-draft commands, with `commandId`s, while a reply is still
-writing. Use a Work in `aiWriteMode: draft` and an owned project. Every command body carries `draftId`,
+writing. Use a draft-mode chat in a Work (`aiWriteMode: "draft"` at thread creation) and an owned project. Every command body carries `draftId`,
 `itemKey` and a fresh `commandId`; read live with `./mf doc read` after each one.
 
 **Holding a reply mid-write.** A reply saves once per model response, after all of that response's tools have
