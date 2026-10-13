@@ -119,12 +119,29 @@ export function useLinkFollower({
   /** Follows clicked while the scope was pending, released once it registers. */
   const scopeWaiters = useRef(new Set<() => void>());
 
+  // The catalog finishing its load changes what a question needs from the
+  // server, not what is true, so it must not start a new generation: that
+  // threw away every answer in flight and asked all of them again. The
+  // resolver reads `complete` live; only a different catalog (`revision`)
+  // registers anew.
+  const catalog = useRef(index);
+  useLayoutEffect(() => {
+    catalog.current = index;
+  });
+  const revision = index.revision;
   useEffect(() => {
     if (!resolution || !projectId || !workId) return;
+    const registered: LinkableDocumentIndex = {
+      documents: catalog.current.documents,
+      revision,
+      get complete() {
+        return catalog.current.complete;
+      },
+    };
     const unregister = resolution.registerResolver(
       createProjectLinkResolver(
         { projectId, workId, rootThreadId, baseUri, holderDocumentId },
-        index,
+        registered,
         settlements,
       ),
       { baseUri, projectId },
@@ -137,10 +154,18 @@ export function useLinkFollower({
     // be checked". Deferred, the unregister finds a newer registration and is a
     // no-op (it only takes its own generation); on unmount it still runs.
     return () => queueMicrotask(unregister);
-    // `index` stays the same object while its revision does, so a different one
-    // is a different catalog: registering against it is how an answer about the
-    // old one becomes unreachable.
-  }, [baseUri, holderDocumentId, index, projectId, resolution, rootThreadId, settlements, workId]);
+    // A different revision is a different catalog: registering against it is
+    // how an answer about the old one becomes unreachable.
+  }, [
+    baseUri,
+    holderDocumentId,
+    projectId,
+    resolution,
+    revision,
+    rootThreadId,
+    settlements,
+    workId,
+  ]);
 
   const inFlight = useRef(new Set<AbortController>());
   const currentFollow = useRef<AbortController | null>(null);
