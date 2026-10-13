@@ -12,8 +12,10 @@
 
 import { createContext, useCallback, useContext } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { useContextTabsActions } from "@/client/stores";
 import type { LinkDestination } from "@/features/links";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
+import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import {
@@ -88,11 +90,24 @@ export function useDockReviewLauncher(projectId: string, document: DockDocument)
 export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
   const openEditorReview = useOptionalOpenEditorReview();
   const containerLaunch = useContext(ReviewLaunchContext);
+  const projectId = useProjectDocumentNavigationProjectId();
+  const { openTab } = useContextTabsActions();
   return useCallback(
     (document, gesture) => {
       const { review } = document;
       if (!review) return open(document, gesture);
-      const target = { documentId: document.documentId, ...review };
+      // A hidden target exists only in the draft: it is a draft-only review, never a live tab.
+      const target: AiDraftLaunchTarget = {
+        documentId: document.documentId,
+        ...review,
+        isNew: true,
+      };
+      if (gesture === "new-tab") {
+        // The writer keeps their place: the review joins the tab strip without a route change.
+        const tab = contextTabFromDraftGroup(target);
+        if (projectId && tab) openTab(projectId, tab);
+        return Promise.resolve();
+      }
       if (containerLaunch) {
         containerLaunch(target);
         return Promise.resolve();
@@ -103,6 +118,6 @@ export function useReviewingLinkDestination(open: LinkDestination): LinkDestinat
         console.error("[editor-review] launch failed", error);
       });
     },
-    [open, openEditorReview, containerLaunch],
+    [open, openEditorReview, containerLaunch, projectId, openTab],
   );
 }
