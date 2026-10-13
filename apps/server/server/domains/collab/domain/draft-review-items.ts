@@ -146,9 +146,7 @@ export function createDraftReviewItems(deps: {
 
 /** The §3.1 predicate for a document the draft only edited. */
 function isEdited(evidence: WorkDraftPendingEvidence | undefined): boolean {
-  return Boolean(
-    evidence && evidence.rows.length > 0 && (evidence.branch.hasEffect || evidence.branch.blocking),
-  );
+  return Boolean(evidence?.hasRows && (evidence.branch.hasEffect || evidence.branch.blocking));
 }
 
 function toItem(
@@ -160,13 +158,7 @@ function toItem(
 ): DraftReviewItem {
   const deletedLive = !node.hidden && node.live.deleted;
   const isNew = node.origin === "created" && node.hidden;
-  const writers: string[] = [
-    ...new Set(
-      [...(evidence?.rows ?? [])]
-        .sort((a, b) => b.id - a.id)
-        .flatMap((row) => (row.source === "agent" && row.threadId ? [row.threadId as string] : [])),
-    ),
-  ];
+  const writers = evidence?.agentThreadIds ?? [];
   const path = node.target.uri;
   const livePath = node.live.uri !== path && !node.hidden ? node.live.uri : null;
   return {

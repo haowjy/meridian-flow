@@ -152,10 +152,7 @@ function refresh(
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   }
-  void queryClient.invalidateQueries({
-    predicate: (query) =>
-      query.queryKey[0] === projectQueryKeys.all[0] && query.queryKey[2] === "threads",
-  });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(draft.projectId) });
   return Promise.all([
     queryClient.invalidateQueries({
       queryKey: projectQueryKeys.workDrafts(draft.projectId, draft.workId),
