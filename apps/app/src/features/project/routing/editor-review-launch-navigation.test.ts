@@ -61,4 +61,28 @@ describe("review launch navigation", () => {
     expect(history.location.href).toContain("/editor/manuscript/chapters/new.md");
     expect(history.location.href).toContain("draft-1");
   });
+
+  it("re-selecting a draft-only tab keeps its review identity (item=), since no live document exists", async () => {
+    const { open, history } = setup(vi.fn(async () => ({ kind: "failed" as const })));
+    const tab = {
+      kind: "tracked" as const,
+      documentId: "doc-1",
+      scheme: "manuscript" as const,
+      path: "Scene",
+      name: "Scene",
+      editable: true,
+      filetype: "markdown" as const,
+      schemaType: "document" as const,
+      draftOnly: true,
+      reviewWorkId: workId,
+      reviewItemKey: "draft-1:doc-1",
+      tabInstanceId: "tab-1",
+    } as never;
+    const result = await open(
+      { scheme: "manuscript", path: "Scene", documentId: "doc-1", workId },
+      { tab },
+    );
+    expect(result.kind).toBe("applied");
+    expect(history.location.href).toContain("item=draft-1");
+  });
 });
