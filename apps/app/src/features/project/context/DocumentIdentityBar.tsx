@@ -150,6 +150,8 @@ export function DocumentIdentityBar({
         className={cn(
           "flex items-center gap-1 font-mono text-ink-subtle text-sm",
           variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
+          // The row grows so every control can own a 44px target (document-identity-row.css).
+          "[@media(pointer:coarse)]:h-11",
         )}
       >
         {placementOpen ? (

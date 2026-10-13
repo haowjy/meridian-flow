@@ -7,7 +7,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { useDraftView } from "@/features/draft-review/useDraftView";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { DockFailureText } from "./DraftDockMessages";
 import type { DockFile } from "./draft-dock-files";
@@ -161,7 +161,7 @@ function DockFileLine({
   expanded: boolean;
   summary?: (trouble: ReactNode) => ReactNode;
 }) {
-  const touch = usePhoneShell() ?? false;
+  const touch = useCoarsePointer();
   const view = useDraftView(
     {
       projectId: dock.projectId,
@@ -307,7 +307,7 @@ function TroubleLine({
 
 /** One document's review door, independent of the strip's expansion toggle. */
 function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
-  const touch = usePhoneShell() ?? false;
+  const touch = useCoarsePointer();
   return (
     <button
       type="button"
