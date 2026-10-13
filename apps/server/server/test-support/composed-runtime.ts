@@ -27,7 +27,7 @@ async function composeRuntime(db: Database, eventSink: EventSink) {
   const ports = await createProductionAppPorts({
     db,
     eventSink,
-    environment: { OPENAI_API_KEY: "sk-test-runtime-composition" },
+    environment: { FLOW_OPENAI_API_KEY: "sk-test-runtime-composition" },
   });
   const hocuspocus = new Hocuspocus({
     yDocOptions: { gc: false, gcFilter: () => true },

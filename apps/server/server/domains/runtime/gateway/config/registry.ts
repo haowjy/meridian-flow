@@ -327,26 +327,26 @@ export const MODEL_REGISTRY: ModelRegistry = {
     {
       id: "anthropic",
       adapter: "anthropic",
-      apiKeyEnv: "ANTHROPIC_API_KEY",
+      apiKeyEnv: "FLOW_ANTHROPIC_API_KEY",
       models: [CLAUDE_SONNET_4_6_MODEL, CLAUDE_HAIKU_4_5_MODEL],
     },
     {
       id: "openai",
       adapter: "openai",
-      apiKeyEnv: "OPENAI_API_KEY",
+      apiKeyEnv: "FLOW_OPENAI_API_KEY",
       models: [GPT_4O_MODEL, GPT_4_1_MODEL, GPT_4_1_MINI_MODEL, GPT_4O_MINI_MODEL],
     },
     {
       id: "deepseek",
       adapter: "anthropic",
-      apiKeyEnv: "DEEPSEEK_API_KEY",
+      apiKeyEnv: "FLOW_DEEPSEEK_API_KEY",
       baseUrl: "https://api.deepseek.com/anthropic",
       models: [DEEPSEEK_FLASH_MODEL],
     },
     {
       id: "openrouter",
       adapter: "openrouter",
-      apiKeyEnv: "OPENROUTER_API_KEY",
+      apiKeyEnv: "FLOW_OPENROUTER_API_KEY",
       baseUrl: "https://openrouter.ai/api/v1",
       models: [
         OPENROUTER_CLAUDE_SONNET_4_6_MODEL,
