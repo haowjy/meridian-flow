@@ -18,7 +18,10 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { answeredControlIds, isHandoffSeed } from "@meridian/contracts/threads";
-import { viewTranscript } from "@meridian/thread-client";
+import {
+  queuedWriterTurnIds as selectQueuedWriterTurnIds,
+  viewTranscript,
+} from "@meridian/thread-client";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
@@ -62,7 +65,6 @@ import {
 import { optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
-import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { ReferenceAvailabilityContext } from "./reference-availability";

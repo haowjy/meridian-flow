@@ -9,21 +9,6 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
 
-/** Writer turns still waiting for the model to read them; inbox IDs are turn IDs. */
-export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const item of pending.items) {
-    // A control is writer-authored but never a turn; it renders as its own row.
-    if (
-      item.intent !== "control" &&
-      item.provenance.kind === "writer" &&
-      item.deliveryState === "waiting"
-    )
-      ids.add(item.id);
-  }
-  return ids;
-}
-
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   return Array.isArray((value as ThreadPendingInbox).items);

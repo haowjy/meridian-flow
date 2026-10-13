@@ -37,6 +37,14 @@ describe("thread", () => {
       thread: expect.objectContaining({ id: THREAD_ID, ref: "c1" }),
     });
     expect((await mf(["thread", "view", "c1", "--project", PROJECT_ID])).code).toBe(EXIT.ok);
+    // The envelope is the shared view model's rows, with what they were computed from.
+    const envelope = JSON.parse((await mf(["thread", "view", "c1", "--json"])).stdout);
+    expect(envelope).toMatchObject({
+      chatView: 1,
+      inputs: { inherited: "omitted", localRecords: "none", standIns: "none" },
+    });
+    for (const row of envelope.rows)
+      expect(row.identity).toEqual({ turnId: row.renderKey, kind: row.kind, occurrence: 0 });
     const elsewhere = await mf(["thread", "view", "c1", "--project", "other-project"]);
     expect(elsewhere.code).toBe(EXIT.notFound);
     expect(elsewhere.stderr).toContain("--project");

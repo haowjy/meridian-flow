@@ -19,7 +19,7 @@
 import type { AGUIEvent, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import { createTurnReducer, InMemoryTurnStore, type TurnReducer } from "@meridian/thread-client";
 import { truncate } from "../../core/output";
-import { assistantText } from "./transcript";
+import { replyText } from "./reply-text";
 
 export type LiveDiff = {
   turnId: string;
@@ -92,6 +92,7 @@ export class ReducedThread {
     if (ids.size === 0) return {};
     if (truncated || [...ids].some((id) => !this.observedFromStart.has(id)))
       return { liveView: "not_observed" };
+    const liveTurns = this.turns();
     for (const turnId of ids) {
       const live = this.turn(turnId);
       const server = snapshot.turns.find((turn) => turn.id === turnId);
@@ -102,8 +103,8 @@ export class ReducedThread {
           live: live?.status ?? null,
           server: server?.status ?? null,
         });
-      const liveText = live?.role === "assistant" ? assistantText(live) : null;
-      const serverText = server?.role === "assistant" ? assistantText(server) : null;
+      const liveText = live?.role === "assistant" ? replyText(liveTurns, turnId) : null;
+      const serverText = server?.role === "assistant" ? replyText(snapshot.turns, turnId) : null;
       if (liveText !== serverText)
         diffs.push({
           turnId,

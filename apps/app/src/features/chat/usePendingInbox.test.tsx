@@ -3,13 +3,13 @@
 import type { Turn } from "@meridian/contracts/protocol";
 import {
   projectWriterText,
+  queuedWriterTurnIds,
   type ThreadTransport,
   type ThreadTransportHandlers,
 } from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { queuedWriterTurnIds } from "./pending-inbox";
 import { UserTurn } from "./UserTurn";
 import { usePendingInbox } from "./usePendingInbox";
 
