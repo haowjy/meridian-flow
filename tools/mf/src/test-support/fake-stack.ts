@@ -79,7 +79,15 @@ function turnDto(turn: FakeTurn) {
     blocks: [
       ...(turn.blocks ?? []),
       ...(turn.text
-        ? [{ blockType: "text", content: turn.text, createdAt: "2026-01-01T00:00:03.000Z" }]
+        ? [
+            {
+              blockType: "text",
+              content: turn.text,
+              // The server's projection stores the prose beside the content.
+              textContent: turn.text,
+              createdAt: "2026-01-01T00:00:03.000Z",
+            },
+          ]
         : []),
     ].map((block, sequence) => ({
       id: `${turn.id}-b${sequence}`,

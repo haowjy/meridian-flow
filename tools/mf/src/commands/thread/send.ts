@@ -30,6 +30,7 @@ import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
 import { type LiveDiff, ReducedThread } from "./reduced-thread";
+import { replyText } from "./reply-text";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import {
   type Claim,
@@ -40,7 +41,6 @@ import {
   timeoutReport,
 } from "./result";
 import { followThread } from "./stream";
-import { assistantText } from "./transcript";
 import { createThreadClient } from "./transport";
 
 export type SendFields = {
@@ -334,7 +334,7 @@ async function followToOutcome(
     threadId,
     turnId: ourTurn,
     status,
-    finalText: assistantText(turn),
+    finalText: replyText(snapshot.turns, turn?.id ?? null),
     error: turn?.error ?? null,
     ...liveView,
     ...(interrupt

@@ -60,6 +60,7 @@ export {
   isReasoningBlock,
   visibleReasoningText,
 } from "./view/partition-turn";
+export { queuedWriterTurnIds } from "./view/pending-writer-turns";
 export { placeStandIns } from "./view/retry-stand-ins";
 export type { FoldDigest } from "./view/thinking-digest";
 export { threadMessageRow } from "./view/thread-message-result";
