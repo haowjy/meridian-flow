@@ -388,7 +388,7 @@ it("a link to a document that exists only in a draft is followed to that Work's 
       review: {
         workId: "w2",
         itemKey: `${DRAFT}:${KAEL}`,
-        contextLocation: { scheme: "manuscript", path: "Kael.md" },
+        contextLocation: { scheme: "manuscript", path: "/Kael.md" },
         documentName: "Kael",
       },
     },
