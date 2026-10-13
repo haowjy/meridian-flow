@@ -8,6 +8,7 @@ import {
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
+import { commitSegmentRows } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -55,7 +56,7 @@ it.each([
     };
     ai.clientID = 731000;
     edit(ai, 0, 11, 11, " Proposed");
-    await f.branchCoordinator.commitSegmentRows({
+    await commitSegmentRows(f.branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: ai,
       expectedGeneration: branch.generation,
