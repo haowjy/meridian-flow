@@ -12,6 +12,8 @@ const SENSITIVE_EXACT_KEYS = new Set(["body", "message", "messages", "response"]
 const SECRET_TEXT_PATTERN = /\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g;
 const MAX_STRING_LENGTH = 1_000;
 const MAX_IDENTIFIER_LENGTH = 128;
+/** `errorMessage` is the one free-text payload key, already scrubbed by `errorMessageOf`. */
+const MAX_ERROR_MESSAGE_LENGTH = 200;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
@@ -332,6 +334,7 @@ function sanitizeValue(key: string, value: unknown, depth: number): unknown {
     return "[redacted]";
   if (value == null) return value;
   if (typeof value === "string") {
+    if (key === "errorMessage") return redactString(value.slice(0, MAX_ERROR_MESSAGE_LENGTH));
     return payloadStringIsApproved(key, value) ? redactString(value) : "[redacted]";
   }
   if (typeof value === "number" || typeof value === "boolean") return value;

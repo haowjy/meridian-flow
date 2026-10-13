@@ -510,6 +510,25 @@ if (!RUN) {
         .toEqual({ id: liveAnchor });
     });
 
+    it("answers a direct ahead ref (unregistered, no holder) at a model-created hidden document as in a draft, from live and a draft view", async () => {
+      const s = await draftTreeScenario(db, { runtime: await runtimes.compose(), runtimes });
+      const atlas = await s.work("Atlas", "draft");
+      const ship = await s.model(atlas).create("ship2", "A ship.");
+      for (const view of ["live", atlas] as const) {
+        const { answer } = await s.linkAnswer({
+          view,
+          ref: `ahead:${crypto.randomUUID()}`,
+          href: "manuscript://ship2",
+          baseUri: null,
+        });
+        expect.soft(answer).toMatchObject({
+          state: "document",
+          inDraft: true,
+          document: { id: ship },
+        });
+      }
+    });
+
     it("reuses one snapshot in nested scopes, reloads an inherited settled one, and fails a door that never prepared", async () => {
       const spellTarget = () =>
         scopes

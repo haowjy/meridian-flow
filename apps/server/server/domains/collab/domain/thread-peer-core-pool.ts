@@ -1,11 +1,13 @@
 /** The one model-edit entry point: routes per document to live or a thread peer, saves each reply once. */
 import {
   type AgentEditCore,
+  type DiscardedWriteReason,
   modelResult,
   parseDocumentAddress,
   type ReadCommand,
   type ResponseCommitSuccessResult,
   type ResponseRollbackResult,
+  rejectedWriteExplanation,
   splitDocumentFile,
   type WriteCommand,
   type WriteContext,
@@ -40,7 +42,9 @@ export type ResponseTransactionHooks = {
   ): Promise<T>;
 };
 
+import { BranchCasConflictError, BranchStaleUpdateError } from "./branch-coordinator.js";
 import type { Drafts } from "./drafts.js";
+import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
 import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-fences.js";
 
 type PulledThreadPeer = {
@@ -62,7 +66,8 @@ type ResponseRecord = ReplyRecord;
  * that commits at once, and once for the whole reply at its save (§5.2).
  */
 export function createThreadPeerCorePool(input: {
-  drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite">;
+  drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite" | "shareActive">;
+  branches: Pick<ApplicationBranchStore, "getBranch">;
   fences: ReplySaveFences;
   liveUtilityCore: LiveAgentEditCore;
   /**
@@ -357,7 +362,19 @@ export function createThreadPeerCorePool(input: {
         return draftChanged(command);
       }
     };
-    const outcome = record && !immediateInverse ? await call() : await immediate();
+    // A staged write whose peer pull lost to Discard all or an item Discard: the same named
+    // refusal its save receipt would carry, never the store's raw error.
+    const staged = async (): Promise<WriteOutcome> => {
+      try {
+        return await call();
+      } catch (cause) {
+        const reason = await discardLossReason(cause, entry?.linkView ?? routedContext.linkView);
+        // The reply's earlier staged writes stay: the retirement refuses them with their own receipts.
+        if (!reason) throw cause;
+        return discardedWrite(command, reason);
+      }
+    };
+    const outcome = record && !immediateInverse ? await staged() : await immediate();
     if (!outcome.isError && documentId) {
       if (context.threadId)
         lastSeen.set(seenKey(context.threadId, documentId), {
@@ -371,6 +388,23 @@ export function createThreadPeerCorePool(input: {
         input.afterLiveCommit?.(documentId);
     }
     return outcome;
+  }
+
+  /**
+   * Why a failed peer pull is Discard's doing: the draft it pulled for is closed, or the
+   * peer branch the error names is closed or gone. Any other branch store error is not.
+   */
+  async function discardLossReason(
+    cause: unknown,
+    view: LinkView,
+  ): Promise<DiscardedWriteReason | undefined> {
+    if (!(cause instanceof BranchStaleUpdateError || cause instanceof BranchCasConflictError))
+      return undefined;
+    if (view.kind === "draft" && !(await input.drafts.shareActive(view.draftId)))
+      return "discarded_draft";
+    if (cause.branchId.startsWith("draft:")) return undefined;
+    const branch = await input.branches.getBranch(cause.branchId);
+    return !branch || branch.status === "closed" ? "discarded_edit" : undefined;
   }
 
   /**
@@ -630,6 +664,23 @@ function readRequired(
 function draftChanged(command: WriteCommand): WriteOutcome {
   const path = splitDocumentFile(command.file).filePath;
   const message = `This file's draft changed before your write landed (it was applied or discarded), so this change wasn't kept. Read ${path} again before editing.`;
+  return {
+    status: "invalid_write",
+    isError: true,
+    revision: null,
+    command: command.command,
+    result: modelResult({
+      command: command.command,
+      status: "invalid_write",
+      payload: { path, message },
+    }),
+  };
+}
+
+/** A write the Work's Discard retired before it could be staged; the copy a save receipt uses. */
+function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): WriteOutcome {
+  const path = splitDocumentFile(command.file).filePath;
+  const message = `Write did not land: ${rejectedWriteExplanation(reason)}. Re-read and retry.`;
   return {
     status: "invalid_write",
     isError: true,
