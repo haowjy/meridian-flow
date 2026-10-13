@@ -21,7 +21,7 @@ import type { ContextUri } from "@/lib/context-uri";
 export function contextTabFromDraftGroup(group: {
   workId: string;
   documentId: string;
-  draftId: string;
+  itemKey: string;
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
   documentName?: string | null;
   /**
@@ -29,7 +29,7 @@ export function contextTabFromDraftGroup(group: {
    * the tab lifecycle can follow the draft's: cleared on Apply, closed on
    * whole-draft Discard (the document never joins the tree).
    */
-  isNewDocument?: boolean;
+  isNew?: boolean;
 }): ServerContextTab | null {
   const location = group.contextLocation;
   if (!location?.path) return null;
@@ -52,10 +52,10 @@ export function contextTabFromDraftGroup(group: {
     filetype,
     schemaType: classification.schemaType,
     reviewWorkId: group.workId,
-    ...(group.isNewDocument
+    ...(group.isNew
       ? {
           draftOnly: true,
-          reviewDraftId: group.draftId,
+          reviewItemKey: group.itemKey,
           tabInstanceToken: crypto.randomUUID(),
         }
       : {}),

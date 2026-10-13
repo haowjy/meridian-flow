@@ -82,7 +82,7 @@ Paths outside this directory are relative to `apps/app/src`.
   makes one durable; a gone/404 read is not remote-Discard evidence. Apply and
   Discard settle every container through `draft-only-lifecycle.ts`; Close and
   Back to live stay with the container used. A review tab is identified by
-  document, Work and draft (`ReviewDraftTabIdentity`): Close and Discard consume
+  document, Work and draft (`ReviewItemTabIdentity`): Close and Discard consume
   that exact tab, never another Work's review of the same document. Promotion needs a resolved live
   presentation of the same document, Work and draft, never a flag transition.
 - Presentational components receive props and callbacks, not controllers.

@@ -276,6 +276,6 @@ export function gateLiveView(
   const settled = manifest.isComplete && !manifest.isFetching;
   if (!settled || drafts.status === "loading") return { outcome: "pending", result: undefined };
   const group = drafts.files?.find((candidate) => candidate.documentId === documentId);
-  if (group?.isNewDocument) return { outcome: "ready", result, draftOnly: group };
+  if (group?.isNew) return { outcome: "ready", result, draftOnly: group };
   return { outcome: "ready", result: { kind: "unavailable" } };
 }

@@ -12,7 +12,7 @@ The review wire shape is intentionally JSON-natural and UI-oriented:
   `reviewRoomName`, live markdown, branch markdown, review operations, and
   hunks. Agent operations carry `actorThreadId` and `actorThreadTitle` (the
   chat title at preview time); writer operations carry neither.
-- `draftGeneration` (list row and preview) is the server's branch generation.
+- `branchGeneration` (list row and preview) is the server's branch generation.
   Closing a draft resets the same `draftId` one generation up, and the next
   proposal arrives at that higher generation, so the number orders proposals of
   one draft and never decreases. The preview's `reviewRoomName` and tokens belong
@@ -25,12 +25,12 @@ The review wire shape is intentionally JSON-natural and UI-oriented:
   route) sends every operation id of the selected `closureClassId`s plus the
   preview's opaque `liveRevisionToken` and `draftRevisionToken`. It answers
   `applied` with the applied `operationIds` and `closureClassIds`, or `stale`,
-  `gone`, `draft_only` (new document) or `incomplete_class`, all as HTTP 200.
+  `gone`, `whole_item` (new document) or `incomplete_class`, all as HTTP 200.
   Selective Discard sends operation ids, stable class IDs and server-vended
   admission tokens over complete closed journal rows and rich effect. The server
   expands each id to its current class and checks that evidence.
-- Successful per-change Apply and Discard responses add `draftClosed`. When
-  true, `draftDisposition` names the settled review (`applied` if any content
+- Successful per-change Apply and Discard responses add `itemClosed`. When
+  true, `itemDisposition` names the settled review (`applied` if any content
   reached live, otherwise `discarded`). No client-side operation-count guess
   is needed to decide whether the server closed the review. Whole Apply remains
   unfenced and unchanged.

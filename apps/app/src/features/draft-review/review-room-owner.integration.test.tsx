@@ -39,7 +39,7 @@ const previewKey = projectQueryKeys.workDraftPreview(
 const listKey = projectQueryKeys.workDrafts("project-a", "work-a");
 const proposal = (generation: number, ...ids: string[]) => ({
   ...previewOf(...ids),
-  draftGeneration: generation,
+  branchGeneration: generation,
   reviewRoomName: `room-g${generation}`,
 });
 
@@ -134,7 +134,7 @@ it("a newer proposal beats the old command and a lagging list, with monotonic ca
       probe().queryClient.setQueryData(listKey, []);
     });
     await settleReact(() =>
-      expect(probe().presented.controller.inlineReview?.draftGeneration).toBe(2),
+      expect(probe().presented.controller.inlineReview?.branchGeneration).toBe(2),
     );
     expect(probe().presented.controller.inlineReview?.completion).toBeUndefined();
     await act(async () => {
@@ -186,7 +186,7 @@ it("lets the entry read answer before a stale empty list can exit review", async
   await fixture.render(async (probe) => {
     probe().queryClient.setQueryData(listKey, []);
     await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
-    expect(probe().presented.controller.inlineReview?.draftId).toBe("draft-a");
+    expect(probe().presented.controller.inlineReview?.itemKey).toBe("draft-a");
     await act(async () => read.resolve(proposal(1, "1")));
     await settleReact(() => expect(probe().presented.controller.reviewRoomName).toBe("room-g1"));
   });
@@ -194,9 +194,9 @@ it("lets the entry read answer before a stale empty list can exit review", async
 
 it.each([false, true])("a gone entry read is authoritative (draft-only: %s)", async (draftOnly) => {
   fixture.network.listWorkDrafts.mockReturnValue(new Promise(() => {}));
-  fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
+  fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", itemKey: "draft-a" });
   await fixture.render(async (probe) => {
-    if (draftOnly) probe().queryClient.setQueryData(listKey, [{ ...listed, isNewDocument: true }]);
+    if (draftOnly) probe().queryClient.setQueryData(listKey, [{ ...listed, isNew: true }]);
     await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
     await settleReact(() =>
       draftOnly
@@ -254,11 +254,11 @@ it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", a
     );
     expect(probe().queryClient.getQueryData(previewKey)).toEqual({
       status: "gone",
-      draftId: "draft-a",
-      draftGeneration: 1,
+      itemKey: "draft-a",
+      branchGeneration: 1,
     });
     expect(probe().queryClient.getQueryData(listKey)).toEqual([listed]);
-    expect(probe().presented.controller.inlineReview?.draftGeneration).toBe(1);
+    expect(probe().presented.controller.inlineReview?.branchGeneration).toBe(1);
     expect(probe().presented.controller.reviewRoomName).toBeNull();
     expect(probe().presented.controller.reviewRoomError).toBe(false);
     const reads = fixture.network.getDraftPreview.mock.calls.length;
@@ -281,7 +281,7 @@ it("a late HTTP 404 retains its request-start horizon behind a newer cached prop
           projectId: "project-a",
           workId: "work-a",
           ...draftA,
-          draftGeneration: 1,
+          branchGeneration: 1,
         }),
         staleTime: 0,
       });
@@ -290,13 +290,13 @@ it("a late HTTP 404 retains its request-start horizon behind a newer cached prop
     fixture.network.getDraftPreview.mockResolvedValue(next);
     await act(async () => probe().queryClient.setQueryData(previewKey, next));
     await settleReact(() =>
-      expect(probe().presented.controller.inlineReview?.draftGeneration).toBe(2),
+      expect(probe().presented.controller.inlineReview?.branchGeneration).toBe(2),
     );
     await act(async () => {
       absent.reject(Object.assign(new Error("gone"), { status: 404 }));
       await read;
     });
     expect(probe().queryClient.getQueryData(previewKey)).toEqual(next);
-    expect(probe().presented.controller.inlineReview?.draftGeneration).toBe(2);
+    expect(probe().presented.controller.inlineReview?.branchGeneration).toBe(2);
   });
 });

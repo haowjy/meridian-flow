@@ -20,12 +20,12 @@ import {
 import { settleReact } from "@/test-support/react-dom-harness";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
-const draftB = { documentId: "document-b", draftId: "draft-b" };
+const draftB = { documentId: "document-b", itemKey: "draft-b" };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const target = (draft: typeof draftA) => ({ projectId: "project-a", workId: "work-a", ...draft });
 async function open(p: () => ScopeProbe, draft = draftA) {
   await act(async () =>
-    p().presented.controller.enterInlineReview(draft.documentId, draft.draftId),
+    p().presented.controller.enterInlineReview(draft.documentId, draft.itemKey),
   );
   await p().openDraft(draft);
   await settleReact(() => expect(p().header.view.status).toBe("ready"));
@@ -37,7 +37,7 @@ beforeEach(() => {
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-b" ? ["3"] : ["1", "2"])),
-    draftId: id,
+    itemKey: id,
   }));
 });
 afterEach(() => {
@@ -64,7 +64,7 @@ it("Chat whole Apply hides the draft and excludes presented review selection", a
     expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     expect(p().header.view.items).toEqual([]);
     await act(async () => {
-      answer.resolve({ status: "applied", draftId: "draft-a" });
+      answer.resolve({ status: "applied", itemKey: "draft-a" });
       await done;
     });
   });
@@ -119,7 +119,7 @@ it.each([
         viewA().items.find(({ change }) => change.classId === "class-2")?.failure,
       ).toMatchObject({ code: "server-error" }),
     );
-    expect(p().presented.controller.inlineReview?.draftId).toBe(returned ? "draft-a" : "draft-b");
+    expect(p().presented.controller.inlineReview?.itemKey).toBe(returned ? "draft-a" : "draft-b");
     if (returned) expect(p().header.view.items[1]?.failure).toMatchObject({ code: "server-error" });
     else expect(p().header.view.items.every(({ failure }) => failure === null)).toBe(true);
     expect(p().presented.controller.toast).toBeNull();
@@ -138,11 +138,11 @@ it.each([
   if (mode === "apply")
     fixture.network.applyDraftChanges
       .mockReturnValueOnce(applyAnswer.promise)
-      .mockResolvedValue({ ...applied(false, "3"), draftId: "draft-b" });
+      .mockResolvedValue({ ...applied(false, "3"), itemKey: "draft-b" });
   else
     fixture.network.discardDraft
       .mockReturnValueOnce(discardAnswer.promise)
-      .mockResolvedValue({ ...discarded(false), draftId: "draft-b" });
+      .mockResolvedValue({ ...discarded(false), itemKey: "draft-b" });
   await fixture.render(async (p) => {
     await settleReact(() => expect(p().chat.files).toHaveLength(2));
     if (presentedFirst) await open(p);
@@ -167,7 +167,7 @@ it.each([
       else discardAnswer.resolve(discarded(false));
       await done;
     });
-    expect(endpoint.mock.calls.map((call) => [call[1], call[2], call[3].draftId])).toEqual([
+    expect(endpoint.mock.calls.map((call) => [call[1], call[2], call[3].itemKey])).toEqual([
       ["work-a", "document-a", "draft-a"],
       ["work-a", "document-b", "draft-b"],
     ]);
@@ -176,19 +176,19 @@ it.each([
 });
 
 it("a slow refused whole command on chapter A leaves chapter B actionable", async () => {
-  const answer = deferredReviewAnswer<{ status: "applied"; draftId: string }>();
+  const answer = deferredReviewAnswer<{ status: "applied"; itemKey: string }>();
   fixture.network.applyDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     const viewB = await p().mountDraftChanges(target(draftB));
     await settleReact(() => expect(viewB().status).toBe("ready"));
     let done!: Promise<unknown>;
     await act(async () => {
-      done = p().chat.commands.apply(draftA.documentId, draftA.draftId);
+      done = p().chat.commands.apply(draftA.documentId, draftA.itemKey);
     });
     expect(viewB().locked).toBe(false);
     fixture.network.applyDraftChanges.mockResolvedValueOnce({
       ...applied(false, "3"),
-      draftId: "draft-b",
+      itemKey: "draft-b",
     });
     await act(async () => {
       await viewB().apply(viewB().items[0].change);

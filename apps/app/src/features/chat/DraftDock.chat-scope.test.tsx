@@ -47,7 +47,7 @@ const pacing = { threadId: "thread-a", title: "Pacing pass" };
 const draft = (id: string, actors: (typeof pacing)[]) => ({
   ...listed,
   documentId: id,
-  draftId: `draft-${id}`,
+  itemKey: `draft-${id}`,
   documentName: id,
   contextLocation: { scheme: "manuscript" as const, path: `/${id}.md` },
   actorThreads: actors,
@@ -92,18 +92,18 @@ it.each([
   label,
   expanded,
 }) => {
-  const file = { ...draft("new-scene", [pacing]), isNewDocument: true };
+  const file = { ...draft("new-scene", [pacing]), isNew: true };
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [file] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
-    draftId: file.draftId,
-    isNewDocument: true,
+    itemKey: file.itemKey,
+    isNew: true,
     operations: [op("1", pacing), op("2", pacing)],
   });
   const request = label === "Apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
   request.mockResolvedValue({
     status: label === "Apply" ? "applied" : "discarded",
-    draftId: file.draftId,
+    itemKey: file.itemKey,
   } as never);
   await fixture.render(
     async () => {
@@ -118,7 +118,7 @@ it.each([
         expect.objectContaining({
           workId: "work-a",
           documentId: "new-scene",
-          draftId: file.draftId,
+          itemKey: file.itemKey,
         }),
       );
       expect(document.querySelector('[aria-label="Expand changes"]')).not.toBeNull();
@@ -137,7 +137,7 @@ it.each([
         await click(label);
       } else await click(label);
       expect(request).toHaveBeenCalledWith("project-a", "work-a", "new-scene", {
-        draftId: file.draftId,
+        itemKey: file.itemKey,
       });
       expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     },
@@ -158,31 +158,31 @@ it.each([
 
 it.each([
   {
-    isNewDocument: false,
+    isNew: false,
     code: "review-failed" as const,
     message: "Couldn't open this draft. Try again.",
   },
   {
-    isNewDocument: false,
+    isNew: false,
     code: "apply-offline" as const,
     message: "Couldn't apply. Check your connection and try again.",
   },
   {
-    isNewDocument: true,
+    isNew: true,
     code: "apply-offline" as const,
     message: "Couldn't apply. Check your connection and try again.",
   },
-])("gives a single file's $code one owner after expansion (new: $isNewDocument)", async ({
+])("gives a single file's $code one owner after expansion (new: $isNew)", async ({
   code,
   message,
-  isNewDocument,
+  isNew,
 }) => {
-  const file = { ...draft("chapter-12", [pacing]), isNewDocument };
+  const file = { ...draft("chapter-12", [pacing]), isNew };
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [file] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
-    draftId: file.draftId,
-    isNewDocument,
+    itemKey: file.itemKey,
+    isNew,
     operations: [op("1", pacing)],
   });
   await fixture.render(
@@ -193,7 +193,7 @@ it.each([
           projectId: "project-a",
           workId: "work-a",
           documentId: "chapter-12",
-          draftId: file.draftId,
+          itemKey: file.itemKey,
         };
         if (code === "review-failed") failDraftReviewLaunch(ref);
         else failDraftCommand(ref, { code });
@@ -206,9 +206,7 @@ it.each([
           (node) => node.textContent === message,
         ),
       ).toHaveLength(1);
-      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(
-        isNewDocument ? 0 : 1,
-      );
+      expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(isNew ? 0 : 1);
       if (code === "review-failed") {
         await click("chapter-12");
         expect(navigate).toHaveBeenCalledWith(
@@ -216,7 +214,7 @@ it.each([
         );
         expect(document.querySelector('[aria-label="Collapse changes"]')).not.toBeNull();
       }
-      if (!isNewDocument) {
+      if (!isNew) {
         expect(
           document
             .querySelector("[data-draft-dock-strip-error] span[title]")
@@ -244,7 +242,7 @@ it("all accepted batch targets disappear at the click and a refused target resto
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: files });
   fixture.network.getDraftPreview.mockImplementation(async (_project, _work, documentId) => ({
     ...preview,
-    draftId: `draft-${documentId}`,
+    itemKey: `draft-${documentId}`,
     operations: [op(documentId, pacing)],
   }));
   let confirm!: (value: unknown) => void;
@@ -266,7 +264,7 @@ it("all accepted batch targets disappear at the click and a refused target resto
       expect(strip()).toBeNull();
       expect(fixture.network.discardDraft).toHaveBeenCalledTimes(2);
       await act(async () => {
-        confirm({ status: "discarded", draftId: files[0]?.draftId, draftClosed: false });
+        confirm({ status: "discarded", itemKey: files[0]?.itemKey, itemClosed: false });
         refuse(new HttpResponseError("Refused", 500, null));
       });
       await settleReact(() => expect(text()).toContain("1 change"));
@@ -291,14 +289,14 @@ it("all accepted batch targets disappear at the click and a refused target resto
 it("new documents have one review door and whole-draft commands in chat and Work rows", async () => {
   const files = ["chapter-a", "chapter-b"].map((id) => ({
     ...draft(id, [pacing]),
-    isNewDocument: true,
+    isNew: true,
   }));
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: files });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, documentId) => ({
     ...preview,
-    draftId: `draft-${documentId}`,
+    itemKey: `draft-${documentId}`,
     documentName: documentId,
-    isNewDocument: true,
+    isNew: true,
     operations: [op(documentId, pacing)],
   }));
   fixture.network.applyDraft.mockReturnValue(new Promise(() => {}));
@@ -339,7 +337,7 @@ it("new documents have one review door and whole-draft commands in chat and Work
           ?.click(),
       );
       expect(fixture.network.applyDraft).toHaveBeenCalledWith("project-a", "work-a", "chapter-a", {
-        draftId: "draft-chapter-a",
+        itemKey: "draft-chapter-a",
       });
       expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     },

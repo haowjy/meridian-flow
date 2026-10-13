@@ -20,7 +20,7 @@ it("a same-document Work switch preserves the newly requested branch and the old
     client.setQueryData(projectQueryKeys.workDrafts("project", work), [
       {
         workId: work,
-        draftId: `branch-${work}`,
+        itemKey: `branch-${work}`,
         documentId: "document",
         status: "active",
         updatedAt: "2026-10-12T00:00:00Z",
@@ -38,7 +38,7 @@ it("a same-document Work switch preserves the newly requested branch and the old
     const [workId, setWorkId] = useState("a");
     const [branch, setBranch] = useState<string | null>(null);
     enter = () =>
-      stateOwner.dispatch({ type: "enterInline", documentId: "document", draftId: "branch-a" });
+      stateOwner.dispatch({ type: "enterInline", documentId: "document", itemKey: "branch-a" });
     switchWork = () => {
       setWorkId("b");
       setBranch("branch-b");
@@ -56,18 +56,18 @@ it("a same-document Work switch preserves the newly requested branch and the old
         <EditorReviewAddressOwner
           reviewAddressAdmission="admitted"
           review={review}
-          requestedDraftId={branch ?? undefined}
+          requestedItemKey={branch ?? undefined}
           activeScreen="context"
           activeScheme="kb"
           activePath="/Same"
           activeDocumentId="document"
-          onSetDraftId={(next) => {
+          onSetItemKey={(next) => {
             rewrites.push(`${workId}:${next ?? "plain"}`);
             setBranch(next);
           }}
         />
         <output>
-          {workId}:{branch ?? "plain"}:{review.controller.inlineReview?.draftId ?? "no-review"}
+          {workId}:{branch ?? "plain"}:{review.controller.inlineReview?.itemKey ?? "no-review"}
         </output>
       </EditorReviewHandoffProvider>
     );
@@ -101,12 +101,12 @@ it("an explicit branch switch wins over the old unresolved same-locator review",
     const groups = ["a", "b"].map((id) => ({
       documentId: `doc-${id}`,
       contextLocation: { scheme: "kb", path: "/Collision" },
-      draft: { draftId: id },
+      draft: { itemKey: id },
     }));
     const review = {
       controller: {
         workId: "work",
-        inlineReview: { documentId: "doc-a", draftId: "a" },
+        inlineReview: { documentId: "doc-a", itemKey: "a" },
         exitInlineReview: () => undefined,
       },
       drafts: { status: "ready" },
@@ -121,11 +121,11 @@ it("an explicit branch switch wins over the old unresolved same-locator review",
         <EditorReviewAddressOwner
           reviewAddressAdmission="pending"
           review={review}
-          requestedDraftId={branch ?? undefined}
+          requestedItemKey={branch ?? undefined}
           activeScreen="context"
           activeScheme="kb"
           activePath="/Collision"
-          onSetDraftId={setBranch}
+          onSetItemKey={setBranch}
         />
         <output>{branch}</output>
       </EditorReviewHandoffProvider>

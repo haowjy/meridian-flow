@@ -58,7 +58,7 @@ function Host() {
       projectId="project-a"
       session={sessions.get(documentId)}
       localContentReady
-      reviewDraftId={value.controller.inlineReview?.draftId}
+      reviewItemKey={value.controller.inlineReview?.itemKey}
     />
   );
 }

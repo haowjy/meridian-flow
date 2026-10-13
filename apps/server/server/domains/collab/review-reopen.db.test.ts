@@ -48,7 +48,7 @@ it.each([
       await (action === "discard"
         ? f.collab.draftReview.discardWorkDraft(selection)
         : f.collab.draftReview.applyWorkDraftChanges(selection)),
-    ).toMatchObject({ status: action === "discard" ? "discarded" : "applied", draftClosed: true });
+    ).toMatchObject({ status: action === "discard" ? "discarded" : "applied", itemClosed: true });
     const adjective = action === "discard" ? "sacred " : effect === "replacement" ? "ruined " : "";
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(`The ${adjective}dawn.\n`);
     const reopenedId = await harness.stageCertifiedReplace({

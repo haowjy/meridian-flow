@@ -167,7 +167,7 @@ function DockFileLine({
       projectId: dock.projectId,
       workId: dock.workId,
       documentId: file.row.documentId,
-      draftId: file.row.draft.draftId,
+      itemKey: file.row.draft.itemKey,
     },
     { controller: dock.controller, enabled: expanded },
   );

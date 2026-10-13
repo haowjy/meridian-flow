@@ -154,7 +154,7 @@ type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 function changesOf(preview: ActivePreview): readonly ReviewChange[] {
   let changes = reviewChanges(preview.operations, preview.hunks);
   // A draft-only document has no live target for selective commands.
-  if (changes.length > 0 && preview.isNewDocument) {
+  if (changes.length > 0 && preview.isNew) {
     const first = changes[0];
     const attribution = preview.operations.length
       ? changeAttribution(preview.operations)
@@ -162,7 +162,7 @@ function changesOf(preview: ActivePreview): readonly ReviewChange[] {
     changes = [
       {
         ...first,
-        classId: `draft:${preview.draftId}`,
+        classId: `draft:${preview.itemKey}`,
         operations: [...preview.operations],
         operationIds: preview.operations.map((op) => op.operationId),
         keys: preview.operations.map(operationKey),

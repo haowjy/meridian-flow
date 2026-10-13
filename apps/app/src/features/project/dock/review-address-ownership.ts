@@ -5,7 +5,7 @@ type ReviewLocator = { scheme: ProjectContextTreeScheme; path: string };
 export type OwnedReviewAddress = {
   workId: string;
   documentId: string;
-  draftId: string;
+  itemKey: string;
   /** Last locator confirmed by identity or the review's location, not a pending rename guess. */
   locator: ReviewLocator | null;
 };
@@ -15,11 +15,11 @@ export function exitedReviewOwnsAddress(
   address: {
     workId: string;
     documentId?: string | null;
-    draftId?: string;
+    itemKey?: string;
     locator: ReviewLocator | null;
   },
 ): boolean {
-  if (!address.draftId || owned.workId !== address.workId || owned.draftId !== address.draftId)
+  if (!address.itemKey || owned.workId !== address.workId || owned.itemKey !== address.itemKey)
     return false;
   if (address.documentId) return owned.documentId === address.documentId;
   return (

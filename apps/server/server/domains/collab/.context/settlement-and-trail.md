@@ -121,7 +121,7 @@
 - **Per-change Apply and Discard are preview-scoped**: `DraftApplyChangesRequest` names a
   nonempty set of operation IDs plus both opaque revision tokens. Under the shared
   branch critical section, recompute the comparison against a durable live cut
-  and require complete classes. Refuse `stale`, `gone`, `draft_only`, or
+  and require complete classes. Refuse `stale`, `gone`, `whole_item`, or
   `incomplete_class` without publishing. Draft-only manifest members expose
   `isNewDocument` and use whole-document Apply with the existing manifest companion.
   The live token includes authority identity, generation, and next admission
@@ -143,7 +143,7 @@
   after a durable outbox handoff. Per-change Undo is not implemented.
   After disposition has committed, the application service owns terminal cleanup
   and its disposition policy. Cleanup failure is diagnosed and leaves
-  `draftClosed: false`; it cannot reject an already committed command. The
+  `itemClosed: false`; it cannot reject an already committed command. The
   initial disposition and generation cleanup are still separate transactions.
   Preview carries anchored hunks, operations, room identity and revisions only,
   not whole-document Markdown. Presentation types come from the public contract;

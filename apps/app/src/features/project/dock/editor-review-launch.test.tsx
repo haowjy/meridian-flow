@@ -37,14 +37,14 @@ it.each(
         <Command />
       </EditorReviewHandoffProvider>,
       async () => {
-        for (const isNewDocument of [true, false]) {
+        for (const isNew of [true, false]) {
           useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
           const target: AiDraftLaunchTarget = {
             workId: "work-a",
             documentId: "document-a",
-            draftId: "branch-a",
+            itemKey: "branch-a",
             contextLocation: { scheme, path: "folder/chapter.md" },
-            isNewDocument,
+            isNew,
           };
           await act(async () => {
             await launch?.(target);
@@ -64,11 +64,11 @@ it.each(
           const tabs = getContextTabs("project-a").tabs;
           expect(tabs).toHaveLength(1);
           expect(tabs[0].tabInstanceId).toBe(before.tabInstanceId);
-          if (isNewDocument)
+          if (isNew)
             expect(tabs[0]).toMatchObject({
               draftOnly: true,
               reviewWorkId: "work-a",
-              reviewDraftId: "branch-a",
+              reviewItemKey: "branch-a",
             });
         }
       },

@@ -31,7 +31,7 @@ export function createDrizzleReviewCut(input: {
     runInRootDrizzleReadSnapshot(input.db, async () => {
       // The first read fixes the database snapshot. Live journal replay below is
       // database-only and joins it, so no room/network wait holds this snapshot.
-      const branch = await input.branches.getBranch(address.draftId);
+      const branch = await input.branches.getBranch(address.draftBranchId);
       if (
         branch?.kind !== "work_draft" ||
         branch.status !== "active" ||

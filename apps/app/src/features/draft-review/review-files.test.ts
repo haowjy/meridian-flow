@@ -11,7 +11,7 @@ const group = (documentId: string, documentName: string | null) =>
     documentName,
     contextLocation: { scheme: "manuscript", path: `/${documentName ?? documentId}.md` },
     draft: {
-      draftId: `draft-${documentId}`,
+      itemKey: `draft-${documentId}`,
       documentId,
       documentName,
       contextLocation: null,

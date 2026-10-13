@@ -17,12 +17,12 @@ export type DocumentAddressBinding =
 
 /** The branch owns review identity even while its Work's draft list is loading. */
 export function bindDocumentAddressReview(
-  draftId: string | undefined,
+  itemKey: string | undefined,
   workId: string | null,
 ): DocumentAddressBinding {
-  if (!draftId) return { kind: "plain" };
+  if (!itemKey) return { kind: "plain" };
   if (!workId) return { kind: "pending" };
-  return { kind: "review", review: { workId, draftBranchId: draftId } };
+  return { kind: "review", review: { workId, itemKey } };
 }
 
 /** A failed review selector never falls back to the live occupant. */

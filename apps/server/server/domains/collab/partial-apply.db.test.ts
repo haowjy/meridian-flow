@@ -160,7 +160,7 @@ describe("per-change Apply (postgres)", () => {
         : await fixture.collab.draftReview.discardWorkDraft(request);
     expect(result).toMatchObject({
       status: action === "apply" ? "applied" : "discarded",
-      draftClosed: false,
+      itemClosed: false,
     });
     const after = await fixture.collab.draftReview.list({ workId: WORK_ID });
     expect(after).toHaveLength(1);
@@ -177,7 +177,7 @@ describe("per-change Apply (postgres)", () => {
           remaining.operations.map((op) => op.operationId),
         ),
       );
-      expect(closed).toMatchObject({ draftClosed: true, draftDisposition: "applied" });
+      expect(closed).toMatchObject({ itemClosed: true, itemDisposition: "applied" });
     }
   });
 
@@ -245,7 +245,7 @@ describe("per-change Apply (postgres)", () => {
         preview.operations.map((op) => op.operationId),
       ),
     );
-    expect(result).toMatchObject({ status: "applied", draftClosed: true });
+    expect(result).toMatchObject({ status: "applied", itemClosed: true });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(expectedDraft);
     expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toEqual([]);
   });
@@ -305,19 +305,19 @@ describe("per-change Apply (postgres)", () => {
         : await fixture.collab.draftReview.discardWorkDraft(request);
     expect(await fixture.collab.draftReview.list({ workId: WORK_ID })).toEqual([]);
     expect(result).toMatchObject({
-      draftClosed: true,
-      draftDisposition: action === "apply" ? "applied" : "discarded",
+      itemClosed: true,
+      itemDisposition: action === "apply" ? "applied" : "discarded",
     });
     expect((await fixture.branchStore.getBranch(branch.branchId))?.generation).toBe(
       branch.generation + 1,
     );
-    expect(preview.draftGeneration).toBe(branch.generation);
+    expect(preview.branchGeneration).toBe(branch.generation);
     // The close's reset keeps the id: the same draft, one generation up, nothing to review.
     const reset = await fixture.collab.draftReview.preview(command);
     expect(reset).toMatchObject({
       status: "active",
       draftId: branch.branchId,
-      draftGeneration: branch.generation + 1,
+      branchGeneration: branch.generation + 1,
       reviewRoomName: branchRoomName(branch.branchId, branch.generation + 1),
       operations: [],
       hunks: [],
@@ -331,11 +331,11 @@ describe("per-change Apply (postgres)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       draftId: branch.branchId,
-      draftGeneration: branch.generation + 1,
+      branchGeneration: branch.generation + 1,
     });
     const next = await fixture.collab.draftReview.preview(command);
     if (next.status !== "active") throw new Error("missing preview");
-    expect(next.draftGeneration).toBe(branch.generation + 1);
+    expect(next.branchGeneration).toBe(branch.generation + 1);
     expect(next.reviewRoomName).toBe(reset.status === "active" ? reset.reviewRoomName : "");
     expect(next.operations).not.toHaveLength(0);
   });
@@ -550,7 +550,7 @@ describe("per-change Apply (postgres)", () => {
           preview.operations.map((op) => op.operationId),
         ),
       ),
-    ).resolves.toMatchObject({ status: "draft_only" });
+    ).resolves.toMatchObject({ status: "whole_item" });
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("Proposed");
   });
 
@@ -578,8 +578,8 @@ describe("per-change Apply (postgres)", () => {
       draftId: branch.branchId,
       operationIds: request.operationIds,
       closureClassIds: [preview.operations[0].closureClassId],
-      draftClosed: true,
-      draftDisposition: "applied",
+      itemClosed: true,
+      itemDisposition: "applied",
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha base. Agent Writer\n");
     const authors = await db

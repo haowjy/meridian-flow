@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect } from "react";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { workDraftsQueryOptions } from "@/client/query/useWorkDrafts";
-import type { ContextTab, ReviewDraftTabIdentity } from "@/client/stores";
+import type { ContextTab, ReviewItemTabIdentity } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { validateServerRoute } from "../browser-editor-tab-validation";
 import { useAccountId, useAccountResourceReplica } from "../context/account-feature-context";
@@ -27,16 +27,13 @@ export async function restoreDockDocument(
 ): Promise<DockDocument | null> {
   let review = document.review;
   if (review) {
-    const identity: ReviewDraftTabIdentity = {
-      documentId: document.tab.documentId,
+    const identity: ReviewItemTabIdentity = {
       reviewWorkId: review.workId,
-      reviewDraftId: review.draftId,
+      reviewItemKey: review.itemKey,
     };
     const rows = await readWorkDrafts(document.projectId, identity.reviewWorkId);
-    const row = rows.find(
-      (row) => row.draftId === identity.reviewDraftId && row.documentId === identity.documentId,
-    );
-    if (row?.isNewDocument) {
+    const row = rows.find((row) => row.itemKey === identity.reviewItemKey);
+    if (row?.isNew) {
       const tab = contextTabFromDraftGroup({ ...row, workId: review.workId });
       return tab ? { ...document, tab, review } : null;
     }

@@ -44,7 +44,7 @@ import { cn } from "@/lib/utils";
 
 export type DraftReviewBandProps = {
   documentId: string;
-  draftId: string;
+  itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
   /** Opens another draft of the Work in review (the editor's launcher). */
@@ -222,14 +222,14 @@ function ShowChangesToggle({
 /** The refusals the review holds, as lines under the identity row; nothing when there are none. */
 export function DraftReviewFailureNotices({
   documentId,
-  draftId,
+  itemKey,
   onOpenDraft,
 }: {
   documentId: string;
-  draftId: string;
+  itemKey: string;
   onOpenDraft: (row: ReviewFileTarget) => void;
 }) {
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId });
+  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey });
   if (!commandError && failedElsewhere.length === 0) return null;
   return (
     <div className="shrink-0 text-caption" data-draft-review-notices>

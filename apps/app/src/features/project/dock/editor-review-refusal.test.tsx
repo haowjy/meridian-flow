@@ -58,11 +58,11 @@ it.each(
         <EditorReviewAddressOwner
           reviewAddressAdmission="unavailable"
           review={review}
-          requestedDraftId={branch ?? undefined}
+          requestedItemKey={branch ?? undefined}
           activeScreen="context"
           activeScheme={scheme}
           activePath="/Collision"
-          onSetDraftId={setBranch}
+          onSetItemKey={setBranch}
         />
         <output>{state}</output>
       </EditorReviewHandoffProvider>

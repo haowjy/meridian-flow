@@ -64,7 +64,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       {
         ...listed,
         documentId: "document-b",
-        draftId: "draft-b",
+        itemKey: "draft-b",
         documentName: "Foreign document",
         contextLocation: { scheme: "manuscript", path: "/foreign.md" },
       },
@@ -72,7 +72,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
   });
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
-    draftId: id,
+    itemKey: id,
   }));
   const selective = deferredReviewAnswer<ReturnType<typeof discarded>>();
   const whole = deferredReviewAnswer<ReturnType<typeof discarded>>();
@@ -114,7 +114,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
           "work-a",
           "document-a",
           {
-            draftId: "draft-a",
+            itemKey: "draft-a",
             closureClassIds: ["class-1"],
             memberPartKeys: [],
             admissionTokens: ["class-1"],
@@ -140,7 +140,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         "project-a",
         "work-a",
         "document-a",
-        { draftId: "draft-a" },
+        { itemKey: "draft-a" },
       ]);
       await act(async () => whole.resolve(discarded(true)));
       await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
@@ -149,7 +149,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       await act(async () => editor.commands.insertContent(" Still writing."));
       expect(editor.getText()).toContain("Still writing.");
       expect(navigate).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ documentId: "document-b", draftId: "draft-b", workId: "work-a" }),
+        expect.objectContaining({ documentId: "document-b", itemKey: "draft-b", workId: "work-a" }),
       );
     },
     {

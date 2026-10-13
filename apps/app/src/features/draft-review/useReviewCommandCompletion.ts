@@ -52,14 +52,14 @@ export function draftClaim(
   records: DraftCommandRecords = currentDraftCommandRecords(),
 ): ReviewClaim | undefined {
   const command = pendingDraftCommand(records, draft);
-  if (!command || command.draftGeneration === undefined) return undefined;
-  if (command.draftClosed)
+  if (!command || command.branchGeneration === undefined) return undefined;
+  if (command.itemClosed)
     return {
-      draftGeneration: command.draftGeneration,
-      completion: { phase: "closed", documentName: command.draftClosed.documentName },
+      branchGeneration: command.branchGeneration,
+      completion: { phase: "closed", documentName: command.itemClosed.documentName },
     };
   return {
-    draftGeneration: command.draftGeneration,
+    branchGeneration: command.branchGeneration,
     ...(command.completesDraft
       ? {
           completion: {
@@ -69,7 +69,7 @@ export function draftClaim(
               queryClient,
               draft.projectId,
               draft.workId,
-              draft.draftId,
+              draft.itemKey,
             ),
           },
         }
@@ -98,13 +98,13 @@ export function completionAction(
     if (current === prior) return null;
     if (!claim?.completion && (!prior?.completesDraft || !before)) return null;
   }
-  const generation = claim?.completion ? claim.draftGeneration : before?.draftGeneration;
+  const generation = claim?.completion ? claim.branchGeneration : before?.branchGeneration;
   if (generation === undefined) return null;
   return {
     type: "completionObserved",
     documentId: draft.documentId,
-    draftId: draft.draftId,
-    draftGeneration: generation,
+    itemKey: draft.itemKey,
+    branchGeneration: generation,
     completion: claim?.completion ?? null,
   };
 }
@@ -136,8 +136,8 @@ export function useReviewCommandCompletion({
             command.outcome !== before?.outcome &&
             review.kind === "inline" &&
             review.documentId === draft.documentId &&
-            review.draftId === draft.draftId &&
-            review.draftGeneration === command.draftGeneration
+            review.itemKey === draft.itemKey &&
+            review.branchGeneration === command.branchGeneration
           )
             dispatch({
               type: "toast",

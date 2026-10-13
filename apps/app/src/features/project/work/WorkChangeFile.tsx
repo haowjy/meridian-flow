@@ -39,7 +39,7 @@ export function WorkChangeFile({
   const [expanded, setExpanded] = useState(false);
   const { openReviewFile } = useAiDraftLauncher();
   const records = useDraftCommandRecords();
-  const draft = { projectId, workId, documentId: file.documentId, draftId: file.draft.draftId };
+  const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
   const refused = draftCommandFailure(records, draft);
   const view = useDraftView(draft, { controller, enabled: expanded });
   if (

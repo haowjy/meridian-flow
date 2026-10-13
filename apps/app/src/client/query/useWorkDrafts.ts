@@ -37,7 +37,7 @@ export function workDraftsQueryOptions(projectId: string, workId: string) {
     queryKey: projectQueryKeys.workDrafts(projectId, workId),
     queryFn: () =>
       readDraftsAfterCommands({ projectId, workId }, () =>
-        listWorkDrafts(projectId, workId).then((response) => response.drafts),
+        listWorkDrafts(projectId, workId).then((response) => response.items),
       ),
     staleTime: 15_000,
     structuralSharing: shareDraftObservation,

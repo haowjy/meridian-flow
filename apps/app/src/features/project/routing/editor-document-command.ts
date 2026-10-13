@@ -5,7 +5,7 @@ import {
   type ContextTab,
   editorTabsForWork,
   getContextTabs,
-  matchesReviewDraft,
+  matchesReviewItem,
   matchesTabInstance,
   useContextTabsStore,
 } from "@/client/stores";
@@ -85,9 +85,9 @@ export function createEditorDocumentCommand({
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
         target,
         preparedTab,
-        options?.draftId ?? (sameDocument ? current.address.draftId : undefined),
+        options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined),
         options?.changeId ??
-          (sameDocument && (!options?.draftId || options.draftId === current.address.draftId)
+          (sameDocument && (!options?.itemKey || options.itemKey === current.address.itemKey)
             ? current.address.changeId
             : undefined),
       );
@@ -169,7 +169,7 @@ export function prepareEditorDestination(
   },
   target: ContextRouteRequest,
   preparedTab?: ContextTab,
-  draftId?: string,
+  itemKey?: string,
   changeId?: string,
 ) {
   let state: Record<string, unknown> | undefined;
@@ -185,12 +185,11 @@ export function prepareEditorDestination(
     ? workspace.selectedTabInstanceIdByWork?.[resolvedWorkId]
     : undefined;
   const addressedDraft =
-    draftId && documentId && resolvedWorkId
+    itemKey && documentId && resolvedWorkId
       ? eligible.find((tab) =>
-          matchesReviewDraft(tab, {
-            documentId,
+          matchesReviewItem(tab, {
             reviewWorkId: resolvedWorkId,
-            reviewDraftId: draftId,
+            reviewItemKey: itemKey,
           }),
         )
       : undefined;
@@ -254,8 +253,8 @@ export function prepareEditorDestination(
         ? { kind: "absent" }
         : workSelectionFor(destination, target.workId, noWorkId),
       ...(target.rootThreadId ? { lineage: parseRequestId(target.rootThreadId) } : {}),
-      draftId,
-      changeId: draftId ? changeId : undefined,
+      itemKey,
+      changeId: itemKey ? changeId : undefined,
     } as ProjectAddress,
     state,
   };

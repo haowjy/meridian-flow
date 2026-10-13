@@ -45,7 +45,7 @@ export function useWorkDraftCommands({
     const scope = { projectId, workId };
     const sendWhole = (mode: "apply" | "discard", draft: DraftReviewSelection): CommandStart => {
       if (frozen) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
-      const target = { ...scope, documentId: draft.documentId, draftId: draft.draftId };
+      const target = { ...scope, documentId: draft.documentId, itemKey: draft.itemKey };
       const generation = newestKnownProposal(queryClient, target);
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === draft.documentId,
@@ -100,7 +100,7 @@ export function useWorkDraftCommands({
         : runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
     const whole = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
       runWholeDraftIntent(
-        { ...scope, documentId: draft.documentId, draftId: draft.draftId },
+        { ...scope, documentId: draft.documentId, itemKey: draft.itemKey },
         mode,
         () => sendWhole(mode, draft),
       );
@@ -124,10 +124,10 @@ export function useWorkDraftCommands({
       workId,
       threadId,
       startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => whole(mode, draft),
-      apply: (documentId: string, draftId: string) =>
-        whole("apply", { documentId, draftId }).outcome,
-      discard: (documentId: string, draftId: string) =>
-        whole("discard", { documentId, draftId }).outcome,
+      apply: (documentId: string, itemKey: string) =>
+        whole("apply", { documentId, itemKey }).outcome,
+      discard: (documentId: string, itemKey: string) =>
+        whole("discard", { documentId, itemKey }).outcome,
       applyChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
         selection("apply", draft, changes),
       discardChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>

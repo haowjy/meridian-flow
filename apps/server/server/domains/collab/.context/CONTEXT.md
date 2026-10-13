@@ -348,10 +348,10 @@ uses the existing generation-reset path, closing old review rooms
 and clearing current pending journal evidence through the Work projection mutation
 seam (the catalog wake hint). The infrastructure branch remains reusable, as for
 full Discard; future AI writes populate the new generation. Pushed history stays
-pushed. The terminal `draftDisposition` is `applied` when any current-generation
+pushed. The terminal `itemDisposition` is `applied` when any current-generation
 journal row reached live, otherwise `discarded`, even if the last action was
-Discard. Success responses expose `draftClosed`; only closed responses expose
-`draftDisposition`. Whole Apply is unchanged.
+Discard. Success responses expose `itemClosed`; only closed responses expose
+`itemDisposition`. Whole Apply is unchanged.
 
 ### Live writes versus CLI replacement
 

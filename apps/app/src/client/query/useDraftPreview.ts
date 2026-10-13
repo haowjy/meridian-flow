@@ -47,26 +47,26 @@ type DraftRef = {
   projectId: string;
   workId: string;
   documentId: string;
-  draftId: string;
-  draftGeneration?: number;
+  itemKey: string;
+  branchGeneration?: number;
 };
 
 /** Gone has no server generation; the cache retains the horizon addressed at request start. */
-export type DraftPreviewRead = DraftPreviewResponse & { draftGeneration?: number };
+export type DraftPreviewRead = DraftPreviewResponse & { branchGeneration?: number };
 
 /**
  * The cache never goes back a generation: a read that began before a close can
  * land after the next proposal's, and the draft's generation only rises
- * (`ThreadDraftListItem.draftGeneration`). Anything else is the default
+ * (`ThreadDraftListItem.branchGeneration`). Anything else is the default
  * structural sharing, which keeps the reference when a refetch changed nothing.
  */
 function keepNewerGeneration(prior: unknown, next: unknown): unknown {
   const before = prior as DraftPreviewRead | undefined;
   const after = next as DraftPreviewRead;
   if (
-    before?.draftGeneration !== undefined &&
-    after.draftGeneration !== undefined &&
-    after.draftGeneration < before.draftGeneration
+    before?.branchGeneration !== undefined &&
+    after.branchGeneration !== undefined &&
+    after.branchGeneration < before.branchGeneration
   )
     return before;
   return shareDraftObservation(prior, next);
@@ -78,7 +78,7 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
     draft.projectId,
     draft.workId,
     draft.documentId,
-    draft.draftId,
+    draft.itemKey,
   );
   return {
     queryKey,
@@ -88,28 +88,28 @@ export function draftPreviewQueryOptions(draft: DraftRef) {
         projectQueryKeys.workDrafts(draft.projectId, draft.workId),
       );
       const row = rows?.find(
-        (row) => row.documentId === draft.documentId && row.draftId === draft.draftId,
+        (row) => row.documentId === draft.documentId && row.itemKey === draft.itemKey,
       );
       const generation = Math.max(
-        draft.draftGeneration ?? 0,
-        prior?.draftGeneration ?? 0,
-        row?.draftGeneration ?? 0,
+        draft.branchGeneration ?? 0,
+        prior?.branchGeneration ?? 0,
+        row?.branchGeneration ?? 0,
       );
       const answer = await readPreviewAfterChangeCommands(draft, () =>
         getDraftPreview(
           draft.projectId,
           draft.workId,
           draft.documentId,
-          draft.draftId,
+          draft.itemKey,
           signal,
         ).catch((error: unknown) => {
           // HTTP absence is the same durable observation as a JSON gone answer.
           if (error && typeof error === "object" && "status" in error && error.status === 404)
-            return { status: "gone" as const, draftId: draft.draftId };
+            return { status: "gone" as const, itemKey: draft.itemKey };
           throw error;
         }),
       );
-      return answer.status === "gone" ? { ...answer, draftGeneration: generation } : answer;
+      return answer.status === "gone" ? { ...answer, branchGeneration: generation } : answer;
     },
     staleTime: 15_000,
     structuralSharing: keepNewerGeneration,
@@ -127,7 +127,7 @@ function projectionOf(
 ): Projected {
   const whole =
     data.status === "active" &&
-    wholeDraftDisposition(records, draft, data.draftGeneration, data) !== null;
+    wholeDraftDisposition(records, draft, data.branchGeneration, data) !== null;
   const intents = intentKeys(records, draft);
   const sorted = (keys: ReadonlySet<string>) => [...keys].sort().join(",");
   const key = whole ? "all" : `${sorted(intents.hidden)}|${sorted(intents.restoring)}`;
@@ -142,7 +142,7 @@ export function useDraftPreview(
   projectId: string | null,
   workId: string | null,
   documentId: string | null,
-  draftId: string | null,
+  itemKey: string | null,
   options?: { enabled?: boolean },
 ): DraftPreviewState {
   const callerEnabled = options?.enabled ?? true;
@@ -151,12 +151,12 @@ export function useDraftPreview(
     Boolean(projectId) &&
     Boolean(workId) &&
     Boolean(documentId) &&
-    Boolean(draftId);
+    Boolean(itemKey);
   const draft = {
     projectId: projectId ?? "",
     workId: workId ?? "",
     documentId: documentId ?? "",
-    draftId: draftId ?? "",
+    itemKey: itemKey ?? "",
   };
   const { data } = useQuery({
     ...draftPreviewQueryOptions(draft),
@@ -202,7 +202,7 @@ function combinePreviewReads(
 }
 
 function previewKeyOf(draft: DraftRef): string {
-  return `${draft.projectId}\u0000${draft.workId}\u0000${draft.documentId}\u0000${draft.draftId}`;
+  return `${draft.projectId}\u0000${draft.workId}\u0000${draft.documentId}\u0000${draft.itemKey}`;
 }
 
 /**
@@ -215,9 +215,9 @@ function useDraftListRows(targets: readonly DraftRef[]): (string | undefined)[] 
   const lists = useQueries({
     queries: scopes.map(({ projectId, workId }) => workDraftsQueryOptions(projectId, workId)),
     combine: useCallback(
-      (all: { data?: { draftId: string; updatedAt: string }[] }[]) =>
+      (all: { data?: { itemKey: string; updatedAt: string }[] }[]) =>
         all.map(({ data }) =>
-          data?.map(({ draftId, updatedAt }) => `${draftId}\u0000${updatedAt}`),
+          data?.map(({ itemKey, updatedAt }) => `${itemKey}\u0000${updatedAt}`),
         ),
       [],
     ),
@@ -226,7 +226,7 @@ function useDraftListRows(targets: readonly DraftRef[]): (string | undefined)[] 
     const at = scopes.findIndex(
       (scope) => scope.projectId === target.projectId && scope.workId === target.workId,
     );
-    const prefix = `${target.draftId}\u0000`;
+    const prefix = `${target.itemKey}\u0000`;
     return lists[at]?.find((row) => row.startsWith(prefix))?.slice(prefix.length);
   });
 }
@@ -245,7 +245,7 @@ function useDraftListRows(targets: readonly DraftRef[]): (string | undefined)[] 
  */
 export function useDraftPreviews(
   targets: readonly DraftRef[],
-  options?: { openReview?: { documentId: string; draftId: string } | null },
+  options?: { openReview?: { documentId: string; itemKey: string } | null },
 ): readonly DraftPreviewEntry[] {
   const queryClient = useQueryClient();
   const records = useChangeCommandRecords();
@@ -268,19 +268,19 @@ export function useDraftPreviews(
       if (updatedAt === undefined) return;
       const prior = seen.current.get(key);
       seen.current.set(key, updatedAt);
-      const isOpen = open?.documentId === target.documentId && open.draftId === target.draftId;
+      const isOpen = open?.documentId === target.documentId && open.itemKey === target.itemKey;
       if (prior === undefined || prior === updatedAt || isOpen) return;
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.workDraftPreview(
           target.projectId,
           target.workId,
           target.documentId,
-          target.draftId,
+          target.itemKey,
         ),
       });
     });
     for (const key of seen.current.keys()) if (!held.has(key)) seen.current.delete(key);
-  }, [targetsKey, listedKey, open?.documentId, open?.draftId, queryClient]);
+  }, [targetsKey, listedKey, open?.documentId, open?.itemKey, queryClient]);
 
   const projectedKeys = targets
     .map((target, index) => {

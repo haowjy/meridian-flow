@@ -8,7 +8,8 @@ export type ReviewAddress = {
   projectId?: ProjectId;
   documentId: DocumentId;
   workId: WorkId;
-  draftId: string;
+  /** The document's `work_draft` branch: server-internal. The wire names the item by `itemKey`. */
+  draftBranchId: string;
 };
 
 export type ReviewCut = Readonly<{

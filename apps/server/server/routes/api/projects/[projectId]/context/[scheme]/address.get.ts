@@ -9,14 +9,18 @@ export default defineEventHandler(async (event) => {
   const { app, projectId, userId, scheme, workId } = await resolveContextRoute(event);
   const query = getQuery(event);
   const path = parseContextMutationPath(query.path, "path");
-  const hasReview = query.reviewWorkId !== undefined || query.draftBranchId !== undefined;
+  // A request still carrying the retired `draftBranchId` selector is a review request that answers unavailable.
+  const hasReview =
+    query.reviewWorkId !== undefined ||
+    query.itemKey !== undefined ||
+    query.draftBranchId !== undefined;
   if (
     hasReview &&
     (typeof query.reviewWorkId !== "string" ||
       !query.reviewWorkId ||
-      typeof query.draftBranchId !== "string" ||
-      !query.draftBranchId ||
-      (query.documentId !== undefined && typeof query.documentId !== "string"))
+      typeof query.itemKey !== "string" ||
+      !query.itemKey ||
+      query.draftBranchId !== undefined)
   )
     return { kind: "unavailable" } as const;
   return handleDocumentAddressRequest(
@@ -37,8 +41,7 @@ export default defineEventHandler(async (event) => {
     hasReview
       ? {
           workId: query.reviewWorkId as string,
-          draftBranchId: query.draftBranchId as string,
-          ...(typeof query.documentId === "string" ? { documentId: query.documentId } : {}),
+          itemKey: query.itemKey as string,
         }
       : undefined,
   );

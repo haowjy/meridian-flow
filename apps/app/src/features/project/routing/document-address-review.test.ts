@@ -5,11 +5,11 @@ import { bindDocumentAddressReview, reviewAddressRouteBinding } from "./document
 it("starts review admission with the selected Work and branch, without draft-list identity", () => {
   expect(bindDocumentAddressReview("branch-a", "work-a")).toEqual({
     kind: "review",
-    review: { workId: "work-a", draftBranchId: "branch-a" },
+    review: { workId: "work-a", itemKey: "branch-a" },
   });
   expect(bindDocumentAddressReview("missing", "work-a")).toEqual({
     kind: "review",
-    review: { workId: "work-a", draftBranchId: "missing" },
+    review: { workId: "work-a", itemKey: "missing" },
   });
   expect(bindDocumentAddressReview("branch-a", null)).toEqual({ kind: "pending" });
   expect(bindDocumentAddressReview(undefined, "work-a")).toEqual({ kind: "plain" });
@@ -18,7 +18,7 @@ it("starts review admission with the selected Work and branch, without draft-lis
 it("replaces a cold live path binding only after the selected review identity is admitted", () => {
   const binding = {
     kind: "review" as const,
-    review: { workId: "work", draftBranchId: "branch" },
+    review: { workId: "work", itemKey: "branch" },
   };
   const selection = {
     status: "bound" as const,

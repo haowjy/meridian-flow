@@ -20,7 +20,7 @@ import {
   type ContextTab,
   getContextTabs,
   isEditorScheme,
-  matchesReviewDraft,
+  matchesReviewItem,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -475,12 +475,11 @@ function ReadableProjectDestination({
         : (documentIssue ??
           (draftOnly
             ? // Review installs the tab; until it has, the address is still being repaired.
-              address.draftId === draftOnly.draft.draftId &&
+              address.itemKey === draftOnly.draft.itemKey &&
               workspaceTabs.some((tab) =>
-                matchesReviewDraft(tab, {
-                  documentId: draftOnly.documentId,
+                matchesReviewItem(tab, {
                   reviewWorkId: workId ?? "",
-                  reviewDraftId: draftOnly.draft.draftId,
+                  reviewItemKey: draftOnly.draft.itemKey,
                 }),
               )
               ? undefined
@@ -505,7 +504,7 @@ function ReadableProjectDestination({
     return {
       ...address,
       destination: next,
-      draftId: undefined,
+      itemKey: undefined,
       workView: undefined,
       worksView: undefined,
     };
@@ -516,7 +515,7 @@ function ReadableProjectDestination({
     return workDetailAddress(address, target);
   }
   const contextDestination = useCallback(
-    (target: ContextRouteRequest, preparedTab?: ContextTab, draftId?: string) =>
+    (target: ContextRouteRequest, preparedTab?: ContextTab, itemKey?: string) =>
       prepareEditorDestination(
         {
           projectId,
@@ -526,7 +525,7 @@ function ReadableProjectDestination({
         },
         target,
         preparedTab,
-        draftId,
+        itemKey,
       ),
     [projectId, user.userId],
   );
@@ -545,21 +544,21 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
-  const setEditorReviewDraftId = useCallback((draftId: string | null, changeId?: string) => {
+  const setEditorReviewItemKey = useCallback((itemKey: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
     const { address } = current;
     // A review names its Work: an address that left it implicit states the Editor's own now.
     const work =
-      draftId && address.work.kind === "absent" && current.editorWorkId
+      itemKey && address.work.kind === "absent" && current.editorWorkId
         ? workSelectionFor(address.destination, current.editorWorkId, current.noWorkId)
         : address.work;
     void current.navigation.replaceIfCurrent(ticket, {
       ...address,
       work,
-      draftId: draftId ?? undefined,
-      changeId: draftId ? changeId : undefined,
+      itemKey: itemKey ?? undefined,
+      changeId: itemKey ? changeId : undefined,
     });
   }, []);
   const closeDestination = useCallback(
@@ -682,7 +681,7 @@ function ReadableProjectDestination({
             ...options,
             ...(editorContainerAddress?.documentId === tab.documentId &&
             editorContainerAddress.workId === workId
-              ? { draftId: editorContainerAddress.address.draftId }
+              ? { itemKey: editorContainerAddress.address.itemKey }
               : {}),
           },
         );
@@ -745,7 +744,7 @@ function ReadableProjectDestination({
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
               result={documentResult}
               localFile={reconciledDocumentAddress.localFile}
-              draftOnlyId={draftOnly?.draft.draftId}
+              draftOnlyId={draftOnly?.draft.itemKey}
               workId={workId}
               noWorkId={noWorkId}
               navigation={navigation}
@@ -790,7 +789,7 @@ function ReadableProjectDestination({
                       // or falls back to another. Either way the review follows
                       // the address until ReviewAddressOwner, which knows
                       // the document's identity, decides it no longer applies.
-                      draftId: address.draftId,
+                      itemKey: address.itemKey,
                     },
                   );
                 else if (next.screen === "work")
@@ -804,7 +803,7 @@ function ReadableProjectDestination({
             activeContextFolder={search.folder ?? null}
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
-            reviewDraftId={address.draftId}
+            reviewItemKey={address.itemKey}
             reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
             onSelectScreen={selectScreen}
@@ -812,7 +811,7 @@ function ReadableProjectDestination({
             onExitContextScheme={() => browse(null)}
             onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
             onOpenContextTarget={openContext}
-            onSetEditorReviewDraftId={setEditorReviewDraftId}
+            onSetEditorReviewItemKey={setEditorReviewItemKey}
           />
         </ProjectDocumentNavigationProvider>
       </ChatNavigationProvider>

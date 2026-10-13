@@ -188,7 +188,7 @@ export function durableContextTab(tab: ContextTab): ContextTab {
   const {
     draftOnly: _,
     reviewWorkId: _reviewWorkId,
-    reviewDraftId: _reviewDraftId,
+    reviewItemKey: _reviewItemKey,
     tabInstanceToken: _tabInstanceToken,
     ...persisted
   } = tab;
@@ -210,7 +210,7 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
         left.path === right.path &&
         left.workId === right.workId &&
         left.rootThreadId === right.rootThreadId)) &&
-    leftDraft?.reviewDraftId === rightDraft?.reviewDraftId &&
+    leftDraft?.reviewItemKey === rightDraft?.reviewItemKey &&
     leftDraft?.tabInstanceToken === rightDraft?.tabInstanceToken
   );
 }
@@ -462,7 +462,7 @@ export function reduceEditorWorkspace(
             ? {
                 draftOnly: true,
                 reviewWorkId: existing.reviewWorkId,
-                reviewDraftId: existing.reviewDraftId,
+                reviewItemKey: existing.reviewItemKey,
                 tabInstanceToken: existing.tabInstanceToken,
               }
             : {}),

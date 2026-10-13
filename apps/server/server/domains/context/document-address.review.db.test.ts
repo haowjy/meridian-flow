@@ -31,7 +31,7 @@ describeDraftTreeDb("review address identity", (start, db) => {
       workId: null,
       path: "Withern",
     };
-    const review = { workId: work.id, draftBranchId: row.draftId, documentId: hidden };
+    const review = { workId: work.id, itemKey: `${row.draftId}:${hidden}` };
     const deps = { ...runtime.app, draftReview: runtime.app.documentSync.draftReview };
     await expect(handleDocumentAddressRequest(deps, input, review)).resolves.toMatchObject({
       kind: "current",
@@ -48,10 +48,10 @@ describeDraftTreeDb("review address identity", (start, db) => {
       document: { documentId: hidden, entry: { uri: "kb://Withern" } },
     });
     for (const selector of [
-      { ...review, draftBranchId: "bad" },
+      { ...review, itemKey: "bad" },
       { ...review, workId: (await s.work("rival", "draft")).id },
-      { ...review, documentId: live },
-      { ...review, documentId: unused },
+      { ...review, itemKey: `${row.draftId}:${live}` },
+      { ...review, itemKey: `${row.draftId}:${unused}` },
     ]) {
       expect(
         await handleDocumentAddressRequest(deps, input, selector),

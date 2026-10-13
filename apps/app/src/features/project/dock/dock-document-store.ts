@@ -125,7 +125,7 @@ export function createDockDocumentStore(
             return state;
           if (
             document.review?.workId === review?.workId &&
-            document.review?.draftId === review?.draftId &&
+            document.review?.itemKey === review?.itemKey &&
             document.review?.changeId === review?.changeId
           )
             return state;
@@ -204,8 +204,8 @@ export function dockDocument(
   review: ReviewAddress | null,
 ): DockDocument {
   const intrinsic =
-    tab.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewDraftId
-      ? { workId: tab.reviewWorkId, draftId: tab.reviewDraftId }
+    tab.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewItemKey
+      ? { workId: tab.reviewWorkId, itemKey: tab.reviewItemKey }
       : review;
   return { projectId, screen, screenWorkId: null, tab, review: intrinsic };
 }

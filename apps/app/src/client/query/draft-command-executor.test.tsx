@@ -37,13 +37,13 @@ const input = {
   projectId: "project-a",
   workId: "work-a",
   documentId: "doc-a",
-  draftId: "draft-a",
-  draftGeneration: 1,
+  itemKey: "draft-a",
+  branchGeneration: 1,
 };
 const lost = () => new TypeError("Failed to fetch");
-const listing = (...draftIds: string[]) => ({
-  drafts: draftIds.map(
-    (draftId) => ({ draftId, documentId: "doc-a", draftGeneration: 1 }) as ThreadDraftListItem,
+const listing = (...itemKeys: string[]) => ({
+  drafts: itemKeys.map(
+    (itemKey) => ({ itemKey, documentId: "doc-a", branchGeneration: 1 }) as ThreadDraftListItem,
   ),
 });
 
@@ -65,7 +65,7 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let drafts: string[] = [];
   function Capture() {
-    drafts = (useWorkDrafts("project-a", "work-a").data ?? []).map((draft) => draft.draftId);
+    drafts = (useWorkDrafts("project-a", "work-a").data ?? []).map((draft) => draft.itemKey);
     return null;
   }
   await withReactRoot(
@@ -123,7 +123,7 @@ describe("draft command executor", () => {
         void queryClient.refetchQueries({ queryKey: ["projects", "project-a"] });
       });
       await act(async () => {
-        confirmation.resolve({ status: "applied", draftId: "draft-a" });
+        confirmation.resolve({ status: "applied", itemKey: "draft-a" });
         await applied;
       });
       await act(async () => older.resolve(listing("draft-a")));
@@ -139,7 +139,7 @@ it("an answer from before an account change cannot settle the new account's clai
   resetDraftCommandRecords();
   bindDraftCommandAccount("account-a");
   const selection = { classIds: ["c"], admissionTokens: ["c"], operationIds: ["1"] };
-  const basis = { liveRevisionToken: "l", draftRevisionToken: "d", draftGeneration: 1 };
+  const basis = { liveRevisionToken: "l", draftRevisionToken: "d", branchGeneration: 1 };
   const command = {
     target: "selection" as const,
     draft: input,
@@ -159,7 +159,7 @@ it("an answer from before an account change cannot settle the new account's clai
   const old = startDraftCommand(client, command).outcome;
   oldAnswer.resolve({
     status: "applied",
-    draftId: input.draftId,
+    itemKey: input.itemKey,
     operationIds: ["1"],
     closureClassIds: ["c"],
   });
@@ -173,7 +173,7 @@ it("an answer from before an account change cannot settle the new account's clai
   reads.mockRestore();
   newAnswer.resolve({
     status: "applied",
-    draftId: input.draftId,
+    itemKey: input.itemKey,
     operationIds: ["1"],
     closureClassIds: ["c"],
   });
@@ -183,7 +183,7 @@ it("an answer from before an account change cannot settle the new account's clai
 
 describe("clicks queued behind a Discard that re-forked the draft", () => {
   const scope = { projectId: input.projectId, workId: input.workId };
-  const target = { documentId: input.documentId, draftId: input.draftId };
+  const target = { documentId: input.documentId, itemKey: input.itemKey };
   // Two independent changes with the very same text: only the part key tells them apart.
   const op = (id: string, partKey: string) => ({
     operationId: id,
@@ -197,8 +197,8 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
   });
   const preview = (generation: number, ...operations: ReturnType<typeof op>[]) => ({
     status: "active" as const,
-    draftId: input.draftId,
-    draftGeneration: generation,
+    itemKey: input.itemKey,
+    branchGeneration: generation,
     reviewRoomName: "room",
     liveRevisionToken: "live",
     draftRevisionToken: `draft-${generation}`,
@@ -211,7 +211,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     operationIds: [o.operationId],
     keys: [o.partKey],
   });
-  const discarded = { status: "discarded", draftId: input.draftId, draftClosed: false };
+  const discarded = { status: "discarded", itemKey: input.itemKey, itemClosed: false };
   const seeded = (...operations: ReturnType<typeof op>[]) => {
     resetDraftCommandRecords();
     bindDraftCommandAccount("account-a");
@@ -223,7 +223,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
         input.projectId,
         input.workId,
         input.documentId,
-        input.draftId,
+        input.itemKey,
       ),
       preview(1, ...operations),
     );
@@ -287,15 +287,15 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
   it("admits the entire batch at the click and revokes an unsent target in its draft queue", async () => {
     const [a, b, c] = [op("2", "a"), op("3", "b"), op("4", "c")];
     const client = seeded(a, b);
-    const other = { ...input, documentId: "doc-b", draftId: "draft-b" };
+    const other = { ...input, documentId: "doc-b", itemKey: "draft-b" };
     client.setQueryData(
       projectQueryKeys.workDraftPreview(
         other.projectId,
         other.workId,
         other.documentId,
-        other.draftId,
+        other.itemKey,
       ),
-      { ...preview(1, c), draftId: other.draftId },
+      { ...preview(1, c), itemKey: other.itemKey },
     );
     const answer = deferred<unknown>();
     api.discardDraft.mockReturnValue(answer.promise);
@@ -311,7 +311,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
     expect([...intentKeys(currentChangeCommandRecords(), other).hidden]).toContain("c");
     await settleReact(() => expect(api.discardDraft).toHaveBeenCalledTimes(2));
     expect(api.discardDraft.mock.calls[1]?.[3]).toMatchObject({
-      draftId: "draft-b",
+      itemKey: "draft-b",
       closureClassIds: [c.closureClassId],
     });
     bindDraftCommandAccount("account-b");
@@ -327,7 +327,7 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
 
   it("retries explicit stale once with fresh rows only for identical actionable members", async () => {
     const b = op("3", "b");
-    const stale = { status: "stale", draftId: input.draftId };
+    const stale = { status: "stale", itemKey: input.itemKey };
     for (const situation of [
       "same",
       "joined",
@@ -362,7 +362,9 @@ describe("clicks queued behind a Discard that re-forked the draft", () => {
         api.discardDraft.mockRejectedValue(new HttpResponseError("Forbidden", 403, null));
       else
         api.discardDraft.mockResolvedValueOnce(stale).mockImplementation(async () => {
-          expect(pendingDraftCommand(currentDraftCommandRecords(), input)?.draftGeneration).toBe(2);
+          expect(pendingDraftCommand(currentDraftCommandRecords(), input)?.branchGeneration).toBe(
+            2,
+          );
           return situation === "stale-again" ? stale : discarded;
         });
       const outcome = await runDraftSelection(client, scope, "discard", target, selecting(b), null);

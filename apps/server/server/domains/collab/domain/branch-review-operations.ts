@@ -108,15 +108,15 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           "selective_discard_refork",
           survivors.map((row) => row.id),
         );
-        const draftClosed = documentEffectsEqual(live, peer);
+        const itemClosed = documentEffectsEqual(live, peer);
         await deps.commitStore.commitDiscard({
           branch,
           journalRows: rows,
           survivors,
-          retireSurvivors: draftClosed,
+          retireSurvivors: itemClosed,
           expectedLiveRevision: selection.expectedLiveRevision,
-          state: Y.encodeStateAsUpdate(draftClosed ? live : peer),
-          stateVector: Y.encodeStateVector(draftClosed ? live : peer),
+          state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
+          stateVector: Y.encodeStateVector(itemClosed ? live : peer),
           reviewedByUserId: discardInput.reviewedByUserId,
         });
         deps.branchCoordinator?.notifyReset?.({
@@ -127,10 +127,10 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           status: "discarded",
           branchId: branch.branchId,
           journalIds: [...selected].sort((a, b) => a - b),
-          draftClosed,
-          ...(draftClosed
+          itemClosed,
+          ...(itemClosed
             ? {
-                draftDisposition: history.some((row) => row.status === "pushed")
+                itemDisposition: history.some((row) => row.status === "pushed")
                   ? ("applied" as const)
                   : ("discarded" as const),
               }

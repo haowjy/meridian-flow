@@ -7,10 +7,10 @@ import {
   type ContextTab,
   isEditorContextTab,
   isEditorTab,
-  matchesReviewDraft,
+  matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
-  type ReviewDraftTabIdentity,
+  type ReviewItemTabIdentity,
   type TabOwner,
 } from "./editor-workspace-model";
 import {
@@ -28,7 +28,7 @@ export type TrackedTabPatch = Partial<
     | "tabInstanceId"
     | "draftOnly"
     | "reviewWorkId"
-    | "reviewDraftId"
+    | "reviewItemKey"
     | "tabInstanceToken"
   >
 > &
@@ -40,10 +40,10 @@ export {
   isEditorContextTab,
   isEditorScheme,
   isEditorTab,
-  matchesReviewDraft,
+  matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
-  type ReviewDraftTabIdentity,
+  type ReviewItemTabIdentity,
   replaceOwner,
   type ServerContextTab,
   type TabOwner,
@@ -109,7 +109,7 @@ export type ReviewOverlayConsumeReceipt =
   | { kind: "consumed"; current: ProjectTabsSlice }
   | { kind: "not-consumed"; current: ProjectTabsSlice };
 
-export type ReviewOverlayTabIdentity = ReviewDraftTabIdentity & {
+export type ReviewOverlayTabIdentity = ReviewItemTabIdentity & {
   tabInstanceId: string;
   tabInstanceToken: string;
 };
@@ -163,10 +163,9 @@ function composeProjectSlice(state: ContextTabsState, projectId: string): Projec
 function sameReviewOverlay(left: ContextTab, right: ContextTab): boolean {
   return (
     right.kind !== "new" &&
-    matchesReviewDraft(left, {
-      documentId: right.documentId,
+    matchesReviewItem(left, {
       reviewWorkId: right.reviewWorkId ?? "",
-      reviewDraftId: right.reviewDraftId ?? "",
+      reviewItemKey: right.reviewItemKey ?? "",
     })
   );
 }
@@ -247,7 +246,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                       ...tab,
                       tabInstanceId: existing.tabInstanceId,
                       reviewWorkId: existing.reviewWorkId,
-                      reviewDraftId: existing.reviewDraftId,
+                      reviewItemKey: existing.reviewItemKey,
                       tabInstanceToken: existing.tabInstanceToken,
                     } as ContextTab)
                   : tab;
@@ -290,8 +289,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                             draftOnly: candidate.draftOnly,
                             reviewWorkId:
                               candidate.kind !== "new" ? candidate.reviewWorkId : undefined,
-                            reviewDraftId:
-                              candidate.kind !== "new" ? candidate.reviewDraftId : undefined,
+                            reviewItemKey:
+                              candidate.kind !== "new" ? candidate.reviewItemKey : undefined,
                             tabInstanceToken:
                               candidate.kind !== "new" ? candidate.tabInstanceToken : undefined,
                           } as ContextTab)
@@ -525,10 +524,9 @@ function planReviewOverlayClose(
     const matches =
       candidate.kind !== "new" &&
       candidate.draftOnly &&
-      candidate.documentId === identity.documentId &&
       candidate.tabInstanceId === identity.tabInstanceId &&
       candidate.reviewWorkId === identity.reviewWorkId &&
-      candidate.reviewDraftId === identity.reviewDraftId &&
+      candidate.reviewItemKey === identity.reviewItemKey &&
       candidate.tabInstanceToken === identity.tabInstanceToken;
     if (matches) consumed = true;
     return !matches;
@@ -618,12 +616,11 @@ export function commitDraftApplyMetadata(
     .getState()
     ._reviewOverlayByProject[projectId]?.tabs.find(
       (candidate) =>
-        candidate.documentId === identity.documentId &&
         candidate.kind === "tracked" &&
         candidate.draftOnly &&
         candidate.tabInstanceId === identity.tabInstanceId &&
         candidate.reviewWorkId === identity.reviewWorkId &&
-        candidate.reviewDraftId === identity.reviewDraftId &&
+        candidate.reviewItemKey === identity.reviewItemKey &&
         candidate.tabInstanceToken === identity.tabInstanceToken,
     );
   if (!tab) return Promise.resolve({ kind: "not-settled" });

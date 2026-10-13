@@ -13,7 +13,7 @@ export type ReviewFileTarget = {
   /** The active draft the row's verbs act on. */
   draft: ThreadDraftListItem;
   /** Absent from the live project until Apply. */
-  isNewDocument: boolean;
+  isNew: boolean;
 };
 
 /** The DB guarantees one active draft per document/Work; raw rows remain untouched. */
@@ -36,7 +36,7 @@ export function projectWorkDraftFiles(
             ? { scheme: location.scheme, path: location.path }
             : draft.contextLocation,
           draft,
-          isNewDocument: draft.isNewDocument === true,
+          isNew: draft.isNew === true,
         };
       }),
   );

@@ -118,18 +118,18 @@ export function ContextViewer({
 
   // Draft review state: the review's controls live in the identity bar.
   const { controller } = useDraftReview();
-  const activeReviewDraftId =
+  const activeReviewItemKey =
     activeTab &&
     controller.inlineReview?.documentId === activeTab.documentId &&
     controller.inlineReview.shown
-      ? controller.inlineReview.draftId
+      ? controller.inlineReview.itemKey
       : null;
   const archivedEditorWork = editorWork && isWorkArchived(editorWork) ? editorWork : null;
   // Archiving freezes the Editor Work's own files and its drafts (D30). A
   // review edits the draft, so its editor freezes and shows the notice; the
   // reviewed file itself may be project-owned and keeps its identity bar.
   const fileFrozen = Boolean(activeFileInWork && archivedEditorWork);
-  const editorFrozen = Boolean((activeFileInWork || activeReviewDraftId) && archivedEditorWork);
+  const editorFrozen = Boolean((activeFileInWork || activeReviewItemKey) && archivedEditorWork);
 
   return (
     <div
@@ -145,7 +145,7 @@ export function ContextViewer({
         tabs={tabs}
         activeTabId={activeTabId}
         activeTabInstanceId={activeTab?.tabInstanceId}
-        reviewingTabId={activeReviewDraftId ? activeTabId : null}
+        reviewingTabId={activeReviewItemKey ? activeTabId : null}
         optimisticTab={optimisticTab}
         onSelect={onSelectTab}
         onClose={onCloseTab}

@@ -47,7 +47,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
         projectId,
         workId,
         documentId: row.documentId,
-        draftId: row.draft.draftId,
+        itemKey: row.draft.itemKey,
       })),
     [candidates, projectId, workId],
   );
@@ -77,7 +77,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const send = useCallback(
     (mode: "apply" | "discard") => {
       const items = actionableFiles.map((file) => ({
-        draft: { documentId: file.row.documentId, draftId: file.row.draft.draftId },
+        draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
         target: targetOfChanges(file.actionable),
       }));
       if (items.length === 0) return;
@@ -94,7 +94,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
       projectId,
       workId,
       documentId: file.row.documentId,
-      draftId: file.row.draft.draftId,
+      itemKey: file.row.draft.itemKey,
     };
     const state = changeCommandState(records, ref, selectionOf(file.changes));
     const held = draftCommandFailure(records.drafts, ref);

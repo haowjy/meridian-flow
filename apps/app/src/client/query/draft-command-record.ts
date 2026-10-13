@@ -7,8 +7,8 @@ import type { DraftCommandOutcome } from "./draft-command-executor";
 import type { ActivePreview, DraftIntentKeys } from "./draft-projection";
 
 type DraftScope = { projectId: string; workId: string };
-export type DraftRef = DraftScope & { documentId: string; draftId: string };
-type ListedDraft = { documentId: string; draftId: string; draftGeneration?: number };
+export type DraftRef = DraftScope & { documentId: string; itemKey: string };
+type ListedDraft = { documentId: string; itemKey: string; branchGeneration?: number };
 
 /**
  * What a held failure is, never its wording. `-offline`: the request never got
@@ -71,9 +71,9 @@ export type ClosedDraft = { documentName: string | null };
 export type PendingChangeCommand = ChangeSelection & {
   target: "selection";
   mode: ChangeCommandMode;
-  draftGeneration: number;
+  branchGeneration: number;
   completesDraft?: true;
-  draftClosed?: ClosedDraft;
+  itemClosed?: ClosedDraft;
   outcome?: "applied" | "discarded" | "change-gone";
 };
 
@@ -82,9 +82,9 @@ export type PendingDraftCommand =
   | {
       target: "all";
       mode: ChangeCommandMode;
-      draftGeneration: number | undefined;
+      branchGeneration: number | undefined;
       completesDraft?: true;
-      draftClosed?: ClosedDraft;
+      itemClosed?: ClosedDraft;
     };
 
 type DraftClaimRecord =
@@ -94,7 +94,7 @@ type DraftClaimRecord =
 type DraftCommandRecord = {
   claim?: DraftClaimRecord;
   /** Account-scoped Apply intent: retained cached observations still name this generation. */
-  applied?: { draftGeneration: number | undefined; at: number };
+  applied?: { branchGeneration: number | undefined; at: number };
   outcomes: Readonly<Record<string, ChangeCommandRecord>>;
 };
 export type DraftCommandRecords = Readonly<Record<string, DraftCommandRecord>>;
@@ -172,7 +172,7 @@ function scopePrefix({ projectId, workId }: DraftScope): string {
 }
 
 export function draftCommandKey(draft: DraftRef): string {
-  return `${scopePrefix(draft)}${draft.documentId}\u0000${draft.draftId}`;
+  return `${scopePrefix(draft)}${draft.documentId}\u0000${draft.itemKey}`;
 }
 
 /** Mutations and retention share one update path; empty draft records never survive. */
@@ -247,7 +247,7 @@ export function answerDraftCommandClosed(by: DraftClaim | DraftRef, closed: Clos
     (record.command.target === "all" && !record.command.completesDraft)
   )
     return;
-  const change = { ...record.command, draftClosed: closed };
+  const change = { ...record.command, itemClosed: closed };
   setRecord(draft, () => ({ phase: "pending", command: change, token: record.token }));
 }
 
@@ -312,17 +312,17 @@ export function confirmDraftCommand(by: DraftClaim | DraftRef): void {
     prior.command.mode !== "apply"
   )
     return;
-  const draftGeneration = prior.command.draftGeneration;
+  const branchGeneration = prior.command.branchGeneration;
   updateDraftRecord(
     draftCommandKey(draft),
     ({ claim: _claim, ...retained }, at) => ({
       ...retained,
       applied: {
         at,
-        draftGeneration:
-          retained.applied?.draftGeneration === undefined
-            ? draftGeneration
-            : Math.max(retained.applied.draftGeneration, draftGeneration ?? 0),
+        branchGeneration:
+          retained.applied?.branchGeneration === undefined
+            ? branchGeneration
+            : Math.max(retained.applied.branchGeneration, branchGeneration ?? 0),
       },
     }),
     true,
@@ -353,8 +353,8 @@ export async function readDraftsAfterCommands<T extends ListedDraft>(
       !stillListed.has(key),
   );
   for (const [key] of gone) {
-    const [documentId = "", draftId = ""] = key.slice(prefix.length).split("\u0000");
-    setRecord({ ...scope, documentId, draftId }, () => null);
+    const [documentId = "", itemKey = ""] = key.slice(prefix.length).split("\u0000");
+    setRecord({ ...scope, documentId, itemKey }, () => null);
   }
   return listed;
 }
@@ -374,13 +374,13 @@ export function wholeDraftDisposition(
   const read = observed ? observations.get(observed) : undefined;
   if (
     record?.applied &&
-    addressed(record.applied.draftGeneration) &&
+    addressed(record.applied.branchGeneration) &&
     (!read || (read.epoch === accountEpoch && read.fence < record.applied.at))
   )
     return "apply";
   const claim = record?.claim;
   if (claim?.phase === "pending" && claim.command.target === "all")
-    return addressed(claim.command.draftGeneration) ? claim.command.mode : null;
+    return addressed(claim.command.branchGeneration) ? claim.command.mode : null;
   const queued = Object.values(records.queued).find(
     (entry) => entry.prefix === draftCommandKey(draft) && entry.target === "all",
   );
@@ -427,8 +427,8 @@ export function changedDrafts(
   return [...new Set([...Object.keys(records), ...Object.keys(previous)])]
     .filter((key) => key.startsWith(prefix) && records[key] !== previous[key])
     .map((key) => {
-      const [documentId = "", draftId = ""] = key.slice(prefix.length).split("\u0000");
-      return { ...scope, documentId, draftId };
+      const [documentId = "", itemKey = ""] = key.slice(prefix.length).split("\u0000");
+      return { ...scope, documentId, itemKey };
     });
 }
 
@@ -552,7 +552,7 @@ export function beginChangeCommand(
   draft: DraftRef,
   selection: ChangeSelection,
   mode: ChangeCommandMode,
-  draftGeneration: number,
+  branchGeneration: number,
   completesDraft = false,
 ): DraftClaim | null {
   const claim = beginDraftCommand(draft, {
@@ -562,7 +562,7 @@ export function beginChangeCommand(
     operationIds: selection.operationIds,
     ...(selection.keys ? { keys: selection.keys } : {}),
     mode,
-    draftGeneration,
+    branchGeneration,
     ...(completesDraft ? { completesDraft: true as const } : {}),
   });
   // The claim is the next action on these changes: a failure they held is stale now.
@@ -590,7 +590,7 @@ export function rebaseChangeCommand(
           target: "selection",
           mode: prior.claim.command.mode,
           ...selection,
-          draftGeneration: generation,
+          branchGeneration: generation,
           ...(completesDraft ? { completesDraft: true } : {}),
         },
       },

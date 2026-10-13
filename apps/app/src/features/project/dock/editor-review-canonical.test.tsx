@@ -12,12 +12,12 @@ it.each([
   "document",
 ])("keeps a moved review with address identity %s", async (documentId) => {
   function Harness() {
-    const [draftId, setDraftId] = useState<string | null>("branch");
+    const [itemKey, setItemKey] = useState<string | null>("branch");
     const [destination, setDestination] = useState("waiting");
     const group = {
       documentId: "document",
       contextLocation: { scheme: "kb", path: "/Withern" },
-      draft: { draftId: "branch" },
+      draft: { itemKey: "branch" },
     };
     const review = {
       controller: { workId: "work", inlineReview: null },
@@ -35,15 +35,15 @@ it.each([
         <EditorReviewAddressOwner
           reviewAddressAdmission="admitted"
           review={review}
-          requestedDraftId={draftId ?? undefined}
+          requestedItemKey={itemKey ?? undefined}
           activeScreen="context"
           activeScheme="user"
           activePath="/Before"
           activeDocumentId={documentId}
-          onSetDraftId={setDraftId}
+          onSetItemKey={setItemKey}
         />
         <output>
-          {draftId ?? "none"}:{destination}
+          {itemKey ?? "none"}:{destination}
         </output>
       </EditorReviewHandoffProvider>
     );

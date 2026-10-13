@@ -149,7 +149,7 @@ row's Review a silent no-op).
    Work page's Files tab ("Changes to review").
 2. The row must show the real document title, not a placeholder.
 3. Click the file's name. PASS: the app navigates to the Editor for that document
-   (`/editor/manuscript/<path>?work=…&draft=…` under the project URL) and the
+   (`/editor/manuscript/<path>?work=…&item=…` under the project URL) and the
    inline review UI appears in the editor. FAIL: nothing happens.
 4. Repeat with a draft that creates a **new** document (write directive
    targeting a filename that doesn't exist). PASS: the Work page row shows the
@@ -236,25 +236,25 @@ for ~200ms).
 ## Probe E — cold load and reload of a draft-only review
 
 1. Leave a pending new-document draft unapplied. Open its review, copy the
-   address (`/editor/manuscript/<name>.md?work=…&draft=…`), and open it in a
+   address (`/editor/manuscript/<name>.md?work=…&item=…`), and open it in a
    fresh tab, then reload. Run it at desktop width and as a phone (390px wide,
    coarse pointer).
-   PASS: the document opens in review at the same URL with `?draft=` kept,
+   PASS: the document opens in review at the same URL with `?item=` kept,
    and no other document shows at any point. Record the history writes with a
    `history.replaceState` wrapper installed before first load: there must be
    none beyond the router's own startup write. FAIL: the address ends on
-   another open document with `?draft=` dropped (a tab at a path spelling the
+   another open document with `?item=` dropped (a tab at a path spelling the
    route does not match, or a phone host rejecting the route before the
    address admitted it).
 
 ## Probe F — copied No Work review address, remote disposition, history writes
 
 1. Leave a pending new-document draft in No Work. Copy its review address
-   (`…/editor/manuscript/<name>.md?work=&draft=…`: the draft states its Work).
+   (`…/editor/manuscript/<name>.md?work=&item=…`: the draft states its Work).
    Select a named Work in this browser, then open the copied address cold, at
    desktop width and as a phone.
-   PASS: the same draft opens in review, `?draft=` kept, no history write beyond the
-   router's startup one. FAIL: `?draft=` dropped or another document shown.
+   PASS: the same draft opens in review, `?item=` kept, no history write beyond the
+   router's startup one. FAIL: `?item=` dropped or another document shown.
 2. Open a draft-only review in two pages in a named Work. From the Work page
    Changes to review `…` menu, Apply all in one.
    PASS: the other page leaves review in place within about a second and shows the

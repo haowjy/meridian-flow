@@ -20,30 +20,30 @@ import { reviewRoomObservations } from "./useReviewRoomOwner";
 const enter = (generation = 1): DraftReviewAction => ({
   type: "enterInline",
   ...draftA,
-  draftGeneration: generation,
+  branchGeneration: generation,
 });
 const closed: DraftReviewAction = {
   type: "completionObserved",
   ...draftA,
-  draftGeneration: 1,
+  branchGeneration: 1,
   completion: { phase: "closed", documentName: "Chapter 12" },
 };
 const pending: DraftReviewAction = {
   type: "completionObserved",
   ...draftA,
-  draftGeneration: 1,
+  branchGeneration: 1,
   completion: { phase: "pending", mode: "apply", documentName: "Chapter 12" },
 };
 const observe = (generation: number, proposal = true, roomName?: string): DraftReviewAction => ({
   type: "generationObserved",
   ...draftA,
-  draftGeneration: generation,
+  branchGeneration: generation,
   proposal,
   roomName,
 });
 const proposal = (generation: number, ...ids: string[]) => ({
   ...previewOf(...ids),
-  draftGeneration: generation,
+  branchGeneration: generation,
   reviewRoomName: `room-g${generation}`,
 });
 const missing = (generation: number, ...ids: string[]) =>
@@ -51,8 +51,8 @@ const missing = (generation: number, ...ids: string[]) =>
 const shown = (state: DraftReviewState) =>
   state.surface.kind === "inline"
     ? {
-        draftId: state.surface.draftId,
-        generation: state.surface.draftGeneration,
+        itemKey: state.surface.itemKey,
+        generation: state.surface.branchGeneration,
         completion: state.surface.completion?.phase ?? null,
         room: state.surface.roomName ?? null,
       }
@@ -63,35 +63,35 @@ describe("review-room transition table", () => {
     {
       name: "new proposal interrupts pending",
       actions: [enter(), pending, observe(2, true, "room-g2"), closed],
-      result: { draftId: "draft-a", generation: 2, completion: null, room: "room-g2" },
+      result: { itemKey: "draft-a", generation: 2, completion: null, room: "room-g2" },
     },
     {
       name: "new proposal re-enters closed even after an older room answer",
       actions: [enter(), closed, observe(2, true, "room-g2"), observe(1, true, "old")],
-      result: { draftId: "draft-a", generation: 2, completion: null, room: "room-g2" },
+      result: { itemKey: "draft-a", generation: 2, completion: null, room: "room-g2" },
     },
     {
       name: "empty reset does not certify pending",
       actions: [enter(), pending, ...missing(2)],
-      result: { draftId: "draft-a", generation: 1, completion: "pending", room: null },
+      result: { itemKey: "draft-a", generation: 1, completion: "pending", room: null },
     },
     {
       name: "same generation never reopens closed",
       actions: [enter(), closed, observe(1)],
-      result: { draftId: "draft-a", generation: 1, completion: "closed", room: null },
+      result: { itemKey: "draft-a", generation: 1, completion: "closed", room: null },
     },
     {
       name: "a newer preview survives a lagging empty list",
       actions: [enter(), ...missing(2, "3"), observe(1)],
-      result: { draftId: "draft-a", generation: 2, completion: null, room: null },
+      result: { itemKey: "draft-a", generation: 2, completion: null, room: null },
     },
     {
       name: "a lagging listed generation cannot replace the preview",
       actions: [
         enter(),
-        ...reviewRoomObservations([{ ...listed, draftGeneration: 1 }], proposal(2, "3"), draftA),
+        ...reviewRoomObservations([{ ...listed, branchGeneration: 1 }], proposal(2, "3"), draftA),
       ],
-      result: { draftId: "draft-a", generation: 2, completion: null, room: null },
+      result: { itemKey: "draft-a", generation: 2, completion: null, room: null },
     },
     ...[1, 2].map((readGeneration) => ({
       name:
@@ -102,51 +102,51 @@ describe("review-room transition table", () => {
         enter(),
         closed,
         ...reviewRoomObservations(
-          [{ ...listed, draftGeneration: 2 }],
-          { status: "gone" as const, draftId: draftA.draftId, draftGeneration: readGeneration },
+          [{ ...listed, branchGeneration: 2 }],
+          { status: "gone" as const, itemKey: draftA.itemKey, branchGeneration: readGeneration },
           draftA,
         ),
         // The next layout pass sees completion cleared by the G2 observation.
         ...reviewRoomObservations(
-          [{ ...listed, draftGeneration: 2 }],
-          { status: "gone" as const, draftId: draftA.draftId, draftGeneration: readGeneration },
+          [{ ...listed, branchGeneration: 2 }],
+          { status: "gone" as const, itemKey: draftA.itemKey, branchGeneration: readGeneration },
           draftA,
         ),
       ],
       result:
         readGeneration === 1
-          ? { draftId: "draft-a", generation: 2, completion: null, room: null }
+          ? { itemKey: "draft-a", generation: 2, completion: null, room: null }
           : null,
     })),
     { name: "genuine external absence exits", actions: [enter(), ...missing(2)], result: null },
     {
       name: "confirmed close is held through absence",
       actions: [enter(), closed, ...missing(2)],
-      result: { draftId: "draft-a", generation: 1, completion: "closed", room: null },
+      result: { itemKey: "draft-a", generation: 1, completion: "closed", room: null },
     },
     {
       name: "refusal withdraws only predicted completion",
       actions: [
         enter(),
         pending,
-        { type: "completionObserved", ...draftA, draftGeneration: 1, completion: null },
+        { type: "completionObserved", ...draftA, branchGeneration: 1, completion: null },
       ],
-      result: { draftId: "draft-a", generation: 1, completion: null, room: null },
+      result: { itemKey: "draft-a", generation: 1, completion: null, room: null },
     },
     {
       name: "a next-generation claim is adopted, not the old one",
-      actions: [enter(), pending, { ...closed, draftGeneration: 2 }, pending],
-      result: { draftId: "draft-a", generation: 2, completion: "closed", room: null },
+      actions: [enter(), pending, { ...closed, branchGeneration: 2 }, pending],
+      result: { itemKey: "draft-a", generation: 2, completion: "closed", room: null },
     },
     {
       name: "departed draft answers cannot replace a new review",
       actions: [
         enter(),
-        { type: "enterInline", documentId: "document-b", draftId: "draft-b", draftGeneration: 4 },
+        { type: "enterInline", documentId: "document-b", itemKey: "draft-b", branchGeneration: 4 },
         observe(9, true, "old"),
         closed,
       ],
-      result: { draftId: "draft-b", generation: 4, completion: null, room: null },
+      result: { itemKey: "draft-b", generation: 4, completion: null, room: null },
     },
     {
       name: "retired room signals cannot clear its successor",
@@ -155,7 +155,7 @@ describe("review-room transition table", () => {
         observe(2, true, "room-g2"),
         { type: "roomStale", ...draftA, roomName: "room-g1" },
       ],
-      result: { draftId: "draft-a", generation: 2, completion: null, room: "room-g2" },
+      result: { itemKey: "draft-a", generation: 2, completion: null, room: "room-g2" },
     },
   ])("$name", ({ actions, result }) => {
     const [entry, ...observations] = actions;
@@ -183,12 +183,12 @@ it("retains an applied row's generation evidence without presenting it as a prop
   resetDraftCommandRecords();
   const scope = { projectId: "project-a", workId: "work-a" };
   const draft = { ...scope, ...draftA };
-  const claim = beginDraftCommand(draft, { target: "all", mode: "apply", draftGeneration: 5 });
+  const claim = beginDraftCommand(draft, { target: "all", mode: "apply", branchGeneration: 5 });
   if (!claim) throw new Error("claim refused");
   confirmDraftCommand(claim);
   const observe = (generation: number) =>
     reviewRoomObservations(
-      [{ ...listed, draftGeneration: generation }],
+      [{ ...listed, branchGeneration: generation }],
       proposal(generation, "1"),
       draftA,
       null,
@@ -196,15 +196,15 @@ it("retains an applied row's generation evidence without presenting it as a prop
       { scope, records: currentChangeCommandRecords() },
     );
   expect(observe(5)).toEqual([
-    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: false },
-    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: false },
+    { type: "generationObserved", ...draftA, branchGeneration: 5, proposal: false },
+    { type: "generationObserved", ...draftA, branchGeneration: 5, proposal: false },
   ]);
   expect(observe(6)).toEqual([
-    { type: "generationObserved", ...draftA, draftGeneration: 6, proposal: true },
-    { type: "generationObserved", ...draftA, draftGeneration: 6, proposal: true },
+    { type: "generationObserved", ...draftA, branchGeneration: 6, proposal: true },
+    { type: "generationObserved", ...draftA, branchGeneration: 6, proposal: true },
   ]);
   const freshRows = await readDraftsAfterCommands(scope, async () => [
-    { ...listed, draftGeneration: 5 },
+    { ...listed, branchGeneration: 5 },
   ]);
   const freshPreview = await readPreviewAfterChangeCommands(draft, async () => proposal(5, "2"));
   expect(
@@ -213,8 +213,8 @@ it("retains an applied row's generation evidence without presenting it as a prop
       records: currentChangeCommandRecords(),
     }),
   ).toEqual([
-    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: true },
-    { type: "generationObserved", ...draftA, draftGeneration: 5, proposal: true },
+    { type: "generationObserved", ...draftA, branchGeneration: 5, proposal: true },
+    { type: "generationObserved", ...draftA, branchGeneration: 5, proposal: true },
   ]);
   expect(
     observe(5).every((action) => action.type === "generationObserved" && !action.proposal),

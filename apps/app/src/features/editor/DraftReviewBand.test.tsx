@@ -62,13 +62,13 @@ it("focuses this document, then applies and discards its classes without closing
   const other = {
     ...listed,
     documentId: "document-b",
-    draftId: "draft-b",
+    itemKey: "draft-b",
     documentName: "Other chapter",
   };
   network.listWorkDrafts.mockResolvedValue({ drafts: [listed, other] });
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
-    draftId: id,
+    itemKey: id,
   }));
   const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
   network.applyDraftChanges.mockReturnValueOnce(answer.promise);
@@ -99,7 +99,7 @@ it("focuses this document, then applies and discards its classes without closing
           "work-a",
           "document-a",
           {
-            draftId: "draft-a",
+            itemKey: "draft-a",
             operationIds: ["1"],
             liveRevisionToken: "live-1",
             draftRevisionToken: "draft-1",
@@ -118,7 +118,7 @@ it("focuses this document, then applies and discards its classes without closing
           "work-a",
           "document-a",
           {
-            draftId: "draft-a",
+            itemKey: "draft-a",
             closureClassIds: ["class-2"],
             memberPartKeys: [],
             admissionTokens: ["class-2"],
@@ -132,7 +132,7 @@ it("focuses this document, then applies and discards its classes without closing
       expect(navigate).not.toHaveBeenCalled();
     },
     {
-      surface: <DraftReviewBand documentId="document-a" draftId="draft-a" onOpenDraft={navigate} />,
+      surface: <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate} />,
       host: (children) => (
         <I18nProvider i18n={i18n}>
           <TooltipProvider>
@@ -184,7 +184,7 @@ it.each([
       editor.commands.setInlineReviewMarksVisible(false);
       probe().presented.controller.registerInlineReviewRuntime({
         documentId: "document-a",
-        draftId: "draft-a",
+        itemKey: "draft-a",
         editor,
       });
       const paragraphs = [...editor.view.dom.querySelectorAll("p")];
@@ -210,7 +210,7 @@ it.each([
     {
       surface:
         surface === "desktop" ? (
-          <DraftReviewBand documentId="document-a" draftId="draft-a" onOpenDraft={navigate} />
+          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate} />
         ) : (
           <MobileDocumentReview documentId="document-a">
             <div />
