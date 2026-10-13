@@ -19,7 +19,8 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
-import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
+import { reviewDriver } from "./test-support/draft-review-requests.js";
+import { draftBranchId, inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
 const fixture = () => inverseFixture(db);
@@ -31,6 +32,7 @@ it.each([
   "redo",
 ] as const)("another draft holds %s text, then release leaves Redo first with an active part", async (origin) => {
   const { harness, view, responseId, context, target } = await fixture();
+  const review = reviewDriver(view.collab.draftReview);
   try {
     if (origin !== "applied")
       await view.collab
@@ -60,17 +62,7 @@ it.each([
       ).toMatchObject({ status: "success" });
     await harness.commit(responseId);
     if (origin === "applied") {
-      const [ownDraft] = await view.collab.draftReview.list({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-      });
-      expect(
-        await view.collab.draftReview.applyWorkDraft({
-          ...target,
-          draftId: ownDraft.draftId,
-          userId: USER_ID as never,
-        }),
-      ).toMatchObject({ status: "applied" });
+      expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
     }
     const redoContext = {
       ...context,
@@ -89,12 +81,18 @@ it.each([
       otherThread = randomUUID(),
       otherTurn = randomUUID(),
       otherResponse = randomUUID();
+    const holdingReview = reviewDriver(view.collab.draftReview, { workId: otherWork as never });
     const [work] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
     const [thread] = await db.select().from(schema.threads).where(eq(schema.threads.id, THREAD_ID));
     const [turn] = await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID));
     await db
       .insert(schema.works)
       .values({ ...work, id: otherWork as never, name: "Holding draft", slug: "holding" });
+    await db.insert(schema.drafts).values({
+      projectId: PROJECT_ID,
+      originWorkId: otherWork as never,
+      createdBy: USER_ID,
+    });
     await db.insert(schema.threads).values({ ...thread, id: otherThread as never });
     await db.insert(schema.threadWorks).values({
       threadId: otherThread as never,
@@ -180,14 +178,7 @@ it.each([
         .agentEdit()
         .read({ ...address, format: "edits" }, redoContext);
       expect(edits.result.message).not.toMatch(/ {2}redo(?:\n|$)/);
-      const [holding] = await view.collab.draftReview.list({ ...target, workId: otherWork });
-      expect(holding).toBeDefined();
-      await view.collab.draftReview.discardWorkDraft({
-        ...target,
-        workId: otherWork,
-        draftId: holding.draftId,
-        userId: USER_ID as never,
-      });
+      await holdingReview.discardItem(ALPHA_ID);
       expect(
         await view.collab.agentEdit().write({ ...address, command: "redo", count: 2 }, redoContext),
       ).toMatchObject({ status: "success" });
@@ -206,19 +197,7 @@ it.each([
       skips: [{ before: "Beta", after: "Gamma", reason: expect.stringContaining("@holding") }],
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
-    const [holding] = await view.collab.draftReview.list({
-      projectId: PROJECT_ID as never,
-      workId: otherWork,
-    });
-    expect(holding).toBeDefined();
-    expect(
-      await view.collab.draftReview.discardWorkDraft({
-        ...target,
-        workId: otherWork,
-        draftId: holding.draftId,
-        userId: USER_ID as never,
-      }),
-    ).toMatchObject({ status: "discarded" });
+    expect(await holdingReview.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
     // Both an active Gamma part and the latest action's undone Gold part now qualify.
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "redo",
@@ -336,6 +315,7 @@ it("card Undo during an open response drops writes into undone text and keeps an
 
 it("overlapping applied and pending parts undo together in the draft", async () => {
   const { harness, view, responseId, context, target } = await fixture();
+  const review = reviewDriver(view.collab.draftReview);
   try {
     await view.collab.agentEdit().write(
       {
@@ -349,14 +329,8 @@ it("overlapping applied and pending parts undo together in the draft", async () 
       context,
     );
     await harness.commit(responseId);
-    const [draft] = await view.collab.draftReview.list({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-    });
-    const scope = { ...target, draftId: draft.draftId, userId: USER_ID as never };
-    expect(await view.collab.draftReview.applyWorkDraft(scope)).toMatchObject({
-      status: "applied",
-    });
+    const branchId = await draftBranchId(db, ALPHA_ID);
+    expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
     const second = randomUUID();
     await db.insert(schema.modelResponses).values({
       id: second as never,
@@ -389,14 +363,12 @@ it("overlapping applied and pending parts undo together in the draft", async () 
           actor: { type: "user", userId: USER_ID },
         }),
       ).toMatchObject({ status: "reversed", acceptedParts: 2 });
-      expect(await view.draftMarkdown(draft.draftId)).toBe(
+      expect(await view.draftMarkdown(branchId)).toBe(
         direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Delta.\n\nBlue.\n",
       );
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     }
-    expect(await view.collab.draftReview.applyWorkDraft(scope)).toMatchObject({
-      status: "applied",
-    });
+    expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Delta.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
@@ -406,6 +378,7 @@ it("overlapping applied and pending parts undo together in the draft", async () 
 
 it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", async (placement) => {
   const { harness, view, responseId, context, target } = await fixture();
+  const review = reviewDriver(view.collab.draftReview);
   try {
     const second = randomUUID();
     await db.insert(schema.modelResponses).values({
@@ -435,20 +408,10 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
       );
       await harness.commit(id);
     }
-    const [draft] = await view.collab.draftReview.list({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-    });
-    const scope = { ...target, draftId: draft.draftId, userId: USER_ID as never };
+    const branchId = await draftBranchId(db, ALPHA_ID);
     if (placement === "mixed") {
-      const preview = await view.collab.draftReview.preview(scope);
-      if (preview.status !== "active") throw new Error("Missing preview");
-      await view.collab.draftReview.applyWorkDraftChanges({
-        ...scope,
-        operationIds: [preview.operations[0].operationId],
-        liveRevisionToken: preview.liveRevisionToken,
-        draftRevisionToken: preview.draftRevisionToken,
-      });
+      const preview = await review.activePreview(ALPHA_ID);
+      await review.applyChanges(ALPHA_ID, preview, [preview.operations[0].operationId]);
     }
     expect(
       await view.collab.reverseTurn({
@@ -458,12 +421,12 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "reversed", acceptedParts: 2 });
-    expect(await view.draftMarkdown(draft.draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+    expect(await view.draftMarkdown(branchId)).toBe("Alpha Beta.\n\nBlue.\n");
     if (placement === "empty") {
       const [branch] = await db
         .select()
         .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.id, draft.draftId));
+        .where(eq(schema.documentBranches.id, branchId));
       const doc = new Y.Doc({ gc: false });
       try {
         Y.applyUpdate(doc, branch.state);
@@ -486,15 +449,9 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
         doc.destroy();
       }
     }
-    const inversePreview = await view.collab.draftReview.preview(scope);
-    if (inversePreview.status !== "active") throw new Error("Missing inverse preview");
+    const inversePreview = await review.activePreview(ALPHA_ID);
     expect(inversePreview.operations).toHaveLength(1);
-    await view.collab.draftReview.applyWorkDraftChanges({
-      ...scope,
-      operationIds: [inversePreview.operations[0].operationId],
-      liveRevisionToken: inversePreview.liveRevisionToken,
-      draftRevisionToken: inversePreview.draftRevisionToken,
-    });
+    await review.applyChanges(ALPHA_ID, inversePreview, [inversePreview.operations[0].operationId]);
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
       placement === "empty" ? "Alpha Beta.\n\nBlue.\n\nExtra.\n" : "Alpha Beta.\n\nBlue.\n",
     );
@@ -520,6 +477,7 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
 
 it("an unrelated restoration hold leaves applied Undo and Redo in live through Apply", async () => {
   const { harness, view, responseId, context, target } = await fixture();
+  const review = reviewDriver(view.collab.draftReview);
   try {
     await view.collab.agentEdit().write(
       {
@@ -533,12 +491,7 @@ it("an unrelated restoration hold leaves applied Undo and Redo in live through A
       context,
     );
     await harness.commit(responseId);
-    const [draft] = await view.collab.draftReview.list({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-    });
-    const scope = { ...target, draftId: draft.draftId, userId: USER_ID as never };
-    await view.collab.draftReview.applyWorkDraft(scope);
+    await review.applyItem(ALPHA_ID);
     const otherTurn = randomUUID() as typeof TURN_ID,
       otherResponse = randomUUID();
     const [turn] = await db.select().from(schema.turns).where(eq(schema.turns.id, TURN_ID));
@@ -595,7 +548,7 @@ it("an unrelated restoration hold leaves applied Undo and Redo in live through A
         documents: [{ destination: { kind: "live" } }],
       });
     }
-    await view.collab.draftReview.applyWorkDraft(scope);
+    await review.applyItem(ALPHA_ID);
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
