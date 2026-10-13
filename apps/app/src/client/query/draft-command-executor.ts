@@ -206,7 +206,10 @@ function draftIdOf(
       draft.itemKey,
     ),
   );
-  return (preview?.status === "active" ? preview.draftId : row?.draftId) ?? null;
+  // A corrupt preview carries draftId so an unlisted item can still be discarded.
+  const previewed =
+    preview?.status === "active" || preview?.status === "corrupt" ? preview.draftId : undefined;
+  return previewed ?? row?.draftId ?? null;
 }
 
 /** The command's request without its id: what a resend repeats byte for byte. */
