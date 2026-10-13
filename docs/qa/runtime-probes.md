@@ -93,6 +93,14 @@ end-to-end as one suite.
   failure rather than waiting behind failed messages.
 - **Evidence:** failed and retried snapshots, timeline of gateway and turn
   events, both response statuses, and no extra request during the idle interval.
+- **Provider-declined variant:** repeat with a sticky 404 error (`"message":
+  "RP1 retired model"`). In the chat, expect "The AI provider turned this
+  request down." and Retry on the latest failed reply. Clear that script with
+  `./mf mock clear --id <script-id>` (read the ID from `error-script.json`),
+  then click Retry. Expect a new reply without retyping; the old failure keeps
+  its sentence as history, with no Retry. Before this fix, the current
+  provider-declined reply had no Retry. An inherited read-only failure must
+  still have no Retry.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
 
