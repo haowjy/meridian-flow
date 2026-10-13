@@ -44,7 +44,6 @@ if (!enabled || !databaseUrl) {
         expect(rows.map((row) => row.table_name).sort()).toEqual([
           "branch_write_journal",
           "change_trail_document_occurrences",
-          "turn_trail_work",
         ]);
         const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name
@@ -53,16 +52,7 @@ if (!enabled || !databaseUrl) {
               AND trigger_name IN ('enlist_turn_trail_work', 'complete_turn_trail_work')
             ORDER BY trigger_name
           `;
-        expect(triggers).toEqual([
-          {
-            event_object_table: "branch_write_journal",
-            trigger_name: "complete_turn_trail_work",
-          },
-          {
-            event_object_table: "branch_write_journal",
-            trigger_name: "enlist_turn_trail_work",
-          },
-        ]);
+        expect(triggers).toEqual([]);
         // The chat-activity projection's trigger family (migration
         // 0000_baseline.sql; see domains/threads/.context/CONTEXT.md
         // "Chat activity projection") stays a single owner across threads,
@@ -107,12 +97,12 @@ if (!enabled || !databaseUrl) {
           ORDER BY name
         `;
         expect(functions.map((row) => row.name)).toEqual([
-          "complete_turn_trail_work",
+          "capture_change_trail_signal",
+          "change_trail_owners",
           "consume_credit_lots_fifo",
           "enforce_prompt_bake_insert_only",
           "enforce_prompt_bake_write_once",
           "enforce_turn_position_write_once",
-          "enlist_turn_trail_work",
           "recompute_thread_chat_activity",
           "recompute_thread_chat_activity_from_block_insert",
           "recompute_thread_chat_activity_from_block_update",

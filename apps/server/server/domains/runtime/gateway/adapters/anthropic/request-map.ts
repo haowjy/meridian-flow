@@ -39,6 +39,7 @@ import type {
 } from "../../domain/index.js";
 import { thinkingBudgetTokens } from "../../domain/thinking-budget.js";
 import { safeToolOutput } from "../../helpers/serialize.js";
+import { anthropicToolSchema } from "./tool-schema.js";
 
 type CacheControl = Anthropic.Messages.CacheControlEphemeral;
 
@@ -330,7 +331,10 @@ function extractSystem(
 // breakpoint already covers them (see the file header).
 //
 
-function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | undefined {
+function mapTools(
+  tools: Tool[] | undefined,
+  providerId: string,
+): Anthropic.Messages.ToolUnion[] | undefined {
   if (!tools?.length) return undefined;
 
   const mapped: Anthropic.Messages.ToolUnion[] = [];
@@ -340,7 +344,9 @@ function mapTools(tools: Tool[] | undefined): Anthropic.Messages.ToolUnion[] | u
       mapped.push({
         name: ft.name,
         description: ft.description,
-        input_schema: ft.inputSchema as Anthropic.Messages.Tool.InputSchema,
+        input_schema: (providerId === "anthropic"
+          ? anthropicToolSchema(ft.inputSchema)
+          : ft.inputSchema) as Anthropic.Messages.Tool.InputSchema,
       });
     } else if (tool.type === "hosted") {
       if (tool.kind === "web_search" || tool.kind.startsWith("anthropic.web_search")) {
@@ -395,6 +401,7 @@ export function toAnthropicMessageParams(
   const cacheControl = cacheControlForTtl(promptCacheTtlMs);
   const maxTokens = request.maxTokens ?? maxOutputTokens;
   const system = extractSystem(request.messages, cacheControl);
+  const tools = mapTools(request.tools, providerId);
   const messages = mergeConsecutiveSameRole(
     request.messages
       .map((message) => mapMessage(message, providerId, modelId, cacheControl))
@@ -413,7 +420,7 @@ export function toAnthropicMessageParams(
     messages: repaired,
     stream: true,
     ...(system !== undefined ? { system } : {}),
-    ...(mapTools(request.tools) ? { tools: mapTools(request.tools) } : {}),
+    ...(tools ? { tools } : {}),
     ...(mapToolChoice(request.toolChoice)
       ? { tool_choice: mapToolChoice(request.toolChoice) }
       : {}),

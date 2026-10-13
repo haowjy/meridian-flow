@@ -377,20 +377,16 @@ export function reduceEditorWorkspace(
   }
   if (command.kind === "settle-draft") {
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    const index = workspace?.tabs.findIndex((tab) => sameTabIdentity(tab, command.tab)) ?? -1;
+    const index = workspace.tabs.findIndex((tab) => tab.documentId === command.tab.documentId);
     if (command.tab.kind === "new") return outcome("stale", current);
     const settled = durableContextTab(command.tab);
-    const conflicting = workspace.tabs.find(
-      (tab) =>
-        tab.documentId === command.tab.documentId &&
-        tab.tabInstanceId !== command.tab.tabInstanceId,
-    );
-    if (index < 0 && conflicting) return outcome("stale", current);
     const tabs =
       index < 0
         ? canonicalizeTabs([...workspace.tabs, settled])
         : workspace.tabs.map((candidate, candidateIndex) =>
-            candidateIndex === index ? settled : candidate,
+            candidateIndex === index
+              ? ({ ...settled, tabInstanceId: candidate.tabInstanceId } as ContextTab)
+              : candidate,
           );
     if (JSON.stringify(tabs) === JSON.stringify(workspace.tabs))
       return outcome("already-committed", current);

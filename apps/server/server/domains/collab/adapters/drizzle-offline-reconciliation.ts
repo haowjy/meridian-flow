@@ -2,7 +2,6 @@
 import { createHash } from "node:crypto";
 import type {
   AgentEditCodecFactory,
-  ReversalStore,
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
@@ -14,7 +13,7 @@ import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js"
 import { documentTitleFromUri } from "../domain/reversal-notices.js";
 
 export function createDrizzleOfflineReconciliation(input: {
-  journal: UpdateJournal & ReversalStore;
+  journal: UpdateJournal;
   changeTrails: ChangeTrailPersistence;
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
