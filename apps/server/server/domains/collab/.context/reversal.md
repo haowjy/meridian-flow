@@ -16,6 +16,12 @@ refusals. The GET availability route serves Work receipts by turn target only.
   ordinary immutable journal parts with restoration aliases, never rewriting a
   target row or marking it reversed. Partial results name skipped parts with their
   own before/after text. Card inverse rows are writer rows with no turn.
+- **No reversal routing.** #757's reversal plan, origin registry and per-peer
+  reversal endpoints are gone; the card and the model both use the one inverse
+  engine above. A card Undo skips a part by name when its draft was discarded
+  (`expired`, reason `discarded`) or an earlier writer edit depends on it
+  (`cant_undo_dependent`), and inverts the rest. A model `write undo` of a draft
+  edit after the chat's Work moved refuses `cant_undo_elsewhere`.
 - **Effective actions**: `inverse-actions.ts` indexes accepted Undo targets per
   part and subtracts only effective Redo consumption. Rolled-back actions have
   no stack effect. Card placement/partial selection and model strict stack
