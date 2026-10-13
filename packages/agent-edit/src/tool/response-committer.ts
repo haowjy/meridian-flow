@@ -8,6 +8,7 @@ import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type {
   DocumentCoordinator,
+  DiscardedWriteReason,
   DocumentLockOptions,
   HostSaveLease,
   StagedWriteRejectionReason,
@@ -79,9 +80,9 @@ export interface ResponseCommitter {
     documentId: string;
     threadId: string;
     peerBranchId: string;
-    reason: StagedWriteRejectionReason;
+    reason: DiscardedWriteReason;
   }): void;
-  dropForThread(docId: string, threadId: string, peerBranchId?: string): void;
+  dropForThread(docId: string, threadId: string): void;
   prepare(editScopeId: string, docId: string): Promise<ResponseReadLease | null>;
   stage<T>(
     input: CommandLeaseInput,
@@ -1611,26 +1612,17 @@ export function createResponseCommitter(deps: {
     }
   }
 
-  function dropForThread(docId: string, threadId: string, peerBranchId?: string): void {
+  function dropForThread(docId: string, threadId: string): void {
     for (const docs of documentEpochs.values()) {
       const entry = docs.get(docId);
-      if (entry?.threadId === threadId && (!peerBranchId || entry.peerBranchId === peerBranchId))
-        entry.epoch = nextDocumentEpoch++;
+      if (entry?.threadId === threadId) entry.epoch = nextDocumentEpoch++;
     }
     for (const [responseId, state] of [...responses]) {
       if (state.kind !== "buffered") continue;
       const buffer = state.buffer;
       const docBuffer = buffer.docs.get(docId);
-      const belongs = (entry: StagedResponseUpdate) =>
-        entry.mutation?.threadId === threadId &&
-        (!peerBranchId ||
-          (entry.mutation.mode === "threadPeer" && entry.mutation.peerBranchId === peerBranchId));
-      const ownsCreate =
-        docBuffer?.session.threadId === threadId &&
-        (!peerBranchId ||
-          (docBuffer.interactionContext?.mode === "threadPeer" &&
-            docBuffer.interactionContext.peerBranchId === peerBranchId));
-      if (peerBranchId && !docBuffer?.updates.some(belongs) && !ownsCreate) continue;
+      const belongs = (entry: StagedResponseUpdate) => entry.mutation?.threadId === threadId;
+      const ownsCreate = docBuffer?.session.threadId === threadId;
       let claimedWriteDropped = false;
       let droppedClaimedCount = 0;
       if (docBuffer) {
@@ -1638,22 +1630,8 @@ export function createResponseCommitter(deps: {
         claimedWriteDropped = claimedUpdates.length > 0;
         droppedClaimedCount = claimedUpdates.length;
         docBuffer.updates = docBuffer.updates.filter((entry) => !belongs(entry));
-        if (
-          peerBranchId &&
-          claimedWriteDropped &&
-          docBuffer.updates.length > 0 &&
-          isPrepared(docBuffer)
-        ) {
-          // Remove retired structs from the helper too; a fresh peer may share this reply.
-          const rebuilt = yjsUpdateFromState(docBuffer.view.cut.state);
-          for (const entry of docBuffer.updates) Y.applyUpdate(rebuilt, entry.update);
-          docBuffer.view.doc.destroy();
-          docBuffer.view = { ...docBuffer.view, doc: rebuilt };
-        }
-        if (ownsCreate) {
-          if (docBuffer.createdDocumentBeforeCommit) {
-            docBuffer.discardedBeforeCommit = true;
-          }
+        if (ownsCreate && docBuffer.createdDocumentBeforeCommit) {
+          docBuffer.discardedBeforeCommit = true;
         }
         if (docBuffer.updates.length === 0 && !docBuffer.discardedBeforeCommit) {
           if (isPrepared(docBuffer)) docBuffer.view.doc.destroy();
