@@ -291,7 +291,7 @@ async function classifyYjsConnectionAdmission(input: {
       room.branchId,
       room.generation,
     );
-    if (!branch) throw permissionDenied("branch-generation-stale");
+    if (!branch) throw permissionDenied(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
     documentId = branch.documentId;
     headSchemaVersion = branch.schemaVersion;
     fileTarget = { kind: "draft", documentId, workId: branch.workId };
@@ -619,7 +619,8 @@ export function createHocuspocus(
             serverSchemaVersion: cause.expectedVersion,
           });
         }
-        if (!state && room.kind === "branch") throw permissionDenied("branch-generation-stale");
+        if (!state && room.kind === "branch")
+          throw permissionDenied(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
         if (state) Y.applyUpdate(document, state);
         if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
       });

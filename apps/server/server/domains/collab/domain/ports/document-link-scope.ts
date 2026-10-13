@@ -34,6 +34,8 @@ export type LinkScopeKey = (
    * another account or thread.
    */
   viewer?: { accountId?: string; threadId?: string };
+  /** A fresh scope over already captured membership; never joins an enclosing scope. */
+  memberships?: readonly { view: LinkView; members: readonly string[] }[];
   /** Documents the caller already knows share this project (e.g. one source's search). */
   documentIds?: readonly string[];
 };

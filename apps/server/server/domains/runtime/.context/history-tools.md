@@ -151,4 +151,4 @@ A runtime composed without a registered-tool reader (tests, a tool-less
 runtime) freezes no read line.
 
 [kb-connected]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/conversations/connected-history-read.md
-[kb-from]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/spawn-from-reference.md
+[kb-from]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/agents/conversations/spawn-from-reference.md

@@ -215,6 +215,11 @@ instead of `console.log`.
 - The dev Vite and Nitro watchers exclude the repository `logs/` tree. Log
   writes must not reload either process; a reload during a long-running turn is
   a bug, not expected dev behavior.
+  `logs/portless.log` shows a rebuild (`[nitro] Server built` followed by a
+  fresh `startup.complete`) but not what triggered it. Before blaming product
+  code, confirm the running Nitro process belongs to this checkout and config,
+  then capture the triggering path with a recursive `inotifywait` over the
+  checkout (excluding `.git` and `node_modules`).
 - Each event is at most 8 KiB. The local output sink holds at most 5,000 pending
   events or 16 MiB. Output backpressure drops oldest first; the next successful
   write reports lost record and byte counts. The recent ring uses the same dual
