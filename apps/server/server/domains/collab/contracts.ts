@@ -188,10 +188,7 @@ export type AgentEditAccess = {
 export type ReverseThreadContextInput = {
   threadId: ThreadId;
   userId: UserId;
-  uri?: string;
   direction: "undo" | "redo";
-  scope: "write" | "turn" | "thread";
-  selection?: string;
   turnId: TurnId;
 };
 
