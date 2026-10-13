@@ -67,13 +67,7 @@ export function asGrantedWriter<T>(operation: () => Promise<T>): Promise<T> {
   );
 }
 
-const JOURNAL_WRITES = new Set([
-  "append",
-  "appendBatch",
-  "persistUndo",
-  "persistRedo",
-  "persistRedoBatch",
-]);
+const JOURNAL_WRITES = new Set(["append", "appendBatch"]);
 
 /** A journal whose agent writes run as a granted entry point's would. */
 export function grantedJournal<J extends object>(journal: J): J {
