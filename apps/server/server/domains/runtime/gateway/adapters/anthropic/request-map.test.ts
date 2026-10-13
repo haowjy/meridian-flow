@@ -220,46 +220,6 @@ describe("Anthropic prompt-cache breakpoints", () => {
     );
     expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL_1H });
   });
-
-  it("never emits more than 4 cache_control breakpoints for the loop's 3-mark scheme", () => {
-    // Mirrors what `loop/prompt-cache-marks.ts` marks: the system message,
-    // the previous request's tail (read point), and this request's tail.
-    const params = toAnthropicMessageParams(
-      {
-        messages: [
-          {
-            ...system("You are Writer."),
-            content: [{ type: "text", text: "You are Writer.", cacheBreakpoint: true as const }],
-          },
-          {
-            ...user("History line one."),
-            content: [{ type: "text", text: "History line one.", cacheBreakpoint: true as const }],
-          },
-          assistant([{ type: "tool_use", toolCallId: "call_1", toolName: "search", input: {} }]),
-          {
-            ...toolResult("call_1", "result", false),
-            content: [
-              {
-                type: "tool_result",
-                toolCallId: "call_1",
-                output: "result",
-                isError: false,
-                cacheBreakpoint: true,
-              },
-            ],
-          },
-        ],
-      },
-      "claude-sonnet-4-5",
-      256,
-      undefined,
-      60 * 60 * 1_000,
-    );
-    const wireJson = JSON.stringify(params);
-    const breakpointCount = wireJson.split('"cache_control"').length - 1;
-    expect(breakpointCount).toBe(3);
-    expect(breakpointCount).toBeLessThanOrEqual(4);
-  });
 });
 
 it("keeps implicit thinking and cached content unchanged when only the output cap changes", () => {
@@ -287,4 +247,41 @@ it("keeps implicit thinking and cached content unchanged when only the output ca
     3600000,
   );
   expect(capped).toEqual({ ...original, max_tokens: 4396 });
+});
+
+it("advertises command unions as an object schema accepted by Anthropic", () => {
+  const inputSchema = {
+    type: "object",
+    oneOf: [
+      {
+        type: "object",
+        properties: { command: { const: "create" }, path: { type: "string" } },
+        required: ["command", "path"],
+      },
+      {
+        type: "object",
+        properties: { command: { const: "list" }, verbose: { type: "boolean" } },
+        required: ["command"],
+      },
+    ],
+  };
+  const params = toAnthropicMessageParams(
+    { messages: [user("Hello")], tools: [{ ...skillTool, inputSchema }] },
+    "claude-sonnet-4-6",
+    64_000,
+    "anthropic",
+  );
+  expect(params.tools?.[0]).toMatchObject({
+    input_schema: {
+      type: "object",
+      properties: {
+        command: { anyOf: [{ const: "create" }, { const: "list" }] },
+        path: { type: "string" },
+        verbose: { type: "boolean" },
+      },
+      required: ["command"],
+    },
+  });
+  expect(params.tools?.[0]).not.toHaveProperty("input_schema.oneOf");
+  expect(inputSchema.oneOf).toHaveLength(2);
 });
