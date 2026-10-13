@@ -303,7 +303,7 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
     if (!row) return;
     const fit = () => {
       row.setAttribute("data-measuring", "");
-      for (let priority = 0; priority <= 4; priority++) {
+      for (let priority = 0; priority <= 5; priority++) {
         row.dataset.collapse = String(priority);
         const children = [...row.children].filter(
           (child) => child instanceof HTMLElement && getComputedStyle(child).display !== "none",

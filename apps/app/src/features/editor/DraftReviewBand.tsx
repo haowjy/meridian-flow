@@ -23,7 +23,6 @@ import { Check, Eye, EyeOff, List, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { PaintCapture } from "@/components/app/PaintHold";
-
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -40,6 +39,7 @@ import {
   useReviewFailures,
   useReviewHeader,
 } from "@/features/draft-review/useReviewHeader";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 
 export type DraftReviewBandProps = {
@@ -60,6 +60,10 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
   const { status } = view;
   const count = view.items.length;
   const listed = view.status === "ready" && count > 0;
+  // A finger's 44px targets leave no room for every control in a docked row, so the
+  // version menu carries Show changes, and the list and stepper give way before
+  // Discard draft and Apply draft do (document-identity-row.css, collapse 5).
+  const coarse = useCoarsePointer();
 
   return (
     <>
@@ -69,6 +73,11 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
         disabled={locked}
         onShowLive={header.showLive}
         onRename={props.onRename}
+        marks={
+          coarse && listed
+            ? { visible: controller.marksVisible, onChange: controller.setMarksVisible }
+            : undefined
+        }
       />
       <span className="identity-spacer min-w-0 flex-1" />
       <span
@@ -78,17 +87,21 @@ export function DraftReviewBand(props: DraftReviewBandProps) {
         <ChangeListPopover header={header} />
         {listed ? (
           <>
-            <ReviewStepper
-              compact
-              count={count}
-              focusedIndex={view.focusedIndex}
-              disabled={false}
-              onStep={view.step}
-            />
-            <ShowChangesToggle
-              visible={controller.marksVisible}
-              onChange={controller.setMarksVisible}
-            />
+            <span data-review-secondary className="contents">
+              <ReviewStepper
+                compact
+                count={count}
+                focusedIndex={view.focusedIndex}
+                disabled={false}
+                onStep={view.step}
+              />
+            </span>
+            {coarse ? null : (
+              <ShowChangesToggle
+                visible={controller.marksVisible}
+                onChange={controller.setMarksVisible}
+              />
+            )}
           </>
         ) : null}
         <ReviewStateInline
@@ -162,6 +175,7 @@ function ChangeListPopover({ header }: { header: ReviewHeaderModel }) {
         <IconButton
           disabled={view.finished || !!view.completing}
           tooltip={changeListLabel(view.items.length)}
+          data-review-secondary
           className="size-5.5 data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground"
         >
           <List aria-hidden className="size-3.5" />
