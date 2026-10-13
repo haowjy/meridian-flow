@@ -338,7 +338,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         captureQueries = false;
       }
-      expect(measuredQueries.filter((query) => query.includes("count(distinct"))).toHaveLength(2);
+      expect(
+        measuredQueries.filter((query) =>
+          query.startsWith('(select "drafts"."origin_work_id", "document_branches"."document_id"'),
+        ),
+      ).toHaveLength(2);
       expect(
         measuredQueries.filter((query) => query.startsWith('insert into "branch_write_journal"')),
       ).toHaveLength(1);
@@ -376,11 +380,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         onBranchReset: ({ generation }) => resets.push(generation),
       });
       const draft = proseDoc("draft row before discard");
+      const { createDrizzleJournal } = await import("../drizzle-journal.js");
       await coordinator.commitUpdate({
         branchId: work.branchId,
         updateData: Y.encodeStateAsUpdate(draft),
         source: "agent",
         threadId: THREAD_ID as never,
+        wId: await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID),
       });
       const pendingDrafts = createDrizzleWorkDraftPendingStore(db);
       await expect(

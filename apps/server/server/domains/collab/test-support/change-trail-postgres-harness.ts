@@ -7,6 +7,7 @@ import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import {
   createAgentEditCodecFactory,
   toDocHandle,
+  unwrapDoc,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
@@ -2074,8 +2075,16 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       if (!peer) throw new Error("staged reply has no thread peer");
       return peer.id;
     },
-    stagedReplyMarkdown: (_responseId: string, _documentId: DocumentId, peerId: string) =>
-      branchCoordinator.readBranch(peerId, async (doc) => serializeMarkdown(doc)),
+    /** The reply's staged view of a document: its buffered writes live in the response, not the peer branch. */
+    async stagedReplyMarkdown(responseId: string, documentId: DocumentId) {
+      const lease = await collab.agentEdit().prepare(responseId, documentId);
+      if (!lease) throw new Error(`${responseId} has no staged writes on ${documentId}`);
+      try {
+        return serializeMarkdown(unwrapDoc(lease.doc));
+      } finally {
+        lease.dispose();
+      }
+    },
     branchMarkdown: (branchId: string) =>
       branchCoordinator.readBranch(branchId, async (doc) => serializeMarkdown(doc)),
     seedSweepClassificationPush,
