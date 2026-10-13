@@ -88,6 +88,7 @@ import {
   createDeferredLiveProjectionCoordinator,
   createHocuspocusCoordinator,
 } from "./adapters/hocuspocus-coordinator.js";
+import { createLiveFingerprintReader } from "./adapters/live-fingerprint-reader.js";
 import { createWriterIngressBinding } from "./adapters/writer-ingress-binding.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
@@ -507,8 +508,17 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workDraftPendingStore.listDraftBranchEvidence(draftId, documentIds),
     creators: (draftId, documentIds) => workDraftPendingStore.listCreators(draftId, documentIds),
     settling: (draftId) => workDraftPendingStore.listSettling(draftId),
-    liveFingerprint: (documentId) =>
-      liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
+    liveFingerprint: createLiveFingerprintReader({
+      db: deps.db,
+      roomOpen: (documentId) => {
+        const hocuspocus = hocuspocusBinding.current();
+        return Boolean(
+          hocuspocus?.documents.has(documentId) || hocuspocus?.loadingDocuments.has(documentId),
+        );
+      },
+      read: (documentId) =>
+        liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
+    }),
   });
   const publication = createDraftPublication({
     drafts: workDrafts,

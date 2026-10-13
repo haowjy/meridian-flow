@@ -416,6 +416,10 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
       return keys;
     },
     async listDraftBranchEvidence(draftId, documentIds) {
+      // One row per branch and writing chat: the journal is aggregated here, not shipped.
+      const writer = sql<
+        string | null
+      >`case when ${branchWriteJournal.source} = 'agent' then ${branchWriteJournal.threadId} end`;
       const rows = await currentDrizzleDb(db)
         .select({
           branchId: documentBranches.id,
@@ -424,12 +428,9 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           updatedAt: documentBranches.updatedAt,
           hasEffect: documentBranches.hasEffect,
           blocking: documentBranches.blocking,
-          journal: {
-            id: branchWriteJournal.id,
-            source: branchWriteJournal.source,
-            threadId: branchWriteJournal.threadId,
-            turnId: branchWriteJournal.turnId,
-          },
+          writer,
+          writes: sql<number>`count(${branchWriteJournal.id})::int`,
+          lastWrite: sql<number | null>`max(${branchWriteJournal.id})`,
         })
         .from(documentBranches)
         .leftJoin(
@@ -448,7 +449,8 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             documentIds ? inArray(documentBranches.documentId, [...documentIds]) : undefined,
           ),
         )
-        .orderBy(asc(documentBranches.id), asc(branchWriteJournal.id));
+        .groupBy(documentBranches.id, writer)
+        .orderBy(asc(documentBranches.id), sql`max(${branchWriteJournal.id}) desc nulls last`);
 
       const evidence = new Map<string, WorkDraftPendingEvidence>();
       for (const row of rows) {
@@ -462,9 +464,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             hasEffect: row.hasEffect,
             blocking: row.blocking,
           },
-          rows: [],
+          hasRows: false,
+          agentThreadIds: [],
         };
-        if (row.journal?.id != null) branch.rows.push(row.journal);
+        if (row.writes > 0) branch.hasRows = true;
+        if (row.writer) branch.agentThreadIds.push(row.writer);
         evidence.set(row.branchId, branch);
       }
       return [...evidence.values()];

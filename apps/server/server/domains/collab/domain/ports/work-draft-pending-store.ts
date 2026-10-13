@@ -1,12 +1,6 @@
 /** Loads current-generation Work-draft journal evidence for pending-review classification. */
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
-import type { BranchJournalRow } from "../branch-push-contracts.js";
-
-export type WorkDraftPendingRowEvidence = Pick<
-  BranchJournalRow,
-  "id" | "source" | "threadId" | "turnId"
->;
 
 export type WorkDraftPendingEvidence = {
   branch: {
@@ -20,7 +14,10 @@ export type WorkDraftPendingEvidence = {
     /** A held restoration keeps an item listed with no effect. */
     blocking: boolean;
   };
-  rows: WorkDraftPendingRowEvidence[];
+  /** The branch has at least one reviewable journal row. */
+  hasRows: boolean;
+  /** Chats whose agent writes are pending on the branch, most recent write first, distinct. */
+  agentThreadIds: string[];
 };
 
 export type WorkDraftPendingStore = {
