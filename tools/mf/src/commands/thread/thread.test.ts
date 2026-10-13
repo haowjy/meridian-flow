@@ -80,8 +80,24 @@ describe("thread", () => {
       reason: null,
       status: "complete",
       finalText: "Hello there",
+      liveView: "matches",
     });
+    expect(lines.at(-1)).not.toHaveProperty("liveDiff");
     expect(result.stderr).toBe("");
+  });
+
+  it("send reports a live view that differs from the stored reply without changing the claim", async () => {
+    const json = await mf(["thread", "send", THREAD_ID, "diverge", "--json"]);
+    expect(json.code).toBe(EXIT.ok);
+    expect(JSON.parse(json.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      outcome: "complete",
+      finalText: "Stored answer",
+      liveView: "differs",
+      liveDiff: [{ field: "finalText", live: "Hello there", server: "Stored answer" }],
+    });
+    const text = await mf(["thread", "send", THREAD_ID, "diverge"]);
+    expect(text.code).toBe(EXIT.ok);
+    expect(text.stderr.match(/live view differs from the server/g)).toHaveLength(1);
   });
 
   it("resumes after a socket drop mid-run without duplicating the replay", async () => {

@@ -6,6 +6,7 @@ import type { ThreadTransport } from "@meridian/thread-client";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
+import type { ReducedThread } from "./reduced-thread";
 import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
@@ -37,6 +38,8 @@ export type FollowOptions = {
   /** Confirm a requested checkpoint without disposing subscription/presentation state. */
   confirmStop?: (turnIds: readonly string[]) => Promise<boolean>;
   transport?: ThreadTransport;
+  /** Reduces every sequenced event into turn state, beside the log output. */
+  reduced?: ReducedThread;
 };
 
 export async function followThread(options: FollowOptions): Promise<FollowResult> {
@@ -87,6 +90,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
           if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;
         case "event": {
+          options.reduced?.apply(message.event.seq, message.event.event);
           const stop = consume(message.event.seq, message.event);
           if (stop) {
             stopRequested = true;

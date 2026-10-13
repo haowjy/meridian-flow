@@ -11,7 +11,7 @@ import {
   type ThreadAvailableSkillsResponse,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
-import { blockPlainText, type Turn } from "@meridian/contracts/threads";
+import type { Turn } from "@meridian/contracts/threads";
 import { buildMessageDoc, imageCapable, serializeMessageDoc } from "@meridian/thread-client";
 import { CliError, usageError } from "../../core/cli-error";
 import {
@@ -29,6 +29,7 @@ import type { Session } from "../../core/session";
 import { resolveDocument, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
+import { type LiveDiff, ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import {
   type Claim,
@@ -39,6 +40,7 @@ import {
   timeoutReport,
 } from "./result";
 import { followThread } from "./stream";
+import { assistantText } from "./transcript";
 import { createThreadClient } from "./transport";
 
 export type SendFields = {
@@ -49,17 +51,10 @@ export type SendFields = {
   finalText: string | null;
   error: string | null;
   interrupt?: { turnId: string; interruptId: string };
+  /** Whether the reduced events agree with the confirming snapshot; absent when nothing was followed. */
+  liveView?: "matches" | "differs";
+  liveDiff?: LiveDiff[];
 };
-
-function assistantText(turn: Turn | undefined): string | null {
-  if (!turn) return null;
-  const text = [...turn.blocks]
-    .sort((a, b) => a.sequence - b.sequence)
-    .filter((block) => block.blockType === "text")
-    .map((block) => blockPlainText(block.blockType, block.content) ?? block.textContent ?? "")
-    .join("");
-  return text || null;
-}
 
 export type SendOutcome = TerminalResult<SendFields>;
 
@@ -223,6 +218,16 @@ async function followToOutcome(
   let ourTurn: string | null = admitted.assistantTurnId;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendFields["interrupt"];
+  // The shared reducer follows the same events the log prints, from the state at admission.
+  // Without a snapshot it still builds this send's turn from its own events.
+  const reduced = new ReducedThread(threadId);
+  try {
+    reduced.hydrate(
+      await session.request<ThreadSnapshotResponse>("GET", apiThreadSnapshotPath(threadId)),
+    );
+  } catch {
+    // Events alone still build this send's turn; the final comparison reports any gap.
+  }
   const transport = createThreadClient(session);
   const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
   try {
@@ -237,6 +242,7 @@ async function followToOutcome(
         out,
         full: input.full,
         textStream: "err",
+        reduced,
         shouldStop(event: CliEvent) {
           if (event.type === "turn.started" && ourTurn === null) ourTurn = event.turnId;
           if (event.type === "turn.finished") return isOurs(event.turnId);
@@ -294,6 +300,7 @@ async function followToOutcome(
     apiThreadSnapshotPath(threadId),
   );
   const turn = snapshot.turns.find((candidate) => candidate.id === ourTurn);
+  const liveView = reduced.compare(snapshot, ourTurn ? [ourTurn] : []);
   const status: SendFields["status"] = interrupt
     ? "waiting_interrupt"
     : (turn?.status ?? "unknown");
@@ -321,6 +328,7 @@ async function followToOutcome(
         status,
         finalText: null,
         error: null,
+        ...liveView,
         ...snapshotActivity(snapshot),
         next: [`./mf thread tail ${threadId} --until-idle`],
       },
@@ -332,6 +340,7 @@ async function followToOutcome(
     status,
     finalText: assistantText(turn),
     error: turn?.error ?? null,
+    ...liveView,
     ...(interrupt
       ? {
           interrupt,

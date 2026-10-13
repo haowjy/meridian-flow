@@ -301,7 +301,8 @@ function createFake() {
       publish({ type: "TEXT_MESSAGE_CONTENT", messageId, delta: " there" } as AGUIEvent);
       publish({ type: "TEXT_MESSAGE_END", messageId } as AGUIEvent);
       assistant.status = "complete";
-      assistant.text = "Hello there";
+      // "diverge" stores other text than the events streamed: a live view that disagrees.
+      assistant.text = text.includes("diverge") ? "Stored answer" : "Hello there";
       if (snapshotPolicy.releaseDelayMs) {
         leaseReleasePending = true;
         setTimeout(() => {

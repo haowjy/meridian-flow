@@ -213,6 +213,7 @@ it.each([
       publish({ type: "TEXT_MESSAGE_END", messageId: "A::0" });
     }
     turn.status = "complete";
+    if (kind === "text") turn.text = "Hello there";
     publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: "A" });
     const result = await tail;
     expect(result.code).toBe(0);
@@ -233,6 +234,7 @@ it.each([
       expect(records.find((record) => record.type === "message.completed")).toMatchObject({
         text: "Hello there",
       });
+    expect(records.at(-1)).toMatchObject({ liveView: "matches" });
     expect(stack.socketCount()).toBe(1);
   } finally {
     await stack.close();
