@@ -1,4 +1,6 @@
 /** Agent-edit bindings that make a thread-peer branch the write tool's document world. */
+
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditCodec,
   bytesEqual,
@@ -164,6 +166,8 @@ export function createBranchAgentEditCoordinator(input: {
    * access takes the peer and its draft branch in one ordered acquisition, the order a save
    * and a close use (contract §14), so neither waits on the other in a cycle.
    */
+  /** The session of the access running now, for the attribution reads made inside it. */
+  const heldSession = new AsyncLocalStorage<{ owned: OwnedBranchSession; peerBranchId: string }>();
   async function underAccess<T>(
     access: DocumentLockOptions | undefined,
     peerBranchId: string,
@@ -175,7 +179,8 @@ export function createBranchAgentEditCoordinator(input: {
       await accessBranchIds(input, peerBranchId),
       async (lease) => {
         await collabHook("access.afterLeases");
-        return run(input.branchCoordinator.ownedSession(lease));
+        const owned = input.branchCoordinator.ownedSession(lease);
+        return heldSession.run({ owned, peerBranchId }, () => run(owned));
       },
     );
   }
@@ -353,6 +358,7 @@ export function createBranchAgentEditCoordinator(input: {
         docId as DocumentId,
         afterJournalId,
         access,
+        heldSession.getStore(),
       );
       if (reportingCut) {
         const cut = Y.snapshot(doc);
@@ -607,13 +613,14 @@ async function concurrentUpstreamJournalRows(
   documentId: DocumentId,
   afterJournalId?: number,
   access?: import("@meridian/agent-edit/integration").DocumentLockOptions,
+  held?: { owned: OwnedBranchSession; peerBranchId: string },
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
   const owned = access?.lease
     ? input.branchCoordinator.ownedSession(access.lease as BranchLockLease)
-    : undefined;
-  let peerId = access?.pinnedBranchId;
+    : held?.owned;
+  let peerId = access?.pinnedBranchId ?? held?.peerBranchId;
   if (!peerId) {
     if (owned) throw new Error("Owned attribution requires a pinned peer");
     const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
