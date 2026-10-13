@@ -69,9 +69,7 @@ witness retires when the inbox lists the id, a divider names it (`settleSwitches
 that refetch resolves. A refused record's removal leaves no witness.
 
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
-Account bind rewrites v1 under the driver thread lock. A v3 copy is not
-drivable or retirable until its v1 key is gone; failed deletion leaves words in v1. The
-bounded rewrite removal trigger is in `.context/TODO`.
+Records under older storage keys are ignored.
 
 Record/retire notify in-tab subscribers; cross-tab localStorage events forward
 to the same listeners. `useIsThreadPendingCreation` synchronously combines

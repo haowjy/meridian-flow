@@ -47,13 +47,10 @@ export function bindChatSubmissions(
 ): void {
   const current = browserJournal();
   if (!current || current.accountId === accountId) return;
-  const ready = current.setUser(accountId);
+  current.setUser(accountId);
   const epoch = current.epoch;
-  void ready
-    .then(async () => {
-      const { cleanDeletedChatsOnBind } = await import("./deleted-chat");
-      await cleanDeletedChatsOnBind(accountId, epoch, addressed);
-    })
+  void import("./deleted-chat")
+    .then(({ cleanDeletedChatsOnBind }) => cleanDeletedChatsOnBind(accountId, epoch, addressed))
     .catch((error) => reportError(error));
 }
 
