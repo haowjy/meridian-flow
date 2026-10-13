@@ -203,7 +203,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const candidates = (await repos.turns.listPendingPlaceholders(100)).filter(
         (turn) => turn.id === placeholder.id,
       );
-      const lease = { threadId: THREAD_A, executionId: "failed-summary", holderId: "dead-worker" };
+      const lease = {
+        threadId: THREAD_A,
+        executionId: crypto.randomUUID(),
+        holderId: "dead-worker",
+      };
       await db.insert(schema.threadRunLeases).values({
         ...lease,
         turnId: placeholder.id,
@@ -302,9 +306,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: "assistant",
         status: "streaming",
       });
+      const deadRun = crypto.randomUUID();
       await db.insert(schema.threadRunLeases).values({
         threadId: THREAD_A,
-        executionId: "dead-run",
+        executionId: deadRun,
         holderId: "dead-worker",
         turnId: turn.id,
         boundTurnIds: [turn.id],
@@ -351,7 +356,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         settleStaleExecution: failing.settleStaleExecution,
       }).sweep(10);
       expect((await repos.turns.findById(turn.id))?.status).toBe("streaming");
-      expect(await authority.holder(THREAD_A)).toBe("dead-run");
+      expect(await authority.holder(THREAD_A)).toBe(deadRun);
       expect(published).toEqual([]);
       const repair = createOrphanReportRepair(repairDeps);
       await repair.sweep(10);

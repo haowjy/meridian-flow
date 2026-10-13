@@ -1,5 +1,5 @@
 /**
- * Populated upgrade contract for 0042/0043: every chat starts in its primary Work's mode, the
+ * Populated upgrade contract for 0046/0047: every chat starts in its primary Work's mode, the
  * Work's mode survives its rename to the default, and a control body may carry a mode switch.
  * Run identity adds no backfill: an old lease keeps its id but is never an open execution, and
  * a message delivered before the upgrade reads as delivered by an unknown turn.
@@ -26,7 +26,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" && Boolean(databaseUrl);
 const id = (n: number) => `73900000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
-/** Rows in the 0041 shape (after #754's namespace observation versions and the Work-branch foundation): the mode lives on the Work only. */
+/** Rows in the 0045 shape (after the Work-branch foundation and its draft-review follow-ups): the mode lives on the Work only. */
 async function seedWorkModeShape(sql: postgres.Sql) {
   await sql`INSERT INTO users (id, external_id, email) VALUES (${id(1)}, 'chat-mode-upgrade', 'chat-mode@example.test')`;
   await sql`INSERT INTO projects (id, user_id, name, slug) VALUES (${id(2)}, ${id(1)}, 'Upgrade', 'upgrade')`;
@@ -73,7 +73,7 @@ describe.skipIf(!enabled)("chat write mode migration (postgres)", () => {
     let isolated = false;
     try {
       const journal = await readJournal();
-      const first = journalIndex(journal, "0042_d62_chat_write_mode");
+      const first = journalIndex(journal, "0046_d62_chat_write_mode");
       await isolateSchemas(target);
       isolated = true;
       await stageThrough(MIGRATIONS, directory, journal, first);

@@ -1,5 +1,5 @@
 /**
- * Populated upgrade contract for 0044/0045: the Work-branch foundation's data moves and
+ * Populated upgrade contract for 0044/0045 (and D62's 0046/0047 on top): the Work-branch foundation's data moves and
  * online retry, and `main`'s pending draft creates arriving hidden with their drafts' uses.
  * Rows are seeded in `main`'s 0036 shape, so the document-name migration (0037), the namespace
  * observation versions (0038/0039) and #713's edit ledger and dirty signals (0040/0041) run
@@ -366,6 +366,24 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
         await target`SELECT column_name FROM information_schema.columns
           WHERE table_schema = 'public' AND table_name = 'document_branches'
             AND column_name IN ('work_id', 'deleted_by_work_id')`,
+      ).toEqual([]);
+      // D62's pair (0046/0047, the chat-owned write mode and run identity) over the rows the
+      // foundation just reshaped; chat-write-mode-migration.db.test.ts checks its data moves.
+      await rm(directory, { recursive: true, force: true });
+      await stageThrough(migrations, directory, journal, journal.entries.length);
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      expect(
+        await target`SELECT table_name, column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND column_name IN ('ai_write_mode', 'default_ai_write_mode')
+          ORDER BY table_name, column_name`,
+      ).toEqual([
+        { table_name: "threads", column_name: "ai_write_mode" },
+        { table_name: "turns", column_name: "ai_write_mode" },
+        { table_name: "works", column_name: "default_ai_write_mode" },
+      ]);
+      expect(
+        await target`SELECT conname FROM pg_constraint
+          WHERE connamespace = 'public'::regnamespace AND NOT convalidated`,
       ).toEqual([]);
       // The repository's SQL functions follow its migrations, as `db:migrate` applies them.
       for (const file of (await readdir(FUNCTIONS_DIRECTORY))

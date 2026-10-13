@@ -255,9 +255,10 @@ export function createDeliveryAdapter(
       if (turns.length > 0) await executionEnded(threadId, stale.executionId);
       await leaseStore.deleteStaleExecution(threadId, stale.executionId);
       await appendPending(threadId);
-    });
-    schedulePostCommit(async () => {
-      await deps.publishStatus?.(threadId);
+      // The row's deletion is what turns the chat idle for readers.
+      schedulePostCommit(async () => {
+        await deps.publishStatus?.(threadId);
+      });
     });
   }
   async function settleSweepLane<T>(threadId: ThreadId, repair: () => Promise<T>): Promise<T> {

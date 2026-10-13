@@ -82,11 +82,23 @@ export function createOrphanReportRepair(deps: {
       await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
-  /** Settlement publishes the reports it finalizes. */
+  /**
+   * A candidate captured earlier may be stale: repair only the turns it names, so
+   * a newer execution's receipt (admitted since) survives until its own lane.
+   */
   async function repairTurns(candidate: { threadId: ThreadId }): Promise<void> {
-    await deps.authority.withExclusiveThread(candidate.threadId, () =>
-      settleStaleExecution(candidate.threadId),
+    const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
+      settleStaleExecution(candidate.threadId, () =>
+        finalizeOrphanedTurns(deps, { threadId: candidate.threadId }),
+      ),
     );
+    for (const report of reports ?? [])
+      await deps.publisher.publish(report.childThreadId, report.executionTurnId);
+  }
+
+  /** An expired row is stale as listed: the full settlement ends it, publishing its reports. */
+  async function repairExpired(threadId: ThreadId): Promise<void> {
+    await deps.authority.withExclusiveThread(threadId, () => settleStaleExecution(threadId));
   }
 
   async function sweep(limit: number): Promise<number> {
@@ -143,7 +155,7 @@ export function createOrphanReportRepair(deps: {
     for (const threadId of expired) {
       leaseCursor = threadId;
       try {
-        await repairTurns({ threadId });
+        await repairExpired(threadId);
       } catch (error) {
         emitEvent(deps.eventSink, {
           level: "warn",
