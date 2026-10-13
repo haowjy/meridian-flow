@@ -2,19 +2,21 @@
 
 ## [Unreleased]
 
-### Changed
+- A reply you stopped now shows as stopped in every open tab the moment the run ends, instead of "complete" until a refetch. The server's finish event now says the run was cancelled.
 
-- `./mf thread view`, `send` and `tail --until-idle` build turns with the app's own event reducer, now shared through `@meridian/thread-client`. `send` and `tail --until-idle` results add `liveView` (`matches` or `differs`, with a compact `liveDiff`) when the followed events disagree with the stored reply; the outcome and exit code do not change.
+- A reply that started elsewhere (another tab, `./mf`, a server wake) no longer begins mid-sentence while the page catches up, and no longer repeats text after a socket catch-up. Each socket listener gets every event after its own cursor, exactly once.
 
-### Fixed
+- `./mf thread view`, `send` and `tail --until-idle` build turns with the app's own event reducer, shared through `@meridian/thread-client`. `tail --until-idle` applies every replayed event, and `send` reads no snapshot before its deadline starts. `send` and `tail --until-idle` results add `liveView`: `matches`, `differs` (with a compact `liveDiff`) or `not_observed`. It is a diagnostic comparing reduced status and final text with the stored reply; it never changes the outcome or exit code.
 
 - `./mf thread send --no-wait` reports `outcome: "accepted"` (admission only) instead of `complete`.
 
 - `./mf doc put --overwrite` says it deletes and recreates the document (new id), reports the deleted id, and says so when the create fails after the delete.
 
-- `./mf` deadline reports leave running turns and owed messages unknown when no snapshot was read.
+- `./mf` deadline reports leave running turns and owed messages unknown when no snapshot was read, and tell an awake run lease from pending writer messages and unconfirmed idle state, without claiming success.
 
-- `./mf` deadline reports distinguish an awake run lease from pending writer messages and unconfirmed idle state, without claiming success.
+- Thread socket deadline and recovery contracts now live with the shared client package.
+
+- The development CLI `./mf` now lives in its own workspace package at `tools/mf`, with unchanged commands and exit codes.
 
 - Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
 
@@ -216,6 +218,8 @@
 - Treat delivery into a retired destination authority as move repair rather than a missing Work.
 - Bind offline file and folder moves to the picked parent identity. Ancestor renames no longer create ghost destinations, and Recent shares folder deletion visibility.
 
+### Fixed
+
 - Identity-addressed server moves follow a renamed destination folder and refuse a deleted destination without recreating its old path.
 
 - Recently opened and Chat Recent hide the same deleted documents and pending-deleted folder descendants.
@@ -244,9 +248,6 @@
 
 ### Changed
 
-- Thread socket deadline and recovery contracts now live with the shared client package.
-
-- The development CLI `./mf` now lives in its own workspace package at `tools/mf`, with unchanged commands and exit codes.
 - Consolidate namespace observation migrations into one schema migration and one data backfill.
 
 - Document path menus support keyboard opening before browsing data loads. Cancelled moves release their feedback watches even when their rows are closed.
@@ -589,6 +590,8 @@
 - Recover orphaned primary assistant turns and pending compaction placeholders under the session claim; child reports terminate on the orphaned placeholder and late inbox messages remain redeliverable.
 - Persist request sizes and turn-neutral child execution selectors for compaction.
 - Show each LLM call's predicted prefix-cache state and reason beside observed cache reads and resets, with mismatch flags in the debug viewer.
+
+### Fixed
 - Keep a failed reply marked failed after the writer sends again. Its error turns into a quiet marker as soon as anything follows it, and each failure keeps its own marker. Its pending trail work no longer auto-pushes its branch when the writer sends first; before, that depended on timing.
 - Say "Couldn't send." only when the writer's message never reached the server. A reply that fails before writing anything now reads as a failed response, both while current and in history.
 - Keep interrupted compaction metadata parseable across run-start and startup recovery.
@@ -735,6 +738,8 @@
 - Remove the unused account project-home redirect endpoint and its wire contract; drop the unconsumed last-active-project preference from user persistence.
 - Open a searchable project library at the signed-in base URL. Create a named project from a separate destination; open any project directly in Chat. Remove the account Home composer and quick-chat entry.
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
+### Fixed
+
 - Reject malformed saved report captures without confusing JSON null with an absent capture.
 
 - Keep thread snapshots and replay cursors on one consistent database view.
@@ -796,6 +801,8 @@
 - Saved terminal reports drive durable parent publication: the original card is patched in place, a body-free completion fact is emitted, and a compact retrieval reference is queued. Pending publication retries after interruption.
 - Saved report artifacts render on the child Return card, foreground direct card, and ordinary expanded `thread_report` row; background cards stay body-free.
 - Every conversation has a project-scoped short ref (`cN` primary, `pN` subagent). `thread_message` and `thread_report` address the child by ref; exact report reads also require its execution UUID. Chat URLs and Open doors retain thread UUIDs.
+
+### Fixed
 
 - Keep the project-title header on the sidebar surface in both themes.
 - Reveal the current chat when a long switcher list opens without stealing search focus; give dark dropdown current and hover rows visible tonal steps.
