@@ -4,6 +4,7 @@ import type * as Y from "yjs";
 import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
 import type { BranchLockLease } from "../branch-critical-sections.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
+import type { RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
@@ -28,10 +29,7 @@ export type ApplicationBranchStore = BranchStore &
       threadId: ThreadId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
-    discardActiveThreadPeerBranches(input: {
-      documentId: DocumentId;
-      threadId?: ThreadId | null;
-    }): Promise<void>;
+    closeThreadPeersOf(upstreamBranchIds: readonly string[]): Promise<RetiredBranch[]>;
     resolveWorkDraftBranchForThread(
       documentId: DocumentId,
       threadId: ThreadId,
@@ -71,4 +69,17 @@ export type WorkDraftDiscard = (input: {
   workId: WorkId;
   documentId: DocumentId;
   contentBranchId: string;
-}) => Promise<void>;
+}) => Promise<RetiredBranch[]>;
+
+/** Settles an empty review under the branch/live/Work fence, preserving pushed rows. */
+export type WorkDraftEmptySettlement = (input: {
+  workId: WorkId;
+  documentId: DocumentId;
+  branchId: string;
+  isEmpty(liveDoc: Y.Doc, draftDoc: Y.Doc): boolean;
+  disposition(
+    rows: readonly import("../branch-push-contracts.js").BranchJournalRow[],
+  ): "applied" | "discarded";
+}) => Promise<
+  { draftClosed: false } | { draftClosed: true; draftDisposition: "applied" | "discarded" }
+>;

@@ -56,7 +56,7 @@ it mints.
 | formatted or cross-block find | inside the splice only | `restoreOutsideSplice` (below) |
 | plain same-block find (`textRanges`) | none | only for blocks with no link occurrence, so a title- or ref-only change is never filtered as equal text |
 | copies (`from`, `copy`) | skipped | copied nodes carry refs structurally |
-| undo, redo, cold reversal, reply save | never | bytes carry recorded refs |
+| forward inverse, reply save | never | bytes carry recorded refs |
 
 Handler order: load `context.shownLinks`, `links.prepare` (docs, `shown`, and
 `stored` for copies), `scopeFor`, then `planWrite` (`resolver/resolve.ts`):

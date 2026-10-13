@@ -10,7 +10,7 @@ function reversal(id: number, direction: "undo" | "redo", handle = "w1"): Notice
     kind: "undo",
     scope: { kind: "thread", threadId: "thread-1" },
     message: "",
-    data: { uri: "manuscript://Scene", writeHandles: [handle], direction },
+    data: { uri: "manuscript://Scene", turnId: handle, direction },
     createdAt: new Date(id),
   };
 }
@@ -44,13 +44,13 @@ describe("notice materialization", () => {
 
   it("still reports undo alone", () => {
     expect(plan([reversal(1, "undo")]).blocks[0]?.content).toContain(
-      "The user reversed the following edits before this message:\n- Scene: w1",
+      "The user reversed the following edits before this message:\n- Scene",
     );
   });
 
   it("reports restoration when the undo was delivered in an earlier batch", () => {
     expect(plan([reversal(2, "redo")]).blocks[0]?.content).toContain(
-      "The user restored the following edits before this message:\n- Scene: w1",
+      "The user restored the following edits before this message:\n- Scene",
     );
   });
 
@@ -65,6 +65,6 @@ describe("notice materialization", () => {
     expect(
       plan([reversal(1, "undo"), reversal(2, "redo"), reversal(3, "undo", "w2")]).blocks[0]
         ?.content,
-    ).toContain("- Scene: w2");
+    ).toContain("- Scene");
   });
 });

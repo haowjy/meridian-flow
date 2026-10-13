@@ -3,7 +3,9 @@
  *
  * The transcript owns this stage and always reports it: it lands the named turn
  * or, once its history has settled without that turn, hands the writer back to
- * the thread the shell already brought them to.
+ * the thread the shell already brought them to. A request may also name a block
+ * inside the turn (a subagent's card, or a tool call); that block is scrolled
+ * to and flashed once the turn has rendered.
  *
  * `TurnList` stays the single scroll owner — this hook receives the one
  * capability it needs (`scrollToIndex`) rather than reaching for the viewport's
@@ -36,9 +38,25 @@ export function subagentBlockRevealTarget(
     .at(-1);
 }
 
+/**
+ * What to bring into view for a tool call in a landed turn: its row when the
+ * row is on screen, else the fold that holds it, else nothing (the turn stays
+ * the landing). Folds are never opened for the reveal; the writer opens them.
+ */
+export function toolCallRevealTarget(row: ParentNode, toolCallId: string): HTMLElement | undefined {
+  const exact = [...row.querySelectorAll<HTMLElement>("[data-tool-call-id]")].find(
+    (element) => element.dataset.toolCallId === toolCallId,
+  );
+  // A closed fold keeps its rows mounted but hidden.
+  if (exact && !exact.closest('[data-process-fold][aria-hidden="true"]')) return exact;
+  return [...row.querySelectorAll<HTMLElement>("[data-tool-call-ids]")].find((element) =>
+    element.dataset.toolCallIds?.split(" ").includes(toolCallId),
+  );
+}
+
 /** A smooth scroll to the block settles within this window before it flashes. */
 const REVEAL_SCROLL_SETTLE_MS = 450;
-/** Matches `subagent-block-reveal` in globals.css. */
+/** Matches `block-reveal` in globals.css. */
 const REVEAL_FLASH_MS = 1600;
 
 export function useTurnRevealLanding({
@@ -90,13 +108,25 @@ export function useTurnRevealLanding({
       // Landing settles the request, which re-runs this effect; the block
       // flash therefore runs outside the effect so that cleanup can't cancel it.
       request.landed();
-      if (request.subagentThreadId) {
+      const { subagentThreadId, subagentBlock, toolCallId } = request;
+      if (subagentThreadId) {
         blockReveal.current?.();
-        blockReveal.current = revealSubagentBlock({
+        blockReveal.current = revealBlock({
           viewport,
           turnId: targetTurnId,
-          subagentThreadId: request.subagentThreadId,
-          block: request.subagentBlock,
+          locate: (row) => subagentBlockRevealTarget(row, subagentThreadId, subagentBlock),
+          // A subagent's latest point lives in a disclosure; its card does not.
+          prepare: (target) => {
+            const disclosureKey = target.dataset.subagentDisclosureKey;
+            if (subagentBlock !== "card" && disclosureKey) revealSubagentDisclosure(disclosureKey);
+          },
+        });
+      } else if (toolCallId) {
+        blockReveal.current?.();
+        blockReveal.current = revealBlock({
+          viewport,
+          turnId: targetTurnId,
+          locate: (row) => toolCallRevealTarget(row, toolCallId),
         });
       }
     };
@@ -123,20 +153,21 @@ export function useTurnRevealLanding({
 }
 
 /**
- * Finds the subagent block once its turn has rendered, opens its disclosure,
- * scrolls it into view, and flashes it after the scroll settles. Returns a
- * cancel for a newer reveal or unmount.
+ * Finds the block once its turn has rendered, scrolls it into view, and flashes
+ * it after the scroll settles. A block that never appears leaves the writer on
+ * the turn. Returns a cancel for a newer reveal or unmount.
  */
-function revealSubagentBlock({
+function revealBlock({
   viewport,
   turnId,
-  subagentThreadId,
-  block,
+  locate,
+  prepare,
 }: {
   viewport: HTMLElement;
   turnId: string;
-  subagentThreadId: string;
-  block?: SubagentRevealBlock;
+  locate: (row: HTMLElement) => HTMLElement | undefined;
+  /** Runs once the block is found, before it is scrolled to. */
+  prepare?: (target: HTMLElement) => void;
 }): () => void {
   let raf = 0;
   let timer = 0;
@@ -144,23 +175,22 @@ function revealSubagentBlock({
   const deadline = performance.now() + 5000;
   const find = () => {
     const row = viewport.querySelector<HTMLElement>(`[data-turn-id="${CSS.escape(turnId)}"]`);
-    const target = row ? subagentBlockRevealTarget(row, subagentThreadId, block) : undefined;
+    const target = row ? locate(row) : undefined;
     if ((!target || !row?.getBoundingClientRect().height) && performance.now() < deadline) {
       raf = requestAnimationFrame(find);
       return;
     }
     if (!target) return;
-    const disclosureKey = target.dataset.subagentDisclosureKey;
-    if (block !== "card" && disclosureKey) revealSubagentDisclosure(disclosureKey);
+    prepare?.(target);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
     // Flash once the block has arrived: started during a smooth scroll, most
     // of the flash would play while the block is still sliding in.
     const flash = () => {
       flashed = target;
-      target.classList.add("subagent-reveal-flash");
+      target.classList.add("block-reveal-flash");
       timer = window.setTimeout(() => {
-        target.classList.remove("subagent-reveal-flash");
+        target.classList.remove("block-reveal-flash");
         flashed = null;
       }, REVEAL_FLASH_MS);
     };
@@ -171,6 +201,6 @@ function revealSubagentBlock({
   return () => {
     cancelAnimationFrame(raf);
     window.clearTimeout(timer);
-    flashed?.classList.remove("subagent-reveal-flash");
+    flashed?.classList.remove("block-reveal-flash");
   };
 }
