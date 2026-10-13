@@ -718,7 +718,7 @@ reuse another worktree's project, database, thread or browser session.
    live reads remain seeded until Apply. There must be one addition, not two.
 4. Apply that document's draft via
    `POST /api/projects/<project>/works/<work>/documents/<document>/draft/apply`
-   with `{"draftId":"<branch ID>"}`. Read via `./mf doc read <URI> --json`.
+   with `{"draftId":"<draft ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
    Assert the entire `content` value, including terminal newlines:
    insertion `"Seed.\n\nAdded once.\n"`; replacement `"Alpha Gamma.\n"`.
 5. For named partial skips, script a turn inserting `One addition.` and
@@ -898,3 +898,54 @@ independent typing through the durable coordinator. Queue/retry evidence:
 `client/query/draft-command-executor.test.tsx` includes changed-effect evidence
 with unchanged stable keys. These are integration/adapter checks, not browser
 smoke verification.
+
+## Review commands against a replying model (CLI, mock stack)
+
+These probes cover the item, per-change and whole-draft commands, with `commandId`s, while a reply is still
+writing. Use a Work in `aiWriteMode: draft` and an owned project. Every command body carries `draftId`,
+`itemKey` and a fresh `commandId`; read live with `./mf doc read` after each one.
+
+**Holding a reply mid-write.** A reply saves once per model response, after all of that response's tools have
+run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 15 to
+40 chained `replace` calls on one document (each `find` is the previous `content`) and send the command about one
+second after `./mf thread send --no-wait`; the batch takes seconds to stage. The item must already be listed, so
+run an earlier turn that saves a draft edit to it first. Take the Apply all request's tokens from the list
+before the long turn starts.
+
+1. **Per-change Apply and Discard.** Live `Alpha`, `Beta`, `Gamma` paragraphs; the AI replaces Alpha and Gamma.
+   Apply only Alpha's class (`operationIds`, both revision tokens), read live: Alpha changed, Gamma not. Discard
+   the remaining class (`closureClassIds`, `admissionTokens`, `memberPartKeys`, both tokens), read live: unchanged,
+   and the item settles `itemClosed: true`. PASS when each readback is exact.
+2. **Empty create and created image.** The AI creates `manuscript://Blank.md` with empty content and copies an
+   uploaded image to `manuscript://art/map.png` (upload through `uploads://`, then `write copy` with
+   `from: { path }`). The list shows one item for each (`wholeItem: true`; the image is `binary: true` with a
+   null branch generation). Apply each item: the empty document reads `""` live and the image is live.
+3. **Item Discard while the reply writes.** Long chained batch on `X` plus one last edit on `Y`. Discard `X`'s
+   item during the batch. PASS: every `X` write fails with `Write did not land: the user discarded the text it
+   edited. Re-read and retry.`, the `Y` write lands, live `X` is unchanged, and a later write to `X` starts a fresh
+   draft.
+4. **Apply all while the reply writes.** Same setup with two drafted documents; Apply all during the batch. PASS:
+   live shows the text saved before the command, the late writes stay in the draft, and the item remains listed.
+5. **Discard all while the reply writes.** Discard the whole draft during the batch. PASS: in-flight writes fail
+   with `Write did not land: the user discarded this draft. Re-read and retry.`; live is unchanged; the list is
+   empty; a later write lands in a draft with a different `draftId`.
+6. **Model undo, redo, revert, elsewhere.** The AI edits two paragraphs of a drafted document, then (one turn
+   each) `write undo`, `redo`, and `revert` of the first edit: each acts in the draft only. Switch the Work to
+   `direct` with `pending: "keep"`, make the model `read` the document again, then undo: PASS is
+   `cant_undo_elsewhere` naming the version, and live unchanged.
+
+## Cold-open waterfall and the ahead-link chip (browser)
+
+Open a drafted document's review cold: a fresh `agent-browser` session with the auth state loaded, then `open` the
+review URL (`/editor/<scheme>/<name>?work=<workId>&item=<draftId>:<documentId>`). Wrap `fetch` and `WebSocket` in an
+init script, enlarge the Resource Timing buffer (Vite loads hundreds of modules), and watch for the first appearance
+of the draft's text in `document.body.innerText`. Record, ordered by start time: the address admission request
+(`reviewWorkId` and `itemKey` in its query), the draft preview request, the `/ws/yjs` connect and open, and the first
+text. PASS is the request order and the total from the address request to first text, not a threshold: say whether
+the three run as a serial chain.
+
+For the link chip, record every change of `data-link-chip` and `aria-description` on `a[data-meridian-link]` with
+`performance.now()` from the chip's first insertion, on a cold load, a load with `?work=`, in-app navigation, and with
+the `links/resolve` response held by an owned fetch seam. A live chapter holding an `ahead:` link to a document that
+exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
+
