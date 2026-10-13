@@ -159,7 +159,11 @@ it("draws a link whose answer is a draft-only document with a visible draft stat
         {
           type: "paragraph",
           content: [
-            { type: "text", text: "Hidden", marks: [{ type: "link", attrs: { href: KAEL, ref } }] },
+            {
+              type: "text",
+              text: "Hidden",
+              marks: [{ type: "link", attrs: { href: KAEL, ref, title: "Author note" } }],
+            },
           ],
         },
       ],
@@ -186,6 +190,22 @@ it("draws a link whose answer is a draft-only document with a visible draft stat
     expect(anchor()?.getAttribute("title")).toBe("In a draft");
     expect(anchor()?.getAttribute("aria-description")).toBe("In a draft");
     expect(anchor()?.hasAttribute("aria-disabled")).toBe(false);
+    // The draft goes live: the writer's own title returns, not an erased hover.
+    editor.storage[LINK_SURFACE_NAME].resolution.registerResolver({
+      remote: async (questions) =>
+        questions.map(() => ({
+          state: "document" as const,
+          document: {
+            documentId: "00000000-0000-4000-8000-0000000000bb",
+            title: "Hidden",
+            scheme: "manuscript" as const,
+            path: "Kael.md",
+            uri: KAEL,
+            workId: null,
+          },
+        })),
+    });
+    await vi.waitFor(() => expect(anchor()?.getAttribute("title")).toBe("Author note"));
   } finally {
     editor.destroy();
   }
