@@ -59,7 +59,7 @@ export async function bindEditAgent(runtime: ComposedRuntime, threadId: string):
   );
 }
 
-/** Unloads every open room, so pending stores land before the case ends. */
+/** Unloads every open room, scheduling its final checkpoint store. */
 export async function unloadHocuspocus(server: Hocuspocus): Promise<void> {
   for (let pass = 0; pass < 3; pass += 1) {
     await Promise.all(server.loadingDocuments.values());
@@ -73,7 +73,8 @@ export async function unloadHocuspocus(server: Hocuspocus): Promise<void> {
 
 /**
  * Registers per-case cleanup for composed runtimes: rooms unload and the app
- * shuts down (cancelling scheduled live pulls) after each case. `db` is read
+ * shuts down (cancelling scheduled live pulls), then checkpoint stores drain
+ * before the next case can reset tables. `db` is read
  * at call time, so a rollback suite passes its current transaction.
  */
 export function useComposedRuntimes(db: () => Database) {
@@ -85,6 +86,7 @@ export function useComposedRuntimes(db: () => Database) {
     for (const runtime of runtimes.splice(0)) {
       await unloadHocuspocus(runtime.hocuspocus);
       await runtime.app.shutdown();
+      await runtime.ports.documentSync.drainHocuspocusPersistence();
     }
   });
 

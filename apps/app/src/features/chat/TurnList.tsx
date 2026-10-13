@@ -49,6 +49,7 @@ export type TurnListProps = {
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
   queuedWriterTurnIds?: ReadonlySet<string>;
+  waitingForUsage?: boolean;
   /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
   controls?: ThreadControls | null;
   /** Retry and Stop on this handoff destination's brief cards. */
@@ -101,6 +102,7 @@ export function TurnList({
   changeTrails = {},
   submissionRecoveryByTurnId,
   queuedWriterTurnIds,
+  waitingForUsage,
   controls = null,
   brief = null,
   replyRetry = null,
@@ -258,6 +260,7 @@ export function TurnList({
             turn={turn}
             submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
             queued={local && queuedWriterTurnIds?.has(turn.id)}
+            waitingForUsage={waitingForUsage}
           />
         );
       }
@@ -316,6 +319,7 @@ export function TurnList({
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
       queuedWriterTurnIds,
+      waitingForUsage,
       threadId,
       threadUsage,
       transcript,
