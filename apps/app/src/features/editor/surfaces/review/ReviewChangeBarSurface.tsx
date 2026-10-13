@@ -19,6 +19,7 @@ import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensi
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { escapeCssIdent } from "@/lib/css-selector";
 import type { EditorChromeSurfaceProps } from "../../chrome";
@@ -41,6 +42,7 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const overlay = manuscriptOverlay(editor);
   // A phone's bar is pinned to the bottom of the screen (`MobileChangeBar`).
   const phone = usePhoneShell();
+  const touch = useCoarsePointer();
 
   const showing =
     !phone && reviewing && controller.marksVisible && Boolean(focusedItem) && Boolean(rect);
@@ -61,6 +63,7 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
     <ReviewChangeBar
       change={focusedItem.change}
       disabled={view.locked}
+      touch={touch}
       failure={focusedItem.failure}
       draftFailure={focusedItem.draftFailure}
       onApply={() => void view.apply(focusedItem.change)}
