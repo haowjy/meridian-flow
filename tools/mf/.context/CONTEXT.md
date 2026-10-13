@@ -16,8 +16,8 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
   - `src/commands/<group>/` holds one command group each (`thread`, `doc`,
     `project`, `mock`, `log`, `seed`, `api`): one file per command, an `index.ts`
     exporting the `CommandGroup`, and the group's own helpers (thread:
-    `transport.ts`, `stream.ts`, `events-map.ts`, `reduced-thread.ts`, `transcript.ts`,
-    `resolve.ts`;
+    `transport.ts`, `stream.ts`, `events-map.ts`, `reduced-thread.ts`, `chat-view.ts`,
+    `reply-text.ts`, `resolve.ts`;
     project: `resolve.ts`; doc: `uri.ts`; mock: `queue.ts`). Groups may import
     another group's helper module (`thread/send` uses `mock/queue`, `doc/uri`),
     never `main.ts`; `core/` imports no group.
@@ -26,8 +26,17 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     `src/main.ts`. Help, parsing, output, and errors come from `core/`.
   - **Views derive from the shared reducer.** `reduced-thread.ts` hydrates a snapshot
     into `@meridian/thread-client`'s `InMemoryTurnStore` and applies each sequenced
-    event through the same `createTurnReducer` the app uses. `thread view` renders
-    its turns (`transcript.ts` and `block-timing.ts` are renderers over `Turn[]`).
+    event through the same `createTurnReducer` the app uses. `thread view` runs the
+    shared `viewTranscript` (`@meridian/thread-client`) over the hydrated turns and the
+    snapshot's pending inbox, then prints its rows: text as `you:`, `reply: 3 steps,
+    read 2 docs`, `compaction:`, `queued: N`, or `--json` as the versioned
+    `chatView: 1` envelope (row identity, kind, items, and `inputs`, which states what
+    the view was computed from: no local records, stand-ins or live activity, inherited
+    history omitted). `chat-view.ts` only prints; it decides no row. `--turn`, `--last`
+    and `--full` select rows; `--blocks` prints per-block timing
+    (`block-timing.ts`). A reply's `finalText` (`send`, `tail`) and the `liveView`
+    comparison read the same view model's visible text items in order
+    (`reply-text.ts`).
     `send` and `tail --until-idle` follow with a hydrated store and compare each
     followed turn's reduced status and final text with the confirming snapshot's;
     the result carries `liveView: "matches" | "differs" | "not_observed"` (and a

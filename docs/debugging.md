@@ -64,7 +64,7 @@ optimistic UI, and navigation are the browser's to verify.
 ./mf seed tools/mf/fixtures/basic.json        # docs + thread + an opening message
 ./mf thread send <id> "Tighten the opening" --ref manuscript://mf-chapter-1.md
 ./mf thread send <id> "go" --mock @tools/mf/fixtures/mock-write.json --json | tail -1
-./mf thread view c3                                # transcript (ref, id, or id prefix)
+./mf thread view c3                                # chat rows as the app draws them (ref, id, or id prefix)
 ./mf thread tail <id> --until-idle                 # follow a run started elsewhere
 ./mf thread events <id> --child p2                 # one direct child's status, phase, tool, and target per activity frame
 ./mf thread view <id> --blocks                     # persisted blocks with created time, gaps, tool name, size
@@ -82,8 +82,14 @@ alone is not reply binding. Check the reported reply against `./mf thread view`
 at its final snapshot; it does not attribute replies to messages.
 
 - Content comes from the app's own event processing. `thread view` hydrates the
-  snapshot into the shared `@meridian/thread-client` turn store and prints its
-  turns. `send` and `tail --until-idle` reduce every followed event through the
+  snapshot into the shared `@meridian/thread-client` turn store, runs the shared
+  `viewTranscript` over it, and prints that view model's rows (`you:`,
+  `reply: 3 steps, read 2 docs`, `compaction:`, `queued:`), or `--json` as the
+  versioned `chatView: 1` envelope with row identity, kind and items. Its `inputs`
+  field says what the view was computed from: the snapshot only, with no local
+  records, stand-ins or live activity, and inherited history omitted. The app draws
+  the same function's output, so compare a chat in the browser by row identity, row
+  kind, item kinds and visible text with [the chat-session recipe](qa/chat-session.md). `send` and `tail --until-idle` reduce every followed event through the
   same shared reducer, then compare this CLI follower's reduced status and final
   text for the followed turns with the confirming snapshot. The result gains
   `liveView`: `matches`, `differs` with a compact `liveDiff` of `{ turnId, field,

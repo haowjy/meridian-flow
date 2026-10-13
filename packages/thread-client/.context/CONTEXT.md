@@ -18,6 +18,33 @@ its build-time debug gate. Observer adapters must not throw or affect transport.
 the protocol constants 0 (connecting) and 1 (open). Timers, clocks, and randomness
 remain late-bound globals, preserving existing reconnect timing.
 
+## Transcript view model
+
+`viewTranscript(input)` (`view/view-transcript.ts`) is the one pure function that
+decides which rows a chat shows. The app builds the input from its store and hooks;
+`./mf thread view` builds it from a snapshot and says what it left out.
+
+- **Input:** `turns` (local writer turns included), `inherited` (a fork's frozen
+  prefix) or omitted, `activity.awaitingSubagents`, `standIns` to place after their
+  `prevTurnId`, `queued` writer turn ids, and an `onContractFailure` callback for
+  persisted records that miss a contract (the caller decides where it is reported).
+- **Rows:** `turn`, `compaction`, `handoff-seed` and `thread-reference` rows in causal
+  order, plumbing and overflow shells dropped. Each carries `identity` (the server turn
+  id, null for a local writer turn; the row kind; the occurrence within the turn), a
+  `renderKey` (today's React key, the turn id; nothing compares render keys), inherited
+  marks, delivery events, `continuing` (a later row continues this reply) and, on a
+  reply's last part, `response` (its parts and usage numbers).
+- **`writer`:** each writer message's text with reference and skill ranges.
+- **`items`:** per non-writer turn row, `AssistantView`: ordered items (process fold, text,
+  report, artifact), each fold's visible tools and `FoldDigest` counts, `finalFrom` (where
+  the answer after the last fold starts), the hidden protocol halves and the turn's Work
+  receipts. A fold with nothing visible is kept with `visible: false`.
+- **Not here:** composer, row actions, control rows, interrupts and announcements; and
+  strings. The package never formats; callers do.
+
+Turn-metadata readers (compaction, handoff seed, thread references) live in
+`@meridian/contracts/threads` because they mirror the server's metadata codecs.
+
 ## Message documents
 
 Non-editor callers use `buildMessageDoc`: skills, prose and references are inline

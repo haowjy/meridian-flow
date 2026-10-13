@@ -13,6 +13,11 @@ remains client-owned until #768 phase 2 settles its shared contract.
 - Event application lives here: `createTurnReducer` over a `TurnStore` port.
   The app's Zustand store and `InMemoryTurnStore` both implement it, and the
   app's parity test keeps them equal. Do not fork reducer behavior into a client.
+- The transcript view model lives in `view/`: `viewTranscript` decides the rows
+  a chat shows and what each reply's items are, over plain inputs, as pure
+  functions. The app draws its output and `./mf thread view` prints it. It emits
+  counts, kinds and numbers; Lingui and `Intl` strings stay in the app. Memoized
+  by input identity (`WeakMap`) so unchanged turns keep their items.
 - Clients own HTTP, auth, persistence, printing and editor lifecycle.
   Observers must not affect product transport behavior.
 
