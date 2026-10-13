@@ -10,8 +10,13 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "./adapters/drizzle-drafts.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
+import { createDrafts } from "./domain/drafts.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -74,19 +79,24 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
     .from(schema.documentBranches)
     .where(
       and(
-        eq(schema.documentBranches.workId, WORK_ID),
+        sql`${schema.documentBranches.draftId} IN (SELECT id FROM drafts WHERE origin_work_id = ${WORK_ID})`,
         eq(schema.documentBranches.documentId, ALPHA_ID),
         eq(schema.documentBranches.kind, "work_draft"),
       ),
     );
-  const [before] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
   const locks = createBranchCriticalSections();
   const projection = createWorkProjectionMutation({
     db,
     availability: { advance: async () => {} },
     catalog: { upsertWorkAuthorities: async () => {} },
   } as unknown as Parameters<typeof createWorkProjectionMutation>[0]);
-  const branches = createFixtureBranchStore(db, undefined, locks, projection);
+  const branches = createFixtureBranchStore(db, {
+    workProjection: projection,
+    drafts: createDrafts({
+      store: createDrizzleDraftStore(db),
+      boundary: createDrizzleDraftWriteBoundary(db),
+    }),
+  });
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, a.state);
   const secondReached = gate(),
@@ -146,14 +156,12 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       pull,
     ]);
     expect(result).toBeNull();
-    const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
     const [saved] = await db
       .select()
       .from(schema.documentBranches)
       .where(eq(schema.documentBranches.id, a.id));
     expect(saved.hasEffect).toBe(false);
     expect(saved.liveCut).toEqual(a.state);
-    expect(after.entityRevision).toBeGreaterThan(before.entityRevision);
   } finally {
     live.destroy();
     harness.cancelScheduledPulls();
