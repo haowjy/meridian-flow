@@ -74,12 +74,6 @@ export interface DocumentLinkScopes {
    */
   reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
   /**
-   * The document the holder's own binding names for this ahead ref (a published ref,
-   * contract §10.4 step 1): null when it has none, undefined when not loaded. A copy out
-   * of the holder carries `doc:<id>` for it, since the binding stays with the holder.
-   */
-  holderBinding(input: { holderDocumentId: string; aheadId: string }): string | null | undefined;
-  /**
    * Pins the holder a reader door reads bindings for, in `view`: an explicit id when that
    * document is visible there (wherever it now sits), else the one document at `uri`.
    * Null when neither names exactly one document. The answer carries its current URI.
@@ -93,17 +87,13 @@ export interface DocumentLinkScopes {
 
 export const LIVE_VIEW: LinkView = { kind: "live" };
 
-/**
- * Durable ahead-ref registration (context's `LinkAheadRegistry.register`). A `draftId`
- * also settles the ref in that draft's view when the draft has its occupant.
- */
+/** Durable ahead-ref registration (context's `LinkAheadRegistry.register`). */
 export interface AheadRefRegistrar {
   register(
     registrations: readonly {
       aheadId: string;
       holderProjectId: string;
       address: string;
-      draftId?: string;
     }[],
   ): Promise<void>;
 }

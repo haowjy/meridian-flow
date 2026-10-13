@@ -9,7 +9,7 @@ const COLLAB_HOOK_POINTS = [
   "discard.afterLeases",
   "discard.beforeRetirement",
   "access.afterLeases",
-  "applyItems.afterLinkCut",
+  "applyItems.beforeStaging",
   "applyItems.afterStaging",
   "applyItems.beforeContinue",
 ] as const;

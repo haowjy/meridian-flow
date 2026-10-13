@@ -9,8 +9,7 @@ export const ResolveDocumentLinksRequestSchema = z
     baseUri: z.string().max(2048).nullable(),
     /**
      * The holder document, when the client knows it: pins the holder whatever `baseUri`
-     * now spells, so its own bindings answer its ahead refs (a renamed holder still reads
-     * them).
+     * now spells (a renamed holder still resolves its relative links).
      */
     holderDocumentId: z.string().uuid().optional(),
     links: z
@@ -29,15 +28,8 @@ export const ResolveDocumentLinksRequestSchema = z
 
 export type ResolveDocumentLinksRequest = z.infer<typeof ResolveDocumentLinksRequestSchema>;
 
-/**
- * On an `ahead:` answer when the route couldn't pin the holder (an ambiguous or stale
- * `baseUri` and no `holderDocumentId`): the answer ignores holder bindings; re-ask with
- * `holderDocumentId`.
- */
-type HolderUnresolved = { holderUnresolved?: true };
-
 export type DocumentLinkAnswer =
-  | ({
+  | {
       state: "document";
       document: {
         id: string;
@@ -53,16 +45,11 @@ export type DocumentLinkAnswer =
       draft?: { draftId: string; workId: string | null };
       /** An ahead ref answered through its settlement: it never answers by address again. */
       settled?: true;
-      /**
-       * The holder's own binding answered this ahead ref (a published ref): a copy of the
-       * link carries `doc:<document.id>`, not the ahead ref.
-       */
-      holderBound?: true;
-    } & HolderUnresolved)
+    }
   /** A ref the reader cannot reach: no uri, no title. `settled` as on `document`. */
-  | ({ state: "gone"; settled?: true } & HolderUnresolved)
+  | { state: "gone"; settled?: true }
   /** An unsettled ahead ref, or a no-ref address with nothing there: Create. */
-  | ({ state: "missing"; uri: string } & HolderUnresolved)
+  | { state: "missing"; uri: string }
   /** External, malformed, or contextual outside any Work. */
   | { state: "unresolvable" };
 

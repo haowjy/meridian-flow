@@ -434,11 +434,8 @@ export type CollabDrafts = {
 /** The one drafts resolver (Work → active draft, made only at the write boundary). */
 export type CollabDraftResolver = {
   drafts: Drafts;
-  /**
-   * A draft's links, registered in the draft: Apply's prerequisite (§10.8), and a drain
-   * for the debounced registration of writers' review-room edits (§10.7).
-   */
-  draftLinks: Pick<DraftBranchAheadRegistration, "prepareDraftLinkPublication" | "flush">;
+  /** A drain for the debounced registration of writers' review-room edits (§10.7). */
+  draftLinks: Pick<DraftBranchAheadRegistration, "flush">;
   /** Every branch of a draft leased before its transaction: what closing the draft needs. */
   draftLeases: DraftBranchLeases;
   /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */

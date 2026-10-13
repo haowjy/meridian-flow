@@ -1,9 +1,8 @@
 /**
  * Apply as one publication (contract §11): a draft's selected items become one batch on
  * the settlement seam, carrying the `draft_tree` payload the tree step publishes with the
- * text. `applyItems` registers the link cut (§10.8), stages through `pushBranchesToLive`
- * and maps per-item results; the step itself (tokens, holds, vacate and install, arrivals,
- * holder bindings, history, row drop, close) is `adapters/drizzle-draft-tree-step.ts`.
+ * text. `applyItems` stages through `pushBranchesToLive` and maps per-item results; the
+ * step itself (tokens, holds, vacate and install, arrivals, history, row drop, close) is `adapters/drizzle-draft-tree-step.ts`.
  * Every Apply caller goes through here: the per-document route, per-change Apply (its rows
  * chosen under the branch lease, §4.1), Apply all and D40's switch. Apply never closes the
  * draft (§2.4). A writer's command is claimed in the staging transaction and settled by the
@@ -20,10 +19,6 @@ import type {
 } from "./branch-push-contracts.js";
 import { PublicationLeasesChangedError } from "./branch-push-transition.js";
 import { collabHook } from "./collab-test-hooks.js";
-import type {
-  DraftBranchAheadRegistration,
-  DraftLinkRegistrationFailure,
-} from "./draft-branch-ahead-registration.js";
 import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import {
@@ -111,17 +106,6 @@ export class DraftApplyPendingError extends Error {
   }
 }
 
-/** A ref in the cut that can't register now (connection, timeout, lock): retry the Apply later. */
-export class DraftLinkRegistrationFailedError extends Error {
-  constructor(
-    readonly draftId: DraftId,
-    readonly failed: readonly DraftLinkRegistrationFailure[],
-  ) {
-    super(`Draft ${draftId}'s links could not be registered for Apply; try again`);
-    this.name = "DraftLinkRegistrationFailedError";
-  }
-}
-
 export interface DraftPublication {
   applyItems(input: {
     workId: WorkId;
@@ -145,7 +129,6 @@ export interface DraftPublication {
 export function createDraftPublication(deps: {
   drafts: Pick<Drafts, "byIds">;
   reviewItems: Pick<DraftReviewItems, "list" | "withLiveTextTokens">;
-  draftLinks: Pick<DraftBranchAheadRegistration, "prepareDraftLinkPublication">;
   push: Pick<BranchPushService, "pushBranchesToLive">;
 }): DraftPublication {
   async function activeDraft(draftId: DraftId, workId: WorkId) {
@@ -177,16 +160,15 @@ export function createDraftPublication(deps: {
   interface PublicationPlan {
     branchIds: string[];
     itemKeys: string[];
-    /** The staged payload; the link cut is registered per pass. */
-    payload(linkCut: DraftTreePayload["linkCut"]): DraftTreePayload;
-    selected?(linkCut: DraftTreePayload["linkCut"]): SelectedPublication;
+    payload: DraftTreePayload;
+    selected?: SelectedPublication;
     /** A stale answer from a tokenless selection was read before a change: read again, once. */
     rereadStale: boolean;
   }
 
   /**
-   * One publication loop: register the link cut, stage, push, settle the answer. The cut fence
-   * (F18) refuses when a branch changed since registration: plan and register again, once.
+   * One publication loop: stage, push, settle the answer. A tokenless selection whose
+   * tokens went stale is planned again, once.
    */
   async function publish(input: {
     draftId: DraftId;
@@ -196,28 +178,19 @@ export function createDraftPublication(deps: {
     plan(): Promise<PublicationPlan | ApplyOutcome>;
   }): Promise<ApplyOutcome> {
     const { draftId } = input;
-    let registeredAgain = false;
     let readAgain = false;
     for (;;) {
       const plan = await input.plan();
       if ("status" in plan) return plan;
-      const prepared = await deps.draftLinks.prepareDraftLinkPublication({
-        draftId,
-        branchIds: plan.branchIds,
-      });
-      if (prepared.status === "registration_failed") {
-        throw new DraftLinkRegistrationFailedError(draftId, prepared.failed);
-      }
-      await collabHook("applyItems.afterLinkCut");
-      const payload = plan.payload(prepared.cut);
+      await collabHook("applyItems.beforeStaging");
       const pushed = await deps.push
         .pushBranchesToLive({
           branchIds: plan.branchIds,
-          payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload) },
+          payloads: { [DRAFT_TREE_STEP]: encodeDraftTreePayload(plan.payload) },
           ...(input.command ? { command: input.command.envelope } : {}),
           ...(input.userId ? { pushedByUserId: input.userId } : {}),
           ...(input.signal ? { signal: input.signal } : {}),
-          ...(plan.selected ? { selected: plan.selected(prepared.cut) } : {}),
+          ...(plan.selected ? { selected: plan.selected } : {}),
         })
         .catch((cause: unknown) => {
           if (cause instanceof PublicationLeasesChangedError) {
@@ -230,10 +203,6 @@ export function createDraftPublication(deps: {
         const refusal = readDraftTreeRefusal(pushed.refused);
         if (!refusal) throw new Error(`Apply was refused: ${pushed.refused.code}`);
         if (refusal.kind === "gone") return { status: "gone", draftId };
-        if (refusal.kind === "link_cut_changed" && !registeredAgain) {
-          registeredAgain = true;
-          continue;
-        }
         if (refusal.kind === "stale" && plan.rereadStale && !readAgain) {
           readAgain = true;
           continue;
@@ -306,13 +275,11 @@ export function createDraftPublication(deps: {
             branchIds: [...new Set(chosen.flatMap(({ item }) => item.draftBranchId ?? []))].sort(),
             itemKeys,
             rereadStale: tokenless,
-            payload: (linkCut) => ({
+            payload: {
               draftId,
               command: input.command ? { shape: input.command.shape, itemKeys } : null,
-              linkCut,
               items,
-              holderMeanings: [],
-            }),
+            },
           };
         },
       });
@@ -335,11 +302,10 @@ export function createDraftPublication(deps: {
         branchGenerationToken: item.tokens.branchGenerationToken,
         selection: { operationIds: [], closureClassIds: [] },
       };
-      const payload = (linkCut: DraftTreePayload["linkCut"], chosen?: ChangeSelection) =>
+      const payload = (chosen?: ChangeSelection) =>
         ({
           draftId,
           command: { shape: input.command.shape, itemKeys: [item.itemKey] },
-          linkCut,
           items: [
             chosen
               ? {
@@ -353,7 +319,6 @@ export function createDraftPublication(deps: {
                 }
               : entry,
           ],
-          holderMeanings: [],
         }) satisfies DraftTreePayload;
       return publish({
         draftId,
@@ -365,8 +330,8 @@ export function createDraftPublication(deps: {
             branchIds: [branchId],
             itemKeys: [item.itemKey],
             rereadStale: false,
-            payload: (linkCut) => payload(linkCut),
-            selected: (linkCut) => ({
+            payload: payload(),
+            selected: {
               branchId,
               select: async (branch, rows) => {
                 const chosen = await input.select(branch, rows);
@@ -374,11 +339,11 @@ export function createDraftPublication(deps: {
                   journalIds: chosen.journalIds,
                   expectedLiveRevision: chosen.expectedLiveRevision,
                   payloads: {
-                    [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload(linkCut, chosen)),
+                    [DRAFT_TREE_STEP]: encodeDraftTreePayload(payload(chosen)),
                   },
                 };
               },
-            }),
+            },
           };
         },
       });

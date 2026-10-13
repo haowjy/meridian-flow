@@ -8,12 +8,11 @@
  * fingerprint, the branch generation) are compared only at the check: staging is the consent
  * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the draft's own view, then the
  * final live tree to a fixed point (an item waits for what only a held item would free).
- * The check also fences the link cut (F18) and captures each holder's link meanings into
- * the payload it refines (V2-H4). `beforeAdmission` then vacates and installs: relocations
+ * The check refines the payload to the eligible items. `beforeAdmission` then vacates and installs: relocations
  * through the batch move primitive, reveals of still-hidden creates and restores of
  * documents deleted live (F9) through placement, and reports each item's receipt notes.
- * `afterAdmission` settles arrivals once against the final tree, binds admitted holders
- * from the staged meanings, records the moves, reconciles the catalog for every source it
+ * `afterAdmission` settles arrivals once against the final tree (an ahead ref binds there,
+ * once, for every holder), records the moves, reconciles the catalog for every source it
  * touched (F23), drops the draft's applied rows, resets every admitted item whose branch
  * has nothing left to review (`settleDrainedItems`, in the completion transaction and keyed
  * to the staged generation) and records the writer's command with its terminal result.
@@ -30,8 +29,6 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Ok } from "../../../shared/result.js";
-import { draftMeaningsOf } from "../../context/adapters/link-ahead-draft-settlements.js";
-import { bindHolderRefs } from "../../context/adapters/link-ahead-holder-bindings.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
@@ -53,7 +50,6 @@ import type {
 } from "../domain/branch-coordinator.js";
 import { BranchCasConflictError } from "../domain/branch-coordinator.js";
 import { documentEffectsEqual } from "../domain/document-content.js";
-import { branchCutOf } from "../domain/draft-branch-ahead-registration.js";
 import {
   type ApplyNote,
   DRAFT_TREE_STEP,
@@ -364,29 +360,6 @@ export function createDrizzleDraftTreeStep(
         async check() {
           const decided = await decide();
           if (decided.kind === "refuse") return decided;
-          const holderMeanings: DraftTreePayload["holderMeanings"][number][] = [];
-          for (const { item, branch } of decided.apply) {
-            if (!item.draftBranchId) continue;
-            const read = branch ? cutOfBranch(branch) : null;
-            const cut = payload.linkCut.branches.find(
-              (registered) => registered.branchId === item.draftBranchId,
-            );
-            // F18: the staged text must be the text whose refs were registered.
-            if (!read || cut?.fingerprint !== read.fingerprint) {
-              return refuse(draftTreeRefusal.linkCutChanged());
-            }
-            const refs = await draftMeaningsOf(db, {
-              draftId: payload.draftId,
-              aheadIds: read.refs.map((ref) => ref.aheadId),
-            });
-            // One snapshot per holder: the durable payload never names a (holder, ref) twice.
-            const captured = holderMeanings.some(
-              (meaning) => meaning.holderDocumentId === item.documentId,
-            );
-            if (refs.length > 0 && !captured) {
-              holderMeanings.push({ holderDocumentId: item.documentId, refs });
-            }
-          }
           return {
             kind: "proceed",
             hold: decided.holds,
@@ -402,7 +375,6 @@ export function createDrizzleDraftTreeStep(
                     }
                   : item,
               ),
-              holderMeanings,
             }),
           };
         },
@@ -497,11 +469,6 @@ export function createDrizzleDraftTreeStep(
           const { apply, moves, arrived } = installed;
           // A restore or a reveal is an arrival; settled once against the final tree.
           if (arrived.length > 0) await deps.arrivals?.settle([...new Set(arrived)]);
-          const admittedSet = new Set(admitted);
-          await bindHolderRefs(
-            db,
-            payload.holderMeanings.filter((meaning) => admittedSet.has(meaning.holderDocumentId)),
-          );
           if (moves) await recordMoves(db, moves);
           // In this transaction, warm or recovered: a replica replaying from a cursor taken
           // before the Apply learns of every node it revealed, restored or named back.
@@ -519,7 +486,7 @@ export function createDrizzleDraftTreeStep(
                 .map(({ node }) => node.nodeId),
             });
           });
-          const settled = await settleDrainedItems(apply, admittedSet);
+          const settled = await settleDrainedItems(apply, new Set(admitted));
           const result = completedResult(settled);
           if (result)
             await settleCommandForBatchWithinTx(currentDrizzleDb(db), scope.batchId, result);
@@ -566,17 +533,6 @@ function notesOf(node: TreeStateNode): ApplyNote[] {
     return [{ code: "rename_replaced", replacedPath: node.live.uri ?? node.live.path, path }];
   }
   return [];
-}
-
-/** A branch's link cut as it stands: its text loaded once and read the registration's way. */
-function cutOfBranch(branch: BranchSnapshot) {
-  const doc = createCollabYDoc({ gc: false });
-  try {
-    Y.applyUpdate(doc, branch.state);
-    return branchCutOf(doc);
-  } finally {
-    doc.destroy();
-  }
 }
 
 function refuse(reason: Refusal["reason"]): Refusal {

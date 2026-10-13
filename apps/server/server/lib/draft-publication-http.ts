@@ -9,7 +9,6 @@ import { createError } from "nitro/h3";
 import {
   DraftApplyPendingError,
   DraftApplyStaleError,
-  DraftLinkRegistrationFailedError,
   DuplicateApplyItemError,
 } from "../domains/collab/domain/draft-publication.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
@@ -18,12 +17,6 @@ import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 export function draftPublicationHttpAnswer(cause: unknown): DraftApplyPending | undefined {
   if (cause instanceof DraftApplyPendingError) {
     return { status: "pending", draftId: cause.draftId };
-  }
-  if (cause instanceof DraftLinkRegistrationFailedError) {
-    throwHttpInterrupt(
-      meridianErrorFromSystem("draft_link_registration_failed", cause.message, true),
-      503,
-    );
   }
   if (cause instanceof DuplicateApplyItemError) {
     throw createError({ statusCode: 400, message: cause.message });

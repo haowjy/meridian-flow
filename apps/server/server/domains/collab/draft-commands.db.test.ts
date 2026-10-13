@@ -89,7 +89,7 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
   ] as const)("2: a live %s between selection and staging refuses stale with nothing staged", async (change) => {
     const c = await twoChanges(start);
     const request = await c.click("first");
-    const remove = setCollabHook("applyItems.afterLinkCut", async () => {
+    const remove = setCollabHook("applyItems.beforeStaging", async () => {
       remove();
       if (change === "edit")
         await c.s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.");
