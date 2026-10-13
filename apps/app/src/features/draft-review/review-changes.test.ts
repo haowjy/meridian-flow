@@ -5,10 +5,16 @@
  * hunks, visible author attribution and class-owned excerpts.
  */
 import { i18n } from "@lingui/core";
-import type { ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
+import type { DraftPreviewResponse, ReviewHunk, ReviewOperation } from "@meridian/contracts/drafts";
 import { describe, expect, it } from "vitest";
 
-import { changeExcerpt, reviewChanges } from "./review-changes";
+import { listed } from "@/test-support/draft-review-scope";
+import {
+  changeExcerpt,
+  reviewChanges,
+  reviewChangesOfPreview,
+  wholeItemChange,
+} from "./review-changes";
 
 function op(overrides: Partial<ReviewOperation> & { operationId: string }): ReviewOperation {
   return {
@@ -193,5 +199,49 @@ describe("change excerpts", () => {
       { kind: "removed", text: "archway" },
       { kind: "added", text: "gate" },
     ]);
+  });
+});
+
+describe("whole-item changes", () => {
+  const preview = (item: Partial<typeof listed>, operations: ReviewOperation[] = []) =>
+    ({
+      status: "active",
+      draftId: listed.draftId,
+      itemKey: listed.itemKey,
+      branchGeneration: 1,
+      reviewRoomName: "room",
+      liveRevisionToken: "l",
+      draftRevisionToken: "t",
+      item: { ...listed, ...item },
+      operations,
+      hunks: [],
+    }) satisfies DraftPreviewResponse;
+
+  it("shows a new document with no operations as exactly one change", () => {
+    const changes = reviewChangesOfPreview(preview({ isNew: true, wholeItem: true }));
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.target).toEqual({ kind: "draft" });
+  });
+
+  it("collapses a new document's operations to one change", () => {
+    const ops = [op({ operationId: "1" }), op({ operationId: "2" })];
+    expect(reviewChangesOfPreview(preview({ isNew: true, wholeItem: true }, ops))).toHaveLength(1);
+  });
+
+  it("shows a branchless image by its file name, attributed to the chat that created it", () => {
+    const image = {
+      ...listed,
+      binary: true,
+      wholeItem: true,
+      branchGeneration: null,
+      documentName: "map.png",
+      actorThreads: [{ threadId: "chat-a", title: "Chat A" }],
+    };
+    const change = wholeItemChange(image);
+    expect(change.change.runs).toEqual([{ kind: "added", text: "map.png" }]);
+    expect(change.threadIds).toEqual(["chat-a"]);
+    expect(
+      wholeItemChange({ ...image, actorThreads: [{ threadId: "chat-b", title: null }] }).threadIds,
+    ).not.toContain("chat-a");
   });
 });

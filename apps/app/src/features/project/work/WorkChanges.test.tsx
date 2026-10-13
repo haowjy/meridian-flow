@@ -16,7 +16,6 @@ import {
   applied,
   createReviewScopeFixture,
   deferredReviewAnswer,
-  discarded,
   listed,
   preview,
   workC,
@@ -103,7 +102,7 @@ const click = (label: string) =>
 it("applies an unopened C row, then discards every C draft despite filtering without moving presented review A", async () => {
   const network = fixture.network;
   network.listWorkDrafts.mockImplementation(async (_project, work) => ({
-    drafts: work === workC.id ? [draftB, draftC] : [listed],
+    items: work === workC.id ? [draftB, draftC] : [listed],
   }));
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
@@ -112,10 +111,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
   }));
   const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
   network.applyDraftChanges.mockReturnValueOnce(answer.promise);
-  network.discardDraft.mockImplementation(async (_p, _w, _d, request) => ({
-    ...discarded(true),
-    itemKey: request.itemKey,
-  }));
+  network.discardAllDrafts.mockResolvedValue({ status: "discarded", draftId: listed.draftId });
   await fixture.render(
     async (probe) => {
       await settleReact(() => expect(probe().third.files).toHaveLength(2));
@@ -141,12 +137,14 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
           "project-a",
           "work-c",
           "document-b",
-          {
+          expect.objectContaining({
+            draftId: listed.draftId,
+            commandId: expect.any(String),
             itemKey: "draft-b",
             operationIds: ["1"],
             liveRevisionToken: "live-1",
             draftRevisionToken: "draft-1",
-          },
+          }),
         ],
       ]);
       expect(document.querySelector('[data-review-change-row="class-1"]')).toBeNull();
@@ -164,9 +162,8 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       expect(network.discardDraft).not.toHaveBeenCalled();
       await click("Discard");
       await settleReact(() =>
-        expect(network.discardDraft.mock.calls).toEqual([
-          ["project-a", "work-c", "document-b", { itemKey: "draft-b" }],
-          ["project-a", "work-c", "document-c", { itemKey: "draft-c" }],
+        expect(network.discardAllDrafts.mock.calls).toEqual([
+          ["project-a", "work-c", { draftId: listed.draftId, commandId: expect.any(String) }],
         ]),
       );
       expect(probe().presented.controller.inlineReview).toEqual(presentedReview);

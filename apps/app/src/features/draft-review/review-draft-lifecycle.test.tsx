@@ -20,6 +20,7 @@ import {
   createReviewScopeFixture,
   deferredReviewAnswer,
   draftA,
+  itemApplied,
   listed,
   previewOf,
   type ScopeProbe,
@@ -116,7 +117,7 @@ beforeEach(() => {
   });
   removal.bindRouteSelection("project-a", revision, { kind: "server", documentId: "document-a" });
   fixture = createReviewScopeFixture({ removal });
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-a" ? ["1", "2"] : ["3"])),
     itemKey: id,
@@ -161,66 +162,41 @@ it.each([
   );
 });
 
-it("draft-only Discard closes both containers and repairs the route; refusal never resurrects either", async () => {
+it("draft-only Discard keeps both containers until its own terminal success; refusal keeps them", async () => {
   useDockDocumentStore.setState({
-    occupant: dockDocument("project-a", "chat", draftTab as NonNullable<typeof draftTab>, null),
+    occupant: dockDocument("project-a", "chat", draftTab!, null),
   });
-  const claim = useDockDocumentStore.getState().claim();
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.discardDraft>>>();
   fixture.network.discardDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     await open(p);
+    const before = tabs();
+    const occupant = useDockDocumentStore.getState().occupant;
     let done!: Promise<unknown>;
     await act(async () => {
       done = p().presented.controller.discard("document-a", "draft-a");
     });
-    expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
-    expect(useDockDocumentStore.getState().occupant).toBeNull();
-    expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
-    expect(search.path).toBe("/live-neighbor.md");
-    expect(writes).toBe(1);
+    expect(tabs()).toEqual(before);
+    expect(useDockDocumentStore.getState().occupant).toBe(occupant);
+    expect(writes).toBe(0);
     await act(async () => {
       answer.reject(new HttpResponseError("refused", 500, null));
       await done;
     });
-    expect(p().header.commandError).toEqual({ code: "discard-server-error" });
-    expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
-    expect(writes).toBe(1);
+    expect(tabs()).toEqual(before);
+    expect(useDockDocumentStore.getState().occupant).toBe(occupant);
     fixture.network.discardDraft.mockResolvedValue({
       status: "discarded",
+      draftId: listed.draftId,
       itemKey: "draft-a",
       itemClosed: true,
     });
     await act(async () => {
       await p().presented.controller.discard("document-a", "draft-a");
     });
-    expect(p().header.commandError).toBeNull();
+    expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
+    expect(useDockDocumentStore.getState().occupant).toBeNull();
     expect(writes).toBe(1);
-  });
-});
-
-it("an optimistic route-coordination exception before dispatch releases the claim for a real retry", async () => {
-  const close = vi.spyOn(removal, "discardDraft").mockImplementationOnce(() => {
-    throw new Error("route repair failed");
-  });
-  fixture.network.applyDraft.mockResolvedValue({ status: "applied", itemKey: "draft-a" });
-  await fixture.render(async (p) => {
-    await open(p);
-    await act(async () => {
-      await expect(p().presented.controller.discard("document-a", "draft-a")).rejects.toThrow(
-        "route repair failed",
-      );
-    });
-    expect(fixture.network.discardDraft).not.toHaveBeenCalled();
-    expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
-    expect(p().header.locked).toBe(false);
-    close.mockRestore();
-    await act(async () => {
-      expect(await p().presented.controller.apply("document-a", "draft-a")).toEqual({
-        kind: "applied",
-      });
-    });
-    expect(fixture.network.applyDraft).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -229,9 +205,9 @@ it("a lost whole Apply keeps the draft-only tab and review, apart from a server 
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      expect(await p().presented.controller.apply("document-a", "draft-a")).toEqual({
-        kind: "apply-outcome-unknown",
-      });
+      const done = p().presented.controller.apply("document-a", "draft-a");
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(await done).toEqual({ kind: "apply-outcome-unknown" });
     });
     expect(p().header.commandError).toEqual({ code: "apply-unknown" });
     expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
@@ -255,7 +231,7 @@ it.each([
   if (container === "dock")
     useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
   const claim = useDockDocumentStore.getState().claim();
-  fixture.network.applyDraft.mockResolvedValue({ status: "applied", itemKey: "draft-a" });
+  fixture.network.applyDraft.mockResolvedValue(itemApplied());
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
@@ -292,7 +268,7 @@ it.each([
       useDockDocumentStore.getState().commit(useDockDocumentStore.getState().claim(), replacement);
       const revision = useDockDocumentStore.getState().revision;
       await act(async () => {
-        answer.resolve({ status: "applied", itemKey: "draft-a" });
+        answer.resolve(itemApplied());
         await pending;
       });
       expect(useDockDocumentStore.getState().occupant).toBe(replacement);
@@ -303,10 +279,14 @@ it.each([
 
 it("bulk progress reaches the next draft at confirmation without waiting for navigation", async () => {
   const navigate = vi.fn(() => new Promise<never>(() => {}));
-  fixture.network.applyDraft.mockImplementation(async (_p, _w, _d, request) => ({
-    status: "applied",
-    itemKey: request.itemKey,
-  }));
+  fixture.network.applyAllDrafts.mockResolvedValue({
+    status: "completed",
+    draftId: listed.draftId,
+    items: [
+      { itemKey: "draft-a", status: "applied", notes: [] },
+      { itemKey: "draft-b", status: "applied", notes: [] },
+    ],
+  });
   await fixture.render(
     async (p) => {
       await open(p);
@@ -317,10 +297,7 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
         ]);
       });
       expect(navigate).toHaveBeenCalled();
-      expect(fixture.network.applyDraft.mock.calls.map((call) => call[2])).toEqual([
-        "document-a",
-        "document-b",
-      ]);
+      expect(fixture.network.applyAllDrafts).toHaveBeenCalledTimes(1);
       expect(p().presented.controller.isDisposing).toBe(false);
     },
     {
@@ -388,7 +365,7 @@ it("an unopened list follows a remote write and disposition through updated list
         itemKey: id,
       }));
       fixture.network.listWorkDrafts.mockResolvedValue({
-        drafts: [listed, { ...listedB, updatedAt: stamp }],
+        items: [listed, { ...listedB, updatedAt: stamp }],
       });
       await act(async () => {
         await p().queryClient.invalidateQueries({

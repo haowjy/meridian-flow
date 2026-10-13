@@ -47,11 +47,23 @@ export const workC = {
 } as Work;
 
 export const listed = {
+  draftId: "work-draft-a",
+  origin: "edited" as const,
+  isNew: false,
+  binary: false,
+  wholeItem: false,
+  livePath: null,
+  conflict: null,
+  tokens: {
+    locationToken: "location-1",
+    liveTextToken: "live-1",
+    branchGenerationToken: "generation-1",
+  },
+  settling: false,
   itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
   contextLocation: null,
-  status: "active" as const,
   branchGeneration: 1,
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
@@ -66,6 +78,8 @@ export const operation = (id: string) => ({
 });
 
 export const preview = {
+  draftId: listed.draftId,
+  item: listed,
   status: "active" as const,
   itemKey: "draft-a",
   branchGeneration: 1,
@@ -91,6 +105,7 @@ export const change = (...ids: string[]) => ({
 });
 
 export const applied = (itemClosed: boolean, id = "2") => ({
+  draftId: listed.draftId,
   status: "applied" as const,
   itemKey: "draft-a",
   operationIds: [id],
@@ -98,7 +113,16 @@ export const applied = (itemClosed: boolean, id = "2") => ({
   itemClosed,
 });
 
+/** Item Apply's 200: the item settled with no notes. */
+export const itemApplied = (itemKey = "draft-a") => ({
+  draftId: listed.draftId,
+  status: "applied" as const,
+  itemKey,
+  item: { itemKey, status: "applied" as const, notes: [] },
+});
+
 export const discarded = (itemClosed: boolean) => ({
+  draftId: listed.draftId,
   status: "discarded" as const,
   itemKey: "draft-a",
   itemClosed,
@@ -282,6 +306,9 @@ export function createReviewScopeFixture(
   const network = {
     listWorkDrafts: vi.spyOn(draftsApi, "listWorkDrafts"),
     getDraftPreview: vi.spyOn(draftsApi, "getDraftPreview"),
+    applyAllDrafts: vi.spyOn(draftsApi, "applyAllDrafts"),
+    discardAllDrafts: vi.spyOn(draftsApi, "discardAllDrafts"),
+    observeDraftCommand: vi.spyOn(draftsApi, "observeDraftCommand"),
     applyDraft: vi.spyOn(draftsApi, "applyDraft"),
     applyDraftChanges: vi.spyOn(draftsApi, "applyDraftChanges"),
     discardDraft: vi.spyOn(draftsApi, "discardDraft"),

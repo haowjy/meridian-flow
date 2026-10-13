@@ -43,12 +43,14 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   );
   const targets = useMemo(
     () =>
-      candidates.map((row) => ({
-        projectId,
-        workId,
-        documentId: row.documentId,
-        itemKey: row.draft.itemKey,
-      })),
+      candidates
+        .filter((row) => row.draft.branchGeneration !== null)
+        .map((row) => ({
+          projectId,
+          workId,
+          documentId: row.documentId,
+          itemKey: row.draft.itemKey,
+        })),
     [candidates, projectId, workId],
   );
   // The open review keeps its own refresh; the strip refreshes the rest.
@@ -59,16 +61,22 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const files = useMemo(
     () =>
       candidates
-        .map((row, index) =>
-          dockFile(row, reviewFileTargetName(row, untitled), entries[index], threadId),
+        .map((row, _index) =>
+          dockFile(
+            row,
+            reviewFileTargetName(row, untitled),
+            entries[targets.findIndex((target) => target.itemKey === row.draft.itemKey)],
+            threadId,
+          ),
         )
         .filter(isOnStrip),
-    [candidates, entries, threadId, untitled],
+    [candidates, entries, targets, threadId, untitled],
   );
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
+      if (file.row.draft.branchGeneration === null) return;
       openReviewFile(file.row, workId, change?.operationIds ?? file.changes[0]?.operationIds);
     },
     [openReviewFile, workId],
