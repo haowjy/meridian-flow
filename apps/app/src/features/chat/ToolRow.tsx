@@ -19,7 +19,7 @@
  * them (`isToolViewVisible`) before a fold reaches this row.
  */
 
-import type { ToolView, WriteMode } from "@meridian/thread-client";
+import type { ToolView } from "@meridian/thread-client";
 import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
@@ -27,27 +27,28 @@ import { rendererFor, toolRowFailed } from "./tool-renderers";
 
 export type ToolRowProps = {
   tool: ToolView;
-  writeMode?: WriteMode;
 };
 
-function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
+function ToolRowComponent({ tool }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
   const status: ActivityRowStatus =
     tool.status === "partial" ? "running" : toolRowFailed(tool) ? "error" : "done";
   const presentation = useMemo(
     () => ({
-      title: renderer.title(tool, { writeMode }),
+      title: renderer.title(tool),
       expand: renderer.expand?.(tool) ?? undefined,
     }),
-    [renderer, tool, writeMode],
+    [renderer, tool],
   );
   return (
-    <ActivityRow
-      Icon={descriptorFor(tool).Icon}
-      title={presentation.title}
-      status={status}
-      expand={presentation.expand}
-    />
+    <div data-tool-call-id={tool.toolCallId ?? undefined}>
+      <ActivityRow
+        Icon={descriptorFor(tool).Icon}
+        title={presentation.title}
+        status={status}
+        expand={presentation.expand}
+      />
+    </div>
   );
 }
 

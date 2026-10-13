@@ -30,6 +30,41 @@ const fake = {
 };
 
 describe("thread", () => {
+  it("exits on a proven usage block for its own accepted message", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "wait for usage",
+      "--timeout",
+      "2s",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.failed);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      status: "blocked",
+      reason: "credits_exhausted",
+      turnId: null,
+    });
+  });
+  it("uses the recovered outcome rather than an obsolete catch-up usage block", async () => {
+    const result = await mf([
+      "thread",
+      "send",
+      THREAD_ID,
+      "recovered before admission returns",
+      "--timeout",
+      "2s",
+      "--json",
+    ]);
+    expect(result.code).toBe(EXIT.ok);
+    expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
+      type: "result",
+      status: "complete",
+      finalText: "Recovered reply",
+      turnId: expect.any(String),
+    });
+  });
   it("resolves cN refs through the by-ref route in the default or given project", async () => {
     const byRef = await mf(["thread", "view", "c1", "--json", "--fields", "thread"]);
     expect(byRef.code).toBe(EXIT.ok);

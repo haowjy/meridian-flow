@@ -26,7 +26,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { deleteDrizzleRows } = await import("../../test-support/drizzle-reset.js");
-    const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../lib/interrupt-boundary.js");
+    const { HTTP_INTERRUPT_ENVELOPE_KEY } = await import("../../shared/interrupt-boundary.js");
     const { updateWorkMetadataForWriter } = await import("../../lib/work-metadata-route.js");
     const { createProjectRepositoryForTest } = await import("./test-support/project-repository.js");
     const { createDrizzleProjectContextAvailability } = await import(

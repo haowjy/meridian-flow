@@ -250,7 +250,6 @@ import {
 } from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
-import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -567,24 +566,12 @@ export async function createProductionAppPorts(input: {
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
-          { threads: threadRepos.threads, projects: projectRepo },
+          { threads: threadRepos.threads },
           input.threadId,
           input.userId as never,
         );
         return { projectId: thread.projectId };
       },
-      resolveContextDocument: (input) =>
-        readThreadContextDocument(
-          {
-            contextPorts,
-            fileAccess,
-            threads: threadRepos.threads,
-            threadWorks: threadRepos.threadWorks,
-            works: workRepo,
-            workAuthorityResolver,
-          },
-          input as never,
-        ),
     },
   });
   boundManifestMembership = documentSync;
@@ -653,7 +640,7 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
-  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-v4-flash";
+  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-flash";
   if (
     !MODEL_REGISTRY.providers.some((provider) =>
       provider.models.some((model) => model.id === summarizerModel),
@@ -881,15 +868,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
     inbox: delivery,
+    settleStaleExecution: delivery.settleStaleExecution,
     retireOrphanedReply: delivery.retireOrphanedReply,
     clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: ports.runClaim,
-    threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
-    publishStatus: publishThreadStatus,
   });
   let wakeCursor: ThreadId | undefined;
   const recovery = {

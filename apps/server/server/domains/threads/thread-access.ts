@@ -1,15 +1,21 @@
 /**
- * Thread authorization helper: requireThreadOwner loads a thread and asserts the
- * caller owns it and its parent project is live, throwing 404 otherwise. Owns
- * the thread ownership gate; depends inward on the thread/project repositories.
+ * HTTP thread ownership and attested availability errors. Deleted rows stay
+ * concealed from foreign users; full owners receive a distinct deletion proof.
  */
 
-import type { Project } from "@meridian/contracts/projects";
 import type { UserId } from "@meridian/contracts/runtime";
-import type { Thread } from "@meridian/contracts/threads";
-import { throwHttpInterruptForStatus } from "../../lib/interrupt-boundary.js";
+import type {
+  Thread,
+  ThreadAvailabilityCode,
+  ThreadAvailabilityDetails,
+} from "@meridian/contracts/threads";
+import {
+  throwHttpInterrupt,
+  throwHttpInterruptForStatus,
+} from "../../shared/interrupt-boundary.js";
 import { parseRequestId } from "../../shared/uuid.js";
 import type { ProjectRepository, WorkContextNotices } from "../projects/index.js";
+import { threadAvailabilityCode } from "./domain/thread-availability.js";
 import {
   type ThreadTrashState,
   ThreadTrashUnavailableError,
@@ -17,13 +23,38 @@ import {
 } from "./domain/thread-trash-lifecycle.js";
 import type { ThreadRepositories, ThreadRepository } from "./ports/repositories.js";
 
-interface ProjectOwnerRepository {
-  findById(id: string): Promise<Project | null>;
+/** Shared HTTP proof for both repository and runtime owner gates. */
+function throwThreadAvailability(
+  code: ThreadAvailabilityCode,
+  userId: UserId,
+  projectDeleted = false,
+): never {
+  throwHttpInterrupt(
+    {
+      code,
+      message: code === "thread_deleted" ? "Thread deleted" : "Thread not found",
+      retryable: false,
+      source: "system",
+      details: {
+        authenticatedUserId: userId,
+        ...(projectDeleted ? { projectDeleted: true } : {}),
+      } satisfies ThreadAvailabilityDetails,
+    },
+    404,
+  );
 }
 
-/** Owner gate: 404 for missing, wrong user, deleted thread, or soft-deleted parent project. */
+export function throwThreadNotFound(userId: UserId): never {
+  throwThreadAvailability("thread_not_found", userId);
+}
+
+export function throwThreadDeleted(userId: UserId, projectDeleted = false): never {
+  throwThreadAvailability("thread_deleted", userId, projectDeleted);
+}
+
+/** Owner gate: classify ownership before deletion, including the parent project. */
 export async function requireThreadOwner(
-  repos: { threads: Pick<ThreadRepository, "findById">; projects: ProjectOwnerRepository },
+  repos: { threads: Pick<ThreadRepository, "findByIdIncludingDeleted"> },
   threadId: string,
   userId: UserId,
 ): Promise<Thread> {
@@ -31,17 +62,11 @@ export async function requireThreadOwner(
   if (!parsedThreadId) {
     throwHttpInterruptForStatus(400, "`threadId` must be a canonical UUID");
   }
-  const thread = await repos.threads.findById(parsedThreadId);
-  if (!thread || thread.deletedAt) {
-    throwHttpInterruptForStatus(404, "Thread not found");
-  }
-  const project = await repos.projects.findById(thread.projectId);
-  if (!project || project.deletedAt || project.userId !== userId) {
-    throwHttpInterruptForStatus(404, "Thread not found");
-  }
-  if (thread.userId !== userId) {
-    throwHttpInterruptForStatus(404, "Thread not found");
-  }
+  const row = await repos.threads.findByIdIncludingDeleted(parsedThreadId);
+  const code = threadAvailabilityCode(row, row?.project, userId);
+  if (code === "thread_deleted") throwThreadDeleted(userId, !!row?.project?.deletedAt);
+  if (code === "thread_not_found" || !row) throwThreadNotFound(userId);
+  const { project: _project, ...thread } = row;
   return thread;
 }
 
@@ -73,7 +98,7 @@ export async function setOwnedThreadTrashState(
     });
   } catch (cause) {
     if (cause instanceof ThreadTrashUnavailableError) {
-      throwHttpInterruptForStatus(404, "Thread not found");
+      throwThreadNotFound(userId);
     }
     throw cause;
   }

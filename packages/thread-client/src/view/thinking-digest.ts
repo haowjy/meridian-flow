@@ -6,6 +6,7 @@
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ToolView } from "./group-delivery-segments";
 import {
+  documentToolFailed,
   skillFile,
   stringInput,
   type ToolCommand,
@@ -17,7 +18,6 @@ export type FoldToolCounts = {
   /** Skill slugs the fold loaded, in call order. */
   invokedSkills: Set<string>;
   readDocuments: Set<string>;
-  editedDocuments: Set<string>;
   steps: number;
 };
 
@@ -26,7 +26,6 @@ export type FoldDigest = {
   /** Skill slugs the fold loaded, in call order. */
   invokedSkills: string[];
   readDocuments: number;
-  editedDocuments: number;
   steps: number;
 };
 
@@ -35,7 +34,6 @@ export function foldDigest(tools: readonly ToolView[]): FoldDigest {
   return {
     invokedSkills: [...counts.invokedSkills],
     readDocuments: counts.readDocuments.size,
-    editedDocuments: counts.editedDocuments.size,
     steps: counts.steps,
   };
 }
@@ -43,27 +41,24 @@ export function foldDigest(tools: readonly ToolView[]): FoldDigest {
 export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   const invokedSkills = new Set<string>();
   const readDocuments = new Set<string>();
-  const editedDocuments = new Set<string>();
   let steps = 0;
 
   for (const tool of tools) {
     const path = stringInput(toolInputObject(tool), "path");
-    // `read` calls count as reads and `write` calls as edits. A write command
-    // the app doesn't know is a step.
+    // Successful writes belong to the turn receipt, not the process digest.
     const command = toolCommand(tool);
     const skill = stringInput(toolInputObject(tool), "name");
 
-    if (!tool.isError && command === "skill" && skill) {
+    if (!documentToolFailed(tool) && command === "skill" && skill) {
       invokedSkills.add(skill);
       continue;
     }
     // A skill's own files are not the writer's documents; reading one is a step.
-    if (!tool.isError && path && isReadCommand(command) && !skillFile(path)) {
+    if (!documentToolFailed(tool) && path && isReadCommand(command) && !skillFile(path)) {
       readDocuments.add(documentIdentity(path));
       continue;
     }
-    if (!tool.isError && path && isEditCommand(command)) {
-      editedDocuments.add(documentIdentity(path));
+    if (!documentToolFailed(tool) && path && isEditCommand(command)) {
       continue;
     }
     // Failed, non-document (`search`, `ls`, `work`, a `skills://` read) and
@@ -71,7 +66,7 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     steps += 1;
   }
 
-  return { invokedSkills, readDocuments, editedDocuments, steps };
+  return { invokedSkills, readDocuments, steps };
 }
 
 /** A command that only looked at a document. */

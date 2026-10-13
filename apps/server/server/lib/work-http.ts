@@ -2,7 +2,11 @@
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { isError } from "nitro/h3";
 import { WorkLifecycleUnavailableError, WorkNameConflictError } from "../domains/projects/index.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
+import {
+  HTTP_INTERRUPT_ENVELOPE_KEY,
+  isHttpInterruptEnvelope,
+  throwHttpInterrupt,
+} from "../shared/interrupt-boundary.js";
 
 export function throwWorkMutationHttpError(error: unknown): never {
   if (error instanceof WorkNameConflictError) {
@@ -19,6 +23,15 @@ export function throwWorkMutationHttpError(error: unknown): never {
     );
   }
   if (isError(error) && error.statusCode === 404) {
+    // Owner gates already carry the proof; don't replace a deleted project with a missing Work.
+    const data = error.data;
+    if (
+      data &&
+      typeof data === "object" &&
+      HTTP_INTERRUPT_ENVELOPE_KEY in data &&
+      isHttpInterruptEnvelope(data[HTTP_INTERRUPT_ENVELOPE_KEY])
+    )
+      throw error;
     throwHttpInterrupt(meridianErrorFromSystem("work_not_found", "Work not found."), 404);
   }
   throw error;

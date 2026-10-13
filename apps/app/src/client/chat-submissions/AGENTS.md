@@ -65,8 +65,9 @@ turned into a resubmittable composer failure. The driver chooses Edit's cohort u
 its lock. Local write failure exposes Retry but never authorizes Edit or re-mint.
 
 An empty journal is not a dissolve signal. An observer that last saw creation
-confirms the server destination: 200 loads it, 404 permits dissolution, and an
-inconclusive response preserves the destination and last-known rows. Only this
+confirms the server destination: 200 loads it, 404 permits dissolution unless
+server-confirmed `thread_deleted` or `project_deleted` sends it to deleted-chat
+cleanup instead, and an inconclusive response preserves the destination and last-known rows. Only this
 tab's explicit Edit bypasses that check. Pane disposal fences only its recovery
 session; account disposal, not unrelated pane teardown, invalidates admissions.
 
@@ -75,10 +76,44 @@ sessionStorage. A received record is moving, never retryable or editable; mount
 and external wakes finish its journal retirement without another prepend/admission.
 Receipts survive draft Send/clear and reload in the same tab. They are not shared
 with other tabs: the receipt guarantee is tab-local, not a cross-tab transaction.
-Lookup/retirement request refusal is ambiguity, never rejection proof.
+Lookup/retirement request refusal is ambiguity, never rejection proof, except
+owner-attested deletion, which is the separate cleanup signal below.
 
 Known limit (tech-lead scope ruling, 2026-10-11): Edit receipts are per tab; if removing
 the journal record fails after Edit moves the words into that tab's message box,
 another tab can still Retry the record. Draft write and removal run in one synchronous
 step, so the only trigger is localStorage removal being refused when storage access
 is denied altogether.
+
+## Deleted chats
+
+Only an owner-attested `thread_deleted` (without `projectDeleted`) moves words.
+The attestation's `authenticatedUserId` must equal the bound account. The visible
+Chat center, uncovered expanded dock, or phone chat transfers its shown unadmitted
+rows and its tab-local box into the project's New chat ahead of existing writing.
+The same tab-local draft stores the title/count notice and unique record-id
+receipts atomically. Box text needs no receipt: transfer and source clear are
+synchronous under the lock. Refused source storage can duplicate words, never lose them. Dismiss removes the notice;
+Send clears it. Then every journal record and this tab's old box are cleared, and
+the surface leaves the deleted chat. Hidden, collapsed, covered and index-warm
+surfaces move nothing. Own Delete intent is published before its request, fenced
+to account and bind epoch, and released when its confirmed cleanup returns
+(finished or not), or cancelled on DELETE failure. While pending, all cleanup
+for that chat only clears, like confirmed own Delete and project deletion.
+`thread_not_found` and the never-created-chat (O4) lifecycle are unchanged.
+
+Deletion runs under the existing submission lock, or inside that lock when the
+driver reports it. No new lock or cross-tab transfer protocol exists. On account
+bind, after journal rewrite readiness, a single pass probes off-screen journal and
+session-draft destinations (four concurrent requests, each bounded to 15 seconds).
+The URL chat and current project's remembered chat are excluded before panes mount;
+off-screen eligibility is rechecked inside the lock. Those addressed panes report
+their own deletion with the project id, even when hidden.
+Only attested chat/project deletion clears them; other answers preserve them.
+An unreadable journal or refused destination write is incomplete: retain source
+words and stay. The driver shows Couldn't send and retries cleanup on Retry,
+Edit or wake without admitting messages to a known-deleted chat.
+
+Accepted rough edge: in two tabs on the same deleted chat, the first tab's journal
+cleanup can remove the second tab's failed rows before it learns of deletion. Its
+own per-tab box still moves when it learns. Receipts are per tab, not cross-tab.

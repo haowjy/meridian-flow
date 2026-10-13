@@ -4,37 +4,14 @@ import type {
   CompactionResult,
   JournalSnapshot,
   PersistedUpdate,
-  ReversalActor,
-  ReversalRecord,
-  ReversalStatus,
   UpdateMeta,
 } from "../ports/types.js";
 import type {
-  ActiveWriteSummary,
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
-  PersistUndoResult,
-  ReversalStore,
   UpdateJournal,
-  WriteMutationRow,
 } from "../ports/update-journal.js";
-import { parseWriteHandle, writeHandle } from "../ports/update-journal.js";
-import { guardPersistUndo } from "./persist-undo-guard.js";
-
-export type StoredAgentEditMutation = {
-  wId: number;
-  documentId: string;
-  threadId: string;
-  turnId: string | null;
-  writeId: string;
-  status: "active" | "reversed";
-  createdSeq: number;
-  undoUpdateSeq?: number;
-  createdAt: Date;
-  reversedAt?: Date;
-  reversedBy?: "user" | "agent";
-};
 
 export interface InMemoryAgentEditJournalOptions {
   now?: () => Date;
@@ -42,19 +19,6 @@ export interface InMemoryAgentEditJournalOptions {
 
 export interface StoredUpdate extends PersistedUpdate {
   storedAt: Date;
-}
-
-export interface StoredReversal {
-  record: ReversalRecord;
-  createdAt: Date;
-}
-
-export interface StoredReversalOp {
-  documentId: string;
-  threadId: string;
-  updateSeq: number;
-  handle: string;
-  direction: "undo" | "redo";
 }
 
 export interface StoredCheckpoint {
@@ -69,19 +33,17 @@ export interface JournalEntry {
   nextWIdByThread: Map<string, number>;
   updates: StoredUpdate[];
   attributionUpdates: StoredUpdate[];
-  reversals: Map<string, StoredReversal>;
-  reversalOps: StoredReversalOp[];
-  mutations: StoredAgentEditMutation[];
+  turnsByThread: Map<string, Set<string>>;
 }
 
 /**
  * Drizzle-compatible in-memory implementation of UpdateJournal.
  *
  * This is deliberately shared by package tests, demos, and the server in-memory
- * adapter so reversal metadata, w-id allocation, and compaction semantics do not
+ * adapter so write-ordinal allocation and compaction semantics do not
  * drift away from the production adapter.
  */
-export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
+export class InMemoryAgentEditJournal implements UpdateJournal {
   private readonly data = new Map<string, JournalEntry>();
   private readonly now: () => Date;
 
@@ -109,17 +71,15 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     return entries.map((batchEntry) => {
       const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
       if (!batchEntry.mutation) return { seq, journalCommitKind: "durable" };
-      const wId = this.appendMutationSync(
-        batchEntry.docId,
-        batchEntry.mutation.threadId,
-        batchEntry.mutation.turnId,
-        batchEntry.mutation.writeId ??
-          `${batchEntry.mutation.threadId}:${batchEntry.mutation.turnId}:${seq}`,
+      const wId =
         batchEntry.mutation.wId ??
-          this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId),
-        seq,
-        storedAt,
-      );
+        this.reserveWriteOrdinalSync(batchEntry.docId, batchEntry.mutation.threadId);
+      if (batchEntry.mutation.turnId) {
+        const turns = this.entry(batchEntry.docId).turnsByThread;
+        const threadTurns = turns.get(batchEntry.mutation.threadId) ?? new Set<string>();
+        threadTurns.add(batchEntry.mutation.turnId);
+        turns.set(batchEntry.mutation.threadId, threadTurns);
+      }
       return { seq, wId, journalCommitKind: "durable" };
     });
   }
@@ -137,10 +97,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
       checkpoint: null,
       updates: this.entry(docId).attributionUpdates.map(copyPersistedUpdate),
     };
-  }
-
-  async readForReconstruction(docId: string): Promise<JournalSnapshot> {
-    return this.readSync(docId, { fromCheckpoint: false });
   }
 
   async checkpoint(docId: string, state: Uint8Array, upToSeq: number): Promise<void> {
@@ -171,263 +127,9 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
 
     if (compactedThroughSeq > 0) {
       entry.updates = entry.updates.filter((update) => update.seq > compactedThroughSeq);
-      entry.reversalOps = entry.reversalOps.filter((op) => op.updateSeq > compactedThroughSeq);
     }
 
-    let reversalsExpired = 0;
-    for (const stored of entry.reversals.values()) {
-      const shouldExpire =
-        stored.createdAt < before ||
-        (stored.record.expiresAt !== undefined && stored.record.expiresAt < before);
-      if (!shouldExpire || stored.record.status === "expired") continue;
-      stored.record = { ...stored.record, status: "expired" };
-      reversalsExpired += 1;
-    }
-
-    return { updatesFolded: foldRows.length, reversalsExpired };
-  }
-
-  async persistUndo(
-    docId: string,
-    undoUpdate: Uint8Array,
-    records: readonly ReversalRecord[],
-    actor: ReversalActor = { type: "agent" },
-  ): Promise<PersistUndoResult> {
-    const blocked = await guardPersistUndo(this, docId, records);
-    if (blocked) return blocked;
-
-    const storedAt = this.now();
-    const seq = this.appendSync(
-      docId,
-      undoUpdate,
-      {
-        origin: "system",
-        reversalActor: actor,
-        ...(records[0]?.authoringResponseId
-          ? { authoringResponseId: records[0].authoringResponseId }
-          : {}),
-        seq: 0,
-      },
-      storedAt,
-    );
-
-    const entry = this.entry(docId);
-    for (const record of records) {
-      for (const writeId of record.writeIds) {
-        const key = reversalKey(docId, record.threadId, writeId);
-        const existing = entry.reversals.get(key);
-        entry.reversals.set(key, {
-          record: copyReversalRecord({
-            ...record,
-            documentId: docId,
-            writeIds: [writeId],
-            undoUpdateSeq: seq,
-            redoUpdateSeq: undefined,
-          }),
-          createdAt: existing ? copyDate(existing.createdAt) : copyDate(storedAt),
-        });
-        entry.reversalOps.push({
-          documentId: docId,
-          threadId: record.threadId,
-          updateSeq: seq,
-          handle: writeId,
-          direction: "undo",
-        });
-        this.reverseMutations(
-          docId,
-          record.threadId,
-          writeId,
-          seq,
-          record.reversedAt ?? storedAt,
-          actor,
-        );
-      }
-    }
-    return { persisted: true };
-  }
-
-  async persistReversal(
-    docId: string,
-    undoUpdate: Uint8Array,
-    record: ReversalRecord,
-  ): Promise<void> {
-    await this.persistUndo(docId, undoUpdate, [record]);
-  }
-
-  async persistRedo(
-    docId: string,
-    redoUpdate: Uint8Array,
-    ref: { threadId: string; undoUpdateSeq: number },
-    meta: UpdateMeta,
-  ): Promise<{ consumed: boolean; seq?: number }> {
-    const batch = await this.persistRedoBatch(docId, [{ update: redoUpdate, ref, meta }]);
-    return batch.consumed ? { consumed: true, seq: batch.seqs?.[0] } : { consumed: false };
-  }
-
-  async persistRedoBatch(
-    docId: string,
-    entries: readonly import("../ports/update-journal.js").PersistRedoEntry[],
-  ): Promise<{ consumed: boolean; seqs?: number[] }> {
-    const entry = this.entry(docId);
-    if (
-      entries.some(
-        (redo) =>
-          redo.persistGuardWatermark !== undefined &&
-          entry.updates.some(
-            (update) =>
-              update.seq > (redo.persistGuardWatermark ?? 0) &&
-              update.meta.origin.startsWith("human:"),
-          ),
-      )
-    ) {
-      return { consumed: false };
-    }
-    const groups = entries.map(({ ref }) =>
-      [...entry.reversals.entries()].filter(
-        ([, stored]) =>
-          stored.record.threadId === ref.threadId &&
-          stored.record.undoUpdateSeq === ref.undoUpdateSeq,
-      ),
-    );
-    if (
-      groups.some(
-        (group) =>
-          group.length === 0 || group.some(([, stored]) => stored.record.status !== "reversed"),
-      )
-    ) {
-      return { consumed: false };
-    }
-
-    const seqs: number[] = [];
-    for (const [index, redo] of entries.entries()) {
-      const seq = this.appendSync(docId, redo.update, redo.meta, this.now());
-      seqs.push(seq);
-      for (const [key, stored] of groups[index] ?? []) {
-        entry.reversals.set(key, {
-          ...stored,
-          record: {
-            ...stored.record,
-            status: "redone",
-            redoUpdateSeq: seq,
-            ...(redo.meta.authoringResponseId
-              ? { authoringResponseId: redo.meta.authoringResponseId }
-              : {}),
-          },
-        });
-        for (const writeId of stored.record.writeIds) {
-          entry.reversalOps.push({
-            documentId: docId,
-            threadId: redo.ref.threadId,
-            updateSeq: seq,
-            handle: writeId,
-            direction: "redo",
-          });
-          this.reactivateMutations(docId, redo.ref.threadId, writeId, redo.ref.undoUpdateSeq);
-        }
-      }
-    }
-    return { consumed: true, seqs };
-  }
-
-  async readReversals(
-    docId: string,
-    opts: { threadId?: string; status?: ReversalStatus[] } = {},
-  ): Promise<ReversalRecord[]> {
-    if (opts.status !== undefined && opts.status.length === 0) return [];
-    return [...this.entry(docId).reversals.values()]
-      .map((stored) => stored.record)
-      .filter(
-        (record) =>
-          (opts.threadId === undefined || record.threadId === opts.threadId) &&
-          (opts.status === undefined || opts.status.includes(record.status)),
-      )
-      .sort(compareReversalRecords)
-      .map(copyReversalRecord);
-  }
-
-  async reversalOpSeqsForHandles(
-    docId: string,
-    threadId: string,
-    handles: readonly string[],
-  ): Promise<Set<number>> {
-    const handleSet = new Set(handles);
-    return new Set(
-      this.entry(docId)
-        .reversalOps.filter((op) => op.threadId === threadId && handleSet.has(op.handle))
-        .map((op) => op.updateSeq),
-    );
-  }
-
-  async documentsForTurn(threadId: string, turnId: string): Promise<string[]> {
-    const documentIds = new Set<string>();
-    for (const [documentId, entry] of this.data) {
-      if (
-        entry.mutations.some(
-          (mutation) => mutation.threadId === threadId && mutation.turnId === turnId,
-        )
-      ) {
-        documentIds.add(documentId);
-      }
-    }
-    return [...documentIds].sort();
-  }
-
-  async latestActiveWrite(
-    documentId: string,
-    threadId: string,
-  ): Promise<ActiveWriteSummary | undefined> {
-    const record = this.entry(documentId)
-      .mutations.filter(
-        (mutation) => mutation.threadId === threadId && mutation.status === "active",
-      )
-      .sort((left, right) => left.wId - right.wId)
-      .at(-1);
-    return record ? activeWriteSummary(record) : undefined;
-  }
-
-  async activeWriteSummary(documentId: string, threadId: string): Promise<ActiveWriteSummary[]> {
-    return this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.status === "active")
-      .sort((left, right) => left.wId - right.wId)
-      .map(activeWriteSummary);
-  }
-
-  async writeMinCreatedSeq(
-    documentId: string,
-    threadId: string,
-    handle: string,
-  ): Promise<number | undefined> {
-    const ordinal = parseWriteHandle(handle);
-    if (ordinal === undefined) return undefined;
-    const seqs = this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.wId === ordinal)
-      .map((record) => record.createdSeq);
-    return seqs.length > 0 ? Math.min(...seqs) : undefined;
-  }
-
-  async mutationsForWrite(
-    documentId: string,
-    threadId: string,
-    handle: string,
-  ): Promise<WriteMutationRow[]> {
-    const ordinal = parseWriteHandle(handle);
-    if (ordinal === undefined) return [];
-    return this.entry(documentId)
-      .mutations.filter((record) => record.threadId === threadId && record.wId === ordinal)
-      .sort((left, right) => left.createdSeq - right.createdSeq || left.wId - right.wId)
-      .map(writeMutationRow);
-  }
-
-  async mutationsForWrites(
-    documentId: string,
-    threadId: string,
-    handles: readonly string[],
-  ): Promise<Map<string, WriteMutationRow[]>> {
-    const result = new Map<string, WriteMutationRow[]>();
-    for (const handle of handles) {
-      result.set(handle, await this.mutationsForWrite(documentId, threadId, handle));
-    }
-    return result;
+    return { updatesFolded: foldRows.length };
   }
 
   appendSync(
@@ -457,15 +159,19 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     return seq;
   }
 
-  readSync(
-    docId: string,
-    opts: JournalReadOptions & { fromCheckpoint?: boolean } = {},
-  ): JournalSnapshot {
+  readSync(docId: string, opts: JournalReadOptions = {}): JournalSnapshot {
     const entry = this.entry(docId);
-    const fromCheckpoint = opts.fromCheckpoint ?? true;
-    const checkpoint = fromCheckpoint
-      ? entry.checkpoint
-      : this.selectReconstructionCheckpoint(entry, opts.until);
+    const bound =
+      opts.since === undefined
+        ? opts.until
+        : Math.min(opts.until ?? Number.MAX_SAFE_INTEGER, opts.since - 1);
+    const checkpoint =
+      bound === undefined
+        ? entry.checkpoint
+        : entry.checkpoints
+            .filter((cut) => cut.upToSeq <= bound)
+            .sort((a, b) => a.upToSeq - b.upToSeq)
+            .at(-1);
     const checkpointUpToSeq = checkpoint?.upToSeq ?? 0;
     return {
       checkpoint: checkpoint ? copyBytes(checkpoint.state) : null,
@@ -521,14 +227,9 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
           meta: { ...update.meta },
           storedAt: copyDate(update.storedAt),
         })),
-        reversals: new Map(
-          [...entry.reversals].map(([key, stored]) => [
-            key,
-            { record: copyReversalRecord(stored.record), createdAt: copyDate(stored.createdAt) },
-          ]),
+        turnsByThread: new Map(
+          [...entry.turnsByThread].map(([threadId, turns]) => [threadId, new Set(turns)]),
         ),
-        reversalOps: entry.reversalOps.map((op) => ({ ...op })),
-        mutations: entry.mutations.map(copyMutationRecord),
       });
     }
     return target;
@@ -538,80 +239,17 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     return this.entry(docId).updates.map(copyPersistedUpdate);
   }
 
-  reversalRecords(docId: string): ReversalRecord[] {
-    return [...this.entry(docId).reversals.values()].map((stored) =>
-      copyReversalRecord(stored.record),
+  documentsForTurn(threadId: string, turnId: string): Promise<string[]> {
+    return Promise.resolve(
+      [...this.data]
+        .filter(([, entry]) => entry.turnsByThread.get(threadId)?.has(turnId))
+        .map(([id]) => id)
+        .sort(),
     );
-  }
-
-  mutationRecords(docId: string): StoredAgentEditMutation[] {
-    return this.entry(docId).mutations.map(copyMutationRecord);
   }
 
   debugEntry(docId: string): JournalEntry | undefined {
     return this.data.get(docId);
-  }
-
-  private selectReconstructionCheckpoint(
-    entry: JournalEntry,
-    untilSeq?: number,
-  ): StoredCheckpoint | null {
-    // Reconstruction must start from the newest checkpoint strictly BELOW the earliest
-    // retained update needed for this read, then replay retained updates — never a
-    // checkpoint at/above them, which would hide the rows undo and draft projection need.
-    // Historical reads additionally must not choose a checkpoint above `untilSeq`, because
-    // that checkpoint contains future live edits relative to the requested base.
-    const relevantUpdates =
-      untilSeq === undefined
-        ? entry.updates
-        : entry.updates.filter((update) => update.seq <= untilSeq);
-    if (relevantUpdates.length === 0) return this.latestCheckpointAtOrBefore(entry, untilSeq);
-
-    const minRetainedSeq = Math.min(...relevantUpdates.map((update) => update.seq));
-    let selected: StoredCheckpoint | null = null;
-    for (const checkpoint of entry.checkpoints) {
-      if (checkpoint.upToSeq >= minRetainedSeq) continue;
-      if (untilSeq !== undefined && checkpoint.upToSeq > untilSeq) continue;
-      if (selected === null || checkpoint.upToSeq >= selected.upToSeq) selected = checkpoint;
-    }
-    // null when no checkpoint precedes the earliest retained update: reconstruct from an
-    // empty base plus every retained update row.
-    return selected;
-  }
-
-  private latestCheckpointAtOrBefore(
-    entry: JournalEntry,
-    untilSeq: number | undefined,
-  ): StoredCheckpoint | null {
-    let selected: StoredCheckpoint | null = null;
-    for (const checkpoint of entry.checkpoints) {
-      if (untilSeq !== undefined && checkpoint.upToSeq > untilSeq) continue;
-      if (selected === null || checkpoint.upToSeq >= selected.upToSeq) selected = checkpoint;
-    }
-    return selected;
-  }
-
-  private appendMutationSync(
-    docId: string,
-    threadId: string,
-    turnId: string | null,
-    writeId: string,
-    wId: number,
-    createdSeq: number,
-    createdAt: Date,
-  ): number {
-    const entry = this.entry(docId);
-    entry.mutations.push({
-      wId,
-      documentId: docId,
-      threadId,
-      turnId,
-      writeId,
-      status: "active",
-      createdSeq,
-      createdAt: copyDate(createdAt),
-    });
-    return wId;
   }
 
   private reserveWriteOrdinalSync(docId: string, threadId: string): number {
@@ -619,40 +257,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
     const wId = entry.nextWIdByThread.get(threadId) ?? 1;
     entry.nextWIdByThread.set(threadId, wId + 1);
     return wId;
-  }
-
-  private reverseMutations(
-    docId: string,
-    threadId: string,
-    writeId: string,
-    undoUpdateSeq: number,
-    reversedAt: Date,
-    actor: ReversalActor,
-  ): void {
-    for (const record of this.entry(docId).mutations) {
-      if (record.threadId !== threadId || writeHandle(record.wId) !== writeId) continue;
-      if (record.status !== "active") continue;
-      record.status = "reversed";
-      record.undoUpdateSeq = undoUpdateSeq;
-      record.reversedAt = copyDate(reversedAt);
-      record.reversedBy = actor.type;
-    }
-  }
-
-  private reactivateMutations(
-    docId: string,
-    threadId: string,
-    writeId: string,
-    undoUpdateSeq: number,
-  ): void {
-    for (const record of this.entry(docId).mutations) {
-      if (record.threadId !== threadId || writeHandle(record.wId) !== writeId) continue;
-      if (record.status !== "reversed" || record.undoUpdateSeq !== undoUpdateSeq) continue;
-      record.status = "active";
-      delete record.undoUpdateSeq;
-      delete record.reversedAt;
-      delete record.reversedBy;
-    }
   }
 
   private entry(docId: string): JournalEntry {
@@ -665,9 +269,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal, ReversalStore {
         nextWIdByThread: new Map(),
         updates: [],
         attributionUpdates: [],
-        reversals: new Map(),
-        reversalOps: [],
-        mutations: [],
+        turnsByThread: new Map(),
       };
       this.data.set(docId, entry);
     }
@@ -681,53 +283,11 @@ function assertExpectedSeq(meta: { seq?: number }, expectedSeq: number): void {
   }
 }
 
-function reversalKey(docId: string, threadId: string, writeId: string): string {
-  return `${docId}\u0000${threadId}\u0000${writeId}`;
-}
-
-function compareReversalRecords(left: ReversalRecord, right: ReversalRecord): number {
-  const leftTime = left.reversedAt?.getTime() ?? Number.POSITIVE_INFINITY;
-  const rightTime = right.reversedAt?.getTime() ?? Number.POSITIVE_INFINITY;
-  return leftTime - rightTime || left.undoUpdateSeq - right.undoUpdateSeq;
-}
-
 function copyPersistedUpdate(update: PersistedUpdate): PersistedUpdate {
   return {
     seq: update.seq,
     update: copyBytes(update.update),
     meta: { ...update.meta },
-  };
-}
-
-function copyReversalRecord(record: ReversalRecord): ReversalRecord {
-  return {
-    documentId: record.documentId,
-    turnId: record.turnId,
-    threadId: record.threadId,
-    ...(record.authoringResponseId ? { authoringResponseId: record.authoringResponseId } : {}),
-    writeIds: [...record.writeIds],
-    status: record.status,
-    undoUpdateSeq: record.undoUpdateSeq,
-    ...(record.redoUpdateSeq !== undefined ? { redoUpdateSeq: record.redoUpdateSeq } : {}),
-    ...(record.expiresAt ? { expiresAt: copyDate(record.expiresAt) } : {}),
-    ...(record.reversedAt ? { reversedAt: copyDate(record.reversedAt) } : {}),
-    ...(record.reversedByUserId ? { reversedByUserId: record.reversedByUserId } : {}),
-  };
-}
-
-function copyMutationRecord(record: StoredAgentEditMutation): StoredAgentEditMutation {
-  return {
-    wId: record.wId,
-    documentId: record.documentId,
-    threadId: record.threadId,
-    turnId: record.turnId,
-    writeId: record.writeId,
-    status: record.status,
-    createdSeq: record.createdSeq,
-    createdAt: copyDate(record.createdAt),
-    ...(record.undoUpdateSeq !== undefined ? { undoUpdateSeq: record.undoUpdateSeq } : {}),
-    ...(record.reversedAt ? { reversedAt: copyDate(record.reversedAt) } : {}),
-    ...(record.reversedBy ? { reversedBy: record.reversedBy } : {}),
   };
 }
 
@@ -737,26 +297,4 @@ function copyBytes(bytes: Uint8Array): Uint8Array {
 
 function copyDate(date: Date): Date {
   return new Date(date.getTime());
-}
-
-function activeWriteSummary(record: StoredAgentEditMutation): ActiveWriteSummary {
-  return {
-    writeId: record.writeId,
-    handle: writeHandle(record.wId),
-    wId: record.wId,
-    turnId: record.turnId,
-    createdSeq: record.createdSeq,
-  };
-}
-
-function writeMutationRow(record: StoredAgentEditMutation): WriteMutationRow {
-  return {
-    writeId: record.writeId,
-    handle: writeHandle(record.wId),
-    wId: record.wId,
-    turnId: record.turnId,
-    createdSeq: record.createdSeq,
-    status: record.status,
-    ...(record.undoUpdateSeq !== undefined ? { undoUpdateSeq: record.undoUpdateSeq } : {}),
-  };
 }

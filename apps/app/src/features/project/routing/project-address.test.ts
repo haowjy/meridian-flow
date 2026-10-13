@@ -1,6 +1,11 @@
 /** Browser grammar contracts: screen-first paths, exact filenames, and lossless raw query parsing. */
 import { describe, expect, it } from "vitest";
-import { parseProjectAddress, projectAddressHref, projectAddressState } from "./project-address";
+import {
+  browsedFolder,
+  parseProjectAddress,
+  projectAddressHref,
+  projectAddressState,
+} from "./project-address";
 
 const P = "/p/550e8400-e29b-41d4-a716-446655440000";
 const WORK = "123e4567-e89b-42d3-a456-426614174000";
@@ -14,6 +19,21 @@ function parse(href: string) {
 }
 
 describe("readable project addresses", () => {
+  it("round trips a stable change only inside a review address", () => {
+    const href = `${P}/editor/manuscript/chapter.md?work=&draft=draft-one&change=class%3Apart%2Ftwo`;
+    const parsed = parse(href);
+    expect(parsed).toMatchObject({ kind: "valid", href, address: { changeId: "class:part/two" } });
+    if (parsed.kind !== "valid") throw new Error(parsed.reason);
+    expect(projectAddressHref(parsed.address)).toBe(href);
+    expect(parse(`${P}/editor/manuscript/chapter.md?change=gone`)).toMatchObject({
+      href: `${P}/editor/manuscript/chapter.md`,
+    });
+    expect(parse(`${href}&change=other`)).toMatchObject({
+      kind: "invalid",
+      reason: "duplicate:change",
+    });
+  });
+
   it.each([
     [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
     // A chat's Scratch is named by its lineage in `?chat=`, never a Work.
@@ -102,5 +122,18 @@ describe("readable project addresses", () => {
 
   it.each([`?work=${WORK}&work=`, "?unknown=%FE"])("rejects raw query ambiguity %s", (search) => {
     expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
+  });
+});
+
+describe("browsed folder", () => {
+  // A scheme root has no folder; "/" would read as a missing folder on the phone.
+  it.each([
+    [`${P}/editor/browse/manuscript`, null],
+    [`${P}/editor/browse/manuscript/arc-1/drafts`, "/arc-1/drafts"],
+    [`${P}/editor/manuscript/chapter.md`, null],
+  ])("%s browses %s", (href, folder) => {
+    const parsed = parse(href);
+    if (parsed.kind !== "valid") throw new Error(parsed.reason);
+    expect(browsedFolder(parsed.address.destination)).toBe(folder);
   });
 });

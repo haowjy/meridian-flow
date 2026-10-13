@@ -33,7 +33,7 @@ describe("documentDisplayName", () => {
 
 describe("tool activity labels", () => {
   const label = (name: string, path: string) => {
-    const phrases = descriptorFor(tool(name, { path })).phrases(tool(name, { path }), "direct");
+    const phrases = descriptorFor(tool(name, { path })).phrases(tool(name, { path }));
     return `${phrases.complete.verb} ${phrases.complete.parameter}`;
   };
 

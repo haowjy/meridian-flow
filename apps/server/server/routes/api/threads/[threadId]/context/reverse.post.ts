@@ -1,4 +1,4 @@
-/** Authenticated reversal command transport for thread context. */
+/** Authenticated whole-turn card Undo/Redo transport. */
 
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -10,7 +10,6 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { z } from "zod";
-import { ReverseThreadContextError } from "../../../../../domains/collab/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
 import {
@@ -18,14 +17,10 @@ import {
   reverseWorkReceipts,
 } from "../../../../../lib/work-receipt-reversal.js";
 
-const reverseBodySchema = z.object({
-  uri: z
-    .string({ error: "uri must be a non-empty string" })
-    .min(1, "uri must be a non-empty string")
-    .optional(),
+const reverseBodySchema = z.strictObject({
   direction: z.enum(["undo", "redo"], { error: "direction must be undo or redo" }),
-  scope: z.enum(["write", "turn", "thread"], { error: "scope must be write, turn, or thread" }),
-  target: z.string({ error: "target must be a string" }).optional(),
+  scope: z.literal("turn"),
+  target: z.string({ error: "target must be a string" }).min(1),
 });
 
 export default defineEventHandler(async (event) => {
@@ -38,57 +33,45 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: parsed.error.issues[0]?.message });
   }
   const body = parsed.data;
+  const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
+  const turnId = requireRequestId(body.target, "target") as TurnId;
+  const outcome = await app.documentSync.reverseThreadContext({
+    threadId,
+    userId: user.userId,
+    direction: body.direction,
+    turnId,
+  });
+  const canReverseWorkReceipts =
+    outcome.status === "reversed" ||
+    outcome.status === "reconciled" ||
+    outcome.status === "nothing_to_undo" ||
+    outcome.status === "nothing_to_redo" ||
+    outcome.status === "partial" ||
+    outcome.status === "partial_failure";
+  let workReceipts = [];
   try {
-    const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
-    const turnId = (body.target ?? "") as TurnId;
-    const outcome = await app.documentSync.reverseThreadContext({
-      threadId,
-      userId: user.userId,
-      ...(body.uri ? { uri: body.uri } : {}),
-      direction: body.direction,
-      scope: body.scope,
-      ...(body.target !== undefined ? { selection: body.target } : {}),
-      turnId,
-    });
-    const canReverseWorkReceipts =
-      body.target !== undefined &&
-      (outcome.status === "reversed" ||
-        outcome.status === "reconciled" ||
-        outcome.status === "nothing_to_undo" ||
-        outcome.status === "nothing_to_redo" ||
-        outcome.status === "partial" ||
-        outcome.status === "partial_failure");
-    let workReceipts = [];
-    try {
-      workReceipts = canReverseWorkReceipts
-        ? await reverseWorkReceipts(
-            {
-              blocks: app.threadRepos.blocks,
-              turns: app.threadRepos.turns,
-              threads: app.threadRepos.threads,
-              works: app.works,
-              workContextNotices: app.workContextNotices,
-              stopThreadRun: app.stopThreadRun,
-              transaction: app.threadRepos.transaction,
-            },
-            { threadId, turnId, direction: body.direction },
-          )
-        : [];
-    } catch {
-      setResponseStatus(event, 200);
-      return {
-        ...outcome,
-        status: "partial_failure",
-        workError: "execution_failed",
-      } satisfies ReversalOutcome;
-    }
+    workReceipts = canReverseWorkReceipts
+      ? await reverseWorkReceipts(
+          {
+            blocks: app.threadRepos.blocks,
+            turns: app.threadRepos.turns,
+            threads: app.threadRepos.threads,
+            works: app.works,
+            workContextNotices: app.workContextNotices,
+            stopThreadRun: app.stopThreadRun,
+            transaction: app.threadRepos.transaction,
+          },
+          { threadId, turnId, direction: body.direction },
+        )
+      : [];
+  } catch {
     setResponseStatus(event, 200);
-    return combineWorkReversalOutcome(outcome, workReceipts, body.direction);
-  } catch (error) {
-    if (!(error instanceof ReverseThreadContextError)) throw error;
-    throw createError({
-      statusCode: error.code === "document_not_found" ? 404 : 400,
-      message: error.message,
-    });
+    return {
+      ...outcome,
+      status: "partial_failure",
+      workError: "execution_failed",
+    } satisfies ReversalOutcome;
   }
+  setResponseStatus(event, 200);
+  return combineWorkReversalOutcome(outcome, workReceipts, body.direction);
 });

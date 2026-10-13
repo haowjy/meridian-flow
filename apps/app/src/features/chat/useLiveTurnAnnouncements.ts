@@ -36,9 +36,7 @@ export function useLiveTurnAnnouncements(
   const status = liveTurn?.status ?? "pending";
   const prevStatusRef = useRef(status);
   const tool = useMemo(() => runningTool(liveTurn), [liveTurn]);
-  const toolAnnouncement = tool
-    ? toolActivityAnnouncement(toolActivityPhrase(tool, liveTurn?.writeMode ?? "direct"))
-    : null;
+  const toolAnnouncement = tool ? toolActivityAnnouncement(toolActivityPhrase(tool)) : null;
   const hasPartialText = Boolean(
     liveTurn?.blocks.some((block) => block.blockType === "text" && block.status === "partial"),
   );

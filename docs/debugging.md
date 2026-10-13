@@ -50,15 +50,22 @@ Start from your symptom in [Strategies](#strategies), or scan the
 
 Repeatable verification recipes live in the [runtime probe catalog](qa/README.md).
 
-`./mf` (repo root) is a thin wrapper over this worktree's own API: every command
-maps to an existing HTTP route or thread-socket message, authenticated exactly
-like the browser through dev login. Run `./mf` for the command tree with the
-route each command wraps, and `./mf <noun> <verb> --help` for flags and examples.
-Its thread socket and message body come from `@meridian/thread-client`, the same
-code the app runs, so a `./mf` run is evidence of the app's socket client and
-composer serialization against the real server. It never covers what the writer
-sees: rendering, the thread store, the TipTap composer, the submission journal,
-optimistic UI, and navigation are the browser's to verify.
+`./mf` (repo root) drives this worktree's own API: every command maps to an
+existing HTTP route or thread-socket message, authenticated exactly like the
+browser through dev login. Run `./mf` for the command tree with the route each
+command wraps, and `./mf <noun> <verb> --help` for flags and examples. Its
+thread socket, message body and chat event processing come from
+`@meridian/thread-client`, the same code the app runs, so a `./mf` run is
+evidence of that shared code against the real server. A command with no shared
+client code behind it is evidence of the server only. It never covers what the
+writer sees: rendering, the app's thread store, the TipTap composer, the
+submission journal, optimistic UI, and navigation are the browser's to verify.
+
+A send that cannot start for lack of usage returns `status: "blocked"`,
+`outcome: "failed"`, `reason: "credits_exhausted"` and exit code 1, not a
+deadline timeout. This proves that this send's accepted writer turn is still in
+the durable blocked inbox; it does not discard the message. Adding usage lets
+the existing server wake retry it.
 
 ```bash
 ./mf seed tools/mf/fixtures/basic.json        # docs + thread + an opening message
@@ -104,8 +111,9 @@ at its final snapshot; it does not attribute replies to messages.
   - `differs` is a lead to investigate, and `matches` does not prove the screen
     was right. Neither changes the outcome or exit code (the claim is the
     server's stored state).
-  - The owner ruled (TL-MF-20) that once the chat session's sync is shared, a
-    live disagreement will fail with exit 6. That is not true yet.
+  - The owner has ruled that once the chat session's sync is shared, a live
+    disagreement will fail with exit 6 (`live_disagrees`). That is not true
+    yet ([`./mf`'s claims][mf-claims]).
 
   `thread events` stays an event log and prints both `tool.completed` and
   `tool.settled`.
@@ -314,9 +322,21 @@ instead of `console.log`.
   128 MiB (`LOG_MAX_BYTES` overrides the byte cap). Allocation, append, and
   pruning share a worktree lock so overlapping server generations keep both
   ceilings hard. This is not an audit log.
-- The dev Vite and Nitro watchers exclude the repository `logs/` tree. Log
-  writes must not reload either process; a reload during a long-running turn is
-  a bug, not expected dev behavior.
+- Nitro's active dev watcher is Rolldown's module-graph watcher
+  (`rolldownConfig.watch` in `apps/server/nitro.config.ts`); it excludes
+  `logs/` and `**/node_modules/**`. App Vite has its own ignore predicate for
+  `logs/`. A reload during a long-running turn is a bug, not expected dev
+  behavior. A rebuild can also come from inside the checkout (a source edit).
+  These are written by the dev stack and are not watched inputs:
+  `logs/portless.log`, `logs/events/**`, `.meridian/dev-session.json`, and
+  Nitro output under `apps/server/node_modules/.nitro/dev/**`.
+  `logs/portless.log` shows a rebuild (`[nitro] Server built` followed by a
+  fresh `startup.complete`) but not what triggered it. Before blaming product
+  code, confirm the running Nitro process belongs to this checkout and config,
+  then capture the triggering path with a recursive `inotifywait` over the
+  checkout (excluding `.git` only). Keep `node_modules`: a sibling worktree's
+  `pnpm install` hardlinks shared store files and fires `IN_ATTRIB` there, which
+  hid #817 when it was excluded.
 - Each event is at most 8 KiB. The local output sink holds at most 5,000 pending
   events or 16 MiB. Output backpressure drops oldest first; the next successful
   write reports lost record and byte counts. The recent ring uses the same dual
@@ -513,3 +533,5 @@ not removing and inspect the plan before confirming it:
 pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
 pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr>
 ```
+
+[mf-claims]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md

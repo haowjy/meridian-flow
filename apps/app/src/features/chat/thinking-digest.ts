@@ -7,12 +7,7 @@ import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
 import { type FoldDigest, humanizeSkillSlug } from "@meridian/thread-client";
 
-export type ThinkingDigestWriteMode = "direct" | "draft";
-
-export function thinkingDigest(
-  digest: FoldDigest,
-  writeMode: ThinkingDigestWriteMode,
-): string | null {
+export function thinkingDigest(digest: FoldDigest): string | null {
   // Member expressions keep the catalog's positional `{0}` ids for these messages.
   const clauses: string[] = [];
 
@@ -32,24 +27,6 @@ export function thinkingDigest(
         one: "read # document",
         other: "read # documents",
       }),
-    );
-  }
-  if (digest.editedDocuments > 0) {
-    const carryDocumentNoun = digest.readDocuments > 0;
-    clauses.push(
-      writeMode === "draft"
-        ? carryDocumentNoun
-          ? t`drafted ${digest.editedDocuments}`
-          : plural(digest.editedDocuments, {
-              one: "drafted # document",
-              other: "drafted # documents",
-            })
-        : carryDocumentNoun
-          ? t`edited ${digest.editedDocuments}`
-          : plural(digest.editedDocuments, {
-              one: "edited # document",
-              other: "edited # documents",
-            }),
     );
   }
   const { steps } = digest;

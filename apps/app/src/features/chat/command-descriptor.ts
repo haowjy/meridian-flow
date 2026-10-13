@@ -4,12 +4,12 @@ import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   copySourcePath,
+  documentToolFailed,
   humanizeSkillSlug,
   stringInput,
   type ToolCommand,
   toolCommand,
   toolInputObject,
-  type WriteMode,
   workReceipt,
 } from "@meridian/thread-client";
 import {
@@ -62,11 +62,11 @@ export type CommandExpand =
 export type CommandDescriptor = {
   /** One glyph per command. Read down the icon column and the turn has a shape. */
   Icon: LucideIcon;
-  phrases: (tool: ToolView, writeMode: WriteMode) => ToolActivityVocabulary;
+  phrases: (tool: ToolView) => ToolActivityVocabulary;
   /** A failure is its own claim, so it never reuses the success verb. */
-  failureVerb: (writeMode: WriteMode) => string;
+  failureVerb: () => string;
   /** The complete-tense title when the command named no document. */
-  pathlessTitle: ((writeMode: WriteMode) => string) | null;
+  pathlessTitle: (() => string) | null;
   expand: CommandExpand;
 };
 
@@ -105,14 +105,9 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
   create: {
     Icon: FilePlus2,
-    phrases: (tool, writeMode) =>
-      documentTenses(
-        tool,
-        writeMode === "draft" ? t`Drafting` : t`Writing`,
-        writeMode === "draft" ? t`Drafted` : t`Wrote`,
-      ),
-    failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't write`),
-    pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Wrote file`),
+    phrases: (tool) => documentTenses(tool, t`Writing`, t`Edited`),
+    failureVerb: () => t`Couldn't write`,
+    pathlessTitle: () => t`Edited file`,
     expand: "submitted-content",
   },
   // The destination rides the row's document door, so the verb names the source
@@ -127,14 +122,9 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
   },
   edit: {
     Icon: PenLine,
-    phrases: (tool, writeMode) =>
-      documentTenses(
-        tool,
-        writeMode === "draft" ? t`Drafting` : t`Editing`,
-        writeMode === "draft" ? t`Drafted` : t`Edited`,
-      ),
-    failureVerb: (writeMode) => (writeMode === "draft" ? t`Couldn't draft` : t`Couldn't edit`),
-    pathlessTitle: (writeMode) => (writeMode === "draft" ? t`Drafted file` : t`Edited file`),
+    phrases: (tool) => documentTenses(tool, t`Editing`, t`Edited`),
+    failureVerb: () => t`Couldn't edit`,
+    pathlessTitle: () => t`Edited file`,
     expand: "submitted-content",
   },
   // Reverting a change is not editing. Telling a writer their chapter was
@@ -301,11 +291,10 @@ export function humanizeToolName(toolName: string): string {
 }
 
 /** The phrase for the tool's current protocol state, never guessed from timing. */
-export function toolActivityPhrase(
-  tool: ToolView,
-  writeMode: WriteMode = "direct",
-): ToolActivityPhrase {
-  const vocabulary = descriptorFor(tool).phrases(tool, writeMode);
+export function toolActivityPhrase(tool: ToolView): ToolActivityPhrase {
+  const descriptor = descriptorFor(tool);
+  if (documentToolFailed(tool)) return { verb: descriptor.failureVerb() };
+  const vocabulary = descriptor.phrases(tool);
   return tool.status === "complete" ? vocabulary.complete : vocabulary.active;
 }
 

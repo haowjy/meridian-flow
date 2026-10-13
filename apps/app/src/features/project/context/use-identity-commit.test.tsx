@@ -60,7 +60,10 @@ describe("useIdentityCommit", () => {
       expect(committed).toHaveBeenCalledWith(
         "doc-1",
         expect.objectContaining({ routeWorkId: NO_WORK, path: `/${canonical}`, name: canonical }),
-        { isLatest: true },
+        expect.objectContaining({
+          isLatest: true,
+          tab: expect.objectContaining({ documentId: "doc-1" }),
+        }),
       );
     });
   });

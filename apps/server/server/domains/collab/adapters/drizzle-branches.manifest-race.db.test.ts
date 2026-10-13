@@ -16,7 +16,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { hasLiveManifestMembership } from "../../../lib/yjs-ws-handler.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
-import { createDrizzleBranchStore } from "./drizzle-branches.js";
+import { createFixtureBranchStore } from "../test-support/fixture-branch-store.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
 import { createHocuspocusCoordinatorForTest } from "./hocuspocus-coordinator.js";
 
@@ -47,11 +47,10 @@ describe("Drizzle manifest persistence", () => {
     journal: livePersistence.journal,
     hocuspocus: () => ({ documents: liveDocs }) as never,
     metaForOrigin: () => ({ origin: "system", seq: 0 }),
-    latestUpdateSeq: (documentId) => livePersistence.store.latestUpdateSeq(documentId),
     emitAgentEditInvariantViolation() {},
   });
   storeWarmDocument = hocuspocusPersistence.storeHocuspocusDocument;
-  const store = createDrizzleBranchStore(db, {
+  const store = createFixtureBranchStore(db, {
     journal: livePersistence.journal,
     lifecycle: livePersistence.lifecycle,
     coordinator: liveCoordinator,

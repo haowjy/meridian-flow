@@ -13,6 +13,9 @@ export class MemoryJournal extends InMemoryAgentEditJournal {
   override async appendBatch(
     entries: readonly JournalBatchAppendEntry[],
   ): Promise<JournalBatchAppendResult[]> {
+    entries = entries.flatMap((entry) =>
+      (entry.mutation?.editParts ?? [entry.update]).map((update) => ({ ...entry, update })),
+    );
     this.batches.push(entries.map((entry) => `${entry.docId}:${entry.mutation?.turnId ?? ""}`));
     this.batchEntries.push(entries.map((entry) => ({ ...entry })));
     if (this.nextAppendBatchFailure) {

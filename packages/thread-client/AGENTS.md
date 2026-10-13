@@ -2,8 +2,10 @@
 
 The framework-free thread socket and message-document core shared by the app
 and `./mf`. Keep protocol readiness, deadlines, cursor recovery and turn
-reduction (`turns/`) here so the clients cannot disagree. Reply following
-remains client-owned until #768 phase 2 settles its shared contract.
+reduction (`turns/`) here so the clients cannot disagree. Every chat decision
+between the server and the screen is headed here: design A's run-state reader
+and the chat session belong in this package, never in `apps/app`. Reply
+following stays client-owned until they land.
 
 - Platform differences enter through injected ports at each composition root.
   No React, stores, browser or Node globals at module evaluation,

@@ -21,11 +21,13 @@ export type Reason =
   | "replay_truncated"
   | "unconfirmed"
   | "deliverer_unknown"
-  | "snapshot_disagrees";
+  | "snapshot_disagrees"
+  | "credits_exhausted";
 /** `accepted` is admission only and is built solely by `thread send --no-wait`; no wait produces it. */
 export type Claim =
-  | { outcome: "accepted" | "complete" | "failed" | "cancelled" | "interrupt"; reason: null }
-  | { outcome: "unproven" | "timeout"; reason: Reason };
+  | { outcome: "accepted" | "complete" | "cancelled" | "interrupt"; reason: null }
+  | { outcome: "failed"; reason: null | "credits_exhausted" }
+  | { outcome: "unproven" | "timeout"; reason: Exclude<Reason, "credits_exhausted"> };
 export type Result = Claim & {
   type: "result";
   command: string;
@@ -55,10 +57,13 @@ export function terminalResult<T extends Record<string, unknown> & { threadId: s
   claim: Claim,
   fields: T,
 ): TerminalResult<T> {
+  // Rebuild so callers that pass a whole prior result as the claim leak nothing else.
   const proof: Claim =
-    claim.reason === null
-      ? { outcome: claim.outcome, reason: null }
-      : { outcome: claim.outcome, reason: claim.reason };
+    claim.outcome === "failed"
+      ? { outcome: "failed", reason: claim.reason }
+      : claim.reason === null
+        ? { outcome: claim.outcome, reason: null }
+        : { outcome: claim.outcome, reason: claim.reason };
   return {
     result: { ...fields, ...proof, type: "result", command },
     exitCode: EXITS[claim.outcome],

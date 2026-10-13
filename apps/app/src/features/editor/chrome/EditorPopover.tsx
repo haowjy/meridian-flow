@@ -95,7 +95,9 @@ export function EditorPopover({
   // last was rather than with a corner. Never measured at all is the different
   // answer: there is nowhere to put this, so it does not open.
   const placed = useRef<DOMRect | null>(null);
-  const here = measure.current();
+  // Measuring forces layout, so a closed surface never measures: a page
+  // full of closed popovers otherwise reflows on every render.
+  const here = open ? measure.current() : null;
   if (!open) placed.current = null;
   else if (here) placed.current = here;
   const mounted = open && (Boolean(trigger) || placed.current !== null);

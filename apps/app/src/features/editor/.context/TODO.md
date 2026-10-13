@@ -12,14 +12,6 @@
   to new cases. The schema-fence read-only state is the model to follow:
   content visible, honest notice, automatic repair attempted.
 
-- `EditorView.tsx` review entry: on an existing document the read-only live
-  text shows under the review header for about 110 ms until the draft paints
-  (the alternative before #654 was about 1.1 s of blank body). Open product
-  question for the human: (A) keep this, or (B) hold the whole live view,
-  header included, until the draft paints. Undecided; do not change it without
-  a ruling. Evidence: `evidence/final-682-findings.md` F1 in the
-  [draft-review-repair work item](https://github.com/haowjy/meridian-flow-docs/tree/main/work/draft-review-repair).
-
 - `EditorSurfaceFrame.tsx` toolbar row in a narrow pane (the dock's document):
   the row scrolls sideways with its scrollbar hidden, so at the narrowest dock
   width (280px) the last control starts off-screen and nothing shows that the

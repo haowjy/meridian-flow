@@ -11,11 +11,7 @@ export default defineEventHandler(async (event): Promise<ThreadReportResult> => 
   const threadId = getRouterParam(event, "threadId") ?? "";
   const childThreadId = getRouterParam(event, "childThreadId") ?? "";
   const execution = getRouterParam(event, "execution") ?? "";
-  const parent = await requireThreadOwner(
-    { threads: app.repos.threads, projects: app.projectRepo },
-    threadId,
-    user.userId,
-  );
+  const parent = await requireThreadOwner({ threads: app.repos.threads }, threadId, user.userId);
   const child = await app.repos.threads.findById(childThreadId);
   if (!child?.ref) throw createError({ statusCode: 404, message: "Thread not found" });
   const readable = await resolveReadableThread({
