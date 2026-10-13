@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `./mf thread view` prints the shared transcript view model (`chatView: 2`, `inputs`).
+
+- `./mf thread send` `finalText` is the visible text.
+
 - A reply you stopped now shows as stopped in every open tab the moment the run ends, instead of "complete" until a refetch. The server's finish event now says the run was cancelled.
 
 - A reply that started elsewhere (another tab, `./mf`, a server wake) no longer begins mid-sentence while the page catches up, and no longer repeats text after a socket catch-up. Each socket listener gets every event after its own cursor, exactly once.
