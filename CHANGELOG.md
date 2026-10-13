@@ -177,6 +177,7 @@
 
 ### Fixed
 
+- A screen heading focused on navigation no longer shows a focus ring, and focus the app moves after a click stays ring-free. When Archive is refused, focus comes back to the Active tab with the Work (ring only if you used the keyboard).
 - Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
 - Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
