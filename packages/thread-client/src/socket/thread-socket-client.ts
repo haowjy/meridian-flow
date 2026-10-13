@@ -11,10 +11,8 @@
 import {
   type AGUIEvent,
   type CancelTurnResponse,
-  compareSeq,
   type MeridianError,
   parseWsServerMessage,
-  type SequencedEvent,
   type WsServerMessage,
 } from "@meridian/contracts/protocol";
 
@@ -31,7 +29,7 @@ import type {
 } from "./thread-transport";
 import {
   type ActiveThreadSubscription,
-  selectNewestSeq,
+  oldestCursor,
   WsThreadSubscriptionRegistry,
 } from "./ws-thread-subscription";
 
@@ -70,7 +68,7 @@ export class ThreadSocketClient implements ThreadTransport {
             listener(closedGeneration);
           }
           for (const subscription of this.subscriptions.values()) {
-            subscription.serverSubscribed = false;
+            this.subscriptions.connectionLost(subscription);
             for (const handler of subscription.handlers) {
               handler.onClose?.(event);
             }
@@ -114,7 +112,7 @@ export class ThreadSocketClient implements ThreadTransport {
     handlers: ThreadTransportHandlers,
     opts?: ThreadTransportSubscribeOptions,
   ): () => void {
-    const { subscription, sendSubscribe, forceSubscribe } = this.subscriptions.ensure(
+    const { subscription, sendSubscribe, forceSubscribe, waiters } = this.subscriptions.ensure(
       threadId,
       handlers,
       opts?.after,
@@ -126,7 +124,7 @@ export class ThreadSocketClient implements ThreadTransport {
 
     this.ensureConnected();
     if (sendSubscribe && this.socket.isServerConnected()) {
-      this.sendSubscribe(threadId, subscription, forceSubscribe);
+      this.sendSubscribe(threadId, subscription, forceSubscribe, waiters);
     }
 
     return () => {
@@ -210,6 +208,10 @@ export class ThreadSocketClient implements ThreadTransport {
       dispatchSequencedEvent: (threadId, seq, aguiEvent, error, sourceThreadId) =>
         this.dispatchSequencedEvent(threadId, seq, aguiEvent, error, sourceThreadId),
       handleGap: (gap) => this.handleGap(gap),
+      resubscribe: (threadId) => {
+        const subscription = this.subscriptions.get(threadId);
+        if (subscription) this.sendSubscribe(threadId, subscription, true);
+      },
       send: (payload) => this.send(payload),
       onConnected: () => {
         this.socket.markConnected();
@@ -221,6 +223,7 @@ export class ThreadSocketClient implements ThreadTransport {
       onThreadError: (threadId, error) => {
         const subscription = this.subscriptions.get(threadId);
         if (!subscription) return;
+        this.subscriptions.abortReplay(threadId);
         for (const handler of subscription.handlers) {
           handler.onError?.(error);
         }
@@ -236,11 +239,17 @@ export class ThreadSocketClient implements ThreadTransport {
 
   private sendResume(): void {
     if (!this.socket.isSocketOpen() || this.subscriptions.size === 0) return;
+    // A reconnect replays for every handler, so every handler waits for it.
+    for (const subscription of this.subscriptions.values()) {
+      this.subscriptions.holdForReplay(subscription, subscription.handlers);
+      subscription.replayInFlight = true;
+      subscription.serverSubscribed = true;
+    }
     this.send({
       type: "resume",
       subscriptions: Array.from(this.subscriptions.entries()).map(([threadId, subscription]) => ({
         threadId,
-        lastSeq: subscription.lastSeq ?? "0",
+        lastSeq: oldestCursor(subscription) ?? "0",
       })),
     });
   }
@@ -249,6 +258,7 @@ export class ThreadSocketClient implements ThreadTransport {
     threadId: string,
     subscription: ActiveThreadSubscription,
     force: boolean,
+    waiters: Iterable<ThreadTransportHandlers> = [],
   ): void {
     if (!this.socket.isSocketOpen()) {
       subscription.serverSubscribed = false;
@@ -259,12 +269,22 @@ export class ThreadSocketClient implements ThreadTransport {
       return;
     }
 
+    this.subscriptions.holdForReplay(subscription, waiters);
+    // One replay at a time: the server answers only the latest request, so a
+    // second in-flight subscribe could leave the fence waiting forever.
+    if (subscription.replayInFlight) {
+      subscription.resendQueued = true;
+      return;
+    }
+
+    subscription.replayInFlight = true;
+    subscription.serverSubscribed = true;
+    const lastSeq = oldestCursor(subscription);
     this.send({
       type: "subscribe",
       threadId,
-      ...(subscription.lastSeq ? { lastSeq: subscription.lastSeq } : {}),
+      ...(lastSeq ? { lastSeq } : {}),
     });
-    subscription.serverSubscribed = true;
   }
 
   private async handleGap(message: Extract<WsServerMessage, { type: "gap" }>): Promise<void> {
@@ -291,9 +311,12 @@ export class ThreadSocketClient implements ThreadTransport {
     // would gap forever. The truncated history is recovered from the thread
     // snapshot the onGap consumers refetch.
     if (message.toSeq) {
-      subscription.lastSeq = selectNewestSeq(subscription.lastSeq, message.toSeq);
+      this.subscriptions.skipTo(subscription, message.toSeq);
     }
 
+    // The gap answers the request in flight in place of a `subscribed`, so the
+    // resubscribe below is the replay the fenced handlers now wait on.
+    subscription.replayInFlight = false;
     if (this.socket.isSocketOpen()) {
       this.sendSubscribe(message.threadId, subscription, true);
     }
@@ -310,27 +333,12 @@ export class ThreadSocketClient implements ThreadTransport {
     error?: MeridianError,
     sourceThreadId?: string,
   ): void {
-    const subscription = this.subscriptions.get(threadId);
-    if (!subscription) return;
-
-    const lastSeq = subscription.lastSeq;
-    if (lastSeq && compareSeq(seq, lastSeq) <= 0) {
-      return;
-    }
-
-    subscription.lastSeq = seq;
-    subscription.gapCount = 0;
-
-    const payload: SequencedEvent = {
+    this.subscriptions.accept(threadId, {
       seq,
       event,
       error,
       sourceThreadId: sourceThreadId ?? threadId,
-    };
-
-    for (const handler of subscription.handlers) {
-      handler.onEvent(payload);
-    }
+    });
   }
 
   private publishConnectionState(state: ConnectionState): void {
