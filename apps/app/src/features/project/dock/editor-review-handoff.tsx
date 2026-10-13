@@ -182,6 +182,11 @@ export function useOpenEditorReview(): EditorReviewCommand {
   return command;
 }
 
+/** For a surface that only sometimes launches a review (a link to a draft), and may mount without an owner. */
+export function useOptionalOpenEditorReview(): EditorReviewCommand | null {
+  return useContext(EditorReviewCommandContext);
+}
+
 /**
  * Draft currently crossing the route-to-Editor handoff, if any: its route
  * command is running, or its launch is waiting for the Editor to claim it (the
