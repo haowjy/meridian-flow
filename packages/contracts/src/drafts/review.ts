@@ -325,7 +325,11 @@ export type DraftApplyChangesResponse =
       operationIds: string[];
       closureClassIds: string[];
     } & DraftItemSettlement)
-  | { status: "stale" | "gone" | "whole_item" | "incomplete_class"; draftId: DraftId; itemKey: DraftItemKey }
+  | {
+      status: "stale" | "gone" | "whole_item" | "incomplete_class";
+      draftId: DraftId;
+      itemKey: DraftItemKey;
+    }
   | DraftApplyPendingResponse;
 
 // Apply all and Discard all: one server command over the Work's whole draft.

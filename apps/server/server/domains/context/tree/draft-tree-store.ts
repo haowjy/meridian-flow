@@ -34,18 +34,20 @@ export async function recordCreated(
     createdBy?: { threadId: ThreadId; turnId?: TurnId };
   },
 ): Promise<void> {
-  await currentDrizzleDb(db).insert(draftTreeChanges).values({
-    draftId: input.draftId,
-    nodeKind: "document",
-    nodeId: input.documentId,
-    created: true,
-    contextSourceId: input.location.contextSourceId,
-    parentFolderId: input.location.parentFolderId,
-    name: input.location.name,
-    extension: input.location.extension,
-    createdThreadId: input.createdBy?.threadId ?? null,
-    createdTurnId: input.createdBy?.turnId ?? null,
-  });
+  await currentDrizzleDb(db)
+    .insert(draftTreeChanges)
+    .values({
+      draftId: input.draftId,
+      nodeKind: "document",
+      nodeId: input.documentId,
+      created: true,
+      contextSourceId: input.location.contextSourceId,
+      parentFolderId: input.location.parentFolderId,
+      name: input.location.name,
+      extension: input.location.extension,
+      createdThreadId: input.createdBy?.threadId ?? null,
+      createdTurnId: input.createdBy?.turnId ?? null,
+    });
 }
 
 /** The draft stops saying anything about these documents (its settlements are the registry's). */
