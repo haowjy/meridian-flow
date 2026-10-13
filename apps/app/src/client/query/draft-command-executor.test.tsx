@@ -682,4 +682,28 @@ describe("command-record outcome matrix", () => {
     expect([first.itemKey, second.itemKey]).toEqual(["a", "b"]);
     expect(first.commandId).not.toEqual(second.commandId);
   });
+  it("discards a corrupt item missing from the list using the preview's draftId", async () => {
+    client.setQueryData(projectQueryKeys.workDrafts(input.projectId, input.workId), []);
+    client.setQueryData(
+      projectQueryKeys.workDraftPreview(
+        input.projectId,
+        input.workId,
+        input.documentId,
+        input.itemKey,
+      ),
+      { status: "corrupt", draftId: "draft-id-x", itemKey: input.itemKey, branchGeneration: 1 },
+    );
+    api.discardDraft.mockResolvedValue({
+      status: "discarded",
+      draftId: "draft-id-x",
+      itemKey: input.itemKey,
+    });
+    startDraftCommand(client, { target: "all", mode: "discard", generation: 1, draft: input });
+    await vi.waitFor(() => expect(api.discardDraft).toHaveBeenCalled());
+    expect(api.discardDraft.mock.calls[0][3]).toEqual({
+      commandId: expect.any(String),
+      draftId: "draft-id-x",
+      itemKey: input.itemKey,
+    });
+  });
 });
