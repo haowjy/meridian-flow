@@ -15,6 +15,7 @@ export type VisibleEditorRoute = {
 export function resolveVisibleEditorTab({
   tabs,
   selectedTabId,
+  selectedTabInstanceId,
   selection,
   editorWorkId,
   localDocumentId,
@@ -24,6 +25,7 @@ export function resolveVisibleEditorTab({
 }: VisibleEditorRoute & {
   tabs: readonly ContextTab[];
   selectedTabId?: string | null;
+  selectedTabInstanceId?: string;
   selection: ContextRouteSelection;
 }) {
   const selectedDocumentId = localDocumentId ?? selectedTabId ?? undefined;
@@ -49,11 +51,13 @@ export function resolveVisibleEditorTab({
   const workspaceRoute = resolveWorkspaceRoute({
     tabs,
     selectedDocumentId,
+    selectedTabInstanceId,
     locator,
     boundDocumentId,
   });
   return {
     selectedDocumentId,
+    selectedTabInstanceId,
     locator,
     workspaceRoute,
     tab: workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab,

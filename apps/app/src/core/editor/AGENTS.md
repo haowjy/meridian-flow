@@ -78,6 +78,11 @@ change-trail events, not manuscript content.
   snapshot over a correction the publisher already made — a caret the destroyed
   editor cleared came back as a ghost. A new ephemeral field is one more
   `setField` caller, never a second suspension mechanism.
+- Draft review alone rotates content clients at independent editing boundaries.
+  `local-presence.adoptDocumentClient` retires the old awareness identity and
+  follows the new one, retaining suspended fields. The caret provider exposes
+  its current client ID through a getter; never cache it or rotate without
+  migrating presence (upstream Hocuspocus and cursor plugins assume agreement).
 - Markdown autoformat is mostly inherited: TipTap's own input rules already
   resolve the parity schema and already refuse to run inside code. Check
   whether a trigger is already firing before writing a rule for it, because a
@@ -221,3 +226,26 @@ and navigation contracts.
 → [`blocks/AGENTS.md`](blocks/AGENTS.md) — what the document knows about a block drag
 → [`links/AGENTS.md`](links/AGENTS.md) — the link system
 → [`images/AGENTS.md`](images/AGENTS.md) — how a picture gets into a document
+
+- `DocumentSession.resetDisposition` describes terminal resets: `superseded`
+  and `rebuild` keep unacknowledged updates available for retirement; `refused`
+  rejects pending edits and `schema` fences the room. The transport owns the
+  outbox; the session exposes it without reconstructing a document diff.
+- `BranchRoomPool` retains draft refs per owner without opening rooms. A released
+  room with an outbox drains before teardown; terminal retirement takes its
+  carry before destruction and installs the teardown quarantine before delivery.
+  `BranchWriterHandoff` belongs to the account epoch, not the review UI. Its
+  attempt retains the successor across retries and waits for first sync. Missing
+  anchors in a same-generation rebuild may still arrive, so their original carry
+  and pending signal survive partial acknowledgements. A synced newer generation
+  is the durable retirement cut: absent source identities cannot arrive from its
+  fenced old journal. `writer-carry-recovery.ts` re-expresses only pending writer
+  operations with surviving own anchors/parents under a fresh client, transfers
+  their current tombstones, and never replays the retired AI snapshot. The rest
+  is deliberately dropped, reported once through the document-scoped ref, and
+  released; pending evidence lasts only until any rescued update is acknowledged.
+
+Private Yjs reconstruction mechanics live in the browser-safe
+`@meridian/agent-edit/yjs-mutation` adapter, pinned to Yjs 13.6.31. The app's
+carry recovery selects operations and identity mappings; retirement, retry,
+ownership and document loss presentation remain app concerns.

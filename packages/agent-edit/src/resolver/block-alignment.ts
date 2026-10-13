@@ -3,11 +3,12 @@
 import type { Block } from "../codec-types.js";
 import { weightedOrderedMatches } from "../ordered-matching.js";
 
-export type BlockAlignmentStep =
+export type BlockAlignmentStep = { structuralBoundary?: object } & (
   | { kind: "keep"; old: number; next: number }
   | { kind: "change"; old: number; next: number }
   | { kind: "remove"; old: number }
-  | { kind: "add"; next: number };
+  | { kind: "add"; next: number }
+);
 
 /** Whether `next` may rewrite `old` in place (a `change` step). */
 export type CanPair = (old: Block, next: Block) => boolean;
@@ -63,6 +64,7 @@ export function alignBlocks(
   for (let offset = 0; oldEnd + offset < oldBlocks.length; offset += 1) {
     steps.push({ kind: "keep", old: oldEnd + offset, next: newEnd + offset });
   }
+  recognizeBoundaries(steps, oldBlocks, newBlocks);
   return steps;
 }
 
@@ -141,4 +143,127 @@ function edgeSimilarity(oldText: string, newText: string): number {
   }
   const shared = prefix + suffix;
   return shared * 3 >= limit ? shared + 1 : 0;
+}
+
+/** Only changed pairs and adjacent unpaired blocks can share structural identity. */
+function recognizeBoundaries(
+  steps: BlockAlignmentStep[],
+  oldBlocks: readonly Block[],
+  newBlocks: readonly Block[],
+): void {
+  let start = 0;
+  for (let end = 0; end <= steps.length; end++) {
+    if (end !== steps.length && steps[end].kind !== "keep") continue;
+    const gap = steps.slice(start, end);
+    start = end + 1;
+    const parents = gap.map((_, index) => index);
+    const root = (index: number): number => {
+      while (parents[index] !== index) {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+      }
+      return index;
+    };
+    const union = (owners: number[]) => {
+      for (const owner of owners) parents[root(owner)] = root(owners[0]);
+    };
+    // Adjacent structural steps already form one physical insert/delete run.
+    for (let index = 1; index < gap.length; index++) {
+      if (
+        (gap[index].kind === "add" || gap[index].kind === "remove") &&
+        (gap[index - 1].kind === "add" || gap[index - 1].kind === "remove")
+      )
+        union([index - 1, index]);
+    }
+    const words = new Intl.Segmenter(undefined, { granularity: "word" });
+    for (let index = 0; index < gap.length; index++) {
+      const pair = gap[index];
+      if (pair.kind !== "change") continue;
+      for (const kind of ["add", "remove"] as const) {
+        const blocks = kind === "add" ? newBlocks : oldBlocks;
+        const pairedIndex = kind === "add" ? pair.next : pair.old;
+        const reference = kind === "add" ? oldBlocks[pair.old] : newBlocks[pair.next];
+        for (const direction of [-1, 1]) {
+          let edge = blocks[pairedIndex].textContent;
+          let middle = false;
+          for (
+            let candidate = index + direction;
+            candidate >= 0 && candidate < gap.length;
+            candidate += direction
+          ) {
+            const step = gap[candidate];
+            if (step.kind === "change") break;
+            if (step.kind !== kind) continue;
+            const text = blocks[step.kind === "add" ? step.next : step.old].textContent;
+            const left = direction < 0 ? text : edge,
+              right = direction < 0 ? edge : text;
+            if (
+              !boundaryContinues(
+                reference.textContent,
+                left,
+                right,
+                words,
+                middle ? (direction < 0 ? "right" : "left") : undefined,
+              )
+            )
+              break;
+            union([index, candidate]);
+            edge = text;
+            middle = true;
+          }
+        }
+      }
+    }
+    const components = new Map<number, BlockAlignmentStep[]>();
+    gap.forEach((step, index) => {
+      const key = root(index),
+        members = components.get(key) ?? [];
+      members.push(step);
+      components.set(key, members);
+    });
+    for (const members of components.values()) {
+      if (members.length < 2) continue;
+      const identity = {};
+      for (const step of members) step.structuralBoundary = identity;
+    }
+  }
+}
+
+const MAX_BOUNDARY_CHARACTERS = 4096;
+/** Direct continuation accepts any occurrence, including fragments of a source word. */
+function boundaryContinues(
+  reference: string,
+  left: string,
+  right: string,
+  words: Intl.Segmenter,
+  middle?: "left" | "right",
+): boolean {
+  if (reference.length + left.length + right.length > MAX_BOUNDARY_CHARACTERS) return true;
+  const edgeWord = (piece: string, head: boolean) => {
+    const parts = [...words.segment(piece)];
+    let word = -1;
+    for (let index = 0; index < parts.length; index++) {
+      if (!parts[index].isWordLike) continue;
+      word = index;
+      if (!head) break;
+    }
+    if (word < 0) return piece;
+    let start = word,
+      end = word;
+    while (start > 0 && !parts[start - 1].isWordLike && !/\s/u.test(parts[start - 1].segment))
+      start--;
+    while (
+      end + 1 < parts.length &&
+      !parts[end + 1].isWordLike &&
+      !/\s/u.test(parts[end + 1].segment)
+    )
+      end++;
+    return piece.slice(parts[start].index, parts[end].index + parts[end].segment.length);
+  };
+  const normalize = (text: string) => text.replace(/\s+/gu, "");
+  // On the outward walk the already-joined edge is an interior piece, not
+  // another independently selected word fragment.
+  const head = normalize(middle === "left" ? left : edgeWord(left, true));
+  const tail = normalize(middle === "right" ? right : edgeWord(right, false));
+  return head.length > 0 && tail.length > 0 && normalize(reference).includes(head + tail);
 }

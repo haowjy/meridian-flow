@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 /** PostgreSQL barriers for the production Work projection publication owner. */
 
 import { catalogScopeKey } from "@meridian/contracts/protocol";
@@ -27,11 +28,11 @@ import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
 } from "../collab/adapters/drizzle-branch-push.js";
-import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { createDrizzleDocumentProjectionEffects } from "../collab/adapters/drizzle-document-activity.js";
 import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
+import { createFixtureBranchStore } from "../collab/test-support/fixture-branch-store.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
@@ -147,24 +148,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID,
         kind: "work_draft",
         workId: WORK_ID,
-        state: Buffer.from([0]),
-        stateVector: Buffer.from([0]),
+        state: Buffer.from(projectionDraft.state),
+        stateVector: Buffer.from(projectionDraft.vector),
       });
       await db.insert(documentBranches).values({
         id: SECOND_BRANCH_ID,
         documentId: SECOND_DOCUMENT_ID,
         kind: "work_draft",
         workId: SECOND_WORK_ID,
-        state: Buffer.from([0]),
-        stateVector: Buffer.from([0]),
+        state: Buffer.from(projectionDraft.state),
+        stateVector: Buffer.from(projectionDraft.vector),
       });
       await db.insert(documentBranches).values({
         id: OTHER_BRANCH_ID,
         documentId: OTHER_DOCUMENT_ID,
         kind: "work_draft",
         workId: OTHER_WORK_ID,
-        state: Buffer.from([0]),
-        stateVector: Buffer.from([0]),
+        state: Buffer.from(projectionDraft.state),
+        stateVector: Buffer.from(projectionDraft.vector),
       });
       await db.insert(threads).values({
         rootThreadId: THREAD_ID,
@@ -410,7 +411,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { availabilityMutations: availability },
       );
       const projection = createWorkProjectionMutation({ db, availability, catalog });
-      const branches = createDrizzleBranchStore(
+      const branches = createFixtureBranchStore(
         db,
         undefined,
         createBranchCriticalSections(),
@@ -472,13 +473,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadId: null,
               generation: 1,
               status: "active",
-              state: new Uint8Array([0]),
-              stateVector: new Uint8Array([0]),
+              state: projectionDraft.state,
+              stateVector: projectionDraft.vector,
               schemaVersion: 1 as never,
             },
             journalRows: await journal.listReviewableJournalRows(value.branchId, 1),
-            state: new Uint8Array([0]),
-            stateVector: new Uint8Array([0]),
+            state: projectionDraft.state,
+            stateVector: projectionDraft.vector,
           });
         }
         expect(wakes).toHaveLength(0);
@@ -506,3 +507,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
   });
 }
+
+// Valid immutable draft bytes; these suites exercise publication ownership, not fake CRDT encodings.
+const projectionDraft = (() => {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 6000;
+  const paragraph = new Y.XmlElement("paragraph"),
+    text = new Y.XmlText();
+  text.insert(0, "Pending.");
+  paragraph.insert(0, [text]);
+  doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
+  const state = Y.encodeStateAsUpdate(doc),
+    vector = Y.encodeStateVector(doc);
+  doc.destroy();
+  return { state, vector };
+})();

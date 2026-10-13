@@ -3,7 +3,7 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
-  type ReversalStore,
+  type UpdateJournal,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
@@ -32,6 +32,7 @@ export type BranchPullService = {
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
   pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
+    peerBranchId: string;
     branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
@@ -52,7 +53,7 @@ export function createBranchPullService(input: {
   debounceMs?: number;
   maxDebounceMs?: number;
   concurrentJournalWatermarks?: BranchConcurrentJournalWatermarks;
-  liveJournal?: Pick<ReversalStore, "readForReconstruction">;
+  liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: BranchPullDiagnostics;
 }): BranchPullService {
   const debounceMs = input.debounceMs ?? 2000;
@@ -93,7 +94,7 @@ export function createBranchPullService(input: {
 
   async function pullLive(documentId: DocumentId): Promise<void> {
     // Most documents have no Work draft; skip the snapshot (a room open and
-    // release) for them. The root transaction re-lists: a branch can close in
+    // release) for them. Re-list before pulling: a branch can close in
     // between, and one opened since waits for the next pull.
     if ((await input.branches.listActiveWorkDraftBranchIds(documentId)).length === 0) return;
     // Snapshot before the root transaction opens: the snapshot takes its own
@@ -101,11 +102,12 @@ export function createBranchPullService(input: {
     // hold every pooled connection and wait on each other forever.
     const liveDoc = await liveSnapshot(documentId);
     try {
-      await input.rootTransaction(async () => {
-        for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-          await input.branchCoordinator.pullFromDoc(branchId, liveDoc);
-        }
-      });
+      // Commit snapshot, effect and projection before taking another branch mutex.
+      // A receipt owns branch mutexes before Work rows, so retaining a Work row
+      // lock across the next mutex would reverse that order.
+      for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
+        await input.rootTransaction(() => input.branchCoordinator.pullFromDoc(branchId, liveDoc));
+      }
     } finally {
       liveDoc.destroy();
     }
@@ -202,11 +204,10 @@ export function createBranchPullService(input: {
           }
         })();
         await run(inputPeer.documentId);
-        const liveJournalSeq = input.liveJournal
-          ? (await input.liveJournal.readForReconstruction(inputPeer.documentId)).updates.reduce(
-              (latest, update) => Math.max(latest, update.seq),
-              0,
-            )
+        const liveCut = await input.liveJournal?.read(inputPeer.documentId);
+        const liveJournalSeq = liveCut
+          ? (liveCut.persistenceWatermark ??
+            liveCut.updates.reduce((latest, update) => Math.max(latest, update.seq), 0))
           : undefined;
         const liveDoc = await liveSnapshot(inputPeer.documentId);
         try {
@@ -236,7 +237,13 @@ export function createBranchPullService(input: {
             else await input.branchCoordinator.pullFromBranch(peer.branchId);
           });
           const branchGeneration = upstream?.generation ?? captured.peerGeneration;
-          return { branchGeneration, afterJournalId, liveJournalSeq, attributionBaseline };
+          return {
+            peerBranchId: peer.branchId,
+            branchGeneration,
+            afterJournalId,
+            liveJournalSeq,
+            attributionBaseline,
+          };
         } finally {
           liveDoc.destroy();
         }

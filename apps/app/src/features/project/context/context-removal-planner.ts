@@ -4,7 +4,7 @@ import {
   isWorkScopedProjectContextScheme,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import type { ContextTab } from "@/client/stores";
+import { type ContextTab, editorTabsForWork, matchesTabInstance } from "@/client/stores";
 import {
   buildWorkingSetRoute,
   type ReconcileContextRoutesInput,
@@ -25,6 +25,8 @@ export type ContextRemovalIntent = {
     | "work-prune"
     | "draft-discard";
   documentIds: readonly string[];
+  /** Writer close and draft settlement address a mounted tab, not every document representation. */
+  tabInstanceId?: string;
 };
 
 export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
@@ -175,6 +177,8 @@ export function contextTabEligibleForRemoval(
   intent: ContextRemovalIntent,
 ): boolean {
   if (!intent.documentIds.includes(tab.documentId)) return false;
+  if (intent.tabInstanceId !== undefined && tab.tabInstanceId !== intent.tabInstanceId)
+    return false;
   switch (intent.cause) {
     case "writer-close":
       return true;
@@ -214,7 +218,7 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       workId: activeWorkId,
       rootThreadId: tab.rootThreadId,
     };
-  let workId = activeWorkId;
+  let workId = tab.draftOnly ? (tab.reviewWorkId ?? activeWorkId) : activeWorkId;
   if (isWorkScopedProjectContextScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;
@@ -230,13 +234,14 @@ function adjacentSurvivor(
   if (!anchorDocumentId) return remaining[0] ?? null;
   const anchor = tabs.findIndex((tab) => tab.documentId === anchorDocumentId);
   if (anchor < 0) return remaining[0] ?? null;
-  const surviving = new Set(remaining.map((tab) => tab.documentId));
+  const survives = (tab: ContextTab) =>
+    remaining.some((member) => matchesTabInstance(member, tab) || member === tab);
   return (
-    tabs.slice(anchor + 1).find((tab) => surviving.has(tab.documentId)) ??
+    tabs.slice(anchor + 1).find((tab) => survives(tab)) ??
     tabs
       .slice(0, anchor)
       .reverse()
-      .find((tab) => surviving.has(tab.documentId)) ??
+      .find((tab) => survives(tab)) ??
     null
   );
 }
@@ -274,13 +279,16 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     };
   }
   const activeWorkId = input.activeWorkId;
-  const survives = (documentId: string) => remaining.some((tab) => tab.documentId === documentId);
+  const visibleRemaining = editorTabsForWork(remaining, activeWorkId);
+  const visibleTabs = editorTabsForWork(input.tabs, activeWorkId);
+  const survives = (documentId: string) =>
+    visibleRemaining.some((tab) => tab.documentId === documentId);
   const workspaceSelectedRemoved =
     input.selectedTabId !== null &&
     removedIds.has(input.selectedTabId) &&
     !survives(input.selectedTabId);
   const workspaceSelectedTab =
-    input.tabs.find((tab) => tab.documentId === input.selectedTabId) ?? null;
+    visibleTabs.find((tab) => tab.documentId === input.selectedTabId) ?? null;
   const workspaceSelectedIneligibleForWork =
     input.intent.cause === "work-prune" &&
     workspaceSelectedTab !== null &&
@@ -349,26 +357,22 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
 
   const routedIdentity = boundSelection?.identity ?? provenRemoved?.identity ?? null;
   const routedTab = routedIdentity
-    ? (input.tabs.find((tab) => tab.documentId === routedIdentity.documentId) ?? null)
+    ? (visibleTabs.find((tab) => tab.documentId === routedIdentity.documentId) ?? null)
     : null;
   const survivingRoutedTab =
     boundSelection && !routedDocumentRemoved
-      ? (remaining.find((tab) => tab.documentId === boundSelection.identity.documentId) ?? null)
+      ? (visibleRemaining.find((tab) => tab.documentId === boundSelection.identity.documentId) ??
+        null)
       : null;
   const anchorDocumentId = routedDocumentRemoved
     ? (routedTab?.documentId ?? null)
     : workspaceSelectionNeedsFallback
       ? input.selectedTabId
       : null;
-  const eligibleRemaining =
-    input.intent.cause === "work-prune"
-      ? remaining.filter((tab) => {
-          return targetInEditorOf(routeTargetForTab(tab, activeWorkId), activeWorkId);
-        })
-      : remaining;
+  const eligibleRemaining = visibleRemaining;
   const fallback =
     routedDocumentRemoved || workspaceSelectionNeedsFallback
-      ? adjacentSurvivor(input.tabs, eligibleRemaining, anchorDocumentId)
+      ? adjacentSurvivor(visibleTabs, eligibleRemaining, anchorDocumentId)
       : null;
   const selectedFallback =
     workspaceSelectedRemoved && survivingRoutedTab ? survivingRoutedTab : fallback;
