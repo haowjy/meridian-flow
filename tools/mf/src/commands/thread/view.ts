@@ -21,10 +21,15 @@ export const threadViewCommand: CommandSpec = {
     ...THREAD_TARGET_OPTIONS,
     turn: { type: "string", description: "Only this row's turn (id or id prefix)" },
     last: { type: "string", description: "Show the last N rows (default 20)" },
-    full: { type: "boolean", description: "No truncation, all rows" },
+    full: {
+      type: "boolean",
+      description:
+        "No truncation, all rows. With --json it is the inspectable form: tool input/result/output, card content, report payloads, handoff brief, delivery bodies, writer occurrences. Text mode summarizes and omits them",
+    },
     blocks: {
       type: "boolean",
-      description: "Per-block timing instead: sequence, type, tool, created time, gap, size",
+      description:
+        "Per-block timing instead: sequence, type, tool, created time, gap, size. Times only the selected rows' turns (hidden plumbing and delivery turns are not timed)",
     },
   },
   examples: [

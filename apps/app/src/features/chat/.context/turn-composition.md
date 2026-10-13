@@ -316,4 +316,5 @@ Implemented in the view model's `partition-turn.ts`, `ProcessDisclosure.tsx`, an
 items compose reasoning rows and folded activity runs. Delivery turns
 (`inbox_message`, `subagent_update`) never become bubbles; `AssistantTurn`
 renders them through `subagent/DeliveryEventRows` after the preceding
-assistant turn's block items.
+assistant turn's block items. The view model groups them (`ViewRow.deliveries`);
+the component only draws each group and keeps disclosure, wording and navigation.

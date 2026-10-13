@@ -30,12 +30,21 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     shared `viewTranscript` (`@meridian/thread-client`) over the hydrated turns and the
     snapshot's pending inbox, then prints its rows: text as `you:`, `reply: 3 steps,
     read 2 docs`, `compaction:`, `queued: N`, or `--json` as the versioned
-    `chatView: 1` envelope (row identity, kind, items, and `inputs`, which states what
-    the view was computed from: no local records, stand-ins or live activity, inherited
-    history omitted). `chat-view.ts` only prints; it decides no row. `--turn`, `--last`
+    `chatView: 2` envelope (row identity, kind, items, and `inputs`, which states what
+    the view was computed from: no local records, stand-ins, opening seed or live
+    activity, inherited history omitted). `--full --json` is the inspectable form: paired
+    tools with input, result and streamed output, card content and direct results, report
+    payloads, the handoff brief, delivery bodies (a reply's delivery groups are its last
+    item) and writer occurrences. Text mode summarizes (card titles, fold tool names,
+    one `delivery:` line per group, references set apart by a space) and omits tool
+    inputs and results, card props, report payloads and occurrences. `chat-view.ts`
+    only prints; it decides no row and words no visible text (reasoning and plain-row
+    text come from the view model). `--blocks` times only the selected rows' turns,
+    not hidden plumbing or delivery turns. `--turn`, `--last`
     and `--full` select rows; `--blocks` prints per-block timing
-    (`block-timing.ts`). A reply's `finalText` (`send`, `tail`) and the `liveView`
-    comparison read the same view model's visible text items in order
+    (`block-timing.ts`). A reply's `finalText` (`send`) and the `liveView`
+    comparison (`tail` prints no `finalText`; its text comparison changes only through
+    `ReducedThread.compare`) read the same view model's visible text items in order
     (`reply-text.ts`).
     `send` and `tail --until-idle` follow with a hydrated store and compare each
     followed turn's reduced status and final text with the confirming snapshot's;

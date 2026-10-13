@@ -12,8 +12,11 @@ will grow, one per command. Today it holds the transcript comparison.
   component re-decides a row. A divergence is a binding bug (a component dropping,
   reordering or re-classifying) or an input the two sides don't share.
 - **Stack:** mock model, an owned worktree stack (`MODEL_PROVIDER=mock pnpm dev`,
-  `pnpm portless:list`). Build one chat with `./mf` so both sides read the same
-  durable turns:
+  `pnpm portless:list`). **Confirm route ownership before any `./mf seed` or send** (#615):
+  `pnpm portless:list` must show routes for your own session, and `MF_APP_URL` and
+  `MF_SERVER_URL` must be passed explicitly. A detached checkout can report "started" while
+  its routes belong to another checkout, and `./mf` would then write into that checkout's
+  database. Build one chat with `./mf` so both sides read the same durable turns:
 
   ```bash
   ./mf seed tools/mf/fixtures/basic.json --json            # chat + opening reply
@@ -23,9 +26,11 @@ will grow, one per command. Today it holds the transcript comparison.
   ```
 
 - **Steps:**
-  1. Read the model: `./mf thread view "$T" --full --json > view.json`. Text mode
-     (`./mf thread view "$T"`) shows the same rows as `you:`, `reply: read 2 docs, 1 step`,
-     `compaction:` and `queued: N`.
+  1. Read the model: `./mf thread view "$T" --full --json > view.json`. `--full --json` is
+     the inspectable form: tool inputs and results, card content, report payloads, the
+     handoff brief, delivery bodies and writer occurrences. Text mode
+     (`./mf thread view "$T"`) summarizes (`you:`, `reply: read 2 docs, 1 step`,
+     `compaction:`, `queued: N`) and omits all of that; use it to orient, not to compare.
   2. Open the chat in the browser (`/p/<projectId>/chats/<threadId>`, signed in through
      the stack's dev login).
   3. **Scroll every row into view and expand every process fold first.** The list is
@@ -33,9 +38,20 @@ will grow, one per command. Today it holds the transcript comparison.
      collapsed, so their tools are not either.
   4. Compare, per row in order, by **row identity** (`identity.turnId`, `identity.kind`,
      `identity.occurrence`; the DOM carries the turn id as `data-turn-id` and the kind as
-     `data-chat-turn-kind`), **row kind**, **render-item kinds** (`data-turn-item-kind`:
+     `data-chat-turn-kind`; compaction and handoff-seed rows carry `data-turn-id` on their
+     list item too), **row kind**, **render-item kinds** (`data-turn-item-kind`:
      `process`, `text`, `report`, `artifact`, `delivery`) and **visible text** (the
      `text` of `text` items and a writer row's `text`).
+     - **Deliveries:** the JSON lists a reply's delivery groups as a last `delivery` item
+       (`groups`, each a list of events), the DOM's trailing `delivery` item; a group of
+       several is one merged row.
+     - **Text:** the DOM collapses newlines and draws references as chips, so compare after
+       whitespace normalization and after rendering a reference to its title (the JSON's
+       `text` holds the reference as Markdown, and `occurrences` locates it).
+     - **Folds:** compare fold contents by the tool names and targets in the full JSON
+       (`runs[].tools[].name`, `input`), not by label words.
+     - **Cards, reports, brief:** compare a card's `title` and `outcome`, a report's
+       `summary`, and a handoff row's `brief`, against the DOM text.
   5. Never compare render keys. `renderKey` is the React key and may change when a
      local turn is renamed to its server id.
 - **Expect:** same rows in the same order; each reply's item kinds match, with a fold
