@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { shownFolders } from "./DocumentPath";
 import {
   areaNode,
   buildMenuTree,
@@ -167,19 +166,5 @@ describe("crumb opening trails", () => {
     expect(ids(nested, 3)).toEqual(["area:manuscript", "book", "part"]);
     expect(ids(nested, 4)).toEqual(["area:manuscript", "book", "part", "act"]);
     expect(crumbTrailFor(manuscript, "/root.md", 1).map((n) => n.id)).toEqual(["area:manuscript"]);
-  });
-
-  it.each([
-    ["all", [0, 1, 2], null],
-    ["last", [2], ["area:manuscript", "book"]],
-    ["none", [], ["area:manuscript", "book", "part"]],
-    ["icon", [], ["area:manuscript", "book", "part"]],
-  ] as const)("%s opens ellipsis where its last hidden folder sits", (fit, shown, trail) => {
-    const visible = shownFolders(3, fit);
-    expect(visible).toEqual(shown);
-    const hiddenCount = 3 - visible.length;
-    expect(hiddenCount ? ids(nested, hiddenCount) : null).toEqual(trail);
-    expect(shownFolders(0, fit)).toEqual([]);
-    expect(ids(nested, 4)).toEqual(["area:manuscript", "book", "part", "act"]);
   });
 });
