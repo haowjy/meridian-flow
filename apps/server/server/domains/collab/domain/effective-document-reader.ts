@@ -1,4 +1,4 @@
-/** Effective branch reads with staged-response overlays and manifest projection. */
+/** Effective branch reads with staged-response overlays . */
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -9,7 +9,7 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { LinkView } from "@meridian/contracts";
-import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -26,6 +26,8 @@ import { BranchNotFoundError } from "./branch-resolver.js";
 import { documentRevision, versioned } from "./document-revision.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type { Drafts } from "./drafts.js";
+import type { PeerRetirement } from "./peer-retirement.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 type EffectiveReadInput = {
@@ -44,18 +46,19 @@ export function createEffectiveDocumentReader(input: {
   model: YProsemirrorDocumentModel;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
+  drafts: Pick<Drafts, "viewForWork">;
+  retirePeers: PeerRetirement;
+  deferUntilCommit(callback: () => Promise<void>): boolean;
 }): BranchPeerShadowAccess {
   /** The view a read spells in: the version it reads. */
-  function viewOf(command: EffectiveReadInput): LinkView {
-    const responseId = command.responseId ?? undefined;
-    const reply = responseId ? { responseId } : {};
+  async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
-      ? { kind: "draft", workId: command.workId, ...reply }
-      : { kind: "live", ...reply };
+      ? input.drafts.viewForWork(command.workId)
+      : { kind: "live" };
   }
 
   async function spelling(command: EffectiveReadInput, doc: Y.Doc) {
-    const holder = { documentId: command.documentId, view: viewOf(command) };
+    const holder = { documentId: command.documentId, view: await viewOf(command) };
     await input.links.prepare({ holders: [holder], docs: [doc] });
     return input.links.holder(holder);
   }
@@ -175,18 +178,15 @@ export function createEffectiveDocumentReader(input: {
         return null;
       }
     },
-    pullThreadPeer(command) {
-      return input.branchPulls.pullThreadPeer(command);
-    },
     flushBranchLivePull(documentId) {
       return input.branchPulls.flushLivePull(documentId);
     },
     readEffectiveMarkdown(command) {
-      return readEffective(command, (doc) =>
+      return readEffective(command, async (doc) =>
         input.documents.serializeVersionedDocument(
           command.documentId,
           unwrapDoc(doc),
-          viewOf(command),
+          await viewOf(command),
         ),
       );
     },
@@ -204,58 +204,32 @@ export function createEffectiveDocumentReader(input: {
         return { ...read, links, holder: { uri: scope.holder.uri, view: scope.holder.view } };
       });
     },
-    async resolveManifestMembership(command) {
-      const { destination, ...view } = command;
-      // A live view's manifest is the live one; its thread only names whose creates count.
-      const manifestView = destination === "live" ? { projectId: view.projectId } : view;
-      if (manifestView.threadId || manifestView.workId) {
-        const manifest = await input.branches.ensureProjectManifest({
-          projectId: command.projectId,
-        });
-        try {
-          if (manifestView.threadId) {
-            await input.branchPulls.pullThreadPeer({
-              documentId: manifest.documentId,
-              threadId: manifestView.threadId,
-            });
-          } else if (manifestView.workId) {
-            await input.branchPulls.flushLivePull(manifest.documentId);
-          }
-        } finally {
-          manifest.doc.destroy();
-        }
+    ensureCreatedDraftBranch(command) {
+      return input.branches.ensureCreatedDraftBranch(command);
+    },
+    async retractCreatedDraftBranch(command) {
+      const retracted = await input.branches.retractCreatedDraftBranch(command);
+      if (retracted.outcome === "retracted" && retracted.deleted.length > 0) {
+        // Rooms and pooled cores hold the deleted branches' state; exactly those go, once
+        // the deletion is durable (an abort keeps the branches). Another Work's peers on
+        // the same document are not this retraction's.
+        const { deleted } = retracted;
+        const retire = () =>
+          input.retirePeers(
+            deleted.map(({ branchId, threadId }) =>
+              threadId
+                ? {
+                    branchId,
+                    documentId: command.documentId,
+                    threadId,
+                    cause: "document_discarded" as const,
+                  }
+                : { branchId, documentId: command.documentId, threadId: null },
+            ),
+          );
+        if (!input.deferUntilCommit(retire)) await retire();
       }
-      const membership = await input.branches.resolveManifestMembership(manifestView);
-      const { responseId, threadId } = view;
-      if (!responseId || !threadId) return membership;
-      // A create staged for the other destination is not this view's.
-      const created = input.agentEdit
-        .responseDocuments(responseId, threadId)
-        .created.filter(
-          (documentId) =>
-            !destination ||
-            (input.agentEdit.responseDestination(responseId, documentId)?.kind ?? destination) ===
-              destination,
-        );
-      return { ...membership, members: [...new Set([...membership.members, ...created])] };
-    },
-    reconcileProjectManifest(projectId: ProjectId) {
-      return input.branches.reconcileProjectManifest(projectId);
-    },
-    transferLiveManifestMembership(documentIds, projects) {
-      return input.branches.transferLiveManifestMembership(documentIds, projects);
-    },
-    async recordManifestDocumentCreated(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ) {
-      await input.branches.recordManifestDocumentCreated(documentId, view);
-    },
-    async recordManifestDocumentDeleted(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ) {
-      await input.branches.recordManifestDocumentDeleted(documentId, view);
+      return retracted.outcome;
     },
   };
 }

@@ -105,16 +105,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    liveHistory: journal,
-    reversalHistory: {
-      branches: {
-        resolveThreadBranch: async (documentId, threadId) => {
-          throw new BranchNotFoundError(documentId, threadId);
-        },
-        getBranch: async () => null,
-      },
-      branchRows: { listJournalRowsForBranch: async () => [] },
-    },
     pullThreadPeer: async () => undefined,
     // Thread cores are the live core here, so nothing is ever pinned to a branch.
     fences: createReplySaveFences({
@@ -133,6 +123,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
     fileAccess,
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
@@ -159,12 +151,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       }),
     },
     resolveDocumentUri: async (documentId) => documentId,
-    branches: {
-      async checkpointThreadPeer() {},
-      async prepareFailedResponseRollback() {
-        return async () => {};
-      },
-    },
+    branches: { async checkpointThreadPeer() {} },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
   });

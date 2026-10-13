@@ -282,8 +282,8 @@ export function draftTreeCommands(
       return {
         responseId,
         call,
-        save: () => lifecycle.commitResponse(responseId, thread),
-        rollback: () => lifecycle.rollbackResponse(responseId, thread),
+        save: () => lifecycle.commitResponse({ providerResponseId: responseId, editScopeId: responseId }, thread),
+        rollback: () => lifecycle.rollbackResponse({ providerResponseId: responseId, editScopeId: responseId }, thread),
       };
     }
     async function succeed(result: ToolExecutionResult) {

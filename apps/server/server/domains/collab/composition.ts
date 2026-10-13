@@ -202,7 +202,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     ...(deps.workProjectionMutation ? { workProjection: deps.workProjectionMutation } : {}),
     drafts: workDrafts,
   });
+  const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const branchCoordinator = createBranchCoordinator({
+    journalReads: branchJournal,
     store: branches,
     criticalSections,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
@@ -340,7 +342,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     deps.workProjectionMutation,
   );
-  const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
   const pushCommits = createDrizzlePushCommitStore(
     deps.db,
     stageSettlementBatchWithinTx,
@@ -386,6 +387,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
       drafts: workDrafts,
+      liveCoordinator,
       liveUtilityCore: runtime.liveUtilityCore,
       fileAccess: deps.fileAccess,
       async lockWorks(workIds) {
@@ -486,12 +488,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       reversalStore: persistence.journal,
       liveReversal: liveDependencies,
       resolveDocumentUri: documentUriResolver,
-      branches: createResponseBranchFinalization({
-        branches,
-        branchCoordinator,
-        branchJournal,
-        branchReview,
-      }),
+      branches: createResponseBranchFinalization({ branches, branchCoordinator }),
       projections: projectionRefresher,
       notices: postDurabilityNotices,
       deferUntilCommit: deferUntilDrizzleCommit,

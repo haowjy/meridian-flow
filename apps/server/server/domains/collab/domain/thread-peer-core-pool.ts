@@ -19,7 +19,7 @@ import {
   type WriteOutcome,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
@@ -82,89 +82,17 @@ type AgentEditObservability = Pick<
   | "onLinkSpliceFallback"
 >;
 
-export function createBranchThreadPeerAgentEditCore(input: {
-  liveUtilityCore: LiveAgentEditCore;
-  journal: UpdateJournal;
-  documentEdits?: DocumentEdits;
-  liveCoordinator: DocumentCoordinator;
-  lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-  branches: ApplicationBranchStore;
-  branchCoordinator: BranchCoordinator;
-  branchPulls: BranchPullService;
-  branchJournal: BranchJournalReadStore;
-  concurrentJournalWatermarks: BranchConcurrentJournalWatermarks;
-  diagnostics: BranchAgentEditDiagnostics;
-  afterCommit(callback: () => void | Promise<void>): void;
-  enlistResponseParticipant: EnlistResponseParticipant;
-  model: YProsemirrorDocumentModel;
-  codec: AgentEditCodecFactory;
-  links: DocumentLinkScopes;
-  aheadRefs: AheadRefRegistrar;
-  semanticProvenance: SemanticProvenanceWriter;
-  observability: AgentEditObservability;
-  commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
-  responseTransactionSettlement: ResponseTransactionSettlement;
-  responseTransactions: ResponseTransactionHooks;
-  fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
-  lockWorks(workIds: readonly string[]): Promise<void>;
-  lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
-}): ThreadPeerAgentEditCore {
-  return createThreadPeerCorePool({
-    liveUtilityCore: input.liveUtilityCore,
-    afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
-    fileAccess: input.fileAccess,
-    lockWorks: input.lockWorks,
-    lockLiveDocuments: input.lockLiveDocuments,
-    commitThreadResponseAtomically: input.commitThreadResponseAtomically,
-    responseTransactionSettlement: input.responseTransactionSettlement,
-    responseTransactions: input.responseTransactions,
-    createThreadCore: (threadId, viewFor) => {
-      const pendingJournalEntries = createBranchPendingJournalEntries(
-        input.enlistResponseParticipant,
-        input.diagnostics,
-      );
-      return createAgentEditCore({
-        links: createScopedDocumentLinks({
-          scopes: input.links,
-          registrar: input.aheadRefs,
-          viewFor,
-        }),
-        journal: createBranchAgentEditJournal({
-          liveJournal: input.journal,
-          pendingJournalEntries,
-        }),
-        coordinator: createBranchAgentEditCoordinator({
-          threadId,
-          liveCoordinator: input.liveCoordinator,
-          branchCoordinator: input.branchCoordinator,
-          branches: input.branches,
-          pendingJournalEntries,
-          journalRows: input.branchJournal,
-          liveJournal: input.journal,
-          diagnostics: input.diagnostics,
-          afterCommit: input.afterCommit,
-          enlistResponseParticipant: input.enlistResponseParticipant,
-          model: input.model,
-          // Attribution compares blocks as stored: a linked document's move is no one's edit.
-          codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
-          concurrentJournalWatermarks: input.concurrentJournalWatermarks,
-        }),
-        documentEdits: input.documentEdits,
-        lifecycle: input.lifecycle,
-        codec: input.codec,
-        model: input.model,
-        semanticProvenance: input.semanticProvenance,
-        defaultThreadId: threadId,
-        createRuntimeDoc: () => createCollabYDoc({ gc: false }),
-        ...input.observability,
-      });
-    },
-    pullThreadPeer: (command) => input.branchPulls.pullThreadPeer(command),
-  });
-}
+import type { Drafts } from "./drafts.js";
+import {
+  pinStaged,
+  type ReplyDocument,
+  type ReplyRecord,
+  type ReplySaveFences,
+} from "./reply-save-fences.js";
 
 type PulledThreadPeer = {
-  peerBranchId?: string;
+  peerBranchId: string;
+  upstreamBranchId: string;
   branchGeneration: number;
   afterJournalId?: number;
   liveJournalSeq?: number;
@@ -175,14 +103,8 @@ type PulledThreadPeer = {
  * One document's place in a reply: its grant, and with it its destination,
  * is pinned at its first write.
  */
-type PinnedDocument = { core: AgentEditCore; grant: FileGrant<"edit"> };
-
-type ResponseRecord = {
-  threadId?: ThreadId;
-  /** Every core holding this reply's buffered writes; each saves in the reply's one step. */
-  participants: Set<AgentEditCore>;
-  documents: Map<DocumentId, PinnedDocument>;
-};
+type PinnedDocument = ReplyDocument;
+type ResponseRecord = ReplyRecord;
 
 /**
  * The single entry point for model reads and writes in both destinations
@@ -192,6 +114,8 @@ type ResponseRecord = {
  * that commits at once, and once for the whole reply at its save (§5.2).
  */
 export function createThreadPeerCorePool(input: {
+  drafts: Pick<Drafts, "viewForWork" | "ensureActiveForWrite">;
+  fences: ReplySaveFences;
   liveUtilityCore: LiveAgentEditCore;
   /**
    * `viewFor` is the view a command on this thread's core spells in: the one
@@ -205,6 +129,7 @@ export function createThreadPeerCorePool(input: {
   pullThreadPeer(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId?: DraftId;
   }): Promise<PulledThreadPeer | undefined>;
   commitThreadResponseAtomically<T>(operation: () => Promise<T>): Promise<T>;
   responseTransactionSettlement: ResponseTransactionSettlement;
@@ -239,7 +164,7 @@ export function createThreadPeerCorePool(input: {
       const responseId = context?.responseIdentity?.editScopeId;
       const record = responseId ? responses.get(responseId) : undefined;
       const pinned = record?.documents.get(documentId as DocumentId);
-      if (pinned) return linkViewAt(pinned.grant.destination, responseId);
+      if (pinned) return pinned.linkView;
       throw new Error(
         `Thread ${threadId} spelled ${documentId} without a routed link view; route the call through the pool.`,
       );
@@ -284,6 +209,7 @@ export function createThreadPeerCorePool(input: {
     }
     const id = threadId as ThreadId | undefined;
     const record: ResponseRecord = {
+      responseId,
       ...(id ? { threadId: id } : {}),
       participants: new Set(),
       documents: new Map(),
@@ -325,6 +251,7 @@ export function createThreadPeerCorePool(input: {
     const pulled = await input.pullThreadPeer({
       documentId,
       threadId: context.threadId as ThreadId,
+      draftId: context.linkView?.kind === "draft" ? context.linkView.draftId : undefined,
     });
     if (!pulled) return context;
     // Fresh calls rebuild the runtime from the pulled peer. A previous reply's
@@ -340,6 +267,7 @@ export function createThreadPeerCorePool(input: {
       interactionContext: {
         mode: "threadPeer" as const,
         peerBranchId: pulled.peerBranchId,
+        upstreamBranchId: pulled.upstreamBranchId,
         branchGeneration: pulled.branchGeneration,
         afterJournalId: pulled.afterJournalId ?? 0,
         liveJournalSeq: pulled.liveJournalSeq,
@@ -382,8 +310,12 @@ export function createThreadPeerCorePool(input: {
     await evictIdleCores();
     const callContext =
       command.format === "edits"
-        ? routedTo(context, destination)
-        : await threadPeerContext(core, documentId, routedTo(context, destination));
+        ? await routedTo(context, destination, pinned?.linkView)
+        : await threadPeerContext(
+            core,
+            documentId,
+            await routedTo(context, destination, pinned?.linkView),
+          );
     const outcome = await core.read(command, callContext);
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {
@@ -422,18 +354,38 @@ export function createThreadPeerCorePool(input: {
       }
     }
     const core = pinned?.core ?? coreForDestination(destination, context.threadId);
+    const immediateInverse =
+      command.command === "undo" || command.command === "redo" || command.command === "revert";
+    const draftView: LinkView | undefined =
+      pinned || destination.kind !== "draft" || immediateInverse
+        ? undefined
+        : {
+            kind: "draft",
+            draftId: (
+              await input.drafts.ensureActiveForWrite({
+                workId: destination.workId,
+                projectId: grant.facts.projectId,
+                threadId: (context.threadId as ThreadId | undefined) ?? null,
+                userId: grant.principal.accountId,
+              })
+            ).id,
+          };
+    const routedContext = await routedTo(context, destination, pinned?.linkView ?? draftView);
+    let entry = pinned;
     // Lookup and enrollment are synchronous: close must see the first owner
     // before cache maintenance yields, so that owner's lifecycle rejects late staging.
     if (record) {
       record.participants.add(core);
-      if (documentId && !pinned) record.documents.set(documentId, { core, grant });
+      if (documentId && !pinned && !immediateInverse) {
+        entry = { core, grant, linkView: routedContext.linkView! };
+        record.documents.set(documentId, entry);
+      }
     }
     await evictIdleCores();
-    const immediateInverse =
-      command.command === "undo" || command.command === "redo" || command.command === "revert";
-    let callContext = routedTo(context, destination);
+    let callContext = routedContext;
     const call = async () => {
       if (!immediateInverse) callContext = await threadPeerContext(core, documentId, callContext);
+      if (!immediateInverse) pinStaged(entry, callContext);
       return core.write(command, callContext);
     };
     const outcome =
@@ -461,38 +413,6 @@ export function createThreadPeerCorePool(input: {
    * documents' mutation locks in id order, before any participant commits. A
    * refused document leaves the reply; the rest saves (D29, D42).
    */
-  async function confirmReply(record: ResponseRecord): Promise<RefusedResponseDocument[]> {
-    const pinned = [...record.documents];
-    if (pinned.length === 0) return [];
-    const grants = pinned.map(([, entry]) => entry.grant);
-    await input.lockWorks(grants.flatMap((grant) => grantWorkIds(grant.facts)));
-    const refused = await input.fileAccess.confirmEdit(grants);
-    const refusals = new Map<DocumentId, FileAccessDenied>();
-    for (const denial of refused) refusals.set(targetDocumentId(denial.target), denial);
-    for (const documentId of refusals.keys()) {
-      const entry = record.documents.get(documentId);
-      if (!entry) continue;
-      record.documents.delete(documentId);
-      if (record.threadId) await entry.core.invalidateThreadDocument(documentId, record.threadId);
-    }
-    for (const core of [...record.participants]) {
-      const holds = (entry: PinnedDocument) => entry.core === core;
-      const writesElsewhere = [...record.documents.values()].some(holds);
-      if (!writesElsewhere && pinned.some(([, entry]) => holds(entry))) {
-        record.participants.delete(core);
-      }
-    }
-    // The seams these documents' participants reach take this as their grant.
-    markReplyConfirmed([...record.documents.keys()]);
-    await input.lockLiveDocuments(
-      [...record.documents]
-        .filter(([, entry]) => entry.core === input.liveUtilityCore)
-        .map(([documentId]) => documentId)
-        .sort(),
-    );
-    return [...refusals].map(([documentId, denial]) => ({ documentId, denial }));
-  }
-
   function finalizeOptions() {
     return {
       deferFinalization: (participant: ResponseCommitParticipant) => {
@@ -505,19 +425,28 @@ export function createThreadPeerCorePool(input: {
 
   async function retireThreadPeers(
     docId: string,
-    peers: readonly { threadId: string; peerBranchId: string }[],
+    peers: readonly {
+      threadId: string;
+      peerBranchId: string;
+      reason: import("@meridian/agent-edit/integration").DiscardedWriteReason;
+    }[],
   ): Promise<void> {
     const errors: unknown[] = [];
-    for (const { threadId, peerBranchId } of peers) {
+    for (const { threadId, peerBranchId, reason } of peers) {
       if (!docId || !threadId || !peerBranchId)
         throw new Error("Retirement names one document, thread and peer branch");
       const id = threadId as ThreadId;
       const key = seenKey(id, docId as DocumentId);
       if (lastSeen.get(key)?.peerBranchId === peerBranchId) lastSeen.delete(key);
+      for (const record of responses.values()) {
+        if (record.threadId !== id) continue;
+        const entry = record.documents.get(docId as DocumentId);
+        if (entry?.pin?.peerBranchId === peerBranchId) record.documents.delete(docId as DocumentId);
+      }
       // Response-pinned owners survive cache eviction and must lose these buffers too.
       for (const core of new Set([...ownersForThread(id), input.liveUtilityCore])) {
         try {
-          await core.invalidateThreadDocument(docId, threadId, peerBranchId);
+          await core.retirePeer({ documentId: docId, threadId, peerBranchId, reason });
         } catch (cause) {
           errors.push(cause);
         }
@@ -527,9 +456,32 @@ export function createThreadPeerCorePool(input: {
     if (errors.length > 1) throw new AggregateError(errors, "Failed to retire thread peers");
   }
 
+  async function routedTo(
+    context: WriteContext,
+    destination: FileDestination,
+    pinnedView?: LinkView,
+  ): Promise<WriteContext> {
+    const linkView =
+      pinnedView ??
+      (destination.kind === "live"
+        ? { kind: "live" as const }
+        : await input.drafts.viewForWork(destination.workId));
+    return { ...context, linkView };
+  }
+
   return asThreadPeerAgentEditCore({
     read,
     write,
+    refuseStaged(responseId, docId, reason, peerBranchId) {
+      const record = responses.get(responseId);
+      for (const core of record?.participants ?? [])
+        core.refuseStaged(responseId, docId, reason, peerBranchId);
+      const entry = record?.documents.get(docId as DocumentId);
+      if (entry && (!peerBranchId || entry.pin?.peerBranchId === peerBranchId))
+        record?.documents.delete(docId as DocumentId);
+    },
+    retirePeer: ({ documentId, threadId, peerBranchId, reason }) =>
+      retireThreadPeers(documentId, [{ threadId, peerBranchId, reason }]),
     recover(docId) {
       return Promise.all([
         input.liveUtilityCore.recover(docId),
@@ -545,39 +497,43 @@ export function createThreadPeerCorePool(input: {
         await options?.beforeTransactionCommit?.(saved);
         return saved;
       }
-      return input.responseTransactions.run(
-        input.commitThreadResponseAtomically,
-        async () => {
-          // A core whose every document was refused has already closed this
-          // reply on its side; only a reply that never wrote falls back to the
-          // live core, which closes it.
-          const wrote = record.participants.size > 0;
-          const refused = await confirmReply(record);
-          const participants = wrote ? [...record.participants] : [input.liveUtilityCore];
-          const results: ResponseCommitSuccessResult[] = [];
-          for (const core of participants) {
-            results.push(await core.commitResponse(responseId, finalizeOptions()));
-          }
-          const drafted = new Set(
-            [...record.documents]
-              .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
-              .map(([documentId]) => documentId),
-          );
-          const saved = mergeSaveResults(responseId, results, drafted, refused);
-          await options?.beforeTransactionCommit?.(saved);
-          input.responseTransactions.enlist({
-            commit: async () => {
-              await untrackResponse(responseId);
-              for (const document of saved.documents) {
-                const documentId = document.documentId as DocumentId;
-                if (!drafted.has(documentId)) input.afterLiveCommit?.(documentId);
-              }
-            },
-            abort() {},
-          });
-          return saved;
-        },
-        input.responseTransactionSettlement,
+      return input.fences.withLeases(record, (lease) =>
+        input.responseTransactions.run(
+          input.commitThreadResponseAtomically,
+          async () => {
+            // A core whose every document was refused has already closed this
+            // reply on its side; only a reply that never wrote falls back to the
+            // live core, which closes it.
+            const wrote = record.participants.size > 0;
+            const refused = await input.fences.confirm(record);
+            const participants = wrote ? [...record.participants] : [input.liveUtilityCore];
+            const results: ResponseCommitSuccessResult[] = [];
+            for (const core of participants) {
+              results.push(
+                await core.commitResponse(responseId, { ...finalizeOptions(), branchLease: lease }),
+              );
+            }
+            const drafted = new Set(
+              [...record.documents]
+                .filter(([, pinned]) => pinned.grant.destination.kind === "draft")
+                .map(([documentId]) => documentId),
+            );
+            const saved = mergeSaveResults(responseId, results, drafted, refused);
+            await options?.beforeTransactionCommit?.(saved);
+            input.responseTransactions.enlist({
+              commit: async () => {
+                await untrackResponse(responseId);
+                for (const document of saved.documents) {
+                  const documentId = document.documentId as DocumentId;
+                  if (!drafted.has(documentId)) input.afterLiveCommit?.(documentId);
+                }
+              },
+              abort() {},
+            });
+            return saved;
+          },
+          input.responseTransactionSettlement,
+        ),
       );
     },
     responseDestination(responseId, docId) {
@@ -591,52 +547,42 @@ export function createThreadPeerCorePool(input: {
       const pinned = responses.get(responseId)?.documents.get(docId as DocumentId);
       return pinned?.core.prepare(responseId, docId) ?? Promise.resolve(null);
     },
-    responseDocuments(responseId, threadId) {
-      const record = responses.get(responseId);
-      const staged = new Set<string>();
-      const created = new Set<string>();
-      for (const core of record?.participants ?? []) {
-        const documents = core.responseDocuments(responseId, threadId);
-        for (const documentId of documents.staged) staged.add(documentId);
-        for (const documentId of documents.created) created.add(documentId);
-      }
-      return { staged: [...staged], created: [...created] };
-    },
     async rollbackResponse(responseId) {
       const record = responses.get(responseId);
-      return input.responseTransactions.run(
-        input.commitThreadResponseAtomically,
-        async () => {
-          const participants =
-            record && record.participants.size > 0
-              ? [...record.participants]
-              : [input.liveUtilityCore];
-          // Every participant rolls back even when one throws, so no core keeps
-          // the reply's writes buffered.
-          const results: ResponseRollbackResult[] = [];
-          const failures: unknown[] = [];
-          for (const core of participants) {
-            try {
-              results.push(await core.rollbackResponse(responseId, finalizeOptions()));
-            } catch (error) {
-              failures.push(error);
+      const rollback = () =>
+        input.responseTransactions.run(
+          input.commitThreadResponseAtomically,
+          async () => {
+            const participants =
+              record && record.participants.size > 0
+                ? [...record.participants]
+                : [input.liveUtilityCore];
+            // Every participant rolls back even when one throws, so no core keeps
+            // the reply's writes buffered.
+            const results: ResponseRollbackResult[] = [];
+            const failures: unknown[] = [];
+            for (const core of participants) {
+              try {
+                results.push(await core.rollbackResponse(responseId, finalizeOptions()));
+              } catch (error) {
+                failures.push(error);
+              }
             }
-          }
-          if (failures.length > 0) throw failures[0];
-          input.responseTransactions.enlist({
-            commit: () => untrackResponse(responseId),
-            abort() {},
-          });
-          return mergeRollbackResults(responseId, results);
-        },
-        input.responseTransactionSettlement,
-      );
+            if (failures.length > 0) throw failures[0];
+            input.responseTransactions.enlist({
+              commit: () => untrackResponse(responseId),
+              abort() {},
+            });
+            return mergeRollbackResults(responseId, results);
+          },
+          input.responseTransactionSettlement,
+        );
+      return record ? input.fences.withLeases(record, rollback) : rollback();
     },
     retireThreadPeers,
-    async invalidateThreadDocument(docId, threadId, peerBranchId) {
-      if (!docId || !threadId || peerBranchId === "")
+    async invalidateThreadDocument(docId, threadId) {
+      if (!docId || !threadId)
         throw new Error("invalidateThreadDocument names one document and one thread");
-      if (peerBranchId) return retireThreadPeers(docId, [{ threadId, peerBranchId }]);
       lastSeen.delete(seenKey(threadId, docId as DocumentId));
       for (const core of new Set([...ownersForThread(threadId as ThreadId), input.liveUtilityCore]))
         await core.invalidateThreadDocument(docId, threadId);
@@ -724,16 +670,4 @@ function versionPhrase(destination: FileDestination, preposition: "in" | "to"): 
 function documentIdFromCommand(command: { file: string; documentId?: string }): DocumentId | null {
   const address = parseDocumentAddress(command.file, command.documentId);
   return address.ok ? (address.documentId as DocumentId) : null;
-}
-
-/** The link view of a destination, for a call (or reply) the pool routed there. */
-function linkViewAt(destination: FileDestination, responseId: string | undefined): LinkView {
-  const reply = responseId ? { responseId } : {};
-  return destination.kind === "draft"
-    ? { kind: "draft", workId: destination.workId, ...reply }
-    : { kind: "live", ...reply };
-}
-
-function routedTo(context: WriteContext, destination: FileDestination): WriteContext {
-  return { ...context, linkView: linkViewAt(destination, context.responseIdentity?.editScopeId) };
 }

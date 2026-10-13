@@ -6,7 +6,8 @@ import {
   type UpdateJournal,
   yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftId } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
@@ -14,14 +15,10 @@ import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
   listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
-  ensureWorkDraftBranch(input: {
-    documentId: DocumentId;
-    workId: WorkId;
-    liveDoc: Y.Doc;
-  }): Promise<{ branchId: string }>;
   ensureThreadPeerBranch(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId?: DraftId;
     liveDoc: Y.Doc;
   }): Promise<{ branchId: string }>;
 };
@@ -31,8 +28,13 @@ export type BranchPullService = {
   /** Drops debounced pulls that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  pullThreadPeer(input: { documentId: DocumentId; threadId: ThreadId }): Promise<{
+  pullThreadPeer(input: {
+    documentId: DocumentId;
+    threadId: ThreadId;
+    draftId?: DraftId;
+  }): Promise<{
     peerBranchId: string;
+    upstreamBranchId: string;
     branchGeneration: number;
     afterJournalId?: number;
     liveJournalSeq?: number;
@@ -224,22 +226,27 @@ export function createBranchPullService(input: {
             inputPeer.threadId,
             inputPeer.documentId,
           );
-          const upstream = captured.upstreamBranchId
-            ? await input.branchCoordinator.readBranch(captured.upstreamBranchId, (doc, snapshot) =>
+          const upstreamBranchId = captured.upstreamBranchId;
+          if (!upstreamBranchId)
+            throw new Error(`Thread peer ${peer.branchId} has no upstream Work draft branch`);
+          // Upstream is read inside the pull's transaction: a per-change Discard that
+          // reforked it meanwhile can never be merged back from a stale capture.
+          const upstream = await input.rootTransaction(async () => {
+            const read = await input.branchCoordinator.readBranch(
+              upstreamBranchId,
+              (doc, snapshot) =>
                 Promise.resolve({
                   generation: snapshot.generation,
                   state: Y.encodeStateAsUpdate(doc),
                 }),
-              )
-            : undefined;
-          await input.rootTransaction(async () => {
-            if (upstream) await pullPeerFromCapturedUpstream(peer.branchId, upstream.state);
-            else await input.branchCoordinator.pullFromBranch(peer.branchId);
+            );
+            await pullPeerFromCapturedUpstream(peer.branchId, read.state);
+            return read;
           });
-          const branchGeneration = upstream?.generation ?? captured.peerGeneration;
           return {
             peerBranchId: peer.branchId,
-            branchGeneration,
+            upstreamBranchId,
+            branchGeneration: upstream.generation,
             afterJournalId,
             liveJournalSeq,
             attributionBaseline,
