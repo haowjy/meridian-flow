@@ -6,8 +6,6 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_markdown_projections_fts" ON "
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_markdown_projections_trgm" ON "document_markdown_projections" USING gin ("markdown" gin_trgm_ops);
 --> statement-breakpoint
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "link_ahead_holder_bindings_document" ON "link_ahead_holder_bindings" USING btree ("document_id");
---> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "draft_tree_changes_location" ON "draft_tree_changes" USING btree ("context_source_id","parent_folder_id","name","extension") WHERE "draft_tree_changes"."context_source_id" IS NOT NULL;
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "draft_tree_changes_node" ON "draft_tree_changes" USING btree ("node_kind","node_id");
@@ -17,10 +15,6 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "draft_tree_changes_parent" ON "draft_tr
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "drafts_active_origin_work" ON "drafts" USING btree ("origin_work_id","created_at") WHERE "drafts"."status" = 'active';
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "drafts_project" ON "drafts" USING btree ("project_id");
---> statement-breakpoint
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "link_ahead_draft_settlements_draft" ON "link_ahead_draft_settlements" USING btree ("draft_id");
---> statement-breakpoint
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "link_ahead_draft_settlements_document" ON "link_ahead_draft_settlements" USING btree ("document_id");
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "branch_push_settlement_batches_recovery" ON "branch_push_settlement_batches" USING btree ("available_at","lease_expires_at","created_at") WHERE "branch_push_settlement_batches"."state" = 'pending';
 --> statement-breakpoint
@@ -54,12 +48,6 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_branches_active_work_draft_by_
 --> statement-breakpoint
 ALTER TABLE "document_markdown_projections" VALIDATE CONSTRAINT "document_markdown_projections_document_id_documents_id_fk";
 --> statement-breakpoint
-ALTER TABLE "link_ahead_holder_bindings" VALIDATE CONSTRAINT "link_ahead_holder_bindings_ahead_id_link_ahead_refs_ahead_id_fk";
---> statement-breakpoint
-ALTER TABLE "link_ahead_holder_bindings" VALIDATE CONSTRAINT "link_ahead_holder_bindings_holder_document_id_documents_id_fk";
---> statement-breakpoint
-ALTER TABLE "link_ahead_holder_bindings" VALIDATE CONSTRAINT "link_ahead_holder_bindings_document_id_documents_id_fk";
---> statement-breakpoint
 ALTER TABLE "draft_tree_changes" VALIDATE CONSTRAINT "draft_tree_changes_draft_id_drafts_id_fk";
 --> statement-breakpoint
 ALTER TABLE "draft_tree_changes" VALIDATE CONSTRAINT "draft_tree_changes_context_source_id_context_sources_id_fk";
@@ -73,12 +61,6 @@ ALTER TABLE "drafts" VALIDATE CONSTRAINT "drafts_origin_thread_id_threads_id_fk"
 ALTER TABLE "drafts" VALIDATE CONSTRAINT "drafts_origin_work_id_works_id_fk";
 --> statement-breakpoint
 ALTER TABLE "drafts" VALIDATE CONSTRAINT "drafts_created_by_users_id_fk";
---> statement-breakpoint
-ALTER TABLE "link_ahead_draft_settlements" VALIDATE CONSTRAINT "link_ahead_draft_settlements_ahead_id_link_ahead_refs_ahead_id_fk";
---> statement-breakpoint
-ALTER TABLE "link_ahead_draft_settlements" VALIDATE CONSTRAINT "link_ahead_draft_settlements_draft_id_drafts_id_fk";
---> statement-breakpoint
-ALTER TABLE "link_ahead_draft_settlements" VALIDATE CONSTRAINT "link_ahead_draft_settlements_document_id_documents_id_fk";
 --> statement-breakpoint
 ALTER TABLE "branch_push_settlement_holds" VALIDATE CONSTRAINT "branch_push_settlement_holds_batch_id_branch_push_settlement_batches_id_fk";
 --> statement-breakpoint
