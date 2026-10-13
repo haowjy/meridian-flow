@@ -1,7 +1,9 @@
+import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 /** Drizzle persistence adapter for shadow branch peers and manifest peers. */
 
 import { randomUUID } from "node:crypto";
 import {
+  captureEditParts,
   type DocumentCoordinator,
   type DocumentLifecycle,
   effectiveYjsUpdate,
@@ -69,7 +71,13 @@ import {
   admitFreshAuthorship,
   replicateFrozenIdentity,
 } from "../domain/document-mutation-policy.js";
+import type { RetiredBranch } from "../domain/peer-retirement.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
+import {
+  captureReceiptRows,
+  recordDocumentEdit,
+  settleDraftGeneration,
+} from "./drizzle-document-edits.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
@@ -144,7 +152,12 @@ export function createDrizzleBranchStore(
   ): Promise<BranchSnapshot> {
     const [row] = await currentDrizzleDb(db)
       .insert(documentBranches)
-      .values({ ...values, schemaVersion: packCollabSchemaVersion(values.schemaVersion) })
+      .values({
+        ...values,
+        liveCut: values.kind === "work_draft" ? values.state : null,
+        hasEffect: false,
+        schemaVersion: packCollabSchemaVersion(values.schemaVersion),
+      })
       .returning();
     if (!row) throw new Error("Failed to create document branch");
     return mapBranch({
@@ -159,6 +172,7 @@ export function createDrizzleBranchStore(
       state: row.state,
       stateVector: row.stateVector,
       discardedStateVector: row.discardedStateVector,
+      liveCut: row.liveCut,
       schemaVersion: row.schemaVersion,
     });
   }
@@ -410,20 +424,30 @@ export function createDrizzleBranchStore(
     return row ? mapBranch(row) : null;
   }
 
-  async function discardActiveThreadPeerBranches(input: {
-    documentId: DocumentId;
-    threadId?: ThreadId | null;
-  }): Promise<void> {
-    const clauses = [
-      eq(documentBranches.documentId, input.documentId),
-      eq(documentBranches.kind, "thread_peer"),
-      eq(documentBranches.status, "active"),
-    ];
-    if (input.threadId) clauses.push(eq(documentBranches.threadId, input.threadId));
-    await currentDrizzleDb(db)
+  async function closeThreadPeersOf(
+    upstreamBranchIds: readonly string[],
+  ): Promise<RetiredBranch[]> {
+    if (upstreamBranchIds.length === 0) return [];
+    const closed = await currentDrizzleDb(db)
       .update(documentBranches)
       .set({ status: "closed", updatedAt: new Date() })
-      .where(and(...clauses));
+      .where(
+        and(
+          inArray(documentBranches.upstreamBranchId, [...upstreamBranchIds]),
+          eq(documentBranches.kind, "thread_peer"),
+          eq(documentBranches.status, "active"),
+        ),
+      )
+      .returning({
+        branchId: documentBranches.id,
+        documentId: documentBranches.documentId,
+        threadId: documentBranches.threadId,
+      });
+    return closed.map((branch) => ({
+      branchId: branch.branchId,
+      documentId: branch.documentId as DocumentId,
+      threadId: branch.threadId as ThreadId | null,
+    }));
   }
 
   async function projectForDocument(documentId: DocumentId): Promise<ProjectId | null> {
@@ -639,6 +663,7 @@ export function createDrizzleBranchStore(
         ),
       )
       .returning({ id: documentBranches.id });
+    if (row) await refreshDraftEffect(currentDrizzleDb(db), input.branchId, input.liveCut);
     return Boolean(row);
   }
 
@@ -908,67 +933,91 @@ export function createDrizzleBranchStore(
     },
 
     async updateBranchSnapshot(input: PersistBranchInput) {
-      return updateBranchSnapshot(input);
+      return runInDrizzleTransaction(db, () =>
+        mutatePending([input.branchId], () => updateBranchSnapshot(input)),
+      );
     },
 
     async commitBranchMutation(input: CommitBranchMutationInput) {
-      return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, async () => {
-        if (input.journal && input.journal.generation !== input.expectedGeneration) {
-          throw new BranchMutationRollback();
-        }
-        const ok = await updateBranchSnapshot(input);
-        if (!ok) throw new BranchMutationRollback();
-        if (input.journal?.expectedJournalWatermark !== undefined) {
-          const [head] = await currentDrizzleDb(db)
-            .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
-            .from(branchWriteJournal)
-            .where(
-              and(
-                eq(branchWriteJournal.branchId, input.journal.branchId),
-                eq(branchWriteJournal.generation, input.journal.generation),
-              ),
-            );
-          if ((head?.id ?? 0) > input.journal.expectedJournalWatermark) {
-            throw new BranchMutationRollback();
-          }
-        }
-        if (input.journal?.expectedJournalRevision !== undefined) {
-          const rows = await currentDrizzleDb(db)
-            .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
-            .from(branchWriteJournal)
-            .where(
-              and(
-                eq(branchWriteJournal.branchId, input.journal.branchId),
-                eq(branchWriteJournal.generation, input.journal.generation),
-              ),
+      return runWithActiveWorkDrafts(db, { branchIds: [input.branchId] }, () =>
+        mutatePending([input.branchId], async () => {
+          const journals = input.journals ?? [];
+          const editBranch = await getBranchSnapshot(input.branchId);
+          await lockDocumentMutation(currentDrizzleDb(db), editBranch.documentId);
+          if (
+            journals.some(
+              (row) =>
+                row.generation !== input.expectedGeneration || row.branchId !== input.branchId,
             )
-            .orderBy(branchWriteJournal.id)
-            .for("update");
-          if (branchJournalRevision(rows) !== input.journal.expectedJournalRevision) {
+          )
             throw new BranchMutationRollback();
+          const ok = await updateBranchSnapshot(input);
+          if (!ok) throw new BranchMutationRollback();
+          for (const journal of journals) {
+            if (journal?.expectedJournalWatermark !== undefined) {
+              const [head] = await currentDrizzleDb(db)
+                .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
+                .from(branchWriteJournal)
+                .where(
+                  and(
+                    eq(branchWriteJournal.branchId, journal.branchId),
+                    eq(branchWriteJournal.generation, journal.generation),
+                  ),
+                );
+              if ((head?.id ?? 0) > journal.expectedJournalWatermark) {
+                throw new BranchMutationRollback();
+              }
+            }
+            if (journal?.expectedJournalRevision !== undefined) {
+              const rows = await currentDrizzleDb(db)
+                .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
+                .from(branchWriteJournal)
+                .where(
+                  and(
+                    eq(branchWriteJournal.branchId, journal.branchId),
+                    eq(branchWriteJournal.generation, journal.generation),
+                  ),
+                )
+                .orderBy(branchWriteJournal.id)
+                .for("update");
+              if (branchJournalRevision(rows) !== journal.expectedJournalRevision) {
+                throw new BranchMutationRollback();
+              }
+            }
           }
-        }
-        const journal = input.journal;
-        if (journal)
-          await mutatePending([journal.branchId], () =>
-            currentDrizzleDb(db)
-              .insert(branchWriteJournal)
-              .values({
-                branchId: journal.branchId,
-                generation: journal.generation,
-                updateData: Buffer.from(journal.updateData),
-                draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
-                source: journal.source,
-                wId: journal.wId ?? null,
-                threadId: journal.threadId ?? null,
-                turnId: journal.turnId ?? null,
-                actorUserId: journal.actorUserId ?? null,
-                updateMeta: journal.updateMeta ?? null,
-              })
-              .then(() => undefined),
-          );
-        return true;
-      }).catch((cause) => {
+          if (journals.length) {
+            {
+              const rows = await currentDrizzleDb(db)
+                .insert(branchWriteJournal)
+                .values(
+                  journals.map((journal) => ({
+                    branchId: journal.branchId,
+                    generation: journal.generation,
+                    updateData: Buffer.from(journal.updateData),
+                    draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
+                    source: journal.source,
+                    wId: journal.wId ?? null,
+                    toolCallId: journal.toolCallId ?? null,
+                    threadId: journal.threadId ?? null,
+                    turnId: journal.turnId ?? null,
+                    actorUserId: journal.actorUserId ?? null,
+                    updateMeta: journal.updateMeta ?? null,
+                  })),
+                )
+                .returning({ id: branchWriteJournal.id });
+              const branch = await getBranchSnapshot(input.branchId);
+              const doc = createCollabYDoc({ gc: false });
+              Y.applyUpdate(doc, input.expectedState);
+              try {
+                await captureBranchEdits(currentDrizzleDb(db), branch, doc, journals, rows);
+              } finally {
+                doc.destroy();
+              }
+            }
+          }
+          return true;
+        }),
+      ).catch((cause) => {
         if (cause instanceof BranchMutationRollback) return false;
         throw cause;
       });
@@ -982,6 +1031,9 @@ export function createDrizzleBranchStore(
             .update(documentBranches)
             .set({
               generation: sql`${documentBranches.generation} + 1`,
+              hasEffect: false,
+              blocking: false,
+              liveCut: Buffer.from(input.state),
               state: Buffer.from(input.state),
               stateVector: Buffer.from(input.stateVector),
               discardedStateVector: Buffer.from(input.discardedStateVector),
@@ -1010,6 +1062,12 @@ export function createDrizzleBranchStore(
               ),
             )
             .then(() => undefined);
+          await settleDraftGeneration(
+            txDb,
+            input.branchId,
+            input.expectedGeneration,
+            input.editDisposition ?? "discarded",
+          );
           return true;
         }),
       );
@@ -1027,6 +1085,7 @@ export function createDrizzleBranchStore(
               draftBaseUpdateSeq: draftBaseForBranch(input.branchId),
               source: input.source,
               wId: input.wId ?? null,
+              toolCallId: input.toolCallId ?? null,
               threadId: input.threadId ?? null,
               turnId: input.turnId ?? null,
               actorUserId: input.actorUserId ?? null,
@@ -1101,9 +1160,7 @@ export function createDrizzleBranchStore(
       return ensureThreadPeerBranch(input);
     },
 
-    discardActiveThreadPeerBranches(input) {
-      return discardActiveThreadPeerBranches(input);
-    },
+    closeThreadPeersOf,
 
     ensureProjectManifest(input) {
       return ensureProjectManifest(input);
@@ -1197,6 +1254,7 @@ function selectBranch(db: DrizzleDb) {
       state: documentBranches.state,
       stateVector: documentBranches.stateVector,
       discardedStateVector: documentBranches.discardedStateVector,
+      liveCut: documentBranches.liveCut,
       schemaVersion: documentBranches.schemaVersion,
     })
     .from(documentBranches);
@@ -1215,6 +1273,7 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     state: row.state,
     stateVector: row.stateVector,
     discardedStateVector: row.discardedStateVector,
+    liveCut: row.liveCut,
     schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
   };
 }
@@ -1242,5 +1301,67 @@ function updateChangesState(state: Uint8Array, update: Uint8Array): boolean {
     return Boolean(effectiveYjsUpdate(doc, update));
   } finally {
     doc.destroy();
+  }
+}
+
+async function captureBranchEdits(
+  db: Pick<Database, "select" | "insert" | "update">,
+  branch: BranchSnapshot,
+  doc: Y.Doc,
+  journals: readonly AppendBranchJournalInput[],
+  rows: readonly { id: number }[],
+): Promise<void> {
+  const groups = new Map<
+    string,
+    {
+      journal: AppendBranchJournalInput;
+      receipts: import("./drizzle-document-edits.js").ReceiptWrite["receipts"];
+    }
+  >();
+  const captured = captureReceiptRows(
+    doc,
+    journals.map((journal, i) => ({
+      update: journal.updateData,
+      origin: {
+        kind: "pending",
+        branchId: branch.branchId,
+        generation: branch.generation,
+        rowId: rows[i].id,
+      },
+    })),
+  );
+  for (const [i, journal] of journals.entries()) {
+    const meta =
+      journal.updateMeta && typeof journal.updateMeta === "object"
+        ? (journal.updateMeta as Record<string, unknown>)
+        : {};
+    if (meta.kind === "manifest_membership") continue;
+    const key = journal.documentEditKey ?? `${journal.threadId}:${journal.wId ?? rows[i].id}`;
+    const group = groups.get(key) ?? { journal, receipts: [] };
+    group.receipts.push(captured[i]);
+    groups.set(key, group);
+  }
+  for (const { journal, receipts } of groups.values()) {
+    const meta =
+      journal.updateMeta && typeof journal.updateMeta === "object"
+        ? (journal.updateMeta as Record<string, unknown>)
+        : {};
+    await recordDocumentEdit(db, {
+      documentId: branch.documentId,
+      wId: journal.wId ?? undefined,
+      threadId: journal.threadId,
+      turnId: journal.turnId as import("@meridian/contracts").TurnId | null | undefined,
+      responseId:
+        typeof meta.authoringResponseId === "string"
+          ? (meta.authoringResponseId as import("@meridian/contracts").ModelResponseId)
+          : undefined,
+      editScopeId: typeof meta.editScopeId === "string" ? meta.editScopeId : undefined,
+      actor: journal.source === "writer" ? "human" : journal.threadId ? "agent" : "system",
+      actorUserId: journal.actorUserId as import("@meridian/contracts").UserId | null | undefined,
+      receipts: captureEditParts(doc, receipts).map((p, i) => ({
+        ...p,
+        origin: receipts[i].origin,
+      })),
+    });
   }
 }
