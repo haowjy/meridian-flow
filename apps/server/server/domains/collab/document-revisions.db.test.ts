@@ -125,7 +125,15 @@ async function fixture(
     ),
   };
   const read = (responseId?: string) =>
-    core.read({ file: "alpha.md", documentId: ALPHA_ID }, { ...context, responseId });
+    core.read(
+      { file: "alpha.md", documentId: ALPHA_ID },
+      {
+        ...context,
+        responseIdentity: responseId
+          ? { providerResponseId: responseId, editScopeId: responseId }
+          : undefined,
+      },
+    );
   const current = async () =>
     (await revisions.current({ threadId: THREAD_ID, documentIds: [ALPHA_ID] })).get(ALPHA_ID);
   async function writerDelete() {
@@ -161,7 +169,13 @@ async function fixture(
         overwrite: true,
         content: "Agent revision.",
       },
-      { ...context, responseId, createdDocument: false },
+      {
+        ...context,
+        responseIdentity: responseId
+          ? { providerResponseId: responseId, editScopeId: responseId }
+          : undefined,
+        createdDocument: false,
+      },
     );
     expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;

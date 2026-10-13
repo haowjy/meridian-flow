@@ -7,9 +7,14 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
+import {
+  DraftReviewBoundary,
+  usePresentedDraftReview,
+} from "@/features/draft-review/DraftReviewProvider";
 import { DocumentIdentityBar } from "../context/DocumentIdentityBar";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
-import { type DockDocument, useDockViewStore } from "./dock-view-store";
+import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
+import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
 
 const noopCommitted = () => undefined;
 
@@ -20,8 +25,26 @@ export function DockDocumentIdentity({
   projectId: string;
   document: DockDocument;
 }) {
+  const review = usePresentedDraftReview();
+  const launch = useDockReviewLauncher(projectId, dockDocument);
+  return (
+    <ReviewLaunchContext.Provider value={launch}>
+      <DraftReviewBoundary value={review}>
+        <DockIdentityBody projectId={projectId} document={dockDocument} />
+      </DraftReviewBoundary>
+    </ReviewLaunchContext.Provider>
+  );
+}
+
+function DockIdentityBody({
+  projectId,
+  document: dockDocument,
+}: {
+  projectId: string;
+  document: DockDocument;
+}) {
   const tab = dockDocument.tab;
-  const closeDocument = useDockViewStore((state) => state.closeDocument);
+  const closeDocument = useDockDocumentStore((state) => state.closeDocument);
   const openInEditor = useOpenDocumentInEditor();
   const archivedWork = useDockArchivedWork(projectId, tab);
   return (
@@ -32,15 +55,16 @@ export function DockDocumentIdentity({
       editorWorkId={tab.kind === "new" ? null : (tab.workId ?? null)}
       tab={tab}
       readOnly={Boolean(archivedWork)}
+      onCloseDraftOnly={tab.kind !== "new" && tab.draftOnly ? closeDocument : undefined}
       // The dock follows a rename through the resource projection; it keeps no tab to patch.
       onCommitted={noopCommitted}
       onOpenExisting={(scheme, path, owner) => {
-        const claim = useDockViewStore.getState().claim();
+        const claim = useDockDocumentStore.getState().claim();
         openInEditor(
           { scheme, path, ...owner },
           {
             afterCommit: () => {
-              if (useDockViewStore.getState().isCurrent(claim)) closeDocument();
+              if (useDockDocumentStore.getState().isCurrent(claim)) closeDocument();
             },
           },
         );
