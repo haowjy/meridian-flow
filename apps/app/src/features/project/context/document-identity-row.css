@@ -64,6 +64,14 @@
   }
 }
 
+/* A finger owns the whole 44px square, as in the phone shell. The row grows to
+   44px (DocumentIdentityBar), so the vertical extension above is unclipped. */
+@media (pointer: coarse) {
+  [data-document-identity-row] :is(button, [role="switch"]) {
+    min-width: 44px;
+  }
+}
+
 [data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
   .identity-version-label {
   display: none;

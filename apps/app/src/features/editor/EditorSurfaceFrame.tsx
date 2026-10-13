@@ -56,7 +56,7 @@ export function EditorSurfaceFrame({
     // The container the column insets answer to: the pane, not the viewport.
     <div className="@container flex min-h-0 flex-1 flex-col">
       {toolbar ? (
-        <div className="flex h-9 shrink-0 items-center">
+        <div className="flex h-9 shrink-0 items-center [@media(pointer:coarse)]:h-11">
           {/* The toolbar's geometry is fixed (ten controls, one order), so a
               pane too narrow for it scrolls the row rather than dropping controls. */}
           <div
