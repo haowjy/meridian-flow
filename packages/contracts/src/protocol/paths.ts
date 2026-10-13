@@ -112,10 +112,6 @@ export function apiProjectWorkingSetPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}/working-set`;
 }
 
-export function apiProjectWorkWriteModePath(projectId: string, workId: string): string {
-  return `${apiProjectWorksPath(projectId)}/${workId}/write-mode`;
-}
-
 export function apiProjectWorkDraftsPath(projectId: string, workId: string): string {
   return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
 }

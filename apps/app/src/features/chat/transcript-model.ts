@@ -6,8 +6,9 @@ import { isHandoffSeed } from "./derivation/handoff-seed";
 import { readThreadReferences, type ThreadReference } from "./derivation/thread-reference";
 import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { readSubagentUpdateMetadata } from "./subagent/update";
+import { readWriteModeSwitch } from "./thread-controls/write-mode-model";
 
-export type TurnClass = "bubble" | "delivery" | "context" | "plumbing";
+export type TurnClass = "bubble" | "delivery" | "context" | "write-mode" | "plumbing";
 const emptyEvents: DeliveryEvent[] = [];
 export type DeliveryEvent = {
   turn: Turn;
@@ -45,6 +46,8 @@ export type InheritedMark = {
 export type TranscriptRow =
   | { kind: "turn"; turn: Turn; inherited: InheritedMark | null }
   | { kind: "compaction"; turn: Turn; inherited: InheritedMark | null }
+  /** A write-mode switch: the line where the chat's mode changed. It ends a reply. */
+  | { kind: "write-mode"; turn: Turn; inherited: InheritedMark | null }
   /** A handoff seed S: the brief card. Only the newest local seed can be retried. */
   | { kind: "handoff-seed"; turn: Turn; latest: boolean; inherited: InheritedMark | null }
   /**
@@ -65,6 +68,7 @@ export function classifyTurn(turn: Turn): TurnClass {
       : null;
   if (turn.role === "compaction") return "plumbing";
   if (turn.role === "assistant") return "bubble";
+  if (turn.role === "system" && readWriteModeSwitch(turn)) return "write-mode";
   if (metadata?.kind === "inbox_message" || metadata?.kind === "subagent_update") return "delivery";
   if (
     turn.role === "user" &&
@@ -102,6 +106,10 @@ export function buildTranscriptModel(
       return;
     }
     if (isOverflowShell(turn, nextByPrev.get(turn.id) ?? turns[index + 1])) return;
+    if (classifyTurn(turn) === "write-mode") {
+      rows.push({ kind: "write-mode", turn, inherited: mark });
+      return;
+    }
     if (classifyTurn(turn) === "bubble") {
       rows.push({ kind: "turn", turn, inherited: mark });
       return;
@@ -248,8 +256,11 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
       // A divider inside a reply (autocompaction mid-task) does not end it.
       case "compaction":
         continue;
+      // A switch ends the reply before it, even when the message between the two
+      // was stamped a steer: the next reply answers in the new mode.
       case "handoff-seed":
       case "thread-reference":
+      case "write-mode":
         finish();
         continue;
       case "turn":

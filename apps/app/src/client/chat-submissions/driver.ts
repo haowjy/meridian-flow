@@ -1,5 +1,6 @@
 /** One bounded, fenced lifecycle for first and subsequent writer messages. */
 import type { Thread } from "@meridian/contracts/protocol";
+import type { EnqueueThreadControlResponse } from "@meridian/contracts/threads";
 import type { SubmissionOutcome, ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { classifyWriteFailure } from "@/client/copilot/ThreadRunController";
 import { abortable, type SubmissionLock } from "./lock";
@@ -26,6 +27,10 @@ export type SubmissionDriverOptions = {
   whenDerived(threadId: string, signal: AbortSignal): Promise<boolean>;
   create(entry: ChatSubmission, signal: AbortSignal): Promise<Thread>;
   created(thread: Thread): void;
+  /** Post a control record (a write-mode switch) to the chat's controls route. */
+  postControl(entry: ChatSubmission, signal: AbortSignal): Promise<EnqueueThreadControlResponse>;
+  /** The server answered a control. Called before the record is retired. */
+  controlAnswered(entry: ChatSubmission, response: EnqueueThreadControlResponse): void;
   row(entry: ChatSubmission): string;
   status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
@@ -48,6 +53,25 @@ export class ChatSubmissionDriver {
   private current = () => !this.options.signal.aborted && this.options.isCurrent();
   private read(recordId: string) {
     return this.options.journal.entries().find((entry) => entry.recordId === recordId);
+  }
+
+  /**
+   * A switch the server refused stays in the journal with its Retry and Withdraw,
+   * and everything the writer did after it waits: a message would otherwise be
+   * answered in the mode the writer already left. Withdraw releases them at once,
+   * Retry once the switch is admitted.
+   */
+  private behindRejectedSwitch(record: ChatSubmission): boolean {
+    return this.options.journal
+      .entries()
+      .some(
+        (other) =>
+          other.threadId === record.threadId &&
+          other.control &&
+          other.state === "rejected" &&
+          other.recordId !== record.recordId &&
+          other.createdAt.localeCompare(record.createdAt) <= 0,
+      );
   }
 
   /** Each request gets a new deadline. Ownership cancellation is never presented as failure. */
@@ -100,7 +124,8 @@ export class ChatSubmissionDriver {
                 (!record.state ||
                   this.incompleteDeletions.has(threadId) ||
                   this.options.transferReceived(record)) &&
-                !tried.has(record.recordId),
+                !tried.has(record.recordId) &&
+                !this.behindRejectedSwitch(record),
             )
             .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
           if (!entry) break;
@@ -131,7 +156,8 @@ export class ChatSubmissionDriver {
               (!record.state ||
                 this.incompleteDeletions.has(threadId) ||
                 this.options.transferReceived(record)) &&
-              !tried.has(record.recordId),
+              !tried.has(record.recordId) &&
+              !this.behindRejectedSwitch(record),
           )
       )
         void this.drive(threadId);
@@ -284,6 +310,10 @@ export class ChatSubmissionDriver {
       if (!entry || !this.current()) return;
     }
 
+    if (entry.control) {
+      await this.postControl(entry);
+      return;
+    }
     const rowId = this.options.row(entry);
     const options = { optimisticUserTurnId: rowId };
     if (!fresh) {
@@ -338,6 +368,45 @@ export class ChatSubmissionDriver {
       entry,
       outcome.kind === "accepted" || outcome.kind === "rejected" ? outcome.kind : "ambiguous",
     );
+  }
+
+  /**
+   * A switch is one idempotent POST under its own id, so a repeat after a lost answer
+   * is the original request. A refusal is stored; anything else leaves the record
+   * unresolved and holds the records after it.
+   */
+  private async postControl(entry: ChatSubmission) {
+    let response: EnqueueThreadControlResponse;
+    try {
+      response = await this.request((signal) => this.options.postControl(entry, signal));
+    } catch (error) {
+      if (!this.current()) return;
+      const availability = threadAvailability(error, this.options.accountId);
+      if (availability === "deleted" || availability === "project-deleted")
+        await this.deleted(entry, { kind: availability, submissionId: entry.submissionId });
+      else this.settle(entry, classifyWriteFailure(error));
+      return;
+    }
+    if (!this.current()) return;
+    this.options.controlAnswered(entry, response);
+    this.settle(entry, "accepted");
+  }
+
+  /**
+   * Withdraw a switch before the server has it: take it out of the journal under the
+   * chat's lock, so no driver is posting it meanwhile. `admitted` means the record is
+   * gone because the server already has it, and the server's own Withdraw is the way.
+   */
+  async withdrawControl(recordId: string, threadId: string): Promise<"removed" | "admitted"> {
+    let removed = false;
+    await this.locked(threadId, async () => {
+      const entry = this.read(recordId);
+      if (!entry?.control || !this.current()) return;
+      if (this.options.journal.retire(recordId)) removed = true;
+      else this.localFailure(entry);
+    });
+    if (removed) await this.drive(threadId);
+    return removed ? "removed" : "admitted";
   }
 
   private async reconcileAmbiguous(

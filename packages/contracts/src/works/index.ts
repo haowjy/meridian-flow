@@ -17,7 +17,8 @@ export interface Work {
   /** AI-owned one-to-three-word progress summary. */
   status: string | null;
   archivedAt: string | null;
-  aiWriteMode: AiWriteMode;
+  /** What a new chat in this Work starts with. A chat owns its own mode afterwards. */
+  defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
   /** Server count of unpushed branch-write rows across this Work's branches; never derive from visible rows. */

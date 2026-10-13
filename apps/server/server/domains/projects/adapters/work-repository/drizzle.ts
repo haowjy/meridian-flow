@@ -70,7 +70,7 @@ function mapWork(row: WorkRow): Work {
     goal: row.goal,
     status: row.status,
     archivedAt: row.archivedAt?.toISOString() ?? null,
-    aiWriteMode: row.defaultAiWriteMode,
+    defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),

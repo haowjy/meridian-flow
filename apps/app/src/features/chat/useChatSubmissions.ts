@@ -1,7 +1,8 @@
 /** Mount binding: cancellation, external wakes, and keyed accessibility presentation. */
 import { t } from "@lingui/core/macro";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import {
   getChatSubmissionAccountId,
   getChatSubmissionEpoch,
@@ -11,7 +12,12 @@ import {
   cleanDeletedChat,
   registerDeletedChatSurface,
 } from "@/client/chat-submissions/deleted-chat";
-import { ChatSubmissionOwner } from "@/client/chat-submissions/owner";
+import {
+  ChatSubmissionOwner,
+  type JournalSwitch,
+  onSwitchAnswered,
+  type SwitchAnswer,
+} from "@/client/chat-submissions/owner";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
@@ -19,6 +25,10 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, clearAnnouncement, type ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import { controlStatusCopy } from "./thread-controls/control-copy";
+
+const NO_SWITCHES: readonly JournalSwitch[] = [];
+
 export function useChatSubmissions(
   threadId: string,
   projectId: string,
@@ -67,6 +77,12 @@ export function useChatSubmissions(
         const key = `${accountId}:${recordId}`;
         announcementKeys.add(key);
         announceError(t`Couldn't send your message.`, { key });
+      },
+      failedSwitch: (entry) => {
+        if (!entry.control) return;
+        const key = `${accountId}:${entry.recordId}`;
+        announcementKeys.add(key);
+        announceError(controlStatusCopy(entry.control, "failed"), { key });
       },
       clear: clearRowAnnouncement,
       focusComposer: () => latest.current.focusComposer(),
@@ -132,9 +148,21 @@ export function useChatSubmissions(
     };
   }, [threadId, projectId, accountId, controller, accountSignal, queryClient, transport]);
 
+  const onAnswered = useCallback(
+    (listener: (answer: SwitchAnswer) => void) => onSwitchAnswered(accountId, threadId, listener),
+    [accountId, threadId],
+  );
   return {
     presentation: driver.current?.presentation,
     submit: (envelope: ComposerSubmitEnvelope) =>
       driver.current?.submit(envelope) ?? Promise.resolve(false),
+    /** Write-mode switches ride the same journal, so they are posted in order with the messages. */
+    switches: {
+      pending: driver.current?.switches ?? NO_SWITCHES,
+      submit: (id: string, mode: AiWriteMode) => driver.current?.submitSwitch(id, mode) ?? false,
+      retry: (id: string) => driver.current?.retrySwitch(id),
+      withdraw: (id: string) => driver.current?.withdrawSwitch(id) ?? Promise.resolve("admitted"),
+      onAnswered,
+    },
   };
 }

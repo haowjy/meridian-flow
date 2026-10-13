@@ -193,8 +193,9 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
 export function enqueueThreadControl(
   threadId: string,
   request: EnqueueThreadControlRequest,
+  options?: { signal?: AbortSignal },
 ): Promise<EnqueueThreadControlResponse> {
-  return postJson(apiThreadControlsPath(threadId), request);
+  return postJson(apiThreadControlsPath(threadId), request, options);
 }
 
 /** Withdraw a queued control; one that already started answers `already_started`. */

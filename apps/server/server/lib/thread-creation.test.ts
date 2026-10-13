@@ -80,7 +80,7 @@ describe("exact thread creation", () => {
     expect(copied.aiWriteMode).toBe("draft");
     const explicit = await create("direct");
     expect(explicit.aiWriteMode).toBe("direct");
-    expect((await deps.workRepo.findById(work.id))?.aiWriteMode).toBe("direct");
+    expect((await deps.workRepo.findById(work.id))?.defaultAiWriteMode).toBe("direct");
     // The Work's earlier chat keeps the mode it started with.
     expect((await deps.threads.findById(copied.id))?.aiWriteMode).toBe("draft");
     expect((await create()).aiWriteMode).toBe("direct");

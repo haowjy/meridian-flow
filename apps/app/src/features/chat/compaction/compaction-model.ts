@@ -68,16 +68,6 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
   };
 }
 
-/** Every writer command a divider already answers: a queued item for one is no longer queued. */
-export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const turn of turns) {
-    const id = turn.role === "compaction" ? readCompactionFacts(turn).controlId : null;
-    if (id) ids.add(id);
-  }
-  return ids;
-}
-
 /**
  * R4: a context-window overflow completes the running assistant turn empty
  * before the compaction that recovers it. It says nothing to the writer.

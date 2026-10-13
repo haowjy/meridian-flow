@@ -14,6 +14,7 @@ const transport = vi.hoisted(() => ({ cancel: vi.fn() }));
 vi.mock("@/client/providers/TransportProvider", () => ({ useThreadTransport: () => transport }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
+vi.mock("@/client/query/write-mode-cache", () => ({ applyWriteModeSwitch: vi.fn() }));
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
 vi.mock("@/client/stores", () => announcements);
 
@@ -21,6 +22,7 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
+import type { QueuedControl } from "./thread-controls";
 import { type ThreadControls, useThreadControls } from "./useThreadControls";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -33,6 +35,13 @@ afterAll(() => {
 });
 
 const EMPTY: ThreadPendingInbox = { items: [] };
+const NO_JOURNAL = {
+  pending: [],
+  submit: () => true,
+  retry: () => undefined,
+  withdraw: () => Promise.resolve("admitted" as const),
+  onAnswered: () => () => undefined,
+};
 const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
@@ -40,8 +49,12 @@ let latest: ThreadControls;
 function Probe(props: { pending?: ThreadPendingInbox }) {
   latest = useThreadControls({
     threadId: "thread-1",
+    projectId: "project-1",
+    workId: null,
+    writeMode: "direct",
     pending: props.pending ?? EMPTY,
     answeredControlIds: NONE,
+    switches: NO_JOURNAL,
   });
   return null;
 }
@@ -78,7 +91,7 @@ describe("useThreadControls", () => {
       id,
       control: { kind: "compact" },
     });
-    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
     expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
     await act(async () => response.resolve({ id, pending: null, turnId: "c" }));
     expect(latest.queued).toEqual([]);
@@ -207,7 +220,8 @@ describe("useThreadControls", () => {
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
   });
 
-  it("leaves a queued write-mode switch out of the compaction rows", async () => {
+  it("shows a queued write-mode switch as its own row, with a Withdraw that reaches the server", async () => {
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn" });
     const pending: ThreadPendingInbox = {
       items: [
         {
@@ -223,7 +237,17 @@ describe("useThreadControls", () => {
       ],
     };
     await act(async () => root.render(<Probe pending={pending} />));
-    expect(latest.queued).toEqual([]);
+    const [row] = latest.queued;
+    expect(row).toEqual({
+      id: "switch-1",
+      control: { kind: "write_mode", mode: "draft" },
+      status: "queued",
+    });
+    expect(latest.writeMode).toBe("draft");
+    await act(async () => latest.withdraw(row as QueuedControl));
+    expect(announcements.announce).toHaveBeenLastCalledWith("Switch withdrawn");
+    expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", "switch-1");
+    expect(latest.writeMode).toBe("direct");
   });
 
   it("stops a pending divider through the cancel route and marks it stopping", async () => {

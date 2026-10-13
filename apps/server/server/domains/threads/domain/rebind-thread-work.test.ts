@@ -23,7 +23,7 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
     goal: null,
     status: null,
     archivedAt: null,
-    aiWriteMode: "direct",
+    defaultAiWriteMode: "direct",
     entityRevision: "1",
     createdAt: "2026-08-08T00:00:00.000Z",
     updatedAt: "2026-08-08T00:00:00.000Z",
@@ -37,7 +37,7 @@ function noWorkRow(projectId = "project-1"): Work {
     ...work(NO_WORK_ID, "No Work", projectId),
     slug: null,
     isNoWork: true,
-    aiWriteMode: "draft",
+    defaultAiWriteMode: "draft",
   };
 }
 

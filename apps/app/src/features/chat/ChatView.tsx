@@ -50,9 +50,7 @@ import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
-import { answeredControlIds } from "./compaction/compaction-model";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
-import { useThreadControls } from "./compaction/useThreadControls";
 import { composerRun } from "./composer-run";
 import { DraftDock } from "./DraftDock";
 import {
@@ -76,6 +74,9 @@ import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
+import { useThreadControls } from "./thread-controls/useThreadControls";
+import { useWriteModeSync } from "./thread-controls/useWriteModeSync";
+import { answeredControlIds } from "./thread-controls/write-mode-model";
 import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import { useChatSubmissions } from "./useChatSubmissions";
@@ -222,12 +223,43 @@ export function ChatView({
     () => selectQueuedWriterTurnIds(pendingInbox),
     [pendingInbox],
   );
+  const submissions = useChatSubmissions(
+    threadId,
+    projectId,
+    accountId,
+    controller,
+    actions,
+    () => composerRef.current?.focus(),
+    () => {
+      navigation.forgetChat(threadId);
+      void navigation.openNewChat(undefined, { replace: true });
+    },
+    {
+      visible: active,
+      title:
+        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
+          ? null
+          : activeThread.title,
+      leave: (moved) => {
+        navigation.forgetChat(threadId);
+        if (moved) void navigation.openNewChat(undefined, { replace: true });
+        else if (displayedChatThreadId(navigation.display) === threadId)
+          void navigation.openNewChat(undefined, { replace: true });
+      },
+    },
+  );
   const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  const workId = activeThread?.workId ?? null;
   const controls = useThreadControls({
     threadId,
+    projectId,
+    workId,
+    writeMode: activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
     pending: pendingInbox,
     answeredControlIds: answeredControls,
+    switches: submissions.switches,
   });
+  useWriteModeSync({ projectId, threadId, workId, turns, settled: historySettled });
   useControlTurnAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live
   // state is fresher here than the subscription seed.
@@ -327,40 +359,15 @@ export function ChatView({
     isStreaming,
   });
 
-  const submissions = useChatSubmissions(
-    threadId,
-    projectId,
-    accountId,
-    controller,
-    actions,
-    () => composerRef.current?.focus(),
-    () => {
-      navigation.forgetChat(threadId);
-      void navigation.openNewChat(undefined, { replace: true });
-    },
-    {
-      visible: active,
-      title:
-        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
-          ? null
-          : activeThread.title,
-      leave: (moved) => {
-        navigation.forgetChat(threadId);
-        if (moved) void navigation.openNewChat(undefined, { replace: true });
-        else if (displayedChatThreadId(navigation.display) === threadId)
-          void navigation.openNewChat(undefined, { replace: true });
-      },
-    },
-  );
   useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
-  const draftMode = activeWork?.aiWriteMode === "draft";
-  // Generating signal: the current thread's latest assistant turn is streaming
-  // AND the Work is in draft mode. That is the cleanest "this streaming turn is
-  // producing draft edits" signal available client-side (per-turn draft lineage
-  // is a later server phase); auto-apply streams never light the dock.
-  const generating = isStreaming && draftMode;
+  // Generating signal: the latest assistant turn is streaming AND it started in
+  // draft mode. A reply keeps the mode it started with while the chat's mode may
+  // already be queued to change, so the running turn's own mode is the signal;
+  // auto-apply streams never light the dock.
+  const generating =
+    isStreaming && (latestAssistantTurn?.writeMode ?? activeThread?.aiWriteMode) === "draft";
   const dock = useDraftDock({ threadId, generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
@@ -446,6 +453,8 @@ export function ChatView({
                       threadId={threadId}
                       work={activeWork}
                       agentName={composerAgentName}
+                      writeMode={controls.writeMode}
+                      onWriteModeChange={controls.switchWriteMode}
                     />
                   ) : undefined
                 }
