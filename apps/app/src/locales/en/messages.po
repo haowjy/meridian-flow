@@ -4027,11 +4027,11 @@ msgstr "Switch to draft mode queued"
 msgid "Switch withdrawn"
 msgstr "Switch withdrawn"
 
-#: src/features/chat/thread-controls/WriteModeDivider.tsx
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Switched to auto-apply"
 msgstr "Switched to auto-apply"
 
-#: src/features/chat/thread-controls/WriteModeDivider.tsx
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Switched to draft mode"
 msgstr "Switched to draft mode"
 

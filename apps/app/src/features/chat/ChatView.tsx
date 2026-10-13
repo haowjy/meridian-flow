@@ -249,17 +249,15 @@ export function ChatView({
     },
   );
   const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
-  const workId = activeThread?.workId ?? null;
   const controls = useThreadControls({
     threadId,
     projectId,
-    workId,
     writeMode: activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
     pending: pendingInbox,
     answeredControlIds: answeredControls,
     switches: submissions.switches,
   });
-  useWriteModeSync({ projectId, threadId, workId, turns, settled: historySettled });
+  useWriteModeSync({ projectId, threadId, turns, settled: historySettled });
   useControlTurnAnnouncements(turns);
   // The snapshot revalidates as a compaction reserves and settles, so its live
   // state is fresher here than the subscription seed.

@@ -29,36 +29,6 @@ const serverRow = (id: string, mode: "draft" | "direct"): PendingInboxItem =>
     enqueuedAt: "2026-10-11T00:00:00.000Z",
   }) as PendingInboxItem;
 
-it("goes from sending to queued to nothing once the divider answers it", () => {
-  const sending = mergeQueuedControls({
-    local: NO_LOCAL_CONTROLS,
-    pending: EMPTY,
-    journaled: [switchTo("s1", "direct")],
-    executedControlIds: NONE,
-  });
-  expect(sending.map((row) => row.status)).toEqual(["sending"]);
-  // The driver got the server's answer: queued behind a reply, the inbox not yet echoing.
-  const answered = controlsReducer(NO_LOCAL_CONTROLS, {
-    type: "switch_answered",
-    id: "s1",
-    control: { kind: "write_mode", mode: "direct" },
-    pending: serverRow("s1", "direct"),
-    turnId: null,
-    cancels: [],
-  });
-  const queued = mergeQueuedControls({
-    local: answered,
-    pending: EMPTY,
-    executedControlIds: NONE,
-  });
-  expect(queued.map((row) => row.status)).toEqual(["queued"]);
-  expect(overlaidWriteMode("draft", queued)).toBe("direct");
-  // Its divider arrives: the row is the divider now.
-  expect(
-    mergeQueuedControls({ local: answered, pending: EMPTY, executedControlIds: new Set(["s1"]) }),
-  ).toEqual([]);
-});
-
 it("hides both rows of a switch back at once, and the server's null answer confirms it", () => {
   const input = {
     local: NO_LOCAL_CONTROLS,

@@ -153,3 +153,11 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
    switch, then send a message: the row says "Couldn't switch…" with Retry and Withdraw, and the
    message stays "Sending". Remove the route and reload: the switch is admitted before the message.
 5. New chat: pick a mode in the new-chat composer and send. The chat starts in it.
+6. Two chats in one Work: switch A, then B. Delay A's snapshot
+   (`agent-browser network route "**/snapshot" --delay`): the new-chat composer
+   shows B's choice after A's divider arrives, because the Work's default is refetched,
+   never patched from a divider.
+7. Steer, then switch, during a reply: once the later reply ends, the earlier one
+   shows Copy and its actions (the divider ends continuation).
+8. Read the live region (`[role=status]`) through a queued switch, its apply and a
+   switch back: "Switch to … queued", then "Switched to …", then nothing for the switch back.

@@ -5,15 +5,15 @@
  * divider's mark and rule and has no actions: the mode already changed. The
  * queued row that becomes this divider is `QueuedControlRows`.
  */
-import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import { DividerMark, DividerRule } from "../compaction/CompactionDivider";
+import { writeModeSwitchedCopy } from "./control-copy";
 import { readWriteModeSwitch } from "./write-mode-model";
 
 export function WriteModeDivider({ turn }: { turn: Turn }) {
   const facts = readWriteModeSwitch(turn);
   if (!facts) return null;
-  const label = facts.mode === "draft" ? t`Switched to draft mode` : t`Switched to auto-apply`;
+  const label = writeModeSwitchedCopy(facts.mode);
   return (
     <section
       aria-label={label}
