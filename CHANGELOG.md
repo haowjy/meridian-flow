@@ -177,6 +177,8 @@
 
 ### Fixed
 
+- Settings fits a narrow desktop window. Its sections become tabs along the top and each setting sits under its label, as on a phone, with a margin from the window edge.
+
 - Phone: opening Manuscript, Knowledge Base or Unfiled from Files lists its files again, instead of "This folder no longer exists."
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
