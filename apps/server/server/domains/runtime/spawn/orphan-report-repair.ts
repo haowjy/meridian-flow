@@ -7,7 +7,6 @@ import type { EventJournalWriter, ThreadRepositories } from "../../threads/index
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import type { RunClaim } from "../loop/ports.js";
-import type { ThreadLock } from "../loop/thread-lock.js";
 import type { ReportPublisher } from "./report-publisher.js";
 
 export function createOrphanReportRepair(deps: {
@@ -18,11 +17,11 @@ export function createOrphanReportRepair(deps: {
   clearOrphanedTurn?(threadId: ThreadId, turnId: TurnId): Promise<void>;
   eventWriter: EventJournalWriter;
   authority: RunClaim;
-  threadLock: ThreadLock;
   publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
-  publishStatus?(threadId: ThreadId): Promise<void>;
+  settleStaleExecution: import("../loop/runtime-delivery.js").RuntimeDelivery["settleStaleExecution"];
 }) {
+  const { settleStaleExecution } = deps;
   let reportCursor: TurnId | undefined;
   let unsettledCursor: { threadId: ThreadId; position: number } | undefined;
   let placeholderCursor: TurnId | undefined;
@@ -30,17 +29,17 @@ export function createOrphanReportRepair(deps: {
   async function repairReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void> {
     const reportsToPublish = new Map<TurnId, SavedExecutionReport>();
     await deps.authority.withExclusiveThread(childThreadId, async () => {
-      await deps.threadLock.withThreadLock(childThreadId, async () => {
+      await settleStaleExecution(childThreadId, async () => {
         const report = await deps.repos.executionReports.findByExecution(
           childThreadId,
           executionTurnId,
         );
         if (!report || report.outcome !== null) return;
 
-        const orphanReports = await finalizeOrphanedTurns(
-          { ...deps, publishStatus: deps.publishStatus },
-          { threadId: childThreadId, roles: ["compaction"] },
-        );
+        const orphanReports = await finalizeOrphanedTurns(deps, {
+          threadId: childThreadId,
+          roles: ["compaction"],
+        });
         for (const report of orphanReports) reportsToPublish.set(report.executionTurnId, report);
         if (orphanReports.some((report) => report.executionTurnId === executionTurnId)) return;
 
@@ -84,11 +83,8 @@ export function createOrphanReportRepair(deps: {
 
   async function repairTurns(candidate: { threadId: ThreadId }): Promise<void> {
     const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
-      deps.threadLock.withThreadLock(candidate.threadId, () =>
-        finalizeOrphanedTurns(
-          { ...deps, publishStatus: deps.publishStatus },
-          { threadId: candidate.threadId },
-        ),
+      settleStaleExecution(candidate.threadId, () =>
+        finalizeOrphanedTurns(deps, { threadId: candidate.threadId }),
       ),
     );
     for (const report of reports ?? [])

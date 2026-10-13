@@ -868,15 +868,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
     inbox: delivery,
+    settleStaleExecution: delivery.settleStaleExecution,
     retireOrphanedReply: delivery.retireOrphanedReply,
     clearOrphanedTurn: delivery.clearOrphanedTurn,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     authority: ports.runClaim,
-    threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
-    publishStatus: publishThreadStatus,
   });
   let wakeCursor: ThreadId | undefined;
   const recovery = {
