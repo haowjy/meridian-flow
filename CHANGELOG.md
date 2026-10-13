@@ -177,6 +177,8 @@
 
 ### Fixed
 
+- After a server restart interrupts a reply, the chat returns to idle when recovery finishes and accepts your next message without waiting.
+
 - A reply the AI provider turned down now offers Retry, so you can try it again after fixing the cause without retyping.
 
 - Documents in a narrow pane (the side panel, a narrow Editor window, the phone) give more of their width to the text. Margins follow the pane rather than the screen, and the right margin narrows first while the left keeps room for the drag handle.
