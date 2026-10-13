@@ -16,28 +16,10 @@ import { postJson } from "./http-client";
 
 export type ReversalDirection = "undo" | "redo";
 
-export type ReverseDocumentInput = {
-  turnId: string;
-  uri: string;
-  direction: ReversalDirection;
-};
-
 export type ReverseTurnInput = {
   turnId: string;
   direction: ReversalDirection;
 };
-
-export function reverseDocument(
-  threadId: string,
-  input: ReverseDocumentInput,
-): Promise<ReversalOutcome> {
-  return postJson<ReversalOutcome>(apiThreadContextReversePath(threadId), {
-    scope: "turn",
-    target: input.turnId,
-    direction: input.direction,
-    uri: input.uri,
-  });
-}
 
 export function reverseTurn(threadId: string, input: ReverseTurnInput): Promise<ReversalOutcome> {
   return postJson<ReversalOutcome>(apiThreadContextReversePath(threadId), {

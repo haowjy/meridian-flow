@@ -21,6 +21,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { captureHistoricalBranchRow } from "./test-support/historical-branch-row.js";
 
 const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" } as const;
 
@@ -46,6 +47,30 @@ describe("change trail (postgres)", () => {
   const db = createTestDatabase();
   beforeEach(() => resetDatabase(db));
   afterAll(() => closeDatabase(db));
+
+  it.each([
+    false,
+    true,
+  ])("a post-root checkpoint failure cannot reopen committed response (mixed=%s)", async (liveBeta) => {
+    const harness = createHarness(db);
+    const responseId = "00000000-0000-4000-8000-000000000832";
+    await harness.seedAndStage(responseId, { liveBeta });
+    harness.failCheckpoint = true;
+    await expect(harness.commit(responseId)).resolves.toMatchObject({ status: "committed" });
+    expect(harness.checkpointObservedDurability).toBe(true);
+    expect(harness.responseEvents(responseId)).toContainEqual(
+      expect.objectContaining({ transition: "closed" }),
+    );
+    expect(harness.stagedUpdates(responseId)).toEqual([[], []]);
+    const draftText = await harness.workDraftMarkdown();
+    expect(draftText).toContainEqual(expect.stringContaining("Agent alpha."));
+    if (liveBeta) expect(await harness.liveMarkdown(BETA_ID)).toContain("Agent beta.");
+    else expect(draftText).toContainEqual(expect.stringContaining("Agent beta."));
+    expect(
+      await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),
+    ).toEqual([]);
+    expect(await harness.responseJournalRows()).not.toEqual([]);
+  });
 
   it("rolls back all ten state surfaces and commits the retained response on retry", async () => {
     const harness = createHarness(db);
@@ -428,16 +453,26 @@ describe("change trail (postgres)", () => {
       { from: draftTextLength, to: draftTextLength },
       " WRITER DRAFT MARKER",
     );
-    const committed = await fixture.branchCoordinator.commitSyncFromDoc({
+    const committed = await fixture.branchCoordinator.commitSegmentRows({
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
-      source: "writer",
-      actorUserId: USER_ID as never,
-      threadId: null,
-      turnId: null,
-      wId: null,
-      updateMeta: null,
+      rows: [
+        {
+          branchId: branch.branchId,
+          updateData: await captureHistoricalBranchRow(
+            fixture.branchCoordinator,
+            branch.branchId,
+            branch.doc,
+          ),
+          source: "writer",
+          actorUserId: USER_ID as never,
+          threadId: null,
+          turnId: null,
+          wId: null,
+          updateMeta: null,
+        },
+      ],
     });
     branch.doc.destroy();
     expect(committed).toBe(true);
@@ -477,7 +512,7 @@ describe("change trail (postgres)", () => {
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       }),
-    ).resolves.toMatchObject({ status: "cant_undo_dependent" });
+    ).resolves.toMatchObject({ status: "expired" });
     await expect(
       fixture.collab.draftReview.list({
         projectId: PROJECT_ID as never,
@@ -507,7 +542,7 @@ describe("change trail (postgres)", () => {
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
     await expect(
       fixture.collab.agentEdit().write(
@@ -534,10 +569,13 @@ describe("change trail (postgres)", () => {
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     await expect(
-      fixture.collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: context.turnId as never,
-      }),
+      fixture.collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: context.turnId as never,
+        },
+      ),
     ).resolves.toMatchObject({ status: "committed" });
 
     await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -591,7 +629,7 @@ describe("change trail (postgres)", () => {
       grant: testFileGrant(DRAFT_DESTINATION),
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      responseId,
+      responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
       createdDocument: false,
     };
     await expect(
@@ -619,10 +657,13 @@ describe("change trail (postgres)", () => {
       ),
     ).resolves.toMatchObject({ status: "success", phase: "staged" });
     await expect(
-      fixture.collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      }),
+      fixture.collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        },
+      ),
     ).resolves.toMatchObject({ status: "committed" });
 
     await fixture.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {

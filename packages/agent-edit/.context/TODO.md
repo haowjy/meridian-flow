@@ -4,34 +4,6 @@ Keep the agent-editing protocol reusable across CRDT and tool implementations,
 but do not freeze a public abstraction until a second implementation exposes
 the seam it needs.
 
-## Selective Discard reconstruction reuse
-
-Work-draft selective Discard and live undo both reconstruct a peer from ordered
-Yjs updates, but Discard reverses every branch journal row in a server-vended
-class, including rows from different actors. A reusable agent-edit primitive
-would need to accept multiple update identities without importing branch-review
-concepts.
-
-Active Work-draft journal rows must remain immutable and individually
-addressable. Collab storage owns that invariant; agent-edit should not infer it
-from a snapshot.
-
-Design: [inline-diff-decoration-architecture.md] in
-`meridian-flow-docs/work/human-undo-affordance/design/`.
-
-[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
-
-## Selective undo inside one turn refuses a safe undo
-
-`undo/journal-dependencies.ts` counts a later row's `origin`/`rightOrigin`
-anchor on the undone text as a dependency. The server checks a whole turn at
-once, so this never bites there, but `planUndo` checks single writes: two
-`insert`s in one turn, then `write undo since w1 to w1`, returns
-`cant_undo_dependent` (w2 sits after w1, not inside it). Undoing `w1..w2`
-works. Fix by ignoring a later row whose only link to the undone text is
-positional (it anchors on the undone text's edge and nothing it inserts sits
-inside it), keeping the server and `planUndo` on the one rule.
-
 ## `find` misses text spelled with character references
 
 The codec encodes edge characters next to emphasis and strike as character
@@ -67,11 +39,7 @@ matches the text a writer sees.
 - **Tool registry + capability gating.** Over one closed command set a registry is
   indirection without decoupling; with one full-capability impl, capability gating
   gates nothing and can't be tested. Wait for a second tool surface / impl. (Zod
-  single source, `read` rename, and the query/write/history split already landed.)
-
-- **`HistoryPort` as a real seam.** (Issue #83.) Undo is Yjs-married cold
-  reconstruction (journal + binary updates + `UndoManager`); a 2-method port hides
-  almost none of it. Keep undo Yjs-internal until a second backend needs it.
+  single source, `read` rename, and the query/write split already landed.)
 
 - **OSS packaging.** (Issue #84.) `yjs` as a peer dep (today a direct dep); engine
   source importing no Yjs.

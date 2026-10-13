@@ -99,6 +99,7 @@ beforeEach(() => {
           {
             kind: "tracked",
             documentId: "a",
+            tabInstanceId: "instance-a",
             scheme: "manuscript",
             path: "/a.md",
             name: "a.md",
@@ -291,6 +292,7 @@ it("persists and admits the real New action without an empty working-set route",
 
 it("restores the exact older local owner across A to B to A through mounted controllers", async () => {
   const older: ContextTab = {
+    tabInstanceId: "older-instance",
     kind: "new",
     documentId: "untitled-older",
     name: "Untitled",
@@ -298,6 +300,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
   };
   const newer: ContextTab = {
     ...older,
+    tabInstanceId: "newer-instance",
     documentId: "untitled-newer",
     resourceHandle: "resource-untitled-newer",
   };
