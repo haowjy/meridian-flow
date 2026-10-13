@@ -1,7 +1,7 @@
 # @meridian/agent-edit
 
 Reusable Yjs agent-edit core: model-facing document `read` and `write`,
-response-scoped commit buffering, write handles, and cold undo/redo over
+response-scoped commit buffering, write handles, and forward inverse edits over
 host-provided ports. `read()` and `write()` are separate entry points; every
 `write` command changes a document.
 
@@ -12,7 +12,8 @@ ports and live/branch coordinators; the package never owns Postgres, Hocuspocus,
 routes, auth, or Meridian Work/Project concepts. The coordinator's document is
 this core's canonical world; it need not be the host's live document.
 
-Runtime sync state is memory-only. The journal is the only durable record;
+Runtime sync state is memory-only. The host persists journals and immutable edit
+receipts;
 restart/cold paths reconstruct from retained updates/checkpoints. Attribution is
 host-provided per interaction and must not depend on session-lifetime snapshots.
 
@@ -20,13 +21,27 @@ host-provided per interaction and must not depend on session-lifetime snapshots.
 lifecycle: journal submission precedes coordinator projection, but submission can
 be host-staged rather than durable. Finalization follows the host transaction;
 recovery follows the explicit acceptance state, never an inferred catch path.
+Draft response helpers are private committer-owned Y.Docs, never runtime-store
+entries. Core `prepare` returns a disposable read lease; only tool results drain
+the dropped-write notice outbox. Whole Discard's peer retirement advances the retired
+peer's document epoch, revoking its outstanding leases without closing
+independent documents in the same reply or a replacement peer's leases.
+Replay acceptance and staging both validate that lifetime. Equivalent prepares
+retain their view identity; real content/cut changes invalidate concurrent replay.
+Save-time link preparation receives only disposable replicas.
+Rollback changes ownership only on settlement.
 The committer owns one immutable snapshot and one promise while committing;
 immediate writes use the journal kind returned by submission to restore or recover atomically.
+Receipts render accepted cuts independently of projection. Reporting failures produce
+degraded receipts, never mutation recovery; prepared reporting uses the owner’s accepted
+before and after cuts without acquiring or applying to a live document.
 
 ## Rules
 
-- Public reads go through `read()`; mutations go through `write()` / `reverse()` /
-  response lifecycle APIs.
+- Public reads go through `read()`; mutations go through `write()` /
+  response lifecycle APIs. The narrow browser-safe `./yjs-mutation` subpath is
+  the pinned private-Yjs adapter for host-owned reconstruction transactions; it
+  does not own retirement policy, persistence, attribution or undo orchestration.
 - Do not bypass `ResponseCommitter` or infer durability from live projection; the
   journal boundary decides whether rollback may discard or must recover.
 - Destructive policy is report-only: Yjs merge never blocks an agent write.
@@ -36,3 +51,31 @@ immediate writes use the journal kind returned by submission to restore or recov
   ProseMirror via `@meridian/markup`.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
+
+## Forward inverse primitive (host-owned policy)
+
+`undo/forward-inverse.ts` owns receipt normalization, per-part classification,
+restoration lineage, and admission. The browser-safe `yjs-mutation.ts` owns
+retained-struct lookup, visibility, splitting, redone hydration/capture and
+low-level UndoManager execution, pinned to Yjs 13.6.31. `computeInverse` returns one edit
+per target edit, with transaction-delta parts and aliases; the host persists
+those edits under the policy's action IDs. Model Undo uses one action per target
+edit, including multi-edit counts committed atomically; card actions may group
+edits. Normalization is per edit, never per action.
+`prepareEditRoots` exposes batched classification, root inspection and inverse
+computation over one immutable view. Hosts reuse that prepared lineage within
+an invocation; after advancing a scratch plan, rebuild it before inspecting or
+computing again. It is not a persisted cache.
+
+This primitive does not route commands or choose destinations. The server uses
+it for receipt actions, failed-response rollback and the model's per-document
+undo/redo/revert stack. Model tools and `read(format: "edits")` reach immutable
+parts through the host `DocumentEdits` port, behind the prepared-lease gate,
+never the branch journal facade or staged-write queue. There is no hosted
+reconstruction-based reversal endpoint or reserved undo client.
+
+Provider authorship and helper lifetime are distinct: `WriteContext.responseIdentity`
+carries immutable `providerResponseId` plus rotated `editScopeId`. Journal
+authorship uses the former; prepared leases and buffers use only the latter.
+The server save/rollback boundary takes this typed pair and selects immutable
+parts by `edit_scope_id`, including durable model inverse actions.

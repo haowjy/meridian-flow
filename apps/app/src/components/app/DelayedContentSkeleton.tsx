@@ -2,9 +2,11 @@
 import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { usePaintPending } from "./PaintHold";
 
 /** Key by pending destination; remount feedback, never the retained content host. */
 export function DelayedContentSkeleton({ className }: { className?: string }) {
+  usePaintPending();
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setVisible(true), 500);

@@ -38,7 +38,7 @@ interface AdapterCase {
 
 const results: SmokeTableRow[] = [];
 
-const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+const deepseekApiKey = process.env.FLOW_DEEPSEEK_API_KEY;
 
 const openAiAdapter = createOpenAICompatibleAdapter({
   id: "deepseek-openai",

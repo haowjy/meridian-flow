@@ -201,10 +201,10 @@ export async function startSmokeServer(options?: { port?: number }): Promise<Smo
     MODEL_PROVIDER: process.env.MODEL_PROVIDER,
     MODEL_CALL_TIMEOUT_MS: process.env.MODEL_CALL_TIMEOUT_MS,
     MODEL_CALL_STALL_MS: process.env.MODEL_CALL_STALL_MS,
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
-    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    FLOW_ANTHROPIC_API_KEY: process.env.FLOW_ANTHROPIC_API_KEY,
+    FLOW_OPENAI_API_KEY: process.env.FLOW_OPENAI_API_KEY,
+    FLOW_DEEPSEEK_API_KEY: process.env.FLOW_DEEPSEEK_API_KEY,
+    FLOW_OPENROUTER_API_KEY: process.env.FLOW_OPENROUTER_API_KEY,
   });
 
   const providerIds = providerIdsFromGateway(gateway);

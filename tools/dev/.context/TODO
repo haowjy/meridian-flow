@@ -23,3 +23,10 @@
   note is reachable only through `./mf api ... rootThreadId=<first chat id>`.
   Fix in `cli/commands/doc/` and the thread send reference path when a probe
   needs it.
+
+- Give the dev log directory and Nitro's watcher exclusion one source of truth.
+  `apps/server/nitro.config.ts` builds its own `<repo>/logs/**` exclusion while
+  `lib/dev-env.ts` `resolveDevLogDir` resolves `LOG_DIR` (honoring any absolute
+  override); moving one without the other lets JSONL mirror writes rebuild Nitro
+  and orphan in-flight replies. Export one typed dev-runtime path both consume.
+  Evidence: `work/draft-review-repair/final5-rebuild-report.md` in the docs repo.

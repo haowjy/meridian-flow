@@ -19,6 +19,21 @@ function parse(href: string) {
 }
 
 describe("readable project addresses", () => {
+  it("round trips a stable change only inside a review address", () => {
+    const href = `${P}/editor/manuscript/chapter.md?work=&draft=draft-one&change=class%3Apart%2Ftwo`;
+    const parsed = parse(href);
+    expect(parsed).toMatchObject({ kind: "valid", href, address: { changeId: "class:part/two" } });
+    if (parsed.kind !== "valid") throw new Error(parsed.reason);
+    expect(projectAddressHref(parsed.address)).toBe(href);
+    expect(parse(`${P}/editor/manuscript/chapter.md?change=gone`)).toMatchObject({
+      href: `${P}/editor/manuscript/chapter.md`,
+    });
+    expect(parse(`${href}&change=other`)).toMatchObject({
+      kind: "invalid",
+      reason: "duplicate:change",
+    });
+  });
+
   it.each([
     [`${P}/editor/manuscript/literal%252F.md`, { kind: "document" }],
     // A chat's Scratch is named by its lineage in `?chat=`, never a Work.
