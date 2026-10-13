@@ -37,7 +37,7 @@ export function DocumentPath({
   trailing?: ReactNode;
 }) {
   return (
-    <span data-identity-path className="flex min-w-16 flex-1 items-center gap-1">
+    <span data-identity-path className="flex min-w-16 items-center gap-1">
       <CrumbRow location={location} browse={{ projectId, tab }} />
       {trailing}
     </span>
@@ -57,7 +57,7 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
     </Crumb>
   );
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1 whitespace-nowrap">
+    <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
       <span data-path-parents className="flex shrink-0 items-center gap-1">
         {crumb(
           "area",
@@ -85,7 +85,7 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
         "leaf",
         <span className={cn("truncate", location.provisional && "italic")}>{location.leaf}</span>,
         folders.length + 1,
-        "min-w-16 flex-1 text-ink-muted",
+        "min-w-16 text-ink-muted",
       )}
     </span>
   );

@@ -30,7 +30,11 @@ rest; only the open browsing body acquires catalogs, and its initial trail
 is set once that source resolves. The identity row measures its rendered content
 through one priority ladder shared by Editor and dock: hide parent crumbs,
 collapse labels to icons, hide the stepper count, then collapse Apply to its
-icon. The leaf keeps 64px. Phone/coarse-pointer hit boxes extend only
+icon. The leaf keeps 64px. Path, name and version switcher (Live or Draft) sit
+left in that order and spacing in both modes: the name and the rename field size
+to their content (the field up to 24rem) and yield to the ladder; free space
+trails the last control, and in review the stepper and commands sit at the right
+edge. Phone/coarse-pointer hit boxes extend only
 vertically to 44px, without increasing the band height; horizontally each
 control owns exactly its visible box (see [CONTEXT.md](CONTEXT.md)). Renaming and
 moving a homed document belong to the lists (Files, Scratch section, phone

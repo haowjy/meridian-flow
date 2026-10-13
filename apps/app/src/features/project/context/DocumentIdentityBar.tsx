@@ -192,7 +192,7 @@ export function DocumentIdentityBar({
             onCloseDraftOnly={onCloseDraftOnly}
           />
         ) : null}
-        {/* The path fills the row; the placement field needs the same push. */}
+        {/* Path, name and version switcher sit left; free space trails the last control. */}
         {placementOpen ? <span className="min-w-1 flex-1" /> : null}
         {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
         {repair?.kind === "set-location" && !placementOpen ? (

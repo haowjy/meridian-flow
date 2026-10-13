@@ -310,7 +310,7 @@ export function IdentityPlacementField({
       <PopoverAnchor asChild>
         <div
           className={cn(
-            "flex min-w-0 max-w-96 flex-1 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-sm",
+            "flex min-w-0 max-w-96 items-center rounded-sm border border-primary bg-card px-1.5 font-sans text-foreground text-sm",
             IDENTITY_BAR_BOX_CLASS,
           )}
         >
@@ -321,7 +321,7 @@ export function IdentityPlacementField({
           ) : null}
           <input
             ref={inputRef}
-            className="h-full min-w-0 flex-1 bg-transparent outline-none placeholder:text-ink-subtle/70"
+            className="field-sizing-content h-full min-w-16 bg-transparent outline-none placeholder:text-ink-subtle/70"
             aria-label={t`Document name and location`}
             value={value}
             placeholder={ghost || location.leaf}
