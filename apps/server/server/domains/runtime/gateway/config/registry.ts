@@ -83,7 +83,7 @@ const OPENAI_PRICING_SOURCE = "https://openai.com/api/pricing/ (pinned 2026-06-1
 const ANTHROPIC_PRICING_SOURCE =
   "https://platform.claude.com/docs/en/about-claude/pricing (pinned 2026-06-10)";
 const DEEPSEEK_PRICING_SOURCE =
-  "https://api-docs.deepseek.com/quick_start/pricing (pinned 2026-06-10)";
+  "https://api-docs.deepseek.com/quick_start/pricing (peak fallback pinned 2026-10-13)";
 const OPENROUTER_PRICING_SOURCE = "https://openrouter.ai/docs/pricing (pinned fallback 2026-06-15)";
 
 const EXPLICIT_CACHE_1H: PromptCacheDescriptor = { kind: "explicit", ttlMs: 60 * 60 * 1_000 };
@@ -96,7 +96,7 @@ const NO_PROMPT_CACHE: PromptCacheDescriptor = { kind: "none", ttlMs: null };
 
 // `cacheWriteUsdPerMillionTokens` matches the TTL on each model's prompt-cache
 // descriptor; the adapters translate that descriptor into provider wire format.
-const CLAUDE_SONNET_4_PRICING: ModelPricing = {
+const CLAUDE_SONNET_4_6_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "3.00",
   cachedInputUsdPerMillionTokens: "0.30",
   cacheWriteUsdPerMillionTokens: "6.00",
@@ -109,14 +109,6 @@ const CLAUDE_HAIKU_4_5_PRICING: ModelPricing = {
   cachedInputUsdPerMillionTokens: "0.10",
   cacheWriteUsdPerMillionTokens: "2.00",
   outputUsdPerMillionTokens: "5.00",
-  source: ANTHROPIC_PRICING_SOURCE,
-};
-
-const CLAUDE_3_5_HAIKU_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "0.80",
-  cachedInputUsdPerMillionTokens: "0.08",
-  cacheWriteUsdPerMillionTokens: "1.60",
-  outputUsdPerMillionTokens: "4.00",
   source: ANTHROPIC_PRICING_SOURCE,
 };
 
@@ -149,34 +141,22 @@ const GPT_4O_PRICING: ModelPricing = {
 };
 
 const DEEPSEEK_FLASH_PRICING: ModelPricing = {
-  inputUsdPerMillionTokens: "0.14",
-  cachedInputUsdPerMillionTokens: "0.0028",
-  outputUsdPerMillionTokens: "0.28",
+  inputUsdPerMillionTokens: "0.30",
+  cachedInputUsdPerMillionTokens: "0.006",
+  outputUsdPerMillionTokens: "1.20",
   source: DEEPSEEK_PRICING_SOURCE,
 };
-
-const CLAUDE_SONNET_4_MODEL = {
-  id: "claude-sonnet-4-20250514",
-  tokenizer: "anthropic",
-  displayName: "Claude Sonnet 4",
-  contextWindow: 200_000,
-  maxOutputTokens: 64_000,
-  promptCache: EXPLICIT_CACHE_1H,
-  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
-  hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
-  pricing: CLAUDE_SONNET_4_PRICING,
-} satisfies RegisteredModel;
 
 const CLAUDE_SONNET_4_6_MODEL = {
   id: "claude-sonnet-4-6",
   tokenizer: "anthropic",
   displayName: "Claude Sonnet 4.6",
   contextWindow: 1_000_000,
-  maxOutputTokens: 64_000,
+  maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_1H,
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
-  pricing: CLAUDE_SONNET_4_PRICING,
+  pricing: CLAUDE_SONNET_4_6_PRICING,
 } satisfies RegisteredModel;
 
 const CLAUDE_HAIKU_4_5_MODEL = {
@@ -189,18 +169,6 @@ const CLAUDE_HAIKU_4_5_MODEL = {
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
   hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
   pricing: CLAUDE_HAIKU_4_5_PRICING,
-} satisfies RegisteredModel;
-
-const CLAUDE_3_5_HAIKU_MODEL = {
-  id: "claude-3-5-haiku-latest",
-  tokenizer: "anthropic",
-  displayName: "Claude 3.5 Haiku",
-  contextWindow: 200_000,
-  maxOutputTokens: 8_192,
-  promptCache: EXPLICIT_CACHE_1H,
-  capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
-  hostedTools: ["web_search", "code_execution", "anthropic.text_editor", "anthropic.computer_use"],
-  pricing: CLAUDE_3_5_HAIKU_PRICING,
 } satisfies RegisteredModel;
 
 const GPT_4_1_MODEL = {
@@ -276,10 +244,10 @@ const GPT_4O_MODEL = {
   pricing: GPT_4O_PRICING,
 } satisfies RegisteredModel;
 
-const DEEPSEEK_V4_FLASH_MODEL = {
-  id: "deepseek-v4-flash",
+const DEEPSEEK_FLASH_MODEL = {
+  id: "deepseek-flash",
   tokenizer: "deepseek",
-  displayName: "DeepSeek V4 Flash",
+  displayName: "DeepSeek V4.1 Flash",
   contextWindow: 1_048_576,
   maxOutputTokens: 65_536,
   promptCache: DEEPSEEK_CACHE_ESTIMATE,
@@ -290,10 +258,10 @@ const DEEPSEEK_V4_FLASH_MODEL = {
 // OpenRouter bills the same underlying Anthropic rates for this model, and
 // `computeModelCost` prefers OpenRouter's own `reportedCostUsd` (real,
 // per-call) over this pinned rate whenever it's available — this is only the
-// fallback when it isn't. Cache fields mirror CLAUDE_SONNET_4_PRICING (1h
+// fallback when it isn't. Cache fields mirror CLAUDE_SONNET_4_6_PRICING (1h
 // writes at 2x input) so that fallback doesn't default to the full input
 // rate for cache reads/writes.
-const OPENROUTER_CLAUDE_SONNET_4_PRICING: ModelPricing = {
+const OPENROUTER_CLAUDE_SONNET_4_6_PRICING: ModelPricing = {
   inputUsdPerMillionTokens: "3.00",
   cachedInputUsdPerMillionTokens: "0.30",
   cacheWriteUsdPerMillionTokens: "6.00",
@@ -313,15 +281,15 @@ const OPENROUTER_GEMINI_FLASH_PRICING: ModelPricing = {
   source: OPENROUTER_PRICING_SOURCE,
 };
 
-const OPENROUTER_CLAUDE_SONNET_4_MODEL = {
-  id: "anthropic/claude-sonnet-4",
+const OPENROUTER_CLAUDE_SONNET_4_6_MODEL = {
+  id: "anthropic/claude-sonnet-4.6",
   tokenizer: "anthropic",
-  displayName: "Claude Sonnet 4 (OpenRouter)",
-  contextWindow: 200_000,
-  maxOutputTokens: 64_000,
+  displayName: "Claude Sonnet 4.6 (OpenRouter)",
+  contextWindow: 1_000_000,
+  maxOutputTokens: 128_000,
   promptCache: EXPLICIT_CACHE_1H,
   capabilities: ["streaming", "tool_calling", "image_input", "structured_output", "reasoning"],
-  pricing: OPENROUTER_CLAUDE_SONNET_4_PRICING,
+  pricing: OPENROUTER_CLAUDE_SONNET_4_6_PRICING,
 } satisfies RegisteredModel;
 
 const OPENROUTER_GPT_4O_MODEL = {
@@ -354,18 +322,13 @@ const OPENROUTER_GEMINI_FLASH_MODEL = {
 } satisfies RegisteredModel;
 
 export const MODEL_REGISTRY: ModelRegistry = {
-  defaultModel: "claude-sonnet-4-20250514",
+  defaultModel: "claude-sonnet-4-6",
   providers: [
     {
       id: "anthropic",
       adapter: "anthropic",
       apiKeyEnv: "ANTHROPIC_API_KEY",
-      models: [
-        CLAUDE_SONNET_4_MODEL,
-        CLAUDE_SONNET_4_6_MODEL,
-        CLAUDE_HAIKU_4_5_MODEL,
-        CLAUDE_3_5_HAIKU_MODEL,
-      ],
+      models: [CLAUDE_SONNET_4_6_MODEL, CLAUDE_HAIKU_4_5_MODEL],
     },
     {
       id: "openai",
@@ -378,7 +341,7 @@ export const MODEL_REGISTRY: ModelRegistry = {
       adapter: "anthropic",
       apiKeyEnv: "DEEPSEEK_API_KEY",
       baseUrl: "https://api.deepseek.com/anthropic",
-      models: [DEEPSEEK_V4_FLASH_MODEL],
+      models: [DEEPSEEK_FLASH_MODEL],
     },
     {
       id: "openrouter",
@@ -386,7 +349,7 @@ export const MODEL_REGISTRY: ModelRegistry = {
       apiKeyEnv: "OPENROUTER_API_KEY",
       baseUrl: "https://openrouter.ai/api/v1",
       models: [
-        OPENROUTER_CLAUDE_SONNET_4_MODEL,
+        OPENROUTER_CLAUDE_SONNET_4_6_MODEL,
         OPENROUTER_GPT_4O_MODEL,
         OPENROUTER_GEMINI_FLASH_MODEL,
       ],
