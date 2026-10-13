@@ -45,6 +45,7 @@ function createPool() {
   const ports = poolPorts(liveUtilityCore);
   const pool = createThreadPeerCorePool({
     drafts: ports.drafts,
+    branches: { getBranch: async () => null },
     fences: ports.fences,
     liveUtilityCore,
     createThreadCore: () => threadCore.asCore(),
@@ -127,6 +128,7 @@ describe("thread-peer pool", () => {
       const closingPorts = poolPorts(asLiveAgentEditCore(liveHarness.core));
       const closingPool = createThreadPeerCorePool({
         drafts: closingPorts.drafts,
+        branches: { getBranch: async () => null },
         fences: closingPorts.fences,
         liveUtilityCore: asLiveAgentEditCore(liveHarness.core),
         createThreadCore: () => {
@@ -285,6 +287,7 @@ describe("reasoned refusal and retirement through the pool", () => {
     const ports = poolPorts(live);
     const pool = createThreadPeerCorePool({
       drafts: ports.drafts,
+      branches: { getBranch: async () => null },
       fences: ports.fences,
       liveUtilityCore: live,
       createThreadCore: (threadId) => {
