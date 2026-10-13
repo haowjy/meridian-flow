@@ -24,7 +24,9 @@ import {
   type ViewItem,
   type ViewRow,
   viewTranscript,
+  type WorkReceipt,
   type WriterReferenceOccurrence,
+  workReceipt,
 } from "@meridian/thread-client";
 import { oneLine, truncate } from "../../core/output";
 import { asRecord, liveStatusLabel } from "./transcript";
@@ -45,6 +47,10 @@ export type ChatViewInputs = {
   /** No live children are known, so a reply is never held open for background subagents. */
   liveActivity: "none";
   queued: "snapshot pending inbox";
+  /** The browser fetches each child's report for its card; the snapshot has none, so no card here carries one. */
+  backgroundReports: "not fetched";
+  /** The browser fetches a reply's change trails; none are carried. */
+  changeTrails: "not fetched";
 };
 
 /** A tool call the writer sees in a fold. `--full` adds what the app's tool row is drawn from. */
@@ -57,6 +63,10 @@ export type ChatTool = {
   result?: JsonValue | null;
   message?: string | null;
   streamedOutput?: string | null;
+  /** `--full`: the tool's metadata as stored; `workReceipt` there sets a Work tool's visible title. */
+  metadata?: JsonValue | null;
+  /** `--full`: the Work receipt the view model parsed from `metadata`. */
+  workReceipt?: WorkReceipt | null;
 };
 
 export type ChatDelivery = {
@@ -90,10 +100,8 @@ export type ChatItem =
   | {
       kind: "artifact";
       blockType: string;
+      /** The custom card's kind; the card words its own title and outcome from `content`. */
       card: string | null;
-      agentName: string | null;
-      title: string | null;
-      outcome: string | null;
       /** A plain row's body, when the block is neither a card nor an image. */
       body: string | null;
       /** `--full`: the card's content (props and interrupt) and a direct launch's saved result. */
@@ -130,6 +138,8 @@ export type ChatRow = {
   finalFrom?: number;
   /** Tool calls the writer sees elsewhere, so they have no row. */
   hiddenToolCalls?: string[];
+  /** `--full`: the turn's parsed Work receipts, as the app's receipt rows read them. */
+  workReceipts?: WorkReceipt[];
   response?: { parts: string[]; stats: TurnStats };
   compaction?: ReturnType<typeof readCompactionFacts>;
   handoff?: ReturnType<typeof readHandoffSeed> & { latest: boolean; brief: string | null };
@@ -213,6 +223,8 @@ export function projectChatView(
       opening: "none",
       liveActivity: "none",
       queued: "snapshot pending inbox",
+      backgroundReports: "not fetched",
+      changeTrails: "not fetched",
     },
     rows: rows.map((row) => chatRow(row, view, options)),
     showing: rows.length,
@@ -261,6 +273,7 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
     if (row.deliveries.length)
       out.items.push({ kind: "delivery", groups: row.deliveries.map((g) => g.map(chatDelivery)) });
     out.finalFrom = assistant.finalFrom;
+    if (limits.full) out.workReceipts = assistant.workReceipts;
     if (assistant.hiddenToolCallIds.length) out.hiddenToolCalls = assistant.hiddenToolCallIds;
   }
   if (row.response)
@@ -312,6 +325,8 @@ function chatItem(item: ViewItem, limits: { full: boolean }): ChatItem {
                         result: tool.result,
                         message: tool.message,
                         streamedOutput: tool.streamedOutput,
+                        metadata: tool.metadata,
+                        workReceipt: workReceipt(tool),
                       }
                     : {}),
                 })),
@@ -335,10 +350,7 @@ function chatItem(item: ViewItem, limits: { full: boolean }): ChatItem {
       return {
         kind: "artifact",
         blockType: item.block.blockType,
-        card: item.card?.kind ?? null,
-        agentName: item.card?.agentName ?? null,
-        title: item.card?.title ?? null,
-        outcome: item.card?.outcome ?? null,
+        card: item.cardKind,
         body: item.text === null ? null : clip(item.text),
         ...(limits.full ? { content: item.block.content, direct: item.direct } : {}),
       };
@@ -471,7 +483,7 @@ function rowLines(row: ChatRow): string[] {
       case "artifact":
         lines.push(
           ...indent(
-            `${marker}card: ${item.card ?? item.blockType}${item.title ? `: ${oneLine(item.title)}` : item.body ? `: ${oneLine(item.body)}` : ""}${item.outcome ? ` (${item.outcome})` : ""}`,
+            `${marker}card: ${item.card ?? item.blockType}${item.card === null && item.body ? `: ${oneLine(item.body)}` : ""}`,
           ),
         );
         break;
@@ -495,7 +507,7 @@ export function renderChatView(view: ChatViewEnvelope): string {
     `  project ${thread.projectId}  work ${thread.workId ?? "(none)"}  agent ${thread.agentName ?? "?"}`,
     `  live ${live.status}${live.runningTurnId ? ` running ${live.runningTurnId}` : ""}  pending ${live.pending}${live.actionRequired ? "  ACTION REQUIRED" : ""}  cost $${thread.totalCostUsd}`,
     `  chatView ${view.chatView}  rows: showing ${view.showing} of ${view.total}${view.showing < view.total ? " (--full or --turn for more)" : ""}`,
-    `  inputs: turns from ${inputs.turns}; inherited history ${inputs.inherited}; local records ${inputs.localRecords}, stand-ins ${inputs.standIns}, live activity ${inputs.liveActivity}; queued from ${inputs.queued}`,
+    `  inputs: turns from ${inputs.turns}; inherited history ${inputs.inherited}; local records ${inputs.localRecords}, stand-ins ${inputs.standIns}, live activity ${inputs.liveActivity}; queued from ${inputs.queued}; background reports ${inputs.backgroundReports}, change trails ${inputs.changeTrails}`,
   ];
   const queued = view.rows.filter((row) => row.queued).length;
   for (const row of view.rows) {

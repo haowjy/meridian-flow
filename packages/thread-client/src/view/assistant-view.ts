@@ -7,7 +7,7 @@ import { type Block, blockPlainText, type Turn } from "@meridian/contracts/proto
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
 import { isImageBlock } from "./block-kind";
-import { type CardSummary, cardSummary } from "./card-summary";
+import { componentBlockContent } from "./component-block-content";
 import {
   type DeliverySegment,
   groupDeliverySegments,
@@ -44,8 +44,8 @@ export type ViewItem =
       kind: "artifact";
       block: Block;
       direct: DirectInvocationResult | null;
-      /** A custom card's own title and outcome; null for other blocks. */
-      card: CardSummary | null;
+      /** A custom card's kind; null for other blocks. The card draws its own words from `block.content`. */
+      cardKind: string | null;
       /** What a block without a card or image draws as a plain row; null when it draws nothing. */
       text: string | null;
     };
@@ -126,7 +126,8 @@ function artifactItem(block: Block, direct: DirectInvocationResult | null): View
     kind: "artifact",
     block,
     direct,
-    card: cardSummary(block, direct),
+    cardKind:
+      block.blockType === "custom" ? (componentBlockContent(block.content)?.kind ?? null) : null,
     text: block.blockType === "custom" || isImageBlock(block) ? null : plainRowText(block),
   };
 }

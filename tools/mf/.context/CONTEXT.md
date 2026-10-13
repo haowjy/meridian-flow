@@ -32,12 +32,12 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     read 2 docs`, `compaction:`, `queued: N`, or `--json` as the versioned
     `chatView: 2` envelope (row identity, kind, items, and `inputs`, which states what
     the view was computed from: no local records, stand-ins, opening seed or live
-    activity, inherited history omitted). `--full --json` is the inspectable form: paired
-    tools with input, result and streamed output, card content and direct results, report
+    activity, inherited history omitted, and background report bodies and change trails not fetched). `--full --json` is the inspectable form: paired
+    tools with input, result, streamed output, metadata and parsed Work receipt (plus the turn's `workReceipts`), raw card content and direct results, report
     payloads, the handoff brief, delivery bodies (a reply's delivery groups are its last
-    item) and writer occurrences. Text mode summarizes (card titles, fold tool names,
+    item) and writer occurrences. Text mode summarizes (a card's kind only, since React words each card itself; fold tool names,
     one `delivery:` line per group, references set apart by a space) and omits tool
-    inputs and results, card props, report payloads and occurrences. `chat-view.ts`
+    inputs and results, card props, Work receipts, report payloads and occurrences. `chat-view.ts`
     only prints; it decides no row and words no visible text (reasoning and plain-row
     text come from the view model). `--blocks` times only the selected rows' turns,
     not hidden plumbing or delivery turns. `--turn`, `--last`
