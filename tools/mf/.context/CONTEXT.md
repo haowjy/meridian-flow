@@ -76,6 +76,10 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     (new id; its drafts and history are gone) and reports `previousDocumentId`;
     if the create then fails, the error says the old document was already deleted. Seed scenario names
     use writer spelling, not slugs or prose suffixes.
+  - Usage refusals are current pending state, not terminal run events. Send
+    reconciles a replayed block with the durable snapshot before returning exit 1
+    (`failed` with reason `credits_exhausted`); an already recovered reply wins
+    over an obsolete refusal for that message.
   - **Imports:** workspace libraries are limited to `@meridian/contracts` and
     `@meridian/thread-client`. Portless discovery uses the same route contract
     as `pnpm dev`: `../dev/portless-prefix.ts`, `../dev/portless-routes.ts`,

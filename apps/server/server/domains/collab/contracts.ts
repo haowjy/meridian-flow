@@ -4,7 +4,12 @@ import type {
   ConcurrentEditInfo,
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import type { LinkView, ModelResponseIdentity } from "@meridian/contracts";
+import type {
+  DraftApplyChangesRequest,
+  DraftApplyChangesResponse,
+  DraftPreviewRefusal,
+} from "@meridian/contracts/drafts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -31,7 +36,6 @@ import type {
   SetWorkPushPolicyResult,
 } from "./domain/branch-push-contracts.js";
 import type {
-  ActiveDraft,
   DraftApplyResult,
   DraftDiscardResult,
   DraftReviewPreview,
@@ -175,21 +179,9 @@ export type AgentEditAccess = {
 export type ReverseThreadContextInput = {
   threadId: ThreadId;
   userId: UserId;
-  uri?: string;
   direction: "undo" | "redo";
-  scope: "write" | "turn" | "thread";
-  selection?: string;
   turnId: TurnId;
 };
-
-export class ReverseThreadContextError extends Error {
-  constructor(
-    readonly code: "invalid_write" | "document_not_found" | "invalid_scope",
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 export type TurnReversalAccess = {
   reverseTurn(input: {
@@ -279,12 +271,12 @@ export type ResponseWriteRollbackFinalizeResult = {
 
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: { threadId: ThreadId; turnId: TurnId },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteRollbackFinalizeResult>;
 };
@@ -295,6 +287,38 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
+/** Admission identities and fences for the two selective review protocols. */
+export type ReviewSelectionCommand =
+  | {
+      kind: "apply";
+      operationIds: string[];
+      liveRevisionToken: string;
+      draftRevisionToken: string;
+    }
+  | {
+      kind: "discard";
+      closureClassIds: string[];
+      admissionTokens: string[];
+      memberPartKeys: string[];
+      liveRevisionToken: string;
+    };
+
+export type DraftDiscardCommand =
+  | {
+      liveRevisionToken?: never;
+      draftRevisionToken?: never;
+      closureClassIds?: never;
+      admissionTokens?: never;
+      memberPartKeys?: never;
+    }
+  | {
+      liveRevisionToken: string;
+      draftRevisionToken: string;
+      closureClassIds: string[];
+      admissionTokens: string[];
+      memberPartKeys: string[];
+    };
+
 export type DraftReviewApi = {
   list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
   preview(input: {
@@ -302,9 +326,7 @@ export type DraftReviewApi = {
     workId: WorkId;
     documentId: DocumentId;
     draftId: string;
-  }): Promise<
-    ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
-  >;
+  }): Promise<({ status: "active" } & DraftReviewPreview) | DraftPreviewRefusal>;
   applyWorkDraft(input: {
     projectId?: ProjectId;
     workId: WorkId;
@@ -313,24 +335,29 @@ export type DraftReviewApi = {
     userId: UserId;
     signal?: AbortSignal;
   }): Promise<DraftApplyResult>;
-  discardWorkDraft(input: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-    userId?: UserId;
-    operationIds?: string[];
-  }): Promise<DraftDiscardResult>;
-};
-
-export type DraftSessionStats = {
-  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+  applyWorkDraftChanges(
+    input: DraftApplyChangesRequest & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      documentId: DocumentId;
+      userId: UserId;
+      signal?: AbortSignal;
+    },
+  ): Promise<DraftApplyChangesResponse>;
+  discardWorkDraft(
+    input: DraftDiscardCommand & {
+      projectId?: ProjectId;
+      workId: WorkId;
+      threadId?: ThreadId;
+      documentId: DocumentId;
+      draftId: string;
+      userId?: UserId;
+    },
+  ): Promise<DraftDiscardResult>;
 };
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  draftSessionStats: DraftSessionStats;
 };
 
 export type TurnLiveLineageAccess = {
@@ -344,11 +371,6 @@ export type BranchPushAccess = {
   pushToLive(input: { branchId: string; pushedByUserId?: UserId }): Promise<unknown>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
   setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
-  markFailedResponseRollbackPending(input: {
-    branchId: string;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<unknown>;
 };
 
 /**

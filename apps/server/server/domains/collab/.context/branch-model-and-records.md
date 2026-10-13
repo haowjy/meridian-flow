@@ -21,14 +21,21 @@ new write. Draft-only Discard removes only that document’s manifest entry and
 resets its content branch in one Work-locked transaction. Branch reset
 notifications publish after commit; rolled-back resets never advance a room.
 
+A durable thread peer has no unpublished authored state: reply finalization saves
+its edits into the shared Work draft atomically. Before a new call, a pull tests
+whether the parent contains the peer's full update, including deletes. If review
+retired peer effects, the coordinator resets that peer to the parent instead of
+merging stale structs or tombstones back in. Fresh drafted calls also evict the
+previous reply's runtime replica before rebuilding from the pulled peer. Calls
+already holding a staged document keep that response's private edits.
+
 Thread-peer resolution is primary-Work-aware. After conversation reassignment,
 the old peer is no longer resolvable; provisioning closes it and seeds a new
 peer from the new primary Work draft while holding the conversation row lock.
 
 The review list therefore emits one active item per document and folds all
-contributing journal rows into that item. `lastActorTurnId` is representative
-metadata, not review identity. `draftId` is the only application and wire
-identity. `createWorkDraftReviewService()` resolves it to the physical Work
+contributing journal rows into that item. `actorThreads` lists candidate chats;
+`draftId` is the only application and wire identity. `createWorkDraftReviewService()` resolves it to the physical Work
 branch and keeps that branch identity inside the domain; `reviewRoomName`
 remains an opaque transport address.
 
@@ -39,8 +46,16 @@ authority.
 Review operations keep two internal journal-row identities separate.
 `SourceUpdateIds` name the logical source rows used for operation attribution
 and presentation; `PhysicalSourceUpdateIds` name every physical row needed to
-reconstruct Discard, including reversal rows. Discard classes use the physical
-set. Neither identity is wire data, and callers must not substitute one for the
+replay a review class, including invisible suppliers and certified inverse rows.
+`closureUpdateIds` is the shared physical set for per-change Apply and Discard.
+Classes union visible hunks, shared physical rows, Yjs origin/rightOrigin/parent
+references, delete-set overlaps, and same-client clock-prefix edges. Even unrelated
+visible edits can be inseparable when one Yjs client supplied both. Draft review
+editors rotate the writer client before an edit in a different closure class or
+a disjoint untouched location. Continuous typing and edits within one class
+keep their client; a pause alone never rotates. Writer room admissions retain
+transaction deltas, not state-vector diffs (which echo cumulative deletions).
+Rotation does not remove genuine structural dependencies or split retained rows. Neither identity is wire data, and callers must not substitute one for the
 other just because both are represented by numbers at runtime.
 
 Live→Work-draft pulls run after persisted live updates (2-second debounce, 10-second
@@ -59,12 +74,13 @@ deleted.
 
 **Releasing a live room never waits on a database lock.** Closing the last
 connection runs `onStoreDocument` inline in the releaser's async context, often
-inside its DB transaction. The store therefore only captures the journal cut and
-encoded state; the checkpoint write runs after the releaser's transaction
-commits, in its own transaction, and is dropped on rollback (the room may hold
-that transaction's uncommitted updates) or when the live generation was retired.
-Writes queue one per document, newest snapshot wins; shutdown drains them. A
-checkpoint only caches durable journal state, so a dropped or late one costs
+inside its DB transaction. The hook therefore only queues the room's immutable
+authority binding. After the releaser's transaction commits, the worker captures
+a durable checkpoint cut under the document mutation lock and persists it in
+a separate transaction. Rollback drops the request; a retired generation
+cannot capture or persist a cut. Requests queue one per document, newest request
+wins; shutdown drains them. A checkpoint only caches durable journal state,
+so a dropped or late one costs
 replay time, never data. Thread-peer pulls also take their live snapshot outside
 the caller's transaction, so loading the room cannot leave head or lock rows held
 by a caller that then waits on the root pull transaction.
@@ -161,13 +177,11 @@ persist their branch state inside that transaction; they never push live (D59).
 
 - `document_yjs_updates` is the live update journal.
   Writer rows persist as `origin_type = human`; reads also normalize legacy
-  `user` rows to the package's `human:<actor>` origin. Reversal and bookkeeping
-  rows keep `origin_type = system`, and reversal rows store independent
-  `reversal_actor_type` attribution. Agent rows persist as `agent`. A branch
-  settlement appends its exact authored rows followed by one `reconcile` row
-  carrying the canonical pushed update; the latter supplies replay coverage,
-  not a later semantic edit. Only the writer class invalidates a live reversal
-  plan.
+  `user` rows to the package's `human:<actor>` origin. Card inverse journal rows use
+  `system`; their immutable inverse receipt carries the writer actor. Model
+  inverses use agent attribution. Bookkeeping rows also use `system`. Settlement appends exact authored rows followed by one
+  `reconcile` row carrying canonical replay coverage, not a new semantic edit.
+  Immutable edit parts and certified aliases own reversal correspondence.
 - `document_branches` stores branch snapshots/state vectors/generation.
 - `branch_write_journal` stores branch write rows and review status.
 - `push_lineage` stores publication identity, typed branch generation, and
@@ -187,3 +201,51 @@ durable journal for origin and structural-delete attribution, and reports each
 removed writer-owned canonical block identity. Missing ancestry/body/owner
 evidence emits degradation telemetry rather than guessing from update bytes;
 it does not make the optional mark overlay authoritative.
+
+### Preview interleave semantics
+
+`mergeArtifact` identifies surviving insertion structs whose Yjs origin and
+right-origin both lie in context deleted by the other author. Ordinary writer
+insertions inside intact AI prose keep their author-specific spans, even with
+multiple writer runs. A diff hunk can be writer-only while its deleted origin
+belongs to an adjacent AI rewrite. Run alternation is not the authority.
+
+Text hunks with `deletedText` also emit `deletedSpans`: ordered, disjoint UTF-16
+`from`/`to` offsets covering the full removed string, each with `deletedBy`
+(`agent` or `writer`). Authors come from deletion attribution, not inserted
+spans or the hunk's owning operations. A single semantic deletion can contain
+both authors. This field carries no journal row identifiers. Block-display
+hunks keep their existing contract. Cumulative delete-set visibility is checked
+per Yjs struct, so old tombstones cannot hide a newly deleted neighboring region.
+
+A removal of a whole live block names it: a deleted block hunk's `deletedBlock.blockId`
+and a text hunk's `deletedBlockId` are the live block's Yjs item (`blockItemKey`,
+`client:clock`). A draft re-forked from live keeps that item when the deletion is
+discarded, so a client holding the old review can find the restored block by it.
+
+### Writer Undo restoration attribution
+
+Browser Undo/Redo still allocates fresh writer clocks. Draft editors capture
+local `Item.redone` links before Yjs cleanup merges structs and append claims
+to `meridian_restoration_claims`, outside manuscript and Undo scope. The outer
+Yjs update encodes the current store from its before-state, so it carries both
+the text copies and the queued claim transaction. A following map-only frame
+is already contained. Claims travel through IndexedDB, local peers and offline
+full-state reconnect exactly like other Yjs structs; there is no stateless queue.
+
+The map is untrusted, never attribution authority. `writer-restoration.ts`
+certifies only novel claims and targets, retained deleted sources, matching
+content and length, and a target anchored at the exact source ID. Restored
+containers require certified parent-copy chains and matching source sibling
+slots; cross-parent text equality is never sufficient. A stale, displaced, mismatched or
+already-admitted claim grants nothing; its bytes are admitted as writer text.
+Branch admission persists certified `restorationAliases` in existing journal
+`update_meta` under the same snapshot/CAS lock. Contained updates never append
+again. Source authorship follows aliases transitively during cold journal replay;
+partial restores split target ranges at alias and source-operation boundaries
+so each stroke retains its owner. Reconnect frames assign only novel clocks;
+repeated source structs cannot overwrite earlier ownership. Physical
+writer rows still supply replay/closure, and the browser never uses AI clients.
+
+Writer rows do not invoke the older content-only restorative heuristic. Rendered
+text equality without a source-ID anchor cannot preserve AI authorship.

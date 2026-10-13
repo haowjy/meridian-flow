@@ -35,8 +35,11 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
-import { useChatNavigation } from "@/features/project/routing/chat-navigation";
-import { displayThreadTitle } from "@/lib/thread-title";
+import {
+  displayedChatThreadId,
+  useChatNavigation,
+} from "@/features/project/routing/chat-navigation";
+import { defaultThreadTitle, displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
@@ -47,7 +50,7 @@ import { answeredControlIds } from "./compaction/compaction-model";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { useThreadControls } from "./compaction/useThreadControls";
 import { composerRun } from "./composer-run";
-import { DraftDock, useDraftDock } from "./DraftDock";
+import { DraftDock } from "./DraftDock";
 import {
   canDeriveFrom,
   type TurnDerivation,
@@ -69,10 +72,12 @@ import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
+import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
+import { useDraftDock } from "./useDraftDock";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { usePendingInbox } from "./usePendingInbox";
 import { useReplyRetry } from "./useReplyRetry";
@@ -319,6 +324,19 @@ export function ChatView({
       navigation.forgetChat(threadId);
       void navigation.openNewChat(undefined, { replace: true });
     },
+    {
+      visible: active,
+      title:
+        !activeThread?.title?.trim() || activeThread.title.trim() === defaultThreadTitle()
+          ? null
+          : activeThread.title,
+      leave: (moved) => {
+        navigation.forgetChat(threadId);
+        if (moved) void navigation.openNewChat(undefined, { replace: true });
+        else if (displayedChatThreadId(navigation.display) === threadId)
+          void navigation.openNewChat(undefined, { replace: true });
+      },
+    },
   );
   useThreadRunResume(threadId, controller, { liveState: snapshotLiveState, activateProjection });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
@@ -329,7 +347,7 @@ export function ChatView({
   // producing draft edits" signal available client-side (per-turn draft lineage
   // is a later server phase); auto-apply streams never light the dock.
   const generating = isStreaming && draftMode;
-  const dock = useDraftDock({ generating });
+  const dock = useDraftDock({ threadId, generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
     const recorded = await submissions.submit(envelope);
@@ -363,19 +381,12 @@ export function ChatView({
           surfaceRef={chatSurfaceRef}
           footer={
             <div data-debug-composer={threadId}>
-              {composerStrip ? (
-                // The composer's own border and radius, open at the bottom: the
-                // composer's top border is the strip's lower edge, so the two
-                // read as one unit. Inset like the draft dock below it.
-                <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
-                  {composerStrip}
-                </div>
-              ) : null}
-              {/* The dock strip sits BEHIND (below) the composer — narrower via
-              mx-2, top corners rounded, jade-tinted background. The composer
-              always keeps its own border and overlaps the strip's edge. */}
-              <DraftDock dock={dock} />
               <Composer
+                notices={
+                  pendingInbox.blocked?.reason === "credits_exhausted" ? (
+                    <UsageBlockedNotice />
+                  ) : undefined
+                }
                 key={draft.key}
                 initialDraft={draft.initialDraft}
                 onDraftChange={draft.updateDraft}
@@ -387,6 +398,22 @@ export function ChatView({
                 }}
                 ref={composerRef}
                 variant="pinned"
+                attached={
+                  <>
+                    {composerStrip ? (
+                      // The composer's own border and radius, open at the bottom: the
+                      // composer's top border is the strip's lower edge, so the two
+                      // read as one unit. Inset like the draft dock below it.
+                      <div className="mx-[var(--chat-space-block)] rounded-t-composer-pinned border border-b-0 border-composer-border bg-composer-surface">
+                        {composerStrip}
+                      </div>
+                    ) : null}
+                    {/* The dock strip sits BEHIND (below) the composer — narrower via
+                        mx-2, top corners rounded, jade-tinted background. The composer
+                        always keeps its own border and overlaps the strip's edge. */}
+                    <DraftDock dock={dock} />
+                  </>
+                }
                 running={run !== null}
                 referenceCatalog={referenceCatalog}
                 availableSkills={availableSkills.skills}
@@ -427,6 +454,7 @@ export function ChatView({
                     changeTrails={changeTrails.byId}
                     submissionRecoveryByTurnId={submissions.presentation}
                     queuedWriterTurnIds={queuedWriterTurnIds}
+                    waitingForUsage={pendingInbox.blocked?.reason === "credits_exhausted"}
                     controls={controls}
                     brief={brief}
                     replyRetry={replyRetry}

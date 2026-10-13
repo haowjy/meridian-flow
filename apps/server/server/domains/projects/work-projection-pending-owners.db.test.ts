@@ -19,11 +19,12 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/d
 import {
   createDrizzleBranchJournalReadStore,
   createDrizzlePushCommitStore,
+  createDrizzleWorkDraftPendingStore,
 } from "../collab/adapters/drizzle-branch-push.js";
-import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
 import { createDrizzleChangeTrailAggregateWriter } from "../collab/adapters/drizzle-change-trail-aggregate.js";
 import { stagePendingSettlementWithinTx } from "../collab/adapters/drizzle-pending-settlement.js";
 import { createBranchCriticalSections } from "../collab/domain/branch-critical-sections.js";
+import { createFixtureBranchStore } from "../collab/test-support/fixture-branch-store.js";
 import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import { createDrizzleProjectContextAvailability } from "../context/adapters/project-context-availability.js";
 import { createWorkProjectionMutation } from "./adapters/work-projection-mutation.js";
@@ -80,8 +81,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID,
         kind: "work_draft",
         workId: WORK_ID,
-        state: Buffer.from([0]),
-        stateVector: Buffer.from([0]),
+        state: Buffer.from(projectionDraft.state),
+        stateVector: Buffer.from(projectionDraft.vector),
       });
       const availability = createDrizzleProjectContextAvailability(db);
       const catalog = createDrizzleContextCatalog(db, undefined, {
@@ -122,9 +123,72 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("drives real discard, redo, push, and forced rollback owners", async () => {
+    it("publishes a pull's effect and pending count atomically, including root rollback", async () => {
       const { db, projection } = await fixture();
-      const branches = createDrizzleBranchStore(
+      const branches = createFixtureBranchStore(
+        db,
+        undefined,
+        createBranchCriticalSections(),
+        projection,
+      );
+      await branches.appendJournal?.({
+        branchId: BRANCH_ID,
+        generation: 1,
+        updateData: Y.encodeStateAsUpdate(new Y.Doc()),
+        source: "agent",
+        updateMeta: { kind: "edit" },
+      });
+      await db
+        .update(documentBranches)
+        .set({ hasEffect: true })
+        .where(eq(documentBranches.id, BRANCH_ID));
+      const counts = createDrizzleWorkDraftPendingStore(db);
+      expect(
+        await counts.countPendingByWorkIds(["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" as never]),
+      ).toEqual(new Map());
+      expect(await counts.countPendingByWorkIds([WORK_ID as never])).toEqual(
+        new Map([[WORK_ID, 1]]),
+      );
+      const before = await projectionState();
+      const input = {
+        branchId: BRANCH_ID,
+        expectedGeneration: 1,
+        expectedState: projectionDraft.state,
+        expectedStateVector: projectionDraft.vector,
+        state: projectionDraft.state,
+        stateVector: projectionDraft.vector,
+        liveCut: projectionDraft.state,
+      };
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          expect(await branches.updateBranchSnapshot(input)).toBe(true);
+          throw new Error("forced pull rollback");
+        }),
+      ).rejects.toThrow("forced pull rollback");
+      expect(await projectionState()).toEqual(before);
+      expect(
+        (await db.select().from(documentBranches).where(eq(documentBranches.id, BRANCH_ID)))[0]
+          .hasEffect,
+      ).toBe(true);
+      expect(await branches.updateBranchSnapshot(input)).toBe(true);
+      const after = await projectionState();
+      expect(
+        (await db.select().from(documentBranches).where(eq(documentBranches.id, BRANCH_ID)))[0]
+          .hasEffect,
+      ).toBe(false);
+      expect(await counts.countPendingByWorkIds([WORK_ID as never])).toEqual(new Map());
+      expect(after.entityRevision).toBe((before.entityRevision ?? 0n) + 1n);
+      expect(after.availabilityGeneration).toBeGreaterThan(before.availabilityGeneration ?? 0n);
+      expect(BigInt(after.catalogEntityRevision ?? "0")).toBe(after.entityRevision);
+      expect(
+        (await db.select().from(documentBranches).where(eq(documentBranches.id, BRANCH_ID)))[0]
+          .hasEffect,
+      ).toBe(false);
+    });
+
+    it("drives real discard, push, and forced rollback owners", async () => {
+      const { db, projection } = await fixture();
+      const branches = createFixtureBranchStore(
         db,
         undefined,
         createBranchCriticalSections(),
@@ -158,8 +222,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: null,
         generation: 1,
         status: "active" as const,
-        state: new Uint8Array([0]),
-        stateVector: new Uint8Array([0]),
+        state: projectionDraft.state,
+        stateVector: projectionDraft.vector,
         schemaVersion: 1 as never,
       };
       const pushStore = createDrizzlePushCommitStore(
@@ -193,15 +257,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
-      await pushStore.commitTurnRedo({
-        branch,
-        journalRows: rows,
-        state: branch.state,
-        stateVector: branch.stateVector,
-      });
-      const redone = await projectionState();
-      expect(redone.entityRevision).toBe((discarded.entityRevision ?? 0n) + 1n);
-
+      await appendJournal({ kind: "edit" });
+      const pushRows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
+      const beforePush = await projectionState();
       const validUpdate = Y.encodeStateAsUpdate(new Y.Doc());
       const trail = {
         documentId: DOCUMENT_ID,
@@ -213,7 +271,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
       await pushStore.commitPush({
         branch,
-        journalRows: rows,
+        journalRows: pushRows,
         pushUpdate: validUpdate,
         idempotencyKey: "work-projection-pending-owner-push",
         trail,
@@ -237,8 +295,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       const pushed = await projectionState();
-      expect(pushed.entityRevision).toBe((redone.entityRevision ?? 0n) + 1n);
+      expect(pushed.entityRevision).toBe((beforePush.entityRevision ?? 0n) + 1n);
       expect(BigInt(pushed.catalogEntityRevision ?? "0")).toBe(pushed.entityRevision);
     });
   });
 }
+
+// Valid immutable draft bytes; these suites exercise publication ownership, not fake CRDT encodings.
+const projectionDraft = (() => {
+  const doc = new Y.Doc({ gc: false });
+  doc.clientID = 6000;
+  const paragraph = new Y.XmlElement("paragraph"),
+    text = new Y.XmlText();
+  text.insert(0, "Pending.");
+  paragraph.insert(0, [text]);
+  doc.getXmlFragment("prosemirror").insert(0, [paragraph]);
+  const state = Y.encodeStateAsUpdate(doc),
+    vector = Y.encodeStateVector(doc);
+  doc.destroy();
+  return { state, vector };
+})();

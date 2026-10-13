@@ -1,5 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
@@ -12,13 +13,14 @@ import {
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
   type ContextTab,
   getContextTabs,
   isEditorScheme,
+  matchesReviewDraft,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -56,13 +58,19 @@ import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   type AddressSelection,
   browseDestination,
+  browsedFolder,
   type ProjectAddress,
   type ProjectDestination,
   parseProjectAddress,
   projectAddressHref,
+  workDetailAddress,
 } from "./project-address";
 import { addressWorkSelection, workSelectionFor } from "./project-address-resolution";
-import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
+import {
+  resolveLocalDocumentSelection,
+  selectEditorEntryTab,
+  useEditorContainerAddress,
+} from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
@@ -78,6 +86,7 @@ import {
   projectSearchEquals,
   type RouteWorkResolution,
   routeWorkIssue,
+  type WorkDetailTarget,
 } from "./project-route";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
@@ -249,17 +258,26 @@ function ReadableProjectDestination({
   }, [navigation, location, workCatalog.entries, workCatalog.status, workCatalog.isFetching]);
 
   // Cached live locations, read only to place a review launch's document (never fetched for it).
-  const { catalog: manuscriptCatalog } = useContextCatalogView(projectId, "manuscript", {
-    workId: null,
+  const launchCatalogs = useContextCatalogViews(projectId, CONTEXT_URI_SCHEMES, {
+    workId,
     enabled: false,
   });
+  const documentCatalog = useMemo(
+    () => ({
+      findDocument: (id: string) =>
+        CONTEXT_URI_SCHEMES.map((scheme) => launchCatalogs[scheme].catalog?.findDocument(id)).find(
+          (file) => file != null,
+        ) ?? null,
+    }),
+    [launchCatalogs],
+  );
   const latest = useRef({
     address,
     location,
     navigation,
     editorWorkId: workId,
     noWorkId,
-    manuscriptCatalog,
+    documentCatalog,
   });
   latest.current = {
     address,
@@ -267,7 +285,7 @@ function ReadableProjectDestination({
     navigation,
     editorWorkId: workId,
     noWorkId,
-    manuscriptCatalog,
+    documentCatalog,
   };
   // The document the address resolved to: a review of it stays on this address
   // through a rename, whatever path the launcher read.
@@ -311,16 +329,29 @@ function ReadableProjectDestination({
     documentDestination?.scheme !== "scratch"
       ? { workId: null }
       : contextOwner(addressWorkId, address.lineage);
+  const addressSchemes = useMemo(
+    () => (documentDestination ? [documentDestination.scheme] : []),
+    [documentDestination?.scheme],
+  );
+  const addressCatalogs = useContextCatalogViews(projectId, addressSchemes, {
+    ...addressOwner,
+    enabled: !!documentDestination && editorWork.status === "present",
+  });
   const {
     catalog: addressCatalog,
     isComplete: addressCatalogComplete,
     isFetching: addressCatalogFetching,
     isError: addressCatalogError,
     refetch: refetchAddressCatalog,
-  } = useContextCatalogView(projectId, documentDestination?.scheme ?? "manuscript", {
-    ...addressOwner,
-    enabled: !!documentDestination && editorWork.status === "present",
-  });
+  } = documentDestination
+    ? addressCatalogs[documentDestination.scheme]
+    : {
+        catalog: null,
+        isComplete: false,
+        isFetching: false,
+        isError: false,
+        refetch: () => undefined,
+      };
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
     queryKey: [
@@ -373,17 +404,13 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
-  const editorDrafts = useWorkDrafts(
-    projectId,
-    documentDestination?.scheme === "manuscript" ? workId : null,
-  );
+  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
     documentLookup.data,
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
-    documentDestination?.scheme ?? "",
     {
       catalog: addressCatalog,
       isComplete: addressCatalogComplete,
@@ -400,6 +427,13 @@ function ReadableProjectDestination({
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
+  const editorContainerAddress = useEditorContainerAddress({
+    active: activeScreen === "context",
+    accountId: user.userId,
+    address,
+    documentId: addressDocumentId ?? null,
+    workId,
+  });
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : (routeWorkIssue(routeWork) ??
@@ -443,7 +477,13 @@ function ReadableProjectDestination({
           (draftOnly
             ? // Review installs the tab; until it has, the address is still being repaired.
               address.draftId === draftOnly.draft.draftId &&
-              workspaceTabs.some((tab) => tab.documentId === draftOnly.documentId)
+              workspaceTabs.some((tab) =>
+                matchesReviewDraft(tab, {
+                  documentId: draftOnly.documentId,
+                  reviewWorkId: workId ?? "",
+                  reviewDraftId: draftOnly.draft.draftId,
+                }),
+              )
               ? undefined
               : "loading"
             : documentDestination
@@ -467,9 +507,14 @@ function ReadableProjectDestination({
       ...address,
       destination: next,
       draftId: undefined,
-      workView: next.kind === "work" ? address.workView : undefined,
+      workView: undefined,
       worksView: undefined,
     };
+  }
+  // A Work opens on its chats unless the target names Files: one address, so
+  // one transition and one history entry, whatever screen it leaves.
+  function workAddress(target: WorkDetailTarget): ProjectAddress {
+    return workDetailAddress(address, target);
   }
   const contextDestination = useCallback(
     (target: ContextRouteRequest, preparedTab?: ContextTab, draftId?: string) =>
@@ -501,7 +546,7 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
-  const setEditorReviewDraftId = useCallback((draftId: string | null) => {
+  const setEditorReviewDraftId = useCallback((draftId: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
@@ -515,6 +560,7 @@ function ReadableProjectDestination({
       ...address,
       work,
       draftId: draftId ?? undefined,
+      changeId: draftId ? changeId : undefined,
     });
   }, []);
   const closeDestination = useCallback(
@@ -545,10 +591,8 @@ function ReadableProjectDestination({
     if (result.kind === "failed") throw result.error;
   };
   const routeCommands: ProjectRouteCommands = {
-    openWork: (target, options) =>
-      goLegacy(toDestination({ kind: "work", workId: target.workId }), options),
-    workHref: (target) =>
-      projectAddressHref(toDestination({ kind: "work", workId: target.workId })),
+    openWork: (target, options) => goLegacy(workAddress(target), options),
+    workHref: (target) => projectAddressHref(workAddress(target)),
     workView: address.workView ?? "chats",
     setWorkView: (view) =>
       goLegacy({ ...address, workView: view === "files" ? "files" : undefined }, { replace: true }),
@@ -608,7 +652,7 @@ function ReadableProjectDestination({
       : documentDestination
         ? `/${documentDestination.path}`
         : undefined,
-    folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
+    folder: browsedFolder(destination) ?? undefined,
     view: address.workView ?? address.worksView,
   };
   const editorDocument = {
@@ -635,7 +679,13 @@ function ReadableProjectDestination({
       if (tab)
         return openContext(
           { ...routeTargetForTab(tab, workId), documentId: tab.documentId },
-          options,
+          {
+            ...options,
+            ...(editorContainerAddress?.documentId === tab.documentId &&
+            editorContainerAddress.workId === workId
+              ? { draftId: editorContainerAddress.address.draftId }
+              : {}),
+          },
         );
     }
     return go(
@@ -672,6 +722,7 @@ function ReadableProjectDestination({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
+      openWork={routeCommands.openWork}
       screenCommands={{
         showEditor: (options) => showScreenDestination("context", options),
         showWork: () => showScreenDestination("work"),
@@ -738,7 +789,7 @@ function ReadableProjectDestination({
                       replace: true,
                       // The coordinator relocates the document the address names,
                       // or falls back to another. Either way the review follows
-                      // the address until EditorReviewAddressOwner, which knows
+                      // the address until ReviewAddressOwner, which knows
                       // the document's identity, decides it no longer applies.
                       draftId: address.draftId,
                     },
@@ -755,6 +806,7 @@ function ReadableProjectDestination({
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
             reviewDraftId={address.draftId}
+            reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}

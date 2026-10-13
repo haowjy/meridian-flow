@@ -17,8 +17,8 @@ import {
   InvalidAdmissionError,
 } from "../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
-import { throwHttpInterrupt } from "../../../../lib/interrupt-boundary.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
+import { throwHttpInterrupt } from "../../../../shared/interrupt-boundary.js";
 
 export default defineEventHandler(async (event): Promise<SendMessageResponse> => {
   const { app, user } = await requireAppUser(event);

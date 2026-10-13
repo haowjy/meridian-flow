@@ -13,7 +13,6 @@ export default defineEventHandler(async (event) => {
     {
       threads: app.repos.threads,
       threadWorks: app.repos.threadWorks,
-      projects: app.projectRepo,
       works: app.workRepo,
       workContextNotices: app.workContextNotices,
       notices: app.notices,

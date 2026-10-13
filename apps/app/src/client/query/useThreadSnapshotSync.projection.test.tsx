@@ -540,6 +540,52 @@ describe("stale acquisition and missing targets", () => {
     expect(harness.snapshotRequest).toHaveBeenCalledTimes(2);
     await vi.waitFor(() => expect(status).toBe("cancelled"));
   });
+
+  it("reports history settled only once its turns are in the transcript store", async () => {
+    // A reveal into a chat the page has not loaded asks "is this turn absent?"
+    // the moment history settles. Settling before the turns reach the store
+    // reads as an empty chat, and the reveal gives up on a turn about to arrive.
+    const held = deferred<unknown>();
+    harness.snapshotRequest.mockReset().mockImplementation(() => held.promise);
+    const scenario = mountThreadProjectionScenario();
+    const { actions } = scenario;
+    const renders: Array<{ settled: boolean; turns: number }> = [];
+    function Probe() {
+      const { settled } = useThreadSnapshotSync("thread-1");
+      renders.push({ settled, turns: actions.turns("thread-1")?.length ?? 0 });
+      return null;
+    }
+    await scenario.mount(<Probe />);
+    held.resolve({
+      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+      turns: [
+        {
+          id: "t1",
+          threadId: "thread-1",
+          role: "user",
+          status: "complete",
+          position: 1,
+          blocks: [],
+        },
+        {
+          id: "t2",
+          threadId: "thread-1",
+          role: "user",
+          status: "complete",
+          position: 2,
+          blocks: [],
+        },
+      ],
+      nextSeq: "1000",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(renders.at(-1)?.settled).toBe(true));
+    });
+    expect(renders.at(-1)).toEqual({ settled: true, turns: 2 });
+    expect(renders.filter((render) => render.settled && render.turns === 0)).toEqual([]);
+  });
 });
 
 describe("projection lifetime fencing", () => {

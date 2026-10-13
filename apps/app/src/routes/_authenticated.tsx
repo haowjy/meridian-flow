@@ -9,6 +9,7 @@ import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
+import { readCurrentChat } from "@/client/current-chat";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
@@ -26,13 +27,13 @@ import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
-
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
   AccountFeatureComposition,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
+import { parseProjectAddress } from "@/features/project/routing/project-address";
 import { originalBrowserSearch } from "@/router-search";
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
@@ -128,7 +129,15 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   bindAccountRecents(user.userId);
-  bindChatSubmissions(user.userId);
+  bindChatSubmissions(user.userId, (id) => {
+    const route = parseProjectAddress(window.location.pathname, window.location.search);
+    if (route.kind !== "valid") return false;
+    const { projectId, destination } = route.address;
+    return (
+      (destination.kind === "chat" && destination.chatId === id) ||
+      readCurrentChat(user.userId, projectId) === id
+    );
+  });
   bindDraftCommandAccount(user.userId);
 
   // One unconditional provider tree for every authenticated route — the settings

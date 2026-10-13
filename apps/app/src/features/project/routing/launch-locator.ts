@@ -11,8 +11,8 @@
  */
 import type { ProjectContextIdentityResolution } from "@meridian/contracts/protocol";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import type { ContextTab } from "@/client/stores";
+import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
 import type { ProjectDestination } from "./project-address";
@@ -35,7 +35,12 @@ export async function resolveLaunchLocator(input: {
   const { requested } = input;
   const { documentId } = requested;
   if (!documentId) return requested;
-  const tab = input.tabs.find((candidate) => candidate.documentId === documentId);
+  const tab = input.tabs.find(
+    (candidate) =>
+      candidate.kind !== "new" &&
+      candidate.documentId === documentId &&
+      (!candidate.draftOnly || candidate.reviewWorkId === requested.workId),
+  );
   if (tab && tab.kind !== "new" && requested.workId) {
     return { ...routeTargetForTab(tab, requested.workId), documentId };
   }
@@ -48,10 +53,15 @@ export async function resolveLaunchLocator(input: {
     };
   }
   if (input.draftOnly) return requested;
+  const locate = (uri: string): ContextRouteRequest | null => {
+    const parsed = parseContextUri(uri);
+    return parsed ? { scheme: parsed.scheme, path: parsed.path } : null;
+  };
   const live = input.catalog?.findDocument(documentId);
-  if (live) return { ...requested, scheme: "manuscript", path: live.path };
+  const cached = live ? locate(live.uri) : null;
+  if (cached) return { ...requested, ...cached };
   const resolution = await input.lookup(documentId);
-  if (resolution.kind !== "available" || !resolution.entry.uri.startsWith("manuscript://"))
-    throw new Error("The reviewed document could not be located");
-  return { ...requested, scheme: "manuscript", path: projectCatalogFile(resolution.entry).path };
+  const location = resolution.kind === "available" ? locate(resolution.entry.uri) : null;
+  if (!location) throw new Error("The reviewed document could not be located");
+  return { ...requested, ...location };
 }

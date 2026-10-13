@@ -9,6 +9,7 @@ is not a claim that it passed on the current commit.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
+- [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
@@ -36,6 +37,29 @@ Run on an owned worktree and database. Discover HTTPS routes with
 `pnpm portless:list`; never target another worktree's process or clear its mock
 queue. Stop only your stack with `pnpm dev --stop` when finished.
 
+Leave a shared checkout as you found it. To compare against an older revision,
+extract its modules with `git show` into a scratch directory outside the
+checkout, or point a scratch test config at them; never substitute files in the
+checkout, even briefly. Check `git status` before reporting, and never report a
+change you made as pre-existing.
+
+Drive the browser through a named session (`agent-browser --session <name>`) and
+close only that session with `agent-browser --session <name> close`. Never pass
+`--all` to `close`: it closes every agent-browser session on the machine,
+whatever `--session` says, including other teams' probes.
+
+## Dev watcher: sibling installs
+
+Protects #817. With your stack running (`pnpm dev`), note the count of
+`startup.complete` lines in `logs/events/*.jsonl`. In a sibling worktree run
+`pnpm install`, or just hardlink one store file:
+`ln <store file under node_modules/.pnpm> ../probe-link` (the link must be on the
+same filesystem as the store file, so not `/tmp` when that is tmpfs). Remove the
+link afterwards. Wait 10 seconds.
+Expect no new `startup.complete` and no `[nitro] Server built` in
+`logs/portless.log`. Then edit a server source file: one rebuild is expected.
+Without the stack running, this cannot be checked.
+
 ## Document intake
 
 [Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
@@ -43,7 +67,7 @@ DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
 
 ## Before you call it a defect
 
-Two harness races have produced false defects. Rule them out first.
+Three harness artifacts have produced false defects. Rule them out first.
 
 - **Persistence.** Before judging whether an edit saved, wait until the
   server route's `/readyz` returns 200 and the browser's authenticated
@@ -57,7 +81,23 @@ Two harness races have produced false defects. Rule them out first.
   the editor's copy handler sees an empty selection and Chromium does a native
   copy, which carries none of the app's clipboard data. Assert the holder
   document's URI before testing copy and paste between documents.
+- **Offline emulation.** Attaching and then detaching a temporary CDP session
+  (for example, one opened only for `Page.captureScreenshot`) flips
+  `navigator.onLine` and TanStack's `onlineManager` back to true, while
+  `Network.emulateNetworkConditions` on the owning session keeps the transport
+  offline. The app then sends commands it should have refused, and they fail
+  at the transport. During an offline window, take screenshots through the
+  owning page or session (`page.screenshot()`), never a new target session.
+  Log both `navigator.onLine` and `onlineManager.isOnline()` (from the loaded
+  app module) right before every command, and treat transport reachability as
+  a separate fact.
 
 ## Device reading memory
 
 [Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
+
+## Messages waiting for usage
+
+[Saved messages waiting for usage](usage-waiting.md) covers durable credit blocks,
+existing and New chat, reload, Settings navigation, CLI outcomes and automatic
+recovery after a ledger grant.
