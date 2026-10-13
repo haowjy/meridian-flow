@@ -323,14 +323,18 @@ An explicit latest-wins route handoff carries review launches into
 the matching Editor. A matching committed Editor may claim immediately; other
 destinations claim after navigation. Claims require Work, document identity,
 mounted document, and draft membership to agree. Review addresses bind the
-Work and branch immediately, with server admission supplying document identity.
-The draft list loads in parallel for presentation and hidden-create gating; a colliding live catalog entry never substitutes for that identity. The document address persists
-the draft identity, so reload restores through the same handoff. Unknown or refused
+Work and item immediately, with server admission supplying document identity.
+The draft list loads in parallel for labels and whole-item classification, never admission; a colliding live catalog entry never substitutes for that identity. The document address persists
+the item identity. Dock reload asks the selector before any list or catalog restoration,
+keeps failed/unavailable selectors on their destination, and never infers Live from an omitted row. Unknown or refused
 selectors stay on their unavailable/error destination; only owned Exit or deliberate
 navigation out of review consumes them. Route admission also gates owner restoration. The owner survives phone view
-unmounts. Exit consumes only the owned Work and branch: known document identity
+unmounts. Exit consumes only the owned container, Work and item: known document identity
 decides, with the last confirmed scheme/path as fallback while identity is
-unresolved. Pending rename guesses never replace that confirmed locator.
+unresolved. Pending rename guesses never replace that confirmed locator. Missing draft
+metadata stays unresolved without claiming or repairing ownership; an explicit Work or item
+switch still yields immediately. Selector-hosted reviews do not acquire a live room while
+metadata is unresolved. Leaving review reacquires live through normal session admission.
 
 A chat has one current Work binding. The new-chat Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly

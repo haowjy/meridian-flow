@@ -111,6 +111,7 @@ function Harness({
     <EditorReviewHandoffProvider projectId="project-1" openContextRoute={openContextRoute}>
       <CommandCapture />
       <ReviewAddressOwner
+        admission="admitted"
         review={review}
         presented={
           activeScreen === "context" || container === "dock"
@@ -160,7 +161,7 @@ describe("ReviewAddressOwner", () => {
   });
 
   describe("a review whose draft the list no longer names", () => {
-    it("an unfinished review whose draft left the list is left to the review's own list decision", async () => {
+    it("missing draft metadata keeps the review without claiming or repairing ownership", async () => {
       const exit = vi.fn();
       const setItemKey = vi.fn();
       await withReactRoot(
@@ -176,8 +177,7 @@ describe("ReviewAddressOwner", () => {
             setInline?.({ documentId: draft.documentId, itemKey: draft.itemKey }),
           );
           expect(exit).not.toHaveBeenCalled();
-          expect(setItemKey).toHaveBeenLastCalledWith(draft.itemKey);
-          expect(setItemKey).not.toHaveBeenCalledWith(null);
+          expect(setItemKey).not.toHaveBeenCalled();
         },
       );
     });
@@ -253,9 +253,17 @@ describe("ReviewAddressOwner", () => {
     const fixture = createReviewScopeFixture();
     const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     fixture.network.listWorkDrafts.mockResolvedValue({
-      drafts: [
+      items: [
         {
           ...listed,
+          draftId: "whole-draft",
+          origin: "created",
+          binary: false,
+          wholeItem: true,
+          livePath: null,
+          conflict: null,
+          settling: false,
+          tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
           contextLocation: { scheme: "manuscript", path: "/chapter.md" },
           isNew: true,
         },
@@ -324,6 +332,7 @@ describe("ReviewAddressOwner", () => {
       selected = useDraftReviewScopeValue({ projectId: "project-a", work, presented });
       return (
         <ReviewAddressOwner
+          admission="admitted"
           review={selected}
           presented={presented}
           port={{

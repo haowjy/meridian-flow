@@ -1,7 +1,7 @@
 /** Browser-tab-local, account-stamped document slot for the project dock. */
 import { create } from "zustand";
 import type { ContextTab } from "@/client/stores";
-import type { ReviewAddress } from "../presented-document";
+import type { ReviewAddress, ReviewAddressAdmission } from "../presented-document";
 import type { ScreenKey } from "../shell/screens";
 import {
   browserDockStorage,
@@ -23,6 +23,8 @@ export type DockDocument = {
   /** Work-screen lifetime, independent of the resource or review Work. */
   screenWorkId: string | null;
   review: ReviewAddress | null;
+  /** Ephemeral selector verdict; reload always asks again. */
+  reviewAdmission?: ReviewAddressAdmission;
 };
 
 type DockScope = { projectId: string; screen: ScreenKey; workId: string | null };
@@ -129,7 +131,16 @@ export function createDockDocumentStore(
             document.review?.changeId === review?.changeId
           )
             return state;
-          return { occupant: { ...document, review } };
+          return {
+            occupant: {
+              ...document,
+              review,
+              ...(document.review?.workId !== review?.workId ||
+              document.review?.itemKey !== review?.itemKey
+                ? { reviewAdmission: undefined }
+                : {}),
+            },
+          };
         }),
       isCurrent: (claim) => get().revision === claim,
       commit: (claim, document) => {

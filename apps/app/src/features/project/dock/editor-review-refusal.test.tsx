@@ -3,8 +3,7 @@
 import { CONTEXT_URI_SCHEMES, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { act, useState } from "react";
 import { expect, it } from "vitest";
-import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
-import { EditorReviewAddressOwner } from "@/features/project/dock/EditorReviewAddressOwner";
+import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { EditorReviewHandoffProvider } from "@/features/project/dock/editor-review-handoff";
 import {
   bindDocumentAddressReview,
@@ -15,6 +14,7 @@ import {
   reconcileDocumentAddress,
 } from "@/features/project/routing/local-document-address";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { ReviewAddressOwner } from "../ReviewAddressOwner";
 
 it.each(
   CONTEXT_URI_SCHEMES.filter(isDraftedScheme),
@@ -22,7 +22,7 @@ it.each(
   const transitions: string[] = [];
   function Harness() {
     const [branch, setBranch] = useState<string | null>("unknown");
-    const drafts = { status: "empty", groups: [] };
+    const drafts = { status: "empty", files: [] };
     const binding = bindDocumentAddressReview(branch ?? undefined, "work");
     const remote = branch
       ? { kind: "unavailable" }
@@ -48,21 +48,30 @@ it.each(
     const review = {
       controller: { workId: "work", inlineReview: null },
       drafts,
-      groups: [],
+      files: [],
     } as unknown as DraftReviewContextValue;
     return (
       <EditorReviewHandoffProvider
         projectId="project"
         openContextRoute={async () => ({ kind: "applied" })}
       >
-        <EditorReviewAddressOwner
-          reviewAddressAdmission="unavailable"
+        <ReviewAddressOwner
+          admission="unavailable"
           review={review}
-          requestedItemKey={branch ?? undefined}
-          activeScreen="context"
-          activeScheme={scheme}
-          activePath="/Collision"
-          onSetItemKey={setBranch}
+          presented={{
+            container: "editor",
+            documentId: null,
+            scheme,
+            path: "/Collision",
+            review: branch ? { workId: "work", itemKey: branch } : null,
+            draftOnly: false,
+          }}
+          port={{
+            write: (next) => setBranch(next?.itemKey ?? null),
+            admit: () => {
+              throw new Error("must not admit");
+            },
+          }}
         />
         <output>{state}</output>
       </EditorReviewHandoffProvider>
