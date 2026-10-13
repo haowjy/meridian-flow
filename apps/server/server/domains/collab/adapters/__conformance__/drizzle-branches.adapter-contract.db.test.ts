@@ -1,7 +1,12 @@
 /** Adapter-contract tests for Drizzle branch peers against local Postgres. */
+
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import {
+  commitJournaledUpdate,
+  resetBranchFromDoc,
+} from "../../test-support/branch-update-writes.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -380,7 +385,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const draft = proseDoc("draft row before discard");
       const { createDrizzleJournal } = await import("../drizzle-journal.js");
-      await coordinator.commitUpdate({
+      await commitJournaledUpdate(coordinator, {
         branchId: work.branchId,
         updateData: Y.encodeStateAsUpdate(draft),
         source: "agent",
@@ -398,14 +403,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const before = await store.getBranch(work.branchId);
       await expect(
         runInDrizzleTransaction(db, async () => {
-          await coordinator.resetFromDoc(work.branchId, live);
+          await resetBranchFromDoc(coordinator, store, work.branchId, live);
           expect(resets).toEqual([]);
           throw new Error("abort composite discard");
         }),
       ).rejects.toThrow("abort composite discard");
       expect(await store.getBranch(work.branchId)).toEqual(before);
       expect(resets).toEqual([]);
-      await coordinator.resetFromDoc(work.branchId, live);
+      await resetBranchFromDoc(coordinator, store, work.branchId, live);
       expect(resets).toEqual([work.generation + 1]);
 
       await expect(
@@ -637,8 +642,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const coordinator = createBranchCoordinator({ store });
 
       await expect(
-        coordinator.resetFromDoc("branch_corrupt_preview_reset", docWithText("live repair")),
-      ).resolves.toBeUndefined();
+        resetBranchFromDoc(
+          coordinator,
+          store,
+          "branch_corrupt_preview_reset",
+          docWithText("live repair"),
+        ),
+      ).resolves.toBe(true);
 
       const repaired = await store.resolveDraftBranch({
         draftBranchId: "branch_corrupt_preview_reset",
@@ -657,7 +667,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: DRAFT_ID as never,
         liveDoc: docWithText("before reset"),
       });
-      await coordinator.resetFromDoc(branch.branchId, docWithText("after reset"));
+      await resetBranchFromDoc(coordinator, store, branch.branchId, docWithText("after reset"));
       const persistence = branchRoomPersistence();
 
       const freshGeneration = branch.generation + 1;

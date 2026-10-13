@@ -130,10 +130,7 @@ import {
   enlistResponseParticipant,
   runResponseTransaction,
 } from "./domain/response-transaction.js";
-import {
-  createResponseBranchFinalization,
-  createResponseWriteFinalizer,
-} from "./domain/response-write-finalizer.js";
+import { createResponseWriteFinalizer } from "./domain/response-write-finalizer.js";
 import {
   createDocumentPresentationResolver,
   createPostDurabilityNoticeService,
@@ -495,7 +492,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     createResponseWriteFinalizer({
       agentEdit,
       rollback: turnInverse,
-      branches: createResponseBranchFinalization({ branches, branchCoordinator }),
       projections: projectionRefresher,
       notices: postDurabilityNotices,
     }),

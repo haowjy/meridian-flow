@@ -11,6 +11,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchConcurrentJournalWatermarks } from "./branch-agent-edit.js";
 import type { BranchCoordinator } from "./branch-coordinator.js";
+import type { BranchLockLease } from "./branch-critical-sections.js";
 import { runOutsideResponseTransaction } from "./response-transaction.js";
 
 export type WorkDraftLookup = {
@@ -104,11 +105,14 @@ export function createBranchPullService(input: {
     // hold every pooled connection and wait on each other forever.
     const liveDoc = await liveSnapshot(documentId);
     try {
-      // Commit snapshot, effect and projection before taking another branch mutex.
-      // A receipt owns branch mutexes before Work rows, so retaining a Work row
-      // lock across the next mutex would reverse that order.
+      // One branch at a time: its lease, then its transaction (the save's order), and
+      // the transaction commits before the next branch's lease is taken.
       for (const branchId of await input.branches.listActiveWorkDraftBranchIds(documentId)) {
-        await input.rootTransaction(() => input.branchCoordinator.pullFromDoc(branchId, liveDoc));
+        await input.branchCoordinator.withLeases([branchId], (lease) =>
+          input.rootTransaction(() =>
+            input.branchCoordinator.pullFromDoc(lease, branchId, liveDoc),
+          ),
+        );
       }
     } finally {
       liveDoc.destroy();
@@ -229,20 +233,25 @@ export function createBranchPullService(input: {
           const upstreamBranchId = captured.upstreamBranchId;
           if (!upstreamBranchId)
             throw new Error(`Thread peer ${peer.branchId} has no upstream Work draft branch`);
-          // Upstream is read inside the pull's transaction: a per-change Discard that
-          // reforked it meanwhile can never be merged back from a stale capture.
-          const upstream = await input.rootTransaction(async () => {
-            const read = await input.branchCoordinator.readBranch(
-              upstreamBranchId,
-              (doc, snapshot) =>
-                Promise.resolve({
-                  generation: snapshot.generation,
-                  state: Y.encodeStateAsUpdate(doc),
-                }),
-            );
-            await pullPeerFromCapturedUpstream(peer.branchId, read.state);
-            return read;
-          });
+          // The peer's and its upstream's leases are held from capture through persisting
+          // the peer, so a per-change Discard cannot refork the upstream in between and a
+          // stale capture is never merged back. Leases come before the transaction.
+          const upstream = await input.branchCoordinator.withLeases(
+            [peer.branchId, upstreamBranchId],
+            (lease) =>
+              input.rootTransaction(async () => {
+                const read = await input.branchCoordinator
+                  .ownedSession(lease)
+                  .read(upstreamBranchId, (doc, snapshot) =>
+                    Promise.resolve({
+                      generation: snapshot.generation,
+                      state: Y.encodeStateAsUpdate(doc),
+                    }),
+                  );
+                await pullPeerFromCapturedUpstream(lease, peer.branchId, read.state);
+                return read;
+              }),
+          );
           return {
             peerBranchId: peer.branchId,
             upstreamBranchId,
@@ -259,12 +268,13 @@ export function createBranchPullService(input: {
   };
 
   async function pullPeerFromCapturedUpstream(
+    lease: BranchLockLease,
     peerBranchId: string,
     upstreamState: Uint8Array,
   ): Promise<Uint8Array> {
     const upstreamDoc = docFromSnapshot(upstreamState);
     try {
-      return await input.branchCoordinator.pullFromDoc(peerBranchId, upstreamDoc);
+      return await input.branchCoordinator.pullFromDoc(lease, peerBranchId, upstreamDoc);
     } finally {
       upstreamDoc.destroy();
     }
