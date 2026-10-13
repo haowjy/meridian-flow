@@ -13,11 +13,14 @@
  * exactly their rooms and thread state after commit, and reconciles the catalog of every
  * source it touched inside the transaction (F23), as Apply does.
  */
+
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branchWriteJournal, documentBranches } from "@meridian/database/schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, inArray } from "drizzle-orm";
+import * as Y from "yjs";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
@@ -31,6 +34,7 @@ import {
 import type { WorkDraftDisposal, WorkProjectionMutation } from "../../projects/index.js";
 import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
+import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import {
   type DiscardKernelInput,
   type DiscardKernelResult,
@@ -38,12 +42,11 @@ import {
   DraftDiscardScopeChangedError,
   type DraftDiscardStore,
 } from "../domain/draft-discard.js";
-import { claimCommandWithinTx } from "./drizzle-draft-commands.js";
-import { settleDraftGeneration } from "./drizzle-document-edits.js";
 import type { Drafts } from "../domain/drafts.js";
-import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
+import { settleDraftGeneration } from "./drizzle-document-edits.js";
+import { claimCommandWithinTx } from "./drizzle-draft-commands.js";
 
 type KernelDeps = {
   drafts: Pick<Drafts, "close">;
@@ -116,7 +119,11 @@ async function closeDraftBranches(
   }
   return closed.map((branch) =>
     retired(
-      { ...branch, documentId: branch.documentId as DocumentId, threadId: branch.threadId as ThreadId | null },
+      {
+        ...branch,
+        documentId: branch.documentId as DocumentId,
+        threadId: branch.threadId as ThreadId | null,
+      },
       cause,
     ),
   );
@@ -132,7 +139,13 @@ export async function discardWholeLocked(
   deps: KernelDeps,
   draftId: DraftId,
 ): Promise<DiscardKernelResult> {
-  const ended = await endUseReconciled(db, deps, draftId, { drafts: [{ draftId }] }, "draft_closed");
+  const ended = await endUseReconciled(
+    db,
+    deps,
+    draftId,
+    { drafts: [{ draftId }] },
+    "draft_closed",
+  );
   const closed = await closeDraftBranches(db, draftId, "draft_closed");
   await deps.drafts.close(draftId, new Date());
   return {
@@ -216,7 +229,9 @@ export function createDrizzleDraftDiscard(
         ),
       )
       .limit(1);
-    if (!pending) return [];
+    // A rowless branch has nothing to review, unless its state cannot be read: Discard is
+    // the recovery for a corrupt item, rows or not.
+    if (!pending && isReadable(content.state)) return [];
     const liveDoc = input.liveDocs.get(item.documentId);
     if (!liveDoc) throw new Error(`Discard of ${item.documentId} holds no live document`);
     const reset = await deps.coordinator.resetFromDocIfUnchangedWithLease(input.lease, {
@@ -236,7 +251,9 @@ export function createDrizzleDraftDiscard(
     // Only the items arm carries leases and live documents.
     if (!("lease" in input)) return discardWholeLocked(db, deps, draftId);
     const { items } = input.selection;
-    const created = items.filter((item) => item.origin === "created").map((item) => item.documentId);
+    const created = items
+      .filter((item) => item.origin === "created")
+      .map((item) => item.documentId);
     const ended = await endUseReconciled(
       db,
       deps,
@@ -273,7 +290,10 @@ export function createDrizzleDraftDiscard(
     async discardLocked({ workId, kernel: input, leased, command }) {
       return runInDrizzleTransaction(db, async () => {
         // The command's claim is the transaction's first write (§4.6).
-        if (command && !(await claimCommandWithinTx(currentDrizzleDb(db), command.envelope, command.result))) {
+        if (
+          command &&
+          !(await claimCommandWithinTx(currentDrizzleDb(db), command.envelope, command.result))
+        ) {
           throw new DraftCommandExistsError(command.envelope.commandId);
         }
         await requireLockedActiveWorks(db, [workId as WorkId]);
@@ -372,4 +392,16 @@ export function createDrizzleWorkDraftDisposal(
       }
     },
   };
+}
+
+function isReadable(state: Uint8Array): boolean {
+  const scratch = createCollabYDoc({ gc: false });
+  try {
+    Y.applyUpdate(scratch, state);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    scratch.destroy();
+  }
 }
