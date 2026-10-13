@@ -27,7 +27,7 @@ will grow, one per command. Today it holds the transcript comparison.
 
 - **Steps:**
   1. Read the model: `./mf thread view "$T" --full --json > view.json`. `--full --json` is
-     the inspectable form: tool inputs and results, card content, report payloads, the
+     the inspectable form: tool inputs, results, metadata and Work receipts, raw card content, report payloads, the
      handoff brief, delivery bodies and writer occurrences. Text mode
      (`./mf thread view "$T"`) summarizes (`you:`, `reply: read 2 docs, 1 step`,
      `compaction:`, `queued: N`) and omits all of that; use it to orient, not to compare.
@@ -50,8 +50,19 @@ will grow, one per command. Today it holds the transcript comparison.
        `text` holds the reference as Markdown, and `occurrences` locates it).
      - **Folds:** compare fold contents by the tool names and targets in the full JSON
        (`runs[].tools[].name`, `input`), not by label words.
-     - **Cards, reports, brief:** compare a card's `title` and `outcome`, a report's
-       `summary`, and a handoff row's `brief`, against the DOM text.
+     - **Reports, brief:** compare a report's `summary` and a handoff row's `brief`
+       against the DOM text.
+     - **Deliveries' `message` bodies** are carried but the app does not draw them. Compare
+       a completion by its child (`agentName`, `childThreadId`), `title` and `outcome`.
+     - **Cards:** the view prints only a card's kind and its raw `content` (props) and
+       `direct` result. Card display text and failure copy (a choice's option label, the
+       refusal wording of a stored `error`) are decided per card in React until "Interrupt
+       presentation" moves them, so they are not comparable yet. Compare raw props and the
+       stored `error` and `providerError` only as data.
+     - **Work receipts:** a Work tool's `metadata.workReceipt` (also `tools[].workReceipt`)
+       sets the folded tool's title (`operation` and `workName`, e.g. "Deleted Work
+       Northern Gate"); the reply's `workReceipts` are the receipt rows under it. Compare
+       those fields, not label wording.
   5. Never compare render keys. `renderKey` is the React key and may change when a
      local turn is renamed to its server id.
 - **Expect:** same rows in the same order; each reply's item kinds match, with a fold
@@ -64,6 +75,9 @@ will grow, one per command. Today it holds the transcript comparison.
   - live subagent activity, so a reply that the browser holds open for a running
     background subagent shows `continuing: false` in `./mf`;
   - inherited fork history, omitted from `./mf`'s rows;
+  - background report bodies (`inputs.backgroundReports`): the browser fetches each
+    child's report for its card, and the view has none;
+  - change trails (`inputs.changeTrails`), also fetched by the browser;
   - copy and the receipt rows under a reply (Undo, "Edited 1 document") are the app's
     drawing of Work and lineage reads, not view-model rows.
 - **Evidence:** `view.json`, the browser snapshot or DOM extract per row, and the row
