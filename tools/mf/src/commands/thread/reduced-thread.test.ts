@@ -26,7 +26,7 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
 
   const stored = { turns: reduced.turns(), nextSeq: "104" } as unknown as ThreadSnapshotResponse;
   expect(reduced.turn("turn-1")?.status).toBe("complete");
-  expect(reduced.compare(stored, ["turn-1"])).toEqual({ liveView: "matches" });
+  expect(reduced.compare(stored, ["turn-1"], false)).toEqual({ liveView: "matches" });
   expect(assistantText(reduced.turn("turn-1"))).toBe("Hello");
 
   expect(reduced.hydrate({ turns: [], nextSeq: "103" })).toBe(false);

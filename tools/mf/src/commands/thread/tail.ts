@@ -108,7 +108,7 @@ export const threadTailCommand: CommandSpec = {
         tailResult(threadId, lastSnapshot, turnIds, {
           failed: observedFailure,
           truncated: result.truncated,
-          liveView: reduced.compare(lastSnapshot, turnIds),
+          liveView: reduced.compare(lastSnapshot, turnIds, result.truncated),
         }),
         { full: flag(ctx, "full") },
       );

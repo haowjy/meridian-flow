@@ -1,8 +1,20 @@
 /**
- * The CLI's view of a thread as the app would build it: a snapshot hydrated
- * into the shared `InMemoryTurnStore`, then every sequenced event reduced by
- * the shared turn reducer. `thread events` stays a log (`events-map.ts`);
- * turn state is only ever read from here.
+ * This CLI follower's own reduction of a thread: a snapshot hydrated into the
+ * shared `InMemoryTurnStore`, then every sequenced event reduced by the shared
+ * turn reducer. `thread events` stays a log (`events-map.ts`).
+ *
+ * `compare` is a bounded diagnostic. It checks only the reduced turn status and
+ * final assistant text against the confirming snapshot. It is not a certificate
+ * of any browser screen: it leaves out tools, reasoning, interrupts, the
+ * optimistic UI and the app's visible-turn policy, and the app reconciles to the
+ * server at turn end. `differs` is a lead to investigate, `matches` does not
+ * prove a screen was right, and neither changes the exit code. The owner ruled
+ * (TL-MF-20) that once the chat session's sync is shared, a live disagreement
+ * will fail with exit 6; that is not true yet.
+ *
+ * Snapshot freshness (`nextSeq`) and replay coverage (`resumeAfterSeq`) are
+ * separate facts: `nextSeq` only decides which snapshot may be hydrated, and
+ * the subscription's cursor decides which events arrive. Every arrival is applied.
  */
 import type { AGUIEvent, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import { createTurnReducer, InMemoryTurnStore, type TurnReducer } from "@meridian/thread-client";
@@ -12,21 +24,28 @@ import { assistantText } from "./transcript";
 export type LiveDiff = {
   turnId: string;
   field: "status" | "finalText";
-  /** What the reduced events show (what the app's live view would have shown). */
+  /** What this CLI follower's reduced events show; not what any browser screen showed. */
   live: string | null;
   /** What the confirming snapshot stored. */
   server: string | null;
 };
 
-/** Absent when nothing was followed; a difference never changes the exit code. */
+/**
+ * Absent when nothing was followed. `not_observed`: the follow had a replay gap,
+ * or a compared turn's events were not seen from its start, so there is nothing
+ * fair to compare. A difference never changes the exit code.
+ */
 export type LiveViewReport =
   | Record<string, never>
   | { liveView: "matches" }
+  | { liveView: "not_observed" }
   | { liveView: "differs"; liveDiff: LiveDiff[] };
 
 export class ReducedThread {
   private readonly store: InMemoryTurnStore;
   private readonly reducer: TurnReducer;
+  /** Turns whose beginning this follower holds: in a hydrated snapshot, or their RUN_STARTED was applied. */
+  private readonly observedFromStart = new Set<string>();
 
   constructor(private readonly threadId: string) {
     const now = () => new Date().toISOString();
@@ -36,7 +55,9 @@ export class ReducedThread {
 
   /** False when the snapshot is older than what the store already covers. */
   hydrate(snapshot: Pick<ThreadSnapshotResponse, "turns" | "nextSeq">): boolean {
-    return this.store.hydrate(this.threadId, snapshot.turns, snapshot.nextSeq);
+    const accepted = this.store.hydrate(this.threadId, snapshot.turns, snapshot.nextSeq);
+    if (accepted) for (const turn of snapshot.turns) this.observedFromStart.add(turn.id);
+    return accepted;
   }
 
   /**
@@ -45,6 +66,7 @@ export class ReducedThread {
    * enough to hydrate, so it never filters events here.
    */
   apply(event: AGUIEvent): void {
+    if (event.type === "RUN_STARTED") this.observedFromStart.add(event.runId);
     this.reducer.applyEvent(this.threadId, event);
   }
 
@@ -56,12 +78,21 @@ export class ReducedThread {
     return this.turns().find((turn) => turn.id === turnId);
   }
 
-  /** Compares the followed turns' reduced status and final text with the confirming snapshot's. */
-  compare(snapshot: ThreadSnapshotResponse, turnIds: Iterable<string>): LiveViewReport {
+  /**
+   * Compares the followed turns' reduced status and final text with the
+   * confirming snapshot's. `truncated` is a replay gap in the follow.
+   */
+  compare(
+    snapshot: ThreadSnapshotResponse,
+    turnIds: Iterable<string>,
+    truncated: boolean,
+  ): LiveViewReport {
     const diffs: LiveDiff[] = [];
-    let compared = 0;
-    for (const turnId of new Set(turnIds)) {
-      compared += 1;
+    const ids = new Set(turnIds);
+    if (ids.size === 0) return {};
+    if (truncated || [...ids].some((id) => !this.observedFromStart.has(id)))
+      return { liveView: "not_observed" };
+    for (const turnId of ids) {
       const live = this.turn(turnId);
       const server = snapshot.turns.find((turn) => turn.id === turnId);
       if ((live?.status ?? null) !== (server?.status ?? null))
@@ -81,7 +112,6 @@ export class ReducedThread {
           server: serverText,
         });
     }
-    if (compared === 0) return {};
     return diffs.length === 0 ? { liveView: "matches" } : { liveView: "differs", liveDiff: diffs };
   }
 }
