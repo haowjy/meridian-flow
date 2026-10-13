@@ -11,6 +11,7 @@ import type {
   FolderId,
   ProjectId,
   ThreadId,
+  TurnId,
   UserId,
   WorkId,
 } from "@meridian/contracts";
@@ -26,7 +27,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, updatedAt } from "./_shared";
-import { threads } from "./agent-threads";
+import { threads, turns } from "./agent-threads";
 import { contextSources, documents, folders, linkAheadRefs, projects, works } from "./content";
 import { users } from "./users";
 
@@ -96,6 +97,13 @@ export const draftTreeChanges = pgTable(
       .references(() => folders.id, { onDelete: "cascade" }),
     name: text("name"),
     extension: text("extension"),
+    /** Who created the node: null for a writer's create and for rows before attribution. */
+    createdThreadId: uuid("created_thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "set null" }),
+    createdTurnId: uuid("created_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
