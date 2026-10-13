@@ -4,8 +4,9 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { defaultRehypePlugins, defaultRemarkPlugins } from "streamdown";
 import { unified } from "unified";
+import { parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { remarkReferenceOccurrences } from "@/rich-content/reference-occurrences";
-import { imageContentForBlock, isImageBlock } from "./block-kind";
+import { isImageBlock } from "./block-kind";
 import { finalMessageItems, type RenderItem } from "./partition-turn";
 import { payloadText } from "./report-payload";
 
@@ -28,7 +29,7 @@ export function assistantTurnCopyMarkdown(items: RenderItem[]): string {
         return [item.report.summary, ...(payload.trim() ? [`\`\`\`json\n${payload}\n\`\`\``] : [])];
       }
       if (item.kind === "artifact" && isImageBlock(item.block)) {
-        const image = imageContentForBlock(item.block);
+        const image = parseImageBlockContent(item.block.content);
         if (!image) return [];
         const alt = (image.alt ?? image.caption ?? "").replace(/[[\]]/g, "");
         return [`![${alt}](<${image.url}>)`, ...(image.caption ? [image.caption] : [])];
