@@ -149,7 +149,11 @@ function documentRef(found: DocumentEntry): LinkDocumentRef {
       workId,
       // The review's identity: `${draftId}:${documentId}` (contract rev 5.1, vocabulary).
       itemKey: `${draft.draftId}:${document.documentId}`,
-      contextLocation: { scheme: document.scheme, path: document.path },
+      // Draft rows and launches spell the path with a leading slash.
+      contextLocation: {
+        scheme: document.scheme,
+        path: document.path.startsWith("/") ? document.path : `/${document.path}`,
+      },
       documentName: document.title,
     },
   };
