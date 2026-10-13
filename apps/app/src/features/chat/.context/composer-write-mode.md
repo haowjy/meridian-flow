@@ -40,7 +40,7 @@ rebinds; the model's `work switch` never does
 
 The neutral `useWriteModeToolbarControl` shows a value and reports a choice:
 no dialog, no draft query. In an existing chat the value is the chat's mode
-(`thread.aiWriteMode`) with queued and local switches laid over it
+(`thread.aiWriteMode`) with the ledger's switches laid over it
 (`useThreadControls().writeMode`), and a choice dispatches a `write_mode`
 control: a record in the chat's submission journal, posted in order with the
 messages around it. In the new-chat composer the value is the selected Work's
@@ -49,22 +49,46 @@ the writer picked one there. Switching never touches drafts: the dock keeps
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
-A switch row's actions follow what the server can hold. One never posted, or refused,
-offers Retry and a local Withdraw. One posted whose answer is unresolved (lost
-response, 5xx, abort) offers Retry only: a local Withdraw could let a late request
-apply it. Once it answers and the server queues it, Withdraw calls the server's. A
-tab that only saw the record leave the journal keeps it as a witness row, with its mode
-on the toolbar, until its own inbox lists the id, a divider names it, or the refetch
-started at the removal resolves.
+The **switch ledger** (`thread-controls/switch-ledger.ts`, pure; `useSwitchLedger` is its
+hook) is the one owner of a switch on screen. Each tab keeps one per chat, keyed by control
+id; each entry carries its mode, its journal `seq` and a state that only moves forward:
 
-Caches follow authoritative order. A chat's cached mode comes from its snapshot
-and from its newest divider (`useWriteModeSync`); an applied answer patches it only
-when the cached snapshot has not yet seen that divider turn. The Work's default
-is never patched from a divider or an answer: both invalidate the Works query and the
-versioned Works acquisition refetches it (`client/query/write-mode-cache.ts`).
-Switch announcements follow the same reconciled state: queued and failed from the
-queued rows (`useSwitchAnnouncements`), applied from the divider
-(`useControlTurnAnnouncements`); a switch back announces nothing.
+| State | Entered on |
+| --- | --- |
+| `sending` | A journal record, not posted |
+| `posted` | A journal record marked posted, no answer yet |
+| `queued` | An answer with `pending`, the inbox listing the id, or a snapshot's pending inbox listing it |
+| `applied` | An answer with a turn id, or any divider naming the id |
+| `gone` | Terminal evidence (below) |
+
+`failed` (the record was refused or lost) is a flag on `sending` or `posted`. A record
+leaving the journal, or the id leaving the inbox, is not terminal: the entry stays where it
+was and the hook asks for a snapshot. Terminal evidence:
+
+- `applied` retires once the transcript this tab renders holds the divider naming the id.
+- `gone` comes from a `null`/`null` answer (a cancel-out, which also removes the earlier
+  queued switches to the other mode), a server Withdraw answering `withdrawn`, a server 404 for
+  an entry the journal no longer holds (the server never had it), a local Withdraw the driver
+  allowed (never posted, or refused), or a snapshot whose request began after the entry's last
+  live observation and shows the id neither pending nor as a divider. The snapshot query takes
+  a request number when its fetch starts (`snapshotRequestCount`) and returns it with the data,
+  so a failed, skipped or joined-older fetch proves nothing.
+
+Display derives from the ledger alone. Rows are every entry that is not `gone`, not
+withdrawing, not retired, and not folded by a predicted switch back (a switch back before its
+answer hides both rows; the server's `null`/`null` answer confirms it). `sending` and `posted`
+show as sending, `queued` and not-yet-rendered `applied` as queued (so no frame lacks both
+the row and the divider). A failed row shows Retry; Withdraw shows unless the server may hold
+it (posted and not refused). The mode is the rendered snapshot's `thread.aiWriteMode` with
+each entry laid over it in `seq` order, the last winning, until a snapshot holding the
+entry's divider has rendered. No client path writes a write mode into a cache; an applied
+entry or a newly rendered divider invalidates the Works query and the project thread lists
+instead.
+
+One hook speaks it: "Switch to … queued" when an entry becomes queued, "Switched to …" when a
+divider renders. Entries and dividers present when history first settles (mount, reload) are
+silent, and a cancel-out is silent. A failure stays with the journal owner's keyed
+announcement, cleared on Retry and when the record is withdrawn.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

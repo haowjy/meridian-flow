@@ -63,10 +63,12 @@ record under the lock only when the server can't have it (never posted, or refus
 a posted unresolved one is kept (Retry only), and a record already gone is the
 server's to withdraw. It has no writer row: its queued row, Retry and Withdraw come
 from `useThreadControls`, and the server's answer reaches it through `onSwitchAnswered`
-before the record is retired. A tab that saw the record keeps an in-memory witness
-(`JournalSwitch.witness`) after it leaves storage, and starts a thread refetch; the
-witness retires when the inbox lists the id, a divider names it (`settleSwitches`), or
-that refetch resolves. A refused record's removal leaves no witness.
+before the record is retired. The owner exposes the chat's journal switches (`switches`: id, mode, `seq`, posted, refused,
+failed) and the answers (`onSwitchAnswered`); the switch ledger
+(`features/chat/thread-controls/switch-ledger.ts`) decides what the writer sees, including
+when a record has left storage. The owner keeps only the journal side: `seq`, `posted`, the
+posted-aware Withdraw, and the keyed "Couldn't switch" announcement (cleared on Retry and
+when the record leaves).
 
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
 Records under older storage keys are ignored.
