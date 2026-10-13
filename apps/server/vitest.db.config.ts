@@ -53,6 +53,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/change-trail-persistence-atomicity.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts",
   "apps/server/server/domains/collab/turn-inverse.db.test.ts",
+  "apps/server/server/domains/collab/inverse-integration.db.test.ts",
   "apps/server/server/domains/collab/inverse-placement.db.test.ts",
   "apps/server/server/domains/collab/inverse-rollback.db.test.ts",
   "apps/server/server/domains/collab/inverse-attribution.db.test.ts",
