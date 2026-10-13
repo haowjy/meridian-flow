@@ -1,6 +1,7 @@
+import { createDrizzleDraftCommands } from "../adapters/drizzle-draft-commands.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
+import { createDraftReviewIdentity } from "../domain/draft-review-identity.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
-import { createPeerRetirement } from "../domain/peer-retirement.js";
 /** Focused real-Postgres harness for change-trail durability tests. */
 
 import {
@@ -9,6 +10,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { JsonValue } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import {
@@ -29,17 +31,23 @@ import {
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentDerivationStore } from "../adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftDiscard } from "../adapters/drizzle-draft-discard.js";
 import { readLiveReviewRevision } from "../adapters/drizzle-draft-review-live.js";
-import { createDrizzleReviewCut } from "../adapters/drizzle-review-cut.js";
 import {
-  createDrizzleEmptyDraftSettlement,
-  createDrizzleWorkDraftDiscard,
-} from "../adapters/drizzle-work-draft-discard.js";
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "../adapters/drizzle-drafts.js";
+import { createDrizzleReviewCut, readLiveDoc } from "../adapters/drizzle-review-cut.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
+import { createDraftBranchLeases } from "../domain/draft-branch-leases.js";
+import { createDraftDiscard } from "../domain/draft-discard.js";
+import { createDrafts } from "../domain/drafts.js";
+import { createPeerRetirement } from "../domain/peer-retirement.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
+import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
 import { writeMarkdown } from "./bound-writes.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
@@ -50,6 +58,7 @@ const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await im
 );
 const { createDrizzleNoticePort } = await import("../../notices/index.js");
 export const {
+  currentDrizzleDb,
   deferUntilDrizzleCommit,
   isInDrizzleTransaction,
   deferUntilDrizzleRollback,
@@ -66,12 +75,24 @@ const {
   createDrizzleBranchJournalReadStore,
   createDrizzleWorkDraftPendingStore,
   createDrizzlePushCommitStore,
-  createDrizzleWorkPushPolicyStore,
 } = await import("../adapters/drizzle-branch-push.js");
-const { createDrizzlePendingSettlementStore, stagePendingSettlementWithinTx } = await import(
+const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
   "../adapters/drizzle-pending-settlement.js"
 );
 const { createChangeTrailWorker } = await import("../adapters/change-trail-worker.js");
+const { createDrizzleDraftTreeStep } = await import("../adapters/drizzle-draft-tree-step.js");
+const { expirePendingSettlementClaims } = await import(
+  "../../../test-support/settlement-claims.js"
+);
+const { createDraftBranchAheadRegistration } = await import(
+  "../domain/draft-branch-ahead-registration.js"
+);
+const { createDraftPublication } = await import("../domain/draft-publication.js");
+const { createDraftReviewItems } = await import("../domain/draft-review-items.js");
+const { createTreeReader } = await import("../../context/tree/tree-view.js");
+const { lockDocumentNamespaces } = await import(
+  "../../context/adapters/context-fs/document-locations.js"
+);
 const { createDrizzleChangeTrailAggregateWriter } = await import(
   "../adapters/drizzle-change-trail-aggregate.js"
 );
@@ -102,7 +123,10 @@ const { createBranchCoordinator } = await import("../domain/branch-coordinator.j
 const { createBranchCriticalSections } = await import("../domain/branch-critical-sections.js");
 const { createBranchPullService } = await import("../domain/branch-pulls.js");
 const { createBranchPushService } = await import("../domain/branch-push.js");
-const { journalAttributionByChangedBlock } = await import("../domain/branch-trail-projection.js");
+const { fullStateFingerprint } = await import("../domain/branch-push-transition.js");
+const { journalAttributionByChangedBlock, trailContributionReplacement } = await import(
+  "../domain/branch-trail-projection.js"
+);
 const { projectChangeEventForRecipient } = await import("../domain/change-event-projection.js");
 const { createBranchReviewOperations } = await import("../domain/branch-review-operations.js");
 const { createDocumentWriteHookRunner } = await import(
@@ -115,13 +139,12 @@ const { createResponseBranchFinalization, createResponseWriteFinalizer } = await
   "../domain/response-write-finalizer.js"
 );
 const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
-const { createBranchThreadPeerAgentEditCore } = await import("../domain/thread-peer-core-pool.js");
+const { createBranchThreadPeerAgentEditCore } = await import("../thread-peer-composition.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
 const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
   "../adapters/declared-stubs.js"
 );
 const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
-const { createWorkDraftPending } = await import("../domain/work-draft-pending.js");
 const { replicateFrozenIdentity } = await import("../domain/document-mutation-policy.js");
 const { createMarkdownDocumentEngine } = await import("../domain/markdown-document.js");
 const { appendProvenanceFacts, createSemanticProvenanceWriter, PROVENANCE_TARGETS_TYPE } =
@@ -148,6 +171,7 @@ export const SOURCE_ID = "00000000-0000-4000-8000-000000000803";
 export const WORK_ID = "00000000-0000-4000-8000-000000000804" as WorkId;
 export const ALPHA_ID = "00000000-0000-4000-8000-000000000805" as DocumentId;
 export const BETA_ID = "00000000-0000-4000-8000-000000000806" as DocumentId;
+export const GAMMA_ID = "00000000-0000-4000-8000-000000000810" as DocumentId;
 export const THREAD_ID = "00000000-0000-4000-8000-000000000807" as ThreadId;
 export const TURN_ID = "00000000-0000-4000-8000-000000000808" as TurnId;
 
@@ -157,6 +181,7 @@ export const DEFAULT_SCENARIO_IDS = {
   WORK_ID,
   ALPHA_ID,
   BETA_ID,
+  GAMMA_ID,
   THREAD_ID,
   TURN_ID,
 };
@@ -173,7 +198,7 @@ export async function seedDatabase(
   db: Database,
   ids: ChangeTrailScenarioIds = DEFAULT_SCENARIO_IDS,
 ): Promise<void> {
-  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = ids;
+  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = ids;
   await db
     .insert(schema.users)
     .values([
@@ -194,6 +219,13 @@ export async function seedDatabase(
     name: "Atomicity work",
     slug: "atomicity-work",
     aiWriteMode: "draft",
+  });
+  // The Work already has its draft, as if an earlier write ensured it (contract §2.5):
+  // a drafted read pulls its thread peers instead of reading live.
+  await db.insert(schema.drafts).values({
+    projectId: PROJECT_ID,
+    originWorkId: WORK_ID,
+    createdBy: USER_ID,
   });
   await db.insert(schema.contextSources).values({
     id: SOURCE_ID,
@@ -216,6 +248,13 @@ export async function seedDatabase(
       contextSourceId: SOURCE_ID,
       name: "beta",
       extension: "",
+      fileType: "markdown",
+    },
+    {
+      id: GAMMA_ID,
+      contextSourceId: SOURCE_ID,
+      name: "third",
+      extension: "md",
       fileType: "markdown",
     },
   ]);
@@ -268,13 +307,21 @@ export type ChangeTrailHarnessOptions = {
     appendWriterPrefix(documentId: DocumentId, prefix: string): Promise<void>;
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
-  afterSettlement?: (input: {
+  /** After a batch member is classified, before its completion transaction opens. */
+  afterClassification?: (input: {
     documentId: DocumentId;
     deleteWriterPrefix(documentId: DocumentId, length: number): Promise<void>;
   }) => Promise<void>;
-  afterLiveApply?: () => void;
-  /** Ahead-ref settlement in push completions; absent, completions settle nothing. */
+  /** Inside the completion transaction, after every write, just before commit. */
+  beforeCompletionCommit?: () => void;
+  /** Inside the completion transaction, after each push's text is admitted (journal and projection). */
+  afterAdmission?: (input: { documentId: DocumentId; ordinal: number }) => void | Promise<void>;
+  /** Ahead-ref settlement at Apply's arrivals; absent, completions settle nothing. */
   arrivals?: DocumentArrivals;
+  /** Inside a withdrawal (refusal or hold), at its first write. */
+  duringWithdrawal?: () => Promise<void>;
+  /** Publication steps after the draft tree step, in the order they run. */
+  publicationSteps?: readonly SettlementPublicationStep[];
 };
 
 export type MatrixDraftStep = {
@@ -289,7 +336,9 @@ export type MatrixDraftStep = {
 export function createHarness(db: Database, options: ChangeTrailHarnessOptions = {}) {
   // One link scope for every door the harness assembles, as composition shares one.
   const links = options.links ?? createStaticDocumentLinkScopes();
-  const { ALPHA_ID, BETA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
+  const { ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = options.ids ?? DEFAULT_SCENARIO_IDS;
+  const documentName = (documentId: DocumentId) =>
+    documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "third" : "beta";
   const DRAFT_DESTINATION = {
     kind: "draft",
     workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID,
@@ -303,15 +352,17 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     journal: persistence.journal,
   });
   const branchCriticalSections = createBranchCriticalSections();
-  const realBranchStore = createFixtureBranchStore(
-    db,
-    {
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
+  const realBranchStore = createFixtureBranchStore(db, {
+    live: {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
-      coordinator: liveCoordinator,
     },
-    branchCriticalSections,
-  );
+    drafts: workDrafts,
+  });
   let journalInsertCount = 0;
   // Which branch journal insert of the next save fails, counting from 1.
   const state = {
@@ -400,21 +451,47 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const durableBranchJournalReadStore = createDrizzleBranchJournalReadStore(db);
   const durablePushCommitStore = createDrizzlePushCommitStore(
     db,
-    stagePendingSettlementWithinTx,
+    stageSettlementBatchWithinTx,
     changeTrails,
     notices,
   );
-  const durableWorkPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
   const durableWorkDraftPendingStore = createDrizzleWorkDraftPendingStore(db);
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
-    createDrizzleDocumentProjectionEffects(db),
+    admissionProbe(createDrizzleDocumentProjectionEffects(db), options.afterAdmission),
     changeTrails,
     createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db)),
-    notices,
+    {
+      ...notices,
+      // Withdrawal's first write: a refused or held member's notices are retracted.
+      async retractForPushes(pushIds) {
+        await options.duringWithdrawal?.();
+        return notices.retractForPushes(pushIds);
+      },
+    },
     undefined,
-    options.arrivals,
+    {
+      // The real sorted acquisition, as composition's arrivals adapter takes it.
+      namespaces: {
+        lockNamespaces: ({ documentIds, sourceIds }) =>
+          lockDocumentNamespaces(db, documentIds, sourceIds),
+      },
+      steps: [
+        createDrizzleDraftTreeStep(db, {
+          drafts: workDrafts,
+          // The harness publishes no Work projection; pending changes just run.
+          workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
+          // The harness keeps no catalog.
+          catalog: { refreshSources: async () => "" },
+          branches: branchStore,
+          coordinator: branchCoordinator,
+          liveDoc: (documentId) => readLiveDoc(persistence.journal, documentId),
+          ...(options.arrivals ? { arrivals: options.arrivals } : {}),
+        }),
+        ...(options.publicationSteps ?? []),
+      ],
+    },
   );
   const appendWriterPrefix = async (documentId: DocumentId, prefix: string) => {
     const doc = hocuspocus.documents.get(documentId);
@@ -440,28 +517,25 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       seq: 0,
     });
   };
-  const settlementStore = {
+  const settlementStore: typeof durableSettlementStore = {
     ...durableSettlementStore,
-    async settlePushTrail(input: Parameters<typeof durableSettlementStore.settlePushTrail>[0]) {
-      const settled = await durableSettlementStore.settlePushTrail(input);
-      if (Array.isArray(settled)) settlementProjections.push(...settled);
-      if (settled !== false) {
-        await options.afterSettlement?.({
-          documentId: input.push.documentId,
+    async completeBatch(input) {
+      for (const member of input.members) {
+        await options.afterClassification?.({
+          documentId: member.push.documentId,
           deleteWriterPrefix,
         });
       }
-      return settled;
-    },
-    async withCompletionFence(
-      input: Parameters<typeof durableSettlementStore.withCompletionFence>[0],
-      complete: Parameters<typeof durableSettlementStore.withCompletionFence>[1],
-    ) {
-      return durableSettlementStore.withCompletionFence(input, () => {
-        const result = complete();
-        options.afterLiveApply?.();
-        return result;
+      const completed = await durableSettlementStore.completeBatch({
+        ...input,
+        recheck(cuts) {
+          const decision = input.recheck(cuts);
+          options.beforeCompletionCommit?.();
+          return decision;
+        },
       });
+      if (completed.status === "completed") settlementProjections.push(...completed.projections);
+      return completed;
     },
   };
 
@@ -478,8 +552,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     criticalSections: branchCriticalSections,
     journalReadStore: durableBranchJournalReadStore,
     commitStore: durablePushCommitStore,
-    workPushPolicyStore: durableWorkPushPolicyStore,
-    workDraftPendingStore: durableWorkDraftPendingStore,
     settlementStore,
     branchCoordinator,
     journal: persistence.journal,
@@ -487,7 +559,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     model,
     codec: createAgentEditCodecFactory(markupCodec),
     resolveDocumentTitle: async (documentId) => {
-      return documentId === ALPHA_ID ? "alpha" : "beta";
+      return documentName(documentId);
     },
     hooks: options.afterDurableCommit
       ? {
@@ -531,7 +603,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     flush: async () => {},
   };
   const resolveDocumentUri = async (documentId: string) =>
-    documentId === ALPHA_ID ? "manuscript/alpha.md" : "manuscript/beta.md";
+    `manuscript/${documentName(documentId as DocumentId)}.md`;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},
@@ -571,15 +643,16 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
   const agentEdit = scopeAgentEdit(
     createBranchThreadPeerAgentEditCore({
       documentEdits: modelDocumentEdits,
+      drafts: workDrafts,
       fileAccess: createAllowAllFileAccess(),
       lockWorks: async () => {},
       lockLiveDocuments: async () => {},
       liveUtilityCore: runtime.liveUtilityCore,
       journal: persistence.journal,
-      liveCoordinator,
       lifecycle: persistence.lifecycle,
       branches: branchStore,
       branchCoordinator,
+      criticalSections: branchCriticalSections,
       branchPulls,
       branchJournal: durableBranchJournalReadStore,
       concurrentJournalWatermarks: watermarks,
@@ -647,41 +720,58 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     turnInverse,
     resolveDocumentUri,
   });
+  const reviewItems = createDraftReviewItems({
+    tree: createTreeReader(db),
+    branches: (draftId, documentIds) =>
+      durableWorkDraftPendingStore.listDraftBranchEvidence(draftId, documentIds),
+    creators: (draftId, documentIds) =>
+      durableWorkDraftPendingStore.listCreators(draftId, documentIds),
+    settling: (draftId) => durableWorkDraftPendingStore.listSettling(draftId),
+    liveFingerprint: (documentId) =>
+      liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
+  });
+  // The harness keeps no branch rooms but the fake hocuspocus's: retirement closes those and
+  // the pooled cores' thread state.
+  const retirePeers = createPeerRetirement({
+    closeBranchRoom: (branchId) => {
+      for (const roomId of [...hocuspocus.documents.keys()]) {
+        if (!roomId.startsWith(`branch:${branchId}:gen:`)) continue;
+        hocuspocus.documents.get(roomId)?.destroy();
+        hocuspocus.documents.delete(roomId);
+      }
+    },
+    agentEdit,
+  });
+  const lookups = createDrizzleCollabLookups(db);
+  const identity = createDraftReviewIdentity({ drafts: workDrafts, reviewItems });
   const drafts = createWorkDraftReviewService({
     diagnostics: createDraftReviewDiagnostics(eventSink),
-    settleEmptyDraft: createDrizzleEmptyDraftSettlement(
-      db,
-      branchStore,
-      branchCoordinator,
-      branchCriticalSections,
+    drafts: workDrafts,
+    reviewItems,
+    identity,
+    discard: createDraftDiscard({
+      drafts: workDrafts,
+      draftLeases: createDraftBranchLeases({
+        branches: branchStore,
+        criticalSections: branchCriticalSections,
+      }),
+      criticalSections: branchCriticalSections,
       liveCoordinator,
-      durableBranchJournalReadStore,
-    ),
-    discardWorkDraft: createDrizzleWorkDraftDiscard(
-      db,
-      branchStore,
-      branchCoordinator,
-      branchCriticalSections,
-      liveCoordinator,
-    ),
-    branches: branchStore,
-    branchPush: realBranchPush,
-    branchReview,
-    workDraftPending: createWorkDraftPending(durableWorkDraftPendingStore),
-    model: runtime.model,
-    deferUntilCommit: deferUntilDrizzleCommit,
-    retirePeers: createPeerRetirement({
-      closeBranchRoom: (branchId) => {
-        for (const roomId of [...hocuspocus.documents.keys()]) {
-          if (!roomId.startsWith(`branch:${branchId}:gen:`)) continue;
-          hocuspocus.documents.get(roomId)?.destroy();
-          hocuspocus.documents.delete(roomId);
-        }
-      },
-      agentEdit,
+      // No Work projection in this harness: pending counts aren't under test.
+      store: createDrizzleDraftDiscard(db, {
+        drafts: workDrafts,
+        branches: branchStore,
+        coordinator: branchCoordinator,
+        workProjection: { mutatePendingDraft: (_draftIds, operation) => operation() },
+        catalog: { refreshSources: async () => "" },
+      }),
+      retire: retirePeers,
+      releaseObjects: async () => {},
     }),
-    resolveDocumentUris: createDocumentUrisResolver(db),
-    resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
+    branchReview,
+    commands: createDrizzleDraftCommands(db),
+    model: runtime.model,
+    resolveThreadTitles: lookups.resolveThreadTitles,
     readReviewCut: (options.reviewCut ?? ((read) => read))(
       createDrizzleReviewCut({
         db,
@@ -689,9 +779,21 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         branches: branchStore,
         rows: durableBranchJournalReadStore,
         links,
-        resolveThreadTitles: createDrizzleCollabLookups(db).resolveThreadTitles,
+        identity,
+        resolveThreadTitles: lookups.resolveThreadTitles,
       }),
     ),
+    publication: createDraftPublication({
+      drafts: workDrafts,
+      reviewItems,
+      draftLinks: createDraftBranchAheadRegistration({
+        branches: branchCoordinator,
+        drafts: workDrafts,
+        registrar: UNSUPPORTED_AHEAD_REFS,
+        outsideTransaction: runOutsideDrizzleTransaction,
+      }),
+      push: realBranchPush,
+    }),
   });
   const collab = {
     agentEdit: () => agentEdit,
@@ -835,7 +937,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     writerEditBeforeWrite = false,
     sameIdentityRewrite = false,
   ) {
-    const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
+    const file = `${documentName(documentId)}.md`;
     await writeMarkdown(collab, {
       documentId,
       markdown,
@@ -939,7 +1041,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       turnId: TURN_ID,
       responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
     };
-    const file = documentId === ALPHA_ID ? "alpha.md" : "beta.md";
+    const file = `${documentName(documentId)}.md`;
     await collab
       .agentEdit()
       .read({ file, documentId }, { ...context, responseIdentity: undefined });
@@ -978,7 +1080,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       if (!block) throw new Error("live writer block missing");
       const before = Y.encodeStateVector(doc);
       model.applyTextEdit(toDocHandle(doc), block, { from: 0, to: 0 }, "Writer recent: ");
-      await persistence.journal.append(ALPHA_ID, Y.encodeStateAsUpdate(doc, before), {
+      await persistence.journal.append(documentId, Y.encodeStateAsUpdate(doc, before), {
         origin: `human:${USER_ID}`,
         seq: 0,
       });
@@ -1897,9 +1999,60 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         true,
       ),
     push: (branchId: string) => realBranchPush.pushToLive({ branchId }),
+    pushBranches: (
+      branchIds: readonly string[],
+      resetPolicy?: "auto",
+      payloads?: Readonly<Record<string, JsonValue>>,
+    ) =>
+      realBranchPush.pushBranchesToLive({
+        branchIds,
+        ...(resetPolicy ? { resetPolicy } : {}),
+        ...(payloads ? { payloads } : {}),
+      }),
     changeEvents: () => [...changeEvents],
     settlementProjections: () => [...settlementProjections],
     seedDestructivePush,
+    /** An outstanding tool reply on a real thread peer, not a journaled Work draft. */
+    async stagePeerReply(documentId: DocumentId, responseId: string) {
+      const context = {
+        grant: testFileGrant(DRAFT_DESTINATION),
+        sessionId: THREAD_ID,
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+      };
+      const file = `${documentName(documentId)}.md`;
+      await collab
+        .agentEdit()
+        .read({ file, documentId }, { ...context, responseIdentity: undefined });
+      await expect(
+        collab.agentEdit().write(
+          {
+            command: "insert",
+            file,
+            documentId,
+            content: "Outstanding peer reply.",
+          },
+          context,
+        ),
+      ).resolves.toMatchObject({ status: "success", phase: "staged" });
+      const [peer] = await db
+        .select()
+        .from(schema.documentBranches)
+        .where(
+          and(
+            eq(schema.documentBranches.kind, "thread_peer"),
+            eq(schema.documentBranches.documentId, documentId),
+            eq(schema.documentBranches.threadId, THREAD_ID),
+          ),
+        );
+      if (!peer) throw new Error("staged reply has no thread peer");
+      return peer.id;
+    },
+    stagedReplyMarkdown: (_responseId: string, _documentId: DocumentId, peerId: string) =>
+      branchCoordinator.readBranch(peerId, async (doc) => serializeMarkdown(doc)),
+    branchMarkdown: (branchId: string) =>
+      branchCoordinator.readBranch(branchId, async (doc) => serializeMarkdown(doc)),
     seedSweepClassificationPush,
     seedMatrixPush,
     seedPendingDependencyPush,
@@ -1911,6 +2064,49 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     stageCertifiedReplace,
     seedCheckpointRestoredExplicitDelete,
     seedDiscardedDependencyPush,
+    /** A writer edit on the warm room, journaled first, as a socket write would be. */
+    appendWriterPrefix,
+    /** The process's branch critical sections, for lease probes. */
+    criticalSections: branchCriticalSections,
+    /** The warm room's full-state fingerprint, as a text token captures it. */
+    liveFingerprint: (documentId: DocumentId) =>
+      liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
+    /**
+     * Expires the pending batch's lease inside the caller's transaction (completion or
+     * abandonment holds the row), as if the database clock passed it there.
+     */
+    expireLeaseInTransaction: () => expirePendingSettlementClaims(db),
+    /** A completion of the current owner's valid batch, attempted inside an ambient transaction. */
+    async attemptAmbientCompletion() {
+      const [batch] = await db
+        .select()
+        .from(schema.branchPushSettlementBatches)
+        .where(eq(schema.branchPushSettlementBatches.state, "pending"));
+      if (!batch?.claimToken) throw new Error("the probe needs an owned pending batch");
+      const owner = { token: batch.claimToken, epoch: batch.claimEpoch };
+      const loaded = await durableSettlementStore.loadSettlementBatch({ batchId: batch.id, owner });
+      if (!loaded) throw new Error("the owner lost its batch");
+      return runInRootDrizzleTransaction(db, () =>
+        durableSettlementStore.completeBatch({
+          batchId: batch.id,
+          claim: loaded.claim,
+          members: loaded.members.map((member) => ({
+            push: member.push,
+            joinVersion: member.joinVersion,
+            trail: member.trail,
+            replacement: trailContributionReplacement(member.trail, member.push),
+          })),
+          payloads: loaded.payloads,
+          leasedBranchIds: [],
+          liveTextFingerprints: new Map(),
+          recheck: () => "commit",
+          afterCommit() {},
+        }),
+      ).then(
+        () => "completed",
+        (cause: unknown) => (cause instanceof Error ? cause.message : String(cause)),
+      );
+    },
     crossWorkProbeFixture: () => ({
       branchReview,
       runtime,
@@ -1996,6 +2192,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         });
       }),
     recoverPendingLiveSettlements: () => realBranchPush.recoverPendingLiveSettlements(),
+    /**
+     * Drives every ownership-fenced settlement operation with a stale claim and
+     * otherwise valid input: the current owner's batch, members and join versions.
+     */
     async probeStaleSettlementClaim(claim: {
       token: string;
       epoch: number;
@@ -2007,29 +2207,60 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         .from(schema.branchPushSettlementOutbox)
         .where(eq(schema.branchPushSettlementOutbox.documentId, ALPHA_ID));
       if (!row) throw new Error("settlement row is unavailable");
-      let completionCallbackRan = false;
-      const renewed = await durableSettlementStore.renewClaim({
-        pushId: row.pushId,
-        claim,
+      const [owner] = await db
+        .select()
+        .from(schema.branchPushSettlementBatches)
+        .where(eq(schema.branchPushSettlementBatches.id, row.batchId));
+      if (!owner?.claimToken) throw new Error("the probe needs a current owner");
+      const batch = await durableSettlementStore.loadSettlementBatch({
+        batchId: row.batchId,
+        owner: { token: owner.claimToken, epoch: owner.claimEpoch },
       });
+      if (!batch) throw new Error("the current owner lost its batch");
+      const liveRows = async () =>
+        (
+          await db
+            .select({ id: schema.documentYjsUpdates.id })
+            .from(schema.documentYjsUpdates)
+            .where(eq(schema.documentYjsUpdates.documentId, ALPHA_ID))
+        ).length;
+      const liveRowsBefore = await liveRows();
+      let completionCallbackRan = false;
+      let afterCommitRan = false;
+      const renewed = await durableSettlementStore.renewClaim({ batchId: row.batchId, claim });
       const failureRecorded = await durableSettlementStore.recordFailure({
-        pushId: row.pushId,
+        batchId: row.batchId,
         claim,
         error: "stale actor A failure",
       });
-      const completion = await durableSettlementStore.withCompletionFence(
-        {
-          pushId: row.pushId,
-          documentId: row.documentId,
-          claim,
-          settledJoinVersion: row.settledJoinVersion ?? row.joinVersion,
-        },
-        () => {
+      const completion = await durableSettlementStore.completeBatch({
+        batchId: row.batchId,
+        claim,
+        members: batch.members.map((member) => ({
+          push: member.push,
+          joinVersion: member.joinVersion,
+          trail: member.trail,
+          replacement: trailContributionReplacement(member.trail, member.push),
+        })),
+        payloads: batch.payloads,
+        leasedBranchIds: [],
+        liveTextFingerprints: new Map(),
+        recheck() {
           completionCallbackRan = true;
-          return "applied";
+          return "commit";
         },
-      );
-      return { renewed, failureRecorded, completion, completionCallbackRan };
+        afterCommit() {
+          afterCommitRan = true;
+        },
+      });
+      return {
+        renewed,
+        failureRecorded,
+        completion: completion.status,
+        completionCallbackRan,
+        afterCommitRan,
+        liveRowsUnchanged: (await liveRows()) === liveRowsBefore,
+      };
     },
     async attemptSnapshotReplacement() {
       const [checkpoint] = await db
@@ -2333,6 +2564,22 @@ function remintMarkdown(doc: Y.Doc, markdown: string): void {
     if (fragment.length > 0) fragment.delete(0, fragment.length);
     replaceMarkdown(doc, markdown);
   });
+}
+
+/** Counts push admissions inside the completion transaction for fault injection. */
+function admissionProbe(
+  effects: ReturnType<typeof createDrizzleDocumentProjectionEffects>,
+  afterAdmission: ChangeTrailHarnessOptions["afterAdmission"],
+): ReturnType<typeof createDrizzleDocumentProjectionEffects> {
+  if (!afterAdmission) return effects;
+  let ordinal = 0;
+  return {
+    ...effects,
+    async applyPushCompletion(input) {
+      await effects.applyPushCompletion(input);
+      await afterAdmission({ documentId: input.documentId, ordinal: ++ordinal });
+    },
+  };
 }
 
 function fakeHocuspocus() {

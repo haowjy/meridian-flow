@@ -1,4 +1,5 @@
 // Durable draft receipts and staged response setup shared by the Postgres suites.
+
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { expect } from "vitest";
@@ -14,6 +15,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
+import { fencedSelection, testEnvelope } from "./draft-review-requests.js";
 
 type ReceiptFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 
@@ -110,12 +112,12 @@ export async function setupResponseDraft(
           ["blue", "azure"],
         ],
   );
-  const target = {
-    projectId: PROJECT_ID as never,
+  const resolved = await fixture.collab.draftReview.resolveItemByDocument({
     workId: WORK_ID,
     documentId: ALPHA_ID,
-    draftId: branchId,
-  };
+  });
+  if (!resolved) throw new Error("staged draft has no review item");
+  const target = { workId: WORK_ID, itemKey: resolved.itemKey };
   const review = (after: string, apply = false) => reviewChange(fixture, target, after, apply);
   const read = () =>
     fixture.collab
@@ -148,21 +150,27 @@ export async function reviewChange(
   if (preview.status !== "active") throw new Error("Missing active preview");
   const op = preview.operations.find((op) => op.afterExcerpt === after);
   if (!op) throw new Error(`Missing ${after}: ${JSON.stringify(preview.operations)}`);
-  const command = {
-    ...target,
-    userId: USER_ID as never,
-    closureClassIds: [op.closureClassId],
-    admissionTokens: [op.admissionToken],
-    memberPartKeys: op.partKey ? [op.partKey] : [],
-    liveRevisionToken: preview.liveRevisionToken,
-    draftRevisionToken: preview.draftRevisionToken,
-  };
-  expect(
-    await (apply
-      ? fixture.collab.draftReview.applyWorkDraftChanges({
-          ...command,
-          operationIds: [op.operationId],
-        })
-      : fixture.collab.draftReview.discardWorkDraft(command)),
-  ).toMatchObject({ status: apply ? "applied" : "discarded" });
+  const operationIds = [op.operationId];
+  const selection = fencedSelection(preview, operationIds);
+  const envelope = testEnvelope({
+    workId: target.workId,
+    kind: apply ? "apply_changes" : "discard_changes",
+    draftId: preview.draftId,
+  });
+  const outcome = await (apply
+    ? fixture.collab.draftReview.applyChanges({
+        ...target,
+        userId: USER_ID as never,
+        envelope,
+        selection: { kind: "apply", ...selection },
+      })
+    : fixture.collab.draftReview.discardChanges({
+        ...target,
+        userId: USER_ID as never,
+        envelope,
+        selection: { kind: "discard", ...selection },
+      }));
+  expect(outcome.kind === "result" ? outcome.result : outcome).toMatchObject({
+    status: apply ? "applied" : "discarded",
+  });
 }

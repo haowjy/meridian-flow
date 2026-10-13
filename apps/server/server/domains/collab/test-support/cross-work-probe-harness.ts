@@ -266,10 +266,13 @@ export async function runCrossWorkProbe(
   const reviewedPreview =
     probeCase === "manual"
       ? await collab.draftReview.preview({
-          projectId: PROJECT_ID,
           workId: WORK_B_ID,
-          documentId: ALPHA_ID,
-          draftId: branchB.branchId,
+          itemKey: (
+            await collab.draftReview.resolveItemByDocument({
+              workId: WORK_B_ID,
+              documentId: ALPHA_ID,
+            })
+          )?.itemKey as string,
         })
       : null;
   const bResult =

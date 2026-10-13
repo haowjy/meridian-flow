@@ -1,7 +1,10 @@
 /** Snapshot-owned branch mutations and explicit preview-fenced request envelopes. */
-import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
+import { randomUUID } from "node:crypto";
+import type { DraftCommandId, DraftId, UserId, WorkId } from "@meridian/contracts";
+import type { DraftCommandKind } from "@meridian/contracts/drafts";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { commandDigest, type DraftCommandEnvelope } from "../domain/draft-commands.js";
 import {
   type createHarness,
   THREAD_ID,
@@ -57,34 +60,53 @@ export async function commitBranchEdit(
   }
 }
 
-export function fencedRequest<T>(
-  command: T,
-  preview: Pick<
-    Extract<DraftPreviewResponse, { status: "active" }>,
-    "liveRevisionToken" | "draftRevisionToken" | "operations"
-  >,
+/** A fresh command envelope for facade-level suites; the route builds its own from the body. */
+export function testEnvelope(input: {
+  workId: WorkId;
+  kind: DraftCommandKind;
+  draftId: DraftId | null;
+  userId?: UserId;
+  commandId?: DraftCommandId;
+  body?: unknown;
+}): DraftCommandEnvelope {
+  const accountId = input.userId ?? (USER_ID as UserId);
+  return {
+    commandId: input.commandId ?? (randomUUID() as DraftCommandId),
+    workId: input.workId,
+    accountId,
+    kind: input.kind,
+    draftId: input.draftId,
+    digest: commandDigest({
+      accountId,
+      projectId: "",
+      workId: input.workId,
+      kind: input.kind,
+      selectors: { draftId: input.draftId },
+      body: input.body ?? null,
+    }),
+  };
+}
+
+/** The per-change selection a client sends after previewing, for the operations it clicked. */
+export function fencedSelection(
+  preview: {
+    liveRevisionToken: string;
+    draftRevisionToken: string;
+    operations: readonly {
+      operationId: string;
+      partKey?: string;
+      admissionToken: string;
+      closureClassId: string;
+    }[];
+  },
   operationIds: string[],
 ) {
+  const clicked = preview.operations.filter((op) => operationIds.includes(op.operationId));
   return {
-    ...command,
     operationIds,
-    memberPartKeys: preview.operations
-      .filter((op) => operationIds.includes(op.operationId))
-      .flatMap((op) => (op.partKey ? [op.partKey] : [])),
-    admissionTokens: [
-      ...new Set(
-        preview.operations
-          .filter((op) => operationIds.includes(op.operationId))
-          .map((op) => op.admissionToken),
-      ),
-    ],
-    closureClassIds: [
-      ...new Set(
-        preview.operations
-          .filter((op) => operationIds.includes(op.operationId))
-          .map((op) => op.closureClassId),
-      ),
-    ],
+    memberPartKeys: clicked.flatMap((op) => (op.partKey ? [op.partKey] : [])),
+    admissionTokens: [...new Set(clicked.map((op) => op.admissionToken))],
+    closureClassIds: [...new Set(clicked.map((op) => op.closureClassId))],
     liveRevisionToken: preview.liveRevisionToken,
     draftRevisionToken: preview.draftRevisionToken,
   };
