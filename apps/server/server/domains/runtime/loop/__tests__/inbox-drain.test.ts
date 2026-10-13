@@ -258,7 +258,7 @@ describe("inbox drain", () => {
             kind: "undo",
             scope: { kind: "thread", threadId: rig.thread.id },
             message: "",
-            data: { uri: "manuscript://Scene", writeHandles: ["w1"], direction },
+            data: { uri: "manuscript://Scene", turnId: "turn-1", direction },
           });
         }
       },
