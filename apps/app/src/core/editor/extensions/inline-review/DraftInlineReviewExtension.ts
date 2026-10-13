@@ -21,13 +21,14 @@ import {
   relativePositionRuntimeFromState,
   resolveRelativeRange,
 } from "../../relative-position-runtime";
+import { clickChanges, operationsNearPoint, resolveClickFocus, textAround } from "./click-focus";
 import {
   inlineReviewClassNames,
   paintDecorations,
   type ReviewGeometry,
   resolveGeometry,
 } from "./decorations";
-import type { InlineReviewModel } from "./model";
+import { changeOperationIds, type InlineReviewModel } from "./model";
 import type { RemovalHandlers } from "./removal-widget";
 import { reviewWriterClient } from "./writer-client";
 
@@ -445,6 +446,36 @@ export function buildInlineReviewPlugin({
       // Editor-side click seam. A click on any hunk decoration DOM adopts its
       // first-listed operation as the active one — surfaces reading plugin
       // state (the dock Changes rows) can reflect the emphasis.
+      // A plain click (ProseMirror does not call this for drags or
+      // multi-clicks) that lands in, beside or around a change focuses it,
+      // wherever the caret ends up. It never takes the click from the browser.
+      handleClick: (view, pos, event) => {
+        if (event.button !== 0 || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey)
+          return false;
+        const pluginState = draftInlineReviewPluginKey.getState(view.state);
+        const geometry = pluginState?.geometry;
+        if (!pluginState?.marksVisible || !geometry || geometry.doc !== view.state.doc)
+          return false;
+        const around = textAround(view.state.doc, pos);
+        const [best] = resolveClickFocus(clickChanges(geometry), {
+          pos,
+          ...around,
+          nearOperationIds: operationsNearPoint(
+            view.dom,
+            OPERATION_ATTR,
+            event.clientX,
+            event.clientY,
+          ),
+        });
+        if (!best) return false;
+        const focused = changeOperationIds(
+          geometry.model.operations,
+          pluginState.activeOperationId,
+        );
+        if (focused.has(best.operationId)) return false;
+        dispatchMeta(view, { kind: "focus-click", operationId: best.operationId });
+        return false;
+      },
       handleDOMEvents: {
         input: (view) => {
           // Review projection can repaint before the MutationObserver's delivery,
