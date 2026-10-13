@@ -276,6 +276,8 @@ export function ChangeFailureText({
       );
     case "gone":
       return <Trans>That change is no longer in the draft.</Trans>;
+    case "blocked":
+      return <Trans>Apply couldn't finish</Trans>;
     case "unknown":
       return mode === "apply" ? (
         <Trans>

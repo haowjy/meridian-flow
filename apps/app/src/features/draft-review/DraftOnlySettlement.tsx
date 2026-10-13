@@ -6,6 +6,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import {
   currentDraftCommandRecords,
+  draftCommandFailure,
   pendingDraftCommand,
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
@@ -64,6 +65,7 @@ function WorkSettlement({
     const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
       draft.workId === workId &&
       !pendingDraftCommand(currentDraftCommandRecords(), draft) &&
+      !draftCommandFailure(currentDraftCommandRecords(), draft) &&
       !activeDrafts.some((row) => row.itemKey === draft.itemKey);
     const activeDrafts = drafts.drafts ?? [];
     if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;

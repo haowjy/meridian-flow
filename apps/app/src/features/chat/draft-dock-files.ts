@@ -12,7 +12,11 @@
 import type { DraftPreviewEntry } from "@/client/query/useDraftPreview";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { listablePreview } from "@/features/draft-review/draft-changes";
-import { type ReviewChange, reviewChangesOfPreview } from "@/features/draft-review/review-changes";
+import {
+  type ReviewChange,
+  reviewChangesOfPreview,
+  wholeItemChange,
+} from "@/features/draft-review/review-changes";
 
 export type DockFile = {
   row: ReviewFileTarget;
@@ -46,6 +50,12 @@ export function dockFile(
     changes: NO_CHANGES,
     actionable: NO_CHANGES,
   } satisfies Omit<DockFile, "status">;
+  if (row.draft.branchGeneration === null) {
+    const changes = [wholeItemChange(row.draft)].filter((change) =>
+      change.threadIds.includes(threadId),
+    );
+    return { ...base, status: "ready", changes, actionable: changes };
+  }
   if (entry?.status === "error") return { ...base, status: "error", retry: entry.retry };
   if (entry?.status !== "ready") return { ...base, status: "loading" };
   // A draft that is gone has no change of the chat's left to show.

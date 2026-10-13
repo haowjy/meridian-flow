@@ -41,7 +41,7 @@ export function WorkChangeFile({
   const records = useDraftCommandRecords();
   const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
   const refused = draftCommandFailure(records, draft);
-  const view = useDraftView(draft, { controller, enabled: expanded });
+  const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
   if (
     expanded &&
     (view.status === "gone" ||
@@ -52,7 +52,7 @@ export function WorkChangeFile({
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
   const review = (focusOperationIds?: readonly string[]) =>
-    openReviewFile(file, workId, focusOperationIds);
+    file.draft.branchGeneration !== null && openReviewFile(file, workId, focusOperationIds);
 
   return (
     <>
@@ -87,7 +87,7 @@ export function WorkChangeFile({
           <button
             type="button"
             className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
-            disabled={!file.contextLocation}
+            disabled={!file.contextLocation || file.draft.branchGeneration === null}
             onClick={() => review()}
           >
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>

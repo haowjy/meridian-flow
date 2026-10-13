@@ -92,12 +92,12 @@ it.each([
   label,
   expanded,
 }) => {
-  const file = { ...draft("new-scene", [pacing]), isNew: true };
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [file] });
+  const file = { ...draft("new-scene", [pacing]), isNew: true, wholeItem: true };
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
     itemKey: file.itemKey,
-    isNew: true,
+    item: { ...file, isNew: true, wholeItem: true },
     operations: [op("1", pacing), op("2", pacing)],
   });
   const request = label === "Apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
@@ -136,9 +136,16 @@ it.each([
         ).toBe(true);
         await click(label);
       } else await click(label);
-      expect(request).toHaveBeenCalledWith("project-a", "work-a", "new-scene", {
-        itemKey: file.itemKey,
-      });
+      expect(request).toHaveBeenCalledWith(
+        "project-a",
+        "work-a",
+        "new-scene",
+        expect.objectContaining({
+          draftId: listed.draftId,
+          itemKey: file.itemKey,
+          commandId: expect.any(String),
+        }),
+      );
       expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     },
     {
@@ -169,6 +176,7 @@ it.each([
   },
   {
     isNew: true,
+    wholeItem: true,
     code: "apply-offline" as const,
     message: "Couldn't apply. Check your connection and try again.",
   },
@@ -178,11 +186,11 @@ it.each([
   isNew,
 }) => {
   const file = { ...draft("chapter-12", [pacing]), isNew };
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [file] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
     itemKey: file.itemKey,
-    isNew,
+    item: { ...file, isNew, wholeItem: isNew },
     operations: [op("1", pacing)],
   });
   await fixture.render(
@@ -239,7 +247,7 @@ it.each([
 
 it("all accepted batch targets disappear at the click and a refused target restores independently", async () => {
   const files = [draft("chapter-a", [pacing]), draft("chapter-b", [pacing])];
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: files });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: files });
   fixture.network.getDraftPreview.mockImplementation(async (_project, _work, documentId) => ({
     ...preview,
     itemKey: `draft-${documentId}`,
@@ -290,13 +298,14 @@ it("new documents have one review door and whole-draft commands in chat and Work
   const files = ["chapter-a", "chapter-b"].map((id) => ({
     ...draft(id, [pacing]),
     isNew: true,
+    wholeItem: true,
   }));
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: files });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: files });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, documentId) => ({
     ...preview,
     itemKey: `draft-${documentId}`,
     documentName: documentId,
-    isNew: true,
+    item: { ...listed, documentId, itemKey: `draft-${documentId}`, isNew: true, wholeItem: true },
     operations: [op(documentId, pacing)],
   }));
   fixture.network.applyDraft.mockReturnValue(new Promise(() => {}));
@@ -336,9 +345,16 @@ it("new documents have one review door and whole-draft commands in chat and Work
           ?.querySelector<HTMLButtonElement>('[data-review-change-row] [aria-label="Apply"]')
           ?.click(),
       );
-      expect(fixture.network.applyDraft).toHaveBeenCalledWith("project-a", "work-a", "chapter-a", {
-        itemKey: "draft-chapter-a",
-      });
+      expect(fixture.network.applyDraft).toHaveBeenCalledWith(
+        "project-a",
+        "work-a",
+        "chapter-a",
+        expect.objectContaining({
+          draftId: listed.draftId,
+          itemKey: "draft-chapter-a",
+          commandId: expect.any(String),
+        }),
+      );
       expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
     },
     {

@@ -120,7 +120,7 @@ beforeEach(() => {
   resetDraftCommandRecords();
   review = null;
   heldCarryLookup = null;
-  mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  mocks.listWorkDrafts.mockResolvedValue({ items: [listed] });
   mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
 });
 
@@ -224,7 +224,7 @@ function successor(room: string, ids: string[], listedDraft: boolean) {
     reviewRoomName: room,
   });
   mocks.listWorkDrafts.mockResolvedValue({
-    drafts: listedDraft ? [{ ...listed, branchGeneration: 2 }] : [],
+    items: listedDraft ? [{ ...listed, branchGeneration: 2 }] : [],
   });
 }
 const previewKey = projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a");
@@ -292,7 +292,7 @@ it("delivers unmounted writing before publishing the draft list after acknowledg
     expect(old.document.isDestroyed).toBe(true);
     expect(runtime.wire(newRoom).sent.length).toBeGreaterThan(0);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, branchGeneration: 2 }] });
+    mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
     await acknowledge(newRoom);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
     expect(runtime.pool.peek(newRoom)).toBeUndefined();
