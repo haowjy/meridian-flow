@@ -40,8 +40,9 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI
     and the visible-turn policy, and the app reconciles to the server at turn end.
     `differs` is a lead to investigate, `matches` does not prove the screen was
-    right, and it never changes the claim or exit code. The owner ruled (TL-MF-20)
-    that once the chat session's sync is shared, a live disagreement will fail
+    right, and it never changes the claim or exit code. The planned rule
+    ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
+    is that once the chat session's sync is shared, a live disagreement will fail
     with exit 6; that is not true yet. The claims themselves (`status`,
     `finalText`, outcome) still come from the confirming snapshot. `send` reads no
     snapshot before its deadline: it follows from the admission's `resumeAfterSeq`
