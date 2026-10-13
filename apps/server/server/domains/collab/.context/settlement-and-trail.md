@@ -7,10 +7,11 @@
   cycles) and do not split push/coordinator mutexes (that creates inversion).
   Callers acquire branch locks in branch-id order, then live coordinator locks
   in document-id order.
-- **One push commit seam**: whole-content and manifest-companion builders
+- **One push commit seam**: the whole-branch and selected-row builders in
+  `branch-push-candidates.ts`
   produce a `CandidateBatch` consumed by the single pipeline in
   `branch-push.ts`. Whole-document content candidates materialize the current branch. Per-change
-  content candidates and manifest companions replay only selected closed rows. Locked
+  candidates replay only selected closed rows. Locked
   preparation in `branch-push-preparation.ts` computes one block diff from the
   live lock cut; `branch-trail-projection.ts` turns it into the sole durable
   publication record, while typed `push_lineage.branch_generation` supports
@@ -104,7 +105,7 @@
 - **Apply settles ahead refs per completion because drafts cannot move documents**
   (contract §9.4, L6). A draft only creates, edits, and deletes; every move is
   live and settles in the tree store's move transaction. So the only documents an
-  Apply brings to an address are draft creates the manifest push publishes, their
+  Apply brings to an address are draft creates the draft tree step publishes, their
   SQL address is already final, and the completion fence (`withCompletionFence`
   in `adapters/drizzle-pending-settlement.ts`, `arrivingDocumentIds`) settles them
   under Work → namespace → holder locks. Draft-held moves would break that: a
@@ -122,12 +123,17 @@
   nonempty set of operation IDs plus both opaque revision tokens. Under the shared
   branch critical section, recompute the comparison against a durable live cut
   and require complete classes. Refuse `stale`, `gone`, `whole_item`, or
-  `incomplete_class` without publishing. Draft-only manifest members expose
-  `isNewDocument` and use whole-document Apply with the existing manifest companion.
+  `incomplete_class` without publishing. Draft-only (new) documents expose
+  `isNewDocument`, are whole-item, and settle by item Apply through the draft tree step.
   The live token includes authority identity, generation, and next admission
-  sequence captured with journal bytes under the document mutation lock. Recheck
-  that token inside durable push commit under the same lock, so an admission
-  after selection cannot sneak into a successful stale Apply or Discard. Discard
+  sequence captured with journal bytes under the document mutation lock. Per-change
+  Apply and Discard recheck that token inside the durable push or discard commit
+  under the same lock (`commitPreparedPush`, `commitPreparedDiscard`), so an
+  admission after selection cannot sneak into a successful stale Apply or Discard.
+  Staged item Apply differs: the draft tree step compares its location, live-text
+  and branch-generation tokens only at the staging check
+  (`tokensMoved`, `scope.stage === "check"`), because staging is the consent
+  boundary. Completion does not re-check them. Discard
   expands a nonempty selection to its complete class; missing tokens refuse
   `stale`. An absent selection alone chooses whole Discard; present malformed
   or empty selections are HTTP 400, never whole Discard. The draft token
