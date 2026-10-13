@@ -18,6 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { answeredControlIds, isHandoffSeed } from "@meridian/contracts/threads";
+import { viewTranscript } from "@meridian/thread-client";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
@@ -62,9 +63,9 @@ import { optimisticHandoffSeed } from "./derivation/handoff-seed";
 import { optimisticForkPrefix, useInheritedView } from "./derivation/inherited-view";
 import { useHandoffBrief } from "./derivation/useHandoffBrief";
 import { queuedWriterTurnIds as selectQueuedWriterTurnIds } from "./pending-inbox";
+import { reportPersistedContractFailure } from "./persisted-contract-debug";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { ReferenceAvailabilityContext } from "./reference-availability";
-import { placeStandIns } from "./retry-stand-ins";
 import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
@@ -150,7 +151,21 @@ export function ChatView({
   const intent = derivation?.intent;
   const { localSeeds } = brief;
   const { standIns: replyStandIns } = replyRetry;
-  const turns = useMemo(() => {
+  const activity = useThreadActivity({
+    threadId,
+    seed: snapshotLiveState,
+  });
+  const runningSubagents = activeChildren(activity.activity);
+  const runningBackgroundSubagents = runningSubagents.filter(
+    (node) => node.deliveryMode === "background_notification",
+  );
+  const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
+  const queuedWriterTurnIds = useMemo(
+    () => selectQueuedWriterTurnIds(pendingInbox),
+    [pendingInbox],
+  );
+  const inheritedTranscript = inherited.view?.transcript ?? null;
+  const turnsWithOpening = useMemo(() => {
     const opening =
       intent?.kind === "handoff" &&
       derivation?.state !== "failed" &&
@@ -165,9 +180,24 @@ export function ChatView({
             }),
           ]
         : [];
-    const placed = placeStandIns(storedTurns, [...localSeeds, ...replyStandIns]);
-    return opening.length ? [...opening, ...placed] : placed;
-  }, [derivation?.state, intent, localSeeds, replyStandIns, storedTurns, threadId]);
+    return opening.length ? [...opening, ...storedTurns] : storedTurns;
+  }, [derivation?.state, intent, storedTurns, threadId]);
+  const standIns = useMemo(() => [...localSeeds, ...replyStandIns], [localSeeds, replyStandIns]);
+  const awaitingSubagents = runningBackgroundSubagents.length > 0;
+  // Every decision about which rows the writer sees runs in the view model.
+  const view = useMemo(
+    () =>
+      viewTranscript({
+        turns: turnsWithOpening,
+        inherited: inheritedTranscript,
+        activity: { awaitingSubagents },
+        standIns,
+        queued: queuedWriterTurnIds,
+        onContractFailure: reportPersistedContractFailure,
+      }),
+    [awaitingSubagents, inheritedTranscript, turnsWithOpening, queuedWriterTurnIds, standIns],
+  );
+  const { turns } = view;
   // Live announcements follow the server's replies: a Retry's stand-in speaks
   // for itself, and a lost one is not a failed run.
   const latestAssistantTurn =
@@ -191,19 +221,6 @@ export function ChatView({
     chatLineageId({ thread: activeThread, work: activeWork }),
   );
   const availableSkills = useThreadAvailableSkills(threadId);
-  const activity = useThreadActivity({
-    threadId,
-    seed: snapshotLiveState,
-  });
-  const runningSubagents = activeChildren(activity.activity);
-  const runningBackgroundSubagents = runningSubagents.filter(
-    (node) => node.deliveryMode === "background_notification",
-  );
-  const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
-  const queuedWriterTurnIds = useMemo(
-    () => selectQueuedWriterTurnIds(pendingInbox),
-    [pendingInbox],
-  );
   const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
   const controls = useThreadControls({
     threadId,
@@ -418,15 +435,13 @@ export function ChatView({
                   <RunningSubagentsStrip threadId={threadId} />
                   <TurnList
                     threadId={threadId}
-                    turns={turns}
-                    awaitingSubagents={runningBackgroundSubagents.length > 0}
+                    view={view}
                     historySettled={historySettled}
                     tailFollowRevision={tailFollowRevision}
                     ariaLabel={t`Chat`}
                     onRespondToInterrupt={handleRespondToInterrupt}
                     changeTrails={changeTrails.byId}
                     submissionRecoveryByTurnId={submissions.presentation}
-                    queuedWriterTurnIds={queuedWriterTurnIds}
                     controls={controls}
                     brief={brief}
                     replyRetry={replyRetry}

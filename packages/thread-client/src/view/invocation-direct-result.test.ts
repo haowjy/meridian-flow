@@ -1,7 +1,25 @@
 import type { Block, JsonValue } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { directResultsForTurn } from "./invocation-direct-result";
-import { block } from "./report-test-fixtures";
+
+function block(
+  id: string,
+  sequence: number,
+  blockType: Block["blockType"],
+  content: JsonValue,
+): Block {
+  return {
+    id,
+    turnId: "parent-turn",
+    responseId: null,
+    blockType,
+    sequence,
+    content,
+    status: "complete",
+    textContent: null,
+    createdAt: "2026-09-23T00:00:00.000Z",
+  };
+}
 
 function card(mode = "direct", execution: string | null = "execution-1") {
   return block("card", 0, "custom", {

@@ -1,4 +1,6 @@
 /** Serialize the visible final answer into Markdown and app-free rich clipboard HTML. */
+
+import { type AssistantView, isImageBlock } from "@meridian/thread-client";
 import rehypeStringify from "rehype-stringify";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
@@ -6,8 +8,6 @@ import { defaultRehypePlugins, defaultRemarkPlugins } from "streamdown";
 import { unified } from "unified";
 import { parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { remarkReferenceOccurrences } from "@/rich-content/reference-occurrences";
-import { isImageBlock } from "./block-kind";
-import { finalMessageItems, type RenderItem } from "./partition-turn";
 import { payloadText } from "./report-payload";
 
 const copyProcessor = unified()
@@ -20,10 +20,11 @@ const copyProcessor = unified()
   .use(rehypeStringify);
 
 /** Build Markdown eagerly for the disabled state; rich HTML is deferred until copy. */
-export function assistantTurnCopyMarkdown(items: RenderItem[]): string {
-  return finalMessageItems(items)
+export function assistantTurnCopyMarkdown({ items, finalFrom }: AssistantView): string {
+  return items
+    .slice(finalFrom)
     .flatMap((item) => {
-      if (item.kind === "text") return [item.block.textContent ?? ""];
+      if (item.kind === "text") return [item.text];
       if (item.kind === "report") {
         const payload = payloadText(item.report.payload);
         return [item.report.summary, ...(payload.trim() ? [`\`\`\`json\n${payload}\n\`\`\``] : [])];

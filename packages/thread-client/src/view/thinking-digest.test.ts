@@ -28,21 +28,20 @@ function tool(toolName: "read" | "write", path: string): ToolView {
   };
 }
 
-it.each([
-  "read",
-  "write",
-] as const)("%s counts sections and their file once, without merging different documents", (command) => {
-  const tools = [
-    tool(command, "manuscript://chapter-11.md#the-pill-hall"),
-    tool(command, "chapter-11.md"),
-  ];
-  const documents = (input: ToolView[]) => {
-    const counts = countFoldTools(input);
-    return command === "read" ? counts.readDocuments : counts.editedDocuments;
-  };
+it("counts sections and their file once, without merging different documents", () => {
+  for (const command of ["read", "write"] as const) {
+    const tools = [
+      tool(command, "manuscript://chapter-11.md#the-pill-hall"),
+      tool(command, "chapter-11.md"),
+    ];
+    const documents = (input: ToolView[]) => {
+      const counts = countFoldTools(input);
+      return command === "read" ? counts.readDocuments : counts.editedDocuments;
+    };
 
-  expect([...documents(tools)]).toEqual(["manuscript://chapter-11.md"]);
-  expect(
-    documents([...tools, tool(command, "manuscript://chapter-12.md#the-pill-hall")]).size,
-  ).toBe(2);
+    expect([...documents(tools)]).toEqual(["manuscript://chapter-11.md"]);
+    expect(
+      documents([...tools, tool(command, "manuscript://chapter-12.md#the-pill-hall")]).size,
+    ).toBe(2);
+  }
 });

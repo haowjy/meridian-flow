@@ -101,17 +101,17 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
 msgstr ""
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr ""
 
-#. placeholder {0}: readDocuments.size
+#. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr ""
@@ -1711,7 +1711,7 @@ msgstr ""
 msgid "Drafted"
 msgstr ""
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "drafted {0}"
 msgstr ""
@@ -1772,7 +1772,7 @@ msgstr ""
 msgid "Edited"
 msgstr ""
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "edited {0}"
 msgstr ""

@@ -42,3 +42,60 @@ export {
   type TurnStatusPatch,
   upsertBlockIn,
 } from "./turns/turn-ops";
+export type { AssistantView, ViewItem, ViewRun } from "./view/assistant-view";
+export { isHelperResultBlock, isImageBlock, isToolDeliveryBlock } from "./view/block-kind";
+export { componentBlockContent } from "./view/component-block-content";
+export {
+  type DeliverySegment,
+  groupDeliverySegments,
+  type ToolView,
+} from "./view/group-delivery-segments";
+export {
+  type DirectInvocationResult,
+  directResultsForTurn,
+} from "./view/invocation-direct-result";
+export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
+export {
+  hasVisibleReasoningText,
+  isReasoningBlock,
+  visibleReasoningText,
+} from "./view/partition-turn";
+export { placeStandIns } from "./view/retry-stand-ins";
+export type { FoldDigest } from "./view/thinking-digest";
+export { threadMessageRow } from "./view/thread-message-result";
+export {
+  copySourcePath,
+  humanizeSkillSlug,
+  skillFile,
+  stringInput,
+  type ToolCommand,
+  toolCommand,
+  toolInputObject,
+  turnWorkReceipts,
+  type WorkReceipt,
+  type WriteMode,
+  workReceipt,
+} from "./view/tool-command";
+export { isArtifactBlock } from "./view/tool-kind";
+export { isToolViewVisible } from "./view/tool-view-visibility";
+export type {
+  DeliveryEvent,
+  InheritedMark,
+  InheritedTranscript,
+  PersistedContractFailure,
+  TranscriptRow,
+} from "./view/transcript-model";
+export { cacheHitPercent, type TurnStats } from "./view/turn-stats";
+export {
+  type RowIdentity,
+  type TranscriptView,
+  type TranscriptViewInput,
+  type ViewRow,
+  viewTranscript,
+} from "./view/view-transcript";
+export {
+  projectWriterText,
+  type WriterReferenceOccurrence,
+  type WriterSkillOccurrence,
+  type WriterText,
+} from "./view/writer";

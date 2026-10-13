@@ -7,6 +7,15 @@ import {
   isTerminalTurnStatus,
   type Turn,
 } from "@meridian/contracts/protocol";
+import {
+  type AssistantView,
+  type DeliveryEvent,
+  type DirectInvocationResult,
+  isImageBlock,
+  type ViewItem,
+  type ViewRow,
+  type ViewRun,
+} from "@meridian/thread-client";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
@@ -14,36 +23,26 @@ import { ImageBlock, parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
-import { isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock, type ErrorBlockKind } from "./ErrorBlock";
-import { groupDeliverySegments } from "./group-delivery-segments";
-import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { ProcessDisclosure } from "./ProcessDisclosure";
-import {
-  hasVisibleReasoningText,
-  partitionTurn,
-  type RenderItem,
-  type Run,
-} from "./partition-turn";
 import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
 import { DeliveryEventRows } from "./subagent/DeliveryEventRows";
-import type { SubagentUpdateMetadata } from "./subagent/update";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
 import { thinkingDigest } from "./thinking-digest";
-import { turnWorkReceipts } from "./tool-command";
-import { isToolViewVisible } from "./tool-view-visibility";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
-  /** Assistant turns in the same writer-facing reply, supplied on its final part. */
-  responseParts?: readonly Turn[];
+  /** What the turn shows: its items, decided by the view model. */
+  view: AssistantView;
+  /** The reply this turn ends: its parts and usage numbers. Absent on a part that continues. */
+  response?: ViewRow["response"];
   threadUsage?: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -53,12 +52,7 @@ export type AssistantTurnProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
-  deliveryEvents?: Array<{
-    turn: Turn;
-    childThreadId?: string;
-    title?: string;
-    subagentUpdate: SubagentUpdateMetadata | null;
-  }>;
+  deliveryEvents?: readonly DeliveryEvent[];
   isLatestAssistant?: boolean;
   /**
    * No visible turn follows this one. An error is current only here: once the
@@ -92,7 +86,8 @@ export type ReplyRetryView = {
 function AssistantTurnComponent({
   threadId,
   turn,
-  responseParts,
+  view,
+  response,
   threadUsage,
   deliveryEvents = [],
   isLatestAssistant = false,
@@ -104,14 +99,9 @@ function AssistantTurnComponent({
   changeTrail,
   navigateToChange,
 }: AssistantTurnProps) {
-  const sortedBlocks = useMemo(
-    () => [...turn.blocks].sort((a, b) => a.sequence - b.sequence),
-    [turn.blocks],
-  );
   const isSettled = isTerminalTurnStatus(turn.status);
-  const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
-  const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(items), [items]);
-  const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
+  const { items } = view;
+  const copyMarkdown = useMemo(() => assistantTurnCopyMarkdown(view), [view]);
   const errorKind =
     turn.status === "error"
       ? replyErrorKind({
@@ -133,10 +123,7 @@ function AssistantTurnComponent({
   // own tool results, so a Work-mutation-only turn still gets its Undo receipt.
   // Gated on settlement like document lineage: a receipt is a record of a
   // finished turn, and mid-stream it would offer Undo on a turn still writing.
-  const workReceipts = useMemo(
-    () => (isLive ? [] : turnWorkReceipts(sortedBlocks)),
-    [isLive, sortedBlocks],
-  );
+  const workReceipts = isLive ? NO_WORK_RECEIPTS : view.workReceipts;
 
   return (
     <div
@@ -155,9 +142,6 @@ function AssistantTurnComponent({
             turnStatus={turn.status}
             onRespondToInterrupt={onRespondToInterrupt}
             writeMode={turn.writeMode ?? "direct"}
-            directResult={
-              item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
-            }
           />
         ))}
         {deliveryEvents.length ? (
@@ -189,11 +173,11 @@ function AssistantTurnComponent({
           />
         ) : null}
       </div>
-      {isSettled && !continuesResponse && !standIn ? (
+      {isSettled && !continuesResponse && !standIn && response ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
-          responseParts={responseParts ?? [turn]}
+          response={response}
           markdown={copyMarkdown}
           threadUsage={threadUsage ?? null}
         />
@@ -202,6 +186,8 @@ function AssistantTurnComponent({
     </div>
   );
 }
+
+const NO_WORK_RECEIPTS: AssistantView["workReceipts"] = [];
 
 /** Which failure an errored reply reads as; the provider's decline wins only over a plain failure. */
 function replyErrorKind({
@@ -243,35 +229,25 @@ const TurnItemView = memo(function TurnItemView({
   turnStatus,
   onRespondToInterrupt,
   writeMode,
-  directResult,
 }: {
-  item: RenderItem;
+  item: ViewItem;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
-  directResult: DirectInvocationResult | null;
 }) {
-  const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
-    () => (runs ? thinkingDigest(toolViewsInFold(runs), writeMode) : null),
-    [runs, writeMode],
+    () => (item.kind === "process" ? thinkingDigest(item.digest, writeMode) : null),
+    [item, writeMode],
   );
 
   if (item.kind === "process") {
-    if (!foldHasVisibleContent(item.runs)) return null;
+    if (!item.visible) return null;
     return (
       <div data-turn-item-kind="process">
         <ProcessDisclosure label={digest ?? thinkingLabel()}>
           {item.runs.map((run) => (
-            <FoldRun
-              key={runRenderKey(run)}
-              run={run}
-              threadId={threadId}
-              turnStatus={turnStatus}
-              onRespondToInterrupt={onRespondToInterrupt}
-              writeMode={writeMode}
-            />
+            <FoldRun key={runRenderKey(run)} run={run} writeMode={writeMode} />
           ))}
         </ProcessDisclosure>
       </div>
@@ -293,14 +269,28 @@ const TurnItemView = memo(function TurnItemView({
     );
   }
 
+  if (item.kind === "text") {
+    // Text is the assistant's voice: full prose, no icon, no rail — and it is
+    // only ever rendered here, outside the Thinking fold.
+    return (
+      <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="text">
+        {item.block.status === "partial" ? (
+          <StreamingText text={item.text} />
+        ) : (
+          <Markdown>{item.text}</Markdown>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind={item.kind}>
-      <DeliveryBlock
+    <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="artifact">
+      <ArtifactItem
         block={item.block}
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
-        directResult={directResult}
+        directResult={item.direct}
       />
     </div>
   );
@@ -310,54 +300,31 @@ function thinkingLabel() {
   return <Trans>Thinking</Trans>;
 }
 
-/** A process item earns its disclosure only when it holds something the writer can read. */
-function foldHasVisibleContent(runs: Run[]): boolean {
-  return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
-}
-
-function toolViewsInFold(runs: Run[]) {
-  return runs.flatMap((run) => {
-    if (run.kind !== "activity") return [];
-    return groupDeliverySegments(run.blocks).flatMap((segment) => {
-      if (segment.kind === "tool") return isToolViewVisible(segment.tool) ? [segment.tool] : [];
-      if (segment.kind === "tool-run") return segment.tools.filter(isToolViewVisible);
-      return [];
-    });
-  });
-}
-
 const FoldRun = memo(function FoldRun({
   run,
-  threadId,
-  turnStatus,
-  onRespondToInterrupt,
   writeMode,
 }: {
-  run: Run;
-  threadId: string;
-  turnStatus: Turn["status"];
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  run: ViewRun;
   writeMode: "direct" | "draft";
 }) {
   if (run.kind === "reasoning") {
     return (
       <>
-        {run.blocks.filter(hasVisibleReasoningText).map((block) => (
+        {run.blocks.map((block) => (
           <TurnBlockStep key={blockRenderKey(block)} block={block} />
         ))}
       </>
     );
   }
 
+  // Claude-style timeline: adjacent tools stack as siblings instead of
+  // collapsing into a grouping disclosure. With text-altitude rows the
+  // visual weight is low enough that grouping reads as extra chrome.
   return (
     <div className="space-y-[var(--chat-space-row)]" data-activity-block data-fold-activity-run>
-      <DeliverySegments
-        blocks={run.blocks}
-        threadId={threadId}
-        turnStatus={turnStatus}
-        onRespondToInterrupt={onRespondToInterrupt}
-        writeMode={writeMode}
-      />
+      {run.tools.map((tool) => (
+        <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
+      ))}
     </div>
   );
 });
@@ -365,13 +332,13 @@ const FoldRun = memo(function FoldRun({
 // A turn with only empty blocks partitions to nothing, so a blockless item
 // never reaches render. Returning a stable key instead of throwing keeps a
 // stray empty item from tripping the project route error boundary.
-function itemRenderKey(item: RenderItem): string {
+function itemRenderKey(item: ViewItem): string {
   if (item.kind !== "process") return `${item.kind}:${blockRenderKey(item.block)}`;
   const firstBlock = item.runs[0]?.blocks[0];
   return firstBlock ? `process:${blockRenderKey(firstBlock)}` : "process:empty";
 }
 
-function runRenderKey(run: Run): string {
+function runRenderKey(run: ViewRun): string {
   const firstBlock = run.blocks[0];
   return firstBlock ? `${run.kind}:${blockRenderKey(firstBlock)}` : run.kind;
 }
@@ -379,58 +346,8 @@ function runRenderKey(run: Run): string {
 export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
 
-const DeliverySegments = memo(function DeliverySegments({
-  blocks,
-  threadId,
-  turnStatus,
-  onRespondToInterrupt,
-  writeMode,
-}: {
-  blocks: Block[];
-  threadId: string;
-  turnStatus: Turn["status"];
-  onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  writeMode: "direct" | "draft";
-}) {
-  const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
-  return (
-    <>
-      {segments.flatMap((segment) => {
-        if (segment.kind === "tool") {
-          return [
-            <ToolRow
-              key={blockRenderKey(segment.tool.keyBlock)}
-              tool={segment.tool}
-              writeMode={writeMode}
-            />,
-          ];
-        }
-        // Claude-style timeline: adjacent tools stack as siblings instead of
-        // collapsing into a grouping disclosure. With text-altitude rows the
-        // visual weight is low enough that grouping reads as extra chrome.
-        if (segment.kind === "tool-run") {
-          return segment.tools.map((tool) => (
-            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
-          ));
-        }
-        return [
-          <DeliveryBlock
-            key={blockRenderKey(segment.block)}
-            block={segment.block}
-            threadId={threadId}
-            turnStatus={turnStatus}
-            onRespondToInterrupt={onRespondToInterrupt}
-          />,
-        ];
-      })}
-    </>
-  );
-});
-
-// Tool protocol blocks are normalized by `groupDeliverySegments` before this
-// branch. Keeping DeliveryBlock tool-free prevents `(tool_*)` placeholders from
-// leaking through the generic process renderer.
-function DeliveryBlock({
+// A card, image or unknown block the writer sees outside the Thinking fold.
+function ArtifactItem({
   block,
   threadId,
   turnStatus,
@@ -441,15 +358,8 @@ function DeliveryBlock({
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  directResult?: DirectInvocationResult | null;
+  directResult: DirectInvocationResult | null;
 }) {
-  // `activity` blocks are AG-UI progress placeholders (`ACTIVITY_SNAPSHOT` /
-  // `ACTIVITY_DELTA` events with no tool target) that the reducer parks under
-  // a non-canonical blockType. They're transport-level liveness, not
-  // deliverable content. Rendering them produces "(activity)" placeholder rows
-  // during streaming; hide them here so the item list stays clean.
-  if (block.blockType === ("activity" as Block["blockType"])) return null;
-
   if (isImageBlock(block)) {
     const content = parseImageBlockContent(block.content);
     if (!content) return null;
@@ -465,16 +375,6 @@ function DeliveryBlock({
         directResult={directResult}
       />
     );
-  }
-  if (block.blockType === "text") {
-    const text = block.textContent ?? "";
-    if (!text.trim()) return null;
-    // Text is the assistant's voice: full prose, no icon, no rail — and it is
-    // only ever rendered here, outside the Thinking fold.
-    if (block.status === "partial") {
-      return <StreamingText text={text} />;
-    }
-    return <Markdown>{text}</Markdown>;
   }
   return <TurnBlockStep block={block} />;
 }

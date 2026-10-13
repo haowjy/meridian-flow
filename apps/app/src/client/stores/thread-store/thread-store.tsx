@@ -14,6 +14,8 @@ import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
   createTurnReducer,
   ensureAssistantTurnIn,
+  isOptimisticTurnId,
+  OPTIMISTIC_TURN_ID_PREFIX,
   patchTurnStatusIn,
   upsertBlockIn,
 } from "@meridian/thread-client";
@@ -41,9 +43,7 @@ import {
   interruptResponseKey,
 } from "@/core/session/interrupt-response";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
-
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
-import { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
 import { reconcileSnapshotTurns } from "./reconcile-snapshot-turns";
 import { createThreadCache, type ThreadCachePort } from "./thread-cache";
 import type { LiveTurnMeta, ThreadStoreActions, ThreadStoreState } from "./types";

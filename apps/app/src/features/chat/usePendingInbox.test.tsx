@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 
 import type { Turn } from "@meridian/contracts/protocol";
-import type { ThreadTransport, ThreadTransportHandlers } from "@meridian/thread-client";
+import {
+  projectWriterText,
+  type ThreadTransport,
+  type ThreadTransportHandlers,
+} from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -96,16 +100,14 @@ describe("mounted pending inbox owner", () => {
     function Probe({ threadId }: { threadId: string }) {
       const pending = usePendingInbox({ threadId, seed: null });
       const queued = queuedWriterTurnIds(pending).has("turn-1");
-      return createElement(UserTurn, {
-        turn: {
-          id: "turn-1",
-          threadId,
-          role: "user",
-          status: "complete",
-          blocks: [{ id: "block-1", sequence: 0, blockType: "text", textContent: "follow-up" }],
-        } as Turn,
-        queued,
-      });
+      const turn = {
+        id: "turn-1",
+        threadId,
+        role: "user",
+        status: "complete",
+        blocks: [{ id: "block-1", sequence: 0, blockType: "text", textContent: "follow-up" }],
+      } as Turn;
+      return createElement(UserTurn, { turn, writer: projectWriterText(turn), queued });
     }
     const deliver = async (
       owner: number,

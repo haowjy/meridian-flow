@@ -15,17 +15,15 @@
  *
  * Hidden tools: a few "tools" are protocol primitives whose UX lives elsewhere
  * (the custom interrupt card for `ask_user`). Their tool_use / tool_result
- * blocks are duplication when rendered as activity rows; the shared visibility
- * predicate keeps the rendered rows and process digest in agreement.
+ * blocks are duplication when rendered as activity rows; the view model drops
+ * them (`isToolViewVisible`) before a fold reaches this row.
  */
 
+import type { ToolView, WriteMode } from "@meridian/thread-client";
 import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
-import type { ToolView } from "./group-delivery-segments";
-import type { WriteMode } from "./tool-command";
 import { rendererFor, toolRowFailed } from "./tool-renderers";
-import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ToolRowProps = {
   tool: ToolView;
@@ -43,8 +41,6 @@ function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
     }),
     [renderer, tool, writeMode],
   );
-  if (!isToolViewVisible(tool)) return null;
-
   return (
     <ActivityRow
       Icon={descriptorFor(tool).Icon}

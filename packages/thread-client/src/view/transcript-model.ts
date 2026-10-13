@@ -1,4 +1,4 @@
-/** One indexed interpretation of transcript rows, response boundaries, delivery rows, and reveal targets. */
+/** Transcript rows, response boundaries, delivery events and reveal targets: the indexed reading `viewTranscript` assembles. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { parseSubagentUpdateMetadata } from "@meridian/contracts/spawn";
