@@ -1,6 +1,5 @@
 /** Neutral branch-push contracts shared across collab domain services and adapters. */
 
-import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type {
   AgentEditCodecFactory,
   CanonicalBlockIdentity,
@@ -15,6 +14,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
+import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -63,7 +63,7 @@ export type BranchJournalRow = {
   status: "active" | "pushed" | "discarded" | "rollback_pending";
   updateMeta?: unknown;
   /** Immutable edit evidence, never inferred from actor or missing text. */
-  editKind?: "write" | "undo" | "redo" | "revert" | "rollback" | null;
+  editKind?: "write" | "undo" | "redo" | "revert" | "rollback";
 };
 
 export function branchJournalRevision(
@@ -101,7 +101,7 @@ export type PushToLiveResult =
       status: "pushed";
       push: PushLineageRow;
       update: Uint8Array;
-        }
+    }
   | { status: "already_pushed"; push: PushLineageRow }
   | {
       status: "noop";

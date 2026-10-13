@@ -38,15 +38,19 @@ export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
+import type {
+  CommandLookup,
+  CommandLookupKey,
+  DraftCommandEnvelope,
+} from "./domain/draft-commands.js";
 import type { ApplyItemRef } from "./domain/draft-publication.js";
-import type { CommandLookup, DraftCommandEnvelope } from "./domain/draft-commands.js";
 import type { ResolvedReviewItem } from "./domain/draft-review-identity.js";
-import type { DerivedReview } from "./domain/review-cut.js";
 import type { DraftReviewItem } from "./domain/draft-review-items.js";
 import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
 import type { DocumentAuthorityHeads } from "./domain/ports/document-authority-heads.js";
 import type { WriterIngressBarrier } from "./domain/ports/writer-ingress-barrier.js";
+import type { DerivedReview } from "./domain/review-cut.js";
 import type { LiveLineageDocument, TurnEditedDocument } from "./domain/turn-live-lineage.js";
 import type { TurnReceiptChip } from "./domain/turn-receipt.js";
 
@@ -380,7 +384,7 @@ export type DraftReviewApi = {
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
   preview(input: { workId: WorkId; itemKey: string }): Promise<DraftPreviewResult>;
-  lookupCommand(envelope: DraftCommandEnvelope): Promise<CommandLookup>;
+  lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   applyItem(input: {
     workId: WorkId;
     item: DraftReviewItem;

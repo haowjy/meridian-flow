@@ -47,7 +47,10 @@ export function createDrizzleReviewCut(input: {
         throw new DraftChangeRefusal("gone");
       assertReadableBranch(branch);
       const live = await input.journal.read(resolved.documentId);
-      const revision = await readLiveReviewRevision(currentDrizzleDb(input.db), resolved.documentId);
+      const revision = await readLiveReviewRevision(
+        currentDrizzleDb(input.db),
+        resolved.documentId,
+      );
       const history = await input.rows.listJournalRowsForBranch({
         branchId: branch.branchId,
         generation: branch.generation,
@@ -94,6 +97,11 @@ export function createDrizzleReviewCut(input: {
         draftDoc.destroy();
       }
     });
+}
+
+/** The live document as the current transaction's snapshot sees it, journal replay only. */
+export async function readLiveDoc(journal: UpdateJournal, documentId: string) {
+  return materialize(await journal.read(documentId as never));
 }
 
 function materialize(snapshot: Awaited<ReturnType<UpdateJournal["read"]>>) {

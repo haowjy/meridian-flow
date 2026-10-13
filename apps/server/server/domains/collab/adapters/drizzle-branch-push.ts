@@ -3,14 +3,14 @@ import { randomUUID } from "node:crypto";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  branchWriteJournal,
   branchPushSettlementBatches,
   branchPushSettlementPayloads,
+  branchWriteJournal,
   documentBranches,
-  drafts,
-  draftTreeChanges,
   documentEditParts,
   documentEdits,
+  drafts,
+  draftTreeChanges,
   pushLineage,
   works,
 } from "@meridian/database/schema";
@@ -38,22 +38,22 @@ import {
   type PushLineageRow,
   type WorkPushPolicyStore,
 } from "../domain/branch-push-contracts.js";
+import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
 import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import { DRAFT_TREE_STEP } from "../domain/draft-tree-payload.js";
-import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type {
   WorkDraftPendingEvidence,
   WorkDraftPendingStore,
 } from "../domain/ports/work-draft-pending-store.js";
+import { placeDraftRows } from "./drizzle-document-edits.js";
+import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
+import { refreshDraftEffect } from "./drizzle-draft-effect.js";
+import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import {
   assertRootOwnedSettlement,
   type StageSettlementBatchWithinTx,
 } from "./drizzle-pending-settlement.js";
-import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
-import { placeDraftRows } from "./drizzle-document-edits.js";
-import { refreshDraftEffect } from "./drizzle-draft-effect.js";
-import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 
 /** Global lock order for multi-document push batches — matches journal appendBatch. */
 export function sortPushesByDocumentId<T extends { branch: { documentId: string } }>(
@@ -142,7 +142,10 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
         .leftJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
         .where(and(...conditions))
         .orderBy(branchWriteJournal.id);
-      return rows.map(({ row, editKind }) => ({ ...mapJournalRow(row), editKind }));
+      return rows.map(({ row, editKind }) => ({
+        ...mapJournalRow(row),
+        ...(editKind ? { editKind } : {}),
+      }));
     },
 
     async listPushLineageForTurn(input) {
@@ -379,7 +382,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             documentIds ? inArray(draftTreeChanges.nodeId, [...documentIds]) : undefined,
           ),
         );
-      return new Map(rows.flatMap((row) => (row.threadId ? [[row.documentId as DocumentId, row.threadId as string] as const] : [])));
+      return new Map(
+        rows.flatMap((row) =>
+          row.threadId ? [[row.documentId as DocumentId, row.threadId as string] as const] : [],
+        ),
+      );
     },
     async listSettling(draftId) {
       const rows = await currentDrizzleDb(db)
@@ -465,7 +472,10 @@ async function commitPreparedDiscard(
   input: PreparedDiscardCommit,
   now: Date,
 ): Promise<void> {
-  if (input.command && !(await claimCommandWithinTx(db, input.command.envelope, input.command.result))) {
+  if (
+    input.command &&
+    !(await claimCommandWithinTx(db, input.command.envelope, input.command.result))
+  ) {
     throw new DraftCommandExistsError(input.command.envelope.commandId);
   }
   await lockDocumentMutation(db, input.branch.documentId);

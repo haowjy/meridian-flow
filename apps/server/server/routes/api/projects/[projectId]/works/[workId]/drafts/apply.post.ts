@@ -13,14 +13,13 @@ export default defineEventHandler(async (event) => {
   const request = DraftApplyAllRequestSchema.safeParse(await readBody(event));
   if (!request.success)
     throw createError({ statusCode: 400, message: "Invalid Apply all request" });
-  const projectId = (getRouterParam(event, "projectId") ?? "") as ProjectId;
   const result = await handleApplyAllWorkDraftRequest(selectDraftRouteServices(app), {
-    projectId,
+    projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     userId: user.userId,
     request: request.data,
     signal: event.req.signal,
   });
-  if (result.status === "pending") event.res.status = 202;
-  return result;
+  event.res.status = result.httpStatus;
+  return result.body;
 });
