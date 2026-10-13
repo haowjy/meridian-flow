@@ -7,14 +7,15 @@ import {
   type AgentEditCodecFactory,
   createAgentEditCore,
   type DocumentLifecycle,
-  type ReversalStore,
+  type DocumentEdits,
+  type DocumentCoordinator,
   type SemanticProvenanceWriter,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { AGENT_EDIT_UNDO_CLIENT_ID, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { FileAccess } from "../file-policy/index.js";
 import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import {
@@ -42,14 +43,11 @@ import {
 
 type AgentEditObservability = Pick<
   Parameters<typeof createAgentEditCore>[0],
-  | "reversalNoticePort"
-  | "onInvariantViolation"
   | "onResponseLifecycleError"
   | "onResponseClaimDiscarded"
   | "onResponseCommitterTransition"
   | "onIdempotencyHit"
   | "onUnexpectedWriteError"
-  | "onReversalNoticeFailed"
   | "onLinkSpliceFallback"
 >;
 
@@ -59,7 +57,9 @@ type AgentEditObservability = Pick<
  */
 export function createBranchThreadPeerAgentEditCore(input: {
   liveUtilityCore: LiveAgentEditCore;
-  journal: UpdateJournal & ReversalStore;
+  journal: UpdateJournal;
+  documentEdits?: DocumentEdits;
+  liveCoordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   branches: ApplicationBranchStore;
   branchCoordinator: BranchCoordinator;
@@ -96,9 +96,10 @@ export function createBranchThreadPeerAgentEditCore(input: {
       lockLiveDocuments: input.lockLiveDocuments,
     }),
     liveUtilityCore: input.liveUtilityCore,
-    liveHistory: input.journal,
     afterLiveCommit: (documentId) => input.branchPulls.scheduleLivePull(documentId),
     fileAccess: input.fileAccess,
+    lockWorks: input.lockWorks,
+    lockLiveDocuments: input.lockLiveDocuments,
     commitThreadResponseAtomically: input.commitThreadResponseAtomically,
     responseTransactionSettlement: input.responseTransactionSettlement,
     responseTransactions: input.responseTransactions,
@@ -114,17 +115,12 @@ export function createBranchThreadPeerAgentEditCore(input: {
           viewFor,
         }),
         journal: createBranchAgentEditJournal({
-          threadId,
           liveJournal: input.journal,
           pendingJournalEntries,
-          branches: input.branches,
-          branchRows: {
-            listJournalRowsForBranch: (command) =>
-              input.branchJournal.listJournalRowsForBranch(command),
-          },
         }),
         coordinator: createBranchAgentEditCoordinator({
           threadId,
+          liveCoordinator: input.liveCoordinator,
           branchCoordinator: input.branchCoordinator,
           branches: input.branches,
           pendingJournalEntries,
@@ -138,17 +134,16 @@ export function createBranchThreadPeerAgentEditCore(input: {
           codec: input.codec.forScope(UNSCOPED_DOCUMENT_LINKS),
           concurrentJournalWatermarks: input.concurrentJournalWatermarks,
         }),
+        documentEdits: input.documentEdits,
         lifecycle: input.lifecycle,
         codec: input.codec,
         model: input.model,
         semanticProvenance: input.semanticProvenance,
         defaultThreadId: threadId,
-        undoClientId: AGENT_EDIT_UNDO_CLIENT_ID,
         createRuntimeDoc: () => createCollabYDoc({ gc: false }),
         ...input.observability,
       });
     },
-    reversalHistory: { branches: input.branches, branchRows: input.branchJournal },
     pullThreadPeer: (command) => input.branchPulls.pullThreadPeer(command),
   });
 }

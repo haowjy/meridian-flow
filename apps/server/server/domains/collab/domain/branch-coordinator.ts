@@ -1,7 +1,7 @@
 /** Coordinates persisted branch-peer Y.Docs behind one mutation surface. */
 
 import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
-import { bytesEqual, yjsDeltaUpdate } from "@meridian/agent-edit/integration";
+import { bytesEqual } from "@meridian/agent-edit/integration";
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
@@ -16,6 +16,7 @@ import {
   type BranchLockLease,
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
+import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { BranchCorruptError } from "./branch-resolver.js";
 import { createDocumentContainment } from "./document-containment.js";
 import {
@@ -25,6 +26,7 @@ import {
 } from "./document-mutation-policy.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
+import { certifyWriterRestorations } from "./writer-restoration.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
@@ -44,10 +46,12 @@ export type BranchSnapshot = {
   state: Uint8Array;
   stateVector: Uint8Array;
   discardedStateVector?: Uint8Array | null;
+  liveCut?: Uint8Array | null;
   schemaVersion: CollabSchemaVersion;
 };
 
 export type PersistBranchInput = {
+  liveCut?: Uint8Array;
   branchId: string;
   expectedGeneration: number;
   expectedStateVector: Uint8Array;
@@ -57,10 +61,12 @@ export type PersistBranchInput = {
 };
 
 export type CommitBranchMutationInput = PersistBranchInput & {
-  journal?: AppendBranchJournalInput;
+  journals?: readonly AppendBranchJournalInput[];
 };
 
 export type AppendBranchJournalInput = {
+  /** One logical tool write, shared by its segment rows. */
+  documentEditKey?: string;
   branchId: string;
   generation: number;
   /** Rejects a staged reversal if branch history advanced after planning. */
@@ -70,6 +76,7 @@ export type AppendBranchJournalInput = {
   updateData: Uint8Array;
   source: "agent" | "writer";
   wId?: number | null;
+  toolCallId?: string | null;
   threadId?: ThreadId | null;
   turnId?: string | null;
   actorUserId?: string | null;
@@ -78,6 +85,7 @@ export type AppendBranchJournalInput = {
 };
 
 export type ResetBranchSnapshotInput = {
+  editDisposition?: "discarded" | "retired";
   branchId: string;
   expectedGeneration: number;
   expectedStateVector: Uint8Array;
@@ -118,6 +126,41 @@ type CachedBranchDoc = {
   doc: Y.Doc;
 };
 
+export type SegmentRowsInput = {
+  branchId: string;
+  expectedGeneration: number;
+  sourceDoc: Y.Doc;
+  rows: readonly Omit<AppendBranchJournalInput, "generation">[];
+};
+
+/** The journal reads a save performs: the helper's generation history and attribution's concurrent rows. */
+export type BranchSaveJournalReads = Pick<BranchJournalReadStore, "listConcurrentJournalRows"> & {
+  listJournalRowsForBranch(
+    input: Parameters<BranchJournalReadStore["listJournalRowsForBranch"]>[0],
+  ): Promise<(BranchJournalRow & { editKind?: string })[]>;
+};
+
+export type OwnedBranchSession = {
+  read<T>(branchId: string, fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>): Promise<T>;
+  withTransient<T>(
+    branchId: string,
+    fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
+  ): Promise<T>;
+  withStagedRows<T>(
+    branchId: string,
+    run: (
+      doc: Y.Doc,
+      snapshot: BranchSnapshot,
+    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
+    commit: boolean,
+  ): Promise<T>;
+  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
+  checkpoint(branchId: string): Promise<void>;
+  /** The generation history B+ replays against, with each row's persisted inverse evidence. */
+  listHelperHistory: BranchSaveJournalReads["listJournalRowsForBranch"];
+  listConcurrentRows: BranchSaveJournalReads["listConcurrentJournalRows"];
+};
+
 export type BranchCoordinator = {
   withBranch<T>(
     branchId: string,
@@ -137,6 +180,7 @@ export type BranchCoordinator = {
     expectedStateVector: Uint8Array;
     expectedState: Uint8Array;
     schemaVersion?: CollabSchemaVersion;
+    editDisposition?: "discarded" | "retired";
   }): Promise<boolean>;
   resetFromDocIfUnchangedWithLease(
     lease: BranchLockLease,
@@ -147,6 +191,7 @@ export type BranchCoordinator = {
       expectedStateVector: Uint8Array;
       expectedState: Uint8Array;
       schemaVersion?: CollabSchemaVersion;
+      editDisposition?: "discarded" | "retired";
     },
   ): Promise<boolean>;
   resetFromBranch(branchId: string, upstreamBranchId?: string): Promise<void>;
@@ -191,25 +236,32 @@ export type BranchCoordinator = {
     actorUserId?: string;
     roomDocument: Y.Doc;
   }): Promise<{ admitted: boolean }>;
-  commitSyncFromDoc(
-    input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
-      sourceDoc: Y.Doc;
-      expectedGeneration: number;
-    },
-  ): Promise<boolean>;
-  commitSyncFromDocWithLease(
-    lease: BranchLockLease,
-    input: Omit<AppendBranchJournalInput, "generation" | "updateData"> & {
-      sourceDoc: Y.Doc;
-      expectedGeneration: number;
-    },
-  ): Promise<boolean>;
+  withStagedRows<T>(
+    branchId: string,
+    run: (
+      doc: Y.Doc,
+      snapshot: BranchSnapshot,
+    ) => Promise<{
+      result: T;
+      rows: readonly Omit<AppendBranchJournalInput, "generation">[];
+    }>,
+    commit: boolean,
+  ): Promise<T>;
+  commitSegmentRows(input: SegmentRowsInput): Promise<boolean>;
+  /**
+   * A save's one door to branch state: every call runs under `lease`, acquires nothing, and
+   * throws `BranchLeaseScopeError` for a branch the lease does not cover.
+   */
+  ownedSession(lease: BranchLockLease): OwnedBranchSession;
   appendJournaledUpdate(input: AppendBranchJournalInput): Promise<void>;
+  notifyReset(input: { branchId: string; generation: number }): void;
   broadcastUpdate(input: { branchId: string; update: Uint8Array }): void;
 };
 
 export function createBranchCoordinator(input: {
   store: BranchStore;
+  /** The reads a save's owned session makes; leave it to the adapter that serves them. */
+  journalReads?: BranchSaveJournalReads;
   criticalSections?: BranchCriticalSections;
   maxCasRetries?: number;
   onBranchUpdate?: (input: { branchId: string; update: Uint8Array }) => void;
@@ -231,6 +283,7 @@ export function createBranchCoordinator(input: {
       expectedStateVector: Uint8Array;
       expectedState: Uint8Array;
       schemaVersion?: CollabSchemaVersion;
+      editDisposition?: "discarded" | "retired";
     },
   ): Promise<boolean> {
     assertBranchLeaseCovers(lease, resetInput.branchId);
@@ -248,6 +301,7 @@ export function createBranchCoordinator(input: {
       snapshot,
       resetInput.upstream,
       resetInput.schemaVersion ?? snapshot.schemaVersion,
+      resetInput.editDisposition,
     );
     return true;
   }
@@ -296,16 +350,62 @@ export function createBranchCoordinator(input: {
     }
   }
 
+  async function applySegmentRows(
+    doc: Y.Doc,
+    snapshot: BranchSnapshot,
+    journals: readonly AppendBranchJournalInput[],
+  ): Promise<void> {
+    // Admission remains per logical write; segment rows keep their own attribution.
+    for (let index = 0; index < journals.length; ) {
+      const first = journals[index];
+      const writeRows = [first];
+      index++;
+      while (
+        index < journals.length &&
+        first.semanticEditIr &&
+        journals[index].semanticEditIr === first.semanticEditIr
+      )
+        writeRows.push(journals[index++]);
+      const apply = () => {
+        for (const row of writeRows) {
+          assertFreshAgentClient(doc, row);
+          Y.applyUpdate(doc, row.updateData);
+        }
+      };
+      if (first.semanticEditIr) {
+        const ir = first.semanticEditIr;
+        await admitCertifiedMutation(
+          {
+            readMutationTarget: () => ({
+              documentId: snapshot.documentId,
+              generation: BigInt(snapshot.generation),
+              doc,
+            }),
+            readCurrentRevision: async () => ir.inputRevision,
+            lowerCertifiedMutation: async () =>
+              Y.mergeUpdates(writeRows.map((row) => row.updateData)),
+            admitImmediate: async () => {
+              apply();
+              return { sequence: 0n, joined: 0 };
+            },
+          },
+          { ir },
+        );
+      } else apply();
+    }
+  }
+
   async function persist(
     snapshot: BranchSnapshot,
     doc: Y.Doc,
-    journal?: AppendBranchJournalInput,
+    journals?: readonly AppendBranchJournalInput[],
     publishUpdate?: Uint8Array,
     kind: "mutation" | "pull" = "mutation",
+    upstream?: Y.Doc,
   ): Promise<void> {
     const state = Y.encodeStateAsUpdate(doc);
     const stateVector = Y.encodeStateVector(doc);
-    if (!journal && bytesEqual(state, snapshot.state)) return;
+    if (!journals?.length && bytesEqual(state, snapshot.state) && !upstream) return;
     const mutation = {
       branchId: snapshot.branchId,
       expectedGeneration: snapshot.generation,
@@ -313,7 +413,10 @@ export function createBranchCoordinator(input: {
       expectedState: snapshot.state,
       state,
       stateVector,
-      ...(journal ? { journal } : {}),
+      ...(journals ? { journals } : {}),
+      ...(upstream && snapshot.kind === "work_draft"
+        ? { liveCut: Y.encodeStateAsUpdate(upstream) }
+        : {}),
     };
     // Replication creates no reviewable edit. Its CAS must not reacquire the
     // Work lifecycle lock a reader may already hold in another transaction.
@@ -329,7 +432,9 @@ export function createBranchCoordinator(input: {
     const publish = () => {
       dirtyTransientBranches.delete(snapshot.branchId);
       cached.set(snapshot.branchId, { generation: snapshot.generation, state, stateVector, doc });
-      const update = journal?.updateData ?? publishUpdate;
+      const update = journals?.length
+        ? Y.mergeUpdates(journals.map((row) => row.updateData))
+        : publishUpdate;
       if (update) input.onBranchUpdate?.({ branchId: snapshot.branchId, update });
     };
     if (currentResponseTransactionId()) {
@@ -339,10 +444,18 @@ export function createBranchCoordinator(input: {
     if (!input.store.deferUntilCommit(publish)) publish();
   }
 
+  function notifyReset(reset: { branchId: string; generation: number }): void {
+    dirtyTransientBranches.delete(reset.branchId);
+    cached.delete(reset.branchId);
+    const publish = () => input.onBranchReset?.(reset);
+    if (!input.store.deferUntilCommit(publish)) publish();
+  }
+
   async function persistReset(
     snapshot: BranchSnapshot,
     upstream: Y.Doc,
     schemaVersion: CollabSchemaVersion,
+    editDisposition: "discarded" | "retired" = "discarded",
   ): Promise<void> {
     const resetDoc = createCollabYDoc({ gc: false });
     await replicateFrozenSource(upstream, resetDoc);
@@ -355,6 +468,7 @@ export function createBranchCoordinator(input: {
       expectedState: snapshot.state,
       state,
       stateVector,
+      editDisposition,
       discardedStateVector: mergeStateVectors(snapshot.discardedStateVector, snapshot.stateVector),
       schemaVersion,
     });
@@ -367,34 +481,67 @@ export function createBranchCoordinator(input: {
     dirtyTransientBranches.delete(snapshot.branchId);
     cached.delete(snapshot.branchId);
     resetDoc.destroy();
-    const publish = () =>
-      input.onBranchReset?.({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
-    if (!input.store.deferUntilCommit(publish)) publish();
+    notifyReset({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
   }
 
-  async function runWithRetry<T>(
+  /** One snapshot-clone-persist step of a branch operation; the caller holds the branch's lease. */
+  async function runUnder<T>(
     branchId: string,
     operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
     updateToPublish?: (result: T) => Uint8Array,
     kind: "mutation" | "pull" = "mutation",
+    upstream?: Y.Doc,
   ): Promise<T> {
-    let attempt = 0;
-    while (true) {
+    const snapshot = await loadSnapshot(branchId);
+    const { doc: cachedDoc } = await materialize(snapshot);
+    // A durable thread peer has already saved its writes into the Work draft.
+    // If the parent no longer contains them, a review retired their effect.
+    // Merging cannot remove those structs or undo their tombstones.
+    if (
+      snapshot.kind === "thread_peer" &&
+      upstream &&
+      !Y.snapshotContainsUpdate(Y.snapshot(upstream), snapshot.state)
+    ) {
+      const doc = cloneDoc(upstream);
       try {
-        return await criticalSections.withBranches([branchId], async () => {
-          const snapshot = await loadSnapshot(branchId);
-          const { doc: cachedDoc } = await materialize(snapshot);
-          // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
-          // failed CAS/rollback must never mutate the cached branch doc.
-          const doc = cloneDoc(cachedDoc);
-          const result = await operation(snapshot, doc);
-          await persist(snapshot, doc, undefined, updateToPublish?.(result), kind);
-          return result;
-        });
-      } catch (cause) {
-        if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
+        const result = await operation(snapshot, doc);
+        await persistReset(snapshot, upstream, snapshot.schemaVersion);
+        return result;
+      } finally {
+        doc.destroy();
       }
     }
+    // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
+    // failed CAS/rollback must never mutate the cached branch doc.
+    const doc = cloneDoc(cachedDoc);
+    const result = await operation(snapshot, doc);
+    await persist(snapshot, doc, undefined, updateToPublish?.(result), kind, upstream);
+    return result;
+  }
+
+  /** Retries a CAS conflict; `acquire` takes the branch's lease around each attempt, or none under a held one. */
+  async function retryCas<T>(attempt: () => Promise<T>): Promise<T> {
+    for (let tries = 0; ; tries++) {
+      try {
+        return await attempt();
+      } catch (cause) {
+        if (!(cause instanceof BranchCasConflictError) || tries >= maxCasRetries) throw cause;
+      }
+    }
+  }
+
+  function runWithRetry<T>(
+    branchId: string,
+    operation: (snapshot: BranchSnapshot, doc: Y.Doc) => Promise<T>,
+    updateToPublish?: (result: T) => Uint8Array,
+    kind: "mutation" | "pull" = "mutation",
+    upstream?: Y.Doc,
+  ): Promise<T> {
+    return retryCas(() =>
+      criticalSections.withBranches([branchId], () =>
+        runUnder(branchId, operation, updateToPublish, kind, upstream),
+      ),
+    );
   }
 
   async function replicateFrozenSource(source: Y.Doc, target: Y.Doc): Promise<Uint8Array> {
@@ -432,7 +579,7 @@ export function createBranchCoordinator(input: {
     if (bytesEqual(beforeState, Y.encodeStateAsUpdate(doc))) {
       throw new BranchStaleUpdateError(inputJournal.branchId);
     }
-    await persist(snapshot, doc, { ...inputJournal, generation: snapshot.generation });
+    await persist(snapshot, doc, [{ ...inputJournal, generation: snapshot.generation }]);
     return true;
   }
 
@@ -487,67 +634,90 @@ export function createBranchCoordinator(input: {
     return result;
   }
 
-  type SyncFromDocInput = Parameters<BranchCoordinator["commitSyncFromDoc"]>[0];
-
-  async function syncFromDoc(inputJournal: SyncFromDocInput): Promise<boolean> {
-    const snapshot = await loadSnapshot(inputJournal.branchId);
+  /** Replays a response's rows on a clone of the branch and, when `commit`, publishes them; the caller holds the lease. */
+  async function stagedRowsUnder<T>(
+    branchId: string,
+    run: (
+      doc: Y.Doc,
+      snapshot: BranchSnapshot,
+    ) => Promise<{ result: T; rows: readonly Omit<AppendBranchJournalInput, "generation">[] }>,
+    commit: boolean,
+  ): Promise<T> {
+    const snapshot = await loadSnapshot(branchId);
     assertWritableBranch(snapshot);
-    if (snapshot.generation !== inputJournal.expectedGeneration) {
-      throw new BranchStaleUpdateError(inputJournal.branchId);
+    const doc = cloneDoc((await materialize(snapshot)).doc);
+    let published = false;
+    try {
+      const { result, rows } = await run(doc, snapshot);
+      if (commit && rows.length) {
+        const admitted = cloneDoc((await materialize(snapshot)).doc);
+        try {
+          await applySegmentRows(
+            admitted,
+            snapshot,
+            rows.map((row) => ({ ...row, generation: snapshot.generation })),
+          );
+          if (!bytesEqual(Y.encodeStateAsUpdate(admitted), Y.encodeStateAsUpdate(doc)))
+            throw new Error("Response replay differs from its admitted segment rows");
+        } finally {
+          admitted.destroy();
+        }
+        await persist(
+          snapshot,
+          doc,
+          rows.map((row) => ({ ...row, generation: snapshot.generation })),
+        );
+        published = true;
+      }
+      return result;
+    } finally {
+      // Persist owns the admitted document until its publication callback.
+      if (!published) doc.destroy();
     }
-    const { doc: cachedDoc } = await materialize(snapshot);
-    const doc = cloneDoc(cachedDoc);
-    const updateData = yjsDeltaUpdate(inputJournal.sourceDoc, doc);
-    if (!updateData) return false;
-    const semanticIr = inputJournal.semanticEditIr;
-    if (inputJournal.source === "agent" && semanticIr) {
-      await admitCertifiedMutation(
-        {
-          readMutationTarget: () => ({
-            documentId: snapshot.documentId,
-            generation: BigInt(snapshot.generation),
-            doc,
-          }),
-          // A response may lower several certified IRs into one atomic branch delta.
-          // The package validated each IR against its chained runtime revision before
-          // the ambient response transaction began; rereading the pre-batch target here
-          // would reject every IR after the first and force the durable unit to split.
-          readCurrentRevision: async () => semanticIr.inputRevision,
-          lowerCertifiedMutation: async () => updateData,
-          admitImmediate: async ({ update }) => {
-            Y.applyUpdate(doc, update);
-            await persist(snapshot, doc, {
-              ...inputJournal,
-              updateData: update,
-              generation: snapshot.generation,
-            });
-            return { sequence: 0n, joined: 0 };
-          },
-        },
-        { ir: semanticIr },
-      );
-    } else {
-      Y.applyUpdate(doc, updateData);
-      await persist(snapshot, doc, {
-        ...inputJournal,
-        updateData,
-        generation: snapshot.generation,
-      });
-    }
+  }
+
+  async function segmentRowsUnder(batch: SegmentRowsInput): Promise<boolean> {
+    const snapshot = await loadSnapshot(batch.branchId);
+    assertWritableBranch(snapshot);
+    if (snapshot.generation !== batch.expectedGeneration)
+      throw new BranchStaleUpdateError(batch.branchId);
+    const doc = cloneDoc((await materialize(snapshot)).doc);
+    const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
+    await applySegmentRows(doc, snapshot, journals);
+    if (journalSyncDelta(batch.sourceDoc, doc))
+      throw new Error("Segment publication left an unjournaled residual");
+    if (!journals.length) return false;
+    await persist(snapshot, doc, journals);
     return true;
   }
 
-  async function syncWithRetry(
-    leased: (run: (input: SyncFromDocInput) => Promise<boolean>) => Promise<boolean>,
-  ): Promise<boolean> {
-    let attempt = 0;
-    while (true) {
-      try {
-        return await leased(syncFromDoc);
-      } catch (cause) {
-        if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
-      }
-    }
+  /** Every branch operation a reply's save performs, bound to the lease the pool holds (contract §2.3). */
+  function ownedSession(lease: BranchLockLease): OwnedBranchSession {
+    const under = async <T>(branchId: string, run: () => Promise<T>): Promise<T> => {
+      assertBranchLeaseCovers(lease, branchId);
+      return run();
+    };
+    return {
+      read: (branchId, fn) => readUnder(lease, branchId, fn),
+      withTransient: (branchId, fn) => transientUnder(lease, branchId, fn),
+      withStagedRows: (branchId, run, commit) =>
+        under(branchId, () => stagedRowsUnder(branchId, run, commit)),
+      commitSegmentRows: (batch) =>
+        under(batch.branchId, () => retryCas(() => segmentRowsUnder(batch))),
+      checkpoint: (branchId) =>
+        under(branchId, () => retryCas(() => runUnder(branchId, async () => undefined))),
+      listHelperHistory: (query) =>
+        under(query.branchId, async () => requireJournalReads().listJournalRowsForBranch(query)),
+      listConcurrentRows: (branchId, generation, options) =>
+        under(branchId, async () =>
+          requireJournalReads().listConcurrentJournalRows(branchId, generation, options),
+        ),
+    };
+  }
+
+  function requireJournalReads(): BranchSaveJournalReads {
+    if (!input.journalReads) throw new Error("This coordinator reads no branch journal");
+    return input.journalReads;
   }
 
   function assertWorkDraftResetTarget(snapshot: BranchSnapshot): void {
@@ -572,6 +742,7 @@ export function createBranchCoordinator(input: {
   }
 
   return {
+    notifyReset,
     withBranch(branchId, fn) {
       return runWithRetry(branchId, (snapshot, doc) => fn(doc, snapshot));
     },
@@ -592,6 +763,20 @@ export function createBranchCoordinator(input: {
 
     withBranchTransientWithLease: transientUnder,
 
+    ownedSession,
+
+    withStagedRows(branchId, run, commit) {
+      return criticalSections.withBranches([branchId], () =>
+        stagedRowsUnder(branchId, run, commit),
+      );
+    },
+
+    commitSegmentRows(batch) {
+      return retryCas(() =>
+        criticalSections.withBranches([batch.branchId], () => segmentRowsUnder(batch)),
+      );
+    },
+
     checkpointBranch(branchId) {
       return runWithRetry(branchId, async () => undefined);
     },
@@ -602,6 +787,7 @@ export function createBranchCoordinator(input: {
         async (_snapshot, doc) => replicateFrozenSource(upstream, doc),
         (update) => update,
         "pull",
+        upstream,
       );
     },
 
@@ -672,8 +858,9 @@ export function createBranchCoordinator(input: {
             // O(doc) clone-before-write is intentional per GATE-1 spec §9 (Q4 headroom):
             // failed CAS/rollback must never mutate the cached branch doc.
             const doc = cloneDoc(cachedDoc);
+            assertFreshAgentClient(doc, inputJournal);
             Y.applyUpdate(doc, inputJournal.updateData);
-            await persist(snapshot, doc, inputJournal);
+            await persist(snapshot, doc, [inputJournal]);
           });
         } catch (cause) {
           if (!(cause instanceof BranchCasConflictError) || attempt++ >= maxCasRetries) throw cause;
@@ -689,17 +876,6 @@ export function createBranchCoordinator(input: {
         current.stateVector = Y.encodeStateVector(current.doc);
       }
       input.onBranchUpdate?.(update);
-    },
-
-    async commitSyncFromDoc(inputJournal) {
-      return syncWithRetry((run) =>
-        criticalSections.withBranches([inputJournal.branchId], () => run(inputJournal)),
-      );
-    },
-
-    async commitSyncFromDocWithLease(lease, inputJournal) {
-      assertBranchLeaseCovers(lease, inputJournal.branchId);
-      return syncWithRetry((run) => run(inputJournal));
     },
 
     async commitUpdate(inputJournal) {
@@ -752,6 +928,12 @@ export function createBranchCoordinator(input: {
                     updateData: inputWriter.updateData,
                     source: "writer",
                     actorUserId: inputWriter.actorUserId,
+                    updateMeta: {
+                      restorationAliases: certifyWriterRestorations(
+                        currentDocument,
+                        inputWriter.updateData,
+                      ),
+                    },
                   },
                   currentDocument,
                 ),
@@ -792,11 +974,42 @@ function cloneDoc(doc: Y.Doc): Y.Doc {
   return clone;
 }
 
-function mergeStateVectors(left: Uint8Array | null | undefined, right: Uint8Array): Uint8Array {
+export function mergeStateVectors(
+  left: Uint8Array | null | undefined,
+  right: Uint8Array,
+): Uint8Array {
   if (!left) return right;
   const merged = new Map(Y.decodeStateVector(left));
   for (const [client, clock] of Y.decodeStateVector(right)) {
     merged.set(client, Math.max(merged.get(client) ?? 0, clock));
   }
   return Y.encodeStateVector(new Map(merged));
+}
+
+/** Journal the effective sync transaction, not inherited source tombstones. */
+function journalSyncDelta(from: Y.Doc, to: Y.Doc): Uint8Array | null {
+  const probe = cloneDoc(to);
+  const updates: Uint8Array[] = [];
+  probe.on("update", (update: Uint8Array) => updates.push(update));
+  try {
+    Y.applyUpdate(probe, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)));
+    // A source peer includes the target's complete causal prefix. Never drop
+    // unresolved structs/deletes by journaling only the events that integrated.
+    if (probe.store.pendingStructs || probe.store.pendingDs) {
+      throw new Error("Branch sync delta has unresolved Yjs dependencies");
+    }
+    return updates.length > 0 ? Y.mergeUpdates(updates) : null;
+  } finally {
+    probe.destroy();
+  }
+}
+
+/** Draft agent rows own fresh structs; deletes may refer to older clients. */
+function assertFreshAgentClient(doc: Y.Doc, row: AppendBranchJournalInput): void {
+  if (row.source !== "agent") return;
+  const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
+  for (const struct of Y.decodeUpdate(row.updateData).structs) {
+    if (clients.has(struct.id.client))
+      throw new Error(`Agent segment reused client ${struct.id.client}`);
+  }
 }

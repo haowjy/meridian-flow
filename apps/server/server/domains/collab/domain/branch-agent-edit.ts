@@ -18,7 +18,12 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
-import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
+import type { BranchLockLease } from "./branch-critical-sections.js";
+import type {
+  BranchCoordinator,
+  BranchSnapshot,
+  BranchSaveJournalReads,
+} from "./branch-coordinator.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
 import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
@@ -118,7 +123,7 @@ export function createBranchAgentEditCoordinator(input: {
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
   journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
-    Partial<Pick<BranchJournalReadStore, "listJournalRowsForBranch">>;
+    Partial<Pick<BranchSaveJournalReads, "listJournalRowsForBranch">>;
   liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
@@ -155,11 +160,17 @@ export function createBranchAgentEditCoordinator(input: {
     });
   }
   return {
-    async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
-      const branchId = await ensureThreadBranch(input, docId as DocumentId);
+    async withDocument<T>(
+      docId: string,
+      fn: (doc: Y.Doc) => Promise<T>,
+      access?: import("@meridian/agent-edit/integration").DocumentLockOptions,
+    ): Promise<T> {
+      const branchId =
+        access?.pinnedBranchId ?? (await ensureThreadBranch(input, docId as DocumentId));
+      const owned = ownedSessionOf(input.branchCoordinator, access);
       let result: T;
       try {
-        result = await input.branchCoordinator.withBranchTransient(
+        result = await (owned ? owned.withTransient : input.branchCoordinator.withBranchTransient)(
           branchId,
           async (doc, snapshot) => {
             const beforeState = Y.encodeStateAsUpdate(doc);
@@ -188,7 +199,9 @@ export function createBranchAgentEditCoordinator(input: {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
               const mutation = first.mutation;
-              const committed = await input.branchCoordinator.commitSegmentRows({
+              const committed = await (owned
+                ? owned.commitSegmentRows
+                : input.branchCoordinator.commitSegmentRows)({
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
                 expectedGeneration: mutation.branchGeneration,
@@ -226,20 +239,24 @@ export function createBranchAgentEditCoordinator(input: {
     },
 
     async withStagedWrites(request) {
-      const peerId = await ensureThreadBranch(input, request.docId as DocumentId);
+      const peerId =
+        request.access?.pinnedBranchId ??
+        (await ensureThreadBranch(input, request.docId as DocumentId));
+      const owned = ownedSessionOf(input.branchCoordinator, request.access);
       const peer = await input.branches.getBranch(peerId);
       const branchId = peer?.upstreamBranchId;
       if (!branchId) throw new Error("Response peer has no Work draft");
-      const result = await input.branchCoordinator.withStagedRows(
+      const result = await (owned ? owned.withStagedRows : input.branchCoordinator.withStagedRows)(
         branchId,
         async (doc, snapshot) => {
           if (request.helperCut.generation > snapshot.generation)
             throw new Error("Response helper belongs to a future draft generation");
           const retired: Uint8Array[] = [];
           const inverses: Uint8Array[] = [];
-          const history = input.journalRows;
-          if (!history?.listJournalRowsForBranch)
-            throw new Error("Response generation history is unavailable");
+          const readHistory = owned
+            ? owned.listHelperHistory
+            : input.journalRows?.listJournalRowsForBranch;
+          if (!readHistory) throw new Error("Response generation history is unavailable");
           const planning = new Y.Doc({ gc: false });
           try {
             Y.applyUpdate(planning, request.helperCut.state);
@@ -251,7 +268,7 @@ export function createBranchAgentEditCoordinator(input: {
               generation <= snapshot.generation;
               generation++
             ) {
-              const rows = await history.listJournalRowsForBranch({ branchId, generation });
+              const rows = await readHistory({ branchId, generation });
               for (const row of rows) {
                 const observed = Y.snapshotContainsUpdate(cut, row.updateData);
                 if (
@@ -290,14 +307,18 @@ export function createBranchAgentEditCoordinator(input: {
         request.commit,
       );
       if (request.commit) {
-        const current = await input.branchCoordinator.readBranch(branchId, async (doc) =>
-          cloneYDoc(doc),
+        const current = await (owned ? owned.read : input.branchCoordinator.readBranch)(
+          branchId,
+          async (doc) => cloneYDoc(doc),
         );
         try {
-          await input.branchCoordinator.withBranchTransient(peerId, async (doc) => {
-            Y.applyUpdate(doc, Y.encodeStateAsUpdate(current));
-          });
-          await input.branchCoordinator.checkpointBranch(peerId);
+          await (owned ? owned.withTransient : input.branchCoordinator.withBranchTransient)(
+            peerId,
+            async (doc) => {
+              Y.applyUpdate(doc, Y.encodeStateAsUpdate(current));
+            },
+          );
+          await (owned ? owned.checkpoint : input.branchCoordinator.checkpointBranch)(peerId);
         } finally {
           current.destroy();
         }
@@ -317,6 +338,7 @@ export function createBranchAgentEditCoordinator(input: {
       liveJournalSeq,
       attemptId,
       reportingCut,
+      access,
     }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
       const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
@@ -324,6 +346,7 @@ export function createBranchAgentEditCoordinator(input: {
         input,
         docId as DocumentId,
         afterJournalId,
+        access,
       );
       if (reportingCut) {
         const cut = Y.snapshot(doc);
@@ -489,7 +512,10 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch(
       branchId: string,
-    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "workId" | "generation" | "state"> | null>;
+    ): Promise<Pick<
+      BranchSnapshot,
+      "upstreamBranchId" | "draftId" | "generation" | "state"
+    > | null>;
   };
 
 type BranchPendingJournalEntries = {
@@ -542,6 +568,14 @@ export function createBranchPendingJournalEntries(
   };
 }
 
+/** The save's owned session when the host handed over its lease; a lone call acquires its own. */
+function ownedSessionOf(
+  coordinator: Pick<BranchCoordinator, "ownedSession">,
+  access: import("@meridian/agent-edit/integration").DocumentLockOptions | undefined,
+) {
+  return access?.lease ? coordinator.ownedSession(access.lease as BranchLockLease) : undefined;
+}
+
 function emptyDocState(): Uint8Array {
   const doc = new Y.Doc({ gc: false });
   try {
@@ -590,26 +624,38 @@ async function concurrentUpstreamJournalRows(
     branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
     journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
-      Partial<Pick<BranchJournalReadStore, "listJournalRowsForBranch">>;
+      Partial<Pick<BranchSaveJournalReads, "listJournalRowsForBranch">>;
   },
   documentId: DocumentId,
   afterJournalId?: number,
+  access?: import("@meridian/agent-edit/integration").DocumentLockOptions,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
-  const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
-  peer.doc.destroy();
-  const peerSnapshot = await input.branches.getBranch(peer.branchId);
+  const owned = ownedSessionOf(input.branchCoordinator, access);
+  let peerId = access?.pinnedBranchId;
+  if (!peerId) {
+    if (owned) throw new Error("Owned attribution requires a pinned peer");
+    const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
+    peerId = peer.branchId;
+    peer.doc.destroy();
+  }
+  const peerSnapshot = owned
+    ? await owned.read(peerId, async (_doc, snapshot) => snapshot)
+    : await input.branches.getBranch(peerId);
   const upstreamBranchId = peerSnapshot?.upstreamBranchId;
   if (!upstreamBranchId) return { rows: [] };
-  return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
-    const rows = await journalRows.listConcurrentJournalRows(
-      upstreamBranchId,
-      snapshot.generation,
-      { afterJournalId, documentId },
-    );
-    return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
-  });
+  return (owned ? owned.read : input.branchCoordinator.readBranch)(
+    upstreamBranchId,
+    async (doc, snapshot) => {
+      const rows = await (owned ? owned.listConcurrentRows : journalRows.listConcurrentJournalRows)(
+        upstreamBranchId,
+        snapshot.generation,
+        { afterJournalId, documentId },
+      );
+      return { rows, upstreamState: Y.encodeStateAsUpdate(doc) };
+    },
+  );
 }
 
 function originForJournalRow(row: BranchJournalRow): ConcurrentUpdateOrigin {

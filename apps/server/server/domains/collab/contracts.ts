@@ -312,12 +312,12 @@ export type ResponseWriteRollbackFinalizeResult = {
 
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
-    responseId: string,
+    responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
     ctx: { threadId: ThreadId; turnId: TurnId },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
-    responseId: string,
+    responseIdentity: import("@meridian/contracts").ModelResponseIdentity,
     ctx: { threadId: ThreadId; turnId: TurnId },
   ): Promise<ResponseWriteRollbackFinalizeResult>;
 };
