@@ -3,9 +3,10 @@
  * Apply publishes with a draft's text, in the batch's one lock order (D's Work, D, every
  * current and final source, every item's document).
  *
- * The check (before staging) and `beforeAdmission` (completion) make the same decision:
- * rendered tokens (#420, S2: location version, the live full-state fingerprint, the
- * branch generation) or `stale`; 5a holds per item, first the draft's own view, then the
+ * The check (before staging) and `beforeAdmission` (completion) make the same decision,
+ * except that the rendered tokens (#420, S2: location version, the live full-state
+ * fingerprint, the branch generation) are compared only at the check: staging is the consent
+ * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the draft's own view, then the
  * final live tree to a fixed point (an item waits for what only a held item would free).
  * The check also fences the link cut (F18) and captures each holder's link meanings into
  * the payload it refines (V2-H4). `beforeAdmission` then vacates and installs: relocations
@@ -218,6 +219,9 @@ export function createDrizzleDraftTreeStep(
         ) {
           return true;
         }
+        // Staging is the consent boundary: what the writer saw is compared only at the check.
+        // Later live edits merge as ordinary peer edits and never withdraw an accepted batch.
+        if (scope.stage !== "check") return false;
         if (node.locationVersion.toString() !== item.locationToken) return true;
         // A member's live text under its coordinator lease; an item with no text member
         // publishes no text, so its live text can't be stale.
@@ -519,12 +523,14 @@ export function createDrizzleDraftTreeStep(
           });
           const settled = await settleDrainedItems(apply, admittedSet);
           const result = completedResult(settled);
-          if (result) await settleCommandForBatchWithinTx(currentDrizzleDb(db), scope.batchId, result);
+          if (result)
+            await settleCommandForBatchWithinTx(currentDrizzleDb(db), scope.batchId, result);
         },
 
         async onRefused(reason) {
           const result = withdrawnResult(reason);
-          if (result) await settleCommandForBatchWithinTx(currentDrizzleDb(db), scope.batchId, result);
+          if (result)
+            await settleCommandForBatchWithinTx(currentDrizzleDb(db), scope.batchId, result);
         },
       };
     },

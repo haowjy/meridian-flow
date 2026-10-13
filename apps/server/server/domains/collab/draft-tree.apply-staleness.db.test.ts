@@ -1,8 +1,8 @@
 /**
  * Apply refuses a stale review (#420, contract §11.3, ledger E-6a, E-6b, E-9): a live
  * rename, edit or delete-only change after the review rendered refuses before staging; one
- * racing the staged batch, or landing while it waits for recovery, abandons it with its
- * rows reviewable; and a content-bearing live create racing an Apply of the same document
+ * racing the staged batch, or landing while it waits for recovery, merges and the batch
+ * completes (staging is the consent boundary); and a content-bearing live create racing an Apply of the same document
  * lets both finish.
  */
 import type { DocumentId } from "@meridian/contracts";
@@ -62,9 +62,9 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
     expect.soft((await s.review(ascension)).items, "rows reviewable").toHaveLength(1);
   });
 
-  it("abandons a staged batch a live change raced or that recovery found stale, rows reviewable (E-6b)", async () => {
-    const { s, ascension, chapter, vector, staleAnswer } = await draftedChapter(start);
-    // Raced between staging and completion.
+  it("completes a staged batch a live change raced, or that recovery found changed (5b relaxed)", async () => {
+    const { s, ascension, chapter, vector } = await draftedChapter(start);
+    // Staging is the consent boundary: a rename between staging and completion merges.
     const raced = await interleave(
       db,
       () => s.applyAll(ascension),
@@ -72,9 +72,15 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
       () => s.writer.move("chapter.md", "chapter-2.md"),
     );
     expect.soft(raced.b.ok, "the rename lands").toBe(true);
-    expect.soft(raced.a, "completion refuses").toEqual({ ok: true, value: staleAnswer });
-    expect.soft(await s.batchStates(), "abandoned").toEqual(["abandoned"]);
-    // A delete-only change while the staged batch waits for recovery.
+    expect.soft(raced.a, "completion publishes").toMatchObject({
+      ok: true,
+      value: { status: "completed" },
+    });
+    expect.soft(await s.batchStates(), "completed").toEqual(["completed"]);
+    const live = s.view("live");
+    expect.soft(await live.text("chapter-2.md")).toContain("Opening, drafted.");
+    // A delete-only change while a new staged batch waits for recovery.
+    await s.model(ascension).edit("chapter-2.md", "End.", "End, drafted.");
     const rendered = await s.items(ascension);
     const remove = setCollabHook("applyItems.afterStaging", async () => {
       remove();
@@ -82,17 +88,13 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
     });
     await expect(s.applyAll(ascension, { items: rendered })).rejects.toThrow("process death");
     const beforeDelete = await vector();
-    await s.writer.write("chapter-2.md", "Opening.\n\nEnd.");
+    await s.writer.write("chapter-2.md", "Opening, drafted.\n\nEnd.");
     expect.soft(await vector(), "delete-only").toEqual(beforeDelete);
     await s.expirePendingClaims();
     await s.recover();
-    expect.soft(await s.batchStates(), "recovery abandons it").toEqual(["abandoned", "abandoned"]);
-    expect.soft(itemFor(await s.items(ascension), chapter).branchGeneration).not.toBeNull();
-    expect.soft((await s.review(ascension)).items, "rows reviewable").toHaveLength(1);
-    const live = s.view("live");
-    expect.soft(await live.text("chapter-2.md"), "nothing published").not.toContain("drafted");
-    expect.soft((await s.applyAll(ascension)).status, "a fresh review applies").toBe("completed");
-    expect.soft(await live.text("chapter-2.md")).toContain("Opening, drafted.");
+    expect.soft(await s.batchStates(), "recovery completes it").toEqual(["completed", "completed"]);
+    expect.soft(await live.text("chapter-2.md")).toContain("End, drafted.");
+    expect.soft(await s.items(ascension), "drained").toEqual([]);
   });
 
   it("lets a content-bearing live create and an Apply of the same document both finish (E-9)", async () => {

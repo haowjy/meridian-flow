@@ -190,9 +190,10 @@ function toItem(
       liveTextToken: null,
       branchGenerationToken: evidence ? String(evidence.branch.generation) : null,
     },
-    actorThreadIds: creatorThreadId && !writers.includes(creatorThreadId)
-      ? [...writers, creatorThreadId]
-      : writers,
+    actorThreadIds:
+      creatorThreadId && !writers.includes(creatorThreadId)
+        ? [...writers, creatorThreadId]
+        : writers,
     updatedAt: evidence?.branch.updatedAt ?? new Date(),
   };
 }

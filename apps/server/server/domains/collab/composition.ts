@@ -80,9 +80,8 @@ import {
   stageSettlementBatchWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
 import { createDrizzleReviewCut, readLiveDoc } from "./adapters/drizzle-review-cut.js";
-import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
-import { createModelDocumentEdits } from "./domain/model-document-edits.js";
+import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import {
@@ -122,6 +121,7 @@ import { createDraftReviewIdentity } from "./domain/draft-review-identity.js";
 import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { createModelDocumentEdits } from "./domain/model-document-edits.js";
 import { createPeerRetirement } from "./domain/peer-retirement.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
