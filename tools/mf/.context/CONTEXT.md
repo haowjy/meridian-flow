@@ -28,7 +28,8 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     `type: "result"` envelope (`command`, `threadId`, `outcome`, `reason`, then
     command fields). Seed embeds its sends' envelopes and exits with their worst
     exit. `--fields` always preserves terminal `type`, `command`, `outcome` and
-    `reason`. Proven outcomes have null reason; unproven is exit 6 with a reason.
+    `reason`. Proven outcomes have null reason; unproven is exit 6 with a reason. `accepted` (exit 0)
+    is admission only: just `thread send --no-wait` returns it, never a waiting send.
     `terminalResult` is the single constructor: it returns the typed envelope
     and its mapped exit; proven outcomes require null reason, unproven and timeout
     require a reason. Reasons are `owed`, `running`, `lease_awake`,
@@ -41,7 +42,10 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     (`resolveDebugPathsEnabled`, `APP_DEBUG=1`, never production), which
     `pnpm dev` opens by default.
   - Document commands parse the final path segment with the contracts name codec;
-    `doc put` reports the canonical URI returned by creation. Seed scenario names
+    `doc put` reports the canonical URI returned by creation.
+    `doc put --overwrite` deletes the existing document and creates a new one
+    (new id; its drafts and history are gone) and reports `previousDocumentId`;
+    if the create then fails, the error says the old document was already deleted. Seed scenario names
     use writer spelling, not slugs or prose suffixes.
   - **Imports:** workspace libraries are limited to `@meridian/contracts` and
     `@meridian/thread-client`. Portless discovery uses the same route contract
