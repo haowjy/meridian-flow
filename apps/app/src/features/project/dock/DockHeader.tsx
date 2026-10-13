@@ -1,50 +1,19 @@
-/**
- * DockHeader — the desktop dock's single header row.
- *
- * The header is part of the dock's ONE uniform chrome surface — it paints
- * nothing of its own (the dock slot owns the material) and carries no bottom
- * border. Layout: `[left slot] … [segmented view switch] [close]`. The left
- * slot hosts the chat select/rename dropdown while Chat is active; the view
- * switch carries the view identity, so there is no separate section title. The
- * switch disappears when only one view is available because a single segment
- * cannot select anything. The left slot truncates before the switch or close
- * ever compress.
- *
- * While the dock holds a document, the header is the document's: its path and
- * chips take the left slot, the view switch steps aside, and Open in Editor
- * sits before the collapse toggle. Closing returns to the view
- * the writer last chose.
- *
- * Desktop-only: the phone chat sheet supplies its own header
- * (`mobile/MobileChatSheetHeader.tsx`), built from `MobileTopBar`'s
- * status-bar-aware chrome instead of branching this one. `DockShell` takes
- * either as a header slot.
- *
- * Replaces the per-occupant RailHeader chrome in the dock: same `h-10` shell
- * and the canonical `PanelToggleButton` close, so the collapse control still
- * lands on the shared toggle column.
- */
+/** The desktop dock header names its document or the screen’s native occupant. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
-import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { SubagentHeader } from "@/features/chat/SubagentHeader";
 import { useThreadActivity } from "@/features/chat/useThreadActivity";
 import { PaneTitle } from "../PaneTitle";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
-import { DockDocumentClose, DockOpenInEditor } from "./DockDocumentButtons";
+import type { ScreenKey } from "../shell/screens";
+import { DockDocumentActions } from "./DockDocumentActions";
 import { DockDocumentIdentity } from "./DockDocumentIdentity";
-import type { DockDocument } from "./dock-view-store";
-import type { DockView } from "./dock-views";
+import type { DockDocument } from "./dock-document-store";
 
-export type DockViewSwitchProps = {
-  view: DockView;
-  views: readonly DockView[];
-  onSelectView: (view: DockView) => void;
-};
-
-export type DockHeaderSlotArgs = DockViewSwitchProps & {
+export type DockHeaderSlotArgs = {
+  screen: ScreenKey;
   projectId: string;
   /** The document that replaces the views while the dock shows one. */
   document: DockDocument | null;
@@ -58,9 +27,7 @@ export type DockHeaderProps = DockHeaderSlotArgs & {
 
 export function DockHeader({
   projectId,
-  view,
-  views,
-  onSelectView,
+  screen,
   document: dockDocument,
   onClose,
   threadSelect,
@@ -75,36 +42,29 @@ export function DockHeader({
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
           bleeds left of the slot). */}
-      <div className="relative flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
+      <div className="relative flex min-w-0 flex-1 items-center gap-1 pr-1">
         {dockDocument ? (
-          <>
-            {/* Close and Open in Editor sit together before the path: both act on the
-                document as a whole, and the path stays one unbroken run. */}
-            <span className="flex shrink-0 items-center gap-0.5">
-              <DockDocumentClose />
-              <DockOpenInEditor projectId={projectId} document={dockDocument} />
-            </span>
-            <DockDocumentIdentity projectId={projectId} document={dockDocument} />
-          </>
+          <DockDocumentIdentity projectId={projectId} document={dockDocument} />
         ) : (
           <>
-            {/* The Chat screen's rail is the chat's Recent documents; the switch names it when Changes is offered too. */}
-            {view === "context" && views.length <= 1 ? (
+            {/* The Chat screen's rail: the same chip as an open document's, with nothing open. */}
+            {screen === "chat" ? (
               <PaneTitle>
                 <Trans>Recent</Trans>
               </PaneTitle>
             ) : null}
-            {view === "chat" ? threadSelect : null}
-            {view === "chat" && threadId ? (
+            {screen !== "chat" ? threadSelect : null}
+            {screen !== "chat" && threadId ? (
               <SubagentHeader threadId={threadId} nodes={activity.activity.children} />
             ) : null}
           </>
         )}
       </div>
-      {dockDocument ? null : (
-        <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
-      )}
-      {onClose || dockDocument ? (
+      {dockDocument ? (
+        <div className="flex shrink-0 items-center">
+          <DockDocumentActions document={dockDocument} onCollapse={onClose} />
+        </div>
+      ) : onClose ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
         // collapse/expand must round-trip without moving the mouse.
@@ -116,31 +76,4 @@ export function DockHeader({
       ) : null}
     </header>
   );
-}
-
-/** The segmented view switch, shared by the desktop header and the phone chat sheet header. */
-export function DockViewSwitch({ view, views, onSelectView }: DockViewSwitchProps) {
-  if (views.length <= 1) return null;
-  return (
-    <SegmentedTabs
-      label={t`Dock view`}
-      value={view}
-      onChange={onSelectView}
-      options={views.map((segment) => ({
-        value: segment,
-        label: <DockViewLabel view={segment} />,
-      }))}
-    />
-  );
-}
-
-function DockViewLabel({ view }: { view: DockView }) {
-  switch (view) {
-    case "chat":
-      return <Trans>Chat</Trans>;
-    case "context":
-      return <Trans>Recent</Trans>;
-    case "changes":
-      return <Trans>Changes</Trans>;
-  }
 }

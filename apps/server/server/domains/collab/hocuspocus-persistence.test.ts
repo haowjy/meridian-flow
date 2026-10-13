@@ -474,10 +474,10 @@ describe("createHocuspocusPersistenceService writer ingress", () => {
     [
       "nested insert",
       (doc: Y.Doc) =>
-        (doc.getArray(PROVENANCE_TARGETS_TYPE).get(0) as Y.Array<unknown>).push(["hostile"]),
+        (doc.getMap(PROVENANCE_TARGETS_TYPE).get("nested") as Y.Array<unknown>).push(["hostile"]),
     ],
-    ["delete-only change", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1)],
-    ["top-level collision", (doc: Y.Doc) => doc.getMap(PROVENANCE_TARGETS_TYPE).set("x", 1)],
+    ["delete-only change", (doc: Y.Doc) => doc.getMap(PROVENANCE_TARGETS_TYPE).delete("nested")],
+    ["top-level collision", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([1])],
   ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
     const liveDocument = documentWithReservedFacts();
     const journal = fakeJournal();
@@ -699,7 +699,7 @@ function writerUpdate(): Uint8Array {
 function documentWithReservedFacts(): Y.Doc {
   const doc = boundDoc({ gc: false });
   const nested = new Y.Array<unknown>();
-  doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
+  doc.getMap(PROVENANCE_TARGETS_TYPE).set("nested", nested);
   nested.push(["authority fact"]);
   return doc;
 }
@@ -742,11 +742,14 @@ function branchSnapshot(doc: Y.Doc): BranchSnapshot {
 
 function fakeJournal(): UpdateJournal {
   return {
+    reserveWriteOrdinal: async () => {
+      throw new Error("Transport does not allocate edit ordinals");
+    },
     append: vi.fn(async () => 1),
     appendBatch: vi.fn(async () => []),
     read: vi.fn(async () => ({ checkpoint: null, updates: [] })),
     checkpoint: vi.fn(async () => undefined),
-    compact: vi.fn(async () => ({ updatesFolded: 0, reversalsExpired: 0 })),
+    compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }
 

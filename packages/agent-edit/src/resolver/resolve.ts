@@ -16,6 +16,7 @@ import { normalizeLineageRanges } from "../lineage/range-set.js";
 import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
+import { wordHunks } from "../word-hunks.js";
 import { alignBlocks } from "./block-alignment.js";
 import {
   findTextMatches,
@@ -286,7 +287,7 @@ function insertEdit(
   after: BlockRef | undefined,
   blocks: readonly Block[],
   newText = params.content,
-): ResolvedEdit {
+): Extract<ResolvedEdit, { kind: "insert" }> {
   return {
     documentId: params.documentAddress.documentId,
     file: params.documentAddress.filePath,
@@ -659,12 +660,21 @@ function replaceScope(
   let pendingInsert: Block[] = [];
   let pendingDelete: BlockRef[] = [];
   let keptBlocks = false;
+  let structuralBoundary: object | undefined;
+  let insertionRun = {};
 
   const flushStructural = () => {
     if (pendingInsert.length > 0) {
-      edits.push(
-        insertEdit(params, anchor, pendingInsert, serializeReplacementBlocks(ctx, pendingInsert)),
-      );
+      edits.push({
+        ...insertEdit(
+          params,
+          anchor,
+          pendingInsert,
+          serializeReplacementBlocks(ctx, pendingInsert),
+        ),
+        structuralBoundary,
+        insertionRun,
+      });
     }
     for (const block of pendingDelete) {
       edits.push({
@@ -672,34 +682,52 @@ function replaceScope(
         file: params.documentAddress.filePath,
         kind: "delete",
         block,
+        structuralBoundary,
       });
     }
     pendingInsert = [];
     pendingDelete = [];
+    structuralBoundary = undefined;
   };
 
   for (const step of alignBlocks(oldNodes, newBlocks, canRewriteInPlace)) {
     switch (step.kind) {
       case "remove":
+        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        structuralBoundary = step.structuralBoundary;
         pendingDelete.push(oldBlocks[step.old]);
         break;
       case "add":
+        if (structuralBoundary !== step.structuralBoundary) flushStructural();
+        structuralBoundary = step.structuralBoundary;
         pendingInsert.push(newBlocks[step.next]);
         break;
-      case "change":
+      case "change": {
         flushStructural();
+        const before = oldNodes[step.old];
+        const after = newBlocks[step.next];
+        const replacements = flatWordReplacements(before, after);
         edits.push({
           documentId: params.documentAddress.documentId,
           file: params.documentAddress.filePath,
-          kind: "block",
           block: oldBlocks[step.old],
-          replacement: newBlocks[step.next],
+          structuralBoundary: step.structuralBoundary,
+          ...(replacements
+            ? {
+                kind: "textRanges" as const,
+                replacements,
+                output: replacementWindowOutput(before.textContent, replacements),
+              }
+            : { kind: "block" as const, replacement: after }),
         });
         anchor = oldBlocks[step.old];
+        insertionRun = {};
         break;
+      }
       case "keep":
         flushStructural();
         anchor = oldBlocks[step.old];
+        insertionRun = {};
         keptBlocks = true;
         break;
     }
@@ -891,4 +919,34 @@ function error(
   details?: Record<string, unknown>,
 ): ResolveWriteFailure {
   return { ok: false, error: { code, message, ...(details ? { details } : {}) } };
+}
+
+/** Fall back to block replacement unless exact splices reproduce structure and marks too. */
+function flatWordReplacements(
+  before: Block,
+  after: Block,
+): ResolvedInlineReplacement[] | undefined {
+  if (
+    !before.isTextblock ||
+    before.type.name === "code_block" ||
+    before.content.size !== before.textContent.length ||
+    after.content.size !== after.textContent.length
+  )
+    return;
+  const hunks = wordHunks(before.textContent, after.textContent);
+  if (!hunks.length) return;
+  const replacements = hunks.map((h) => ({
+    span: { start: h.from, end: h.to },
+    content: Fragment.empty,
+  }));
+  let shift = 0;
+  for (let i = 0; i < hunks.length; i++) {
+    const h = hunks[i];
+    replacements[i].content = after.content.cut(h.from + shift, h.from + shift + h.text.length);
+    shift += h.text.length - (h.to - h.from);
+  }
+  let replay = before.content;
+  for (const r of [...replacements].reverse())
+    replay = replay.cut(0, r.span.start).append(r.content).append(replay.cut(r.span.end));
+  return before.copy(replay).eq(after) ? replacements : undefined;
 }

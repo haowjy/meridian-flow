@@ -1,18 +1,16 @@
 /** Agent-edit bindings that make a thread-peer branch the write tool's document world. */
-import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type AgentEditCodec,
   bytesEqual,
   type ConcurrentUpdateOrigin,
   cloneYDoc,
   type DocumentCoordinator,
-  type DocumentLockOptions,
+  DocumentNotFoundError,
   type JournalBatchAppendEntry,
   type JournalBatchAppendResult,
   type JournalReadOptions,
   type JournalSnapshot,
   type PersistedUpdate,
-  type ReversalStore,
   type UpdateJournal,
   type YProsemirrorDocumentModel,
   yjsDeltaUpdate,
@@ -21,31 +19,18 @@ import {
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot } from "./branch-coordinator.js";
-import type { BranchLockLease } from "./branch-critical-sections.js";
 import type { WorkDraftLookup } from "./branch-pulls.js";
 import type { BranchJournalReadStore, BranchJournalRow } from "./branch-push-contracts.js";
-import type { BranchResolver } from "./branch-resolver.js";
-import {
-  type BranchReversalScope,
-  type BranchReversalState,
-  branchRowAsPersistedUpdate,
-  buildBranchReversalState,
-  groupedOrdinalKey,
-  materializeSnapshot,
-  resolveBranchReversalScope,
-  serializeBranchReversalRecord,
-  stageBranchReversal,
-} from "./branch-reversal-history.js";
+import { type BranchResolver, isBranchNotFoundError } from "./branch-resolver.js";
+import { reconcileStagedBranchWrites } from "./branch-response-replay.js";
+
 import {
   type AttributionRow,
   docFromState,
   partitionByBlockCoverage,
   touchedHashesForCoverage,
 } from "./branch-update-attribution.js";
-import { collabHook } from "./collab-test-hooks.js";
 import type { ResponseCommitParticipant } from "./response-transaction.js";
-
-export { activeBranchAgentWriteRows } from "./branch-reversal-history.js";
 
 export type BranchConcurrentJournalWatermarks = {
   current(threadId: ThreadId, documentId: DocumentId): number | undefined;
@@ -128,11 +113,13 @@ type PartitionedConcurrentUpdate =
 
 export function createBranchAgentEditCoordinator(input: {
   threadId: ThreadId;
+  liveCoordinator: DocumentCoordinator;
   branchCoordinator: BranchCoordinator;
   branches: BranchLookupWithSnapshots;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
-  liveJournal?: Pick<ReversalStore, "readForReconstruction">;
+  journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
+    Partial<Pick<BranchJournalReadStore, "listJournalRowsForBranch">>;
+  liveJournal?: Pick<UpdateJournal, "read">;
   diagnostics?: BranchAgentEditDiagnostics;
   afterCommit: AfterCommit;
   enlistResponseParticipant: EnlistResponseParticipant;
@@ -142,25 +129,39 @@ export function createBranchAgentEditCoordinator(input: {
 }): DocumentCoordinator {
   const concurrentJournalWatermarks =
     input.concurrentJournalWatermarks ?? createBranchConcurrentJournalWatermarks();
-  // The branch a document access resolved and the lease it runs under, for the reads
-  // and the upstream commit nested in it (a save's owned lease covers both, §2.5).
-  const access = new AsyncLocalStorage<DocumentAccess>();
-  const coordinator = input.branchCoordinator;
+  function branchRows(branchId: string, entries: readonly JournalBatchAppendEntry[]) {
+    return entries.flatMap((entry) => {
+      const mutation = entry.mutation;
+      if (mutation?.mode !== "threadPeer")
+        throw new Error("thread_peer_commit_missing_branch_generation");
+      return (mutation.editParts ?? [entry.update]).map((updateData) => ({
+        branchId,
+        source: "agent" as const,
+        updateData,
+        documentEditKey: mutation.writeId,
+        threadId: (mutation.threadId as ThreadId | undefined) ?? input.threadId,
+        turnId: mutation.turnId ?? null,
+        wId: mutation.wId ?? null,
+        toolCallId: mutation.toolCallId ?? null,
+        updateMeta: entry.meta ?? null,
+        ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
+        ...(mutation.branchJournalWatermark !== undefined
+          ? { expectedJournalWatermark: mutation.branchJournalWatermark }
+          : {}),
+        ...(mutation.branchJournalRevision !== undefined
+          ? { expectedJournalRevision: mutation.branchJournalRevision }
+          : {}),
+      }));
+    });
+  }
   return {
-    async withDocument<T>(
-      docId: string,
-      fn: (doc: Y.Doc) => Promise<T>,
-      options?: DocumentLockOptions,
-    ): Promise<T> {
-      const branchId =
-        options?.pinnedBranchId ?? (await resolveThreadBranchId(input, docId as DocumentId));
-      // One acquisition of the peer and its draft branch, in the order a save and a close
-      // take them (§14): a save hands its leases down; any other access takes them here,
-      // before any transaction, and every read or commit nested in it runs under them.
-      const owned = options?.lease as BranchLockLease | undefined;
-      const underLease = (lease: BranchLockLease) =>
-        access.run({ docId, branchId, lease }, () =>
-          coordinator.withBranchTransientWithLease(lease, branchId, async (doc, snapshot) => {
+    async withDocument<T>(docId: string, fn: (doc: Y.Doc) => Promise<T>): Promise<T> {
+      const branchId = await ensureThreadBranch(input, docId as DocumentId);
+      let result: T;
+      try {
+        result = await input.branchCoordinator.withBranchTransient(
+          branchId,
+          async (doc, snapshot) => {
             const beforeState = Y.encodeStateAsUpdate(doc);
             const result = await fn(doc);
             const pendingBatch =
@@ -172,44 +173,27 @@ export function createBranchAgentEditCoordinator(input: {
                   `Thread-peer branch ${snapshot.branchId} has no work-draft upstream`,
                 );
               }
-              const pending = pendingBatch.at(-1);
-              const mutation = pending?.mutation;
-              if (mutation?.mode !== "threadPeer") {
+              const first = pendingBatch[0];
+              if (
+                first?.mutation?.mode !== "threadPeer" ||
+                pendingBatch.some(
+                  (pending) =>
+                    pending.mutation?.mode !== "threadPeer" ||
+                    pending.mutation.branchGeneration !==
+                      (first.mutation?.mode === "threadPeer"
+                        ? first.mutation.branchGeneration
+                        : undefined),
+                )
+              ) {
                 throw new Error("thread_peer_commit_missing_branch_generation");
               }
-              const sourceHasBranchDelta = await coordinator.readBranchWithLease(
-                lease,
-                workDraftBranchId,
-                async (branchDoc) => Boolean(yjsDeltaUpdate(doc, branchDoc)),
-              );
-              if (!sourceHasBranchDelta) {
-                input.diagnostics?.stagedWriteNoop({
-                  documentId: docId as DocumentId,
-                  threadId: input.threadId,
-                  branchId: workDraftBranchId,
-                  turnId: pending?.mutation?.turnId ?? null,
-                  writeId: pending?.mutation?.writeId ?? null,
-                });
-                throw new StagedBranchWriteNoopError(workDraftBranchId, docId);
-              }
-              const sync: Parameters<BranchCoordinator["commitSyncFromDoc"]>[0] = {
+              const mutation = first.mutation;
+              const committed = await input.branchCoordinator.commitSegmentRows({
                 branchId: workDraftBranchId,
                 sourceDoc: doc,
-                source: "agent",
-                wId: pending?.mutation?.wId ?? null,
-                threadId: (pending?.mutation?.threadId as ThreadId | undefined) ?? input.threadId,
-                turnId: pending?.mutation?.turnId ?? null,
                 expectedGeneration: mutation.branchGeneration,
-                ...(mutation.branchJournalWatermark !== undefined
-                  ? { expectedJournalWatermark: mutation.branchJournalWatermark }
-                  : {}),
-                ...(mutation.branchJournalRevision !== undefined
-                  ? { expectedJournalRevision: mutation.branchJournalRevision }
-                  : {}),
-                updateMeta: pending?.meta ?? null,
-                ...(mutation.semanticEditIr ? { semanticEditIr: mutation.semanticEditIr } : {}),
-              };
-              const committed = await coordinator.commitSyncFromDocWithLease(lease, sync);
+                rows: branchRows(workDraftBranchId, pendingBatch),
+              });
               if (!committed) return result;
               advanceConcurrentJournalWatermark(
                 concurrentJournalWatermarks,
@@ -217,11 +201,11 @@ export function createBranchAgentEditCoordinator(input: {
                 docId as DocumentId,
                 input.afterCommit,
                 input.enlistResponseParticipant,
-                pending?.mutation?.writeId,
+                first.mutation?.writeId,
               );
             } else if (pendingBatch.length > 0) {
               const workDraftBranchId = snapshot.upstreamBranchId ?? snapshot.branchId;
-              const pending = pendingBatch.at(-1);
+              const pending = pendingBatch[0];
               input.diagnostics?.stagedWriteNoop({
                 documentId: docId as DocumentId,
                 threadId: input.threadId,
@@ -232,16 +216,8 @@ export function createBranchAgentEditCoordinator(input: {
               throw new StagedBranchWriteNoopError(workDraftBranchId, docId);
             }
             return result;
-          }),
+          },
         );
-      let result: T;
-      try {
-        result = owned
-          ? await underLease(owned)
-          : await coordinator.withLeases(await accessBranchIds(input, branchId), async (lease) => {
-              await collabHook("access.afterLeases");
-              return underLease(lease);
-            });
       } catch (cause) {
         concurrentJournalWatermarks.clearPending(input.threadId, docId as DocumentId);
         throw cause;
@@ -249,9 +225,88 @@ export function createBranchAgentEditCoordinator(input: {
       return result;
     },
 
-    async recover(): Promise<void> {
-      // Branch state is durable per commit; there is no journal to replay, and a peer is
-      // made only by a pull in a draft (contract §2.5), never here.
+    async withStagedWrites(request) {
+      const peerId = await ensureThreadBranch(input, request.docId as DocumentId);
+      const peer = await input.branches.getBranch(peerId);
+      const branchId = peer?.upstreamBranchId;
+      if (!branchId) throw new Error("Response peer has no Work draft");
+      const result = await input.branchCoordinator.withStagedRows(
+        branchId,
+        async (doc, snapshot) => {
+          if (request.helperCut.generation > snapshot.generation)
+            throw new Error("Response helper belongs to a future draft generation");
+          const retired: Uint8Array[] = [];
+          const inverses: Uint8Array[] = [];
+          const history = input.journalRows;
+          if (!history?.listJournalRowsForBranch)
+            throw new Error("Response generation history is unavailable");
+          const planning = new Y.Doc({ gc: false });
+          try {
+            Y.applyUpdate(planning, request.helperCut.state);
+            const cut = Y.snapshot(planning);
+            // Every intervening generation can contain an inverse; the old cut
+            // excludes already observed removals without a second sequence fence.
+            for (
+              let generation = request.helperCut.generation;
+              generation <= snapshot.generation;
+              generation++
+            ) {
+              const rows = await history.listJournalRowsForBranch({ branchId, generation });
+              for (const row of rows) {
+                const observed = Y.snapshotContainsUpdate(cut, row.updateData);
+                if (
+                  generation === request.helperCut.generation &&
+                  generation < snapshot.generation &&
+                  observed
+                )
+                  retired.push(row.updateData);
+                if (!observed && row.editKind && row.editKind !== "write")
+                  inverses.push(row.updateData);
+              }
+            }
+          } finally {
+            planning.destroy();
+          }
+          const replay = reconcileStagedBranchWrites(
+            doc,
+            request.sourceDoc,
+            request.entries,
+            retired,
+            request.helperCut.state,
+            inverses,
+          );
+          const kept = replay.keptEntries;
+          return {
+            result: {
+              keptEntries: kept,
+              rejectedWrites: replay.rejectedWrites,
+              helperState: Y.encodeStateAsUpdate(doc),
+              helperCut: { generation: snapshot.generation, state: snapshot.state },
+              beforeState: snapshot.state,
+            },
+            rows: branchRows(branchId, kept),
+          };
+        },
+        request.commit,
+      );
+      if (request.commit) {
+        const current = await input.branchCoordinator.readBranch(branchId, async (doc) =>
+          cloneYDoc(doc),
+        );
+        try {
+          await input.branchCoordinator.withBranchTransient(peerId, async (doc) => {
+            Y.applyUpdate(doc, Y.encodeStateAsUpdate(current));
+          });
+          await input.branchCoordinator.checkpointBranch(peerId);
+        } finally {
+          current.destroy();
+        }
+      }
+      return result;
+    },
+
+    async recover(docId: string): Promise<void> {
+      await ensureThreadBranch(input, docId as DocumentId);
     },
 
     async concurrentUpdatesSince({
@@ -261,6 +316,7 @@ export function createBranchAgentEditCoordinator(input: {
       afterJournalId,
       liveJournalSeq,
       attemptId,
+      reportingCut,
     }) {
       const baselineState = baselineDoc ? Y.encodeStateAsUpdate(baselineDoc) : null;
       const baselineSnapshot = baselineDoc ? Y.snapshot(baselineDoc) : Y.emptySnapshot;
@@ -268,15 +324,23 @@ export function createBranchAgentEditCoordinator(input: {
         input,
         docId as DocumentId,
         afterJournalId,
-        access.getStore(),
       );
+      if (reportingCut) {
+        const cut = Y.snapshot(doc);
+        concurrent.rows = concurrent.rows.filter((row) =>
+          Y.snapshotContainsUpdate(cut, row.updateData),
+        );
+        concurrent.upstreamState = reportingCut;
+      }
       // Durable upstream work-draft rows are never suppressed as "self" merely
       // because they came from this thread; the journal watermark is the fence.
       const liveRows = input.liveJournal
         ? liveAttributionRows(
-            (await input.liveJournal.readForReconstruction(docId)).updates.filter(
-              (update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER),
-            ),
+            (
+              await input.liveJournal.read(docId, {
+                since: (liveJournalSeq ?? Number.MAX_SAFE_INTEGER) + 1,
+              })
+            ).updates.filter((update) => update.seq > (liveJournalSeq ?? Number.MAX_SAFE_INTEGER)),
           )
         : [];
       const partitioned = partitionConcurrentUpdates({
@@ -308,6 +372,15 @@ export function createBranchAgentEditCoordinator(input: {
           maxRowId,
           attemptId,
         );
+        if (reportingCut)
+          advanceConcurrentJournalWatermark(
+            concurrentJournalWatermarks,
+            input.threadId,
+            docId as DocumentId,
+            input.afterCommit,
+            input.enlistResponseParticipant,
+            attemptId,
+          );
         // Capture itself is provisional: failures before branch persistence must
         // clear the candidate even though no watermark-advance participant exists yet.
         input.enlistResponseParticipant({
@@ -337,57 +410,15 @@ export function createBranchAgentEditCoordinator(input: {
 }
 
 export function createBranchAgentEditJournal(input: {
-  threadId: ThreadId;
-  liveJournal: UpdateJournal & ReversalStore;
+  liveJournal: UpdateJournal;
   pendingJournalEntries?: BranchPendingJournalEntries;
-  branches?: BranchLookupWithSnapshots;
-  branchRows?: {
-    listJournalRowsForBranch(input: {
-      branchId: string;
-      generation: number;
-    }): Promise<BranchJournalRow[]>;
-  };
-}): UpdateJournal & ReversalStore {
+}): UpdateJournal {
   let syntheticSeq = 0;
-  const groupedOrdinals = new Map<string, Promise<number>>();
-  const pinnedReversalScope = new AsyncLocalStorage<{
-    docId: string;
-    scope: BranchReversalScope;
-  }>();
   const materializeDestructiveProvenance = input.liveJournal.materializeDestructiveProvenance?.bind(
     input.liveJournal,
   );
 
-  const resolveBranchScope = async (docId: string): Promise<BranchReversalScope | null> => {
-    if (!input.branches) return null;
-    if (!input.branchRows) throw new Error("Branch reversal history is unavailable");
-    return resolveBranchReversalScope({
-      documentId: docId as DocumentId,
-      threadId: input.threadId,
-      branches: input.branches,
-      branchRows: input.branchRows,
-    });
-  };
-
-  const branchScope = async (docId: string): Promise<BranchReversalScope | null> => {
-    const pinned = pinnedReversalScope.getStore();
-    return pinned?.docId === docId ? pinned.scope : resolveBranchScope(docId);
-  };
-
-  const branchState = async (docId: string): Promise<BranchReversalState | null> => {
-    const scope = await branchScope(docId);
-    return scope ? buildBranchReversalState(input.threadId, scope.rows) : null;
-  };
-
   return {
-    async withReversalScope(docId, operation) {
-      const scope = await resolveBranchScope(docId);
-      if (!scope) {
-        throw new Error("Branch reversal authority changed before the command began");
-      }
-      return pinnedReversalScope.run({ docId, scope }, operation);
-    },
-
     async append(_docId, _update, _meta) {
       syntheticSeq += 1;
       return syntheticSeq;
@@ -396,9 +427,6 @@ export function createBranchAgentEditJournal(input: {
     async appendBatch(entries) {
       for (const entry of entries) {
         input.pendingJournalEntries?.push(entry);
-        const groupId = entry.meta.authoringResponseId ?? entry.mutation?.turnId;
-        if (groupId)
-          groupedOrdinals.delete(groupedOrdinalKey(entry.docId, input.threadId, groupId));
       }
       return Promise.all(
         entries.map(async (entry): Promise<JournalBatchAppendResult> => {
@@ -436,154 +464,11 @@ export function createBranchAgentEditJournal(input: {
     },
 
     compact(_docId, _before) {
-      return Promise.resolve({ updatesFolded: 0, reversalsExpired: 0 });
+      return Promise.resolve({ updatesFolded: 0 });
     },
 
-    async reserveWriteOrdinal(documentId, threadId, groupId) {
-      if (!groupId) return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
-      const key = groupedOrdinalKey(documentId, threadId, groupId);
-      const existing = groupedOrdinals.get(key);
-      if (existing !== undefined) return existing;
-      const reservation = input.liveJournal.reserveWriteOrdinal(documentId, threadId);
-      groupedOrdinals.set(key, reservation);
-      try {
-        return await reservation;
-      } catch (cause) {
-        if (groupedOrdinals.get(key) === reservation) groupedOrdinals.delete(key);
-        throw cause;
-      }
-    },
-    async readForReconstruction(docId) {
-      const scope = await branchScope(docId);
-      if (!scope) return input.liveJournal.readForReconstruction(docId);
-      const live = await input.liveJournal.readForReconstruction(docId);
-      const persistenceWatermark = scope.rows.at(-1)?.id ?? 0;
-      const checkpoint = materializeSnapshot(live);
-      const updates = scope.rows.map(branchRowAsPersistedUpdate);
-      const replayedState = materializeSnapshot({ checkpoint, updates });
-      const reconciled = new Y.Doc({ gc: false });
-      Y.applyUpdate(reconciled, replayedState);
-      Y.applyUpdate(reconciled, scope.state);
-      const authoritativeState = Y.encodeStateAsUpdate(reconciled);
-      reconciled.destroy();
-      const reconciliationUpdate = bytesEqual(replayedState, authoritativeState)
-        ? []
-        : [
-            {
-              seq: persistenceWatermark + 1,
-              update: scope.state,
-              meta: { origin: "system:branch-state", seq: persistenceWatermark + 1 },
-            },
-          ];
-      return {
-        checkpoint,
-        updates: [...updates, ...reconciliationUpdate],
-        persistenceWatermark,
-      };
-    },
-    documentsForTurn(threadId, turnId) {
-      return input.liveJournal.documentsForTurn(threadId, turnId);
-    },
-    async latestActiveWrite(documentId, threadId) {
-      const state = await branchState(documentId);
-      return state
-        ? state.activeWrites.at(-1)
-        : input.liveJournal.latestActiveWrite(documentId, threadId);
-    },
-    async activeWriteSummary(documentId, threadId) {
-      const state = await branchState(documentId);
-      return state
-        ? state.activeWrites
-        : input.liveJournal.activeWriteSummary(documentId, threadId);
-    },
-    async writeMinCreatedSeq(documentId, threadId, handle) {
-      const state = await branchState(documentId);
-      return state
-        ? state.mutationsByHandle.get(handle)?.[0]?.createdSeq
-        : input.liveJournal.writeMinCreatedSeq(documentId, threadId, handle);
-    },
-    async mutationsForWrite(documentId, threadId, handle) {
-      const state = await branchState(documentId);
-      return state
-        ? (state.mutationsByHandle.get(handle) ?? [])
-        : input.liveJournal.mutationsForWrite(documentId, threadId, handle);
-    },
-    async mutationsForWrites(documentId, threadId, handles) {
-      const state = await branchState(documentId);
-      if (!state) return input.liveJournal.mutationsForWrites(documentId, threadId, handles);
-      return new Map(handles.map((handle) => [handle, state.mutationsByHandle.get(handle) ?? []]));
-    },
-    async persistUndo(docId, undoUpdate, records, actor = { type: "agent" }) {
-      const scope = await branchScope(docId);
-      if (!scope) return input.liveJournal.persistUndo(docId, undoUpdate, records, actor);
-      if (!input.pendingJournalEntries) throw new Error("Branch reversal queue is not configured");
-      stageBranchReversal({
-        pending: input.pendingJournalEntries,
-        docId,
-        threadId: input.threadId,
-        scope,
-        expectedJournalWatermark: records.reduce(
-          (watermark, record) => Math.min(watermark, record.persistGuardWatermark ?? 0),
-          Number.POSITIVE_INFINITY,
-        ),
-        update: undoUpdate,
-        actor,
-        operation: {
-          direction: "undo",
-          records: records.map(serializeBranchReversalRecord),
-        },
-      });
-      return { persisted: true, journalCommitKind: "staged" };
-    },
-    async persistRedo(docId, redoUpdate, ref, meta) {
-      const result = await this.persistRedoBatch(docId, [{ update: redoUpdate, ref, meta }]);
-      return {
-        consumed: result.consumed,
-        seq: result.seqs?.[0],
-        journalCommitKind: result.journalCommitKind,
-      };
-    },
-    async persistRedoBatch(docId, entries) {
-      const scope = await branchScope(docId);
-      if (!scope) return input.liveJournal.persistRedoBatch(docId, entries);
-      if (entries.length === 0) return { consumed: false };
-      if (!input.pendingJournalEntries) throw new Error("Branch reversal queue is not configured");
-      stageBranchReversal({
-        pending: input.pendingJournalEntries,
-        docId,
-        threadId: input.threadId,
-        scope,
-        expectedJournalWatermark: entries.reduce(
-          (watermark, entry) => Math.min(watermark, entry.persistGuardWatermark ?? 0),
-          Number.POSITIVE_INFINITY,
-        ),
-        update: Y.mergeUpdates(entries.map((entry) => entry.update)),
-        actor: entries[0]?.meta.reversalActor ?? { type: "agent" },
-        operation: {
-          direction: "redo",
-          refs: entries.map((entry) => entry.ref),
-        },
-      });
-      return { consumed: true, journalCommitKind: "staged" };
-    },
-    async readReversals(docId, opts) {
-      const state = await branchState(docId);
-      if (!state) return input.liveJournal.readReversals(docId, opts);
-      return state.reversals.filter(
-        (record) =>
-          (!opts?.threadId || record.threadId === opts.threadId) &&
-          (!opts?.status || opts.status.includes(record.status)),
-      );
-    },
-    async reversalOpSeqsForHandles(docId, threadId, handles) {
-      const state = await branchState(docId);
-      if (!state) return input.liveJournal.reversalOpSeqsForHandles(docId, threadId, handles);
-      const selected = new Set(handles);
-      return new Set(
-        state.operationHandles.flatMap(({ seq, handles: operationHandles }) =>
-          operationHandles.some((handle) => selected.has(handle)) ? [seq] : [],
-        ),
-      );
+    reserveWriteOrdinal(documentId, threadId) {
+      return input.liveJournal.reserveWriteOrdinal(documentId, threadId);
     },
   };
 }
@@ -604,10 +489,7 @@ export type BranchLookupWithSnapshots = WorkDraftLookup &
   BranchResolver & {
     getBranch(
       branchId: string,
-    ): Promise<Pick<
-      BranchSnapshot,
-      "upstreamBranchId" | "draftId" | "workId" | "generation" | "state"
-    > | null>;
+    ): Promise<Pick<BranchSnapshot, "upstreamBranchId" | "workId" | "generation" | "state"> | null>;
   };
 
 type BranchPendingJournalEntries = {
@@ -660,40 +542,46 @@ export function createBranchPendingJournalEntries(
   };
 }
 
-/** One document access of the thread core: its peer and the lease over it and its draft branch. */
-type DocumentAccess = { docId: string; branchId: string; lease: BranchLockLease };
-
-/** The peer and its draft branch: what one thread-core access leases. */
-async function accessBranchIds(
-  input: { branches: BranchLookupWithSnapshots },
-  peerBranchId: string,
-): Promise<string[]> {
-  const peer = await input.branches.getBranch(peerBranchId);
-  return peer?.upstreamBranchId ? [peerBranchId, peer.upstreamBranchId] : [peerBranchId];
+function emptyDocState(): Uint8Array {
+  const doc = new Y.Doc({ gc: false });
+  try {
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
 }
 
-function readUnder<T>(
-  branchCoordinator: BranchCoordinator,
-  lease: BranchLockLease | undefined,
-  branchId: string,
-  fn: (doc: Y.Doc, snapshot: BranchSnapshot) => Promise<T>,
-): Promise<T> {
-  return lease
-    ? branchCoordinator.readBranchWithLease(lease, branchId, fn)
-    : branchCoordinator.readBranch(branchId, fn);
-}
-
-/**
- * The thread's current peer of the document. A peer is made only by a pull in a draft
- * (contract §2.5): an access that finds none is `BranchNotFoundError`, never a new branch.
- */
-async function resolveThreadBranchId(
-  input: { threadId: ThreadId; branches: BranchLookupWithSnapshots },
+async function ensureThreadBranch(
+  input: {
+    threadId: ThreadId;
+    liveCoordinator: DocumentCoordinator;
+    branches: BranchLookupWithSnapshots;
+  },
   documentId: DocumentId,
 ): Promise<string> {
-  const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
-  peer.doc.destroy();
-  return peer.branchId;
+  try {
+    return (await input.branches.resolveThreadBranch(documentId, input.threadId)).branchId;
+  } catch (cause) {
+    if (!isBranchNotFoundError(cause)) throw cause;
+    const liveState = await input.liveCoordinator
+      .withDocument(documentId, async (liveDoc) => Y.encodeStateAsUpdate(liveDoc))
+      .catch((cause: unknown) => {
+        if (cause instanceof DocumentNotFoundError) return emptyDocState();
+        throw cause;
+      });
+    const liveDoc = new Y.Doc({ gc: false });
+    try {
+      Y.applyUpdate(liveDoc, liveState);
+      const peer = await input.branches.ensureThreadPeerBranch({
+        documentId,
+        threadId: input.threadId,
+        liveDoc,
+      });
+      return peer.branchId;
+    } finally {
+      liveDoc.destroy();
+    }
+  }
 }
 
 async function concurrentUpstreamJournalRows(
@@ -701,22 +589,20 @@ async function concurrentUpstreamJournalRows(
     threadId: ThreadId;
     branchCoordinator: BranchCoordinator;
     branches: BranchLookupWithSnapshots;
-    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows">;
+    journalRows?: Pick<BranchJournalReadStore, "listConcurrentJournalRows"> &
+      Partial<Pick<BranchJournalReadStore, "listJournalRowsForBranch">>;
   },
   documentId: DocumentId,
   afterJournalId?: number,
-  access?: DocumentAccess,
 ): Promise<{ rows: BranchJournalRow[]; upstreamState?: Uint8Array }> {
   if (!input.journalRows) return { rows: [] };
   const journalRows = input.journalRows;
-  // Inside a document access, the branch it resolved (a save's pin); else the current peer.
-  const peerBranchId =
-    access?.docId === documentId ? access.branchId : await resolveThreadBranchId(input, documentId);
-  const peerSnapshot = await input.branches.getBranch(peerBranchId);
+  const peer = await input.branches.resolveThreadBranch(documentId, input.threadId);
+  peer.doc.destroy();
+  const peerSnapshot = await input.branches.getBranch(peer.branchId);
   const upstreamBranchId = peerSnapshot?.upstreamBranchId;
   if (!upstreamBranchId) return { rows: [] };
-  const lease = access?.docId === documentId ? access.lease : undefined;
-  return readUnder(input.branchCoordinator, lease, upstreamBranchId, async (doc, snapshot) => {
+  return input.branchCoordinator.readBranch(upstreamBranchId, async (doc, snapshot) => {
     const rows = await journalRows.listConcurrentJournalRows(
       upstreamBranchId,
       snapshot.generation,
@@ -738,17 +624,12 @@ function liveAttributionRows(updates: readonly PersistedUpdate[]): AttributionRo
     let origin: ConcurrentUpdateOrigin;
     if (meta.origin === "system:reconcile") {
       origin = { type: "system" };
-    } else if (meta.reversalActor?.type === "agent" || meta.origin.startsWith("agent:")) {
+    } else if (meta.origin.startsWith("agent:")) {
       origin = { type: "agent", actorTurnId: meta.actorTurnId ?? "unknown-agent" };
     } else {
       origin = {
         type: "human",
-        userId:
-          meta.reversalActor?.type === "user"
-            ? meta.reversalActor.userId
-            : meta.origin.startsWith("human:")
-              ? meta.origin.slice("human:".length)
-              : "unknown",
+        userId: meta.origin.startsWith("human:") ? meta.origin.slice("human:".length) : "unknown",
       };
     }
     return { id: -seq, origin, update };

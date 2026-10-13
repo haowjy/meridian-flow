@@ -1,8 +1,13 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { COLLAB_SCHEMA_VERSION, type CollabSchemaVersion } from "@meridian/prosemirror-schema";
+import {
+  allocateDocumentClient,
+  COLLAB_SCHEMA_VERSION,
+  type CollabSchemaVersion,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type BranchSnapshot,
   type BranchStore,
@@ -23,7 +28,7 @@ function docWithText(value: string): Y.Doc {
 function documentWithReservedFacts(): Y.Doc {
   const doc = docWithText("seed");
   const nested = new Y.Array<unknown>();
-  doc.getArray(PROVENANCE_TARGETS_TYPE).push([nested]);
+  doc.getMap(PROVENANCE_TARGETS_TYPE).set("nested", nested);
   nested.push(["authority fact"]);
   return doc;
 }
@@ -131,7 +136,7 @@ class MemoryBranchStore implements BranchStore {
     expectedState?: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
-    journal?: { updateData: Uint8Array };
+    journals?: readonly { updateData: Uint8Array }[];
   }): Promise<boolean> {
     const previousBranch = this.branches.get(input.branchId);
     const ok = this.persist(input, (current) => ({
@@ -145,7 +150,7 @@ class MemoryBranchStore implements BranchStore {
       if (previousBranch) this.branches.set(input.branchId, previousBranch);
       throw new Error("injected journal failure");
     }
-    if (input.journal) this.journal.push(input.journal.updateData);
+    for (const row of input.journals ?? []) this.journal.push(row.updateData);
     return true;
   }
 
@@ -194,7 +199,7 @@ describe("BranchCoordinator", () => {
     const roomDocument = materialize(storedBranch(store, "work"));
     const hostileClient = materialize(storedBranch(store, "work"));
     const before = Y.encodeStateVector(hostileClient);
-    hostileClient.getArray(PROVENANCE_TARGETS_TYPE).delete(0, 1);
+    hostileClient.getMap(PROVENANCE_TARGETS_TYPE).delete("nested");
     const updateData = Y.encodeStateAsUpdate(hostileClient, before);
 
     const coordinator = createBranchCoordinator({ store });
@@ -209,9 +214,7 @@ describe("BranchCoordinator", () => {
     ).rejects.toThrow("reserved provenance");
 
     expect(store.journal).toHaveLength(0);
-    expect(materialize(storedBranch(store, "work")).getArray(PROVENANCE_TARGETS_TYPE)).toHaveLength(
-      1,
-    );
+    expect(materialize(storedBranch(store, "work")).getMap(PROVENANCE_TARGETS_TYPE).size).toBe(1);
   });
 
   it("persists delete-set-only pulls even when the state vector is unchanged", async () => {
@@ -229,7 +232,7 @@ describe("BranchCoordinator", () => {
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
   });
 
-  it("journals raw multi-range delete-set updates so replay reaches byte-identical state", async () => {
+  it("journals only new multi-range deletions so replay reaches byte-identical state", async () => {
     const store = new MemoryBranchStore();
     const base = docWithText("abcdef");
     const workDoc = materialize(branchSnapshot({ branchId: "base", doc: base }));
@@ -243,19 +246,28 @@ describe("BranchCoordinator", () => {
 
     const coordinator = createBranchCoordinator({ store });
     await expect(
-      coordinator.commitSyncFromDoc({
+      coordinator.commitSegmentRows({
         branchId: "work",
-        sourceDoc,
-        source: "agent",
-        threadId: THREAD_ID,
+        sourceDoc: sourceDoc,
         expectedGeneration: beforeWork.generation,
+        rows: [
+          {
+            branchId: "work",
+            updateData: await captureHistoricalBranchRow(coordinator, "work", sourceDoc),
+            source: "agent",
+            threadId: THREAD_ID,
+          },
+        ],
       }),
     ).resolves.toBe(true);
 
     expect(store.journal).toHaveLength(1);
     const decoded = Y.decodeUpdate(store.journal[0]);
     expect(decoded.structs).toHaveLength(0);
-    expect([...decoded.ds.clients.values()].flat().length).toBeGreaterThanOrEqual(2);
+    expect([...decoded.ds.clients.values()].flat()).toEqual([
+      { clock: 1, len: 1 },
+      { clock: 4, len: 1 },
+    ]);
 
     const replayed = materialize(beforeWork);
     Y.applyUpdate(replayed, store.journal[0]);
@@ -356,3 +368,49 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
   }
   return true;
 }
+
+it("publishes ordered segment rows once and rejects reused clients and unjournaled residuals", async () => {
+  const store = new MemoryBranchStore();
+  const base = docWithText("start");
+  store.branches.set("work", branchSnapshot({ branchId: "work", doc: base }));
+  const sourceDoc = materialize(storedBranch(store, "work"));
+  const rows = [];
+  for (let i = 0; i < 40; i++) {
+    sourceDoc.clientID = allocateDocumentClient(sourceDoc);
+    const updates: Uint8Array[] = [];
+    const collect = (update: Uint8Array) => updates.push(update);
+    sourceDoc.on("update", collect);
+    sourceDoc.getText("content").insert(sourceDoc.getText("content").length, ` ${i}`);
+    sourceDoc.off("update", collect);
+    rows.push({
+      branchId: "work",
+      source: "agent" as const,
+      updateData: Y.mergeUpdates(updates),
+      toolCallId: i < 20 ? "first" : "second",
+      wId: i < 20 ? 1 : 2,
+    });
+  }
+  let broadcasts = 0;
+  const coordinator = createBranchCoordinator({ store, onBranchUpdate: () => broadcasts++ });
+  await expect(
+    coordinator.commitSegmentRows({
+      branchId: "work",
+      expectedGeneration: 1,
+      sourceDoc,
+      rows: rows.slice(0, -1),
+    }),
+  ).rejects.toThrow("unjournaled residual");
+  expect(store.journal).toHaveLength(0);
+  await coordinator.commitSegmentRows({ branchId: "work", expectedGeneration: 1, sourceDoc, rows });
+  expect(store.journal).toHaveLength(40);
+  expect(broadcasts).toBe(1);
+  expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
+  await expect(
+    coordinator.commitSegmentRows({
+      branchId: "work",
+      expectedGeneration: 1,
+      sourceDoc,
+      rows: [rows[0]],
+    }),
+  ).rejects.toThrow("reused client");
+});

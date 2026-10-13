@@ -7,6 +7,7 @@ import type {
   ResponseCommitWriteReceipt,
   ResponseStagedCreateOutcome,
 } from "@meridian/agent-edit/integration";
+import type { ModelResponseIdentity } from "@meridian/contracts";
 import type { PermissionDeniedReason } from "@meridian/contracts/protocol";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { FileAccessDenied } from "../../domains/file-policy/index.js";
@@ -28,12 +29,12 @@ type StagedCreateCleanup = {
 export interface AgentEditResponseWriteLifecycle {
   trackStagedCreate(input: StagedCreateCleanup): void;
   commitResponse(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
     beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
   ): Promise<ResponseWriteLifecycleCommitResult>;
   rollbackResponse(
-    responseId: string,
+    responseIdentity: ModelResponseIdentity,
     ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
   ): Promise<void>;
 }
@@ -109,10 +110,11 @@ export function createAgentEditResponseWriteLifecycle(
     },
 
     async commitResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
       beforeTransactionCommit?: (result: ResponseWriteLifecycleCommitResult) => Promise<void>,
     ): Promise<ResponseWriteLifecycleCommitResult> {
+      const responseId = responseIdentity.editScopeId;
       const mapResult = (
         result: Awaited<ReturnType<typeof deps.documentSync.finalizeResponseCommit>>,
       ): ResponseWriteLifecycleCommitResult => {
@@ -136,7 +138,7 @@ export function createAgentEditResponseWriteLifecycle(
         };
       };
       const result = await deps.documentSync.finalizeResponseCommit(
-        responseId,
+        responseIdentity,
         ctx,
         async (commitResult) => beforeTransactionCommit?.(mapResult(commitResult)),
       );
@@ -146,10 +148,11 @@ export function createAgentEditResponseWriteLifecycle(
     },
 
     async rollbackResponse(
-      responseId: string,
+      responseIdentity: ModelResponseIdentity,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
     ): Promise<void> {
-      const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
+      const responseId = responseIdentity.editScopeId;
+      const result = await deps.documentSync.finalizeResponseRollback(responseIdentity, ctx);
       try {
         await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       } finally {

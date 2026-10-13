@@ -1,5 +1,11 @@
 # collab TODO
 
+## Per-change Apply Undo
+
+Expose a per-change Apply Undo action through the existing immutable edit-part
+and forward-turn inverse authority. Apply currently confirms settlement only;
+this does not require a separate reversal planner or mutable reversal receipt.
+
 ## Paths that hold a pooled connection while taking another
 
 The live-pull deadlock (10 concurrent pulls each held a root transaction and

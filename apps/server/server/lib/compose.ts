@@ -255,7 +255,6 @@ import {
 } from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
-import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
   liveDocuments: Pick<TreeReader, "findById">;
@@ -586,18 +585,6 @@ export async function createProductionAppPorts(input: {
         );
         return { projectId: thread.projectId };
       },
-      resolveContextDocument: (input) =>
-        readThreadContextDocument(
-          {
-            contextPorts,
-            fileAccess,
-            threads: threadRepos.threads,
-            threadWorks: threadRepos.threadWorks,
-            works: workRepo,
-            workAuthorityResolver,
-          },
-          input as never,
-        ),
     },
   });
   boundCollab = documentSync;

@@ -142,7 +142,9 @@ async function harness(
     readTimeoutMs?: number;
     /** The blocks every document's search read returns, with each block's facts. */
     search?: { entries: string[]; links: SpelledLinkFact[][] };
-    write?: (context: { responseId?: string }) => Promise<WriteOutcome>;
+    write?: (context: {
+      responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+    }) => Promise<WriteOutcome>;
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
@@ -186,7 +188,10 @@ async function harness(
         await options.read?.();
         return success("read", [fact(91 + 10 * n)], DRAFT);
       },
-      write: async (_command: unknown, context: { responseId?: string }) =>
+      write: async (
+        _command: unknown,
+        context: { responseIdentity?: import("@meridian/contracts").ModelResponseIdentity },
+      ) =>
         options.write
           ? options.write(context)
           : success("insert", [fact(92)], undefined, TARGET_URI),
@@ -465,7 +470,7 @@ const rows: Array<{
         write: async (context) => ({
           ...success("insert", [fact(94)], undefined, TARGET_URI),
           phase: "staged",
-          ...(context.responseId ? { writeId: "w1", settlementId: "s1" } : {}),
+          ...(context.responseIdentity?.editScopeId ? { writeId: "w1", settlementId: "s1" } : {}),
         }),
       });
       const receipt = {

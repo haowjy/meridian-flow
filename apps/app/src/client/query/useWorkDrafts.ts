@@ -2,121 +2,47 @@
  * useWorkDrafts — reviewable AI draft list for one Work, and the Work's AI
  * write mode, whose change re-reads those drafts.
  *
- * Groups the active list by document because review launchers and navigation
- * operate at document scope.
+ * Projects one catalog-labelled file per active document draft, in stable order.
  */
-import { documentTitleFromUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { UpdateWorkWriteModeRequest } from "@meridian/contracts/protocol";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
+
 import { listWorkDrafts } from "@/client/api/drafts-api";
-import { httpErrorStatus } from "@/client/api/http-client";
 import { updateWorkWriteMode } from "@/client/api/projects-api";
-import type { CatalogContextView } from "./context-catalog-projection";
-import { readDraftsAfterCommands } from "./draft-command-record";
+import {
+  readDraftsAfterCommands,
+  shareDraftObservation,
+  useChangeCommandRecords,
+} from "./draft-command-record";
+import { projectDraftList } from "./draft-projection";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { useContextCatalogViews } from "./useContextCatalog";
+import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 import { repairWorksSnapshot } from "./works-projection-acquisition";
 
-export type ThreadDraftGroup = {
-  documentId: string;
-  documentName: string | null;
-  contextLocation: ThreadDraftListItem["contextLocation"];
-  /** The server permits one active Work-draft branch per (document, Work). */
-  draft: ThreadDraftListItem;
-};
-
-/** The newest active draft with reviewable content for one document. */
-export function pendingReviewDraft(
-  group: ThreadDraftGroup | null | undefined,
-): ThreadDraftListItem | null {
-  if (group?.draft.status !== "active" || !draftHasReviewContent(group.draft)) return null;
-  return group.draft;
-}
-
-/** Document groups that still carry an active, reviewable draft. */
-export function activeWorkDraftGroups(
-  groups: ThreadDraftGroup[] | null | undefined,
-): ThreadDraftGroup[] {
-  if (!groups?.length) return [];
-  return groups
-    .filter((group) => pendingReviewDraft(group) !== null)
-    .sort(
-      (left, right) =>
-        (Date.parse(right.draft.updatedAt) || 0) - (Date.parse(left.draft.updatedAt) || 0),
-    );
-}
-
-function draftHasReviewContent(draft: ThreadDraftListItem): boolean {
-  const hasKnownOperationCount = typeof draft.proposedOperationCount === "number";
-  const hasKnownWordDelta =
-    typeof draft.wordsAdded === "number" || typeof draft.wordsRemoved === "number";
-  if (!hasKnownOperationCount && !hasKnownWordDelta) return true;
-  return (
-    (draft.proposedOperationCount ?? 0) > 0 ||
-    (draft.wordsAdded ?? 0) > 0 ||
-    (draft.wordsRemoved ?? 0) > 0
-  );
-}
-
-export function groupDraftsByDocument(drafts: ThreadDraftListItem[]): ThreadDraftGroup[] {
-  const groups = new Map<string, ThreadDraftListItem>();
-  const seenDraftIds = new Set<string>();
-  for (const draft of drafts) {
-    if (seenDraftIds.has(draft.draftId)) continue;
-    seenDraftIds.add(draft.draftId);
-    const current = groups.get(draft.documentId);
-    if (!current || compareDraftRecency(draft, current) < 0) groups.set(draft.documentId, draft);
-  }
-
-  return Array.from(groups, ([documentId, draft]) => ({
-    documentId,
-    documentName: draft.documentName,
-    contextLocation: draft.contextLocation,
-    draft,
-  }));
-}
-
-/**
- * Re-label groups from the document's live identity. The draft record keeps the
- * name it had when the list was read; a rename (optimistic included) lands in the
- * catalog first, and the catalog is the one owner of a document's current name
- * and path. A draft-only document has no live entry and keeps its recorded label.
- */
-export function withLiveDocumentLabels(
-  groups: ThreadDraftGroup[],
-  catalog: Pick<CatalogContextView, "findDocument"> | null,
-): ThreadDraftGroup[] {
-  if (!catalog) return groups;
-  return groups.map((group) => {
-    const file = catalog.findDocument(group.documentId);
-    if (!file) return group;
-    const documentName = documentTitleFromUri(file.uri) ?? group.documentName;
-    const parsed = parseUnifiedContextUri(file.uri);
-    if (!parsed.ok) return group;
-    const contextLocation = { scheme: parsed.value.scheme, path: file.path };
-    if (
-      documentName === group.documentName &&
-      contextLocation.path === group.contextLocation?.path &&
-      contextLocation.scheme === group.contextLocation.scheme
-    )
-      return group;
-    return { ...group, documentName, contextLocation };
-  });
-}
-
-function compareDraftRecency(left: ThreadDraftListItem, right: ThreadDraftListItem): number {
-  const updated = (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0);
-  return updated || left.draftId.localeCompare(right.draftId);
-}
-
 export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
+  /** Raw query rows for generation evidence and command fences. */
   drafts: ThreadDraftListItem[] | null;
-  groups: ThreadDraftGroup[] | null;
+  files: ReviewFileTarget[] | null;
+  fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
 };
+
+/** The one Work draft-list query, shared by every reader so the list is fetched once. */
+export function workDraftsQueryOptions(projectId: string, workId: string) {
+  return {
+    queryKey: projectQueryKeys.workDrafts(projectId, workId),
+    queryFn: () =>
+      readDraftsAfterCommands({ projectId, workId }, () =>
+        listWorkDrafts(projectId, workId).then((response) => response.drafts),
+      ),
+    staleTime: 15_000,
+    structuralSharing: shareDraftObservation,
+  };
+}
 
 export function useWorkDrafts(
   projectId: string | null,
@@ -127,56 +53,52 @@ export function useWorkDrafts(
   const enabled = callerEnabled && Boolean(projectId) && Boolean(workId);
   const result = unwrapListQuery(
     useQuery({
-      queryKey: projectQueryKeys.workDrafts(projectId ?? "", workId ?? ""),
-      queryFn: () =>
-        readDraftsAfterCommands({ projectId: projectId as string, workId: workId as string }, () =>
-          listWorkDrafts(projectId as string, workId as string)
-            .then((response) => response.drafts)
-            .catch((error: unknown) => {
-              // A catalog wake may outlive Work deletion; unavailable drafts have no UI.
-              if (httpErrorStatus(error) === 404) return [];
-              throw error;
-            }),
-        ),
-      staleTime: 15_000,
+      ...workDraftsQueryOptions(projectId ?? "", workId ?? ""),
       enabled,
     }),
   );
 
-  // Memoize on the query data identity so downstream consumers (chat
-  // anchoring, memoized turn rows) only see a new groups array when the
-  // underlying drafts list actually changes — otherwise the grouping would
-  // allocate a fresh array on every render and bust memoization for every
-  // streaming tick.
-  const grouped = useMemo(
-    () => (result.data ? groupDraftsByDocument(result.data) : null),
-    [result.data],
-  );
   const schemes = useMemo(
     () => [
       ...new Set(
-        grouped?.flatMap((group) =>
-          group.contextLocation ? [group.contextLocation.scheme] : [],
-        ) ?? [],
+        result.data?.flatMap((row) => (row.contextLocation ? [row.contextLocation.scheme] : [])),
       ),
     ],
-    [grouped],
+    [result.data],
   );
   const catalogs = useContextCatalogViews(projectId ?? "", schemes, {
-    enabled: enabled && schemes.length > 0,
+    enabled: enabled && Boolean(result.data?.length),
     workId,
   });
-  const groups = useMemo(
+  const records = useChangeCommandRecords();
+  const visible = useMemo(
     () =>
-      grouped
-        ? withLiveDocumentLabels(grouped, {
+      result.data
+        ? projectDraftList(
+            result.data,
+            { projectId: projectId ?? "", workId: workId ?? "" },
+            records,
+          )
+        : null,
+    [result.data, projectId, workId, records],
+  );
+  const files = useMemo(
+    () =>
+      enabled && visible
+        ? projectWorkDraftFiles(visible, {
             findDocument: (id) =>
-              schemes
-                .map((scheme) => catalogs[scheme].catalog?.findDocument(id))
-                .find((file) => file != null) ?? null,
+              Object.values(catalogs)
+                .flatMap(({ catalog }) => catalog?.findDocument(id) ?? [])
+                .at(0) ?? null,
           })
         : null,
-    [grouped, schemes, catalogs],
+    [enabled, visible, catalogs],
+  );
+  const byDocument = useMemo(() => new Map(files?.map((file) => [file.documentId, file])), [files]);
+  const fileForDocument = useCallback(
+    (documentId: string | null | undefined) =>
+      documentId ? (byDocument.get(documentId) ?? null) : null,
+    [byDocument],
   );
 
   if (!enabled) {
@@ -185,14 +107,23 @@ export function useWorkDrafts(
       data: null,
       status: "disabled",
       drafts: null,
-      groups: null,
+      files: null,
+      fileForDocument,
     };
   }
 
   return {
     ...result,
+    data: visible,
+    status:
+      result.status === "ready" || result.status === "empty"
+        ? visible?.length
+          ? "ready"
+          : "empty"
+        : result.status,
     drafts: result.data,
-    groups,
+    files,
+    fileForDocument,
   };
 }
 

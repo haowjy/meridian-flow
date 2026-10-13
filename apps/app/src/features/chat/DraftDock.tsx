@@ -1,275 +1,224 @@
-/**
- * DraftDock — the composer-attached strip for a Work's pending AI changes.
- *
- * Visual model: a jade-tinted strip that sits BEHIND the composer (narrower
- * via horizontal margin, top corners rounded) — the composer keeps its own
- * border and overlaps the strip's top edge, creating a layered look. The strip
- * mounts only when pending drafts exist; no terminal flash, no generating
- * state — the streaming turn in the transcript is sufficient.
- *
- * Single doc: name inline, clicking the strip opens review directly.
- * Multi doc: "N documents" with chevron, clicking toggles expand/collapse.
- *
- * Verb order follows the one draft-action grammar: the action that commits is
- * rightmost, Discard sits immediately left of it, and anything backing out
- * (Keep, Cancel) is leftmost.
- *
- * All visibility derives from `DraftReviewProvider` state (never raw queries),
- * so the dock, the editor bar, and the transcript can never disagree about what
- * is pending.
- */
+/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
-import { canonicalContextUri } from "@meridian/contracts/context-uri";
-import { ChevronRight, Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { draftCommandFailure, useDraftCommandRecords } from "@/client/query/draft-command-record";
-import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
+import { useLingui } from "@lingui/react";
+import { Plural, Trans } from "@lingui/react/macro";
+import { ChevronRight } from "lucide-react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { useDraftView } from "@/features/draft-review/useDraftView";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
-import { useChatContextNavigation } from "./ChatContextNavigation";
-import { useDraftReview } from "./DraftReviewProvider";
-import { type DockRow, dockRows } from "./docked-drafts";
-import type { InlineReviewMessageCode } from "./draft-review-session";
-import { aggregateDraftStats, DraftStatsLabel, draftStats } from "./draft-stats";
-import { ReviewMessageText } from "./ReviewMessageText";
-
-export type DraftDockModel = ReturnType<typeof useDraftDock>;
-
-export function useDraftDock({ generating }: { generating: boolean }) {
-  const { groups, controller } = useDraftReview();
-  const { openAiDraft } = useAiDraftLauncher();
-  const commandRecords = useDraftCommandRecords();
-
-  const applyDraft = useCallback(
-    (row: DockRow) => {
-      return controller.disposeDrafts("apply", [
-        { documentId: row.documentId, draftId: row.draft.draftId },
-      ]);
-    },
-    [controller],
-  );
-
-  const rows = useMemo(() => dockRows(groups), [groups]);
-
-  const reviewRow = useCallback(
-    (row: DockRow) => {
-      if (!row.contextLocation) return;
-      openAiDraft({
-        workId: controller.workId,
-        documentId: row.documentId,
-        draftId: row.draft.draftId,
-        contextLocation: row.contextLocation,
-        documentName: row.documentName ?? undefined,
-        isNewDocument: row.isNewDocument,
-      });
-    },
-    [controller.workId, openAiDraft],
-  );
-
-  // Row click opens the LIVE document (Review — the pill — opens the review
-  // view; the row itself is a plain "take me to the file" affordance).
-  const openContextUri = useChatContextNavigation();
-  const openRow = useCallback(
-    (row: DockRow) => {
-      const uri = row.contextLocation
-        ? canonicalContextUri(row.contextLocation.scheme, row.contextLocation.path)
-        : null;
-      if (!openContextUri || !uri) return;
-      openContextUri(uri);
-    },
-    [openContextUri],
-  );
-
-  const model = {
-    generating,
-    rows,
-    aggregateStats: aggregateDraftStats(rows.map((row) => row.draft)),
-    mounted: rows.length > 0,
-    isBusy: controller.isDisposing,
-    dispositionLocked: controller.dispositionLocked,
-    dispositionError: controller.dockDispositionError,
-    /** A refused command on this row's draft, shown on the row it belongs to. */
-    rowError: (row: DockRow) =>
-      draftCommandFailure(commandRecords, {
-        projectId: controller.projectId,
-        workId: controller.workId,
-        documentId: row.documentId,
-        draftId: row.draft.draftId,
-      }),
-    reviewRow,
-    openRow,
-    reviewFirst: () => {
-      const first = rows[0];
-      if (first) reviewRow(first);
-    },
-    applyRow: applyDraft,
-    discardRow: (row: DockRow) =>
-      controller.disposeDrafts("discard", [
-        { documentId: row.documentId, draftId: row.draft.draftId },
-      ]),
-    startApplyAll: () => {
-      void controller.disposeDrafts(
-        "apply",
-        rows.map((row) => ({
-          documentId: row.documentId,
-          draftId: row.draft.draftId,
-        })),
-      );
-    },
-    startDiscardAll: () => {
-      void controller.disposeDrafts(
-        "discard",
-        rows.map((row) => ({
-          documentId: row.documentId,
-          draftId: row.draft.draftId,
-        })),
-      );
-    },
-  };
-  return model;
-}
+import { DockFailureText } from "./DraftDockMessages";
+import type { DockFile } from "./draft-dock-files";
+import type { DockFileFailure, DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
-  const [confirmingDiscardAll, setConfirmingDiscardAll] = useState(false);
-  const refusedRowCount = dock.rows.filter((row) => dock.rowError(row) !== null).length;
-  // A refusal on a row opens the strip so the writer sees it.
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const troubledFileCount = dock.files.filter(
+    (file) => file.status === "error" || dock.fileFailures(file).length > 0,
+  ).length;
+  // A refusal or a preview that did not load opens the strip so the writer sees it.
   useEffect(() => {
-    if (refusedRowCount > 0) setExpanded(true);
-  }, [refusedRowCount]);
+    if (troubledFileCount > 0) setExpanded(true);
+  }, [troubledFileCount]);
 
   if (!dock.mounted) return null;
 
-  const multi = dock.rows.length > 1;
-  const single = dock.rows.length === 1;
-  const firstPending = dock.rows[0] ?? null;
-  const identity = single ? (dock.rows[0].documentName ?? t`Document`) : null;
-  // One document: the error sits under the strip. Several: it sits on the
-  // document's row, so the strip opens to show it.
-  const stripError = single && firstPending ? dock.rowError(firstPending) : null;
-  // A batch-level message repeats what a row already says.
-  const batchError =
-    (dock.dispositionError === "discard-offline" || dock.dispositionError === "apply-unknown") &&
-    refusedRowCount > 0
-      ? null
-      : dock.dispositionError;
-
-  return (
+  const multi = dock.files.length > 1;
+  const only = dock.files[0];
+  const confirming = confirmingDiscard && dock.showCommands;
+  const commands = (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row.
+    // biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own.
     <div
-      className="mx-[var(--chat-space-block)] rounded-t-lg bg-dock-surface"
-      data-draft-dock="settled"
+      className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1"
+      onClick={(event) => event.stopPropagation()}
     >
-      {/* The WHOLE strip is the expand/collapse target (multi only) — buttons
-          intercept their own clicks below. Tiny chevron-only targets read as
-          broken affordance. */}
+      {confirming ? (
+        <>
+          <QuietButton onClick={() => setConfirmingDiscard(false)}>
+            <Trans>Keep</Trans>
+          </QuietButton>
+          <QuietButton
+            onClick={() => {
+              setConfirmingDiscard(false);
+              dock.discard();
+            }}
+            disabled={!dock.canCommand}
+          >
+            <Trans>Discard</Trans>
+          </QuietButton>
+        </>
+      ) : dock.showCommands ? (
+        <>
+          <QuietButton
+            onClick={() => (multi ? setConfirmingDiscard(true) : dock.discard())}
+            disabled={!dock.canCommand}
+          >
+            <Trans>Discard</Trans>
+          </QuietButton>
+          <QuietButton onClick={dock.apply} disabled={!dock.canCommand}>
+            <Trans>Apply</Trans>
+          </QuietButton>
+        </>
+      ) : null}
+    </div>
+  );
+
+  const summary = (trouble: ReactNode = null) => (
+    <>
+      {/* The first line toggles expansion; document names and command buttons intercept their own clicks. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the chevron button inside is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
-        onClick={multi ? () => setExpanded((value) => !value) : () => dock.reviewFirst()}
+        onClick={confirming ? undefined : () => setExpanded((value) => !value)}
         className={cn(
-          "flex min-h-7 items-center gap-[var(--chat-space-inline)] px-[var(--chat-card-pad-x)] text-caption text-prose-foreground",
+          "flex min-h-7 items-center gap-x-[var(--chat-space-inline)] gap-y-0.5 px-[var(--chat-card-pad-x)] @max-[25rem]/dock:px-1 @max-[25rem]/dock:gap-x-1 py-0.5 text-caption @max-[20rem]/dock:[font-size:12px] text-prose-foreground",
           multi && "cursor-pointer transition-colors hover:bg-muted/50",
         )}
       >
-        {multi ? (
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
-            onClick={(event) => {
-              event.stopPropagation();
-              setExpanded((value) => !value);
-            }}
-            className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle"
+        {confirming ? (
+          <span
+            data-draft-dock-confirmation
+            className="min-w-0 flex-1 truncate text-ink-muted"
+            title={t`Discard this chat's changes?`}
           >
-            <ChevronRight
-              className={cn("size-3 transition-transform", expanded && "rotate-90")}
-              aria-hidden
-            />
-          </button>
-        ) : null}
-        <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] overflow-hidden">
-          <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
-          {/* min() keeps the 12ch floor from padding short names with dead space */}
-          <span className="min-w-[min(12ch,max-content)] shrink truncate">
-            {single ? identity : <Trans>{dock.rows.length} documents</Trans>}
+            <Trans>Discard this chat's changes?</Trans>
           </span>
-          {dock.aggregateStats ? (
-            <span className="shrink-0 whitespace-nowrap text-ink-subtle">
-              <DraftStatsLabel stats={dock.aggregateStats} />
-            </span>
-          ) : null}
-        </div>
-        {/* biome-ignore lint/a11y/useKeyWithClickEvents: pure click fence so verb buttons don't also toggle the row. */}
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: same — stopPropagation fence only, no interaction of its own. */}
-        <div
-          className="flex shrink-0 items-center gap-[var(--chat-space-inline)]"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {confirmingDiscardAll ? (
-            <>
-              <span className="whitespace-nowrap text-ink-muted">
-                <Trans>Discard all changes?</Trans>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-[var(--chat-space-inline)] @max-[25rem]/dock:gap-1">
+            {
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-label={expanded ? t`Collapse changes` : t`Expand changes`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setExpanded((value) => !value);
+                }}
+                className="focus-ring -ml-0.5 grid size-4 shrink-0 place-items-center rounded-sm text-ink-subtle [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+              >
+                <ChevronRight
+                  className={cn("size-3 transition-transform", expanded && "rotate-90")}
+                  aria-hidden
+                />
+              </button>
+            }
+            <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
+            {multi ? (
+              <span className="min-w-[10ch] shrink truncate">
+                <Trans>{dock.files.length} documents</Trans>
               </span>
-              <QuietButton onClick={() => setConfirmingDiscardAll(false)}>
-                <Trans>Keep</Trans>
-              </QuietButton>
-              <QuietButton
-                onClick={() => {
-                  setConfirmingDiscardAll(false);
-                  dock.startDiscardAll();
-                }}
-                disabled={dock.dispositionLocked}
-              >
-                <Trans>Discard</Trans>
-              </QuietButton>
-            </>
-          ) : (
-            <>
-              <QuietButton
-                onClick={() => {
-                  if (single && firstPending) dock.discardRow(firstPending);
-                  else setConfirmingDiscardAll(true);
-                }}
-                disabled={dock.generating || dock.dispositionLocked || !firstPending}
-              >
-                {single ? <Trans>Discard</Trans> : <Trans>Discard all</Trans>}
-              </QuietButton>
-              <QuietButton
-                onClick={() => {
-                  if (single && firstPending) void dock.applyRow(firstPending).catch(() => {});
-                  else dock.startApplyAll();
-                }}
-                disabled={dock.generating || dock.dispositionLocked || !firstPending}
-              >
-                {single ? <Trans>Apply</Trans> : <Trans>Apply all</Trans>}
-              </QuietButton>
-              {firstPending ? (
-                <ReviewPill onClick={() => dock.reviewFirst()} disabled={dock.isBusy} />
-              ) : null}
-            </>
-          )}
-        </div>
+            ) : only ? (
+              <DockFileName file={only} onReview={() => dock.review(only)} />
+            ) : null}
+            {trouble ||
+              (dock.changeCount !== null ? (
+                <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
+                  <ChangeCount count={dock.changeCount} />
+                </span>
+              ) : null)}
+          </div>
+        )}
+        {commands}
       </div>
+    </>
+  );
 
-      {batchError ? (
-        <DockErrorLine code={batchError} />
-      ) : stripError ? (
-        <DockErrorLine code={stripError} />
+  return (
+    <div className="@container/dock rounded-t-lg bg-dock-surface" data-draft-dock="settled">
+      {multi ? summary() : null}
+      <div className={cn(expanded && multi && "app-scroll max-h-[min(40svh,20rem)]")}>
+        {dock.files.map((file) => (
+          <DockFileLine
+            key={file.row.documentId}
+            dock={dock}
+            file={file}
+            expanded={expanded}
+            summary={multi ? undefined : summary}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChangeCount({ count }: { count: number }) {
+  return <Plural value={count} one="# change" other="# changes" />;
+}
+
+/** The chat's changes, with file headers only when the summary names multiple documents. */
+function DockFileLine({
+  dock,
+  file,
+  expanded,
+  summary,
+}: {
+  dock: DraftDockModel;
+  file: DockFile;
+  expanded: boolean;
+  summary?: (trouble: ReactNode) => ReactNode;
+}) {
+  const touch = usePhoneShell() ?? false;
+  const view = useDraftView(
+    {
+      projectId: dock.projectId,
+      workId: dock.workId,
+      documentId: file.row.documentId,
+      draftId: file.row.draft.draftId,
+    },
+    { controller: dock.controller, enabled: expanded },
+  );
+  const own = new Set(file.changes.map((change) => change.classId));
+  const items = view.items.filter(({ change }) => own.has(change.classId));
+  const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
+  // Ownership comes from the rows that will actually render, not the kind of document.
+  const renderedItems =
+    expanded && !(summary && wholeDocument) && file.status !== "error" && view.status === "ready"
+      ? items
+      : [];
+  const failures = dock.fileFailures(file).filter(
+    (held) =>
+      !renderedItems.some((item) => {
+        if (held.kind === "draft") return item.draftFailure === held.failure;
+        if (item.draftFailure || !item.failure) return false;
+        return (
+          item.failure.code === held.failure.code &&
+          item.failure.mode === held.failure.mode &&
+          item.failure.serverCode === held.failure.serverCode &&
+          item.failure.serverReason === held.failure.serverReason
+        );
+      }),
+  );
+  const trouble =
+    failures.length > 0 || file.status === "error" ? (
+      <FileTrouble file={file} failures={failures} row={!summary} />
+    ) : null;
+  if (!summary && !expanded) return null;
+  return (
+    <div
+      data-draft-dock-file={file.row.documentId}
+      className="border-border-subtle border-b last:border-b-0"
+    >
+      {summary ? (
+        summary(trouble)
+      ) : expanded && !wholeDocument ? (
+        <div className="flex min-h-7 items-center gap-1 px-2 text-caption text-prose-foreground">
+          <DockFileName file={file} onReview={() => dock.review(file)} />
+          {trouble}
+        </div>
       ) : null}
-
-      {multi && expanded ? (
-        <div>
-          {dock.rows.map((row) => (
-            <DockRowLine
-              key={row.documentId}
-              row={row}
-              error={dock.rowError(row)}
-              busy={dock.isBusy}
-              onOpen={() => dock.openRow(row)}
-              onReview={() => dock.reviewRow(row)}
-            />
-          ))}
+      {!summary && wholeDocument ? trouble : null}
+      {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
+        <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
+          <DocumentChangeRows
+            documentName={file.name}
+            view={{ ...view, items, locked: view.locked || dock.generating }}
+            touch={touch}
+            onSelect={(change) => dock.review(file, change)}
+          />
         </div>
       ) : null}
     </div>
@@ -277,116 +226,98 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 }
 
 /**
- * One document row in the expanded dock. The WHOLE row is a click target that
- * opens the live document; the Review pill fences its own clicks and acts on
- * the pending changes instead.
+ * What went wrong on a file, in the strip's error voice: a command or launch
+ * that did not land, and a preview that did not load. They are independent, so
+ * both show when both are held, and Retry stays with the unreadable preview.
  */
-function DockRowLine({
-  row,
-  error,
-  busy,
-  onOpen,
-  onReview,
+function FileTrouble({
+  file,
+  failures,
+  row = false,
 }: {
-  row: DockRow;
-  error: InlineReviewMessageCode | null;
-  busy: boolean;
-  onOpen: () => void;
-  onReview: () => void;
+  file: DockFile;
+  failures: readonly DockFileFailure[];
+  row?: boolean;
 }) {
-  const name = row.documentName ?? row.documentId;
-  const stats = draftStats(row.draft);
-
+  const unreadable = file.status === "error";
+  if (failures.length === 0 && !unreadable) return null;
   return (
     <>
-      <DockRowShell onOpen={onOpen} className="text-prose-foreground">
-        <span aria-hidden className="shrink-0 text-ink-subtle">
-          ○
-        </span>
-        <span className="min-w-0 flex-1 truncate">
-          {name}
-          {stats ? (
-            <>
-              {" "}
-              <DraftStatsLabel stats={stats} wordsSuffix={false} />
-            </>
-          ) : null}
-        </span>
-        {busy ? (
-          <Loader2 className="size-3 shrink-0 animate-spin text-ink-subtle" aria-hidden />
-        ) : null}
-        <RowClickFence className="shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-          <ReviewPill onClick={onReview} disabled={busy} />
-        </RowClickFence>
-      </DockRowShell>
-      {error ? <DockErrorLine code={error} row /> : null}
+      {failures.map((failure) => (
+        <TroubleLine key={failure.kind} row={row} code={failure.failure.code}>
+          <DockFailureText failure={failure} fileName={file.name} />
+        </TroubleLine>
+      ))}
+      {unreadable ? (
+        <TroubleLine
+          row={row}
+          code="unreadable"
+          action={
+            file.retry ? (
+              <button
+                type="button"
+                onClick={file.retry}
+                className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
+              >
+                <Trans>Retry</Trans>
+              </button>
+            ) : null
+          }
+        >
+          <Trans>Changes couldn't load.</Trans>
+        </TroubleLine>
+      ) : null}
     </>
   );
 }
 
-/** A refused command, in the strip's error voice. */
-function DockErrorLine({ code, row = false }: { code: InlineReviewMessageCode; row?: boolean }) {
+function TroubleLine({
+  row,
+  code,
+  action,
+  children,
+}: {
+  row: boolean;
+  code: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const { i18n } = useLingui();
+  const text = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    // Read the localized rendered copy, including refusal reasons, without duplicating it.
+    if (text.current) text.current.title = text.current.textContent ?? "";
+  }, [children, i18n.locale]);
   return (
     <p
       className={cn(
-        "border-border-subtle border-t py-[var(--chat-card-pad-y)] text-destructive text-caption",
-        row
-          ? "pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)]"
-          : "px-[var(--chat-card-pad-x)]",
+        "flex min-w-0 items-center gap-[var(--chat-space-inline)] text-destructive text-caption",
+        row ? "max-w-[50%]" : "flex-1",
       )}
       role="alert"
-      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-disposition-error"]: code }}
+      {...{ [row ? "data-draft-dock-row-error" : "data-draft-dock-strip-error"]: code }}
     >
-      <ReviewMessageText code={code} />
+      <span ref={text} className="min-w-0 flex-1 truncate">
+        {children}
+      </span>
+      {action}
     </p>
   );
 }
 
-/** Full-width dock row: hover wash + click opens the live document. */
-function DockRowShell({
-  onOpen,
-  className,
-  children,
-}: {
-  onOpen: () => void;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: document names remain reachable via the editor's file tree; the row click is a mouse convenience.
-    // biome-ignore lint/a11y/noStaticElementInteractions: same.
-    <div
-      onClick={onOpen}
-      className={cn(
-        "group flex min-h-7 cursor-pointer items-center gap-[var(--chat-space-inline)] border-b border-border-subtle pr-[var(--chat-geometry-draft-inset)] pl-[var(--chat-geometry-draft-indent)] text-caption transition-colors last:border-b-0 hover:bg-muted",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** Wraps row verbs so their clicks don't also fire the row's open action. */
-function RowClickFence({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: pure stopPropagation fence, no interaction of its own.
-    // biome-ignore lint/a11y/noStaticElementInteractions: same.
-    <div className={className} onClick={(event) => event.stopPropagation()}>
-      {children}
-    </div>
-  );
-}
-
-function ReviewPill({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
+/** One document's review door, independent of the strip's expansion toggle. */
+function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
+  const touch = usePhoneShell() ?? false;
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="focus-ring inline-flex h-5 shrink-0 items-center rounded-sm bg-primary px-2 text-caption font-semibold text-primary-foreground disabled:opacity-50"
+      className={cn("focus-ring min-w-[12ch] flex-1 truncate text-left", touch && "min-h-11")}
+      onClick={(event) => {
+        event.stopPropagation();
+        onReview();
+      }}
     >
-      <Trans>Review draft</Trans>
+      {file.name}
     </button>
   );
 }
@@ -406,7 +337,7 @@ function QuietButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 text-ink-muted hover:text-foreground disabled:opacity-50"
+      className="focus-ring shrink-0 whitespace-nowrap rounded-sm px-[var(--chat-space-block)] py-0.5 @max-[25rem]/dock:px-1 @max-[20rem]/dock:px-0 text-ink-muted hover:text-foreground disabled:opacity-50 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
     >
       {children}
     </button>
