@@ -20,7 +20,10 @@ export default defineConfig({
   experimental: { asyncContext: true },
   rolldownConfig: {
     watch: {
-      exclude: [repoLogsGlob],
+      // pnpm store files are hardlinked across worktrees, so an install in a
+      // sibling worktree changes their ctime (inotify IN_ATTRIB) and would
+      // rebuild this server mid-turn.
+      exclude: [repoLogsGlob, "**/node_modules/**"],
     },
   },
   // Interrupt envelope handler runs before Nitro's built-in JSON wrapper so HTTP bodies

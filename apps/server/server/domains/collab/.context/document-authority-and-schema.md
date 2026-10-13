@@ -202,8 +202,8 @@ schema-aware engine rather than hand-building fragment content. A new
 document's first seed is installed as its
 generation-1 checkpoint with no admitted journal mutations. Seeding is strictly initialize-only: any
 existing admission or checkpoint makes later attempts successful no-ops. A seed
-is reconciled into an already-open live room before success returns, and a stale
-room checkpoint at the same journal cut cannot replace it. The context caller contract is documented in
+is reconciled into an already-open live room before success returns, and a later
+checkpoint at the same journal cut cannot replace it. The context caller contract is documented in
 [the context domain](../../context/.context/CONTEXT.md).
 
 Writer admission rejects reserved client IDs and insertion or deletion in the

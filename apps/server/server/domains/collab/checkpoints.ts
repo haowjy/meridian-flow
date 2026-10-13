@@ -6,9 +6,10 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
+import type { CapturedCheckpointCut } from "./domain/checkpoint-cut.js";
 import { documentAuthority, RetiredDocumentHandleError } from "./domain/document-handle.js";
 import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
-import type { CheckpointAuthority } from "./domain/ports/checkpoint-authority.js";
+import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 
 const SYSTEM_ORIGIN: UpdateOrigin = { type: "system" };
 
@@ -22,13 +23,7 @@ type CheckpointRecord = {
 };
 
 type CheckpointStore = {
-  createCheckpoint(
-    docId: string,
-    state: Uint8Array,
-    reason: string,
-    upToSeq: number,
-    authority: CheckpointAuthority,
-  ): Promise<string | null>;
+  createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string | null>;
   getCheckpoint(id: string): Promise<CheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<CheckpointRecord[]>;
 };
@@ -44,7 +39,7 @@ type CheckpointMarkdownDocuments = {
 type CheckpointServiceDeps = {
   coordinator: DocumentCoordinator;
   store: CheckpointStore;
-  latestUpdateSeq(documentId: string): Promise<number>;
+  journal: Pick<CheckpointJournal, "captureCheckpoint">;
   markdownDocuments: CheckpointMarkdownDocuments;
   replaceAuthorityGeneration?(
     documentId: DocumentId,
@@ -58,17 +53,11 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
   return {
     async checkpoint(documentId, reason) {
       try {
-        const { state, upToSeq, authority } = await deps.coordinator.withDocument(
-          documentId,
-          async (doc) => {
-            const authority = documentAuthority(doc);
-            const upToSeq = await deps.latestUpdateSeq(documentId);
-            // upToSeq must be ≤ the updates reflected in state; any later
-            // update is replayed after the checkpoint, which is safe in Yjs.
-            return { state: Y.encodeStateAsUpdate(doc), upToSeq, authority };
-          },
+        const cut = await deps.coordinator.withDocument(documentId, (doc) =>
+          deps.journal.captureCheckpoint(documentId, documentAuthority(doc)),
         );
-        const id = await deps.store.createCheckpoint(documentId, state, reason, upToSeq, authority);
+        if (!cut) return Err({ code: "stale_generation", documentId });
+        const id = await deps.store.createCheckpoint(cut, reason);
         return id === null ? Err({ code: "stale_generation", documentId }) : Ok(id);
       } catch (cause) {
         if (cause instanceof RetiredDocumentHandleError)

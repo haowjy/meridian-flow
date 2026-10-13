@@ -459,10 +459,6 @@ export function createBranchAgentEditJournal(input: {
         }
       : {}),
 
-    checkpoint(_docId: string, _state: Uint8Array, _upToSeq: number): Promise<void> {
-      return Promise.resolve();
-    },
-
     compact(_docId, _before) {
       return Promise.resolve({ updatesFolded: 0 });
     },

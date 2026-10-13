@@ -180,9 +180,7 @@ function AssistantTurnComponent({
           <ErrorBlock
             isLatest={endsTranscript}
             kind={errorKind}
-            onRetry={
-              endsTranscript && errorKind !== "provider-declined" ? replyRetry?.onRetry : undefined
-            }
+            onRetry={endsTranscript ? replyRetry?.onRetry : undefined}
             retryRefused={replyRetry?.refused ?? false}
           />
         ) : null}
