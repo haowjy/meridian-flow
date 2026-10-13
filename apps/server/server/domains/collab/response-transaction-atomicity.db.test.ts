@@ -115,6 +115,11 @@ describe("change trail (postgres)", () => {
       "00000000-0000-4000-8000-0000000008d2",
     ] as const;
     // The Work's draft created both: hidden rows and the draft's `created` rows.
+    const [draft] = await db
+      .select({ id: schema.drafts.id })
+      .from(schema.drafts)
+      .where(eq(schema.drafts.originWorkId, WORK_ID));
+    if (!draft) throw new Error("the harness seeds the Work's draft");
     await db.insert(schema.documents).values(
       created.map((id, index) => ({
         id: id as never,
