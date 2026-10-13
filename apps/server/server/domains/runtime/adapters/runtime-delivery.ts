@@ -51,7 +51,9 @@ export interface DeliveryStore extends InboxReader {
 
 export interface DeliveryLeaseStore {
   cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
-  lockThreadReceipt(threadId: ThreadId): Promise<{ ids: string[]; turnId: TurnId | null } | null>;
+  lockThreadReceipt(
+    threadId: ThreadId,
+  ): Promise<{ ids: string[]; turnId: TurnId | null; lease: Lease } | null>;
   bindTurn(
     lease: Lease,
     turnId: TurnId,
@@ -601,6 +603,9 @@ export function createDeliveryAdapter(
       });
       next = completion.turn;
       await acknowledge(threadId, drain.ackIds);
+      // This failed successor is terminal; a crash before failure-close must
+      // not leave a selector whose receipt recovery can no longer retire.
+      await deps.runClaim.release(lease);
     }
     if (batch.length > 0 || input.current.kind === "placeholder" || compaction)
       await appendPending(threadId);
@@ -708,6 +713,27 @@ export function createDeliveryAdapter(
       threadLock.withThreadLock(threadId, () => retireOrphanedReply(threadId, turnId)),
     clearOrphanedTurn: (threadId, turnId) =>
       threadLock.withThreadLock(threadId, () => clearOrphanedTurnForRepair(threadId, turnId)),
+    settleStaleExecution: (threadId, repair) =>
+      threadLock.withThreadLock(threadId, async () => {
+        const receipt = await leaseStore.lockThreadReceipt(threadId);
+        const result = await repair();
+        const repaired = await leaseStore.lockThreadReceipt(threadId);
+        // A stale sweep candidate may not repair this receipt's execution. Only
+        // receipt retirement (or an already-empty receipt) permits lease release.
+        if (
+          receipt &&
+          repaired?.lease.runId === receipt.lease.runId &&
+          repaired.lease.holderId === receipt.lease.holderId &&
+          repaired.turnId === null &&
+          repaired.ids.length === 0
+        )
+          await deps.runClaim.release(receipt.lease);
+        await appendPending(threadId);
+        schedulePostCommit(async () => {
+          await deps.publishStatus?.(threadId);
+        });
+        return result;
+      }),
     repairOrphanedTurns: async (lease) => {
       const reports = await threadLock.withThreadLock(lease.threadId, () =>
         finalizeOrphanedTurns(
