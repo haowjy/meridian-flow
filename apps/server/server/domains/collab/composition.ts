@@ -34,6 +34,7 @@ import {
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
   createDraftBranchAheadDiagnostics,
+  createDraftReviewDiagnostics,
   createMarkdownSerializationAnomalyObserver,
   createResponseTransactionDiagnostics,
   createReversalNoticeDiagnostics,
@@ -62,6 +63,7 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftCommands } from "./adapters/drizzle-draft-commands.js";
 import {
   createDrizzleDraftDiscard,
   createDrizzleWorkDraftDisposal,
@@ -78,6 +80,7 @@ import {
   createDrizzlePendingSettlementStore,
   stageSettlementBatchWithinTx,
 } from "./adapters/drizzle-pending-settlement.js";
+import { createDrizzleReviewCut, readLiveDoc } from "./adapters/drizzle-review-cut.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
@@ -116,6 +119,7 @@ import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-
 import { createDraftBranchLeases } from "./domain/draft-branch-leases.js";
 import { createDraftDiscard } from "./domain/draft-discard.js";
 import { createDraftPublication } from "./domain/draft-publication.js";
+import { createDraftReviewIdentity } from "./domain/draft-review-identity.js";
 import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
@@ -333,7 +337,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         createDrizzleDraftTreeStep(deps.db, {
           drafts: workDrafts,
           branches,
-          pending: workDraftPendingStore,
+          coordinator: branchCoordinator,
+          liveDoc: (documentId) => readLiveDoc(persistence.journal, documentId),
           ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
           workProjection: deps.workProjectionMutation,
           catalog: deps.catalogMutations,
@@ -381,7 +386,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branchCoordinator,
     journal: persistence.journal,
     criticalSections,
-    deferUntilCommit: deferUntilDrizzleCommit,
   });
 
   const agentEdit = scopeAgentEdit(
@@ -498,6 +502,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     tree: createTreeReader(deps.db),
     branches: (draftId, documentIds) =>
       workDraftPendingStore.listDraftBranchEvidence(draftId, documentIds),
+    creators: (draftId, documentIds) => workDraftPendingStore.listCreators(draftId, documentIds),
+    settling: (draftId) => workDraftPendingStore.listSettling(draftId),
     liveFingerprint: (documentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => fullStateFingerprint(doc)),
   });
@@ -528,7 +534,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const discard = createDraftDiscard({
     drafts: workDrafts,
-    reviewItems,
     draftLeases,
     criticalSections,
     liveCoordinator,
@@ -536,21 +541,27 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     retire: retirePeers,
     releaseObjects: (storageUrls) => deps.objects?.storageUrls(storageUrls) ?? Promise.resolve(),
   });
+  const identity = createDraftReviewIdentity({ drafts: workDrafts, reviewItems });
   const drafts = createWorkDraftReviewService({
-    links: deps.links,
-    discard,
-    retirePeers,
-    branches,
-    branchCoordinator,
-    branchJournal,
-    branchReview,
-    liveCoordinator,
-    documents: runtime.markdownDocuments,
-    model: runtime.model,
-    latestUpdateSeq: persistence.store.latestUpdateSeq,
+    diagnostics: createDraftReviewDiagnostics(deps.eventSink),
     drafts: workDrafts,
     reviewItems,
+    identity,
     publication,
+    discard,
+    branchReview,
+    commands: createDrizzleDraftCommands(deps.db),
+    model: runtime.model,
+    resolveThreadTitles: lookups.resolveThreadTitles,
+    readReviewCut: createDrizzleReviewCut({
+      db: deps.db,
+      journal: persistence.journal,
+      branches,
+      rows: branchJournal,
+      links: deps.links,
+      identity,
+      resolveThreadTitles: lookups.resolveThreadTitles,
+    }),
   });
   const branchPeers = scopeBranchPeer(
     createEffectiveDocumentReader({

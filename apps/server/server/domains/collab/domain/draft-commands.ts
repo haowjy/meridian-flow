@@ -50,9 +50,14 @@ export type CommandLookup =
   | { kind: "done"; commandKind: DraftCommandKind; result: DraftCommandResult }
   | { kind: "blocked" };
 
+/** What a lookup needs; the observation route has no body to digest, so it names none. */
+export type CommandLookupKey = Pick<DraftCommandEnvelope, "commandId" | "workId" | "accountId"> & {
+  digest?: string;
+};
+
 export interface DraftCommands {
-  /** Fresh and authenticated: the account and Work the envelope names are all it reads. */
-  lookup(envelope: DraftCommandEnvelope): Promise<CommandLookup>;
+  /** Fresh and authenticated: the account and Work the key names are all it reads. */
+  lookup(key: CommandLookupKey): Promise<CommandLookup>;
 }
 
 /** The id is already taken by a committed or in-flight command: the caller answers that one. */

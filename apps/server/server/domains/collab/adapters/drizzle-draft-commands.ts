@@ -1,11 +1,13 @@
 /** Postgres command record (contract §4.6): lookup, claim in the effect transaction, settlement. */
+
+import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
 import { branchPushSettlementBatches, draftCommands } from "@meridian/database/schema";
-import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type {
   CommandLookup,
+  CommandLookupKey,
   DraftCommandEnvelope,
   DraftCommands,
 } from "../domain/draft-commands.js";
@@ -20,7 +22,7 @@ export function createDrizzleDraftCommands(db: Database): DraftCommands {
 
 export async function lookupCommand(
   db: DrizzleDb,
-  envelope: DraftCommandEnvelope,
+  envelope: CommandLookupKey,
 ): Promise<CommandLookup> {
   const [row] = await db
     .select({
@@ -44,7 +46,7 @@ export async function lookupCommand(
   if (
     row.accountId !== envelope.accountId ||
     row.workId !== envelope.workId ||
-    row.requestDigest !== envelope.digest
+    (envelope.digest !== undefined && row.requestDigest !== envelope.digest)
   ) {
     return { kind: "conflict" };
   }

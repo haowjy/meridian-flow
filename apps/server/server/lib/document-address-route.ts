@@ -19,7 +19,7 @@ import type { AppServices } from "./compose.js";
 type AddressRouteServices = {
   documentAddresses: DocumentAddressResolver;
   workRepo: Pick<AppServices["workRepo"], "findById">;
-  draftReview: Pick<DraftReviewApi, "items">;
+  draftReview: Pick<DraftReviewApi, "resolveItem">;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt">;
 };
 
@@ -35,13 +35,15 @@ export async function handleDocumentAddressRequest(
     const work = await deps.workRepo.findById(review.workId as WorkId);
     if (!work || work.projectId !== input.projectId || work.deletedAt)
       return { kind: "unavailable" };
-    const listed = await deps.draftReview.items({ workId: review.workId as WorkId });
-    const matches = listed.items.filter(
-      (item) => item.draftId === listed.draftId && item.itemKey === review.itemKey,
-    );
-    if (!listed.draftId || matches.length !== 1) return { kind: "unavailable" };
-    reviewDocumentId = matches[0]?.documentId;
-    view = { kind: "draft", draftId: listed.draftId };
+    // Addressable, not listed: an unlisted active item opens too (M1). A bare branch id,
+    // another Work's key and a `drafts.id` all resolve to nothing here.
+    const resolved = await deps.draftReview.resolveItem({
+      workId: review.workId as WorkId,
+      itemKey: review.itemKey,
+    });
+    if (!resolved) return { kind: "unavailable" };
+    reviewDocumentId = resolved.documentId;
+    view = { kind: "draft", draftId: resolved.draftId };
     destination = { kind: "draft", workId: work.id, workSlug: work.isNoWork ? null : work.slug };
   }
   const principal = { accountId: input.userId as UserId };
