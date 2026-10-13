@@ -66,7 +66,7 @@ describe("thread", () => {
     }
   });
 
-  it("send --json streams NDJSON whose last line is the result envelope", async () => {
+  it("send --json streams NDJSON ending in the result envelope, with its live view against the stored reply", async () => {
     const result = await mf(["thread", "send", THREAD_ID, "hi again", "--json"]);
     expect(result.code).toBe(EXIT.ok);
     const lines = result.stdout
@@ -85,9 +85,8 @@ describe("thread", () => {
     });
     expect(lines.at(-1)).not.toHaveProperty("liveDiff");
     expect(result.stderr).toBe("");
-  });
 
-  it("send reports a live view that differs from the stored reply without changing the claim", async () => {
+    // A reply stored differently from what streamed is reported, never a different claim.
     const json = await mf(["thread", "send", THREAD_ID, "diverge", "--json"]);
     expect(json.code).toBe(EXIT.ok);
     expect(JSON.parse(json.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
