@@ -12,6 +12,7 @@ import { CodecParseError } from "./error.js";
 import { EMPTY_PARAGRAPH_SENTINEL, parseBlockAst } from "./helpers.js";
 import { blockOccurrenceSpans } from "./link-occurrences.js";
 import { attentionHandlers } from "./markdown/attention.js";
+import { blockSourceMap } from "./presentation-source-map.js";
 import { type CodecRuntime, MARKDOWN_STRINGIFY_OPTIONS, withRuntime } from "./runtime.js";
 import type {
   BuildOptions,
@@ -22,6 +23,7 @@ import type {
   MarkupPlugin,
   OccurrenceSpan,
   ParseContext,
+  PresentationSourceRun,
   SerializeContext,
 } from "./types.js";
 
@@ -110,29 +112,40 @@ function buildMarkupCodec(
     content: string,
     baseCtx: ParseContext,
     withSpans: boolean,
-  ): { blocks: PMNode[]; spans: OccurrenceSpan[] } => {
+    withSourceMap = false,
+  ): { blocks: PMNode[]; spans: OccurrenceSpan[]; sourceMap: PresentationSourceRun[] } => {
     const source = preprocess(content);
     const runtime = makeRuntime(source);
     const ctx = withRuntime<ParseContext>({ schema: baseCtx.schema }, runtime);
+    if (withSourceMap) runtime.inlineOrigins = [];
     const tree = parsePreparedMarkdown(source);
     const blocks: PMNode[] = [];
     const spans: OccurrenceSpan[] = [];
+    const sourceMap: PresentationSourceRun[] = [];
     for (const child of tree.children) {
+      if (runtime.inlineOrigins) runtime.inlineOrigins.length = 0;
       const node = parseBlockAst(child, ctx);
       if (node === null) continue;
+      if (withSourceMap)
+        sourceMap.push(
+          ...blockSourceMap(node, blocks.length, runtime.inlineOrigins ?? [], source === content),
+        );
       blocks.push(node);
       if (withSpans)
         spans.push(
           ...blockOccurrenceSpans(node, child, source === content ? source : null, content.length),
         );
     }
-    return { blocks, spans };
+    return { blocks, spans, sourceMap };
   };
 
-  const parseDocument = (content: string, withSpans: boolean) => {
-    if (content.trim().length === 0) return { blocks: [schema.node("paragraph")], spans: [] };
-    const parsed = parseTopLevel(content, { schema }, withSpans);
-    return parsed.blocks.length > 0 ? parsed : { blocks: [schema.node("paragraph")], spans: [] };
+  const parseDocument = (content: string, withSpans: boolean, withSourceMap = false) => {
+    if (content.trim().length === 0)
+      return { blocks: [schema.node("paragraph")], spans: [], sourceMap: [] };
+    const parsed = parseTopLevel(content, { schema }, withSpans, withSourceMap);
+    return parsed.blocks.length > 0
+      ? parsed
+      : { blocks: [schema.node("paragraph")], spans: [], sourceMap: [] };
   };
 
   const makeRuntime = (source: string): CodecRuntime => ({
@@ -184,7 +197,13 @@ function buildMarkupCodec(
     },
 
     parseWithSpans(content: string) {
-      return parseDocument(content, true);
+      const { blocks, spans } = parseDocument(content, true);
+      return { blocks, spans };
+    },
+
+    parseWithSourceMap(content: string) {
+      const { blocks, sourceMap } = parseDocument(content, false, true);
+      return { blocks, sourceMap };
     },
 
     serializeBlock(block: PMNode, links: DocumentLinkScope): string {

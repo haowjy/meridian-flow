@@ -19,6 +19,7 @@
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-to-markdown": "^2.1.2",
     "micromark-util-classify-character": "^2.0.1",
+    "micromark-util-decode-string": "^2.0.1",
     "parse-entities": "^4.0.2",
     "prosemirror-model": "^1.25.9",
     "remark-gfm": "^4.0.1",

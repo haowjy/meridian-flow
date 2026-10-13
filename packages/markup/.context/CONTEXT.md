@@ -40,11 +40,26 @@ Preset-internal codec lists (`markdownBlockCodecs`, `markdownMarkCodecs`,
 package root. Tests or preset internals that need them import from sibling
 `markdown/index.js` / `mdx/index.js` modules instead.
 
-`MarkupCodec` exposes only `parse`, `parseWithSpans`, `serialize`,
+`MarkupCodec` exposes `parse`, `parseWithSpans`, `parseWithSourceMap`, `serialize`,
 `serializeBlock`, and `serializeBlocks`. Every serialize call takes the
 `DocumentLinkScope` explicitly; nothing is captured at construction.
 `serializeBlock`/`serializeBlocks` return normalized block bodies without hash
 prefixes. Agent-edit owns any hash-prefixed adapter layer.
+
+## Presentation source map
+
+`parseWithSourceMap` returns the same blocks as `parse`, plus a transient sidecar
+for inline text and maximal link runs. Source ranges are exact original `[from,
+to)` offsets or null when provenance is unavailable (rewritten source, table
+conversion, inline normalization such as multiline container prefixes,
+code spans, or unrecognized conversion). Paths address a top-level
+block and descendant; `count` covers link siblings. Text `offset` addresses a
+subrun within a PM text node: equal marks can coalesce text whose original
+source had intervening delimiters. Those runs retain separate source authority.
+No schema attrs, document mutations or extra parser are involved. Normal parsing
+does not collect provenance. Consumers must decline null or mismatched ranges,
+not infer identity from labels. This map is for static presentation, not writes
+or streaming. Existing enclosing `parseWithSpans` semantics remain separate.
 
 ## Round-trip guarantees
 

@@ -94,11 +94,8 @@
   box-shadow: none;
 }
 
-/* The outbound arrow: the Editor's external mark (`data-link-kind`) and the
-   transcript's (Streamdown's link control). A link still streaming in has no
-   destination yet and wears none. */
-a[data-link-kind="external"]::after,
-[data-streamdown="link"]:not([data-incomplete="true"])::after {
+/* The shared outbound arrow follows explicit external link marks. */
+a[data-link-kind="external"]::after {
   display: inline-block;
   width: 0.625em;
   height: 0.625em;

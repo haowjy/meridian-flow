@@ -172,10 +172,16 @@
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
 ### Changed
 
+- Chat shows Markdown the way the Editor shows the document it becomes: the same headings, tight lists, quotes, tables, links and highlighted code, at chat's smaller size. Your own messages, file previews and compact chat text use it too, keeping references, skills and line breaks. Code shows Copy on hover, diagrams draw once their fence closes, web links open in a new tab, and long replies stream more smoothly.
+
 - Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
 - A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
 
 ### Fixed
+
+- Unaligned table headers now line up with their cells in chat and the Editor. Explicit column alignment is unchanged.
+
+- Task lists (`- [ ]`, `- [x]`) show their checkboxes in chat and the Editor.
 
 - Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
