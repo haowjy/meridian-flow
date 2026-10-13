@@ -42,6 +42,10 @@ vi.mock("@/features/editor/SessionEditor", () => ({
     return <p>Document prose</p>;
   },
 }));
+vi.mock("@/features/editor/ReviewPlaceCapture", () => ({
+  ReviewPlaceCapture: () => null,
+  useEditorFocusOwned: () => () => false,
+}));
 vi.mock("@/features/editor/useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("@/features/editor/useInlineReviewSync", () => ({
   useInlineReviewSync: ({
@@ -173,6 +177,7 @@ describe("DraftReviewProvider remote settlement", () => {
             <ReviewAddressOwner
               review={selected}
               presented={presented}
+              admission="admitted"
               port={{
                 write: (address) => useDockDocumentStore.getState().setDocumentReview(address),
                 admit: (target) => {
