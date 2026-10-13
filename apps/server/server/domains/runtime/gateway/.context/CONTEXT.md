@@ -104,9 +104,10 @@ summaries and handoff briefs send no `maxTokens`. Anthropic requires
 
 The registry's `maxOutputTokens` also reserves reply room when auto-compaction
 computes the usable input window: `contextWindow` minus `maxOutputTokens` and
-the other reserves. This value mirrors the provider default rather than
-defining a lower Meridian limit. It is 65,536 for DeepSeek V4 Flash and 64,000
-for both Claude Sonnet 4 entries.
+the other reserves. Sonnet 4.6 uses the published provider maximum of 128,000
+tokens, both direct and through OpenRouter, not an inherited 64,000-token
+Meridian cap. Anthropic requires an explicit `max_tokens`, so a call without
+`request.maxTokens` sends this maximum rather than inventing a lower limit.
 
 Output limits are not cache keys. Anthropic's thinking budget does affect the
 cache, so implicit effort budgets resolve against the model's output budget,
@@ -117,3 +118,42 @@ DeepSeek V4 Flash declares a 1,048,576-token window. A live Anthropic-compatible
 call accepted 150,013 input tokens (253 uncached plus 149,760 cached) on
 2026-09-27; a separate 300,013-token call also succeeded. Prices remain tracked
 separately in issue #613.
+
+## Model lifecycle and persisted selections
+
+The default is `claude-sonnet-4-6` (provider inventory and lifecycle checked
+2026-10-13). Anthropic Sonnet 4 and Haiku 3.5 are retired; OpenRouter uses
+`anthropic/claude-sonnet-4.6`. DeepSeek now lists `deepseek-flash`; its retired
+V4 Flash name is a provider alias, not a Meridian registry entry. Flash fallback
+pricing pins published peak rates; off-peak pricing remains a separate billing
+concern (issue #613).
+
+Agent source revisions and thread Agent bindings persist model selections.
+General is seeded with the configured default for new chats. Existing bindings
+remain immutable: an unregistered model fails gateway route resolution with
+`invalid_request` and a gateway message identifying the unavailable model before any
+provider call. Catalog selection and child spawning also reject unavailable
+models. Turn/response model fields are historical accounting, not routing
+authority. No local-data migration or retired-ID mapping is needed.
+
+Anthropic rejects root tool-schema unions. Its request mapper derives a
+property envelope only for object command unions (`oneOf` / `anyOf`), retaining
+branch purposes, required and allowed fields as generated command guidance,
+and command-tagged field descriptions. Nested field constraints remain intact.
+Unsupported branch shapes fail locally rather than losing constraints. Root
+`allOf` is outside the core tool publication contract and fails at registration
+with the tool name; direct Anthropic requests also reject it before dispatch.
+Tool execution validates the unchanged original Zod contract: provider
+advertisement is not argument-validation authority.
+
+DeepSeek receives the canonical union, not the Anthropic projection. A direct
+`/anthropic/v1/messages` probe with the real Work `oneOf` schema returned HTTP
+200 and `work({command: "list"})` on 2026-10-13. OpenRouter still receives the
+canonical schema; its Claude route's root-union support is unverified without
+a key and remains an explicit verification risk.
+
+Unavailable stored model selections are blocked before provider dispatch, but
+currently persist a generic failed reply with a misleading Retry action. The
+writer decision on adopting the Agent's current model versus a durable
+nonretryable unavailable-model outcome is pending; routing rejection alone
+is not a complete writer-facing recovery contract.

@@ -150,9 +150,7 @@ function stores(
     },
     commitDiscard: async () => {},
     commitPushBatch: async () => ({ pushes: [] }),
-    commitTurnRedo: async () => {},
     lockDraftWorks: async () => new Set<string>(),
-    markRollbackPending: async () => 0,
   };
   const settlementStore: PendingSettlementStore = {
     joinAdmission: async () => {},

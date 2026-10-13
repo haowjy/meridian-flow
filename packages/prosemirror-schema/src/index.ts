@@ -6,7 +6,7 @@
 import { uint32 } from "lib0/random";
 import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
-import { Doc } from "yjs";
+import { Doc, decodeStateVector, encodeStateVector } from "yjs";
 
 export type { CollabSchemaVersion } from "./collab-schema-version.js";
 export {
@@ -236,14 +236,13 @@ export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
 /**
  * Reserved clientID band [0, RESERVED_CLIENT_ID_MAX] is owned by server-authored
- * Yjs writer streams (e.g. agent-edit reversal). Human/agent docs must never draw a
+ * Yjs writer streams. Human/agent docs must never draw a
  * clientID in this band, and inbound updates carrying structs from it are rejected at
  * ingest. This is a Meridian convention — Yjs has no native reserved-range concept; the
  * Yjs invariant we rely on is that one clientID is owned by exactly one live writer.
  */
 export const RESERVED_CLIENT_ID_MAX = 999;
-/** The agent-edit reversal/mutation writer slot within the reserved band. */
-export const AGENT_EDIT_UNDO_CLIENT_ID = 999;
+/** Whether a client belongs to the server-reserved ingest band. */
 export const isReservedClientId = (clientId: number): boolean => clientId <= RESERVED_CLIENT_ID_MAX;
 
 /** Construct a collab Y.Doc whose clientID is guaranteed outside the reserved band. */
@@ -268,4 +267,31 @@ export const documentMarks = {
 
 export function buildDocumentSchema(): Schema {
   return new Schema({ nodes: documentNodes, marks: documentMarks });
+}
+
+export {
+  captureUndoRestorationClaims,
+  isRestorationAlias,
+  RESTORATION_CLAIMS_TYPE,
+  type RestorationAlias,
+  type RestorationRange,
+  restorationAliasesFromMetadata,
+} from "./restoration-claims.js";
+
+/** Allocate independent author identity, excluding every client already held by the document. */
+export function allocateDocumentClient(
+  doc: Doc,
+  excluded: ReadonlySet<number> = new Set(),
+): number {
+  const used = decodeStateVector(encodeStateVector(doc));
+  let client: number;
+  do {
+    client = uint32();
+  } while (
+    isReservedClientId(client) ||
+    client === doc.clientID ||
+    used.has(client) ||
+    excluded.has(client)
+  );
+  return client;
 }

@@ -35,8 +35,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkRepository, deleteWorkTransition } = await import(
       "../../../projects/index.js"
     );
-    const { createDrizzleBranchStore } = await import(
-      "../../../collab/adapters/drizzle-branches.js"
+    const { createFixtureBranchStore } = await import(
+      "../../../collab/test-support/fixture-branch-store.js"
     );
     const { createDrizzleWorkDraftPendingStore } = await import(
       "../../../collab/adapters/drizzle-branch-push.js"
@@ -55,7 +55,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
-    const branches = createDrizzleBranchStore(db, undefined);
+    const branches = createFixtureBranchStore(db, undefined);
 
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);

@@ -19,6 +19,7 @@ export interface RuntimeDocumentState {
   doc: Y.Doc;
   session: ActorSession;
   threadId: string;
+  peerBranchId?: string;
 }
 
 export interface RuntimeRecoveryDocument {
@@ -33,11 +34,11 @@ export interface RuntimeStore {
   attachRuntime(session: ActorSession, docId: string, runtime: RuntimeDocumentState): void;
   evictRuntime(session: ActorSession, docId: string, options?: RuntimeEvictOptions): Promise<void>;
   evictResponseRuntimes(
-    documents: readonly RuntimeRecoveryDocument[],
+    documents: readonly Pick<RuntimeRecoveryDocument, "docId" | "session">[],
     options?: RuntimeEvictOptions,
   ): Promise<void>;
   evictThreadRuntimes(
-    docId: string,
+    docId: string | null,
     threadId: string,
     options?: RuntimeEvictOptions,
   ): Promise<void>;
@@ -65,6 +66,7 @@ export interface RuntimeStore {
 
 export interface RuntimeEvictOptions {
   markLiveDocStale?: boolean;
+  peerBranchId?: string;
 }
 
 export function createRuntimeStore(deps: {
@@ -121,7 +123,7 @@ export function createRuntimeStore(deps: {
   }
 
   async function evictResponseRuntimes(
-    documents: readonly RuntimeRecoveryDocument[],
+    documents: readonly Pick<RuntimeRecoveryDocument, "docId" | "session">[],
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
     await Promise.all(
@@ -141,18 +143,22 @@ export function createRuntimeStore(deps: {
   }
 
   async function evictThreadRuntimes(
-    docId: string,
+    docId: string | null,
     threadId: string,
     options: RuntimeEvictOptions = {},
   ): Promise<void> {
+    let evicted = false;
     for (const [key, runtime] of [...runtimeDocs]) {
-      if (threadId && runtime.threadId !== threadId) continue;
+      if (runtime.threadId !== threadId) continue;
       const runtimeDocId = docIdFromRuntimeKey(key);
-      if (docId && runtimeDocId !== docId) continue;
+      if (docId !== null && runtimeDocId !== docId) continue;
+      if (options.peerBranchId && runtime.peerBranchId !== options.peerBranchId) continue;
+      evicted = true;
       runtimeDocs.delete(key);
       runtime.session.documents.delete(runtimeDocId);
     }
-    if (options.markLiveDocStale && docId) staleLiveDocs.add(docId);
+    if (options.markLiveDocStale && docId && (!options.peerBranchId || evicted))
+      staleLiveDocs.add(docId);
   }
 
   async function restoreRuntimeFromLive(

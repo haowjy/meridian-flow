@@ -72,6 +72,7 @@ export function ContextEditorMountHost({
     <div className="relative min-h-0 flex-1">
       {trackedTabs.map((tab) => (
         <ContextDocumentHost
+          container="editor"
           key={tab.tabInstanceId ?? tab.documentId}
           projectId={projectId}
           tab={tab}
