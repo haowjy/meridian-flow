@@ -109,7 +109,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       },
       remove: (draft) => {
         if (epoch?.aborted) return;
-        removal.discardDraft(draft.projectId, draft.workId, draft.documentId, draft.itemKey);
+        removal.discardDraft(draft.projectId, draft.workId, draft.itemKey);
         settleDock(draft, false);
       },
     }),
