@@ -151,7 +151,9 @@ when the target turn is absent, invalidate/refetch the durable snapshot rather
 than creating a synthetic streaming turn. Store duplicate replacement as a
 reference-preserving no-op. The pending inbox remains generic for transport
 and model drain. `queuedWriterTurnIds` selects writer-provenance turns whose
-delivery state is still `waiting`; only those accepted bubbles show `Queued`.
+delivery state is still `waiting`; those accepted bubbles show `Queued` unless
+the pending inbox is usage-blocked. While blocked, pending writer bubbles show
+`Waiting for usage` and the composer shows the Add usage note. Otherwise
 `awaiting_run` has no inline label because the live indicator already signals a
 response is coming. There is no composer queue tray.
 
@@ -163,7 +165,7 @@ one row's anatomy and its navigation rules in
 composer mode, and review state live in
 [`.context/turn-edit-receipts.md`](.context/turn-edit-receipts.md),
 [`.context/composer-write-mode.md`](.context/composer-write-mode.md), and
-[`.context/draft-review.md`](.context/draft-review.md).
+[`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md).
 
 ## Key rules
 
@@ -210,9 +212,30 @@ composer mode, and review state live in
 
 Inline review is the only draft-review surface. It uses server-backed
 Apply/Discard disposition commands; dispositions never ride browser mutation
-history, even though the review editor itself stays editable. See
-[`.context/draft-review.md`](.context/draft-review.md) for the lifecycle, session,
-preview, and projection contracts.
+history, even though the review editor itself stays editable. The review's
+provider, controller, command executor, refusal copy and file model are
+`features/draft-review`'s; Chat is a consumer (the composer's `DraftDock` strip,
+review-prose focus). See
+[`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md)
+for the lifecycle, execution, preview, and projection contracts.
+
+**The strip is this chat's changes, not the Work's.** `useDraftDock(threadId)`
+lists the Work's drafts whose `actorThreads` name the chat, reads each one's
+preview (`useDraftPreviews`) and keeps the changes whose `threadIds` include the
+chat. A chat with none shows no strip. Apply and Discard send the union of this
+chat's complete classes per file; only new documents
+are one whole-draft item using existing whole commands. Creation-bound
+Work batches hide every queued item at the click; failure restores its file.
+Summary and commands share one row. Each document name opens its own review,
+including the single-document summary (also when a launch fails); the chevron and remaining summary area
+toggle expansion. There is no summary-wide Review command. Narrow strips hide the count before
+truncating the name, which has a readable width floor. Expanded
+file headers share one line each, except a sole whole-document change is the
+file row itself. A single-document summary already provides that row and its
+commands, so it does not repeat below. Expansion shows this chat’s changes through
+the same DocumentChangeRows used by Work Files, without per-file counts.
+There are no notes or Work-page footer; Work-wide
+lists and Apply all remain on the Work page. Coarse-pointer targets stay 44px.
 
 ## Transcript viewport (TurnList)
 
@@ -240,5 +263,9 @@ it scrolls the current chat into view without taking focus from search.
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 → [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
-→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/draft-review-editable-branch.md)
-→ [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the dock, or the review launcher
+→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md)
+→ [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the composer strip, the Work page's Changes to review, or the review launcher
+
+Tool rows call writes edits in Draft and direct mode alike; the fold digest omits
+successful writes because the receipt summarizes them. Neither consumes write
+mode for copy.

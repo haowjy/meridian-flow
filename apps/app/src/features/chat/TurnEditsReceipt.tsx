@@ -1,5 +1,5 @@
 /** Renders durable document and Work change receipts. */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
@@ -10,18 +10,18 @@ import { type ReversalDirection, successfulWorkReversals } from "@/client/api/re
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
+import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
 import { cn } from "@/lib/utils";
 import { ChangeViewRows } from "./ChangeViewRows";
 import { useChatContextNavigation, useChatContextRoutability } from "./ChatContextNavigation";
 import { type ChangeRevealRequest, useChangeReveal } from "./conversation-reveal";
 import { DocumentName } from "./DocumentName";
-import { DraftStatsLabel } from "./draft-stats";
 import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail";
 import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 import { workReceiptLine } from "./work-receipt-copy";
 
 export type TurnEditDocument = {
-  documentId?: string;
+  documentId: string;
   path: string;
   uri: string;
   scope: "live" | "draft";
@@ -32,12 +32,11 @@ function hasTurnEditsReceiptDocuments(
   changeTrail?: ChangeTrailShell,
 ): boolean {
   return (
-    documents.some((document) => document.scope === "live") ||
-    (changeTrail?.state === "settled" && changeTrail.documents.length > 0)
+    documents.length > 0 || (changeTrail?.state === "settled" && changeTrail.documents.length > 0)
   );
 }
 
-/** Whether this turn has a receipt to show at all: committed document edits, or a reversible Work mutation receipt. */
+/** Whether this turn has a receipt to show at all: document edits, or a reversible Work mutation receipt. */
 export function hasTurnEditsReceiptContent(
   documents: TurnEditDocument[],
   changeTrail: ChangeTrailShell | undefined,
@@ -75,18 +74,17 @@ export function TurnEditsReceipt({
   const [expanded, setExpanded] = useState(false);
   const changeReveal = useChangeReveal(threadId, turn.id);
   const [pending, setPending] = useState(false);
+  const [draftOutcome, setDraftOutcome] = useState(false);
+  const [actionSkips, setActionSkips] = useState<
+    import("@meridian/contracts/protocol").TurnInverseSkip[] | null
+  >(null);
   const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
   const [restoredNotices, setRestoredNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
 
   const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
   const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal) : undoGuardCopy(receipt);
-  const liveDocuments = documents.filter((document) => document.scope === "live");
   const trailDocuments = changeTrail?.documents ?? [];
-  // Asks the predicate about the full lineage, not the pre-filtered live subset.
-  // Both callers must hand it the same thing or it owns the "is there a committed
-  // receipt?" decision in name only — filtering first made its scope check dead
-  // here while `AssistantTurn` still depends on it.
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
   // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
@@ -96,7 +94,16 @@ export function TurnEditsReceipt({
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in
   // the expanded rows below, which already navigate.
-  const headerDocumentCount = (trailDocuments.length > 0 ? trailDocuments : liveDocuments).length;
+  const trailDocumentIds = new Set(trailDocuments.map((document) => document.documentId));
+  const headerDocumentCount = new Set([
+    ...trailDocumentIds,
+    ...documents.map((document) => document.documentId),
+  ]).size;
+  const showTrailDetail =
+    changeTrail?.state === "settled" && trailDocuments.length > 0 && navigateToChange;
+  const documentRows = showTrailDetail
+    ? documents.filter((document) => !trailDocumentIds.has(document.documentId))
+    : documents;
   const wordStats =
     changeTrail &&
     (typeof changeTrail.wordsAdded === "number" || typeof changeTrail.wordsRemoved === "number")
@@ -116,7 +123,12 @@ export function TurnEditsReceipt({
     if (!changeReveal) return;
     // Change rows are durable trail evidence; without an authorized trail this
     // receipt has no row to reveal, and the writer stays on the turn.
-    if (!hasEditedDocuments || !changeTrail || !navigateToChange) {
+    if (
+      !hasEditedDocuments ||
+      changeTrail?.state !== "settled" ||
+      changeTrail.documents.length === 0 ||
+      !navigateToChange
+    ) {
       changeReveal.unavailable();
       return;
     }
@@ -134,8 +146,19 @@ export function TurnEditsReceipt({
     setPending(true);
     try {
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
+      setActionSkips(outcome.skips ?? []);
+      const undoneInDraft =
+        direction === "undo" &&
+        outcome.documents.some(
+          (document) => document.status === "reversed" && document.destination?.kind === "draft",
+        );
+      setDraftOutcome(undoneInDraft);
+      if (undoneInDraft) setExpanded(true);
       const restored = successfulWorkReversals(outcome);
-      const status = refusedReversalStatus(outcome.status);
+      const status =
+        outcome.status === "partial" && outcome.acceptedParts
+          ? null
+          : refusedReversalStatus(outcome.status);
       // A Work-only turn has no document half, so its "nothing to undo" is a
       // fact about documents that were never part of the claim. With a Work
       // restored, repeating it would report a successful restore as refusal.
@@ -146,7 +169,7 @@ export function TurnEditsReceipt({
       const refusal = status && !documentHalfEmpty ? status : null;
       setCommandRefusal(refusal ? { direction, status: refusal } : null);
       setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
-      if (refusal || restored.length > 0) setExpanded(true);
+      if (refusal || restored.length > 0 || outcome.skips?.length) setExpanded(true);
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
       // is the only thing that can report it, so it says so here rather than
@@ -223,12 +246,51 @@ export function TurnEditsReceipt({
             disabled={pending}
             className="shrink-0 text-jade-text"
           >
-            {receipt?.control === "redo" ? t`Redo` : t`Undo`}
+            {pending
+              ? direction === "redo"
+                ? t`Redoing…`
+                : t`Undoing…`
+              : direction === "redo"
+                ? t`Redo`
+                : t`Undo`}
           </Button>
         )}
       </div>
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
+          {draftOutcome ? (
+            <p
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
+              data-turn-draft-outcome
+              role="status"
+            >
+              <Trans>Undone in your draft. Apply it to change your manuscript.</Trans>
+            </p>
+          ) : null}
+          {(actionSkips ?? receipt?.skips ?? []).length > 0 ? (
+            <div
+              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
+              data-turn-skips
+              role="status"
+            >
+              <p>
+                {plural((actionSkips ?? receipt?.skips ?? []).length, {
+                  one: "# part stayed",
+                  other: "# parts stayed",
+                })}
+              </p>
+              <ul>
+                {(actionSkips ?? receipt?.skips ?? []).map((skip, index) => (
+                  <li key={`${skip.documentId}:${index}`}>
+                    {skip.before ? `“${skip.before}”` : ""}
+                    {skip.before && skip.after ? " → " : ""}
+                    {skip.after ? `“${skip.after}”` : ""}
+                    <span className="ml-1">{skip.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           {restoredNotices?.map((notice) => (
             <p
               key={notice}
@@ -248,19 +310,20 @@ export function TurnEditsReceipt({
               {guardCopy}
             </p>
           ) : null}
-          {changeTrail && navigateToChange ? (
+          {showTrailDetail && changeTrail && navigateToChange ? (
             <ChangeViewDetail
               threadId={threadId}
               shell={changeTrail}
               navigateToChange={navigateToChange}
               reveal={changeReveal}
-              documents={liveDocuments}
+              documents={documents}
               onOpenContextUri={openContextUri}
               canOpenContextUri={canOpenContextUri}
             />
-          ) : liveDocuments.length > 0 ? (
+          ) : null}
+          {documentRows.length > 0 ? (
             <ul className="flex flex-col">
-              {liveDocuments.map((doc) => (
+              {documentRows.map((doc) => (
                 <li key={doc.uri}>
                   <DocumentRow
                     document={doc}
@@ -333,10 +396,8 @@ function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "request_failed":
       return reversalRetryCopy(refusal.direction);
     default: {
-      // Unreachable for the typed union; kept live for a server that starts
-      // sending a status this build has never heard of.
-      const _exhaust: never = refusal.status;
-      void _exhaust;
+      // Model-only refusal codes do not drive writer controls. Unknown
+      // statuses keep the existing retry path.
       return reversalRetryCopy(refusal.direction);
     }
   }
@@ -417,15 +478,15 @@ function ChangeViewDetail({
       );
     }
     if (document.changes.length === 0) return null;
-    const liveDocument = documents.find(
+    const editedDocument = documents.find(
       (candidate) => candidate.documentId === document.documentId,
     );
 
     return (
       <section key={document.documentId} aria-label={document.documentTitle}>
-        {liveDocument ? (
+        {editedDocument ? (
           <DocumentRow
-            document={liveDocument}
+            document={editedDocument}
             onOpenContextUri={onOpenContextUri}
             canOpenContextUri={canOpenContextUri}
           />
@@ -461,12 +522,12 @@ function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
     return dependentChangeCopy();
   }
   if (receipt?.control === "view_change" || receipt == null) {
-    return t`This change is too old to undo.`;
+    return t`This change is no longer reversible.`;
   }
   return undefined;
 }
 
-/** Full-width document row: hover washes the row, click opens the live file. */
+/** Full-width document row: hover washes the row, click opens the file. */
 function DocumentRow({
   document,
   onOpenContextUri,

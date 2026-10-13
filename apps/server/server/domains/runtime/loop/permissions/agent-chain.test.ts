@@ -39,8 +39,10 @@ describe("readAgentChain", () => {
     const deps = {
       works: { findById: async (id: string) => ({ id, isNoWork: id === "no-work" }) as never },
       threads: {
-        findByIdIncludingDeleted: async (id: ThreadId) =>
-          (threads.get(id) as Thread | undefined) ?? null,
+        findByIdIncludingDeleted: async (id: ThreadId) => {
+          const thread = threads.get(id) as Thread | undefined;
+          return thread ? { ...thread, project: null } : null;
+        },
       },
       agentRevisions: {
         readThreadBinding: async (id: string) => {

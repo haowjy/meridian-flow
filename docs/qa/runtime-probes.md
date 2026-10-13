@@ -93,6 +93,14 @@ end-to-end as one suite.
   failure rather than waiting behind failed messages.
 - **Evidence:** failed and retried snapshots, timeline of gateway and turn
   events, both response statuses, and no extra request during the idle interval.
+- **Provider-declined variant:** repeat with a sticky 404 error (`"message":
+  "RP1 retired model"`). In the chat, expect "The AI provider turned this
+  request down." and Retry on the latest failed reply. Clear that script with
+  `./mf mock clear --id <script-id>` (read the ID from `error-script.json`),
+  then click Retry. Expect a new reply without retyping; the old failure keeps
+  its sentence as history, with no Retry. Before this fix, the current
+  provider-declined reply had no Retry. An inherited read-only failure must
+  still have no Retry.
 - **Last run:** not recorded for this exact wall-clock recipe. Automated
   sweep-boundary coverage is not a substitute for running it.
 
@@ -116,10 +124,26 @@ end-to-end as one suite.
   reason and
   acknowledges every message named by its receipt. Those messages are not
   answered automatically; only never-adopted queued-behind messages remain in
-  the inbox. Retry re-answers explicitly.
+  the inbox. Recovery also deletes the stale `thread_run_leases` row and publishes
+  `meridian.thread.status` with `status.kind: asleep` after commit. A resumed
+  subscription/snapshot reads asleep, with no running turn. Send a new message
+  immediately after repair, before the old lease expiry, and confirm its reply
+  starts without waiting. Retry re-answers explicitly.
 - **Evidence:** signal and exit timestamps, process log showing signal-handler
   ordering, settled reply and response rows, ledger debit, empty pending inbox,
-  and post-restart Retry result.
+  post-restart Retry result, resumed snapshot, idle status frame, lease rows
+  before/after repair, and new-message start time relative to the old expiry.
+
+### Terminal compaction failure crash boundary
+
+The production-adapter DB regression in
+`runtime/adapters/drizzle-loop-ports.db.test.ts` captures a pending compaction
+candidate, calls `failCompactionSuccessor`, then runs orphan recovery without
+failure-close or run-session cleanup. The compaction and successor are failed,
+the adopted inbox is empty, and the thread is asleep with no lease row. The
+in-memory parity case lives in `runtime/loop/__tests__/inbox-drain.test.ts`.
+Run with `pnpm test:db`; these are adapter regressions, not a live process
+restart smoke check.
 
 ## RP-2: Commands wait for messages
 

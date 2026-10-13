@@ -8,9 +8,10 @@
  * of any browser screen: it leaves out tools, reasoning, interrupts, the
  * optimistic UI and the app's visible-turn policy, and the app reconciles to the
  * server at turn end. `differs` is a lead to investigate, `matches` does not
- * prove a screen was right, and neither changes the exit code. The owner ruled
- * (TL-MF-20) that once the chat session's sync is shared, a live disagreement
- * will fail with exit 6; that is not true yet.
+ * prove a screen was right, and neither changes the exit code. The planned rule
+ * is that once the chat session's sync is shared, a live disagreement will fail
+ * with exit 6; that is not true yet. See
+ * https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md
  *
  * Snapshot freshness (`nextSeq`) and replay coverage (`resumeAfterSeq`) are
  * separate facts: `nextSeq` only decides which snapshot may be hydrated, and

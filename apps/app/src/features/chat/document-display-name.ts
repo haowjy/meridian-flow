@@ -12,14 +12,14 @@ import { humanizeSkillSlug, skillFile } from "@meridian/thread-client";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 
 type ParsedContextLocation = {
-  scheme: ProjectContextTreeScheme;
+  scheme: ProjectContextTreeScheme | null;
   path: string;
 };
 
 function parseContextLocation(uriOrPath: string): ParsedContextLocation {
   const { path } = splitDocumentHrefSuffix(uriOrPath);
   const parsed = parseUnifiedContextUri(path);
-  return parsed.ok ? parsed.value : { scheme: "manuscript", path };
+  return parsed.ok ? parsed.value : { scheme: null, path };
 }
 
 /**
@@ -51,5 +51,5 @@ function skillFileDisplayName(uriOrPath: string): string | null {
 export function folderDisplayName(uriOrPath: string): string {
   const { scheme, path } = parseContextLocation(uriOrPath);
   const segments = path.split("/").filter(Boolean);
-  return segments.at(-1) ?? schemeLabel(scheme);
+  return segments.at(-1) ?? (scheme ? schemeLabel(scheme) : t`Untitled document`);
 }

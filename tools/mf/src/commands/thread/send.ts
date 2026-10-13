@@ -47,7 +47,7 @@ export type SendFields = {
   submissionId?: string;
   threadId: string;
   turnId: string | null;
-  status: Turn["status"] | "timeout" | "unknown";
+  status: Turn["status"] | "timeout" | "unknown" | "blocked";
   finalText: string | null;
   error: string | null;
   interrupt?: { turnId: string; interruptId: string };
@@ -219,9 +219,31 @@ async function followToOutcome(
   let lastSeq = admitted.resumeAfterSeq;
   let truncated = false;
   let interrupt: SendFields["interrupt"];
+  // A usage block is proven only for this send's own accepted message: its
+  // inbox id is the admitted user turn id.
+  const blockedOutcome = (
+    pending: ThreadSnapshotResponse["liveState"]["pending"],
+  ): SendOutcome | null =>
+    pending.blocked?.reason === "credits_exhausted" &&
+    pending.items.some((item) => item.id === admitted.userTurnId)
+      ? terminalResult(
+          "thread.send",
+          { outcome: "failed", reason: "credits_exhausted" },
+          {
+            threadId,
+            turnId: null,
+            status: "blocked",
+            finalText: null,
+            error: "Your message is waiting for usage",
+          },
+        )
+      : null;
+  let blocked: SendOutcome | null = null;
   // The shared reducer follows the same events the log prints, from admission's
   // cursor. There is deliberately no snapshot read here: this send's turns are
-  // built from their own events, and a read would sit outside the deadline.
+  // built from their own events, and a read would sit outside the deadline. A
+  // usage block arrives as a replayed `meridian.inbox.changed` event, which
+  // `shouldStop` below reconciles with the durable snapshot.
   const reduced = new ReducedThread(threadId);
   const transport = createThreadClient(session);
   const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
@@ -239,6 +261,13 @@ async function followToOutcome(
         textStream: "err",
         reduced,
         shouldStop(event: CliEvent) {
+          if (event.type === "event" && event.name === "meridian.inbox.changed") {
+            const pending = event.value as
+              | ThreadSnapshotResponse["liveState"]["pending"]
+              | undefined;
+            if (pending) blocked = blockedOutcome(pending);
+            if (blocked) return true;
+          }
           if (event.type === "turn.started" && ourTurn === null) ourTurn = event.turnId;
           if (event.type === "turn.finished") return isOurs(event.turnId);
           if (event.type === "turn.failed") return ourTurn !== null;
@@ -251,6 +280,22 @@ async function followToOutcome(
       });
       lastSeq = followed.lastSeq;
       truncated ||= followed.truncated;
+      if (blocked) {
+        // A replayed refusal is state, not a terminal outcome. Recovery may already
+        // have completed beyond this event; reconcile before deciding or resuming.
+        const snapshot = await session.request<ThreadSnapshotResponse>(
+          "GET",
+          apiThreadSnapshotPath(threadId),
+        );
+        blocked = blockedOutcome(snapshot.liveState.pending);
+        if (blocked) return blocked;
+        const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
+        if (answer) {
+          ourTurn = answer.id;
+          if (["complete", "cancelled", "error"].includes(answer.status)) break;
+        }
+        continue;
+      }
       if (followed.stoppedBy?.type !== "turn.failed") break;
 
       // A previous run can fail while this send's user turn is still queued.
@@ -295,6 +340,8 @@ async function followToOutcome(
     "GET",
     apiThreadSnapshotPath(threadId),
   );
+  blocked = blockedOutcome(snapshot.liveState.pending);
+  if (blocked) return blocked;
   const turn = snapshot.turns.find((candidate) => candidate.id === ourTurn);
   const liveView = reduced.compare(snapshot, ourTurn ? [ourTurn] : [], truncated);
   const status: SendFields["status"] = interrupt

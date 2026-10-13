@@ -12,7 +12,7 @@ export function queuedWriterTurnIds(pending: ThreadPendingInbox): ReadonlySet<st
     if (
       item.intent !== "control" &&
       item.provenance.kind === "writer" &&
-      item.deliveryState === "waiting"
+      (item.deliveryState === "waiting" || pending.blocked?.reason === "credits_exhausted")
     )
       ids.add(item.id);
   }

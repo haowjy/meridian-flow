@@ -6,9 +6,11 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
 ## Architecture and contracts
 
 - **`./mf` dev CLI** — `src/` is the agent-facing CLI behind the repo-root `./mf`
-  shim: a thin wrapper over the app's own HTTP routes and thread WebSocket. It
-  never reads Postgres and holds no business logic; when the API cannot answer a
-  question, add a server route behind the debug gate instead of a CLI-side query.
+  shim. It drives the shared client core (`@meridian/thread-client`) against the
+  app's own HTTP routes and thread WebSocket, and calls the routes directly where
+  no core exists yet. It never reads Postgres and holds no business logic of its
+  own; when the API cannot answer a question, add a server route behind the
+  debug gate instead of a CLI-side query.
   - `src/core/` is the framework and knows no domain: `command.ts` (`CommandSpec`,
     `CommandGroup`, strict flat-arg parsing, option helpers), `output.ts` (text /
     `--json` / NDJSON), `cli-error.ts` (the exit-code contract), `session.ts`
@@ -56,8 +58,9 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI
     and the visible-turn policy, and the app reconciles to the server at turn end.
     `differs` is a lead to investigate, `matches` does not prove the screen was
-    right, and it never changes the claim or exit code. The owner ruled (TL-MF-20)
-    that once the chat session's sync is shared, a live disagreement will fail
+    right, and it never changes the claim or exit code. The planned rule
+    ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
+    is that once the chat session's sync is shared, a live disagreement will fail
     with exit 6; that is not true yet. The claims themselves (`status`,
     `finalText`, outcome) still come from the confirming snapshot. `send` reads no
     snapshot before its deadline: it follows from the admission's `resumeAfterSeq`
@@ -92,6 +95,10 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     (new id; its drafts and history are gone) and reports `previousDocumentId`;
     if the create then fails, the error says the old document was already deleted. Seed scenario names
     use writer spelling, not slugs or prose suffixes.
+  - Usage refusals are current pending state, not terminal run events. Send
+    reconciles a replayed block with the durable snapshot before returning exit 1
+    (`failed` with reason `credits_exhausted`); an already recovered reply wins
+    over an obsolete refusal for that message.
   - **Imports:** workspace libraries are limited to `@meridian/contracts` and
     `@meridian/thread-client`. Portless discovery uses the same route contract
     as `pnpm dev`: `../dev/portless-prefix.ts`, `../dev/portless-routes.ts`,
@@ -113,9 +120,9 @@ add CLI socket timers or tune the package's deadlines to a command's
 `--timeout` (see the
 [package's deadline contract](../../../packages/thread-client/.context/CONTEXT.md)).
 Terminal/auth closes remain exit 4. `stream.ts` only
-maps events, prints them and runs the existing CLI follow predicates. Those
-predicates are not yet the shared follow session, so send still cannot prove which
-reply answered its message. `tail --until-idle` reads an initial snapshot and
+maps events, prints them and runs the existing CLI follow predicates. They don't
+read design A's run state yet, so send still cannot prove which reply answered
+its message. `tail --until-idle` reads an initial snapshot and
 returns at once if idle. After a turn finish/failure, journaled lease/pending update or idle subscription state it
 confirms a snapshot: null `liveState.runningTurnId`, `status.kind: "asleep"`
 (no awake lease), and no writer-provenance message in `liveState.pending.items`.

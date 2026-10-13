@@ -54,10 +54,11 @@ export type { DirectInvocationResult } from "./view/invocation-direct-result";
 export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
 export { queuedWriterTurnIds } from "./view/pending-writer-turns";
 export { placeStandIns } from "./view/retry-stand-ins";
-export type { FoldDigest } from "./view/thinking-digest";
+export { type FoldDigest, foldDigest } from "./view/thinking-digest";
 export { threadMessageRow } from "./view/thread-message-result";
 export {
   copySourcePath,
+  documentToolFailed,
   humanizeSkillSlug,
   skillFile,
   stringInput,
@@ -65,7 +66,6 @@ export {
   toolCommand,
   toolInputObject,
   type WorkReceipt,
-  type WriteMode,
   workReceipt,
 } from "./view/tool-command";
 export { isToolViewVisible } from "./view/tool-view-visibility";

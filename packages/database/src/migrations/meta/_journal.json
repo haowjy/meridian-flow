@@ -281,6 +281,34 @@
       "when": 1791774682076,
       "tag": "0039_backfill_namespace_observation_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791813712424,
+      "tag": "0040_brainy_mimic",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791813730505,
+      "tag": "0041_trail_dirty_signals",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791909132896,
+      "tag": "0042_pretty_ricochet",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791915415119,
+      "tag": "0043_mighty_paper_doll",
+      "breakpoints": true
     }
   ]
 }

@@ -6,19 +6,18 @@ import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
-import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
+import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
+import { WorkDraftCommandsBoundary } from "@/features/draft-review/useWorkDraftCommands";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
-import { useDockViewStore } from "../dock/dock-view-store";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import {
   chatSurfaceThreadId,
-  type DockReveal,
   displayedChatThreadId,
   useChatNavigation,
   useDockReveal,
@@ -43,18 +42,16 @@ type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
   const { recoveringFirstSend } = useChatNavigation();
-  const setDockView = useDockViewStore((state) => state.setDockView);
   // The sheet is the phone's dock: it opens over Work or Editor only. On the
   // Chat screen the chat is already the page. A first send recovering after a
   // reload opens it at mount.
   const [chatOpen, setChatOpen] = useState(
     () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  const openChatSheet = (view: DockReveal = "chat") => {
-    if (view === "chat") setDockView(props.activeScreen, view);
+  const openChatSheet = () => {
     setChatOpen(true);
   };
-  useDockReveal((view) => openChatSheet(view));
+  useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -151,7 +148,7 @@ export function MobileProject(props: MobileProjectProps) {
         >
           <SheetTitle className="sr-only">{t`Chat`}</SheetTitle>
           <SheetDescription className="sr-only">{t`Chat alongside your current screen`}</SheetDescription>
-          <DraftReviewBoundary value={props.chatReview}>
+          <WorkDraftCommandsBoundary value={props.chatCommands}>
             <MobileKeyboardAware>
               <ChatSurface
                 projectId={props.projectId}
@@ -168,7 +165,7 @@ export function MobileProject(props: MobileProjectProps) {
                 onOpenContextTarget={props.onOpenContextTarget}
               />
             </MobileKeyboardAware>
-          </DraftReviewBoundary>
+          </WorkDraftCommandsBoundary>
         </SheetContent>
       </Sheet>
       <NavigationDrawer
@@ -229,7 +226,7 @@ function renderActiveView(
       if (props.chatDisplay.kind === "index")
         return <ChatIndex projectId={props.projectId} namedByChrome />;
       return (
-        <DraftReviewBoundary value={props.chatReview}>
+        <WorkDraftCommandsBoundary value={props.chatCommands}>
           <MobileChatHost
             projectId={props.projectId}
             threadId={displayedChatThreadId(props.chatDisplay)}
@@ -237,7 +234,7 @@ function renderActiveView(
             availableWorks={props.availableWorks}
             onOpenContextTarget={props.onOpenContextTarget}
           />
-        </DraftReviewBoundary>
+        </WorkDraftCommandsBoundary>
       );
     case "context":
       if (props.editorScope.status !== "ready") {
@@ -245,7 +242,7 @@ function renderActiveView(
       }
       if (!props.contextLive) return null;
       return (
-        <DraftReviewBoundary value={props.editorReview}>
+        <DraftReviewBoundary value={props.presentedReview}>
           <EditorReviewIntentClaimant
             editorWorkId={props.editorScope.workId}
             activeScheme={props.activeContextScheme}

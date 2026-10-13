@@ -110,7 +110,10 @@ inbox metadata. See the [reply Retry API](../../../../../../docs/api/thread-repl
   graph split. Response persistence, inbox acknowledgement, and receipt
   clearing share one transaction. Successful and failed terminal replies
   acknowledge their receipt; cancellation acknowledges the receipt, not a
-  later pending claim. The joined projection exposes `waiting` for an
+  later pending claim. A path that writes the run's last terminal turn also
+  releases its lease in that transaction; orphan recovery never retires a
+  receipt whose selector names a terminal turn
+  ([recovery](recovery.md#settling-a-stale-lease)). The joined projection exposes `waiting` for an
   unadopted row behind a live bound run and `awaiting_run` for adopted rows or
   no bound live run. Generic `ThreadPendingInbox` projects every provenance;
   the app's `queuedWriterTurnIds` keeps writer rows in `waiting` so only those
@@ -123,6 +126,17 @@ Materializes a selected batch as durable turns/blocks. Caller-supplied notices a
 Edit-intent notices, Work refreshes, and every other durable notice source
 (`NoticePort`, non-message inbox entries) split the same way at the adoption
 point. No notice source skips this split.
+
+### Empty and canceled notice batches
+
+Notice selection and acknowledgement do not imply a history turn. The shared
+inbox planner formats the batch first and appends a notices turn only for
+non-whitespace content; canceled or empty notices are still consumed in the
+adoption transaction and do not themselves split a running reply. Writer
+reversal notices must retain redo records: an undo/redo pair before delivery
+cancels for that document URI and write handle. An undo alone reports unwanted
+edits; a redo arriving after an earlier batch reports restored edits. Other
+notice sections survive reversal cancellation.
 
 ### Work context
 
@@ -242,3 +256,21 @@ UPDATE` so a Work mutation holding Work rows can insert its marker with FK
 The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` registers the sweep with the process recovery scheduler at boot, then rearms it after completion with `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee.
 
 [kb-run-prep]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/runtime/run-preparation-protocol.md
+
+## A start waiting for usage
+
+`prepareLoop` asks RuntimeDelivery to save `credits_exhausted` when a drain
+claim cannot pass `canStartTurn`. Delivery alone sets and clears the thread's
+`inbox_blocked_reason`: under the thread lock with a held, unbound claim, and
+in the same transaction as `inbox.changed`. A successful initial adoption
+clears it with binding the first turn. Every inbox retirement goes through the
+shared acknowledgement helper, which clears the marker when no message/control
+remains (notices alone cannot sustain a block). Empty-inbox refused wakes never
+install one. A failed publication rolls back the acknowledgement and clear.
+Repeated refused wakes do not republish an unchanged block.
+
+`readPendingInbox` includes `blocked: { reason: "credits_exhausted" }` only
+while message/control work remains pending. Snapshots, socket subscription
+state and `meridian.inbox.changed` carry the same projection. The ordinary
+server wake sweep retries after balance restoration; clients add no polling.
+The accepted writer turn remains saved, with no failed assistant placeholder.

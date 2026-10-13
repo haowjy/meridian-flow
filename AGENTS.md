@@ -102,6 +102,11 @@ Dev uses Portless HTTPS routes. Never assume raw ports, bind ports manually, or
 probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
 `pnpm portless:list`.
 
+The dev server doesn't watch `node_modules`: pnpm hardlinks its shared store into
+every worktree, so another worktree's install would otherwise restart this one's
+server and kill in-flight replies ([#817](https://github.com/haowjy/meridian-flow/issues/817)).
+After installing, upgrading, or patching a package, run `pnpm dev:restart`.
+
 Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 
@@ -113,9 +118,12 @@ Driving or inspecting the running app (threads, docs, mock model, logs): use
 [docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli); 6 means `./mf`
 could not tell. Until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s
 second phase lands, a 0 from `./mf thread send` does not prove which reply answered
-your message: check it against `./mf thread view` (the durable transcript). `./mf`
-shares the app's socket client and message serializer, not its screen: check what
-the writer sees (rendering, the composer, optimistic UI, client state) in the browser.
+your message: check it against `./mf thread view` (the durable transcript). `tail --until-idle`
+now waits for a snapshot that confirms idle. `./mf` shares the
+app's socket client, message serializer and chat event processing (the turn
+reducer), not its screen: check what the writer sees (rendering, the composer,
+optimistic UI, client state) in the browser. See
+[`./mf` drives shared client cores][mf-shared-cores].
 
 ## Build and test
 
@@ -165,4 +173,5 @@ git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 - Prefer reference-style links.
 
 [meridian-flow-docs]: https://github.com/haowjy/meridian-flow-docs
+[mf-shared-cores]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-drives-shared-client-cores.md
 [model-work-switch]: apps/server/server/domains/runtime/.context/tools.md#permissions

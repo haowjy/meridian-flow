@@ -125,8 +125,6 @@ export type ChatRow = {
   text?: string;
   /** Where the writer's references and skills sit in `text`. */
   occurrences?: { references: WriterReferenceOccurrence[]; skills: unknown[] };
-  /** How this reply's edits are worded: drafted or edited. */
-  writeMode?: "direct" | "draft";
   error?: string;
   /** Why a failed reply failed, and the provider's own answer when it gave one. */
   failureReason?: string;
@@ -266,7 +264,6 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
     out.text = limits.full ? writer.text : truncate(writer.text, TEXT_LIMIT);
     out.occurrences = { references: writer.references, skills: writer.skills };
   }
-  if (turn.role === "assistant") out.writeMode = turn.writeMode ?? "direct";
   const assistant = view.items.get(turn.id);
   if (assistant) {
     out.items = assistant.items.map((item) => chatItem(item, limits));
@@ -362,24 +359,21 @@ function plural(count: number, noun: string): string {
 }
 
 /** The fold counts in plain words: `read 2 docs, 3 steps`. */
-export function plainDigest(digest: FoldDigest, drafted = false): string {
+export function plainDigest(digest: FoldDigest): string {
   const parts: string[] = [];
   if (digest.invokedSkills.length) parts.push(`invoked ${digest.invokedSkills.join(", ")}`);
   if (digest.readDocuments) parts.push(`read ${plural(digest.readDocuments, "doc")}`);
-  if (digest.editedDocuments)
-    parts.push(`${drafted ? "drafted" : "edited"} ${plural(digest.editedDocuments, "doc")}`);
   if (digest.steps) parts.push(plural(digest.steps, "step"));
   return parts.join(", ");
 }
 
 function sumDigests(items: readonly ChatItem[]): FoldDigest {
-  const total: FoldDigest = { invokedSkills: [], readDocuments: 0, editedDocuments: 0, steps: 0 };
+  const total: FoldDigest = { invokedSkills: [], readDocuments: 0, steps: 0 };
   for (const item of items) {
     if (item.kind !== "process" || !item.visible) continue;
     for (const slug of item.digest.invokedSkills)
       if (!total.invokedSkills.includes(slug)) total.invokedSkills.push(slug);
     total.readDocuments += item.digest.readDocuments;
-    total.editedDocuments += item.digest.editedDocuments;
     total.steps += item.digest.steps;
   }
   return total;
@@ -402,7 +396,6 @@ function indent(text: string, by = "  "): string[] {
 }
 
 function rowLines(row: ChatRow): string[] {
-  const drafted = row.writeMode === "draft";
   const flags = [
     row.inheritedFrom ? `inherited from ${row.inheritedFrom}` : "",
     row.queued ? "queued" : "",
@@ -436,7 +429,7 @@ function rowLines(row: ChatRow): string[] {
       break;
     case "turn":
       if (row.items) {
-        const summary = plainDigest(sumDigests(row.items), drafted);
+        const summary = plainDigest(sumDigests(row.items));
         lines.push(
           `${row.role === "assistant" ? "reply" : row.role}: ${summary || "no steps folded"}${tag} ${id}`,
         );
@@ -465,7 +458,7 @@ function rowLines(row: ChatRow): string[] {
         const reasoning = item.runs.filter((run) => run.run === "reasoning").length;
         lines.push(
           ...indent(
-            `fold: ${plainDigest(item.digest, drafted) || "reasoning"}${tools.length ? ` (${tools.join(", ")})` : ""}${reasoning ? `${tools.length ? "; " : " ("}${plural(reasoning, "thinking run")}${tools.length ? "" : ")"}` : ""}`,
+            `fold: ${plainDigest(item.digest) || "reasoning"}${tools.length ? ` (${tools.join(", ")})` : ""}${reasoning ? `${tools.length ? "; " : " ("}${plural(reasoning, "thinking run")}${tools.length ? "" : ")"}` : ""}`,
           ),
         );
         break;

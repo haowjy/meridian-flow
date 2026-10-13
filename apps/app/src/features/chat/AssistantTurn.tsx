@@ -113,7 +113,7 @@ function AssistantTurnComponent({
   const liveLineage = useTurnLiveLineage(resolvedThreadId, turn.id, {
     enabled: !isLive && !standIn,
   });
-  const liveLineageDocuments = useMemo(
+  const editedDocuments = useMemo(
     () => dedupeTurnEditDocuments(liveLineage.documents ?? []),
     [liveLineage.documents],
   );
@@ -139,7 +139,6 @@ function AssistantTurnComponent({
             threadId={resolvedThreadId}
             turnStatus={turn.status}
             onRespondToInterrupt={onRespondToInterrupt}
-            writeMode={turn.writeMode ?? "direct"}
           />
         ))}
         {deliveries.length ? (
@@ -148,11 +147,11 @@ function AssistantTurnComponent({
           </div>
         ) : null}
 
-        {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
+        {hasTurnEditsReceiptContent(editedDocuments, changeTrail, workReceipts) ? (
           <TurnEditsReceipt
             threadId={resolvedThreadId}
             turn={turn}
-            documents={liveLineageDocuments}
+            documents={editedDocuments}
             receipt={liveLineage.receipt}
             workReceipts={workReceipts}
             changeTrail={changeTrail}
@@ -164,9 +163,7 @@ function AssistantTurnComponent({
           <ErrorBlock
             isLatest={endsTranscript}
             kind={errorKind}
-            onRetry={
-              endsTranscript && errorKind !== "provider-declined" ? replyRetry?.onRetry : undefined
-            }
+            onRetry={endsTranscript ? replyRetry?.onRetry : undefined}
             retryRefused={replyRetry?.refused ?? false}
           />
         ) : null}
@@ -227,26 +224,35 @@ const TurnItemView = memo(function TurnItemView({
   threadId,
   turnStatus,
   onRespondToInterrupt,
-  writeMode,
 }: {
   item: ViewItem;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  writeMode: "direct" | "draft";
 }) {
   const digest = useMemo(
-    () => (item.kind === "process" ? thinkingDigest(item.digest, writeMode) : null),
-    [item, writeMode],
+    () => (item.kind === "process" ? thinkingDigest(item.digest) : null),
+    [item],
+  );
+  const toolCallIds = useMemo(
+    () =>
+      item.kind === "process"
+        ? item.runs.flatMap((run) =>
+            run.kind === "activity"
+              ? run.tools.flatMap((tool) => (tool.toolCallId ? [tool.toolCallId] : []))
+              : [],
+          )
+        : [],
+    [item],
   );
 
   if (item.kind === "process") {
     if (!item.visible) return null;
     return (
       <div data-turn-item-kind="process">
-        <ProcessDisclosure label={digest ?? thinkingLabel()}>
+        <ProcessDisclosure label={digest ?? thinkingLabel()} toolCallIds={toolCallIds}>
           {item.runs.map((run) => (
-            <FoldRun key={runRenderKey(run)} run={run} writeMode={writeMode} />
+            <FoldRun key={runRenderKey(run)} run={run} />
           ))}
         </ProcessDisclosure>
       </div>
@@ -298,13 +304,7 @@ function thinkingLabel() {
   return <Trans>Thinking</Trans>;
 }
 
-const FoldRun = memo(function FoldRun({
-  run,
-  writeMode,
-}: {
-  run: ViewRun;
-  writeMode: "direct" | "draft";
-}) {
+const FoldRun = memo(function FoldRun({ run }: { run: ViewRun }) {
   if (run.kind === "reasoning") {
     return (
       <>
@@ -325,7 +325,7 @@ const FoldRun = memo(function FoldRun({
   return (
     <div className="space-y-[var(--chat-space-row)]" data-activity-block data-fold-activity-run>
       {run.tools.map((tool) => (
-        <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
+        <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} />
       ))}
     </div>
   );
