@@ -934,3 +934,18 @@ before the long turn starts.
    `direct` with `pending: "keep"`, make the model `read` the document again, then undo: PASS is
    `cant_undo_elsewhere` naming the version, and live unchanged.
 
+## Cold-open waterfall and the ahead-link chip (browser)
+
+Open a drafted document's review cold: a fresh `agent-browser` session with the auth state loaded, then `open` the
+review URL (`/editor/<scheme>/<name>?work=<workId>&item=<draftId>:<documentId>`). Wrap `fetch` and `WebSocket` in an
+init script, enlarge the Resource Timing buffer (Vite loads hundreds of modules), and watch for the first appearance
+of the draft's text in `document.body.innerText`. Record, ordered by start time: the address admission request
+(`reviewWorkId` and `itemKey` in its query), the draft preview request, the `/ws/yjs` connect and open, and the first
+text. PASS is the request order and the total from the address request to first text, not a threshold: say whether
+the three run as a serial chain.
+
+For the link chip, record every change of `data-link-chip` and `aria-description` on `a[data-meridian-link]` with
+`performance.now()` from the chip's first insertion, on a cold load, a load with `?work=`, in-app navigation, and with
+the `links/resolve` response held by an owned fetch seam. A live chapter holding an `ahead:` link to a document that
+exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
+
