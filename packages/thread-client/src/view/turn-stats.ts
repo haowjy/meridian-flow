@@ -66,9 +66,3 @@ export function turnStats(turns: readonly Turn[]): TurnStats {
     outputTokensPerSecond: generationMs > 0 ? (generationOutputTokens * 1000) / generationMs : null,
   };
 }
-
-export function compactCount(value: number): string {
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(
-    value,
-  );
-}

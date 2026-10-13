@@ -13,10 +13,10 @@
  * recede next to the upright prose of the voice surfaces around them.
  */
 import { type Block, blockPlainText } from "@meridian/contracts/protocol";
+import { visibleReasoningText } from "@meridian/thread-client";
 import { Clock, type LucideIcon, MessageSquareText } from "lucide-react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "./ActivityRow";
-import { visibleReasoningText } from "./partition-turn";
 
 export type TurnBlockStepProps = {
   block: Block;

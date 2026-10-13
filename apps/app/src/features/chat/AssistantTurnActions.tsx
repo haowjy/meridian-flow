@@ -1,6 +1,7 @@
 import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
+import { cacheHitPercent, type ViewRow } from "@meridian/thread-client";
 import { Bug, Check, Copy } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
@@ -13,10 +14,10 @@ import {
 } from "@/features/debug/use-debug-enabled";
 import { useStatsForNerds } from "@/hooks/use-stats-for-nerds";
 import { assistantTurnCopyHtml } from "./assistant-turn-copy";
+import { compactCount } from "./compact-count";
 import { DeriveTurnActions } from "./derivation/DeriveTurnActions";
 import { TurnInfoButton, TurnInfoRow } from "./TurnInfoButton";
 import { TURN_ACTION_TOOLTIP_SIDE } from "./turn-action-tooltip";
-import { cacheHitPercent, compactCount, turnStats } from "./turn-stats";
 
 function formatPercent(locale: string, percent: number): string {
   return new Intl.NumberFormat(locale, {
@@ -45,13 +46,13 @@ function formatFixed(value: number, locale: string): string {
 export function AssistantTurnActions({
   threadId,
   turn,
-  responseParts,
+  response,
   threadUsage,
   markdown,
 }: {
   threadId: string;
   turn: Turn;
-  responseParts: readonly Turn[];
+  response: NonNullable<ViewRow["response"]>;
   threadUsage: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -67,7 +68,7 @@ export function AssistantTurnActions({
   const { enabled } = useDebugEnabled();
   const statsForNerds = useStatsForNerds();
   const [copied, setCopied] = useState(false);
-  const stats = useMemo(() => turnStats(responseParts), [responseParts]);
+  const { parts: responseParts, stats } = response;
   const threadHitPercent = threadUsage
     ? cacheHitPercent(threadUsage.cacheReadTokens, threadUsage.cacheReportedInputTokens)
     : null;

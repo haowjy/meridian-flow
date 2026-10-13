@@ -1,24 +1,17 @@
 /** Quiet inline rows for child completion and delivery events. */
 import { i18n } from "@lingui/core";
 import { Trans } from "@lingui/react/macro";
-import type { Block, Turn } from "@meridian/contracts/protocol";
+import type { Block } from "@meridian/contracts/protocol";
+import type { DeliveryEvent } from "@meridian/thread-client";
 import { MessageSquareText } from "lucide-react";
 import { ActivityRow } from "../ActivityRow";
 import { useSubagentDisclosure } from "./DisclosureStore";
 import { subagentStatus } from "./display";
 import type { SubagentRun } from "./run-model";
 import { SubagentIdentity, SubagentRow } from "./SubagentRow";
-import type { SubagentUpdateMetadata } from "./update";
 import { groupAdjacentSubagentUpdates } from "./update";
 
-export type DeliveryEvent = {
-  turn: Turn;
-  childThreadId?: string;
-  title?: string;
-  subagentUpdate: SubagentUpdateMetadata | null;
-};
-
-export function DeliveryEventRows({ events }: { events: DeliveryEvent[] }) {
+export function DeliveryEventRows({ events }: { events: readonly DeliveryEvent[] }) {
   const groups = groupAdjacentSubagentUpdates(events);
   return (
     <>

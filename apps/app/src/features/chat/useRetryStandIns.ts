@@ -15,13 +15,13 @@
  */
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import { placeStandIns } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus } from "@/client/api/http-client";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError } from "@/client/stores";
 import { reportRetryRefused } from "./error-telemetry";
-import { placeStandIns } from "./retry-stand-ins";
 
 export type StandInRequest = "sending" | "sent" | "failed";
 

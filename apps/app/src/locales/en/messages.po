@@ -101,17 +101,17 @@ msgstr "“{name}” doesn't exist yet"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
 msgstr "{0, plural, one {drafted # document} other {drafted # documents}}"
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {edited # document} other {edited # documents}}"
 msgstr "{0, plural, one {edited # document} other {edited # documents}}"
 
-#. placeholder {0}: readDocuments.size
+#. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
@@ -1711,7 +1711,7 @@ msgstr "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
 msgid "Drafted"
 msgstr "Drafted"
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "drafted {0}"
 msgstr "drafted {0}"
@@ -1772,7 +1772,7 @@ msgstr "Edit source"
 msgid "Edited"
 msgstr "Edited"
 
-#. placeholder {0}: editedDocuments.size
+#. placeholder {0}: digest.editedDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "edited {0}"
 msgstr "edited {0}"

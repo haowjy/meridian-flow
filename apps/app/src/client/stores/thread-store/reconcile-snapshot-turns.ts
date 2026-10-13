@@ -9,7 +9,7 @@
 import type { Block, Turn, TurnStatus } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 
-import { isOptimisticTurnId } from "./optimistic-turn-id";
+import { isOptimisticTurnId } from "@meridian/thread-client";
 
 export type ReconcileSnapshotTurnsOptions = {
   /**

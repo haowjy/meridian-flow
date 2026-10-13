@@ -7,13 +7,12 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
+import { groupDeliverySegments, isToolViewVisible, type ToolView } from "@meridian/thread-client";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { announce, announceError } from "@/client/stores";
 import type { ComposerHandle } from "@/components/app/composer";
 import { toolActivityAnnouncement, toolActivityPhrase } from "./command-descriptor";
 import { reportChatError } from "./error-telemetry";
-import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
-import { isToolViewVisible } from "./tool-view-visibility";
 
 function runningTool(turn: Turn | null): ToolView | null {
   const block = [...(turn?.blocks ?? [])]

@@ -1,4 +1,4 @@
-/** partition-turn — turns an ordered `Block[]` into the ordered render items the transcript draws. */
+/** partition-turn — folds an ordered `Block[]` into render items: process folds, prose, reports and artifacts. */
 import { parseInvocationCard } from "@meridian/contracts/components";
 import { isArtifactRef } from "@meridian/contracts/interrupt";
 import {
@@ -21,19 +21,6 @@ export type RenderItem =
   | { kind: "text"; block: Block }
   | { kind: "report"; block: Block; report: ReportContentValue }
   | { kind: "artifact"; block: Block };
-
-/** The writer-facing answer is the prose/report suffix after the final process fold. */
-export function finalMessageItems(items: RenderItem[]): RenderItem[] {
-  return items.slice(lastProcessIndex(items) + 1);
-}
-
-/** Index of the final process fold, shared by answer selection and delivery placement. */
-export function lastProcessIndex(items: RenderItem[]): number {
-  for (let index = items.length - 1; index >= 0; index--) {
-    if (items[index]?.kind === "process") return index;
-  }
-  return -1;
-}
 
 export function isReasoningBlock(block: Block): boolean {
   return block.blockType === "reasoning" || block.blockType === "thinking";
@@ -148,7 +135,7 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
  * `thread_message` refused before it started has no card, so its failure row
  * stays.
  */
-function hiddenToolCallIds(blocks: Block[]): Set<string> {
+export function hiddenToolCallIds(blocks: Block[]): Set<string> {
   const hidden = new Set<string>();
   for (const block of blocks) {
     if (block.blockType !== "custom") continue;

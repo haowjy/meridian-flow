@@ -6,6 +6,7 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
+import { projectWriterText } from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -54,7 +55,13 @@ const failedTurn = {
 } as Turn;
 
 const writerRow = (submissionRecovery: UserTurnRecovery | null) =>
-  render(createElement(UserTurn, { turn: failedTurn, submissionRecovery }));
+  render(
+    createElement(UserTurn, {
+      turn: failedTurn,
+      writer: projectWriterText(failedTurn),
+      submissionRecovery,
+    }),
+  );
 
 describe("writer-row failure card", () => {
   it("draws one row of status text, Retry and Edit, silent to screen readers", async () => {

@@ -4,9 +4,15 @@ import {
   type JsonValue,
   meridianErrorFromStructuredToolOutput,
 } from "@meridian/contracts/protocol";
+import type { ToolView } from "@meridian/thread-client";
+import {
+  copySourcePath,
+  stringInput,
+  toolInputObject,
+  type WriteMode,
+} from "@meridian/thread-client";
 import { ChevronRight, FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
-
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -19,12 +25,10 @@ import {
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
-import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { THREAD_MESSAGE_RENDERER } from "./thread-message-renderer";
 import { THREAD_REPORT_RENDERER } from "./thread-report-renderer";
-import { copySourcePath, stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
