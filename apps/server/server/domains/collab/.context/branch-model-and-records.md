@@ -1,5 +1,28 @@
 # Collab — branch model and durable records
 
+## Vocabulary
+
+Five names that look alike and are not. Code, docs and wire types keep them apart.
+
+| Name | Is | Owner | Crosses the wire as |
+|---|---|---|---|
+| **draft** | The Work's one active draft (`drafts` row). Closes only on Discard all and purge; Apply never closes it. | the Work-draft lifecycle (`shared/work-draft-lifecycle.ts`) | `draftId` |
+| **branch** | One document's text Y.Doc of a draft (`document_branches`, kind `work_draft`, keyed `(documentId, draftId)`) plus the thread peers that fork from it. Same id across resets; its generation moves up. | the branch store and peer pool | never; only `branchGeneration` and the opaque `reviewRoomName` |
+| **item** | One document's reviewable change in the draft, with or without a branch (an empty create, a created image). | `domain/draft-review-identity.ts` (the one module that maps item to branch) | `itemKey` = `${draftId}:${documentId}` |
+| **command** | One writer action: item or per-change Apply or Discard, Apply all, Discard all. Idempotent under its `commandId`. | the review service and command records | `commandId` |
+| **presented address** | What the writer is looking at: `{ workId, itemKey, changeId? }` (URL `item=` and `change=`, dock persistence). Names no branch. | the client | the API review selector `reviewWorkId` + `itemKey` |
+
+```text
+Work 1──1 active draft 1──* item ──0..1── branch 1──* thread peer
+                              │                  │
+                              │                  └ room: branchRoomName(branchId, generation)
+                              └ presented address (workId, itemKey) ─ command (commandId)
+```
+
+An item with no branch still resolves, lists and applies. The server resolves
+every `itemKey` through the identity module; no function takes a bare string
+that may be a draft id, a branch id or an item key.
+
 ## Branch model
 
 Branches are real Y.Docs. A thread peer starts from the Work draft, receives live
@@ -61,9 +84,16 @@ routes and keeps reply records, and `thread-peer-composition.ts` assembles it.
 
 The review list therefore emits one active item per document and folds all
 contributing journal rows into that item. `actorThreads` lists candidate chats;
-`draftId` is the only application and wire identity. `createWorkDraftReviewService()` resolves it to the physical Work
-branch and keeps that branch identity inside the domain; `reviewRoomName`
-remains an opaque transport address.
+`itemKey` is the application and wire identity of an item. The identity module
+resolves it to the physical Work branch and keeps that branch identity inside
+the domain; `reviewRoomName` remains an opaque transport address.
+
+Writer commands are server commands, one `commandId` each. Apply (item,
+per-change, all) never closes the draft; the draft stays open after the last
+item applies. Apply all and Discard all are one command each over the Work's
+whole draft, not a client loop. A per-change command on an item that is only a
+whole-document change (a new document) refuses `whole_item`. A resend of a used
+`commandId` returns the recorded result, so a lost response cannot apply twice.
 
 Propagation is sync-only. Cold attribution uses persisted branch journal rows
 and live journal metadata; memory-only runtime maps are never an attribution

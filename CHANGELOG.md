@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Apply and Discard, for an item, a change or the whole draft, are server commands that carry a command id, so a lost response can be resent without applying twice. Apply never closes the draft; only Discard all does. Work Files' Apply all and Discard all are one command each.
+- Discarding one document's draft while the AI is still replying fails that reply's writes to it ("the user discarded the text it edited"), saves its other documents, and lets a later write start a fresh draft.
+- A link to a document that does not exist yet binds once, for everyone, when a document first goes live at its path. Copying a link keeps it as it is, and Apply no longer re-binds links.
+- Card Undo skips a part by name when its draft was discarded and undoes the rest.
+- The review list reads live document fingerprints from a cache keyed by the document's authority head, and one Apply refreshes only its own project's chats.
+
 - Deleted Works no longer serve pending drafts. Restoring a Work keeps its drafts available, without a draft-loading error after deletion.
 
 - Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
