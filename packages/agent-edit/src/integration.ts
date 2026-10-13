@@ -55,6 +55,8 @@ export type {
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type {
+  DiscardedWriteReason,
+  HostSaveLease,
   DocumentCoordinator,
   DocumentLockOptions,
   StagedHelperCut,
@@ -62,6 +64,7 @@ export type {
   StagedWriteReplayResult,
 } from "./ports/document-coordinator.js";
 export {
+  hostSaveLeaseBrand,
   DocumentNotFoundError,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
