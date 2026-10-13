@@ -13,8 +13,9 @@ waited for a second connection) is fixed by snapshotting first. These paths
 still hold one connection while acquiring another, on purpose for lock
 order, so enough concurrent callers can exhaust the pool the same way:
 
-- `pullThreadPeer` in `domain/branch-pulls.ts`, called inside a caller's
-  transaction: its live snapshots and its `run(...)` each need a connection.
+- `pullThreadPeer` in `domain/branch-pulls.ts`: its live snapshots and its
+  `run(...)` each need a connection (it takes its branch leases before its
+  own transaction).
 - `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: locks the
   thread in one transaction, then opens a separate root transaction.
 - `createDeferredLiveProjectionCoordinator.withDocument` in

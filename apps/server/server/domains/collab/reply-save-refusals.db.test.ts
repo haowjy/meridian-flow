@@ -415,32 +415,52 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("16: a per-change Discard racing a peer pull never shows its text on the next read", async () => {
-    const { fixture, responseId, review, core } = await setup();
+    const { fixture, review, core } = await setup();
     const peer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
     peer.doc.destroy();
     const preview = await review.activePreview(ALPHA_ID);
     const azure = preview.operations.find((op) => op.afterExcerpt === "azure");
-    const readBranch = fixture.branchCoordinator.readBranch;
-    let armed = true;
-    fixture.branchCoordinator.readBranch = (async (branchId, fn) => {
-      const result = await readBranch.call(fixture.branchCoordinator, branchId, fn);
-      if (armed && branchId === peer.branchId) {
-        armed = false;
-        await review.discardChanges(ALPHA_ID, preview, [azure?.operationId as string]);
+    // The pause sits after the pull captured its upstream and before it persists the peer:
+    // the Discard starts there and must wait for the pull's lease on that upstream.
+    const pull = fixture.branchCoordinator.pullFromDoc;
+    // Created here, outside the pull's lease scope, so the Discard waits for the lease
+    // instead of tripping the re-entry guard.
+    let startDiscard!: () => void;
+    let settled = false;
+    const discard = new Promise<void>((resolve) => {
+      startDiscard = resolve;
+    })
+      .then(() => review.discardChanges(ALPHA_ID, preview, [azure?.operationId as string]))
+      .finally(() => {
+        settled = true;
+      });
+    let discardSettledAtApply: boolean | undefined;
+    fixture.branchCoordinator.pullFromDoc = (async (...args: unknown[]) => {
+      if (discardSettledAtApply === undefined && args.includes(peer.branchId)) {
+        startDiscard();
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        discardSettledAtApply = settled;
       }
-      return result;
-    }) as typeof readBranch;
+      return (pull as (...pullArgs: unknown[]) => Promise<Uint8Array>).apply(
+        fixture.branchCoordinator,
+        args,
+      );
+    }) as typeof pull;
     try {
-      const read = await core.read(
+      await core.read(
         { file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "read-16" },
         responseContext(await createResponse(db, 3)),
       );
-      expect(armed).toBe(false);
-      expect(JSON.stringify(read.result)).not.toContain("azure");
     } finally {
-      fixture.branchCoordinator.readBranch = readBranch;
+      fixture.branchCoordinator.pullFromDoc = pull;
     }
-    void responseId;
+    expect(discardSettledAtApply).toBe(false);
+    await discard;
+    const next = await core.read(
+      { file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "read-16-next" },
+      responseContext(await createResponse(db, 4)),
+    );
+    expect(JSON.stringify(next.result)).not.toContain("azure");
   });
 
   describe("17: a save between a Discard's commit and its retirement is refused by branch state", () => {

@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { applyDraftDocument } from "./test-support/apply-draft-document.js";
+import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -159,7 +160,7 @@ describe("change trail (postgres)", () => {
         null,
         fixture.markupCodec.parse(`Created document ${index + 1}.`),
       );
-      await fixture.branchCoordinator.commitUpdate({
+      await commitJournaledUpdate(fixture.branchCoordinator, {
         branchId: branch.branchId,
         updateData: Y.encodeStateAsUpdate(content),
         source: "agent",

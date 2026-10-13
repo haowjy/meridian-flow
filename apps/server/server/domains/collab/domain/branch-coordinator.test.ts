@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
+import { commitJournaledUpdate, resetBranchFromDoc } from "../test-support/branch-update-writes.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type BranchSnapshot,
@@ -20,6 +21,17 @@ import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000502" as WorkId;
 const THREAD_ID = "00000000-0000-4000-8000-000000000503" as ThreadId;
+
+/** A pull under the one-branch lease a caller takes before its transaction. */
+function pull(
+  coordinator: ReturnType<typeof createBranchCoordinator>,
+  branchId: string,
+  upstream: Y.Doc,
+) {
+  return coordinator.withLeases([branchId], (lease) =>
+    coordinator.pullFromDoc(lease, branchId, upstream),
+  );
+}
 
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
@@ -229,7 +241,7 @@ describe("BranchCoordinator", () => {
     expect(Y.encodeStateVector(live)).toEqual(before.stateVector);
 
     const coordinator = createBranchCoordinator({ store });
-    await coordinator.pullFromDoc("work", live);
+    await pull(coordinator, "work", live);
 
     expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(live));
   });
@@ -285,7 +297,7 @@ describe("BranchCoordinator", () => {
     store.failNextCas = true;
     const coordinator = createBranchCoordinator({ store, maxCasRetries: 1 });
 
-    await coordinator.pullFromDoc("work", docWithText("after retry"));
+    await pull(coordinator, "work", docWithText("after retry"));
 
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe(
       "after retry",
@@ -309,14 +321,16 @@ describe("BranchCoordinator", () => {
 
     const coordinator = createBranchCoordinator({ store });
     await expect(
-      coordinator.resetFromDocIfUnchanged({
-        branchId: "work",
-        upstream: docWithText("fresh live"),
-        expectedGeneration: original.generation,
-        expectedStateVector: original.stateVector,
-        expectedState: original.state,
-        schemaVersion: original.schemaVersion,
-      }),
+      coordinator.withLeases(["work"], (lease) =>
+        coordinator.resetFromDocIfUnchangedWithLease(lease, {
+          branchId: "work",
+          upstream: docWithText("fresh live"),
+          expectedGeneration: original.generation,
+          expectedStateVector: original.stateVector,
+          expectedState: original.state,
+          schemaVersion: original.schemaVersion,
+        }),
+      ),
     ).resolves.toBe(false);
 
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("adef");
@@ -331,16 +345,15 @@ describe("BranchCoordinator", () => {
     store.failNextJournal = true;
 
     await expect(
-      coordinator.appendJournaledUpdate({
+      commitJournaledUpdate(coordinator, {
         branchId: "work",
-        generation: 1,
         updateData: update,
         source: "agent",
         threadId: THREAD_ID,
       }),
     ).rejects.toThrow(/injected journal failure/);
 
-    await coordinator.pullFromDoc("work", new Y.Doc({ gc: false }));
+    await pull(coordinator, "work", new Y.Doc({ gc: false }));
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("");
   });
@@ -351,8 +364,8 @@ describe("BranchCoordinator", () => {
     store.branches.set("work", branchSnapshot({ branchId: "work", doc: first }));
     const coordinator = createBranchCoordinator({ store });
 
-    await coordinator.resetFromDoc("work", docWithText("second discarded"));
-    await coordinator.resetFromDoc("work", docWithText("current"));
+    await resetBranchFromDoc(coordinator, store, "work", docWithText("second discarded"));
+    await resetBranchFromDoc(coordinator, store, "work", docWithText("current"));
 
     const discarded = Y.decodeStateVector(
       storedBranch(store, "work").discardedStateVector ?? new Uint8Array(),
@@ -499,7 +512,7 @@ describe("containment replacement (U3)", () => {
     const coordinator = createBranchCoordinator({ store });
 
     // The upstream reforked from live, losing the peer's saved text.
-    await coordinator.pullFromDoc("peer", cloneOf(shared));
+    await pull(coordinator, "peer", cloneOf(shared));
     expect(storedBranch(store, "peer").generation).toBe(2);
     expect(materialize(storedBranch(store, "peer")).getText("content").toString()).toBe("base");
 
@@ -515,7 +528,7 @@ describe("containment replacement (U3)", () => {
     );
     const ahead = cloneOf(shared);
     ahead.getText("content").insert(4, " more");
-    await coordinator.pullFromDoc("behind", ahead);
+    await pull(coordinator, "behind", ahead);
     expect(storedBranch(store, "behind").generation).toBe(1);
     expect(materialize(storedBranch(store, "behind")).getText("content").toString()).toBe(
       "base more",
