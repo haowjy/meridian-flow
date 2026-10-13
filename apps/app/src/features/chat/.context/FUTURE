@@ -98,3 +98,9 @@
   "The AI provider turned this request down." after reload: live-versus-stored
   drift in failure copy. It moves into the shared chat session's row-failure
   output in PR E (design-chat-session, "later outputs"); remove this entry then.
+
+- A merged delivery group (two child completions landing on one reply) could not
+  be produced live on the mock, because the server wakes the parent on each
+  completion; only the reviewer's probe script covers it. Add a mock script that
+  lands two completions on one reply, and a step in `docs/qa/chat-session.md`
+  that checks the `./mf thread view` delivery grouping against the screen.
