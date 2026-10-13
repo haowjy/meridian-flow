@@ -22,7 +22,9 @@ remain late-bound globals, preserving existing reconnect timing.
 
 `viewTranscript(input)` (`view/view-transcript.ts`) is the one pure function that
 decides which rows a chat shows. The app builds the input from its store and hooks;
-`./mf thread view` builds it from a snapshot and says what it left out.
+`./mf thread view` builds it from a snapshot and says what it left out. The decision
+and its rejected alternatives are in the
+[transcript view model ruling](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/client/transcript-view-model.md).
 
 - **Input:** `turns` (local writer turns included), `opening` (a handoff's optimistic
   seed card, placed first before stand-ins; today's stand-in producers never anchor to
@@ -33,8 +35,10 @@ decides which rows a chat shows. The app builds the input from its store and hoo
 - **Rows:** `turn`, `compaction`, `handoff-seed` and `thread-reference` rows in causal
   order, plumbing and overflow shells dropped. Each carries `identity` (the server turn
   id, null for any row the server hasn't stated: a local writer turn, the opening seed, a
-  stand-in with no stored turn behind it; provenance comes from the input, never an id's
-  shape; the row kind; the occurrence within the turn), a
+  stand-in with no stored turn behind it; the seed's and stand-ins' provenance comes from
+  the input they arrived in, never an id's shape, while local writer turns, which arrive
+  mixed into `turns`, are still recognized by the `turn_local_` prefix; the row kind; the
+  occurrence within the turn, always 0 today), a
   `renderKey` (today's React key, the turn id; nothing compares render keys), inherited
   marks, `deliveries` (the reply's delivery events grouped as drawn: contiguous
   completions merge into one group), `continuing` (a later row continues this reply)
@@ -45,10 +49,14 @@ decides which rows a chat shows. The app builds the input from its store and hoo
   report, artifact), each fold's visible tools and `FoldDigest` counts, `finalFrom` (where
   the answer after the last fold starts), the hidden protocol halves and the turn's Work
   receipts. A fold with nothing visible is kept with `visible: false`. Visible text that a
-  component once computed lives here: a reasoning run's `texts`, an artifact's `text` (plain
-  row body) and `card` (title and outcome).
-- **Not here:** composer, row actions, control rows, interrupts and announcements; and
-  strings. The package never formats; callers do.
+  component once computed lives here: a reasoning run's `texts` and an artifact's `text`
+  (plain row body). A custom card carries only its `cardKind`: each card words its own
+  title and outcome from `block.content` in React.
+- **Not here:** composer, row actions, control rows, interrupts and announcements, card
+  display text and failure copy; and strings. The package never formats; callers do. Do
+  not add a card-text or failure-copy rule here for one client: a CLI-only card summary
+  printed a choice's value (`north`) where the app shows its label, and was deleted.
+  Card display moves here as one projection both clients draw (PR E).
 
 Turn-metadata readers (compaction, handoff seed, thread references) live in
 `@meridian/contracts/threads` because they mirror the server's metadata codecs.

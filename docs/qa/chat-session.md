@@ -16,7 +16,11 @@ will grow, one per command. Today it holds the transcript comparison.
   `pnpm portless:list` must show routes for your own session, and `MF_APP_URL` and
   `MF_SERVER_URL` must be passed explicitly. A detached checkout can report "started" while
   its routes belong to another checkout, and `./mf` would then write into that checkout's
-  database. Build one chat with `./mf` so both sides read the same durable turns:
+  database. For a base comparison, put the base on a throwaway branch
+  (`git worktree add -b <name> <path> <base>`), not `--detach`, so its stack gets its own
+  prefix. When done, stop only your stacks with `pnpm dev --stop` in each worktree; never
+  `pkill` or `killall` by pattern, which reaches every worktree's stack. Build one chat
+  with `./mf` so both sides read the same durable turns:
 
   ```bash
   ./mf seed tools/mf/fixtures/basic.json --json            # chat + opening reply
@@ -35,7 +39,9 @@ will grow, one per command. Today it holds the transcript comparison.
      the stack's dev login).
   3. **Scroll every row into view and expand every process fold first.** The list is
      virtualized, so rows outside the viewport are not in the DOM, and folds start
-     collapsed, so their tools are not either.
+     collapsed, so their tools are not either. A fold can collapse again when its row
+     remounts, so capture each row while it is mounted and expanded, not from one later
+     whole-page snapshot.
   4. Compare, per row in order, by **row identity** (`identity.turnId`, `identity.kind`,
      `identity.occurrence`; the DOM carries the turn id as `data-turn-id` and the kind as
      `data-chat-turn-kind`; compaction and handoff-seed rows carry `data-turn-id` on their
@@ -79,10 +85,20 @@ will grow, one per command. Today it holds the transcript comparison.
     child's report for its card, and the view has none;
   - change trails (`inputs.changeTrails`), also fetched by the browser;
   - copy and the receipt rows under a reply (Undo, "Edited 1 document") are the app's
-    drawing of Work and lineage reads, not view-model rows.
+    drawing of Work and lineage reads, not view-model rows;
+  - a pending reply's DOM `data-turn-id` is its client id, so it is not row identity: a
+    Retry stand-in carries the id it will be stored under before the request leaves the
+    browser, and nothing in the DOM marks it local;
+  - inspection data the row doesn't draw: a compaction's trigger and token counts, tool
+    call ids, usage numbers.
 - **Evidence:** `view.json`, the browser snapshot or DOM extract per row, and the row
   table of identity, kind, items and text from both sides. Record commit, date, stack
   and provider.
-- **Last run:** not recorded on a merged commit. PR C's author compared the chat's rows,
-  folds and text by eye in the browser on a mock stack
-  (`work/mf-client-unification/evidence/pr-c-transcript-view/`).
+- **Last run:** 2026-10-13, PR C at `9fc683109` (before the receipt and card-kind pass),
+  mock provider, owned `mf-transcript-view` stack. All 40 rows matched on identity, kind,
+  ordered items, normalized text, tool targets, drafted wording and the handoff brief,
+  and the first 12 rows had no regression against the base. Background report bodies,
+  delivery bodies and stored 402 copy differed as listed above. Not exercised: a merged
+  delivery group, a completed system custom card, a queued writer row, inherited
+  history, a reasoning fallback. Report:
+  [probe-pr-c-rerun.md](https://github.com/haowjy/meridian-flow-docs/blob/main/work/mf-client-unification/reports/probe-pr-c-rerun.md).

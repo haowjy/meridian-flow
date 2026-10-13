@@ -120,9 +120,10 @@ could not tell. Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
 second phase lands, a 0 from `./mf thread send` does not prove which reply answered
 your message: check it against `./mf thread view` (the durable transcript). `tail --until-idle`
 now waits for a snapshot that confirms idle. `./mf` shares the
-app's socket client, message serializer and chat event processing (the turn
-reducer), not its screen: check what the writer sees (rendering, the composer,
-optimistic UI, client state) in the browser. See
+app's socket client, message serializer, chat event processing (the turn
+reducer) and transcript view model (`thread view` prints the rows the app draws
+from stored turns), not its screen: check rendering, card wording, the composer,
+optimistic UI and client state in the browser. See
 [`./mf` drives shared client cores][mf-shared-cores].
 
 ## Build and test

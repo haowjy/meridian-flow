@@ -35,8 +35,15 @@ The recipes below and in linked pages do not certify those workflows today.
 Script automation and catalog repairs are tracked in [#726](https://github.com/haowjy/meridian-flow/issues/726).
 
 Run on an owned worktree and database. Discover HTTPS routes with
-`pnpm portless:list`; never target another worktree's process or clear its mock
-queue. Stop only your stack with `pnpm dev --stop` when finished.
+`pnpm portless:list` and confirm they carry your worktree's prefix before any
+`./mf seed` or send, then pass `MF_APP_URL` and `MF_SERVER_URL` explicitly. A
+detached-HEAD checkout has no prefix: when another checkout holds the unprefixed
+routes, `pnpm dev` still reports `started` with that checkout's URLs, and `./mf`
+writes into its database ([#615](https://github.com/haowjy/meridian-flow/issues/615)).
+Put a comparison base on a throwaway branch instead. Never target another
+worktree's process or clear its mock queue. Stop only your stack with
+`pnpm dev --stop` when finished; never `pkill` or `killall` by pattern, which
+matches every worktree's stack.
 
 Leave a shared checkout as you found it. To compare against an older revision,
 extract its modules with `git show` into a scratch directory outside the
