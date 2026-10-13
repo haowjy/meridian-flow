@@ -98,11 +98,20 @@ export function ContextViewer({
   const openedTabRef = useRef(activeTab);
   openedTabRef.current = activeTab;
   const recordOpenedDocument = useRecordOpenedDocument();
+  // One open is one record. The effect also re-runs when the recorder's identity
+  // changes and when a dev remount replays it; the ref survives both, and clears
+  // when the document leaves the front, so reopening it records again.
+  const recordedDocumentRef = useRef<string | null>(null);
   useEffect(() => {
     const tab = openedTabRef.current;
-    if (!active || !openedDocumentId || tab?.documentId !== openedDocumentId) return;
+    if (!active || !openedDocumentId || tab?.documentId !== openedDocumentId) {
+      recordedDocumentRef.current = null;
+      return;
+    }
+    if (recordedDocumentRef.current === openedDocumentId) return;
     const opening = recentOpening(projectId, tab, new Date().toISOString());
     if (!opening) return;
+    recordedDocumentRef.current = openedDocumentId;
     recordOpenedDocument(opening);
   }, [active, openedDocumentId, projectId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;

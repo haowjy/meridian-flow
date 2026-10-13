@@ -21,7 +21,8 @@ export function recentOpening(
       address: { kind: "local", resourceHandle: tab.resourceHandle },
     };
   }
-  if (!EDITOR_SCHEMES.has(tab.scheme)) return null;
+  // A draft-only review is not a live document: live Recent never lists it.
+  if (tab.draftOnly || !EDITOR_SCHEMES.has(tab.scheme)) return null;
   const path = readableRecentPath(tab.path);
   if (!path) return null;
   const address: RecentAddress = {
