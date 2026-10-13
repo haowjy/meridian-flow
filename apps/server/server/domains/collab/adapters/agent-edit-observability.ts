@@ -93,6 +93,16 @@ export function createBranchAgentEditDiagnostics(
         payload,
       });
     },
+    replyPinMismatch(payload) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.reply_save_fences",
+        name: "reply_pin.identity_mismatch",
+        correlation: { documentId: payload.documentId },
+        payload: { threadId: payload.threadId ?? null, pin: payload.pin },
+      });
+    },
   };
 }
 

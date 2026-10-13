@@ -10,6 +10,7 @@ import { grantWorkIds, targetDocumentId } from "../../file-policy/domain/types.j
 import { markReplyConfirmed } from "../../file-policy/edit-confirmation.js";
 import type { FileAccess, FileGrant } from "../../file-policy/index.js";
 import type { RefusedResponseDocument } from "./agent-edit-cores.js";
+import type { BranchAgentEditDiagnostics } from "./branch-agent-edit.js";
 import type { BranchCriticalSections, BranchLockLease } from "./branch-critical-sections.js";
 import { collabHook } from "./collab-test-hooks.js";
 import type { Drafts } from "./drafts.js";
@@ -54,6 +55,7 @@ export function createReplySaveFences(deps: {
   branches: Pick<ApplicationBranchStore, "getBranch">;
   criticalSections: BranchCriticalSections;
   drafts: Pick<Drafts, "shareActive">;
+  diagnostics?: Pick<BranchAgentEditDiagnostics, "replyPinMismatch">;
   fileAccess: Pick<FileAccess, "confirmEdit">;
   lockWorks(workIds: readonly string[]): Promise<void>;
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
@@ -100,7 +102,7 @@ export function createReplySaveFences(deps: {
           upstream.kind !== "work_draft"
         ) {
           reason = "integration";
-          console.error("Reply pin identity mismatch", { documentId, pin });
+          deps.diagnostics?.replyPinMismatch({ documentId, threadId: record.threadId, pin });
         }
         if (reason) refusals.set(documentId, { documentId, reason });
       }
