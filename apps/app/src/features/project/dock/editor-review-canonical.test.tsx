@@ -2,9 +2,9 @@
 /** A moved review keeps its selector while the server repairs its old source locator. */
 import { act, useState } from "react";
 import { expect, it } from "vitest";
-import type { DraftReviewContextValue } from "@/features/chat/DraftReviewProvider";
+import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { EditorReviewAddressOwner } from "./EditorReviewAddressOwner";
+import { ReviewAddressOwner } from "../ReviewAddressOwner";
 import { EditorReviewHandoffProvider } from "./editor-review-handoff";
 
 it.each([
@@ -22,7 +22,7 @@ it.each([
     const review = {
       controller: { workId: "work", inlineReview: null },
       drafts: { status: "ready" },
-      groups: [group],
+      files: [group],
     } as unknown as DraftReviewContextValue;
     return (
       <EditorReviewHandoffProvider
@@ -32,15 +32,23 @@ it.each([
           return { kind: "applied" };
         }}
       >
-        <EditorReviewAddressOwner
-          reviewAddressAdmission="admitted"
+        <ReviewAddressOwner
+          admission="admitted"
           review={review}
-          requestedItemKey={itemKey ?? undefined}
-          activeScreen="context"
-          activeScheme="user"
-          activePath="/Before"
-          activeDocumentId={documentId}
-          onSetItemKey={setItemKey}
+          presented={{
+            container: "editor",
+            documentId: documentId ?? null,
+            scheme: "kb",
+            path: "/Withern",
+            review: itemKey ? { workId: "work", itemKey } : null,
+            draftOnly: false,
+          }}
+          port={{
+            write: (next) => setItemKey(next?.itemKey ?? null),
+            admit: (target) => {
+              setDestination(`${target.contextLocation.scheme}:${target.documentId}`);
+            },
+          }}
         />
         <output>
           {itemKey ?? "none"}:{destination}

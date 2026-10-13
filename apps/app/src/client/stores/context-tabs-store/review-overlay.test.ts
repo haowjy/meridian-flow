@@ -103,7 +103,7 @@ it.each(["discard", "close"])("%s removes only the addressed Work overlay", asyn
   const coordinator = new ContextRemovalCoordinator("test-account", { route });
   coordinator.registerRoutePort(project, route, "b");
   if (action === "discard") {
-    expect(coordinator.discardDraft(project, "b", "same", "draft-b").kind).not.toBe("noop");
+    expect(coordinator.discardDraft(project, "b", "draft-b").kind).not.toBe("noop");
   } else {
     await store.selectTab(project, "b", "same");
     await coordinator.writerClose(project, b);

@@ -261,10 +261,14 @@ export function gateLiveView(
   },
   drafts: { status: string; files: ReviewFileTarget[] | null },
   hasLiveTab: (documentId: string) => boolean,
-  admittedView: "live" | "review" | "local" = "review",
+  admittedView: "live" | "review" | "local" = "local",
 ): GatedLiveView {
   if (!result || result.kind === "unavailable") return { outcome: "ready", result };
   const documentId = result.document.documentId;
+  if (admittedView === "review") {
+    const file = drafts.files?.find((candidate) => candidate.documentId === documentId);
+    return { outcome: "ready", result, ...(file?.isNew ? { draftOnly: file } : {}) };
+  }
   if (
     admittedView === "live" ||
     hasLiveTab(documentId) ||

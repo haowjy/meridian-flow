@@ -6,7 +6,11 @@ import {
   type AiDraftLaunchTarget,
   usePendingEditorReviewItemKey,
 } from "./dock/editor-review-handoff";
-import type { PresentedDocument, ReviewAddress, ReviewAddressAdmission } from "./presented-document";
+import type {
+  PresentedDocument,
+  ReviewAddress,
+  ReviewAddressAdmission,
+} from "./presented-document";
 
 export type ReviewAddressPort = {
   write(review: ReviewAddress | null): void;
@@ -100,10 +104,13 @@ export function ReviewAddressOwner({
       // Only the address says the writer left. Whether the draft is still in the
       // list is the review's own decision (row X): a list that lags behind a new
       // proposal must not end a review the reducer keeps.
-      const match = addressNames(
-        inline.documentId,
-        review.fileForDocument(inline.documentId)?.contextLocation,
-      );
+      const file = review.fileForDocument(inline.documentId);
+      const match =
+        presented?.documentId && presented.documentId !== inline.documentId
+          ? "no"
+          : file
+            ? addressNames(inline.documentId, file.contextLocation)
+            : "pending";
       // An inline review that lags a warm change of Work or item yields to the
       // address; it never relabels a newer request with its own identity.
       if (
@@ -117,7 +124,7 @@ export function ReviewAddressOwner({
         return;
       }
       // The address is still resolving: keep the review, and its query, until it decides.
-      if (match === "pending") return;
+      if (match === "pending" || admission !== "admitted") return;
       // The route command already carries this identity. Let it settle instead
       // of competing with itself through an address-owner replacement.
       ownedReview.current = {
@@ -162,6 +169,7 @@ export function ReviewAddressOwner({
       restoring.current = null;
       return;
     }
+    if (admission !== "admitted") return;
     if (presented.container === "dock") {
       if (
         !presented.documentId ||
