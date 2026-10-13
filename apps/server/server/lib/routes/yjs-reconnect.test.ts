@@ -120,11 +120,14 @@ function tombstoneBearingDoc(): Y.Doc {
 
 function fakeJournal(): CheckpointJournal {
   return {
+    reserveWriteOrdinal: async () => {
+      throw new Error("Transport does not allocate edit ordinals");
+    },
     append: vi.fn(async () => 1),
     appendBatch: vi.fn(async () => []),
     read: vi.fn(async () => ({ checkpoint: null, updates: [] })),
     captureCheckpoint: vi.fn(async () => null),
     storeCheckpoint: vi.fn(async () => undefined),
-    compact: vi.fn(async () => ({ updatesFolded: 0, reversalsExpired: 0 })),
+    compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }

@@ -39,16 +39,18 @@ export function isBranchNotFoundError(cause: unknown): cause is BranchNotFoundEr
 export class BranchCorruptError extends Error {
   readonly branchId: string;
   readonly documentId: DocumentId;
-  readonly threadId: ThreadId;
+  readonly threadId: ThreadId | undefined;
+  readonly generation: number | undefined;
 
   constructor(input: {
     branchId: string;
     documentId: DocumentId;
-    threadId: ThreadId;
+    threadId?: ThreadId;
+    generation?: number;
     cause?: unknown;
   }) {
     super(
-      `Branch ${input.branchId} for document ${input.documentId} and thread ${input.threadId} ` +
+      `Branch ${input.branchId} for document ${input.documentId}${input.threadId ? ` and thread ${input.threadId}` : ""} ` +
         "has missing or undecodable Yjs state",
       { cause: input.cause },
     );
@@ -56,6 +58,7 @@ export class BranchCorruptError extends Error {
     this.branchId = input.branchId;
     this.documentId = input.documentId;
     this.threadId = input.threadId;
+    this.generation = input.generation;
   }
 }
 

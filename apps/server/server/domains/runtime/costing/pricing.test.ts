@@ -24,7 +24,7 @@ describe("model pricing", () => {
     // comment.
     const cost = computeModelCost({
       provider: "anthropic",
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       usage: { inputTokens: 1_000_000, cacheWriteTokens: 1_000_000, outputTokens: 0 },
       rateSource,
     });
@@ -50,13 +50,13 @@ describe("model pricing", () => {
     expect(
       computeModelCost({
         provider: "deepseek",
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         usage,
         rateSource,
       }),
     ).toMatchObject({
-      costUsd: "0.000040",
-      millicredits: "5",
+      costUsd: "0.000131",
+      millicredits: "16",
     });
   });
 
@@ -76,7 +76,7 @@ describe("model pricing", () => {
     const costs = nativeUsages.map(([inputTokens, cacheReadTokens, outputTokens]) =>
       computeModelCost({
         provider: "deepseek",
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         usage: mapAnthropicUsage({
           input_tokens: inputTokens,
           output_tokens: outputTokens,
@@ -93,8 +93,8 @@ describe("model pricing", () => {
       0n,
     );
     const totalMillicredits = costs.reduce((total, cost) => total + BigInt(cost.millicredits), 0n);
-    expect(totalUsdMicros).toBe(2_656n);
-    expect(totalMillicredits).toBe(311n);
+    expect(totalUsdMicros).toBe(8_971n);
+    expect(totalMillicredits).toBe(1_035n);
   });
 
   it("retains Anthropic input categories when the terminal delta only updates output", () => {
@@ -127,7 +127,7 @@ describe("model pricing", () => {
     expect(() =>
       computeModelCost({
         provider: "deepseek",
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         usage: {
           inputTokens: 111,
           outputTokens: 74,
@@ -143,7 +143,7 @@ describe("model pricing", () => {
   it("uses OpenRouter providerData.reportedCostUsd when provider is openrouter", () => {
     const cost = computeModelCost({
       provider: "openrouter",
-      model: "anthropic/claude-sonnet-4",
+      model: "anthropic/claude-sonnet-4.6",
       usage: { inputTokens: 0, outputTokens: 0 },
       providerData: { reportedCostUsd: 0.0042, enrichmentSource: "stream_usage" },
       rateSource,
@@ -173,7 +173,7 @@ describe("model pricing", () => {
   it("surfaces missing_usage instead of silently billing zero for openrouter", () => {
     const cost = computeModelCost({
       provider: "openrouter",
-      model: "anthropic/claude-sonnet-4",
+      model: "anthropic/claude-sonnet-4.6",
       usage: { inputTokens: 0, outputTokens: 0 },
       providerData: { meteringStatus: "missing_usage", generationId: "gen-missing" },
       rateSource,
@@ -203,7 +203,7 @@ describe("model pricing", () => {
   it("falls back to pinned rates when provider-reported cost is absent", () => {
     const cost = computeModelCost({
       provider: "openrouter",
-      model: "anthropic/claude-sonnet-4",
+      model: "anthropic/claude-sonnet-4.6",
       usage: { inputTokens: 1_000_000, outputTokens: 0 },
       rateSource,
     });
@@ -237,7 +237,7 @@ describe("model pricing", () => {
       overrideRates: [
         {
           provider: "deepseek",
-          model: "deepseek-v4-flash",
+          model: "deepseek-flash",
           inputUsdPerMillionTokens: "99.00",
           outputUsdPerMillionTokens: "99.00",
           source: "test override",
@@ -245,7 +245,7 @@ describe("model pricing", () => {
       ],
     });
 
-    const rate = source.findRate("deepseek", "deepseek-v4-flash");
+    const rate = source.findRate("deepseek", "deepseek-flash");
     expect(rate?.inputUsdPerMillionTokens).toBe("99.00");
     expect(rate?.sourceLayer).toBe("override");
   });

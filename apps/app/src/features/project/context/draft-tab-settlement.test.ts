@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import { editorTabsForWork, getContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
@@ -59,7 +59,7 @@ describe("draft tab settlement", () => {
     expect(getContextTabs("project-a")).toEqual(before);
   });
 
-  it("keeps one draft-only membership whichever admission arrives first", () => {
+  it("shadows an admitted live tab only in the reviewing Work without inventing live membership", () => {
     const store = useContextTabsStore.getState();
     const durable = () => useContextTabsStore.getState().byProject["project-a"]?.tabs ?? [];
     for (const overlayFirst of [false, true]) {
@@ -72,8 +72,8 @@ describe("draft tab settlement", () => {
         store.openTab("project-a", draftTab());
       }
 
-      expect(durable()).toEqual([]);
-      expect(getContextTabs("project-a").tabs).toMatchObject([
+      expect(durable()).toHaveLength(overlayFirst ? 0 : 1);
+      expect(editorTabsForWork(getContextTabs("project-a").tabs, "work-a")).toMatchObject([
         { documentId: "document-a", draftOnly: true },
       ]);
       const outcome = new ContextRemovalCoordinator("account-a").discardDraft(
@@ -83,7 +83,8 @@ describe("draft tab settlement", () => {
         "draft-a",
       );
       expect(outcome.kind).not.toBe("noop");
-      expect(getContextTabs("project-a").tabs).toEqual([]);
+      expect(getContextTabs("project-a").tabs).toHaveLength(overlayFirst ? 0 : 1);
+      expect(getContextTabs("project-a").tabs.every((tab) => !tab.draftOnly)).toBe(true);
     }
   });
 

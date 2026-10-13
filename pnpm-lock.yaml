@@ -595,6 +595,12 @@ importers:
       '@meridian/markup':
         specifier: workspace:*
         version: link:../markup
+      '@meridian/prosemirror-schema':
+        specifier: workspace:*
+        version: link:../prosemirror-schema
+      '@sanity/diff-match-patch':
+        specifier: ^3.2.0
+        version: 3.2.0
       prosemirror-model:
         specifier: ^1.25.9
         version: 1.25.9
@@ -611,9 +617,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@meridian/prosemirror-schema':
-        specifier: workspace:*
-        version: link:../prosemirror-schema
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
