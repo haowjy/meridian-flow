@@ -49,7 +49,9 @@ export function drawLinkAnswer(
         ? t`No longer available`
         : entry?.state === "missing"
           ? t`Doesn't exist yet`
-          : null,
+          : entry?.state === "document" && entry.draft
+            ? t`In a draft`
+            : null,
     );
     // Nothing follows a gone link, so it also loses the pointer and the hover.
     draw(element, "aria-disabled", entry?.state === "gone" ? "true" : null);

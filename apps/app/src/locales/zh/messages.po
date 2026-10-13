@@ -2382,6 +2382,10 @@ msgstr ""
 msgid "Images need a project before they can be uploaded."
 msgstr ""
 
+#: src/core/editor/links/link-mark-view.ts
+msgid "In a draft"
+msgstr ""
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 #~ msgid "Includes your edits"
 #~ msgstr ""

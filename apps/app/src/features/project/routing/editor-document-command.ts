@@ -73,6 +73,7 @@ export function createEditorDocumentCommand({
           addressNamesIt: sameDocument,
           draftOnly: options.tab?.kind === "tracked" && options.tab.draftOnly === true,
           catalog: current.documentCatalog,
+          selected: !!options.itemKey && !!requested.workId,
           lookup,
         });
         if (options.isCurrent?.() === false) return { kind: "superseded" };
