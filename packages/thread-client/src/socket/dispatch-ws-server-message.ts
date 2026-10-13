@@ -19,6 +19,8 @@ export type WsServerMessageDispatchDeps = {
     error?: MeridianError,
     sourceThreadId?: string,
   ) => void;
+  /** Send the subscribe that was queued behind a replay now settled. */
+  resubscribe: (threadId: string) => void;
   handleGap: (message: Extract<WsServerMessage, { type: "gap" }>) => void | Promise<void>;
   send: (payload: unknown) => void;
   onConnected: (connectionToken: string) => void;
@@ -52,24 +54,24 @@ export function dispatchWsServerMessage(
     case "subscribed": {
       const subscription = deps.subscriptions.get(message.threadId);
       if (!subscription) return;
-      subscription.gapCount = 0;
-      subscription.serverSubscribed = true;
-
-      for (const next of message.catchup) {
-        deps.dispatchSequencedEvent(
-          message.threadId,
-          next.seq,
-          next.event,
-          next.error,
-          next.sourceThreadId,
-        );
-      }
+      // Merges the catch-up with live frames held behind the replay fence.
+      const resend = deps.subscriptions.settleReplay(
+        message.threadId,
+        message.catchup.map((next) => ({
+          seq: next.seq,
+          event: next.event,
+          error: next.error,
+          sourceThreadId: next.sourceThreadId ?? message.threadId,
+        })),
+      );
 
       // After catch-up: a replayed frame is frozen at emit time, so the
       // server-computed live state wins over any stale replayed value.
       for (const handler of subscription.handlers) {
         handler.onLiveState?.(message.state);
       }
+
+      if (resend) deps.resubscribe(message.threadId);
 
       return;
     }
