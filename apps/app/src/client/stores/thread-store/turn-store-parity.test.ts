@@ -1,20 +1,25 @@
 // @vitest-environment jsdom
 /**
  * The app's Zustand store and `InMemoryTurnStore` implement one `TurnStore`.
- * The same event stream must leave both with equal turns, so a change to either
- * store's turn handling that the other does not share fails here.
+ * The same event stream must leave both with equal turns after every event, and
+ * the stream's end state is the canonical turn contract: the typed tool result
+ * survives later events, rows carry the injected clock, blocks sit in sequence
+ * order, and an identical rewrite changes nothing.
  */
 import { createTurnReducer, InMemoryTurnStore } from "@meridian/thread-client";
 import {
   TURN_FIXTURE_EVENTS,
   TURN_FIXTURE_NOW,
+  TURN_FIXTURE_REWRITE_EVENT,
   TURN_FIXTURE_THREAD_ID,
 } from "@meridian/thread-client/test-support";
 import { describe, expect, it } from "vitest";
 import { createThreadStore } from "./thread-store";
 
+const THREAD = TURN_FIXTURE_THREAD_ID;
+
 describe("turn store parity", () => {
-  it("builds equal turns from run, text, reasoning, tool, interrupt, finish and error events", () => {
+  it("keeps both stores equal after every event and ends on the canonical turns", () => {
     const clock = () => TURN_FIXTURE_NOW;
     const app = createThreadStore({
       now: Date.parse(TURN_FIXTURE_NOW),
@@ -28,17 +33,47 @@ describe("turn store parity", () => {
     });
     const memory = new InMemoryTurnStore({ now: clock });
     const reducer = createTurnReducer({ store: memory, now: clock });
+    const apply = (event: (typeof TURN_FIXTURE_EVENTS)[number]) => {
+      app.getState().applyTurnEvent(THREAD, event);
+      reducer.applyEvent(THREAD, event);
+    };
 
+    const statuses: unknown[] = [];
     for (const event of TURN_FIXTURE_EVENTS) {
-      app.getState().applyTurnEvent(TURN_FIXTURE_THREAD_ID, event);
-      reducer.applyEvent(TURN_FIXTURE_THREAD_ID, event);
+      apply(event);
+      expect(app.getState().turns(THREAD)).toEqual(memory.turns(THREAD));
+      statuses.push(memory.turns(THREAD)?.[0]?.status);
     }
+    expect(statuses).toContain("waiting_interrupt");
 
-    const turns = memory.turns(TURN_FIXTURE_THREAD_ID);
-    expect(turns?.map((turn) => [turn.id, turn.status])).toEqual([
+    const turns = memory.turns(THREAD) ?? [];
+    expect(turns.map((turn) => [turn.id, turn.status])).toEqual([
       ["turn-1", "complete"],
       ["turn-2", "error"],
     ]);
-    expect(app.getState().turns(TURN_FIXTURE_THREAD_ID)).toEqual(turns);
+    const [turn] = turns;
+    expect(turn?.blocks.map((block) => [block.sequence, block.id])).toEqual([
+      [0, "m1"],
+      [1, "turn-1::1"],
+      [2, "tool-call-1"],
+      [3, "interrupt-block-1"],
+      [4, "m2"],
+      [5, expect.stringMatching(/^text_[1-9]\d*$/)],
+      [7, "late-b"],
+      [9, "late-c"],
+    ]);
+    expect(turn?.blocks.find((block) => block.blockType === "tool_use")?.content).toMatchObject({
+      output: "committed: ch1.md",
+      result: { schema: "meridian.agent-edit.v1", status: "success" },
+    });
+    expect(turn?.createdAt).toBe(TURN_FIXTURE_NOW);
+    expect(turn?.completedAt).toBe(TURN_FIXTURE_NOW);
+    expect(turn?.blocks.every((block) => block.createdAt === TURN_FIXTURE_NOW)).toBe(true);
+
+    const memoryBefore = memory.turns(THREAD);
+    const appBefore = app.getState().turns(THREAD);
+    apply(TURN_FIXTURE_REWRITE_EVENT);
+    expect(memory.turns(THREAD)).toBe(memoryBefore);
+    expect(app.getState().turns(THREAD)).toBe(appBefore);
   });
 });
