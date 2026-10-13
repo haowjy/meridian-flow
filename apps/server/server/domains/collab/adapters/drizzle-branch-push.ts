@@ -142,10 +142,15 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
         .leftJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
         .where(and(...conditions))
         .orderBy(branchWriteJournal.id);
-      return rows.map(({ row, editKind }) => ({
-        ...mapJournalRow(row),
-        ...(editKind ? { editKind } : {}),
-      }));
+      // A row can carry several parts of one edit: one entry per row, in journal order.
+      const byRow = new Map<number, ReturnType<typeof mapJournalRow>>();
+      for (const { row, editKind } of rows) {
+        const seen = byRow.get(row.id);
+        if (!seen || (!seen.editKind && editKind)) {
+          byRow.set(row.id, { ...mapJournalRow(row), ...(editKind ? { editKind } : {}) });
+        }
+      }
+      return [...byRow.values()];
     },
 
     async listPushLineageForTurn(input) {
