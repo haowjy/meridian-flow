@@ -92,8 +92,17 @@ export function responseContext(responseId: string) {
     threadId: THREAD_ID,
     turnId: TURN_ID,
     responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
-    grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }),
+    grant: inProject(testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" })),
   };
+}
+
+/** The grant names this project and its owner, as the file policy would, so a write can make a draft. */
+function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
+  return {
+    ...grant,
+    principal: { ...grant.principal, accountId: USER_ID },
+    facts: { ...grant.facts, projectId: PROJECT_ID, ownerAccountId: USER_ID },
+  } as T;
 }
 export async function setupResponseDraft(
   db: ReturnType<typeof createTestDatabase>,

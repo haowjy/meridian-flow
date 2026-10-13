@@ -208,6 +208,33 @@ export function reviewDriver(
         }),
       );
     },
+    /** Discard all of the Work's active draft. */
+    async discardAll() {
+      const { draftId } = await review.items({ workId });
+      if (!draftId) throw new Error("No active draft");
+      return body(
+        await review.discardAll({
+          workId,
+          draftId,
+          userId,
+          envelope: testEnvelope({ workId, kind: "discard_draft", draftId, userId }),
+        }),
+      );
+    },
+    /** Apply every listed item of the Work's active draft. */
+    async applyAll() {
+      const { draftId, items } = await review.items({ workId });
+      if (!draftId) throw new Error("No active draft");
+      return body(
+        await review.applyAll({
+          workId,
+          draftId,
+          items: items.map(({ itemKey }) => ({ itemKey })),
+          userId,
+          envelope: testEnvelope({ workId, kind: "apply_items", draftId, userId }),
+        }),
+      );
+    },
     async discardChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
       const { itemKey, draftId } = await resolved(documentId);
       const ids = operationIds ?? preview.operations.map((op) => op.operationId);
