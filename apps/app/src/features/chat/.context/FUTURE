@@ -93,3 +93,8 @@
   writer choices per browser tab, without persisting open menus or confirmations.
   Unsent existing-chat draft loss is tracked separately in
   https://github.com/haowjy/meridian-flow/issues/746.
+
+- A sticky 402 failure shows the full non-retryable explanation live, but only
+  "The AI provider turned this request down." after reload: live-versus-stored
+  drift in failure copy. It moves into the shared chat session's row-failure
+  output in PR E (design-chat-session, "later outputs"); remove this entry then.
