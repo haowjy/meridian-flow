@@ -26,6 +26,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/draft-items.db.test.ts",
   "apps/server/server/domains/collab/branch-peer-pool.db.test.ts",
   "apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts",
+  "apps/server/server/domains/collab/adapters/branch-journal-reads.db.test.ts",
   "apps/server/server/domains/collab/partial-apply.db.test.ts",
   "apps/server/server/domains/collab/review-disposition.db.test.ts",
   "apps/server/server/domains/collab/review-generation-replay.db.test.ts",

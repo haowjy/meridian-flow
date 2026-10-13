@@ -182,7 +182,9 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
 
     async listConcurrentJournalRows(branchId, generation, options) {
       const floor = options.afterJournalId ?? 0;
-      const rows = await db
+      // A save's attribution reads inside its own transaction: the root pool handle would
+      // wait on another connection and miss that transaction's uncommitted rows.
+      const rows = await currentDrizzleDb(db)
         .select({ row: branchWriteJournal })
         .from(branchWriteJournal)
         .innerJoin(documentBranches, eq(branchWriteJournal.branchId, documentBranches.id))
