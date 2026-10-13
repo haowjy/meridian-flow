@@ -24,14 +24,17 @@ Repair finalizes that reply and atomically retires and acknowledges its exact
 receipt, whether the reply belongs to a primary or child thread. Late messages
 that the dead run never adopted stay queued, and a crashed child publishes one
 failure report without starting again for the retired parent message.
-Run-start repair (`repairOrphanedTurns`) keeps the replacement run's
-already-acquired lease; it only retires the inherited dead receipt before
-selecting new work.
+Run-start repair is `settleStaleExecution(threadId)` with no `repair`,
+run inside `startExecution`'s claim callback: the full settlement above, before
+the replacement run's lease row exists.
 
 ## Settling a stale lease
 
 The bounded sweep lanes in `spawn/orphan-report-repair.ts` hold the exclusive
-session claim and pass their repair to delivery's `settleStaleExecution`. One
+session claim. The unsettled-turn, placeholder and report lanes pass their own
+repair to delivery's `settleStaleExecution(threadId, repair)`; the expired-lease
+lane calls it with no `repair` (a listed expired row is stale as listed, so the
+full settlement ends it). With a `repair`, one
 thread-lock transaction runs the repair, decides whether to delete the stale
 lease row, and journals the resulting inbox projection. After commit it
 publishes `thread.status`, so subscribers read asleep at once and a new message
@@ -40,7 +43,8 @@ unfinished turn and its lease and publishes nothing.
 
 - **Release only an empty receipt, never unconditionally.** Delivery captures
   the receipt's run and holder before the repair and re-reads it afterward. It
-  calls `RunClaim.release` only when the same run and holder still own the row
+  ends the execution (`execution.ended` journaled when a turn carries it) only
+  when the same execution and holder still own the row
   and both the turn selector and adopted-message IDs are empty. A sweep
   candidate can be stale: between selection and claim, its execution may have
   completed and a newer run may have adopted a message and died. A successful
