@@ -1,8 +1,8 @@
 /**
  * Apply all and 5a holds (contract §11.2 step 3, §11.4, §11.5, ledger E-5, E-7a, E-7b):
  * one command with per-item results, an item whose path is taken stays held in the draft
- * while the rest apply, a held picture is a payload-only Apply, the draft closes only when
- * drained, and D40's switch goes through the same command, answering a batch handed to
+ * while the rest apply, a held picture is a payload-only Apply, Apply never closes the draft
+ * (D59), and D40's switch goes through the same command, answering a batch handed to
  * recovery the way Apply does (E-7c).
  */
 import type { DocumentId } from "@meridian/contracts";
@@ -173,7 +173,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     expect.soft(await live.idAt("b/Inner.md/chapter"), "held: still hidden").toBeNull();
   });
 
-  it("applies all as one command with per-item results, holds a clash and closes only when drained (E-7a)", async () => {
+  it("applies all as one command with per-item results, holds a clash and keeps the draft open (E-7a)", async () => {
     const { s } = await start();
     const ascension = await s.work("Ascension", "draft");
     const chapter = await s.writer.createDocument("chapter", "Opening.");
