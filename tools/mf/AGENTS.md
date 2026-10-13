@@ -3,8 +3,11 @@
 Agent-facing dev CLI for this worktree's app API, not application runtime code.
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) first.
 
-- **`./mf` wraps the API; it never reimplements it.** Missing data needs a server
-  route behind the debug gate, not a CLI-side database query or business logic.
+- **`./mf` is evidence about the browser only for code both run.** It drives the
+  shared client core (`@meridian/thread-client`: socket, turn reducer), so never
+  reimplement that logic here. Where a feature has no shared core yet, `./mf`
+  calls the server API and its claims say so. Missing data needs a server route
+  behind the debug gate, not a CLI-side database query or business logic.
 - **Imports:** only `@meridian/contracts` and `@meridian/thread-client` from
   workspace packages. From `tools/dev`, only the Portless route contract:
   `portless-prefix.ts`, `portless-routes.ts` and `portlessCa` in
