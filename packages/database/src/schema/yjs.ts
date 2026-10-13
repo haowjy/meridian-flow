@@ -1,11 +1,15 @@
 import type {
   DocumentAuthorityId,
   DocumentId,
+  DraftCommandId,
+  DraftCommandKind,
+  DraftCommandResult,
   DraftId,
   ModelResponseId,
   ThreadId,
   TurnId,
   UserId,
+  WorkId,
 } from "@meridian/contracts";
 import { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
@@ -27,7 +31,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
-import { documents } from "./content";
+import { documents, works } from "./content";
 import { documentEdits } from "./document-edits";
 import { drafts } from "./drafts";
 import { users } from "./users";
@@ -627,5 +631,55 @@ export const changeTrailDirtyLog = pgTable(
   },
   (table) => [
     index("change_trail_dirty_log_owner_seq").on(table.threadId, table.turnId, table.seq),
+  ],
+);
+
+/**
+ * The record of one writer Apply or Discard, keyed by the client's command id so a resend
+ * answers the first command's outcome. It lives beside the batches it points at, which keeps
+ * `drafts.ts` free of an import cycle.
+ */
+export const draftCommands = pgTable(
+  "draft_commands",
+  {
+    id: uuid("id").$type<DraftCommandId>().primaryKey(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .notNull()
+      .references(() => works.id, { onDelete: "cascade" }),
+    draftId: uuid("draft_id")
+      .$type<DraftId>()
+      .references(() => drafts.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .$type<UserId>()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<DraftCommandKind>().notNull(),
+    /** Hash of the canonical command envelope; another digest under this id is a conflict. */
+    requestDigest: text("request_digest").notNull(),
+    /** Set when an Apply stages; completion or withdrawal settles the row with the batch. */
+    settlementBatchId: uuid("settlement_batch_id").references(
+      () => branchPushSettlementBatches.id,
+      { onDelete: "set null" },
+    ),
+    state: text("state").$type<"pending" | "done">().notNull().default("pending"),
+    result: jsonb("result").$type<DraftCommandResult>(),
+    createdAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("draft_commands_work").on(table.workId),
+    index("draft_commands_settlement_batch")
+      .on(table.settlementBatchId)
+      .where(sql`${table.settlementBatchId} IS NOT NULL`),
+    check(
+      "draft_commands_kind_valid",
+      sql`${table.kind} IN ('apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_draft')`,
+    ),
+    check("draft_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
+    check(
+      "draft_commands_done_shape",
+      sql`(${table.state} = 'done') = (${table.completedAt} IS NOT NULL)`,
+    ),
   ],
 );
