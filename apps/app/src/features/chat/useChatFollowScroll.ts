@@ -21,6 +21,8 @@ export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
   mode: FollowMode;
   /** Re-acquire follow (pill click, submit): flips mode synchronously — so the pill hides in the same commit — then pins instantly. */
   enterFollow: () => void;
+  /** Leave follow without moving: a caller about to scroll elsewhere (a reveal) must not be re-pinned to the bottom. */
+  releaseFollow: () => void;
 } {
   const [mode, setMode] = useState<FollowMode>("follow");
   // `commitMode` below is the ONLY writer of this ref (no render-time sync — a
@@ -86,6 +88,8 @@ export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
     el.scrollTop = maxScrollTop();
     lastScrollTopRef.current = el.scrollTop;
   }, [beginProgrammaticScroll, commitMode, maxScrollTop, scrollRef]);
+
+  const releaseFollow = useCallback(() => commitMode("free"), [commitMode]);
 
   // Deliberate upward intent releases immediately, independent of geometry.
   useEffect(() => {
@@ -194,5 +198,5 @@ export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
     };
   }, []);
 
-  return { mode, enterFollow };
+  return { mode, enterFollow, releaseFollow };
 }

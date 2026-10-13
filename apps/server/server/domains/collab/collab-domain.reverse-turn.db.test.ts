@@ -29,14 +29,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const {
-      branchWriteJournal,
-      documentBranches,
-      documentYjsReversals,
-      documentYjsUpdates,
-      documents,
-      modelResponses,
-    } = await import("@meridian/database/schema");
+    const { branchWriteJournal, documentBranches, documentYjsUpdates, documents, modelResponses } =
+      await import("@meridian/database/schema");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const db = createDb(DATABASE_URL, { max: 4 });
     const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
@@ -165,12 +159,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await readMarkdown(collab, DOC_ID)).not.toContain(fountain);
     });
 
-    it("rolls back every live document when one document refuses a turn reversal", async () => {
+    it("undoes the independent document and names the part edited by the writer", async () => {
       await db.insert(documents).values({
         id: CREATED_DOC_ID,
         contextSourceId: SOURCE_ID,
         name: "chapter-two",
-        extension: "",
+        extension: "md",
         fileType: "markdown",
       });
       const collab = createTestCollab();
@@ -217,23 +211,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           direction: "undo",
           actor: { type: "user", userId: USER_ID },
         }),
-      ).resolves.toMatchObject({ status: "cant_undo_dependent" });
+      ).resolves.toMatchObject({
+        status: "partial",
+        acceptedParts: 1,
+        skips: [expect.objectContaining({ after: `Turn edit for ${CREATED_DOC_ID}.` })],
+      });
 
-      await expectMarkdown(collab, DOC_ID, `Turn edit for ${DOC_ID}.`);
+      expect(await readMarkdown(collab, DOC_ID)).toBe("First base.\n");
       await expectMarkdown(collab, CREATED_DOC_ID, "Writer invalidated only the second document.");
-      const reversals = await db
-        .select()
-        .from(documentYjsReversals)
-        .where(
-          and(
-            eq(documentYjsReversals.threadId, THREAD_ID as never),
-            eq(documentYjsReversals.turnId, TURN_ID as never),
-          ),
-        );
-      expect(reversals).toHaveLength(0);
     });
 
-    it("withdraws redo after a writer edit lands following undo", async () => {
+    it("keeps redo after a writer edit to an unrelated paragraph", async () => {
       const collab = createTestCollab();
       collab.bindHocuspocus(hocuspocus as never);
       await writeMarkdown(collab, {
@@ -281,7 +269,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(
         collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
-      ).resolves.toEqual(expect.objectContaining({ state: "expired", control: "view_change" }));
+      ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
       await expect(
         collab.reverseTurn({
           threadId: THREAD_ID as never,
@@ -289,23 +277,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           direction: "redo",
           actor: { type: "user", userId: USER_ID },
         }),
-      ).resolves.toMatchObject({ status: "nothing_to_redo" });
+      ).resolves.toMatchObject({ status: "reversed" });
 
-      const journal = createDrizzleJournal(db);
-      const [reversal] = await journal.readReversals(DOC_ID, {
-        threadId: THREAD_ID,
-      });
-      if (!reversal) throw new Error("missing reversal");
-      await expect(
-        journal.persistRedoBatch(DOC_ID, [
-          {
-            update: Y.encodeStateAsUpdate(new Y.Doc()),
-            ref: { threadId: THREAD_ID, undoUpdateSeq: reversal.undoUpdateSeq },
-            meta: { origin: "system", seq: 0 },
-            persistGuardWatermark: reversal.undoUpdateSeq,
-          },
-        ]),
-      ).resolves.toEqual({ consumed: false });
+      expect(await readMarkdown(collab, DOC_ID)).toBe(
+        "Writer changed the manuscript.\n\nAgent change.\n",
+      );
     });
 
     it("degrades live turn undo when a later writer edit intersects the pushed paragraph", async () => {
@@ -345,16 +321,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       await expect(
         collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
-      ).resolves.toEqual(
-        expect.objectContaining({ state: "cant_undo_dependent", control: "view_change" }),
-      );
+      ).resolves.toEqual(expect.objectContaining({ state: "expired", control: "view_change" }));
       const reversed = await collab.reverseTurn({
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
         direction: "undo",
         actor: { type: "user", userId: USER_ID },
       });
-      expect(reversed.status).toBe("cant_undo_dependent");
+      expect(reversed.status).toBe("expired");
       expect(await readMarkdown(collab, DOC_ID)).toContain("Agent HUMAN-KEEP paragraph.");
     });
 
@@ -430,7 +404,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId,
+          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         },
       );
       if (stagedCreate.status !== "success") {
@@ -449,21 +423,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
-            responseId,
+            responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
           },
         ),
       ).resolves.toMatchObject({ status: "success" });
 
-      await collab.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
+      await collab.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        },
+      );
 
       const rows = await db
         .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
         .from(branchWriteJournal)
         .orderBy(branchWriteJournal.id);
-      expect(rows).toHaveLength(1);
+      expect(rows).toHaveLength(2);
       expect(rows[0]).toEqual(expect.objectContaining({ status: "active" }));
       const pending = await collab.draftReview.preview({
         workId: WORK_ID as never,
@@ -498,14 +475,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_ID,
-            responseId: "response-reused-provider-tool-id-db-a",
+            responseIdentity: {
+              providerResponseId: "response-reused-provider-tool-id-db-a",
+              editScopeId: "response-reused-provider-tool-id-db-a",
+            },
           },
         ),
       ).resolves.toMatchObject({ status: "success" });
-      await collab.finalizeResponseCommit("response-reused-provider-tool-id-db-a", {
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-      });
+      await collab.finalizeResponseCommit(
+        {
+          providerResponseId: "response-reused-provider-tool-id-db-a",
+          editScopeId: "response-reused-provider-tool-id-db-a",
+        },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_ID as never,
+        },
+      );
 
       await expect(
         collab.agentEdit().write(
@@ -521,14 +507,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             grant: testFileGrant(DRAFT_DESTINATION),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
-            responseId: "response-reused-provider-tool-id-db-b",
+            responseIdentity: {
+              providerResponseId: "response-reused-provider-tool-id-db-b",
+              editScopeId: "response-reused-provider-tool-id-db-b",
+            },
           },
         ),
       ).resolves.toMatchObject({ status: "success" });
-      await collab.finalizeResponseCommit("response-reused-provider-tool-id-db-b", {
-        threadId: THREAD_ID as never,
-        turnId: TURN_2_ID as never,
-      });
+      await collab.finalizeResponseCommit(
+        {
+          providerResponseId: "response-reused-provider-tool-id-db-b",
+          editScopeId: "response-reused-provider-tool-id-db-b",
+        },
+        {
+          threadId: THREAD_ID as never,
+          turnId: TURN_2_ID as never,
+        },
+      );
 
       const rows = await db
         .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })

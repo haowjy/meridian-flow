@@ -90,7 +90,8 @@ export function scopedToolUseId(
 export function responseOrTurnScope(
   context: WriteContext,
 ): { kind: "response"; id: string } | { kind: "turn"; id: string } | undefined {
-  if (context.responseId) return { kind: "response", id: context.responseId };
+  if (context.responseIdentity?.editScopeId)
+    return { kind: "response", id: context.responseIdentity?.editScopeId };
   if (context.turnId) return { kind: "turn", id: context.turnId };
   return undefined;
 }

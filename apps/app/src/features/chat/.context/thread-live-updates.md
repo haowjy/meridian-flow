@@ -28,6 +28,11 @@ the authoritative history fetch:
   responses. A server-initiated run has no local submit to learn it from, so
   this subscription also surfaces its turn and card.
 
+- `settled` means the snapshot's turns are in the transcript store (or the
+  load failed), not merely fetched: the accepted snapshot is visible one commit
+  before `applyThreadSnapshot` lands it, and a reader such as the turn reveal
+  would take that empty transcript for "no such turn".
+
 Both this fetch and the transport's gap recovery funnel through
 `applyThreadSnapshot`. The reconciliation mechanics — identity bridge, monotonic
 sequence guard — live in the app-level

@@ -50,6 +50,7 @@ function makeFakeTransport(
       let latest = initial;
       let synced = false;
       const transport: FakeTransport = {
+        unacknowledgedUpdates: () => null,
         get synced() {
           return synced;
         },
@@ -143,6 +144,7 @@ describe("DocumentSession status derivation", () => {
     firstTransport.current().emit({
       kind: "reset",
       reason: "client-schema-superseded",
+      disposition: "schema",
       code: 4406,
     });
 
@@ -159,6 +161,7 @@ describe("DocumentSession status derivation", () => {
     secondTransport.current().emit({
       kind: "reset",
       reason: "client-schema-superseded",
+      disposition: "schema",
       code: 4406,
     });
 
@@ -186,6 +189,7 @@ describe("DocumentSession status derivation", () => {
     current().emit({
       kind: "reset",
       reason: "client-schema-superseded",
+      disposition: "schema",
       code: 4406,
     });
 
@@ -205,12 +209,22 @@ describe("DocumentSession status derivation", () => {
       transportFactory: factory,
     });
 
-    current().emit({ kind: "reset", reason: "document-schema-stale", code: 4407 });
+    current().emit({
+      kind: "reset",
+      reason: "document-schema-stale",
+      disposition: "schema",
+      code: 4407,
+    });
     await flushMicrotasks();
 
     expect(session.getSnapshot()).toMatchObject({
       status: "access-lost",
-      connectionState: { kind: "reset", reason: "document-schema-stale", code: 4407 },
+      connectionState: {
+        kind: "reset",
+        reason: "document-schema-stale",
+        disposition: "schema",
+        code: 4407,
+      },
       schemaFence: null,
     });
     expect(reload).not.toHaveBeenCalled();
@@ -274,6 +288,7 @@ describe("DocumentSession status derivation", () => {
     current().emit({
       kind: "reset",
       reason: WS_CLOSE.BRANCH_STALE.reason,
+      disposition: "rebuild",
       code: WS_CLOSE.BRANCH_STALE.code,
     });
 
@@ -346,6 +361,7 @@ describe("DocumentSession status derivation", () => {
       roomKey: "doc-destroy-rejection",
       persistence: { kind: "none" },
       transportFactory: () => ({
+        unacknowledgedUpdates: () => null,
         synced: false,
         subscribeStatus: () => () => undefined,
         destroy: destroyTransport,
