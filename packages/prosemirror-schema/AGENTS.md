@@ -16,6 +16,9 @@ Shared ProseMirror structural contract used by TipTap/Yjs editor code.
 - Treat `createCollabYDoc()` and the reserved clientID band constants as shared
   collab protocol: random-authoring docs use the factory so they never draw the
   server-owned clientID band `[0, RESERVED_CLIENT_ID_MAX]`.
+- `restoration-claims.ts` defines the untrusted draft Undo claim protocol and
+  captures local Yjs redone links. Certification belongs to server collab; no
+  consumer may treat the claims map itself as authorship authority.
 - Keep this package independent from React components, TipTap runtime objects,
   database adapters, and server domain code.
 

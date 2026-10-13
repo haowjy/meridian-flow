@@ -65,16 +65,22 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
     changedBlocks: [
       {
         blockId: alphaId,
+        beforeBlockIdentity: getBlockItemId(alpha),
+        afterBlockIdentity: getBlockItemId(alpha),
         beforeText: "Alpha.",
         afterText: "Bravo.",
       },
       {
         blockId: bravoId,
+        beforeBlockIdentity: getBlockItemId(bravo),
+        afterBlockIdentity: getBlockItemId(bravo),
         beforeText: "Bravo.",
         afterText: "Charlie.",
       },
       {
         blockId: charlieId,
+        beforeBlockIdentity: getBlockItemId(charlie),
+        afterBlockIdentity: null,
         beforeText: "Charlie.",
         afterText: null,
       },
@@ -87,9 +93,9 @@ it("traces multi-block identity shifts back to the displaced passage", () => {
     ]),
     operations: [],
     before: [
-      { hash: alphaId, serialized: "Alpha." },
-      { hash: bravoId, serialized: "Bravo." },
-      { hash: charlieId, serialized: "Charlie." },
+      { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
+      { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
+      { hash: charlieId, serialized: "Charlie.", ...getBlockItemId(charlie) },
     ],
     blockIdentities: new Map([
       [alphaId, { documentId: "document-1", ...getBlockItemId(alpha) }],
@@ -163,16 +169,22 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
     changedBlocks: [
       {
         blockId: alphaId,
+        beforeBlockIdentity: getBlockItemId(alpha),
+        afterBlockIdentity: getBlockItemId(alpha),
         beforeText: "Alpha.",
         afterText: "Bravo.",
       },
       {
         blockId: bravoId,
+        beforeBlockIdentity: getBlockItemId(bravo),
+        afterBlockIdentity: null,
         beforeText: "Bravo.",
         afterText: null,
       },
       {
         blockId: charlieId,
+        beforeBlockIdentity: getBlockItemId(charlie),
+        afterBlockIdentity: getBlockItemId(charlie),
         beforeText: "Charlie.",
         afterText: "Bravo.",
       },
@@ -185,9 +197,9 @@ it("preserves ordinary changes when two blocks claim the same relocated passage"
     ]),
     operations: [],
     before: [
-      { hash: alphaId, serialized: "Alpha." },
-      { hash: bravoId, serialized: "Bravo." },
-      { hash: charlieId, serialized: "Charlie." },
+      { hash: alphaId, serialized: "Alpha.", ...getBlockItemId(alpha) },
+      { hash: bravoId, serialized: "Bravo.", ...getBlockItemId(bravo) },
+      { hash: charlieId, serialized: "Charlie.", ...getBlockItemId(charlie) },
     ],
     blockIdentities: new Map([
       [alphaId, { documentId: "document-1", ...getBlockItemId(alpha) }],
@@ -269,16 +281,22 @@ it("does not relocate content from a structurally replaced source block", () => 
     changedBlocks: [
       {
         blockId: alphaId,
+        beforeBlockIdentity: getBlockItemId(alpha),
+        afterBlockIdentity: getBlockItemId(alpha),
         beforeText: "Alpha.",
         afterText: "Bravo.",
       },
       {
         blockId: bravoId,
+        beforeBlockIdentity: getBlockItemId(bravo),
+        afterBlockIdentity: null,
         beforeText: "Bravo.",
         afterText: null,
       },
       {
         blockId: xrayId,
+        beforeBlockIdentity: null,
+        afterBlockIdentity: getBlockItemId(xray),
         beforeText: null,
         afterText: "Xray.",
       },
@@ -354,6 +372,8 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
     changedBlocks: [
       {
         blockId: collidingHash,
+        beforeBlockIdentity: beforeIdentity,
+        afterBlockIdentity: afterIdentity,
         beforeText: "Alpha.",
         afterText: "Xray.",
       },
@@ -369,8 +389,8 @@ it("keeps canonical identities distinct when snapshot block hashes collide", () 
       },
     ],
     // Push preparation intentionally stores the after snapshot last when the
-    // display hash collides, so canonical before identity must come from
-    // `before` rather than this combined lookup.
+    // display hash collides, so both canonical identities must come from
+    // the explicit publication change rather than this combined lookup.
     blockIdentities: new Map([[collidingHash, { documentId: "document-1", ...afterIdentity }]]),
     afterIds: new Set([collidingHash]),
     afterById: new Map([[collidingHash, afterElement]]),
@@ -443,11 +463,15 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
     changedBlocks: [
       {
         blockId: deletedId,
+        beforeBlockIdentity: getBlockItemId(deleted),
+        afterBlockIdentity: null,
         beforeText: "Deleted.",
         afterText: null,
       },
       {
         blockId: insertedId,
+        beforeBlockIdentity: null,
+        afterBlockIdentity: getBlockItemId(inserted),
         beforeText: null,
         afterText: "Unrelated.",
       },
@@ -465,7 +489,7 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
       })),
     })),
     before: [
-      { hash: deletedId, serialized: "Deleted." },
+      { hash: deletedId, serialized: "Deleted.", ...getBlockItemId(deleted) },
       { hash: survivorId, serialized: "Survivor." },
     ],
     blockIdentities: new Map([

@@ -250,7 +250,6 @@ import {
 } from "./model-tools/index.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
-import { readThreadContextDocument } from "./thread-context-route.js";
 
 export type AppServices = {
   gateway: Gateway;
@@ -573,18 +572,6 @@ export async function createProductionAppPorts(input: {
         );
         return { projectId: thread.projectId };
       },
-      resolveContextDocument: (input) =>
-        readThreadContextDocument(
-          {
-            contextPorts,
-            fileAccess,
-            threads: threadRepos.threads,
-            threadWorks: threadRepos.threadWorks,
-            works: workRepo,
-            workAuthorityResolver,
-          },
-          input as never,
-        ),
     },
   });
   boundManifestMembership = documentSync;
@@ -653,7 +640,7 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
-  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-v4-flash";
+  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-flash";
   if (
     !MODEL_REGISTRY.providers.some((provider) =>
       provider.models.some((model) => model.id === summarizerModel),

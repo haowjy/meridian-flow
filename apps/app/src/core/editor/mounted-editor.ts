@@ -53,6 +53,7 @@ export type EditorMountIdentity =
       /** Generation-fenced branch review room from the preview DTO. */
       roomName: string;
       draftId: string;
+      workId: string;
     });
 
 /** Values that may change while the same editor keeps running. */
