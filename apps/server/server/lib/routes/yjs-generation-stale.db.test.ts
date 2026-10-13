@@ -15,8 +15,8 @@ import {
   createTestDatabase,
   resetDatabase,
   USER_ID,
-  WORK_ID,
 } from "../../domains/collab/test-support/change-trail-postgres-harness.js";
+import { reviewDriver } from "../../domains/collab/test-support/draft-review-requests.js";
 import { admitWriterSync, createHocuspocus } from "../yjs-ws-handler.js";
 
 const db = createTestDatabase();
@@ -54,7 +54,7 @@ it.each([
     await f.branchCoordinator.readBranch(branchId, async (doc) => {
       Y.applyUpdate(old, Y.encodeStateAsUpdate(doc));
     });
-    const request = { workId: WORK_ID, documentId: ALPHA_ID, draftId: branchId, userId: USER_ID };
+    const review = reviewDriver(f.collab.draftReview);
     const persistence = createHocuspocusPersistenceService({
       branchStore: f.branchStore,
       branchCoordinator: f.branchCoordinator,
@@ -128,7 +128,7 @@ it.each([
       connected = open(old);
       await connected.synced;
       expect(server.hocuspocus.documents.get(roomName)?.getConnectionsCount()).toBe(1);
-      await f.collab.draftReview.discardWorkDraft(request);
+      await review.discardItem(ALPHA_ID);
       reset = true;
       closeBranchRooms(server.hocuspocus, branchId);
       // In-band CLOSE synthesizes 1000; clients must classify the named reason.
@@ -140,18 +140,12 @@ it.each([
       documents.push(fresh);
       expect(await open(fresh).denied).toBe(WS_CLOSE.BRANCH_GENERATION_STALE.reason);
     } else {
-      const preview = await f.collab.draftReview.preview(request);
-      if (preview.status !== "active") throw new Error("missing review");
+      const preview = await review.activePreview(ALPHA_ID);
       expect(preview.operations).toHaveLength(2);
       expect(
-        await f.collab.draftReview.discardWorkDraft({
-          ...request,
-          closureClassIds: [preview.operations[1].closureClassId],
-          admissionTokens: [preview.operations[1].admissionToken],
-          memberPartKeys: preview.operations[1].partKey ? [preview.operations[1].partKey] : [],
-          liveRevisionToken: preview.liveRevisionToken,
-          draftRevisionToken: preview.draftRevisionToken,
-        }),
+        await review.discardChanges(ALPHA_ID, preview, [
+          preview.operations[1]?.operationId as string,
+        ]),
       ).toMatchObject({ itemClosed: false });
       expect((await f.branchStore.getBranch(branchId))?.generation).toBe(snapshot.generation + 1);
       const reconnect = createCollabYDoc({ gc: false });

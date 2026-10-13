@@ -469,6 +469,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           body: {
             status: "held",
             draftId: expect.any(String),
+            itemKey: expect.any(String),
             reason: { code: "path_taken", path: "manuscript://ideas/kael" },
           },
         },
