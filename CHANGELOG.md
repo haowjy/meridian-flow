@@ -179,6 +179,7 @@
 
 - Documents in a narrow pane (the side panel, a narrow Editor window, the phone) give more of their width to the text. Margins follow the pane rather than the screen, and the right margin narrows first while the left keeps room for the drag handle.
 
+- Phone: opening Manuscript, Knowledge Base or Unfiled from Files lists its files again, instead of "This folder no longer exists."
 - Chats recover live replies after a server restart without a reload. A reconnect that never answers, or a connected socket that goes silent, is retried instead of hanging the tab.
 
 - Returning a file or folder to its previous location publishes fresh canonical evidence even when deferred catalog repair skips the intermediate location.
