@@ -70,24 +70,9 @@ function serializeMarkdown(fixture: CrossWorkProbeFixture, doc: Y.Doc): string {
   );
 }
 
-export async function runCrossWorkProbe(
-  fixture: CrossWorkProbeFixture,
-  probeCase: "manual" | "auto",
-): Promise<CrossWorkProbeResult> {
-  const {
-    db,
-    schema,
-    persistence,
-    liveCoordinator,
-    collab,
-    branchStore,
-    branchCoordinator,
-    realBranchPush,
-    trailDelivery,
-    model,
-    markupCodec,
-    deliveredEvents,
-  } = fixture;
+/** A second Work in the project with its own primary chat and one assistant turn. */
+export async function seedSecondWork(fixture: CrossWorkProbeFixture): Promise<void> {
+  const { db, schema } = fixture;
   await db.insert(schema.works).values({
     id: WORK_B_ID,
     projectId: PROJECT_ID,
@@ -119,6 +104,27 @@ export async function runCrossWorkProbe(
     projectId: PROJECT_ID,
     isPrimary: true,
   });
+}
+
+export async function runCrossWorkProbe(
+  fixture: CrossWorkProbeFixture,
+  probeCase: "manual" | "auto",
+): Promise<CrossWorkProbeResult> {
+  const {
+    db,
+    schema,
+    persistence,
+    liveCoordinator,
+    collab,
+    branchStore,
+    branchCoordinator,
+    realBranchPush,
+    trailDelivery,
+    model,
+    markupCodec,
+    deliveredEvents,
+  } = fixture;
+  await seedSecondWork(fixture);
 
   await persistence.lifecycle.ensureDocument(ALPHA_ID);
   await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
