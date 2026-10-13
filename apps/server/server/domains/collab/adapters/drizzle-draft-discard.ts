@@ -17,7 +17,7 @@
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branchWriteJournal, documentBranches } from "@meridian/database/schema";
+import { branchWriteJournal, documentBranches, documents } from "@meridian/database/schema";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
@@ -36,6 +36,7 @@ import { BranchCasConflictError, type BranchCoordinator } from "../domain/branch
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
 import { DraftCommandExistsError } from "../domain/draft-commands.js";
 import {
+  type DiscardItem,
   type DiscardKernelInput,
   type DiscardKernelResult,
   type DraftBranchRef,
@@ -249,14 +250,28 @@ export function createDrizzleDraftDiscard(
     return deps.branches.closeThreadPeersOf([content.branchId], "edit_discarded");
   }
 
+  async function hiddenDocuments(ids: readonly DocumentId[]): Promise<ReadonlySet<DocumentId>> {
+    if (ids.length === 0) return new Set();
+    const rows = await currentDrizzleDb(db)
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(inArray(documents.id, [...ids]), eq(documents.hidden, true)));
+    return new Set(rows.map((row) => row.id as DocumentId));
+  }
+
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
     const { draftId } = input;
     // Only the items arm carries leases and live documents.
     if (!("lease" in input)) return discardWholeLocked(db, deps, draftId);
     const { items } = input.selection;
-    const created = items
-      .filter((item) => item.origin === "created")
-      .map((item) => item.documentId);
+    // Created or edited is the document's visibility now, read under the locks the caller
+    // holds: another Work's Apply may have revealed a create since the item was resolved, and
+    // a revealed create is an edited item (§2.2), kept and reset from live, not ended.
+    const hiddenNow = await hiddenDocuments(
+      items.filter((item) => item.origin === "created").map((item) => item.documentId),
+    );
+    const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
+    const created = items.filter(isCreated).map((item) => item.documentId);
     const ended = await endUseReconciled(
       db,
       deps,
@@ -270,7 +285,7 @@ export function createDrizzleDraftDiscard(
       ...(await closeDraftBranches(db, draftId, "document_discarded", created)),
     ];
     for (const item of items) {
-      if (item.draftBranchId && item.origin === "edited") {
+      if (item.draftBranchId && !isCreated(item)) {
         retiredBranches.push(
           ...(await resetItemText(input, {
             documentId: item.documentId,

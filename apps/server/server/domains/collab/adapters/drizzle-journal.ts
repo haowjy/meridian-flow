@@ -35,8 +35,8 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
-import { collabHook } from "../domain/collab-test-hooks.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
+import { collabHook } from "../domain/collab-test-hooks.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,

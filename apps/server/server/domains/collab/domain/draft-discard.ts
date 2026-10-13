@@ -44,6 +44,7 @@ export type DiscardItem = {
   documentId: DocumentId;
   /** The draft's branch on it; null for a created image. */
   draftBranchId: string | null;
+  /** Provenance only: the kernel classifies by the document's visibility under its locks (§2.2). */
   origin: "created" | "edited";
 };
 
