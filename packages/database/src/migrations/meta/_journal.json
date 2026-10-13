@@ -295,6 +295,13 @@
       "when": 1791813730505,
       "tag": "0041_trail_dirty_signals",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791909132896,
+      "tag": "0042_pretty_ricochet",
+      "breakpoints": true
     }
   ]
 }

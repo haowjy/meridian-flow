@@ -177,6 +177,8 @@
 
 ### Fixed
 
+- Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
+
 - After a server restart interrupts a reply, the chat returns to idle when recovery finishes and accepts your next message without waiting.
 
 - A reply the AI provider turned down now offers Retry, so you can try it again after fixing the cause without retyping.

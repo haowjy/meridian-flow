@@ -136,7 +136,9 @@ when the target turn is absent, invalidate/refetch the durable snapshot rather
 than creating a synthetic streaming turn. Store duplicate replacement as a
 reference-preserving no-op. The pending inbox remains generic for transport
 and model drain. `queuedWriterTurnIds` selects writer-provenance turns whose
-delivery state is still `waiting`; only those accepted bubbles show `Queued`.
+delivery state is still `waiting`; those accepted bubbles show `Queued` unless
+the pending inbox is usage-blocked. While blocked, pending writer bubbles show
+`Waiting for usage` and the composer shows the Add usage note. Otherwise
 `awaiting_run` has no inline label because the live indicator already signals a
 response is coming. There is no composer queue tray.
 

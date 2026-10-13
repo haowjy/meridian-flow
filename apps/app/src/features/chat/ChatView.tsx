@@ -72,6 +72,7 @@ import { SubagentActivityProvider } from "./subagent/ActivityContext";
 import { SubagentDisclosureProvider } from "./subagent/DisclosureStore";
 import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
+import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
@@ -381,6 +382,11 @@ export function ChatView({
           footer={
             <div data-debug-composer={threadId}>
               <Composer
+                notices={
+                  pendingInbox.blocked?.reason === "credits_exhausted" ? (
+                    <UsageBlockedNotice />
+                  ) : undefined
+                }
                 key={draft.key}
                 initialDraft={draft.initialDraft}
                 onDraftChange={draft.updateDraft}
@@ -448,6 +454,7 @@ export function ChatView({
                     changeTrails={changeTrails.byId}
                     submissionRecoveryByTurnId={submissions.presentation}
                     queuedWriterTurnIds={queuedWriterTurnIds}
+                    waitingForUsage={pendingInbox.blocked?.reason === "credits_exhausted"}
                     controls={controls}
                     brief={brief}
                     replyRetry={replyRetry}

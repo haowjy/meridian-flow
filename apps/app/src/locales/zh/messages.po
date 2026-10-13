@@ -519,6 +519,10 @@ msgstr ""
 msgid "Add to favorites"
 msgstr ""
 
+#: src/features/chat/UsageBlockedNotice.tsx
+msgid "Add usage"
+msgstr ""
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 #~ msgid "Added"
 #~ msgstr ""
@@ -4802,6 +4806,10 @@ msgstr ""
 msgid "Wait for this response to finish, then try again."
 msgstr ""
 
+#: src/features/chat/UserTurn.tsx
+msgid "Waiting for usage"
+msgstr ""
+
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
 msgstr ""
@@ -4952,6 +4960,10 @@ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
+msgstr ""
+
+#: src/features/chat/UsageBlockedNotice.tsx
+msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
 
 #: src/features/chat/InterruptResponseFeedback.tsx
