@@ -20,7 +20,7 @@ projection engine. It resolves each document's filetype (composition-root
 resolver injected in `composition.ts`) before every parse or serialization:
 `document` → markdown codec; `code` → one `code_block` holding the raw text
 verbatim (`language` = filetype), read back without fences. Checkpoint restore,
-branch/effective reads, and review previews use this document-aware surface;
+and branch/effective reads use this document-aware surface;
 schema-blind serialization is private to the engine.
 Checkpoint restore (`restoreFromYDoc`) installs the snapshot's projected nodes
 directly, never a serialize/parse round trip, so attributes the codec does not
@@ -118,12 +118,14 @@ from it.
 
 `domain/document-link-scope-doors.ts` wraps every door that serializes: the
 markdown engine (each method prepares after loading its doc), the edit core
-(`read`/`write` by grant project and principal, reversal by document in its
-thread; agent-edit binds its codec per command through `DocumentLinksPort`),
+(`read`/`write` by grant project and principal; agent-edit binds its codec
+per command through `DocumentLinksPort`),
 the branch peer (effective Markdown, hashlines and revision, in the reader's
 thread), the reply's save (by thread),
-live turn reversal and offline reconciliation. Draft preview owns one
-enclosing scope for both sides, the draft spelled in its Work's view. ContextFS
+and offline reconciliation. Draft preview owns one
+enclosing scope for both sides and prepares the draft holder in its Work's
+view for the `y2:` revision; it does not serialize whole-document Markdown.
+Selective Apply/Discard recompute that scoped revision with their selection. ContextFS
 search owns one for all matching documents in its source. Branch push opens
 its scope before branch locks and prepares its trail docs under them; its
 settlement keeps its own scope. Wrappers name every method, so a new method

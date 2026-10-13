@@ -12,17 +12,18 @@
  * The phone never holds a dock document.
  *
  * Every asynchronous attempt claims the dock at the start of its intent
- * (`useDockViewStore.claim`) and commits with that claim, so a slower, older
+ * (`useDockDocumentStore.claim`) and commits with that claim, so a slower, older
  * attempt can never replace a newer choice; a superseded commit is `cancelled`.
  */
 import { useCallback } from "react";
 import type { ContextTab } from "@/client/stores";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useProjectDocumentNavigationProjectId } from "../context/open-project-document";
+import type { ReviewAddress } from "../presented-document";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
 import type { ScreenKey } from "../shell/screens";
-import { useDockViewStore } from "./dock-view-store";
+import { dockDocument, useDockDocumentStore } from "./dock-document-store";
 
 /** A chat/Scratch pick opens beside the chat: only when the chat is in the middle. */
 export function opensBesideChat(screen: ScreenKey, phone: boolean): boolean {
@@ -65,10 +66,11 @@ export function commitDockDocument(
   tab: ContextTab,
   revealDock: (view: "document") => void,
   claim?: number,
+  review: ReviewAddress | null = null,
 ): DockCommit {
-  const store = useDockViewStore.getState();
+  const store = useDockDocumentStore.getState();
   const attempt = claim ?? store.claim();
-  if (!store.commit(attempt, { projectId, screen, tab })) return "cancelled";
+  if (!store.commit(attempt, dockDocument(projectId, screen, tab, review))) return "cancelled";
   revealDock("document");
   return "opened";
 }

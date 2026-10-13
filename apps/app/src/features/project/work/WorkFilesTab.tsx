@@ -1,4 +1,4 @@
-/** The Work page's Files tab: its search and New note, over Drafts and Scratch. */
+/** The Work page's Files tab: its search and New note, over Changes to review and Scratch. */
 import { t } from "@lingui/core/macro";
 import { useState } from "react";
 import type { AddressableWork } from "@/client/query/useWorks";

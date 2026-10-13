@@ -1,7 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
-
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ParsedRequestId } from "@meridian/contracts/request-id";
@@ -14,13 +13,14 @@ import {
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useContextCatalogView, useContextCatalogViews } from "@/client/query/useContextCatalog";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
   type ContextTab,
   getContextTabs,
   isEditorScheme,
+  matchesReviewDraft,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -37,11 +37,6 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
-import {
-  bindDocumentAddressReview,
-  reviewAddressRouteBinding,
-  reviewBoundAddressResult,
-} from "./document-address-review";
 import {
   DocumentSwitchFailureProvider,
   destinationFailure,
@@ -67,9 +62,14 @@ import {
   type ProjectDestination,
   parseProjectAddress,
   projectAddressHref,
+  workDetailAddress,
 } from "./project-address";
 import { addressWorkSelection, workSelectionFor } from "./project-address-resolution";
-import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
+import {
+  resolveLocalDocumentSelection,
+  selectEditorEntryTab,
+  useEditorContainerAddress,
+} from "./project-local-selection";
 import {
   createProjectNavigation,
   type DisplayedProjectSelection,
@@ -85,6 +85,7 @@ import {
   projectSearchEquals,
   type RouteWorkResolution,
   routeWorkIssue,
+  type WorkDetailTarget,
 } from "./project-route";
 import { resolveRouteWork, useWorkRoute } from "./work-route";
 
@@ -327,20 +328,29 @@ function ReadableProjectDestination({
     documentDestination?.scheme !== "scratch"
       ? { workId: null }
       : contextOwner(addressWorkId, address.lineage);
+  const addressSchemes = useMemo(
+    () => (documentDestination ? [documentDestination.scheme] : []),
+    [documentDestination?.scheme],
+  );
+  const addressCatalogs = useContextCatalogViews(projectId, addressSchemes, {
+    ...addressOwner,
+    enabled: !!documentDestination && editorWork.status === "present",
+  });
   const {
     catalog: addressCatalog,
     isComplete: addressCatalogComplete,
     isFetching: addressCatalogFetching,
     isError: addressCatalogError,
     refetch: refetchAddressCatalog,
-    // No document destination has no review; the default only supplies an inert browse catalog.
-  } = useContextCatalogView(projectId, documentDestination?.scheme ?? "manuscript", {
-    ...addressOwner,
-    enabled: !!documentDestination && editorWork.status === "present",
-  });
-  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
-  const addressBinding = bindDocumentAddressReview(address.draftId, addressWorkId);
-  const addressReview = addressBinding.kind === "review" ? addressBinding.review : undefined;
+  } = documentDestination
+    ? addressCatalogs[documentDestination.scheme]
+    : {
+        catalog: null,
+        isComplete: false,
+        isFetching: false,
+        isError: false,
+        refetch: () => undefined,
+      };
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const documentLookup = useQuery({
     queryKey: [
@@ -348,8 +358,6 @@ function ReadableProjectDestination({
       documentDestination?.scheme,
       documentDestination?.path,
       addressOwner.rootThreadId ?? addressOwner.workId,
-      address.draftId ? addressWorkId : null,
-      address.draftId,
       addressCatalog?.normalized.generation,
       addressCatalog?.normalized.appliedRevision,
     ],
@@ -359,16 +367,10 @@ function ReadableProjectDestination({
         projectId,
         documentDestination.scheme,
         documentDestination.path,
-        {
-          ...addressOwner,
-          review: addressReview,
-        },
+        addressOwner,
       );
     },
-    enabled:
-      !!documentDestination &&
-      editorWork.status === "present" &&
-      (addressBinding.kind === "plain" || addressBinding.kind === "review"),
+    enabled: !!documentDestination && editorWork.status === "present",
     staleTime: 0,
     retry: false,
   });
@@ -382,7 +384,7 @@ function ReadableProjectDestination({
   });
   const localDocumentAddress = useMemo(
     () =>
-      documentDestination && addressBinding.kind === "plain"
+      documentDestination
         ? resolveLocalDocumentAddress(
             projectId,
             documentDestination,
@@ -394,7 +396,6 @@ function ReadableProjectDestination({
         : undefined,
     [
       addressCatalog,
-      addressBinding.kind,
       documentDestination,
       addressOwner.workId,
       addressOwner.rootThreadId,
@@ -402,10 +403,10 @@ function ReadableProjectDestination({
       boundDocumentId,
     ],
   );
+  const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
-    reviewBoundAddressResult(addressBinding, documentLookup.data),
-    addressBinding.kind === "plain" ? "live" : "review",
+    documentLookup.data,
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
@@ -417,29 +418,21 @@ function ReadableProjectDestination({
     },
     editorDrafts,
     (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
-    reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
-  const reviewRouteBinding = reviewAddressRouteBinding(
-    addressBinding,
-    documentResult,
-    selection,
-    documentDestination,
-    workId,
-  );
-  useLayoutEffect(() => {
-    if (!reviewRouteBinding) return;
-    contextRemoval.bindRouteSelection(projectId, reviewRouteBinding.revision, {
-      kind: "server",
-      documentId: reviewRouteBinding.documentId,
-    });
-  }, [contextRemoval, projectId, reviewRouteBinding?.revision, reviewRouteBinding?.documentId]);
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
   const addressDocumentId =
     documentResult && documentResult.kind !== "unavailable"
       ? documentResult.document.documentId
       : undefined;
   addressDocumentIdRef.current = addressDocumentId;
+  const editorContainerAddress = useEditorContainerAddress({
+    active: activeScreen === "context",
+    accountId: user.userId,
+    address,
+    documentId: addressDocumentId ?? null,
+    workId,
+  });
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : (routeWorkIssue(routeWork) ??
@@ -483,7 +476,13 @@ function ReadableProjectDestination({
           (draftOnly
             ? // Review installs the tab; until it has, the address is still being repaired.
               address.draftId === draftOnly.draft.draftId &&
-              workspaceTabs.some((tab) => tab.documentId === draftOnly.documentId)
+              workspaceTabs.some((tab) =>
+                matchesReviewDraft(tab, {
+                  documentId: draftOnly.documentId,
+                  reviewWorkId: workId ?? "",
+                  reviewDraftId: draftOnly.draft.draftId,
+                }),
+              )
               ? undefined
               : "loading"
             : documentDestination
@@ -507,9 +506,14 @@ function ReadableProjectDestination({
       ...address,
       destination: next,
       draftId: undefined,
-      workView: next.kind === "work" ? address.workView : undefined,
+      workView: undefined,
       worksView: undefined,
     };
+  }
+  // A Work opens on its chats unless the target names Files: one address, so
+  // one transition and one history entry, whatever screen it leaves.
+  function workAddress(target: WorkDetailTarget): ProjectAddress {
+    return workDetailAddress(address, target);
   }
   const contextDestination = useCallback(
     (target: ContextRouteRequest, preparedTab?: ContextTab, draftId?: string) =>
@@ -541,7 +545,7 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
-  const setEditorReviewDraftId = useCallback((draftId: string | null) => {
+  const setEditorReviewDraftId = useCallback((draftId: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
@@ -555,6 +559,7 @@ function ReadableProjectDestination({
       ...address,
       work,
       draftId: draftId ?? undefined,
+      changeId: draftId ? changeId : undefined,
     });
   }, []);
   const closeDestination = useCallback(
@@ -585,10 +590,8 @@ function ReadableProjectDestination({
     if (result.kind === "failed") throw result.error;
   };
   const routeCommands: ProjectRouteCommands = {
-    openWork: (target, options) =>
-      goLegacy(toDestination({ kind: "work", workId: target.workId }), options),
-    workHref: (target) =>
-      projectAddressHref(toDestination({ kind: "work", workId: target.workId })),
+    openWork: (target, options) => goLegacy(workAddress(target), options),
+    workHref: (target) => projectAddressHref(workAddress(target)),
     workView: address.workView ?? "chats",
     setWorkView: (view) =>
       goLegacy({ ...address, workView: view === "files" ? "files" : undefined }, { replace: true }),
@@ -675,7 +678,13 @@ function ReadableProjectDestination({
       if (tab)
         return openContext(
           { ...routeTargetForTab(tab, workId), documentId: tab.documentId },
-          options,
+          {
+            ...options,
+            ...(editorContainerAddress?.documentId === tab.documentId &&
+            editorContainerAddress.workId === workId
+              ? { draftId: editorContainerAddress.address.draftId }
+              : {}),
+          },
         );
     }
     return go(
@@ -712,6 +721,7 @@ function ReadableProjectDestination({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
+      openWork={routeCommands.openWork}
       screenCommands={{
         showEditor: (options) => showScreenDestination("context", options),
         showWork: () => showScreenDestination("work"),
@@ -778,7 +788,7 @@ function ReadableProjectDestination({
                       replace: true,
                       // The coordinator relocates the document the address names,
                       // or falls back to another. Either way the review follows
-                      // the address until EditorReviewAddressOwner, which knows
+                      // the address until ReviewAddressOwner, which knows
                       // the document's identity, decides it no longer applies.
                       draftId: address.draftId,
                     },
@@ -795,16 +805,8 @@ function ReadableProjectDestination({
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
             reviewDraftId={address.draftId}
+            reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
-            reviewAddressAdmission={
-              documentIssue === "error"
-                ? "failed"
-                : documentIssue === "unavailable"
-                  ? "unavailable"
-                  : addressDocumentId
-                    ? "admitted"
-                    : "pending"
-            }
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}
             onExitContextScheme={() => browse(null)}

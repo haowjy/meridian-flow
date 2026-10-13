@@ -85,6 +85,8 @@ export type NavigationOptions = {
 export type WorkDetailTarget = {
   kind: "work-detail";
   workId: ParsedRequestId;
+  /** The Work page's tab; absent opens its chats. */
+  view?: WorkView;
 };
 
 /**

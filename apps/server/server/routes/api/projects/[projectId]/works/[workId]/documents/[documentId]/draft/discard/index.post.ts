@@ -22,11 +22,11 @@ export default defineEventHandler(async (event) => {
     documentId: (getRouterParam(event, "documentId") ?? "") as DocumentId,
     draftId,
     userId: user.userId,
-    operationIds: Array.isArray(body.operationIds)
-      ? body.operationIds.filter(
-          (operationId): operationId is string => typeof operationId === "string",
-        )
-      : undefined,
+    ...("memberPartKeys" in body ? { memberPartKeys: body.memberPartKeys } : {}),
+    ...("admissionTokens" in body ? { admissionTokens: body.admissionTokens } : {}),
+    ...("closureClassIds" in body ? { closureClassIds: body.closureClassIds } : {}),
+    ...("liveRevisionToken" in body ? { liveRevisionToken: body.liveRevisionToken } : {}),
+    ...("draftRevisionToken" in body ? { draftRevisionToken: body.draftRevisionToken } : {}),
   });
   return result;
 });

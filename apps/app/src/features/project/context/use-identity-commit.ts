@@ -34,6 +34,8 @@ export type IdentityCommitted = {
 export type IdentityCommitOwnership = {
   /** True only for the latest operation started by this identity surface. */
   isLatest: boolean;
+  /** The mounted representation captured before the namespace command. */
+  tab: ContextTab;
 };
 
 export function identityCommitMayNavigate(
@@ -155,7 +157,7 @@ export function useIdentityCommit({
           ...replaceOwner(destination),
           routeWorkId: authority.workId ?? editorWorkId,
         },
-        ownership,
+        { ...ownership, tab },
       );
       return {
         status: "committed",

@@ -90,7 +90,7 @@ describe("document copy", () => {
     const responseContext = {
       ...context,
       turnId: "turn-copy",
-      responseId: "response-copy",
+      responseIdentity: { providerResponseId: "response-copy", editScopeId: "response-copy" },
       createdDocument: true,
     };
 

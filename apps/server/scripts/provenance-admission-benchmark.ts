@@ -258,7 +258,7 @@ function countingJournal(counters: Counters): UpdateJournal {
     appendBatch: async () => [],
     read: async () => ({ checkpoint: null, updates: [] }),
     checkpoint: async () => undefined,
-    compact: async () => ({ updatesFolded: 0, reversalsExpired: 0 }),
+    compact: async () => ({ updatesFolded: 0 }),
   };
 }
 

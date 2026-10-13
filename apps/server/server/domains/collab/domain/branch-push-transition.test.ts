@@ -92,12 +92,6 @@ function fixture() {
     async lockDraftWorks() {
       return new Set<string>();
     },
-    async commitTurnRedo() {
-      throw new Error("push only");
-    },
-    async markRollbackPending() {
-      throw new Error("push only");
-    },
   };
   const mutex = new KeyedMutex();
   const coordinator = {

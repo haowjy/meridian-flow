@@ -61,7 +61,8 @@ Settings is an auxiliary routed surface (`?settings=`), not a drawer/sidebar des
 
 ### Document sessions: mobile is a registry owner
 
-Mobile documents are read-only for users but live for AI edits. Editable context
+Mobile documents are read-only for users but live for AI edits (a review's draft
+body too). Editable context
 documents still mount `EditorView` with the TipTap/Yjs binding active:
 
 ```tsx
@@ -76,12 +77,62 @@ open-tab set; phone navigation derives the active tab from the context tree and
 does not write to desktop tabs.
 
 The same resolved editable document is published into the persistent Editor
-review value. When that value selects a draft, the host resolves its review room
-and supplies the Work-qualified review identity to the existing `EditorView`;
-phone review does not own a parallel controller or state machine.
+review value through `useActiveReviewBinding`, which also leases live presence.
+The phone suspends presence for the requested review; desktop waits for its
+resolved room. Hosts pass only requested draft identity to `EditorView`; the
+adapter reads its canonical room and Work from the scope.
 
 This ownership is mandatory. Mounting `EditorView` directly without `retain()`
 creates Yjs sessions that the registry cannot know are closed.
+
+### Draft review on the phone
+
+`MobileDocumentReview` wraps the editor of both document hosts (a live document
+and a pending new document) and adds the review's chrome while that document is
+under inline review. The column keeps one place in the tree whether or not a
+review is open, so entering and leaving never remounts the warm live editor;
+the review editor mounts beside it and swaps in, as on desktop (`EditorView`). Nothing here owns
+review state: the stable wrapper obtains one `useReviewHeader` model and passes
+it to the header, bar and sheet. Sheet state and its toast stay phone-owned. Optimistic Apply and
+Discard, refusals held on the change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
+left" with Next draft are therefore the desktop's behaviour, not a copy of it.
+
+- **Header** (`MobileReviewHeader`): the Draft chip (`DraftSwitcher`), the
+  stepper and the list button (with the change count when there are changes),
+  in a 48px row under the top bar. The list button stays whatever the count,
+  because the sheet holds the state lines and the way to the Work's other
+  changes. Apply draft, Discard draft and Show changes live in the chip's menu
+  (with this document's Live and Draft versions and Close review for a new
+  document), so the row stays short. Refusals, "No changes left" and
+  "Formatting changes remain" take a line under it.
+- **Bar** (`MobileChangeBar`): a tap on a change selects it (the inline-review
+  plugin's mousedown handler, reached by the compatibility mousedown a tap fires;
+  verified in Chromium touch emulation, not on an iPhone) and its bar sits at the bottom of the
+  manuscript column, in the page's flow so nothing is hidden behind it. It clears
+  `env(safe-area-inset-bottom)` or the on-screen keyboard
+  (`--mobile-keyboard-height`, from `MobileKeyboardAware`, which the review column
+  uses). The desktop's margin bar steps aside on the phone shell.
+- **Sheet** (`MobileChangeSheet`): the list button opens THIS document's changes
+  as a bottom sheet over the dimmed manuscript, with the same body the desktop
+  identity row's popover shows (`draft-review/DocumentChanges`: changes, Applying,
+  No changes left with Next draft, formatting-only) in its `touch` form, and
+  "All changes in <Work>" at its foot (`WorkChangesLink`, one transition to the
+  Work's Files tab; absent in No Work). It lists no other file and has no Apply
+  all or Discard all: those are the Work page's. It opens and stays open at zero
+  changes. A row tap closes the sheet and focuses the change; Apply and Discard
+  act and leave it open. The toast sits in the sheet's flow below its title, since the scrim
+  covers the manuscript's own.
+- Every control is a 44px target (`touch` on `ReviewChangeRow`, `ReviewChangeBar`,
+  `ReviewStepper` and `DraftSwitcher`).
+- The review body is read-only on the phone, like the live document. A tap must
+  select a change, not raise the keyboard over its bar, and the phone has none of
+  the editing chrome (the desktop's block grip shows once a caret is placed).
+  Making the draft editable is one prop (`editable` on `EditorView`) plus those two
+  pieces of work. The desktop's struck-removal click (caret beside the removal)
+  does nothing on this read-only body.
+- A live document with a pending draft shows the version chip (`DraftReviewChip`,
+  `touch`) under the top bar; its Draft item opens the review. The composer
+  strip and Work files are the other entries.
 
 ## Architecture
 
@@ -129,7 +180,7 @@ the document session registry.
   project title inline without closing, and offers an explicit View projects link.
 - Outside Chat, a separate Open chat action opens a local Sheet without
   changing the destination. The registered dock reveal and pending first-send
-  reload recovery open the same Sheet and select its Chat tab. The Sheet renders
+  reload recovery open the same Sheet on the chat. The Sheet renders
   `ChatSurface` with `renderHeader` supplying `MobileChatSheetHeader`: a 56px
   status-bar-aware header carrying the chat switcher and a 44px close, built
   from `MobileTopBar`'s chrome primitives rather than the desktop `DockHeader`.
@@ -238,8 +289,9 @@ These are deliberate browser decisions, not incidental styling:
   focus on the first nav item, then focuses the sheet container. This avoids an
   unwanted programmatic focus ring on iOS while keeping the focus trap engaged.
 - **Keyboard clearance uses `visualViewport`.** `MobileKeyboardAware` exposes
-  `--mobile-keyboard-height` for the chat composer because standalone/PWA modes
-  have not always honored `interactive-widget=resizes-content` consistently.
+  `--mobile-keyboard-height` for the chat composer and the review's change bar
+  because standalone/PWA modes have not always honored
+  `interactive-widget=resizes-content` consistently.
 
 ## Patterns
 

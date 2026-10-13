@@ -201,10 +201,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (result.isError) {
         throw new Error(JSON.stringify({ output: result.output, events: eventSink.events }));
       }
-      await runtime.ports.documentSync.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      });
+      await runtime.ports.documentSync.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        },
+      );
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
       const drafts = await db
@@ -249,7 +252,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId: responseId,
+          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         },
       );
 
@@ -297,7 +300,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId: responseId,
+          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         },
       );
       if (insert.status !== "success") throw new Error(renderAgentEditResult(insert.result));
@@ -315,14 +318,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "runtime-settlement" }),
           threadId: THREAD_ID,
           turnId: TURN_ID,
-          responseId: responseId,
+          responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
         },
       );
       if (write.status !== "success") throw new Error(renderAgentEditResult(write.result));
-      await ports.documentSync.finalizeResponseCommit(responseId, {
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-      });
+      await ports.documentSync.finalizeResponseCommit(
+        { providerResponseId: responseId, editScopeId: responseId },
+        {
+          threadId: THREAD_ID,
+          turnId: TURN_ID,
+        },
+      );
       // The Work is in auto-apply, but this reply wrote its draft: the writes
       // wait there (D59) until the writer applies them.
       const unapplied = await ports.documentSync.readAsMarkdown(DOC_ID);

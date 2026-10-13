@@ -112,7 +112,7 @@ Shared across both shells:
   `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` +
   `DocumentPath.tsx` (the path, whose crumbs open the drill-in menu and only navigate) +
   `IdentityPlacementField.tsx` (Choose a home for a document in Unfiled, and repair of its refused
-  placement, committed through `use-identity-commit.ts`). Resource-backed tabs retain
+  placement, committed through `use-identity-commit.ts`). The painted review shares the identity row through `DraftReviewBand`; the path only navigates, and rename/move belong to lists. Resource-backed tabs retain
   one stable handle and editor ancestry through create, acknowledgement, rename,
   remint, and catalog refresh.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and

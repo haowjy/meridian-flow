@@ -44,7 +44,7 @@ describe("reply save boundaries", () => {
       toolExecutor: {
         async executeTool(call, ctx) {
           const command = (call.arguments as { command: "insert" | "undo" | "redo" }).command;
-          events.push(`${command}@${ctx.responseId}`);
+          events.push(`${command}@${ctx.responseIdentity?.editScopeId}`);
           if (command !== "insert") {
             const reversed = modelResult({ command, status: "success", phase: "committed" });
             return {
@@ -69,7 +69,8 @@ describe("reply save boundaries", () => {
         },
       },
       responseWrites: {
-        async commitResponse(responseId, _ctx, beforeCommit) {
+        async commitResponse(responseIdentity, _ctx, beforeCommit) {
+          const responseId = responseIdentity.editScopeId;
           events.push(`save@${responseId}`);
           const result = {
             status: "committed" as const,

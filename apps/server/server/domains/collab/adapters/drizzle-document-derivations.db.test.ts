@@ -207,10 +207,7 @@ describe("durable document derivations", () => {
       expect.soft(await writer).toBeInstanceOf(RetiredDocumentHandleError);
       expect.soft(await agent).toBeInstanceOf(RetiredDocumentHandleError);
       await transport.drainHocuspocusPersistence();
-      for (const snapshot of [
-        await persistence.journal.read(documentId),
-        await persistence.journal.readForReconstruction(documentId),
-      ]) {
+      for (const snapshot of [await persistence.journal.read(documentId)]) {
         const restored = new Y.Doc();
         if (snapshot.checkpoint) Y.applyUpdate(restored, snapshot.checkpoint);
         for (const row of snapshot.updates) Y.applyUpdate(restored, row.update);
@@ -375,7 +372,7 @@ describe("durable document derivations", () => {
     await service.derive(documentId);
     expect(await projection()).toBe("Before typing.");
     for (const snapshot of [
-      await persistence.journal.readForReconstruction(documentId),
+      await persistence.journal.read(documentId),
       await persistence.journal.read(documentId, { until: retiredSeq }),
     ]) {
       const reconstructed = new Y.Doc({ gc: false });

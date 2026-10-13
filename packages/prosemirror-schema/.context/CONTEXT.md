@@ -20,8 +20,8 @@ documents from the same node/mark specs.
   Server mirror code imports it from this package; app code must stay aligned when it re-exports or displays the
   fragment name.
 - **One Yjs clientID policy.** `RESERVED_CLIENT_ID_MAX` reserves clientIDs
-  `[0, 999]` for server-authored Yjs writer streams, with
-  `AGENT_EDIT_UNDO_CLIENT_ID` occupying slot `999`. Random-authoring docs that
+  `[0, 999]` for server-authored Yjs writer streams. No undo operation owns a
+  fixed reserved slot. Random-authoring docs that
   may persist or sync use `createCollabYDoc()` so they re-roll out of the
   reserved band before writing.
 - **One schema-version algebra.** `CollabSchemaVersion` triples are the only

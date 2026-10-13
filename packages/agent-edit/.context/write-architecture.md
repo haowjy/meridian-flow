@@ -62,6 +62,20 @@ falls back to block-identity diffing. Scoring and gap policy stay with callers.
 Flat inline offsets exclude atoms (pictures, hard breaks), so `textRanges` edits
 apply only to blocks without atoms; anything else is a `block` edit.
 
+### Prepared edits and receipts (`tool/write-commands.ts`, `tool/receipt.ts`)
+
+Create, copy and mutation planning feed one `PreparedEdit` finishing path. It
+reserves identity, captures the before cut and ordered transaction parts, applies
+and certifies each segment, then stages or submits one logical edit. Certification
+runs inside each segment's own transaction before its fresh client rotates.
+Restoration handles pre-acceptance failure; receipt rendering is outside it.
+Creation ownership and its empty-document admission precondition stay explicit.
+
+Commands submit one merged update with ordered `editParts`, not expanded journal
+rows. The host storage adapter chooses row expansion (paragraph parts for a draft,
+one update for live). Accepted before/after cuts feed the pure receipt renderer;
+report failures preserve settlement identity and return degraded awareness.
+
 ### Edit application (`src/apply/apply-edits.ts`)
 `applyEdits` owns mutation and returns ordered live touched IDs, deleted IDs,
 and inserted IDs in insertion order, without rendering prose or building per-edit
@@ -92,61 +106,19 @@ structurally deleting (the built-in adapter preserves ProseMirror `doc(block+)`
 internally). Structural replacement inserts its new blocks before deleting old
 parents, so a non-empty requested document never leaves a cleared trailing block.
 
-### Undo/redo (`src/undo/`)
+### Forward inverses (`src/undo/`)
 
-Reversal is a single cold reconstruction path from `UpdateJournal`. It replays
-the retained durable update log (plus only a seq-0 baseline checkpoint when the
-host initialized a document that way), assigns per-reconstruction `Symbol` tokens,
-creates a fresh local `Y.UndoManager`, tags only the requested target forward
-update seqs with the tracked token, runs undo/redo, and extracts update bytes.
-The target seqs come from mutation rows: undo targets the selected `active`
-rows (write handles, a `since`/`to` range, the last N, or all; a turn only for
-the writer's turn undo); redo targets `reversed` rows whose `undoUpdateSeq`
-matches the redo target. This journal-backed model is authoritative.
+`forward-inverse.ts` computes a new edit from immutable target parts, durable
+restoration aliases and the current view. The host persists its parts under an
+action ID and chooses its policy and destination. Model stack commands, writer
+card actions and failed-response rollback all use this primitive. Journal history
+is never marked reversed, and no historical UndoManager is rebuilt.
 
-Forward agent writes still use a stable transaction origin `Symbol` per
-`(docId, threadId)` pair via `ThreadOriginRegistry`. That origin is for Yjs
-transaction attribution and same-actor filtering only; write selection for
-reversal comes from durable journal metadata (`w<N>` / mutation row
-`createdSeq`; `turnId` remains context), not live undo stack items.
-
-Redo targets are selected from durable `ReversalRecord` rows with
-`status: "reversed"`; there is no runtime redo stack or rehydration cache. Redo
-consumption is authoritative at persist time: `persistRedo()` rechecks the
-doc+thread+turn reversal is still `status: "reversed"` inside the append
-transaction, marks it `status: "redone"`, and returns `consumed: false` without
-appending when another session already used it.
-
-Redo staleness is writer-specific. A later `human:*` journal row withdraws redo;
-system reversal/bookkeeping rows and later agent rows do not. The planner and
-persist-time watermark guard use that same classification. `planUndo()` and
-`planRedo()` are the shared authority for read-model availability and command
-execution, so those paths cannot disagree except across a race.
-
-Lineage has two distinct persisted authorities.
-`document_yjs_reversals.redo_update_seq` records the current active redo closure
-(state): handles that are active because of the same redo update must undo
-together. `document_yjs_reversal_ops` records durable reversal op identity
-(history): old undo/redo update seqs are exempt from dependency blocking even
-when the current state has moved on. Both authorities compact with the retained
-Yjs update log so closure and dependency checks only target retained update seqs.
-Hosts may append a `system:reconcile` update after separately attributed rows in
-the same admission to make cold replay causally complete. That row is coverage
-for those authored rows, not a later semantic edit, so lineage dependency
-evaluation ignores it; the authored rows remain the reversal targets.
-The pure lineage entry point is `selectUndoClosure(...)`; callers pass the
-journal snapshot, reversal rows, unfiltered candidate mutation rows, selected
-handles, candidate handles, and reversal-op seqs, then receive the undo closure or
-unavailable verdict. The helper steps behind that API (compatible groups, boundary
-expansion, seq ownership, dependency evaluation) are private implementation
-details.
-
-**Write-level undo:** each `write()` call is its own durable mutation row. Undoing without a selector reverses exactly the latest active write. Each write has a stable per-(document, thread) handle (`w1`, `w2`, …) stored on mutation metadata and never renumbered. `undo`/`redo` can target `{to:"w3"}`, an inclusive `{from:"w2", to:"w5"}` range, `{last:N}`, or `{all:true}`. Range reconstruction still uses Yjs UndoManager item identity: selected writes are tracked, non-selected/concurrent updates replay untracked, so same-area concurrent merge behavior is unchanged. User-facing undo notifications carry per-handle turn mappings (`writeHandleTurns`) because one closure can span multiple turns; `turnId` is only a representative fallback for grouping/reporting.
-
-Multiple handles backed by the same durable journal update are one reversal
-boundary. Selecting any member expands to every handle sharing that update, so
-content and mutation status cannot diverge after a folded branch Apply.
-
+Forward-write attribution comes from explicit actor context and immutable receipts,
+not transaction-origin identity. Model handles are reserved through
+`UpdateJournal.reserveWriteOrdinal` before staging; immutable receipts retain
+those ordinals independently of transport compaction. Certified aliases are the
+only persisted restoration correspondence, never text or length guesses.
 
 ### CRDT-neutral seam, ProseMirror content currency
 
@@ -158,3 +130,47 @@ serialization. That does **not** mean the package is ProseMirror-neutral.
 the kernel, and resolver code still inspects PM block shape (`type.name`,
 `isTextblock`, heading attrs, body serialization). Full PM-out-of-kernel work is
 deferred in [TODO.md](TODO.md).
+
+### Per-write journal deltas
+
+The write command captures the synchronous Yjs `update` events from content
+application and semantic certification, then merges them into the logical write’s V1 update (and retains its ordered
+segment updates for draft journal submission).
+This includes that write's structs and deletes, not tombstones inherited from
+earlier writes. The listener is detached before submission, peer synchronization,
+or recovery, including on failure. Full snapshots remain the rollback and cold
+reconstruction currency; a state-vector diff is not a per-write deletion delta.
+
+Dependencies remain in the original Yjs references and client clocks. Independent
+writes can be reviewed separately when their insertion clients differ. Live writes retaining one runtime still require same-client clock-prefix closure.
+Draft writes rotate to a fresh client per segment and do not inherit that coupling.
+
+## Draft write granularity
+
+Flat same-type block rewrites lower to exact whole-word text splices when their
+replay reproduces the target, including marks. The shipped policy is one paragraph per logical
+write, not one paragraph across writes. A segment executes in one transaction with a fresh
+shared-protocol client ID. One staged logical write holds its ordered updates;
+receipts, rollback and before-snapshots stay per tool call. Journal submission
+alone flattens those segments into rows. Live writes capture one merged update.
+
+Recognized adjacent paragraph splits/merges and contiguous inserted or removed
+block runs stay one structural segment. Alignment carries their boundary identity
+into lowering; the segmenter consumes those recognized structural joins rather
+than rediscovering correspondence.
+Different logical writes remain separate unless their Yjs edits are dependent,
+even when they edit the same paragraph.
+
+Changed pairs never join each other through text correspondence. Only adjacent
+unpaired blocks are split/merge candidates, fenced by kept blocks. Each boundary
+checks whether the head's last word and tail's first word occur contiguously
+in the unsplit paragraph, ignoring whitespace. Words include adjacent non-space
+punctuation; fragments match by substring and any occurrence counts. On the
+outward walk the already-joined middle piece is used whole. This boundary
+recognition uses substring continuation, without LCS, subdivision or a cell
+budget; block pairing separately uses `weightedOrderedMatches` with
+`MAX_TABLE_CELLS`. Windows over 4,096 UTF-16 units join conservatively.
+Structural joins and physical insert/delete runs close into union-find components.
+Consecutive insertion
+edits sharing an old anchor carry one ordered run; execution chains each through
+the preceding insertion’s returned tail, in both live and draft destinations.

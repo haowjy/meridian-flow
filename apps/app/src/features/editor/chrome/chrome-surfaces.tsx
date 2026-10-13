@@ -24,6 +24,7 @@ import { ImageIngressOverlay } from "../surfaces/images";
 import { AtReferenceMenu, FollowOutcomeDialog, LinkSurfaces } from "../surfaces/link";
 import { ObjectControls } from "../surfaces/objects";
 import { PeerMarkSurface } from "../surfaces/peer-marks";
+import { ReviewChangeBarSurface } from "../surfaces/review";
 import { SlashMenu } from "../surfaces/slash";
 import { TableChrome } from "../surfaces/table";
 
@@ -54,6 +55,7 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
     id: "link-follow-outcome",
     render: ({ editor }) => <FollowOutcomeDialog editor={editor} />,
   },
+  { id: "review-change-bar", render: ({ editor }) => <ReviewChangeBarSurface editor={editor} /> }, // the focused review change
   { id: "peer-mark", render: ({ editor }) => <PeerMarkSurface editor={editor} /> }, // a peer's change
   {
     // A drag in the air and a refused file. What a picture does once it is IN the

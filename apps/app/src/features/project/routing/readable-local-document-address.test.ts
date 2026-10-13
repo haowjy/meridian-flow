@@ -1,11 +1,10 @@
 /** Warm exact content resolves readable routes independently from network address lookup. */
 
-import { CONTEXT_URI_SCHEMES, isDraftedScheme } from "@meridian/contracts/context-uri";
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
 import type { CatalogContextView, CatalogFile } from "@/client/query/context-catalog-projection";
-import type { ThreadDraftGroup } from "@/client/query/useWorkDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import {
   gateLiveView,
   reconcileDocumentAddress,
@@ -134,7 +133,6 @@ it("uses local content through lookup failure, then yields to a successful canon
   };
   expect(reconcileDocumentAddress(local, canonical)).toEqual({
     result: canonical,
-    view: "review",
     localFile: undefined,
   });
 });
@@ -153,7 +151,6 @@ it("keeps the path of the writer's unconfirmed move over a server alias for the 
 
   expect(reconcileDocumentAddress(pending, alias)).toEqual({
     result: local.result,
-    view: "local",
     localFile: pending.file,
   });
   expect(reconcileDocumentAddress(local, alias).result).toBe(alias);
@@ -172,27 +169,16 @@ describe("gateLiveView", () => {
       isError: false,
       ...state,
     }) as unknown as Parameters<typeof gateLiveView>[1];
-  const group = (isNewDocument: boolean, scheme = "manuscript") =>
+  const group = (isNewDocument: boolean) =>
     ({
       documentId: "document-id",
-      contextLocation: { scheme, path: "/New" },
+      isNewDocument,
       draft: { draftId: "draft-id", status: "active", isNewDocument },
-    }) as unknown as ThreadDraftGroup;
-  const ready = (...groups: ThreadDraftGroup[]) => ({ status: "ready", groups });
+    }) as unknown as ReviewFileTarget;
+  const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });
   const noTab = () => false;
 
-  it("admits only hidden creates as draft-only in every drafted source", () => {
-    for (const scheme of CONTEXT_URI_SCHEMES.filter(isDraftedScheme)) {
-      expect(gateLiveView(resolved, manifest([]), ready(group(true, scheme)), noTab)).toMatchObject(
-        { draftOnly: { draft: { draftId: "draft-id" } } },
-      );
-      expect(
-        gateLiveView(resolved, manifest(["document-id"]), ready(group(false, scheme)), noTab),
-      ).toEqual({ outcome: "ready", result: resolved });
-    }
-  });
-
-  it("opens a manuscript document missing from the live manifest as its pending new-document draft, never live", () => {
+  it("opens a document missing from the live manifest as its pending new-document draft, never live", () => {
     expect(gateLiveView(resolved, manifest(["document-id"]), ready(), noTab)).toEqual({
       outcome: "ready",
       result: resolved,
@@ -217,9 +203,9 @@ describe("gateLiveView", () => {
       outcome: "pending",
       result: undefined,
     });
-    expect(
-      gateLiveView(resolved, manifest([]), { status: "loading", groups: null }, noTab),
-    ).toEqual({ outcome: "pending", result: undefined });
+    expect(gateLiveView(resolved, manifest([]), { status: "loading", files: null }, noTab)).toEqual(
+      { outcome: "pending", result: undefined },
+    );
     // Apply promoted the tab; the lagging catalog does not get to veto it.
     expect(
       gateLiveView(resolved, manifest([], { isFetching: true }), ready(), () => true).result,
@@ -232,7 +218,7 @@ describe("gateLiveView", () => {
       outcome: "failed",
       result: undefined,
     });
-    expect(gateLiveView(resolved, manifest([]), { status: "error", groups: [] }, noTab)).toEqual({
+    expect(gateLiveView(resolved, manifest([]), { status: "error", files: [] }, noTab)).toEqual({
       outcome: "failed",
       result: undefined,
     });
@@ -262,33 +248,4 @@ it.each([
       selection: bound(selectionWork),
     }),
   ).toBe(expected);
-});
-
-it.each([
-  "settled",
-  "loading",
-  "failed",
-])("trusts a server live admission despite a %s catalog", (state) => {
-  const result = {
-    kind: "current",
-    document: { documentId: "new-document" },
-  } as DocumentAddressResult;
-  const manifest = {
-    catalog: null,
-    isComplete: state === "settled",
-    isFetching: state === "loading",
-    isError: state === "failed",
-  };
-  const drafts = {
-    status: state === "loading" ? "loading" : state === "failed" ? "error" : "empty",
-    groups: [],
-  };
-  expect(gateLiveView(result, manifest, drafts, () => false, "live")).toEqual({
-    outcome: "ready",
-    result,
-  });
-  expect(gateLiveView(result, manifest, drafts, () => false, "review")).not.toEqual({
-    outcome: "ready",
-    result,
-  });
 });

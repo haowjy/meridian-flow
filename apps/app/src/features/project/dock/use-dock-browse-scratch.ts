@@ -13,7 +13,7 @@ import { schemeLabel } from "../context/context-schemes";
 import type { ScratchSource } from "../context/use-catalog-menu-source";
 import { displayedChatThreadId, useChatNavigation } from "../routing/chat-navigation";
 import { useProjectScreen } from "../routing/ProjectNavigationContext";
-import { useDockViewStore } from "./dock-view-store";
+import { useDockDocumentStore } from "./dock-document-store";
 
 export function useDockBrowseScratch(projectId: string): ScratchSource | null {
   const screen = useProjectScreen();
@@ -22,7 +22,7 @@ export function useDockBrowseScratch(projectId: string): ScratchSource | null {
     projectId,
     screen === "chat" ? displayedChatThreadId(display) : null,
   );
-  const routeWorkId = useDockViewStore((state) => (screen === "work" ? state.workId : null));
+  const routeWorkId = useDockDocumentStore((state) => (screen === "work" ? state.workId : null));
   const { works } = useWorks(projectId);
   const workName = routeWorkId ? works?.find((work) => work.id === routeWorkId)?.name : undefined;
   const workScratch = useMemo<ScratchSource | null>(
