@@ -155,7 +155,7 @@ settled assistant turns are the same `Turn` rows in `turnsByThread`, with
 in-flight blocks marked `status: "partial"`.
 
 Rendering flows through `AssistantTurn` →
-`partitionTurn` (`features/chat/partition-turn.ts`): ordered turn blocks become
+`partitionTurn` (`@meridian/thread-client`, `src/view/partition-turn.ts`, reached through `viewTranscript`): ordered turn blocks become
 one ordered list of process, text, and artifact items. Process items collapse
 into a default-collapsed `Thinking` fold in place; text and artifacts stay
 visible and close the open process run. `groupDeliverySegments` normalizes tool

@@ -219,7 +219,7 @@ What the model receives for five common deliveries, so "durable
 Every one of these five is either a `system`-role turn with no custom block
 (2, 4, 5) or a `user`-role turn carrying one of the specific hidden-metadata
 shapes above (1 is genuinely visible; 3 is not). `visible-conversation-policy.ts`
-and the app's `visible-chat-turns.ts` keep every hidden one out of the chat
+and the view model's `classifyTurn` (`@meridian/thread-client`) keep every hidden one out of the chat
 transcript with no UI change: a `system`-role turn is visible only if it is
 not `subagent_update` **and** carries a custom block (never true for 2, 4, or
 5), and a `user`-role turn is hidden only for `inbox_message` or

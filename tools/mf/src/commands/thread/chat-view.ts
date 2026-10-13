@@ -346,7 +346,7 @@ function rowLines(row: ChatRow): string[] {
       if (row.items) {
         const summary = plainDigest(sumDigests(row.items));
         lines.push(
-          `${row.role === "assistant" ? "reply" : row.role}: ${summary || "no steps"}${tag} ${id}`,
+          `${row.role === "assistant" ? "reply" : row.role}: ${summary || "no steps folded"}${tag} ${id}`,
         );
       } else {
         const text = oneLine(row.text ?? "");

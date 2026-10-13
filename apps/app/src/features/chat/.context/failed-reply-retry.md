@@ -66,6 +66,6 @@ is announced once and is not reported as a failed run.
 
 `useRetryStandIns.ts` owns this optimistic half for both this Retry and the
 handoff brief's: the stand-in list, placement after the turn it followed
-(`placeStandIns` in `retry-stand-ins.ts`), reconciliation by id, the refused
+(`placeStandIns`, now run by `viewTranscript` from `@meridian/thread-client`), reconciliation by id, the refused
 set, and the lost-request re-send. Each caller supplies the POST and the
 stand-in's shape.
