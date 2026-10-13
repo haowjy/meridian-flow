@@ -6,7 +6,7 @@
  * over them first, as they do in a deploy; #713's edit rows are seeded after 0041.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -124,11 +124,6 @@ async function seedObservationEvidence(sql: postgres.Sql) {
 const FUNCTIONS_DIRECTORY = fileURLToPath(
   new URL("../../../../packages/database/src/functions/", import.meta.url),
 );
-const FUNCTION_FILES = [
-  "update_updated_at.sql",
-  "validate_turn_thread_integrity.sql",
-  "consume_credit_lots_fifo.sql",
-];
 
 /** pg_dump's session guard is random; all schema and data statements remain comparable. */
 function dump(mode: "--schema-only" | "--data-only") {
@@ -373,7 +368,9 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
             AND column_name IN ('work_id', 'deleted_by_work_id')`,
       ).toEqual([]);
       // The repository's SQL functions follow its migrations, as `db:migrate` applies them.
-      for (const file of FUNCTION_FILES) {
+      for (const file of (await readdir(FUNCTIONS_DIRECTORY))
+        .filter((f) => f.endsWith(".sql"))
+        .sort()) {
         await target.unsafe(await readFile(path.join(FUNCTIONS_DIRECTORY, file), "utf8"));
       }
       expect(dump("--schema-only")).toBe(freshSchema);
