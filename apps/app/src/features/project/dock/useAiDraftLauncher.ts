@@ -12,6 +12,7 @@
 
 import { createContext, useCallback, useContext } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { LinkDestination } from "@/features/links";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import { useChatNavigation } from "../routing/chat-navigation";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
@@ -73,4 +74,21 @@ export function useDockReviewLauncher(projectId: string, document: DockDocument)
     [projectId, document.screen, revealDock],
   );
   return launch;
+}
+
+/**
+ * A link destination that sends a document living only in a draft to that
+ * Work's review (by item identity, as the review handoff does), and every
+ * other document to the surface's own live opener.
+ */
+export function useReviewingLinkDestination(open: LinkDestination): LinkDestination {
+  const { openAiDraft } = useAiDraftLauncher();
+  return useCallback(
+    (document, gesture) => {
+      if (!document.review) return open(document, gesture);
+      openAiDraft({ documentId: document.documentId, ...document.review });
+      return Promise.resolve();
+    },
+    [open, openAiDraft],
+  );
 }

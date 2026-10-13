@@ -647,17 +647,22 @@ msgstr ""
 msgid "Apply all changes"
 msgstr ""
 
+#: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Apply couldn't finish"
+msgstr ""
+
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Apply draft"
 msgstr ""
 
-#: src/features/draft-review/ReviewCompletion.tsx
-msgid "Applying"
-msgstr ""
-
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Apply is finishing. You're still in Draft."
+msgstr ""
+
+#: src/features/draft-review/ReviewCompletion.tsx
+msgid "Applying"
 msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -887,7 +892,6 @@ msgstr ""
 #: src/features/chat/ChatView.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/ProjectView.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
 msgstr ""
@@ -1302,6 +1306,10 @@ msgstr ""
 #: src/features/chat/ReviewMessageText.tsx
 #~ msgid "Couldn't confirm whether this applied. It will update when you're back online."
 #~ msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Couldn't confirm whether this discarded. Check what is left before you try again."
+msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "Couldn't confirm whether this was discarded. Check what is left before you try again."
@@ -2372,6 +2380,10 @@ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 msgid "Images need a project before they can be uploaded."
+msgstr ""
+
+#: src/core/editor/links/link-mark-view.ts
+msgid "In a draft"
 msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
@@ -4871,7 +4883,6 @@ msgstr ""
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/ProjectView.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkCollection.tsx
 msgid "Work"

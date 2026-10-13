@@ -351,3 +351,46 @@ it("routes each link to the local index or the server", async () => {
     }
   }
 });
+
+it("a link to a document that exists only in a draft is followed to that Work's review", async () => {
+  const DRAFT = "00000000-0000-4000-8000-0000000000d1";
+  const ref = AHEAD;
+  server.mockReset();
+  server.mockResolvedValue({
+    answers: [{ ...found(KAEL, "Kael"), inDraft: true, draft: { draftId: DRAFT, workId: "w2" } }],
+  });
+  const resolution = createLinkAnswerCache();
+  resolution.registerResolver(
+    createProjectLinkResolver(
+      { projectId: "p", workId: "w", baseUri: HOLDER },
+      { documents: [], revision: "r", complete: true },
+      createLinkSettlements(),
+    ),
+    { baseUri: HOLDER },
+  );
+  const href = "manuscript://Kael.md";
+  const target = classifyLinkTarget(href);
+  if (!target) throw new Error("unclassified");
+  const opened: unknown[] = [];
+  await followProjectLink({
+    target,
+    ref,
+    gesture: "current",
+    resolution,
+    open: async (document) => void opened.push(document),
+    reporter: { report: () => {}, clear: () => {} },
+    signal: new AbortController().signal,
+  });
+  expect(resolution.read({ ref, href })).toMatchObject({ draft: { draftId: DRAFT, workId: "w2" } });
+  expect(opened).toEqual([
+    {
+      documentId: KAEL,
+      review: {
+        workId: "w2",
+        itemKey: `${DRAFT}:${KAEL}`,
+        contextLocation: { scheme: "manuscript", path: "Kael.md" },
+        documentName: "Kael",
+      },
+    },
+  ]);
+});
