@@ -8,7 +8,11 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import { commitJournaledUpdate, resetBranchFromDoc } from "../test-support/branch-update-writes.js";
+import {
+  commitJournaledUpdate,
+  commitSegmentRows,
+  resetBranchFromDoc,
+} from "../test-support/branch-update-writes.js";
 import { captureHistoricalBranchRow } from "../test-support/historical-branch-row.js";
 import {
   type BranchSnapshot,
@@ -260,7 +264,7 @@ describe("BranchCoordinator", () => {
 
     const coordinator = createBranchCoordinator({ store });
     await expect(
-      coordinator.commitSegmentRows({
+      commitSegmentRows(coordinator, {
         branchId: "work",
         sourceDoc: sourceDoc,
         expectedGeneration: beforeWork.generation,
@@ -408,7 +412,7 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   let broadcasts = 0;
   const coordinator = createBranchCoordinator({ store, onBranchUpdate: () => broadcasts++ });
   await expect(
-    coordinator.commitSegmentRows({
+    commitSegmentRows(coordinator, {
       branchId: "work",
       expectedGeneration: 1,
       sourceDoc,
@@ -416,12 +420,17 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
     }),
   ).rejects.toThrow("unjournaled residual");
   expect(store.journal).toHaveLength(0);
-  await coordinator.commitSegmentRows({ branchId: "work", expectedGeneration: 1, sourceDoc, rows });
+  await commitSegmentRows(coordinator, {
+    branchId: "work",
+    expectedGeneration: 1,
+    sourceDoc,
+    rows,
+  });
   expect(store.journal).toHaveLength(40);
   expect(broadcasts).toBe(1);
   expect(storedBranch(store, "work").state).toEqual(Y.encodeStateAsUpdate(sourceDoc));
   await expect(
-    coordinator.commitSegmentRows({
+    commitSegmentRows(coordinator, {
       branchId: "work",
       expectedGeneration: 1,
       sourceDoc,

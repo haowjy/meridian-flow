@@ -4,7 +4,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { applyDraftDocument } from "./test-support/apply-draft-document.js";
-import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
+import { commitJournaledUpdate, commitSegmentRows } from "./test-support/branch-update-writes.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -424,7 +424,7 @@ describe("change trail (postgres)", () => {
       { from: draftTextLength, to: draftTextLength },
       " WRITER DRAFT MARKER",
     );
-    const committed = await fixture.branchCoordinator.commitSegmentRows({
+    const committed = await commitSegmentRows(fixture.branchCoordinator, {
       branchId: branch.branchId,
       sourceDoc: branch.doc,
       expectedGeneration: branch.generation,
