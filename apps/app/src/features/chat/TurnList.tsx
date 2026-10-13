@@ -13,15 +13,17 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
-import { answeredControlIds } from "./compaction/compaction-model";
-import { QueuedControlRows } from "./compaction/QueuedControlRows";
-import type { QueuedControl } from "./compaction/thread-controls";
-import type { ThreadControls } from "./compaction/useThreadControls";
+
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
 import type { InheritedView } from "./derivation/inherited-view";
 import { ThreadReferenceChip } from "./derivation/ThreadReferenceChip";
 import type { HandoffBrief } from "./derivation/useHandoffBrief";
+import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
+import type { QueuedControl } from "./thread-controls/thread-controls";
+import type { ThreadControls } from "./thread-controls/useThreadControls";
+import { WriteModeDivider } from "./thread-controls/WriteModeDivider";
+import { answeredControlIds } from "./thread-controls/write-mode-model";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
 import type { ReplyRetry } from "./useReplyRetry";
 
@@ -121,6 +123,9 @@ export function TurnList({
   );
   const visibleTurns = transcript.visibleTurns;
   const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
+  let lastReplyRowIdx = transcript.rows.length - 1;
+  while (lastReplyRowIdx > 0 && transcript.rows[lastReplyRowIdx]?.kind === "write-mode")
+    lastReplyRowIdx -= 1;
   // A command runs only when no message waits, so queued commands sit at the
   // tail, after every queued message: they take no position until they run.
   const tailControls = useMemo(() => {
@@ -230,6 +235,7 @@ export function TurnList({
           />
         );
       }
+      if (row.kind === "write-mode") return <WriteModeDivider turn={turn} />;
       if (row.kind === "thread-reference") {
         return (
           <div data-thread-references className="flex flex-wrap gap-[var(--chat-space-inline)]">
@@ -267,7 +273,9 @@ export function TurnList({
       // A divider is a row: once one follows a failed reply, that failure is
       // history. The queued-controls tail is not a row and never counts. An
       // inherited reply is the source's history, even with nothing below it.
-      const endsTranscript = local && idx === visibleTurns.length - 1;
+      // A write-mode line after the reply does not close it: the server's Retry
+      // looks past switches.
+      const endsTranscript = local && idx === lastReplyRowIdx;
 
       const standIn = local ? (replyRetry?.requestOf(turn.id) ?? null) : null;
       const retry =
@@ -315,6 +323,7 @@ export function TurnList({
       replyRetry,
       controls,
       lastAssistantIdx,
+      lastReplyRowIdx,
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,

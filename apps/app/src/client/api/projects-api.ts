@@ -26,7 +26,6 @@ import {
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
-  apiProjectWorkWriteModePath,
   type CatalogChanges,
   type CatalogLookupResult,
   type CatalogScope,
@@ -55,8 +54,6 @@ import {
   type ProjectWorkingSet,
   type ThreadListItem,
   type UpdateProjectRequest,
-  type UpdateWorkWriteModeRequest,
-  type UpdateWorkWriteModeResponse,
   type Work,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
@@ -216,19 +213,6 @@ export async function updateProjectWorkingSet(
       headers: init?.headers,
       keepalive: init?.keepalive,
     },
-  );
-}
-
-export async function updateWorkWriteMode(
-  projectId: string,
-  workId: string,
-  input: UpdateWorkWriteModeRequest,
-  init?: RequestInitOptions,
-): Promise<UpdateWorkWriteModeResponse> {
-  return patchJson<UpdateWorkWriteModeResponse>(
-    urlFor(apiProjectWorkWriteModePath(projectId, workId), init),
-    input,
-    { headers: init?.headers },
   );
 }
 

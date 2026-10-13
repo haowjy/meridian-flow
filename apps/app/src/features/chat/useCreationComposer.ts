@@ -26,7 +26,12 @@ export function useCreationComposer(projectId: string) {
     draft,
     submit(
       submission: ComposerSubmitEnvelope,
-      context: { workId: string; workAiWriteMode: AiWriteMode; agent: CreationAgent },
+      context: {
+        workId: string;
+        workAiWriteMode: AiWriteMode;
+        aiWriteMode?: AiWriteMode;
+        agent: CreationAgent;
+      },
     ) {
       return (
         sendProjectChat({
@@ -41,6 +46,7 @@ export function useCreationComposer(projectId: string) {
           agent: context.agent,
           workId: context.workId,
           workAiWriteMode: context.workAiWriteMode,
+          ...(context.aiWriteMode ? { aiWriteMode: context.aiWriteMode } : {}),
           threadActions,
           selectChat: (threadId) => {
             draft.handoff();

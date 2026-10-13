@@ -127,7 +127,7 @@ export async function createThreadForProject(
           userId: args.userId,
           projectId: args.projectId,
           title: args.title ?? null,
-          aiWriteMode: args.aiWriteMode ?? work.aiWriteMode,
+          aiWriteMode: args.aiWriteMode ?? work.defaultAiWriteMode,
         });
       },
       resolveWork: async (created) => {

@@ -79,7 +79,10 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         }
         return id;
       },
+      postControl: async () => ({ id: "control", pending: null, turnId: "switch-turn" }),
+      controlAnswered: () => {},
       status: (entry, status) => {
+        if (entry.control) return;
         let id = rows.get(entry.recordId);
         if (!id) {
           id = scenario.store.getState().appendUserTurn(entry.threadId, entry.blocks).id;
@@ -561,4 +564,81 @@ it("Retry and Edit finish incomplete deletion before handling a received first s
   } finally {
     r.dispose();
   }
+});
+
+describe("write-mode switches in the journal", () => {
+  const switchRecord = (createdAt: string): ChatSubmission => ({
+    recordId: "switch-1",
+    submissionId: "switch-1",
+    threadId: "thread_1",
+    projectId: "project-1",
+    createdAt,
+    text: "",
+    blocks: [],
+    references: [],
+    activatedSkillSlugs: [],
+    control: { kind: "write_mode", mode: "draft" },
+  });
+  const messageAfter = (createdAt: string): ChatSubmission => {
+    const { creation: _creation, ...rest } = record();
+    return { ...rest, recordId: "record-2", submissionId: "sub-2", createdAt };
+  };
+
+  it("posts a reloaded switch between the messages around it, in the order the writer acted", async () => {
+    const r = rig();
+    const order: string[] = [];
+    try {
+      r.records.set("switch-1", switchRecord("2026-10-11T10:01:00Z"));
+      r.records.set("record-2", messageAfter("2026-10-11T10:02:00Z"));
+      const { owner } = r.mount({
+        postControl: async () => {
+          order.push(`switch after ${r.scenario.appendRequests.length} message(s)`);
+          return { id: "switch-1", pending: null, turnId: "switch-turn" };
+        },
+      });
+      await owner.drive("thread_1");
+      expect(order).toEqual(["switch after 1 message(s)"]);
+      expect(r.scenario.appendRequests).toHaveLength(2);
+      expect(r.records.size).toBe(0);
+    } finally {
+      r.dispose();
+    }
+  });
+
+  it("holds what comes after a refused switch until Withdraw or an admitted Retry", async () => {
+    const r = rig();
+    let refuse = true;
+    try {
+      r.records.clear();
+      r.records.set("switch-1", switchRecord("2026-10-11T10:01:00Z"));
+      r.records.set("record-2", messageAfter("2026-10-11T10:02:00Z"));
+      const { owner } = r.mount({
+        postControl: async () => {
+          if (refuse) throw new HttpResponseError("work_unavailable", 400, null);
+          return { id: "switch-1", pending: null, turnId: "switch-turn" };
+        },
+      });
+      await owner.drive("thread_1");
+      expect(r.records.get("switch-1")?.state).toBe("rejected");
+      expect(r.scenario.appendRequests).toHaveLength(0);
+      refuse = false;
+      await owner.retry("switch-1");
+      expect(r.scenario.appendRequests).toHaveLength(1);
+      expect(r.records.size).toBe(0);
+      // Withdraw is the other way out: it never reached the server, so the journal drops it.
+      refuse = true;
+      r.records.set("switch-1", switchRecord("2026-10-11T10:03:00Z"));
+      r.records.set("record-3", {
+        ...messageAfter("2026-10-11T10:04:00Z"),
+        recordId: "record-3",
+        submissionId: "sub-3",
+      });
+      await owner.drive("thread_1");
+      expect(r.scenario.appendRequests).toHaveLength(1);
+      expect(await owner.withdrawControl("switch-1", "thread_1")).toBe("removed");
+      expect(r.scenario.appendRequests).toHaveLength(2);
+    } finally {
+      r.dispose();
+    }
+  });
 });

@@ -494,26 +494,6 @@ export const REPLY_RETRY_PENDING_CODE = "retry_pending" as const;
 
 export type ForkThreadRequest = z.infer<typeof forkThreadRequestSchema>;
 
-/** What happens to a Work's pending changes when it switches to auto-apply. */
-export type PendingChangesChoice = "apply" | "keep";
-
-export type UpdateWorkWriteModeRequest = {
-  aiWriteMode: AiWriteMode;
-  /** Omitted until the writer has chosen; the server then answers `confirmation_required`. */
-  pending?: PendingChangesChoice;
-};
-
-export type UpdateWorkWriteModeResponse =
-  | import("../drafts/review.js").DraftApplyPending
-  | { aiWriteMode: AiWriteMode; status: "updated" }
-  | {
-      aiWriteMode: AiWriteMode;
-      status: "confirmation_required";
-      reason: "pending_branch_changes";
-      pendingChangeCount: number;
-      message: string;
-    };
-
 export type SendMessageRequest = {
   submissionId: string;
   text: string;

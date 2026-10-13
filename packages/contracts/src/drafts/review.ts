@@ -243,7 +243,7 @@ export type DraftApplyItemResult =
   | { itemKey: DraftItemKey; status: "applied"; notes: DraftApplyNote[] }
   | { itemKey: DraftItemKey; status: "held"; reason: DraftHeldReason };
 
-/** 202 without a client command: the D40 write-mode switch stages its own Apply. */
+/** 202 before the Apply has a client command to observe. */
 export type DraftApplyPending = { status: "pending"; draftId: DraftId };
 /** 202: the batch is staged and recovery is finishing it. Observe `commandId` for the result. */
 export type DraftApplyPendingResponse = DraftApplyPending & { commandId: DraftCommandId };

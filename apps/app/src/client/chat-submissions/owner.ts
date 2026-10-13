@@ -1,8 +1,14 @@
 /** Tab submission model: durable handoff, row projection, and writer commands. */
+import type { EnqueueThreadControlResponse } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 import { HttpResponseError } from "@/client/api/http-client";
 import { createProjectThread } from "@/client/api/projects-api";
-import { deserializeThreadSnapshot, getThreadSnapshot } from "@/client/api/threads-api";
+import {
+  deserializeThreadSnapshot,
+  enqueueThreadControl,
+  getThreadSnapshot,
+} from "@/client/api/threads-api";
 import { type ComposerDraftScope, composerSessionDraft } from "@/client/composer-drafts";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { removeChatRow } from "@/client/query/chat-projections";
@@ -46,11 +52,22 @@ type RecoveryState = {
   busy?: boolean;
   moving?: boolean;
 };
+/** A write-mode switch the journal still holds: the server has not admitted it. */
+export type JournalSwitch = { id: string; mode: AiWriteMode; failed: boolean };
+export type SwitchAnswer = {
+  id: string;
+  mode: AiWriteMode;
+  response: EnqueueThreadControlResponse;
+};
 type ThreadModel = {
   epoch: number;
   rows: Map<string, Row>;
   presentation: Map<string, RecoveryState>;
   bindings: Set<ChatSubmissionOwner>;
+  /** Records of switches whose last attempt in this tab did not reach the server. */
+  failedSwitches: Set<string>;
+  switches: readonly JournalSwitch[];
+  answerListeners: Set<(answer: SwitchAnswer) => void>;
 };
 const models = new Map<string, ThreadModel>();
 function threadModel(accountId: string, threadId: string): ThreadModel {
@@ -62,10 +79,23 @@ function threadModel(accountId: string, threadId: string): ThreadModel {
       rows: new Map(),
       presentation: new Map(),
       bindings: new Set(),
+      failedSwitches: new Set(),
+      switches: [],
+      answerListeners: new Set(),
     };
     models.set(id, model);
   }
   return model;
+}
+/** Hear the server's answer to this chat's switches, whichever pane's driver got it. */
+export function onSwitchAnswered(
+  accountId: string,
+  threadId: string,
+  listener: (answer: SwitchAnswer) => void,
+): () => void {
+  const { answerListeners } = threadModel(accountId, threadId);
+  answerListeners.add(listener);
+  return () => answerListeners.delete(listener);
 }
 const key = (accountId: string, recordId: string) => `${accountId}:${recordId}`;
 
@@ -128,6 +158,8 @@ type OwnerOptions = {
   queryClient: QueryClient;
   changed(): void;
   failed(recordId: string): void;
+  /** A switch the server did not take; announce it where the writer can hear it. */
+  failedSwitch(entry: ChatSubmission): void;
   clear(recordId: string): void;
   focusComposer(): void;
   dissolveChat(): void;
@@ -216,6 +248,19 @@ export class ChatSubmissionOwner {
           { signal: requestSignal },
         );
       },
+      postControl: (entry, requestSignal) => {
+        if (!entry.control) throw new Error("Control missing");
+        return enqueueThreadControl(
+          threadId,
+          { id: entry.submissionId, control: entry.control },
+          { signal: requestSignal },
+        );
+      },
+      controlAnswered: (entry, response) => {
+        if (!entry.control) return;
+        const answer = { id: entry.submissionId, mode: entry.control.mode, response };
+        for (const listener of this.model.answerListeners) listener(answer);
+      },
       created: (thread) => {
         this.destination = "created";
         actions.ensureThread(thread);
@@ -223,6 +268,18 @@ export class ChatSubmissionOwner {
         if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
       },
       status: (entry, status, localFailure) => {
+        if (entry.control) {
+          // A switch has no writer row: only its queued row (`switches`) shows the state.
+          if (status === "error") {
+            if (!this.model.failedSwitches.has(entry.recordId)) options.failedSwitch(entry);
+            this.model.failedSwitches.add(entry.recordId);
+          } else {
+            this.model.failedSwitches.delete(entry.recordId);
+            options.clear(entry.recordId);
+          }
+          this.rebuild();
+          return;
+        }
         const row = projectRow(accountId, entry, actions);
         row.status = status === "error" ? status : undefined;
         row.attempt =
@@ -246,6 +303,7 @@ export class ChatSubmissionOwner {
         this.rebuild();
       },
       finished: (entry) => {
+        if (entry.control) return this.rebuild();
         const row = rows.get(key(accountId, entry.recordId));
         if (row?.attempt?.session === this.session) row.attempt = undefined;
         this.rebuild();
@@ -294,6 +352,42 @@ export class ChatSubmissionOwner {
     });
   }
 
+  get switches(): readonly JournalSwitch[] {
+    return this.model.switches;
+  }
+
+  /**
+   * Record a switch in the journal after everything the writer did before it, and drive.
+   * It carries the chat's creation inputs like a message does, so a switch made
+   * while navigate-first creation is in flight waits behind it in the same order.
+   */
+  submitSwitch = (id: string, mode: AiWriteMode): boolean => {
+    const { accountId, threadId, projectId, current } = this.options;
+    if (!current()) return false;
+    const entry: ChatSubmission = {
+      recordId: id,
+      submissionId: id,
+      threadId,
+      projectId,
+      createdAt: new Date().toISOString(),
+      text: "",
+      blocks: [],
+      references: [],
+      activatedSkillSlugs: [],
+      control: { kind: "write_mode", mode },
+      creation: this.entries().find((record) => record.creation)?.creation,
+    };
+    if (!recordChatSubmission(accountId, entry)) return false;
+    void this.driver.drive(threadId);
+    return true;
+  };
+
+  retrySwitch = (id: string) => {
+    if (this.options.current()) void this.driver.retry(id);
+  };
+
+  withdrawSwitch = (id: string) => this.driver.withdrawControl(id, this.options.threadId);
+
   shownRecordIds = () =>
     new Set([...this.model.rows.keys()].map((id) => id.slice(this.options.accountId.length + 1)));
 
@@ -330,7 +424,9 @@ export class ChatSubmissionOwner {
       rows.delete(id);
       retired = true;
     }
+    this.rebuildSwitches(records);
     for (const entry of records) {
+      if (entry.control) continue;
       const row = projectRow(accountId, entry, actions);
       const pending =
         row.attempt &&
@@ -353,6 +449,30 @@ export class ChatSubmissionOwner {
     for (const binding of this.model.bindings)
       if (binding.options.current()) binding.options.changed();
   };
+
+  /** The switches still in the journal, oldest first. A new array only when one changed. */
+  private rebuildSwitches(records: readonly ChatSubmission[]) {
+    const found = records
+      .filter((entry) => entry.control)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const failed = this.model.failedSwitches;
+    for (const id of failed) if (!found.some((entry) => entry.recordId === id)) failed.delete(id);
+    const next = found.map((entry) => ({
+      id: entry.recordId,
+      mode: entry.control?.mode ?? "direct",
+      failed: entry.state === "rejected" || failed.has(entry.recordId),
+    }));
+    const previous = this.model.switches;
+    const same =
+      previous.length === next.length &&
+      previous.every(
+        (entry, index) =>
+          entry.id === next[index]?.id &&
+          entry.mode === next[index]?.mode &&
+          entry.failed === next[index]?.failed,
+      );
+    if (!same) this.model.switches = next;
+  }
 
   /** Absence is not dissolution. Resolve remote Edit versus acceptance from the server. */
   private async reconcileDestination() {

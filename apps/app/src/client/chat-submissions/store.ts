@@ -41,6 +41,12 @@ export type ChatSubmission = {
   references: SubmittedReference[];
   activatedSkillSlugs: string[];
   state?: "rejected";
+  /**
+   * A write-mode switch, not a message. It is posted to the chat's controls route in
+   * `createdAt` order with the messages around it; `recordId` and `submissionId` are
+   * the control's own id, and the message fields are empty.
+   */
+  control?: { kind: "write_mode"; mode: AiWriteMode };
   draft?: ComposerDraftSnapshot;
   creation?: {
     title: string;
@@ -99,6 +105,12 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     (value.state !== undefined && value.state !== "rejected")
   )
     return null;
+  const control = value.control;
+  if (
+    control !== undefined &&
+    (!isObject(control) || control.kind !== "write_mode" || !isAiWriteMode(control.mode))
+  )
+    return null;
   const creation = value.creation;
   if (
     creation !== undefined &&
@@ -125,6 +137,7 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
     ...(value.state === "rejected" ? { state: "rejected" } : {}),
+    ...(control ? { control: { kind: "write_mode", mode: control.mode as AiWriteMode } } : {}),
     ...(draft ? { draft } : {}),
     ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
   };

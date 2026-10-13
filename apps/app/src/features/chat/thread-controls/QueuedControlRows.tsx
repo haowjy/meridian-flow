@@ -1,9 +1,9 @@
 /**
  * Writer commands waiting in the queue.
  *
- * A command runs only once no message waits, so a queued `/compact` sits at
- * the transcript tail, after every queued message, as a dashed rule: the
- * divider it will become, not yet drawn. The writer's instructions show under
+ * A queued `/compact` or write-mode switch sits at the transcript tail, after
+ * every queued message, as a dashed rule: the divider it will become, not yet
+ * drawn. The writer's instructions show under
  * it verbatim, at once. Withdraw is right after the
  * words on every row, a failed enqueue's too (beside its Retry), and removes
  * the row at once. There is no Stop on a queued row. The rows
@@ -17,10 +17,10 @@ import { CircleAlert, FoldVertical } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { CompactionInstructions } from "./CompactionInstructions";
-import { controlStatusCopy } from "./control-copy";
+import { CompactionInstructions } from "../compaction/CompactionInstructions";
+import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
+import { controlRetryLabel, controlStatusCopy, controlWithdrawLabel } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
-import { useFocusWithinRow } from "./useFocusWithinRow";
 
 export type QueuedControlRowsProps = {
   controls: readonly QueuedControl[];
@@ -64,7 +64,10 @@ function QueuedControlRow({
 }) {
   const { status } = control;
   const failed = status === "failed";
-  const instructions = control.control.instructions?.trim() ? control.control.instructions : null;
+  const instructions =
+    control.control.kind === "compact" && control.control.instructions?.trim()
+      ? control.control.instructions
+      : null;
   return (
     <li
       data-queued-control={control.control.kind}
@@ -79,7 +82,7 @@ function QueuedControlRow({
             <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
           )}
           <span className={cn("text-meta", failed ? "text-destructive" : "text-ink-muted")}>
-            {controlStatusCopy(status)}
+            {controlStatusCopy(control.control, status)}
           </span>
         </span>
         {failed && onRetry ? (
@@ -88,7 +91,7 @@ function QueuedControlRow({
             variant="quiet"
             size="meta"
             onClick={() => onRetry(control.id)}
-            aria-label={t`Retry queueing`}
+            aria-label={controlRetryLabel(control.control)}
           >
             <Trans>Retry</Trans>
           </Button>
@@ -98,7 +101,7 @@ function QueuedControlRow({
             type="button"
             variant="quiet"
             size="meta"
-            aria-label={t`Withdraw compaction`}
+            aria-label={controlWithdrawLabel(control.control)}
             onClick={() => onWithdraw(control)}
           >
             <Trans>Withdraw</Trans>

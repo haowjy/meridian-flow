@@ -65,6 +65,7 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     queryClient: client,
     changed: () => {},
     failed: () => {},
+    failedSwitch: () => {},
     clear: () => {},
     focusComposer: focused,
     dissolveChat: dissolved,

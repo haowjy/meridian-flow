@@ -1,7 +1,7 @@
 /** Shared pinned new-chat composer for the center, dock, and phone. */
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -61,7 +61,6 @@ export function CreationComposer({
   );
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
-  const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => !isWorkArchived(work)) ?? null;
   const workId = choices?.workId ?? initialWork?.id ?? works.noWork?.id ?? null;
   const selected = workId
@@ -74,8 +73,18 @@ export function CreationComposer({
   const work = selected && (selected.isNoWork || !isWorkArchived(selected)) ? selected : null;
   const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
   const openDocument = useOpenChatDocument(projectId);
+  // The Work's default shows until the writer picks a mode here, and only a
+  // picked mode is sent: a stale default from another tab never overwrites a newer one.
+  const writeMode = choices?.aiWriteMode ?? work?.defaultAiWriteMode ?? "direct";
   const context =
-    agent && work ? { workId: work.id, workAiWriteMode: work.aiWriteMode, agent } : undefined;
+    agent && work
+      ? {
+          workId: work.id,
+          workAiWriteMode: work.defaultAiWriteMode,
+          ...(choices?.aiWriteMode ? { aiWriteMode: choices.aiWriteMode } : {}),
+          agent,
+        }
+      : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
   const catalogAgent = agents.agents?.find(
@@ -126,18 +135,16 @@ export function CreationComposer({
         }}
         uploadPort={uploadIntakePort}
         uploadScope={work ? { kind: "work", projectId, workId: work.id } : undefined}
-        submitDisabled={!choicesReady || modePending}
+        submitDisabled={!choicesReady}
         submitDisabledReason={
           unavailableMessage ??
-          (modePending
-            ? t`Finishing write mode change`
-            : !worksReady
-              ? t`Loading Work`
-              : !agentsReady
-                ? agents.isError
-                  ? t`Couldn't load agents.`
-                  : t`Loading agents…`
-                : undefined)
+          (!worksReady
+            ? t`Loading Work`
+            : !agentsReady
+              ? agents.isError
+                ? t`Couldn't load agents.`
+                : t`Loading agents…`
+              : undefined)
         }
         toolbarLeft={
           <NewThreadComposerToolbar
@@ -148,11 +155,14 @@ export function CreationComposer({
             noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
-            disabled={modePending}
+            writeMode={writeMode}
             onAgentChange={(next) => creation.updateChoices({ agent: next })}
-            onWorkChange={(selected) => creation.updateChoices({ workId: selected.id })}
+            // A mode picked for one Work is not carried to another.
+            onWorkChange={(selected) =>
+              creation.updateChoices({ workId: selected.id, aiWriteMode: undefined })
+            }
+            onWriteModeChange={(mode) => creation.updateChoices({ aiWriteMode: mode })}
             onRetryWorks={works.refetch}
-            onModePendingChange={setModePending}
           />
         }
       />

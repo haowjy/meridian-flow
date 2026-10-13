@@ -59,7 +59,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       goal: input.goal ?? null,
       status: null,
       archivedAt: null,
-      aiWriteMode: "direct",
+      defaultAiWriteMode: "direct",
       entityRevision: "1",
       lastActivityAt: timestamp,
       createdAt: timestamp,
@@ -150,7 +150,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
         goal: null,
         status: null,
         archivedAt: null,
-        aiWriteMode: "direct",
+        defaultAiWriteMode: "direct",
         entityRevision: "1",
         lastActivityAt: timestamp,
         createdAt: timestamp,
@@ -280,8 +280,8 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
 
     async setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void> {
       const row = rows.get(id);
-      if (!row || row.aiWriteMode === mode) return;
-      row.aiWriteMode = mode;
+      if (!row || row.defaultAiWriteMode === mode) return;
+      row.defaultAiWriteMode = mode;
       row.updatedAt = now();
       advance(row);
     },
