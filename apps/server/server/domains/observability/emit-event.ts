@@ -95,6 +95,33 @@ export function unknownToEventPayload(error: unknown): Record<string, unknown> {
   return { error: { class: typeof error, category: "unexpected" } };
 }
 
+const ERROR_MESSAGE_MAX = 200;
+
+/**
+ * A failure's message for diagnostics that must say what broke (the class and category
+ * alone hid a lock re-entry for a release). Messages are server-authored, but one may
+ * interpolate a writer's text, so quoted spans and secret-shaped tokens are dropped and
+ * the rest is collapsed to one bounded line. Not a MeridianError's: those carry a code.
+ */
+export function errorMessageOf(error: unknown): { errorMessage: string } | undefined {
+  try {
+    if (!(error instanceof Error) || isMeridianError(error)) return undefined;
+    const message = ownDataValue(error, "message");
+    if (typeof message !== "string" || !message) return undefined;
+    return {
+      errorMessage: message
+        .slice(0, ERROR_MESSAGE_MAX * 4)
+        .replace(/"[^"]*"|'[^']*'|`[^`]*`/g, "…")
+        .replace(/\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._~+/-]+=*)\b/g, "[redacted-secret]")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, ERROR_MESSAGE_MAX),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function emitEvent(
   sink: EventSink,
   event: Omit<EventRecord, "timestamp"> & { timestamp?: string },
