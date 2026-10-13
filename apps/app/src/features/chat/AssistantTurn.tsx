@@ -9,8 +9,6 @@ import {
 } from "@meridian/contracts/protocol";
 import {
   type AssistantView,
-  type DeliveryEvent,
-  type DirectInvocationResult,
   isImageBlock,
   type ViewItem,
   type ViewRow,
@@ -41,8 +39,8 @@ export type AssistantTurnProps = {
   turn: Turn;
   /** What the turn shows: its items, decided by the view model. */
   view: AssistantView;
-  /** The reply this turn ends: its parts and usage numbers. Absent on a part that continues. */
-  response?: ViewRow["response"];
+  /** The response this turn belongs to: its parts and usage numbers. */
+  response: NonNullable<ViewRow["response"]>;
   threadUsage?: {
     inputTokens: number;
     cacheReadTokens: number;
@@ -52,7 +50,7 @@ export type AssistantTurnProps = {
     outputTokens: number;
     cacheResets: number;
   } | null;
-  deliveryEvents?: readonly DeliveryEvent[];
+  deliveries?: ViewRow["deliveries"];
   isLatestAssistant?: boolean;
   /**
    * No visible turn follows this one. An error is current only here: once the
@@ -89,7 +87,7 @@ function AssistantTurnComponent({
   view,
   response,
   threadUsage,
-  deliveryEvents = [],
+  deliveries = NO_DELIVERIES,
   isLatestAssistant = false,
   endsTranscript = false,
   continuesResponse = false,
@@ -144,9 +142,9 @@ function AssistantTurnComponent({
             writeMode={turn.writeMode ?? "direct"}
           />
         ))}
-        {deliveryEvents.length ? (
+        {deliveries.length ? (
           <div data-turn-item-kind="delivery">
-            <DeliveryEventRows events={deliveryEvents} />
+            <DeliveryEventRows groups={deliveries} />
           </div>
         ) : null}
 
@@ -173,7 +171,7 @@ function AssistantTurnComponent({
           />
         ) : null}
       </div>
-      {isSettled && !continuesResponse && !standIn && response ? (
+      {isSettled && !continuesResponse && !standIn ? (
         <AssistantTurnActions
           threadId={resolvedThreadId}
           turn={turn}
@@ -187,6 +185,7 @@ function AssistantTurnComponent({
   );
 }
 
+const NO_DELIVERIES: NonNullable<AssistantTurnProps["deliveries"]> = [];
 const NO_WORK_RECEIPTS: AssistantView["workReceipts"] = [];
 
 /** Which failure an errored reply reads as; the provider's decline wins only over a plain failure. */
@@ -286,11 +285,10 @@ const TurnItemView = memo(function TurnItemView({
   return (
     <div className="space-y-[var(--chat-space-row)]" data-turn-item-kind="artifact">
       <ArtifactItem
-        block={item.block}
+        item={item}
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
-        directResult={item.direct}
       />
     </div>
   );
@@ -310,8 +308,12 @@ const FoldRun = memo(function FoldRun({
   if (run.kind === "reasoning") {
     return (
       <>
-        {run.blocks.map((block) => (
-          <TurnBlockStep key={blockRenderKey(block)} block={block} />
+        {run.blocks.map((block, index) => (
+          <TurnBlockStep
+            key={blockRenderKey(block)}
+            block={block}
+            body={run.texts[index] ?? null}
+          />
         ))}
       </>
     );
@@ -348,18 +350,17 @@ AssistantTurn.displayName = "AssistantTurn";
 
 // A card, image or unknown block the writer sees outside the Thinking fold.
 function ArtifactItem({
-  block,
+  item,
   threadId,
   turnStatus,
   onRespondToInterrupt,
-  directResult,
 }: {
-  block: Block;
+  item: Extract<ViewItem, { kind: "artifact" }>;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
-  directResult: DirectInvocationResult | null;
 }) {
+  const { block, direct: directResult } = item;
   if (isImageBlock(block)) {
     const content = parseImageBlockContent(block.content);
     if (!content) return null;
@@ -376,5 +377,5 @@ function ArtifactItem({
       />
     );
   }
-  return <TurnBlockStep block={block} />;
+  return <TurnBlockStep block={block} body={item.text} />;
 }

@@ -22,6 +22,8 @@ export type TurnClass = "bubble" | "delivery" | "context" | "plumbing";
 const emptyEvents: DeliveryEvent[] = [];
 export type DeliveryEvent = {
   turn: Turn;
+  /** The notification's text as drawn; empty when it only carries an attachment. */
+  message: string;
   childThreadId?: string;
   agentName?: string;
   title?: string;
@@ -193,6 +195,10 @@ export function buildTranscriptModel(
         const childThreadId = update?.childThreadId ?? invocation?.threadId;
         events.push({
           turn: next,
+          message: next.blocks
+            .filter((block) => block.blockType === "text")
+            .map((block) => block.textContent ?? "")
+            .join(""),
           subagentUpdate: update,
           ...(childThreadId ? { childThreadId } : {}),
           ...(update?.agentName || invocation?.agentName

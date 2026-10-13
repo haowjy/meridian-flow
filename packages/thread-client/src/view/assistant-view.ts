@@ -3,22 +3,30 @@
  * writer sees (process folds, prose, reports, artifacts), with the fold's visible tools, digest
  * counts, the hidden protocol halves and the turn's Work receipts decided here once.
  */
-import type { Block, Turn } from "@meridian/contracts/protocol";
+import { type Block, blockPlainText, type Turn } from "@meridian/contracts/protocol";
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
+import { isImageBlock } from "./block-kind";
+import { type CardSummary, cardSummary } from "./card-summary";
 import {
   type DeliverySegment,
   groupDeliverySegments,
   type ToolView,
 } from "./group-delivery-segments";
 import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
-import { hiddenToolCallIds, partitionTurn, type RenderItem } from "./partition-turn";
+import {
+  hiddenToolCallIds,
+  partitionTurn,
+  type RenderItem,
+  visibleReasoningText,
+} from "./partition-turn";
 import { type FoldDigest, foldDigest } from "./thinking-digest";
 import { turnWorkReceipts } from "./tool-command";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type ViewRun =
-  | { kind: "reasoning"; blocks: Block[] }
+  /** `texts[i]` is the visible thought of `blocks[i]`: what the writer reads, wherever the block keeps it. */
+  | { kind: "reasoning"; blocks: Block[]; texts: string[] }
   /** The fold's visible tool calls, paired and in order. Hidden halves are not here. */
   | { kind: "activity"; blocks: Block[]; tools: ToolView[] };
 
@@ -32,7 +40,15 @@ export type ViewItem =
     }
   | { kind: "text"; block: Block; text: string }
   | { kind: "report"; block: Block; report: SavedReportContentValue }
-  | { kind: "artifact"; block: Block; direct: DirectInvocationResult | null };
+  | {
+      kind: "artifact";
+      block: Block;
+      direct: DirectInvocationResult | null;
+      /** A custom card's own title and outcome; null for other blocks. */
+      card: CardSummary | null;
+      /** What a block without a card or image draws as a plain row; null when it draws nothing. */
+      text: string | null;
+    };
 
 export type AssistantView = {
   /** The turn's blocks in sequence order. */
@@ -76,7 +92,8 @@ function viewItem(item: RenderItem, direct: Map<string, DirectInvocationResult>)
   switch (item.kind) {
     case "process": {
       const runs = item.runs.map((run): ViewRun => {
-        if (run.kind === "reasoning") return run;
+        if (run.kind === "reasoning")
+          return { ...run, texts: run.blocks.map((block) => visibleReasoningText(block) ?? "") };
         return { ...run, tools: visibleTools(groupDeliverySegments(run.blocks)) };
       });
       const tools = runs.flatMap((run) => (run.kind === "activity" ? run.tools : []));
@@ -92,7 +109,7 @@ function viewItem(item: RenderItem, direct: Map<string, DirectInvocationResult>)
     case "report":
       return item;
     case "artifact":
-      return { kind: "artifact", block: item.block, direct: direct.get(item.block.id) ?? null };
+      return artifactItem(item.block, direct.get(item.block.id) ?? null);
   }
 }
 
@@ -102,4 +119,25 @@ function visibleTools(segments: readonly DeliverySegment[]): ToolView[] {
     if (segment.kind === "tool-run") return segment.tools.filter(isToolViewVisible);
     return [];
   });
+}
+
+function artifactItem(block: Block, direct: DirectInvocationResult | null): ViewItem {
+  return {
+    kind: "artifact",
+    block,
+    direct,
+    card: cardSummary(block, direct),
+    text: block.blockType === "custom" || isImageBlock(block) ? null : plainRowText(block),
+  };
+}
+
+/** The body of a block drawn as a plain activity row. */
+function plainRowText(block: Block): string | null {
+  const raw = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
+  if (raw) return raw;
+  if (block.content && typeof block.content === "object" && !Array.isArray(block.content)) {
+    const summary = (block.content as Record<string, unknown>).summary;
+    if (typeof summary === "string") return summary;
+  }
+  return null;
 }

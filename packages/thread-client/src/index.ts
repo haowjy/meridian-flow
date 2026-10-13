@@ -43,23 +43,16 @@ export {
   upsertBlockIn,
 } from "./turns/turn-ops";
 export type { AssistantView, ViewItem, ViewRun } from "./view/assistant-view";
-export { isHelperResultBlock, isImageBlock, isToolDeliveryBlock } from "./view/block-kind";
+export { isImageBlock, isToolDeliveryBlock } from "./view/block-kind";
+export type { CardSummary } from "./view/card-summary";
 export { componentBlockContent } from "./view/component-block-content";
 export {
   type DeliverySegment,
   groupDeliverySegments,
   type ToolView,
 } from "./view/group-delivery-segments";
-export {
-  type DirectInvocationResult,
-  directResultsForTurn,
-} from "./view/invocation-direct-result";
+export type { DirectInvocationResult } from "./view/invocation-direct-result";
 export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
-export {
-  hasVisibleReasoningText,
-  isReasoningBlock,
-  visibleReasoningText,
-} from "./view/partition-turn";
 export { queuedWriterTurnIds } from "./view/pending-writer-turns";
 export { placeStandIns } from "./view/retry-stand-ins";
 export type { FoldDigest } from "./view/thinking-digest";
@@ -72,12 +65,10 @@ export {
   type ToolCommand,
   toolCommand,
   toolInputObject,
-  turnWorkReceipts,
   type WorkReceipt,
   type WriteMode,
   workReceipt,
 } from "./view/tool-command";
-export { isArtifactBlock } from "./view/tool-kind";
 export { isToolViewVisible } from "./view/tool-view-visibility";
 export type {
   DeliveryEvent,

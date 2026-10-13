@@ -3,7 +3,7 @@ import { useLingui } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
 import { cacheHitPercent, type ViewRow } from "@meridian/thread-client";
 import { Bug, Check, Copy } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { CopyTextButton } from "@/components/app/CopyTextButton";
 import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";

@@ -167,37 +167,36 @@ export function ChatView({
     [pendingInbox],
   );
   const inheritedTranscript = inherited.view?.transcript ?? null;
-  const turnsWithOpening = useMemo(() => {
-    const opening =
+  const opening = useMemo(
+    () =>
       intent?.kind === "handoff" &&
       derivation?.state !== "failed" &&
       !storedTurns.some(isHandoffSeed)
-        ? [
-            optimisticHandoffSeed({
-              threadId,
-              sourceThreadId: intent.sourceThreadId,
-              sourceTitle: intent.sourceTitle,
-              cutoffTurnId: intent.originTurnId,
-              createdAt: intent.createdAt,
-            }),
-          ]
-        : [];
-    return opening.length ? [...opening, ...storedTurns] : storedTurns;
-  }, [derivation?.state, intent, storedTurns, threadId]);
+        ? optimisticHandoffSeed({
+            threadId,
+            sourceThreadId: intent.sourceThreadId,
+            sourceTitle: intent.sourceTitle,
+            cutoffTurnId: intent.originTurnId,
+            createdAt: intent.createdAt,
+          })
+        : null,
+    [derivation?.state, intent, storedTurns, threadId],
+  );
   const standIns = useMemo(() => [...localSeeds, ...replyStandIns], [localSeeds, replyStandIns]);
   const awaitingSubagents = runningBackgroundSubagents.length > 0;
   // Every decision about which rows the writer sees runs in the view model.
   const view = useMemo(
     () =>
       viewTranscript({
-        turns: turnsWithOpening,
+        turns: storedTurns,
+        opening,
         inherited: inheritedTranscript,
         activity: { awaitingSubagents },
         standIns,
         queued: queuedWriterTurnIds,
         onContractFailure: reportPersistedContractFailure,
       }),
-    [awaitingSubagents, inheritedTranscript, turnsWithOpening, queuedWriterTurnIds, standIns],
+    [awaitingSubagents, inheritedTranscript, storedTurns, opening, queuedWriterTurnIds, standIns],
   );
   const { turns } = view;
   // Live announcements follow the server's replies: a Retry's stand-in speaks

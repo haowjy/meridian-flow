@@ -4,16 +4,18 @@
  * `chatView: 1` envelope (JSON). Nothing here decides a row; it only prints what the view
  * model returned, and states `inputs`: what the view was computed from.
  */
-import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
+import type { JsonValue, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import {
   type ProviderErrorResponse,
   readCompactionFacts,
+  readHandoffBrief,
   readHandoffSeed,
   replyProviderError,
   type Thread,
   type Turn,
 } from "@meridian/contracts/threads";
 import {
+  type DeliveryEvent,
   type FoldDigest,
   queuedWriterTurnIds,
   type RowIdentity,
@@ -22,11 +24,12 @@ import {
   type ViewItem,
   type ViewRow,
   viewTranscript,
+  type WriterReferenceOccurrence,
 } from "@meridian/thread-client";
 import { oneLine, truncate } from "../../core/output";
 import { asRecord, liveStatusLabel } from "./transcript";
 
-export const CHAT_VIEW_VERSION = 1;
+export const CHAT_VIEW_VERSION = 2;
 
 const TEXT_LIMIT = 1_500;
 
@@ -37,9 +40,33 @@ export type ChatViewInputs = {
   inherited: "omitted";
   localRecords: "none";
   standIns: "none";
+  /** No optimistic opening seed: a handoff's seed appears when the server has it. */
+  opening: "none";
   /** No live children are known, so a reply is never held open for background subagents. */
   liveActivity: "none";
   queued: "snapshot pending inbox";
+};
+
+/** A tool call the writer sees in a fold. `--full` adds what the app's tool row is drawn from. */
+export type ChatTool = {
+  name: string;
+  status: string;
+  isError: boolean;
+  callId?: string | null;
+  input?: JsonValue | null;
+  result?: JsonValue | null;
+  message?: string | null;
+  streamedOutput?: string | null;
+};
+
+export type ChatDelivery = {
+  turnId: string;
+  childThreadId: string | null;
+  agentName: string | null;
+  title: string | null;
+  outcome: string | null;
+  /** The notification's text; empty for an attachment-only message. */
+  message: string;
 };
 
 export type ChatItem =
@@ -47,14 +74,34 @@ export type ChatItem =
       kind: "process";
       visible: boolean;
       digest: FoldDigest;
-      runs: Array<
-        | { run: "reasoning"; text: string }
-        | { run: "activity"; tools: Array<{ name: string; status: string; isError: boolean }> }
-      >;
+      runs: Array<{ run: "reasoning"; text: string } | { run: "activity"; tools: ChatTool[] }>;
     }
   | { kind: "text"; text: string }
-  | { kind: "report"; summary: string; partial: boolean; artifacts: number; reason: string | null }
-  | { kind: "artifact"; blockType: string; card: string | null };
+  | {
+      kind: "report";
+      summary: string;
+      partial: boolean;
+      artifacts: number;
+      reason: string | null;
+      /** `--full`: the report's payload and artifact references. */
+      payload?: JsonValue;
+      artifactRefs?: unknown[];
+    }
+  | {
+      kind: "artifact";
+      blockType: string;
+      card: string | null;
+      agentName: string | null;
+      title: string | null;
+      outcome: string | null;
+      /** A plain row's body, when the block is neither a card nor an image. */
+      body: string | null;
+      /** `--full`: the card's content (props and interrupt) and a direct launch's saved result. */
+      content?: JsonValue;
+      direct?: unknown;
+    }
+  /** The reply's delivery groups, last as the app draws them. A group of several is one merged row. */
+  | { kind: "delivery"; groups: ChatDelivery[][] };
 
 export type ChatRow = {
   identity: RowIdentity;
@@ -68,6 +115,10 @@ export type ChatRow = {
   continuing: boolean;
   /** A writer message's text. */
   text?: string;
+  /** Where the writer's references and skills sit in `text`. */
+  occurrences?: { references: WriterReferenceOccurrence[]; skills: unknown[] };
+  /** How this reply's edits are worded: drafted or edited. */
+  writeMode?: "direct" | "draft";
   error?: string;
   /** Why a failed reply failed, and the provider's own answer when it gave one. */
   failureReason?: string;
@@ -79,15 +130,9 @@ export type ChatRow = {
   finalFrom?: number;
   /** Tool calls the writer sees elsewhere, so they have no row. */
   hiddenToolCalls?: string[];
-  deliveries?: Array<{
-    turnId: string;
-    childThreadId: string | null;
-    agentName: string | null;
-    outcome: string | null;
-  }>;
   response?: { parts: string[]; stats: TurnStats };
   compaction?: ReturnType<typeof readCompactionFacts>;
-  handoff?: ReturnType<typeof readHandoffSeed> & { latest: boolean };
+  handoff?: ReturnType<typeof readHandoffSeed> & { latest: boolean; brief: string | null };
   references?: Array<{ threadId: string; title: string | null }>;
 };
 
@@ -165,6 +210,7 @@ export function projectChatView(
       inherited: "omitted",
       localRecords: "none",
       standIns: "none",
+      opening: "none",
       liveActivity: "none",
       queued: "snapshot pending inbox",
     },
@@ -204,29 +250,39 @@ function chatRow(row: ViewRow, view: TranscriptView, limits: { full: boolean }):
       costUsd: turn.totalCostUsd,
     };
   const writer = view.writer.get(turn.id);
-  if (writer) out.text = limits.full ? writer.text : truncate(writer.text, TEXT_LIMIT);
+  if (writer) {
+    out.text = limits.full ? writer.text : truncate(writer.text, TEXT_LIMIT);
+    out.occurrences = { references: writer.references, skills: writer.skills };
+  }
+  if (turn.role === "assistant") out.writeMode = turn.writeMode ?? "direct";
   const assistant = view.items.get(turn.id);
   if (assistant) {
     out.items = assistant.items.map((item) => chatItem(item, limits));
+    if (row.deliveries.length)
+      out.items.push({ kind: "delivery", groups: row.deliveries.map((g) => g.map(chatDelivery)) });
     out.finalFrom = assistant.finalFrom;
     if (assistant.hiddenToolCallIds.length) out.hiddenToolCalls = assistant.hiddenToolCallIds;
   }
-  if (row.deliveryEvents.length)
-    out.deliveries = row.deliveryEvents.map((event) => ({
-      turnId: event.turn.id,
-      childThreadId: event.childThreadId ?? null,
-      agentName: event.agentName ?? null,
-      outcome: event.subagentUpdate?.outcome ?? null,
-    }));
   if (row.response)
     out.response = { parts: row.response.parts.map((part) => part.id), stats: row.response.stats };
   if (row.kind === "compaction") out.compaction = readCompactionFacts(turn);
   if (row.kind === "handoff-seed") {
     const seed = readHandoffSeed(turn);
-    if (seed) out.handoff = { ...seed, latest: row.latest };
+    if (seed) out.handoff = { ...seed, latest: row.latest, brief: readHandoffBrief(turn) };
   }
   if (row.kind === "thread-reference") out.references = [...row.references];
   return out;
+}
+
+function chatDelivery(event: DeliveryEvent): ChatDelivery {
+  return {
+    turnId: event.turn.id,
+    childThreadId: event.childThreadId ?? null,
+    agentName: event.agentName ?? null,
+    title: event.title ?? null,
+    outcome: event.subagentUpdate?.outcome ?? null,
+    message: event.message,
+  };
 }
 
 function chatItem(item: ViewItem, limits: { full: boolean }): ChatItem {
@@ -241,7 +297,7 @@ function chatItem(item: ViewItem, limits: { full: boolean }): ChatItem {
           run.kind === "reasoning"
             ? {
                 run: "reasoning",
-                text: clip(run.blocks.map((block) => block.textContent ?? "").join("\n")),
+                text: clip(run.texts.join("\n")),
               }
             : {
                 run: "activity",
@@ -249,6 +305,15 @@ function chatItem(item: ViewItem, limits: { full: boolean }): ChatItem {
                   name: tool.toolName,
                   status: tool.status,
                   isError: tool.isError,
+                  ...(limits.full
+                    ? {
+                        callId: tool.toolCallId,
+                        input: tool.input,
+                        result: tool.result,
+                        message: tool.message,
+                        streamedOutput: tool.streamedOutput,
+                      }
+                    : {}),
                 })),
               },
         ),
@@ -262,20 +327,21 @@ function chatItem(item: ViewItem, limits: { full: boolean }): ChatItem {
         partial: item.report.partial === true,
         artifacts: item.report.artifacts.length,
         reason: item.report.reason ?? null,
+        ...(limits.full
+          ? { payload: item.report.payload, artifactRefs: item.report.artifacts }
+          : {}),
       };
-    case "artifact": {
-      const content = item.block.content;
-      const card =
-        item.block.blockType === "custom" &&
-        content &&
-        typeof content === "object" &&
-        !Array.isArray(content)
-          ? typeof content.kind === "string"
-            ? content.kind
-            : null
-          : null;
-      return { kind: "artifact", blockType: item.block.blockType, card };
-    }
+    case "artifact":
+      return {
+        kind: "artifact",
+        blockType: item.block.blockType,
+        card: item.card?.kind ?? null,
+        agentName: item.card?.agentName ?? null,
+        title: item.card?.title ?? null,
+        outcome: item.card?.outcome ?? null,
+        body: item.text === null ? null : clip(item.text),
+        ...(limits.full ? { content: item.block.content, direct: item.direct } : {}),
+      };
   }
 }
 
@@ -307,11 +373,24 @@ function sumDigests(items: readonly ChatItem[]): FoldDigest {
   return total;
 }
 
+/** Text mode only: a space before a reference that touches the word before it (the app draws a chip there). */
+function setApartReferences(
+  text: string,
+  references: readonly WriterReferenceOccurrence[],
+): string {
+  let out = text;
+  for (const { from } of [...references].sort((a, b) => b.from - a.from))
+    if (from > 0 && !/\s/.test(text[from - 1] ?? " "))
+      out = `${out.slice(0, from)} ${out.slice(from)}`;
+  return out;
+}
+
 function indent(text: string, by = "  "): string[] {
   return text.split("\n").map((line) => `${by}${line}`);
 }
 
 function rowLines(row: ChatRow): string[] {
+  const drafted = row.writeMode === "draft";
   const flags = [
     row.inheritedFrom ? `inherited from ${row.inheritedFrom}` : "",
     row.queued ? "queued" : "",
@@ -336,6 +415,7 @@ function rowLines(row: ChatRow): string[] {
       lines.push(
         `handoff brief: from ${row.handoff?.sourceThreadId ?? "?"}${row.handoff?.latest ? " (latest)" : ""}${tag} ${id}`,
       );
+      if (row.handoff?.brief) lines.push(...indent(`brief: ${oneLine(row.handoff.brief)}`));
       break;
     case "thread-reference":
       lines.push(
@@ -344,12 +424,12 @@ function rowLines(row: ChatRow): string[] {
       break;
     case "turn":
       if (row.items) {
-        const summary = plainDigest(sumDigests(row.items));
+        const summary = plainDigest(sumDigests(row.items), drafted);
         lines.push(
           `${row.role === "assistant" ? "reply" : row.role}: ${summary || "no steps folded"}${tag} ${id}`,
         );
       } else {
-        const text = oneLine(row.text ?? "");
+        const text = oneLine(setApartReferences(row.text ?? "", row.occurrences?.references ?? []));
         lines.push(`you: ${text}${tag} ${id}`);
       }
       break;
@@ -373,7 +453,7 @@ function rowLines(row: ChatRow): string[] {
         const reasoning = item.runs.filter((run) => run.run === "reasoning").length;
         lines.push(
           ...indent(
-            `fold: ${plainDigest(item.digest) || "reasoning"}${tools.length ? ` (${tools.join(", ")})` : ""}${reasoning ? `${tools.length ? "; " : " ("}${plural(reasoning, "thinking run")}${tools.length ? "" : ")"}` : ""}`,
+            `fold: ${plainDigest(item.digest, drafted) || "reasoning"}${tools.length ? ` (${tools.join(", ")})` : ""}${reasoning ? `${tools.length ? "; " : " ("}${plural(reasoning, "thinking run")}${tools.length ? "" : ")"}` : ""}`,
           ),
         );
         break;
@@ -389,16 +469,22 @@ function rowLines(row: ChatRow): string[] {
         );
         break;
       case "artifact":
-        lines.push(...indent(`${marker}card: ${item.card ?? item.blockType}`));
+        lines.push(
+          ...indent(
+            `${marker}card: ${item.card ?? item.blockType}${item.title ? `: ${oneLine(item.title)}` : item.body ? `: ${oneLine(item.body)}` : ""}${item.outcome ? ` (${item.outcome})` : ""}`,
+          ),
+        );
+        break;
+      case "delivery":
+        for (const group of item.groups)
+          lines.push(
+            ...indent(
+              `delivery: ${group.map((event) => `${event.agentName ?? "message"}${event.outcome ? ` ${event.outcome}` : ""}${event.childThreadId ? ` [${event.childThreadId}]` : ""}${event.message && !event.outcome ? ` ${oneLine(event.message)}` : ""}`).join("; ")}`,
+            ),
+          );
         break;
     }
   });
-  for (const delivery of row.deliveries ?? [])
-    lines.push(
-      ...indent(
-        `delivery: ${delivery.agentName ?? "message"}${delivery.outcome ? ` ${delivery.outcome}` : ""}${delivery.childThreadId ? ` [${delivery.childThreadId}]` : ""}`,
-      ),
-    );
   return lines;
 }
 

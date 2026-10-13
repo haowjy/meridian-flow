@@ -246,7 +246,7 @@ export function TurnList({
         );
       }
       const items = view.items.get(turn.id);
-      if (!items) return null;
+      if (!items || !row.response) return null;
       // A divider is a row: once one follows a failed reply, that failure is
       // history. The queued-controls tail is not a row and never counts. An
       // inherited reply is the source's history, even with nothing below it.
@@ -279,7 +279,7 @@ export function TurnList({
           view={items}
           response={row.response}
           threadUsage={local ? threadUsage : null}
-          deliveryEvents={row.deliveryEvents}
+          deliveries={row.deliveries}
           isLatestAssistant={idx === lastAssistantIdx}
           endsTranscript={endsTranscript}
           continuesResponse={row.continuing}
