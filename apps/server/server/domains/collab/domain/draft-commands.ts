@@ -5,12 +5,8 @@
  * stored: it is derived from the command's batch.
  */
 import { createHash } from "node:crypto";
-import type { DraftId, UserId, WorkId } from "@meridian/contracts";
-import type {
-  DraftCommandId,
-  DraftCommandKind,
-  DraftCommandResult,
-} from "@meridian/contracts/drafts";
+import type { DraftCommandId, DraftId, UserId, WorkId } from "@meridian/contracts";
+import type { DraftCommandKind, DraftCommandResult } from "@meridian/contracts/drafts";
 
 /** Who sent which command and what it said: the identity a resend must match exactly. */
 export type DraftCommandEnvelope = {

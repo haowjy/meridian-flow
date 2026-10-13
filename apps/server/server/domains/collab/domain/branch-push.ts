@@ -241,6 +241,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     phases: readonly ComputedCandidate[],
   ): BatchPipelineResult {
     if (outcome.kind === "refused") return { kind: "refused", reason: outcome.reason, phases };
+    if (outcome.kind === "command_exists") return { kind: "command_exists", phases };
     return {
       kind: "committed",
       pushes: outcome.pushes,

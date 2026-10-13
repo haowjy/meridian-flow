@@ -51,6 +51,8 @@ export type DraftReviewItem = {
   deletedLive: boolean;
   /** `isNew || binary || deletedLive`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
+  /** A staged batch holds the item: progress only, never a settlement signal (§4.5). */
+  settling: boolean;
   /** Chats with pending writes on the branch, latest first, then the creating chat. */
   actorThreadIds: string[];
   updatedAt: Date;
@@ -90,6 +92,8 @@ export function createDraftReviewItems(deps: {
     draftId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, string>>;
+  /** The item keys a staged, unfinished batch of the draft holds. */
+  settling(draftId: DraftId): Promise<ReadonlySet<string>>;
   /** The live document's full-state fingerprint, read under its coordinator lease. */
   liveFingerprint(documentId: DocumentId): Promise<string>;
 }): DraftReviewItems {
@@ -105,10 +109,11 @@ export function createDraftReviewItems(deps: {
       documentIds,
     );
     const creators = await deps.creators(draftId, documentIds);
+    const settling = await deps.settling(draftId);
     return nodes
       .map((node) => {
         const evidence = branchOf.get(node.nodeId);
-        const item = toItem(draftId, node, evidence, creators.get(node.nodeId));
+        const item = toItem(draftId, node, evidence, creators.get(node.nodeId), settling);
         return { item, listed: node.origin === "created" || isEdited(evidence) };
       })
       .sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
@@ -151,13 +156,14 @@ function toItem(
   node: TreeStateNode,
   evidence: WorkDraftPendingEvidence | undefined,
   creatorThreadId: string | undefined,
+  settling: ReadonlySet<string>,
 ): DraftReviewItem {
   const deletedLive = !node.hidden && node.live.deleted;
   const isNew = node.origin === "created" && node.hidden;
-  const writers = [
+  const writers: string[] = [
     ...new Set(
-      (evidence?.rows ?? [])
-        .toSorted((a, b) => b.id - a.id)
+      [...(evidence?.rows ?? [])]
+        .sort((a, b) => b.id - a.id)
         .flatMap((row) => (row.source === "agent" && row.threadId ? [row.threadId as string] : [])),
     ),
   ];
@@ -172,6 +178,7 @@ function toItem(
     isNew,
     binary: node.binary,
     wholeItem: isNew || node.binary || deletedLive,
+    settling: settling.has(draftItemKey(draftId, node.nodeId)),
     branchGeneration: evidence?.branch.generation ?? null,
     documentName: documentTitleFromUri(path),
     path,

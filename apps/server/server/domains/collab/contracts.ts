@@ -5,6 +5,7 @@ import type {
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
+import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type {
   DocumentId,
@@ -31,21 +32,16 @@ import type {
   SetWorkPushPolicyInput,
   SetWorkPushPolicyResult,
 } from "./domain/branch-push-contracts.js";
-import type {
-  ActiveDraft,
-  DraftApplyResult,
-  DraftDiscardResult,
-  DraftReviewPreview,
-  ReviewableDraft,
-} from "./domain/branch-review.js";
 
 export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
 
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
-import type { DiscardResult } from "./domain/draft-discard.js";
-import type { ApplyItemRef, ApplyResult } from "./domain/draft-publication.js";
+import type { ApplyItemRef } from "./domain/draft-publication.js";
+import type { CommandLookup, DraftCommandEnvelope } from "./domain/draft-commands.js";
+import type { ResolvedReviewItem } from "./domain/draft-review-identity.js";
+import type { DerivedReview } from "./domain/review-cut.js";
 import type { DraftReviewItem } from "./domain/draft-review-items.js";
 import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, LinkBinder } from "./domain/link-binding.js";
@@ -328,72 +324,110 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
+/** What per-change Apply and Discard say they selected, and the tokens that fence it (§4.1). */
+export type ReviewSelectionCommand =
+  | {
+      kind: "apply";
+      operationIds: readonly string[];
+      liveRevisionToken: string;
+      draftRevisionToken: string;
+    }
+  | {
+      kind: "discard";
+      closureClassIds: readonly string[];
+      admissionTokens: readonly string[];
+      memberPartKeys: readonly string[];
+      liveRevisionToken: string;
+      draftRevisionToken?: string;
+    };
+
+/**
+ * A writer command's answer (§4.6): the stored wire body, still pending, blocked, or the id
+ * belongs to a different command. The route maps these to HTTP.
+ */
+export type CommandOutcome =
+  | { kind: "result"; result: DraftCommandResult }
+  | { kind: "pending" }
+  | { kind: "blocked" }
+  | { kind: "conflict" };
+
+/** The model-facing list row: which documents have a draft, nothing more. */
+export type ModelDraftRow = {
+  documentId: DocumentId;
+  documentName: string | null;
+  contextLocation: import("@meridian/contracts/drafts").ThreadDraftListItem["contextLocation"];
+  createdDocument?: boolean;
+};
+
+export type DraftPreviewResult =
+  | (DerivedReview & { threadTitles: ReadonlyMap<string, string> })
+  | { status: "gone"; itemKey: string }
+  | { status: "corrupt"; draftId: DraftId; itemKey: string; branchGeneration: number };
+
 export type DraftReviewApi = {
-  /** The legacy list: branch items with reviewable rows (`draftId` is the branch id). */
-  list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ReviewableDraft[]>;
-  /**
-   * The review list route's one read of the Work's active draft: its items (§13.1) with
-   * their live text tokens, and the legacy list from them.
-   */
+  list(input: { projectId?: ProjectId; workId: WorkId }): Promise<ModelDraftRow[]>;
+  /** The review list route's one read: the active draft's listed items with live text tokens. */
   listItems(input: { workId: WorkId }): Promise<{
     draftId: DraftId | null;
-    drafts: ReviewableDraft[];
     items: DraftReviewItem[];
+    threadTitles: ReadonlyMap<string, string>;
   }>;
-  /** The Work's active draft's items, live text tokens unread: what Apply authorizes. */
+  /** The Work's active draft's listed items, live text tokens unread: what Apply authorizes. */
   items(input: { workId: WorkId }): Promise<{ draftId: DraftId | null; items: DraftReviewItem[] }>;
-  /** One document's item in the Work's active draft, or null. */
-  item(input: {
+  resolveItem(input: { workId: WorkId; itemKey: string }): Promise<ResolvedReviewItem | null>;
+  resolveItemByDocument(input: {
     workId: WorkId;
     documentId: DocumentId;
-  }): Promise<{ draftId: DraftId; item: DraftReviewItem } | null>;
-  preview(input: {
-    projectId?: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-    draftId: string;
-  }): Promise<
-    ({ status: "active" } & DraftReviewPreview) | { status: "gone"; draftId: string; live: string }
-  >;
-  /**
-   * The legacy per-document Apply of the item the route authorized, optionally with
-   * tokens; the answer's `draftId` is the item's branch.
-   */
-  applyWorkDraft(input: {
+  }): Promise<ResolvedReviewItem | null>;
+  preview(input: { workId: WorkId; itemKey: string }): Promise<DraftPreviewResult>;
+  lookupCommand(envelope: DraftCommandEnvelope): Promise<CommandLookup>;
+  applyItem(input: {
     workId: WorkId;
     item: DraftReviewItem;
     userId: UserId;
+    envelope: DraftCommandEnvelope;
     tokens?: Omit<ApplyItemRef, "itemKey">;
     signal?: AbortSignal;
-  }): Promise<DraftApplyResult>;
-  /** Apply all (§11.5): the items the writer saw, one publication; closes D when drained. */
+  }): Promise<CommandOutcome>;
   applyAll(input: {
     workId: WorkId;
     draftId: DraftId;
     items: readonly ApplyItemRef[];
     userId: UserId;
+    envelope: DraftCommandEnvelope;
     signal?: AbortSignal;
-  }): Promise<ApplyResult>;
-  discardWorkDraft(input: {
-    projectId?: ProjectId;
+  }): Promise<CommandOutcome>;
+  applyChanges(input: {
     workId: WorkId;
-    threadId?: ThreadId;
-    documentId: DocumentId;
-    draftId: string;
-    userId?: UserId;
-    operationIds?: string[];
-  }): Promise<DraftDiscardResult>;
-  /** Discard all (§12.3): the whole draft, one command; always closes it. */
-  discardAll(input: { workId: WorkId; draftId: DraftId; userId: UserId }): Promise<DiscardResult>;
-};
-
-export type DraftSessionStats = {
-  listActiveDraftsByWork(input: { workId: WorkId }): Promise<ActiveDraft[]>;
+    itemKey: string;
+    userId: UserId;
+    envelope: DraftCommandEnvelope;
+    selection: Extract<ReviewSelectionCommand, { kind: "apply" }>;
+    signal?: AbortSignal;
+  }): Promise<CommandOutcome>;
+  discardItem(input: {
+    workId: WorkId;
+    item: DraftReviewItem;
+    userId: UserId;
+    envelope: DraftCommandEnvelope;
+  }): Promise<CommandOutcome>;
+  discardChanges(input: {
+    workId: WorkId;
+    itemKey: string;
+    userId: UserId;
+    envelope: DraftCommandEnvelope;
+    selection: Extract<ReviewSelectionCommand, { kind: "discard" }>;
+  }): Promise<CommandOutcome>;
+  discardAll(input: {
+    workId: WorkId;
+    draftId: DraftId;
+    userId: UserId;
+    envelope: DraftCommandEnvelope;
+  }): Promise<CommandOutcome>;
 };
 
 export type CollabDrafts = {
   draftReview: DraftReviewApi;
-  draftSessionStats: DraftSessionStats;
 };
 
 /** The one drafts resolver (Work → active draft, made only at the write boundary). */

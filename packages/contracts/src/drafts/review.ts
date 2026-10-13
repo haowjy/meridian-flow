@@ -83,7 +83,8 @@ type ActiveDraftPreviewBase = {
 
 export type DraftPreviewRefusal =
   | { status: "gone"; itemKey: DraftItemKey }
-  | { status: "corrupt"; itemKey: DraftItemKey; branchGeneration: number };
+  /** `draftId` lets a corrupt item missing from the list still build its whole-item Discard. */
+  | { status: "corrupt"; draftId: DraftId; itemKey: DraftItemKey; branchGeneration: number };
 
 export type DraftPreviewResponse =
   | (ActiveDraftPreviewBase & {
