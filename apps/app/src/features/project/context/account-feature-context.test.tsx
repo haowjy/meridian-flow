@@ -141,7 +141,10 @@ describe("AccountFeatureTestProvider", () => {
   it("constructs authority before descendants and isolates A to B to A", async () => {
     useContextTabsStore.setState({
       byProject: {
-        "project-1": { tabs: [tracked("a", "/a.md")], selectedTabIdByWork: { "work-1": "a" } },
+        "project-1": {
+          tabs: [{ ...tracked("a", "/a.md"), tabInstanceId: "instance-a" }],
+          selectedTabIdByWork: { "work-1": "a" },
+        },
       },
       _workspaceHydrated: true,
     });
@@ -177,7 +180,10 @@ describe("AccountFeatureTestProvider", () => {
           transitionRevision: coordinator.getProjectSnapshot("project-1").transitionRevision,
           locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
           identity: { kind: "server", documentId: "a" },
-          owner: { kind: "workspace", documentId: "a" },
+          owner: {
+            kind: "workspace",
+            tab: { ...tracked("a", "/a.md"), tabInstanceId: "instance-a" },
+          },
         });
       }, [coordinator]);
       return null;
