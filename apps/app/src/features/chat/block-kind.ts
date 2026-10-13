@@ -5,8 +5,6 @@
  */
 import { type Block, blockContentRecord } from "@meridian/contracts/protocol";
 
-import { type ImageBlockContent, parseImageBlockContent } from "@/rich-content/ImageBlock";
-
 export function isImageBlock(block: Block): boolean {
   return block.blockType === "image";
 }
@@ -18,8 +16,4 @@ export function isHelperResultBlock(block: Block): boolean {
 
 export function isToolDeliveryBlock(block: Block): boolean {
   return block.blockType === "tool_use" || block.blockType === "tool_result";
-}
-
-export function imageContentForBlock(block: Block): ImageBlockContent | null {
-  return parseImageBlockContent(block.content);
 }

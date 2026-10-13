@@ -1,16 +1,16 @@
 /** partition-turn — turns an ordered `Block[]` into the ordered render items the transcript draws. */
 import { parseInvocationCard } from "@meridian/contracts/components";
+import { isArtifactRef } from "@meridian/contracts/interrupt";
 import {
   type Block,
   blockContentRecord,
   blockPlainText,
   type JsonValue,
 } from "@meridian/contracts/protocol";
-import { isArtifactRef } from "./ArtifactGrid";
+import type { SavedReportContentValue as ReportContentValue } from "@meridian/contracts/spawn";
 import { isToolDeliveryBlock } from "./block-kind";
 import { componentBlockContent } from "./component-block-content";
 import { groupDeliverySegments } from "./group-delivery-segments";
-import type { ReportContentValue } from "./ReportContent";
 import { isArtifactBlock } from "./tool-kind";
 import { isToolViewVisible } from "./tool-view-visibility";
 

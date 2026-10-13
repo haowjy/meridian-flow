@@ -10,11 +10,11 @@ import {
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
-import { ImageBlock } from "@/rich-content/ImageBlock";
+import { ImageBlock, parseImageBlockContent } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { AssistantTurnActions } from "./AssistantTurnActions";
 import { assistantTurnCopyMarkdown } from "./assistant-turn-copy";
-import { imageContentForBlock, isImageBlock } from "./block-kind";
+import { isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock, type ErrorBlockKind } from "./ErrorBlock";
@@ -451,7 +451,7 @@ function DeliveryBlock({
   if (block.blockType === ("activity" as Block["blockType"])) return null;
 
   if (isImageBlock(block)) {
-    const content = imageContentForBlock(block);
+    const content = parseImageBlockContent(block.content);
     if (!content) return null;
     return <ImageBlock content={content} />;
   }
