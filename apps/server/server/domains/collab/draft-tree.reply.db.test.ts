@@ -23,7 +23,11 @@ import { interleave } from "../../test-support/lock-interleave.js";
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-type SaveResult = { status: string; refused?: { documentId: string; message: string }[] };
+type SaveResult = {
+  status: string;
+  refused?: { documentId: string; message: string }[];
+  receipts?: { documentId: string; receipt: { result: { status: string; message?: string } } }[];
+};
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("a reply's drafted writes (postgres)", () => {});
@@ -93,8 +97,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return reply;
     }
 
-    const refusedIn = (result: unknown) =>
-      ((result as SaveResult).refused ?? []).map(({ documentId }) => documentId);
+    /** The documents the save refused: a denial, or a write the draft's end turned away (receipted). */
+    const refusedIn = (result: unknown) => [
+      ...((result as SaveResult).refused ?? []).map(({ documentId }) => documentId),
+      ...((result as SaveResult).receipts ?? [])
+        .filter(({ receipt }) => receipt.result.status === "invalid_write")
+        .map(({ documentId }) => documentId),
+    ];
 
     /** The agent rows saved into this draft's branch on the document. */
     async function savedRows(draftId: string, documentId: DocumentId) {
@@ -176,8 +185,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const saved = await reply.save();
       expect.soft(refusedIn(saved), "the drafted document refuses stale").toEqual([chapter]);
       expect
-        .soft(String((saved as SaveResult).refused?.[0]?.message), "and says why")
-        .toContain("draft changed");
+        .soft(String((saved as SaveResult).receipts?.[0]?.receipt.result.message), "and says why")
+        .toContain("discarded this draft");
       expect
         .soft(await draftsOf(closedFirst), "no draft is provisioned for the write")
         .toEqual([{ id: expect.any(String), status: "closed" }]);
