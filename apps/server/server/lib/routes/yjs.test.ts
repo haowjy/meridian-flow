@@ -110,7 +110,11 @@ describe("Yjs branch handshake route guard", () => {
       branchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["branch_1"],
-        ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
+        ensureThreadPeerBranch: async () => ({
+          branchId: "thread-peer",
+          upstreamBranchId: "branch_1",
+          state: new Uint8Array(),
+        }),
       },
     });
     const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);

@@ -74,7 +74,7 @@ function fixture(existingUpstream?: Y.Doc) {
         generation: 1,
         doc: cloneYDoc(baseline),
       }),
-      ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+      ensureThreadPeerBranch: async () => snapshot("peer"),
       listActiveWorkDraftBranchIds: async () => ["draft"],
     },
     journalRows: {
