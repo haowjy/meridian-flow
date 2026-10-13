@@ -60,7 +60,7 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
           }
         : operation;
     });
-    // History statuses and manifest membership are part of the observation,
+    // History statuses and the item's location are part of the observation,
     // even when they change neither prose nor the Yjs state vector.
     const draftRevisionToken = `d2:${createHash("sha256")
       .update(
@@ -71,7 +71,9 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
           documentRevision(liveDoc, cut.links.live),
           cut.live.revision,
           branchJournalRevision(cut.history),
-          cut.membership,
+          // A reveal or a relocation of the item stales a held selection.
+          cut.item.tokens.locationToken,
+          cut.item.isNew,
         ]),
       )
       .digest("base64url")}`;
@@ -79,12 +81,12 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
       diagnostics: review.diagnostics,
       preview: {
         status: "active" as const,
-        draftId: cut.branch.branchId,
+        draftId: cut.item.draftId,
+        itemKey: cut.item.itemKey,
         branchGeneration: cut.branch.generation,
         reviewRoomName: branchRoomName(cut.branch.branchId, cut.branch.generation),
-        isNewDocument:
-          cut.membership.draft.includes(cut.branch.documentId) &&
-          !cut.membership.live.includes(cut.branch.documentId),
+        isNewDocument: cut.item.isNew,
+        item: cut.item,
         liveRevisionToken: cut.live.revision,
         draftRevisionToken,
         operations,
@@ -130,7 +132,8 @@ export function selectReviewCut(
   };
 }
 
-type SelectionPreview = ReturnType<typeof deriveReviewCut>["preview"];
+export type DerivedReview = ReturnType<typeof deriveReviewCut>["preview"];
+type SelectionPreview = DerivedReview;
 
 function admitApply(
   preview: SelectionPreview,
@@ -139,7 +142,7 @@ function admitApply(
   // Keep fence precedence: stale observations cannot be classified as gone or draft-only.
   if (command.draftRevisionToken !== preview.draftRevisionToken)
     throw new DraftChangeRefusal("stale");
-  if (preview.isNewDocument) throw new DraftChangeRefusal("whole_item");
+  if (preview.item.wholeItem) throw new DraftChangeRefusal("whole_item");
   const requested = new Set(command.operationIds);
   if (
     !requested.size ||
@@ -235,28 +238,10 @@ function classAdmissionTokens(
           },
         ];
       });
-      const liveManifest = liveDoc.getMap("documents");
-      const effectManifest = effect.getMap("documents");
-      const manifestEffect = [...new Set([...liveManifest.keys(), ...effectManifest.keys()])]
-        .sort()
-        .filter(
-          (id) =>
-            liveManifest.has(id) !== effectManifest.has(id) ||
-            liveManifest.get(id) !== effectManifest.get(id),
-        )
-        .map((id) => [
-          id,
-          liveManifest.has(id),
-          liveManifest.get(id),
-          effectManifest.has(id),
-          effectManifest.get(id),
-        ]);
       tokens.set(
         operation.closureClassId,
         `admission:v1:${createHash("sha256")
-          .update(
-            JSON.stringify([operation.closureClassId, membership, richEffect, manifestEffect]),
-          )
+          .update(JSON.stringify([operation.closureClassId, membership, richEffect]))
           .digest("base64url")}`,
       );
     } finally {

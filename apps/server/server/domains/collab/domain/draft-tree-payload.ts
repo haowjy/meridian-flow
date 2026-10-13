@@ -34,11 +34,29 @@ const PayloadItemSchema = z.object({
   locationToken: z.string(),
   liveTextToken: z.string().nullable(),
   branchGenerationToken: z.string().nullable(),
+  /**
+   * Per-change Apply: the classes and operations it published, so completion places exactly
+   * those parts and resets a drained item (§4.1). Null for item Apply, which takes the branch.
+   */
+  selection: z
+    .object({
+      operationIds: z.array(z.string()).readonly(),
+      closureClassIds: z.array(z.string()).readonly(),
+    })
+    .nullable(),
+});
+
+/** How the writer's command is answered once the batch is terminal (§4.5, §4.6). */
+const CommandSchema = z.object({
+  shape: z.enum(["item", "all", "changes"]),
+  /** Every item the command named, in order: a held item leaves `items` but not the answer. */
+  itemKeys: z.array(z.string()).readonly(),
 });
 
 const PayloadSchema = z.object({
   draftId: z.string(),
-  closeWhenEmpty: z.boolean(),
+  /** Null for a publication no writer command owns (D40's switch). */
+  command: CommandSchema.nullable(),
   linkCut: z.object({
     draftId: z.string(),
     branches: z
@@ -57,7 +75,8 @@ const PayloadSchema = z.object({
 });
 
 /**
- * The step's durable input, immutable once staged. `items` keeps only the items eligible
+ * The step's durable input, immutable once staged. Apply never closes the draft (§2.4).
+ * `items` keeps only the items eligible
  * at the pre-staging check; `holderMeanings` is filled there, with the link cut fenced, so
  * completion and recovery bind from this snapshot (V2-H4).
  */

@@ -3,7 +3,7 @@
  * placement holds and a live placement never has. Postgres implements it over the tree
  * view; the in-memory composition has no drafts and never builds a draft placement.
  */
-import type { DocumentId, DraftId, WorkId } from "@meridian/contracts";
+import type { DocumentId, DraftId, ThreadId, TurnId, WorkId } from "@meridian/contracts";
 import type { Result } from "../../../shared/result.js";
 import type {
   BinaryNode,
@@ -23,6 +23,8 @@ export interface DraftCreatePort {
     name: string;
     extension: string;
     node: TrackedNode | BinaryNode;
+    /** The chat that made the create (§3.3), recorded on the change row; absent for a writer's. */
+    createdBy?: { threadId: ThreadId; turnId?: TurnId };
   }): Promise<Result<DraftCreateResult, CreateFault>>;
   /** Reverse the draft's create of a document, unless another contribution makes it stand. */
   retractCreate(input: {

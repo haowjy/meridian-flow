@@ -18,8 +18,8 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { captureHistoricalBranchRow } from "./test-support/historical-branch-row.js";
 
 const db = createTestDatabase();
@@ -89,30 +89,15 @@ it.each([
     } else {
       edit(writer, 1, 10, 10, " MINE");
     }
-    const request = {
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: branch.branchId,
-      userId: USER_ID,
-    };
-    const preview = await f.collab.draftReview.preview(request);
-    if (preview.status !== "active") throw new Error("missing review");
-    const selection = {
-      ...request,
-      operationIds: preview.operations.map((operation) => operation.operationId),
-      admissionTokens: [...new Set(preview.operations.map((op) => op.admissionToken))],
-      memberPartKeys: preview.operations.flatMap((op) => (op.partKey ? [op.partKey] : [])),
-      closureClassIds: [
-        ...new Set(preview.operations.map((operation) => operation.closureClassId)),
-      ],
-      liveRevisionToken: preview.liveRevisionToken,
-      draftRevisionToken: preview.draftRevisionToken,
-    };
+    const review = reviewDriver(f.collab.draftReview);
+    const preview = await review.activePreview(ALPHA_ID);
     const disposition = await (command === "apply"
-      ? f.collab.draftReview.applyWorkDraftChanges(selection)
-      : f.collab.draftReview.discardWorkDraft(command === "discard-change" ? selection : request));
+      ? review.applyChanges(ALPHA_ID, preview)
+      : command === "discard-change"
+        ? review.discardChanges(ALPHA_ID, preview)
+        : review.discardItem(ALPHA_ID));
     expect(disposition).toMatchObject({ status: command === "apply" ? "applied" : "discarded" });
-    expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(0);
+    expect(await review.list()).toHaveLength(0);
     const liveBeforeReplay = await harness.liveMarkdown(ALPHA_ID);
     const next = await f.branchCoordinator.readBranch(branch.branchId, async (doc, state) => ({
       doc: clone(doc),
@@ -135,9 +120,8 @@ it.each([
         actorUserId: USER_ID,
       }),
     ).toMatchObject({ admitted: true });
-    expect(await f.collab.draftReview.list({ workId: WORK_ID })).toHaveLength(restoration ? 0 : 1);
-    const reopened = await f.collab.draftReview.preview(request);
-    if (reopened.status !== "active") throw new Error("missing reopened review");
+    expect(await review.list()).toHaveLength(restoration ? 0 : 1);
+    const reopened = await review.activePreview(ALPHA_ID);
     // Undo restores already-applied AI text: its certified alias creates no visible diff.
     expect(reopened.operations).toHaveLength(restoration ? 0 : 1);
     if (!restoration) expect(reopened.operations[0]).toMatchObject({ kind: "writer" });

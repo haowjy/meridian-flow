@@ -26,9 +26,9 @@ describe("DraftApplyAllRequestSchema", () => {
 
 describe("command ids", () => {
   it("require a UUID on Apply all and Discard all", () => {
-    expect(DraftApplyAllRequestSchema.safeParse({ draftId: DRAFT, items: [ref("a")] }).success).toBe(
-      false,
-    );
+    expect(
+      DraftApplyAllRequestSchema.safeParse({ draftId: DRAFT, items: [ref("a")] }).success,
+    ).toBe(false);
     expect(
       DraftApplyAllRequestSchema.safeParse({ draftId: DRAFT, commandId: DRAFT, items: [ref("a")] })
         .success,

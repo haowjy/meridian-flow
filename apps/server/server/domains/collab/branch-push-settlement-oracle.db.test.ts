@@ -34,7 +34,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
   beforeEach(() => resetSettlementFixture(db));
   afterAll(() => closeDatabase(db));
 
-  it("settles a batch in one root-owned transaction; warm rooms, then ordered effects, then every drained branch reset", async () => {
+  it("settles a batch in one root-owned transaction; warm rooms, then ordered effects", async () => {
     let harness!: ReturnType<typeof createHarness>;
     let broadcastsBefore = 0;
     const roomsDuringAdmission: string[][] = [];
@@ -140,24 +140,10 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     for (const documentId of BATCH) {
       await expect(harness.liveMarkdown(documentId)).resolves.toBe("Survivor.\n");
     }
-    // Every drained branch is rebased onto live; the competed one keeps its new row.
-    expect(result.items.map((item) => ("branchReset" in item ? item.branchReset : null))).toEqual([
-      { branchId: gamma, fromGeneration: generations[0] },
-      { branchId: alpha, fromGeneration: generations[1] },
-      null,
-    ]);
-    expect(await Promise.all(request.map((id) => harness.branchGeneration(id)))).toEqual([
-      (generations[0] as number) + 1,
-      (generations[1] as number) + 1,
-      generations[2],
-    ]);
-    for (const branchId of [gamma, alpha]) {
-      const [branch] = await db
-        .select({ state: schema.documentBranches.state })
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.id, branchId));
-      expect(markdownFromUpdate(branch?.state ?? new Uint8Array())).toBe("Survivor.\n");
-    }
+    // Resetting drained branches belongs to the review step (§2.4), not the raw push.
+    expect(await Promise.all(request.map((id) => harness.branchGeneration(id)))).toEqual(
+      generations,
+    );
     const betaRows = await db
       .select({ status: schema.branchWriteJournal.status })
       .from(schema.branchWriteJournal)
@@ -206,7 +192,7 @@ describe("durable branch-push settlement oracle (postgres)", () => {
     await expireAllPendingClaims(db);
     const recoverers = [createHarness(db), createHarness(db)];
     await expect(
-      runInRootDrizzleTransaction(db, () => recoverers[0]!.recoverPendingLiveSettlements()),
+      runInRootDrizzleTransaction(db, () => recoverers[0]?.recoverPendingLiveSettlements()),
     ).rejects.toThrow(/root-owned/);
     const recovered = await Promise.all(
       recoverers.map((recoverer) => recoverer.recoverPendingLiveSettlements()),

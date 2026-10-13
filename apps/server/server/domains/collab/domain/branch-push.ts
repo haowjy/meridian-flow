@@ -4,7 +4,10 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import { type BranchLockLease, createBranchCriticalSections } from "./branch-critical-sections.js";
-import { buildWholeBranchCandidates } from "./branch-push-candidates.js";
+import {
+  buildSelectedRowCandidates,
+  buildWholeBranchCandidates,
+} from "./branch-push-candidates.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
@@ -12,11 +15,17 @@ import {
   type BranchPushService,
   type BranchPushServiceInput,
   type CandidateBatch,
+  DraftChangeRefusal,
   type PushCandidate,
   type PushLineageRow,
   type PushToLiveResult,
 } from "./branch-push-contracts.js";
-import { stablePushIdempotencyKey, wholeBranchPushUpdate } from "./branch-push-plan.js";
+import {
+  assertNoPendingIntegration,
+  assertRowsIntegrated,
+  stablePushIdempotencyKey,
+  wholeBranchPushUpdate,
+} from "./branch-push-plan.js";
 import { preparePushUnderLiveLock } from "./branch-push-preparation.js";
 import {
   createBranchPushTransition,
@@ -40,6 +49,7 @@ type ComputedCandidate = {
 
 type BatchPipelineResult =
   | { kind: "conflict"; push: PushLineageRow; phases: readonly ComputedCandidate[] }
+  | { kind: "command_exists"; phases: readonly ComputedCandidate[] }
   | { kind: "refused"; reason: PublicationRefusal; phases: readonly ComputedCandidate[] }
   | {
       kind: "committed";
@@ -52,9 +62,6 @@ type BatchPipelineResult =
       /** What the steps did per published item, decided in completion. */
       outcomes: readonly PublicationItemOutcome[];
       phases: readonly ComputedCandidate[];
-      liveAfterPush: ReadonlyMap<DocumentId, Uint8Array>;
-      /** One entry per drained branch the auto reset rebased onto live. */
-      branchResets: ReadonlyMap<string, { branchId: string; fromGeneration: number }>;
     };
 
 export function createBranchPushService(input: BranchPushServiceInput): BranchPushService {
@@ -94,9 +101,25 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Promise<ComputedCandidate> {
     const rows = candidate.rows;
     const liveDoc = await loadLiveDoc(branch.documentId);
-    const branchDoc = materializeBranch(branch);
+    let afterDoc: Y.Doc | null = null;
+    let branchDoc: Y.Doc | null = null;
     try {
-      const pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
+      let pushUpdate: Uint8Array;
+      if (candidate.materialization === "selected_rows") {
+        afterDoc = createCollabYDoc({ gc: false });
+        Y.applyUpdate(afterDoc, Y.encodeStateAsUpdate(liveDoc));
+        for (const row of rows) Y.applyUpdate(afterDoc, row.updateData);
+        assertNoPendingIntegration(
+          afterDoc,
+          "selective_content_push",
+          rows.map((row) => row.id),
+        );
+        assertRowsIntegrated(afterDoc, rows, "selective_content_push");
+        pushUpdate = Y.encodeStateAsUpdate(afterDoc, Y.encodeStateVector(liveDoc));
+      } else {
+        branchDoc = materializeBranch(branch);
+        pushUpdate = computePushUpdate({ branch, branchDoc, liveDoc });
+      }
       return {
         candidate,
         branch,
@@ -108,7 +131,8 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         }),
       };
     } finally {
-      branchDoc.destroy();
+      branchDoc?.destroy();
+      afterDoc?.destroy();
       liveDoc.destroy();
     }
   }
@@ -148,7 +172,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
         return computeCandidate(candidate, branch);
       }),
     );
-    const locked = await transition
+    return transition
       .execute<BatchPipelineResult>({
         documentIds: phases.map((phase) => phase.candidate.documentId),
         signal,
@@ -174,6 +198,9 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             });
             return {
               ...candidate.prepared,
+              ...(batch.expectedLiveRevision !== undefined
+                ? { expectedLiveRevision: batch.expectedLiveRevision }
+                : {}),
               receiptId: batch.receiptId,
               pushedByUserId: batch.pushedByUserId,
               trail,
@@ -187,32 +214,34 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
             pushes,
             ...(batch.payloads ? { payloads: batch.payloads } : {}),
             leasedBranchIds,
+            lease,
+            ...(batch.command ? { command: batch.command } : {}),
             afterDurableCommit: input.hooks?.afterDurableCommit,
             onConflict: (push: PushLineageRow) => ({
               kind: "conflict" as const,
               push,
               phases,
             }),
-            finish: ({ outcome, docs }): BatchPipelineResult => batchResult(outcome, docs, phases),
+            onCommandExists: () => ({ kind: "command_exists" as const, phases }),
+            finish: ({ outcome }): BatchPipelineResult => batchResult(outcome, phases),
           };
         },
       })
       .catch((cause: unknown) => {
         if (cause instanceof PublicationLeasesChangedError) {
-          throw new StagedBatchResume(cause, { phases, resetPolicy: batch.resetPolicy });
+          throw new StagedBatchResume(cause, { phases });
         }
         throw cause;
       });
-    return withAutoResets(locked, lease, phases, batch.resetPolicy);
   }
 
   /** A settled batch as the pipeline reports it, from the phases it staged. */
   function batchResult(
     outcome: PublicationOutcome,
-    docs: ReadonlyMap<DocumentId, Y.Doc>,
     phases: readonly ComputedCandidate[],
   ): BatchPipelineResult {
     if (outcome.kind === "refused") return { kind: "refused", reason: outcome.reason, phases };
+    if (outcome.kind === "command_exists") return { kind: "command_exists", phases };
     return {
       kind: "committed",
       pushes: outcome.pushes,
@@ -224,38 +253,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       heldItems: outcome.held,
       outcomes: outcome.outcomes,
       phases,
-      liveAfterPush: new Map(
-        phases.map((phase) => [
-          phase.candidate.documentId,
-          Y.encodeStateAsUpdate(docs.get(phase.candidate.documentId) as Y.Doc),
-        ]),
-      ),
-      branchResets: new Map(),
     };
-  }
-
-  async function withAutoResets(
-    locked: BatchPipelineResult,
-    lease: BranchLockLease,
-    phases: readonly ComputedCandidate[],
-    resetPolicy: "auto" | undefined,
-  ): Promise<BatchPipelineResult> {
-    if (locked.kind !== "committed") return locked;
-    const branchResets = new Map<string, { branchId: string; fromGeneration: number }>();
-    if (resetPolicy === "auto") {
-      // Held candidates' rows are reviewable again: their branches stay as they are.
-      for (const phase of phases.filter(
-        ({ candidate }) => !locked.held.has(candidate.documentId),
-      )) {
-        const reset = await resetAutoBranchIfDrained(
-          lease,
-          phase.branch,
-          locked.liveAfterPush.get(phase.candidate.documentId) as Uint8Array,
-        );
-        if (reset) branchResets.set(reset.branchId, reset);
-      }
-    }
-    return { ...locked, branchResets };
   }
 
   /**
@@ -270,6 +268,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       leasedBranchIds: readonly string[],
     ) => Promise<T>,
     extraBranchIds: readonly string[] = [],
+    refuseGone = false,
   ): Promise<T> {
     const leasedBranchIds = [...new Set([...branchIds, ...extraBranchIds])].sort();
     const retryBranchId = branchIds[0];
@@ -283,8 +282,11 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     const documentIds = await Promise.all(
       branchIds.map(
         async (branchId) =>
-          assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId)
-            .documentId,
+          assertActiveWorkDraftBranch(
+            await input.branchStore.getBranch(branchId),
+            branchId,
+            refuseGone,
+          ).documentId,
       ),
     );
     // The tree is independent of branch state. Open the scope before any lock, then
@@ -295,7 +297,11 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           return await criticalSections.withBranches(leasedBranchIds, async (lease) => {
             const branches = await Promise.all(
               branchIds.map(async (branchId) =>
-                assertActiveWorkDraftBranch(await input.branchStore.getBranch(branchId), branchId),
+                assertActiveWorkDraftBranch(
+                  await input.branchStore.getBranch(branchId),
+                  branchId,
+                  refuseGone,
+                ),
               ),
             );
             return run(branches, lease, leasedBranchIds);
@@ -312,35 +318,6 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       }
       throw new BranchPushRetryExhaustedError(retryBranchId, maxCasRetries);
     });
-  }
-
-  async function resetAutoBranchIfDrained(
-    lease: BranchLockLease,
-    branch: BranchSnapshot,
-    liveAfterPush: Uint8Array,
-  ): Promise<{ branchId: string; fromGeneration: number } | undefined> {
-    if (!input.branchCoordinator) return undefined;
-    const activeRows = await input.journalReadStore.listActiveJournalRows(
-      branch.branchId,
-      branch.generation,
-    );
-    if (activeRows.length > 0) return undefined;
-    const fromGeneration = branch.generation;
-    const liveDoc = createCollabYDoc({ gc: false });
-    Y.applyUpdate(liveDoc, liveAfterPush);
-    try {
-      const reset = await input.branchCoordinator.resetFromDocIfUnchangedWithLease(lease, {
-        branchId: branch.branchId,
-        upstream: liveDoc,
-        expectedGeneration: branch.generation,
-        expectedStateVector: branch.stateVector,
-        expectedState: branch.state,
-        schemaVersion: branch.schemaVersion,
-      });
-      return reset ? { branchId: branch.branchId, fromGeneration } : undefined;
-    } finally {
-      liveDoc.destroy();
-    }
   }
 
   async function sourceFor(branch: BranchSnapshot): Promise<{
@@ -381,14 +358,12 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           (candidate) => candidate.documentId === phase.candidate.documentId,
         );
         if (!push) throw new Error(`Batch lost the push for ${phase.candidate.documentId}`);
-        const branchReset = result.branchResets.get(phase.branch.branchId);
         return [
           phase.branch.branchId,
           {
             status: "pushed" as const,
             push,
             update: phase.pushUpdate,
-            ...(branchReset ? { branchReset } : {}),
           },
         ];
       }),
@@ -423,6 +398,9 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     } else if (result?.kind === "committed") {
       for (const [branchId, item] of mapCommitted(result)) items.set(branchId, item);
     }
+    if (result?.kind === "command_exists") {
+      return { items: [], heldItems: [], outcomes: [], commandExists: true };
+    }
     return {
       items: order.map((branchId) => items.get(branchId) as PushToLiveResult),
       heldItems: result?.kind === "committed" ? result.heldItems : [],
@@ -440,6 +418,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
   ): Promise<PushBranchesResult> {
     const sources = await Promise.all(branches.map(sourceFor));
     const order = sources.map((source) => source.branch.branchId);
+    const [selectedSource] = pushInput.selected ? sources : [];
     const drafted = sources.filter((source) => source.rows.length > 0);
     const unbatched = new Map<string, PushToLiveResult>();
     for (const source of sources) {
@@ -449,12 +428,26 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     if (drafted.length === 0 && Object.keys(pushInput.payloads ?? {}).length === 0) {
       return itemsOf(order, unbatched, null);
     }
-    const batch = buildWholeBranchCandidates({
-      sources: drafted,
-      ...(pushInput.payloads ? { payloads: pushInput.payloads } : {}),
-      ...(pushInput.resetPolicy ? { resetPolicy: pushInput.resetPolicy } : {}),
-      ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
-    });
+    // Per-change Apply selects its rows now, under the lease and on this CAS attempt (B3).
+    const selection =
+      pushInput.selected && selectedSource
+        ? await pushInput.selected.select(selectedSource.branch, selectedSource.rows)
+        : null;
+    const batch =
+      selection && selectedSource
+        ? buildSelectedRowCandidates({
+            source: selectedSource,
+            journalIds: selection.journalIds,
+            expectedLiveRevision: selection.expectedLiveRevision,
+            payloads: selection.payloads,
+            ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+          })
+        : buildWholeBranchCandidates({
+            sources: drafted,
+            ...(pushInput.payloads ? { payloads: pushInput.payloads } : {}),
+            ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
+          });
+    if (pushInput.command) batch.command = pushInput.command;
     const result = await executeCandidateBatch(
       batch,
       branchMap(drafted.map((source) => source.branch)),
@@ -466,7 +459,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
       throw cause;
     });
     // The retry rereads every branch; the pushed one then reports already_pushed.
-    if (result.kind === "conflict") {
+    if (result.kind === "conflict" && !pushInput.selected) {
       throw new BranchPushCommitConflictError(result.push.branchId ?? "");
     }
     return itemsOf(order, unbatched, result);
@@ -479,21 +472,21 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
     leasedBranchIds: readonly string[],
     signal: AbortSignal | undefined,
   ): Promise<PushBranchesResult> {
-    const { phases, resetPolicy } = resume.batch;
+    const { phases } = resume.batch;
     // The grown set is leased, the batch not yet continued: where a test grows it again.
     await collabHook("applyItems.beforeContinue");
-    const locked = await transition
+    const result = await transition
       .continueStaged<BatchPipelineResult>({
         staged: resume.handoff.staged,
         leasedBranchIds,
+        lease,
         ...(signal ? { signal } : {}),
-        finish: ({ outcome, docs }) => batchResult(outcome, docs, phases),
+        finish: ({ outcome }) => batchResult(outcome, phases),
       })
       .catch((cause: unknown) => {
         if (cause instanceof PublicationLeasesChangedError) resume.handoff = cause;
         throw cause instanceof PublicationLeasesChangedError ? resume : cause;
       });
-    const result = await withAutoResets(locked, lease, phases, resetPolicy);
     const answer = resume.answer ?? { order: [], unbatched: new Map() };
     return itemsOf(answer.order, answer.unbatched, result);
   }
@@ -520,6 +513,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
               ? continueStaged(staged, lease, leasedBranchIds, pushInput.signal)
               : stageAndSettle(pushInput, branches, lease, leasedBranchIds),
           extraBranchIds,
+          Boolean(pushInput.selected),
         );
       } catch (cause) {
         if (!(cause instanceof StagedBatchResume)) throw cause;
@@ -585,7 +579,11 @@ function branchMap(branches: readonly BranchSnapshot[]): ReadonlyMap<string, Bra
 function assertActiveWorkDraftBranch(
   branch: BranchSnapshot | null | undefined,
   branchId: string,
+  refuseGone = false,
 ): BranchSnapshot {
+  if (refuseGone && (branch?.kind !== "work_draft" || branch.status !== "active")) {
+    throw new DraftChangeRefusal("gone");
+  }
   if (!branch) throw new Error(`Branch ${branchId} does not exist`);
   if (branch.kind !== "work_draft" || branch.status !== "active") {
     throw new Error(`Branch ${branchId} is not an active work draft`);
@@ -606,7 +604,7 @@ class StagedBatchResume extends Error {
   answer?: { order: readonly string[]; unbatched: ReadonlyMap<string, PushToLiveResult> };
   constructor(
     public handoff: PublicationLeasesChangedError,
-    readonly batch: { phases: readonly ComputedCandidate[]; resetPolicy: "auto" | undefined },
+    readonly batch: { phases: readonly ComputedCandidate[] },
   ) {
     super(handoff.message);
     this.name = "StagedBatchResume";

@@ -255,16 +255,19 @@ export function createThreadPeerCorePool(input: {
     const destination = liveVersion
       ? ({ kind: "live" } as const)
       : (pinned?.grant.destination ?? requested);
-    const core = pinned?.core ?? coreForDestination(destination, context.threadId);
     await evictIdleCores();
+    const routedContext = await routedTo(context, destination, pinned?.linkView);
+    // A read never makes a draft (S1): a draft destination whose Work has no active draft
+    // reads the live document through the live core and makes no peer.
+    const noDraft =
+      !pinned && destination.kind === "draft" && routedContext.linkView.kind !== "draft";
+    const core = noDraft
+      ? input.liveUtilityCore
+      : (pinned?.core ?? coreForDestination(destination, context.threadId));
     const callContext =
-      command.format === "edits"
-        ? await routedTo(context, destination, pinned?.linkView)
-        : await threadPeerContext(
-            core,
-            documentId,
-            await routedTo(context, destination, pinned?.linkView),
-          );
+      command.format === "edits" || noDraft
+        ? routedContext
+        : await threadPeerContext(core, documentId, routedContext);
     const outcome = await core.read(command, callContext);
     if (outcome.isError) return outcome;
     if (documentId && context.threadId) {

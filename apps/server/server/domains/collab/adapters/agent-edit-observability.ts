@@ -374,16 +374,6 @@ function idempotencyHitObserver(
 
 export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
   return {
-    dispositionMaintenanceFailed({ documentId, draftId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.draft_review",
-        name: "disposition.maintenance_failed",
-        correlation: { documentId },
-        payload: { draftId, error: String(cause) },
-      });
-    },
     unattributedHunks({ documentId, hunkIds }) {
       if (!eventSink) return;
       emitEvent(eventSink, {

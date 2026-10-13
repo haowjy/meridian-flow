@@ -1,6 +1,7 @@
 /** Persistence authority for pending branch-push settlement batches and their recovery. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { BranchLockLease } from "../branch-critical-sections.js";
 import type {
   PendingSettlementBatch,
   PushLineageRow,
@@ -61,6 +62,8 @@ export type BatchCompletion = PublicationInputs & {
    * `rediscover`.
    */
   leasedBranchIds: readonly string[];
+  /** The lease over `leasedBranchIds`, for a step that resets a leased branch in completion. */
+  lease?: BranchLockLease;
   /**
    * Synchronous and non-mutating: compares warm state with every admitted
    * member's in-transaction cut after all writes, just before commit. `retry`

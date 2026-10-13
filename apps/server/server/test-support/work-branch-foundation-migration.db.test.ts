@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ContextSourceId, DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import { createDb, type Database } from "@meridian/database";
 import postgres from "postgres";
@@ -118,12 +119,24 @@ async function seedObservationEvidence(sql: postgres.Sql) {
   await sql`INSERT INTO context_availability_heads (authority_key, generation) VALUES (${SCOPE_KEY}, 7)`;
 }
 
+const FUNCTIONS_DIRECTORY = fileURLToPath(
+  new URL("../../../../packages/database/src/functions/", import.meta.url),
+);
+const FUNCTION_FILES = [
+  "update_updated_at.sql",
+  "validate_turn_thread_integrity.sql",
+  "consume_credit_lots_fifo.sql",
+];
+
 /** pg_dump's session guard is random; all schema and data statements remain comparable. */
 function dump(mode: "--schema-only" | "--data-only") {
+  // libpq URIs reject the runner's session parameters (`synchronous_commit`).
+  const url = new URL(databaseUrl ?? "");
+  url.search = "";
   return execFileSync(
     "pg_dump",
     [
-      databaseUrl ?? "",
+      url.toString(),
       mode,
       "--schema=public",
       "--schema=drizzle",
@@ -357,6 +370,10 @@ describe.skipIf(!enabled)("Work-branch foundation migration (postgres)", () => {
           WHERE table_schema = 'public' AND table_name = 'document_branches'
             AND column_name IN ('work_id', 'deleted_by_work_id')`,
       ).toEqual([]);
+      // The repository's SQL functions follow its migrations, as `db:migrate` applies them.
+      for (const file of FUNCTION_FILES) {
+        await target.unsafe(await readFile(path.join(FUNCTIONS_DIRECTORY, file), "utf8"));
+      }
       expect(dump("--schema-only")).toBe(freshSchema);
       const beforeRerun = dump("--data-only");
       await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });

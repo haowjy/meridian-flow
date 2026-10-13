@@ -212,7 +212,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Ascension discards Ori: Beacon still uses it, so it stays hidden for Beacon.
       expect
         .soft(await s.discard(ascension, [ori]))
-        .toEqual([{ status: "discarded", draftId: expect.any(String) }]);
+        .toMatchObject([{ status: "discarded", draftId: expect.any(String), itemClosed: true }]);
       expect
         .soft(await row(ori), "kept for Beacon")
         .toMatchObject({ hidden: true, tombstone: false });
@@ -233,7 +233,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const beaconDraft = (await s.review(beacon)).items[0]?.draftId ?? "";
       expect
         .soft(await s.discard(beacon, "all"), "Discard all")
-        .toEqual({ status: "discarded", draftId: beaconDraft, draftClosed: true });
+        .toEqual({ status: "discarded", draftId: beaconDraft });
       expect.soft(await s.draftStatuses(beacon), "closed").toEqual(["closed"]);
       expect
         .soft(await row(ori), "tombstoned once, still hidden")
@@ -440,7 +440,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
     });
 
-    it("repairs a corrupt draft branch in review without touching another Work's staged reply (corrupt reset)", async () => {
+    it("refuses a corrupt draft branch's preview, and Discard repairs it without touching another Work's staged reply (corrupt reset)", async () => {
       const { runtime, s } = await start();
       const [ascension, beacon] = [
         await s.work("Ascension", "draft"),
@@ -460,21 +460,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(write.isError, JSON.stringify(write.output)).toBeFalsy();
       // The seam: Ascension's draft branch row no longer decodes.
       const item = (await s.review(ascension)).items.find((each) => each.documentId === chapter);
-      const branchId = item?.draftBranchId ?? "";
+      const branchId = (
+        await runtime.ports.documentSync.draftReview.resolveItemByDocument({
+          workId: ascension.id,
+          documentId: chapter,
+        })
+      )?.draftBranchId;
       await db
         .update(documentBranches)
         .set({ state: Buffer.from([255, 255, 255, 255]) })
         .where(eq(documentBranches.id, branchId));
 
-      const preview = await runtime.ports.documentSync.draftReview.preview({
-        workId: ascension.id,
-        documentId: chapter,
-        draftId: branchId,
-      });
-      expect.soft(preview, "the review repaired it").toMatchObject({
-        status: "active",
-        notice: { code: "branch_corrupt_reset" },
-      });
+      const review = runtime.ports.documentSync.draftReview;
+      const itemKey = item?.itemKey ?? "";
+      expect
+        .soft(await review.preview({ workId: ascension.id, itemKey }), "the preview refuses")
+        .toMatchObject({ status: "corrupt", draftId: item?.draftId, itemKey });
+      expect
+        .soft(await s.discard(ascension, [chapter]), "Discard repairs it")
+        .toMatchObject([{ status: "discarded" }]);
+      expect
+        .soft(await review.preview({ workId: ascension.id, itemKey }), "the review is whole again")
+        .toMatchObject({ status: "active", operations: [] });
       const saved = (await staged.save()) as {
         status: string;
         receipts: { documentId: string }[];

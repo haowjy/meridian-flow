@@ -11,6 +11,7 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import {
   type BranchCriticalSections,
+  type BranchLockLease,
   createBranchCriticalSections,
 } from "./branch-critical-sections.js";
 import {
@@ -27,6 +28,7 @@ import {
 import { trailContributionReplacement } from "./branch-trail-projection.js";
 import { projectCommittedChangeEvent } from "./change-event-projection.js";
 import { collabHook } from "./collab-test-hooks.js";
+import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 import { isCorruptDurableProjectionError } from "./ports/durable-projection.js";
@@ -86,7 +88,9 @@ export type PublicationOutcome =
       /** What the steps did per published item, decided in completion. */
       outcomes: readonly PublicationItemOutcome[];
     }
-  | { kind: "refused"; reason: PublicationRefusal };
+  | { kind: "refused"; reason: PublicationRefusal }
+  /** Another request holds the writer's `commandId`; nothing was staged. */
+  | { kind: "command_exists" };
 
 /** What one settlement attempt sequence ended with. */
 type SettleResult =
@@ -122,6 +126,11 @@ export function createBranchPushTransition(input: {
         payloads?: PublicationPayloads;
         /** The branch leases the caller holds, publication steps' included. */
         leasedBranchIds: readonly string[];
+        /** The lease the caller holds, for steps that reset a leased branch in completion. */
+        lease?: BranchLockLease;
+        /** The writer's command, claimed with the staging (§4.6). */
+        command?: DraftCommandEnvelope;
+        onCommandExists?: () => T;
         afterDurableCommit?: (documentIds: readonly string[]) => Promise<void>;
         onConflict: (push: PushLineageRow) => T;
         finish: (input: { outcome: PublicationOutcome; docs: LiveDocs }) => T | Promise<T>;
@@ -184,8 +193,13 @@ export function createBranchPushTransition(input: {
           pushes,
           ...(check.payloads.size > 0 ? { payloads: stagedPayloads } : {}),
           ...(check.hold.length > 0 ? { holds: check.hold } : {}),
+          ...(prepared.command ? { command: prepared.command } : {}),
         });
         if (committed.status === "conflict") return prepared.onConflict(committed.push);
+        if (committed.status === "command_exists") {
+          if (!prepared.onCommandExists) throw new Error("Command id already has an effect");
+          return prepared.onCommandExists();
+        }
         await prepared.afterDurableCommit?.(pushes.map((push) => push.branch.documentId));
         // Staged and durable, not yet settled: where a test races a change with the batch.
         await collabHook("applyItems.afterStaging");
@@ -199,6 +213,7 @@ export function createBranchPushTransition(input: {
           batch,
           docs,
           leasedBranchIds: prepared.leasedBranchIds,
+          ...(prepared.lease ? { lease: prepared.lease } : {}),
           signal: inputExecution.signal,
         });
         return prepared.finish({
@@ -268,6 +283,7 @@ export function createBranchPushTransition(input: {
     batch: PendingSettlementBatch;
     docs: LiveDocs;
     leasedBranchIds: readonly string[];
+    lease?: BranchLockLease;
     signal?: AbortSignal;
   };
 
@@ -318,6 +334,7 @@ export function createBranchPushTransition(input: {
           })),
           payloads,
           leasedBranchIds: settlement.leasedBranchIds,
+          ...(settlement.lease ? { lease: settlement.lease } : {}),
           // The live text the batch publishes over: its lock cut plus every admission that
           // joined it since staging, so a writer's change after the cut (a deletion too)
           // moves the rendered-text token.
@@ -436,7 +453,7 @@ export function createBranchPushTransition(input: {
           ...scope.memberBranchIds,
         ]),
       ].sort();
-      await criticalSections.withBranches(leasedBranchIds, async () => {
+      await criticalSections.withBranches(leasedBranchIds, async (lease) => {
         let batch: PendingSettlementBatch | null = null;
         try {
           batch = await input.settlementStore.claimRecoverableBatch({
@@ -449,7 +466,13 @@ export function createBranchPushTransition(input: {
             claimed.members.map((member) => member.push.documentId),
             recoveryInput?.signal,
             (docs) =>
-              settle({ batch: claimed, docs, leasedBranchIds, signal: recoveryInput?.signal }),
+              settle({
+                batch: claimed,
+                docs,
+                leasedBranchIds,
+                lease,
+                signal: recoveryInput?.signal,
+              }),
           );
           if (settled.kind === "rediscover") {
             // Hand it back: the next pass discovers and leases the grown set first.
@@ -482,6 +505,7 @@ export function createBranchPushTransition(input: {
   async function continueStaged<T>(continuation: {
     staged: StagedBatchHandoff;
     leasedBranchIds: readonly string[];
+    lease?: BranchLockLease;
     signal?: AbortSignal;
     finish: (input: { outcome: PublicationOutcome; docs: LiveDocs }) => T | Promise<T>;
   }): Promise<T> {
@@ -499,6 +523,7 @@ export function createBranchPushTransition(input: {
           batch,
           docs,
           leasedBranchIds: continuation.leasedBranchIds,
+          ...(continuation.lease ? { lease: continuation.lease } : {}),
           signal: continuation.signal,
         });
         return continuation.finish({ outcome: outcomeOf(settled, staged), docs });
