@@ -517,10 +517,9 @@ export const documentYjsHeads = pgTable("document_yjs_heads", {
   schemaVersion: integer("schema_version")
     .notNull()
     .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
+  retiredThroughSeq: bigint("retired_through_seq", { mode: "number" }).notNull().default(0),
   latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
   latestStateVector: byteaColumn("latest_state_vector"),
-  // SET NULL is effectively unreachable: checkpoints delete only via document cascade,
-  // which also deletes the head row.
   latestCheckpointId: bigint("latest_checkpoint_id", { mode: "number" }).references(
     () => documentYjsCheckpoints.id,
     { onDelete: "set null" },

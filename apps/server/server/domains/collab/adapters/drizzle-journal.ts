@@ -35,6 +35,7 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
@@ -46,6 +47,8 @@ import {
   materializeProvenanceForDoc,
 } from "../domain/provenance.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "../domain/stale-schema.js";
+import { resolveCheckpointCut } from "./checkpoint-capability.js";
+import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
   allocateDocumentAdmission,
   ensureAndReadDocumentAuthorityHead,
@@ -73,13 +76,7 @@ export type FacadeCheckpointRecord = {
 };
 
 export type CollabFacadeStore = {
-  createCheckpoint(
-    docId: string,
-    state: Uint8Array,
-    reason: string,
-    upToSeq: number,
-    authority: CheckpointAuthority,
-  ): Promise<string | null>;
+  createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string | null>;
   getCheckpoint(id: string): Promise<FacadeCheckpointRecord | null>;
   listCheckpoints(docId: string): Promise<FacadeCheckpointRecord[]>;
   latestUpdate(docId: string): Promise<PersistedUpdate | null>;
@@ -580,6 +577,31 @@ function mapCheckpoint(row: typeof documentYjsCheckpoints.$inferSelect): FacadeC
   };
 }
 
+async function materializeCurrentCheckpoint(
+  db: JournalDb,
+  cut: CapturedCheckpointCut,
+): Promise<Uint8Array | null> {
+  const isCurrent = async () => {
+    const current = await findDocumentAuthorityHead(
+      currentDrizzleDb(db as Database),
+      cut.documentId,
+    );
+    return (
+      current?.authorityId === cut.authority.authorityId &&
+      current.generation === cut.authority.generation
+    );
+  };
+  if (!(await isCurrent())) return null;
+  try {
+    return await resolveCheckpointCut(cut).materializeState();
+  } catch (cause) {
+    // A restore may retire inputs during the unlocked read. Preserve the stale
+    // checkpoint contract; unrelated materialization failures still surface.
+    if (!(await isCurrent())) return null;
+    throw cause;
+  }
+}
+
 export function createDrizzleJournal(db: JournalDb): CollabJournal {
   return {
     headSchemaVersion: (documentId) => readHeadSchemaVersion(db, documentId),
@@ -813,12 +835,15 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
       };
     },
 
-    async checkpoint(docId, state, upToSeq, authority) {
-      // Unbound seed/conformance producers have no loaded handle. Handle-backed
-      // callers always supply their immutable binding; validation is under lock.
-      const captured =
-        authority ??
-        (await ensureAndReadDocumentAuthorityHead(currentDrizzleDb(db as Database), docId));
+    captureCheckpoint(docId, captured) {
+      return captureDrizzleCheckpoint(db, docId, captured);
+    },
+
+    async storeCheckpoint(cut) {
+      const payload = resolveCheckpointCut(cut);
+      const { documentId: docId, authority: captured, upToSeq } = payload;
+      const state = await materializeCurrentCheckpoint(db, cut);
+      if (state === null) return;
       await runInDrizzleTransaction(db as Database, async () => {
         const txDb = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(txDb, docId);
@@ -829,19 +854,11 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           current.generation !== captured.generation
         )
           return;
+        await payload.validateInputs();
         const existing = await latestCheckpoint(txDb, docId, captured);
-        // A checkpoint names a durable journal cut. A later snapshot at the same
-        // cut cannot contain legitimate extra state because admission is journal-first.
-        // Keeping the first snapshot prevents a stale warm room from replacing an
-        // initialize-only seed with an empty checkpoint at sequence zero.
         if (existing && existing.upToSeq >= upToSeq) return;
-        // upToSeq must be ≤ the updates reflected in state; replaying extra
-        // updates is idempotent, but skipping one loses durable document data.
         await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
         if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
-          // ensureDocument's empty cut only bootstraps a room before its first
-          // journal admission. Once a real cut is stored it has no restore value;
-          // retaining it turns one cold open into two apparent checkpoints.
           await txDb
             .delete(documentYjsCheckpoints)
             .where(eq(documentYjsCheckpoints.id, existing.id));
@@ -903,6 +920,15 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         }
 
         if (compactedThroughSeq > 0) {
+          // Publish every retired prefix, even when an ordinary checkpoint
+          // already covers it and this compaction folds no new rows.
+          await txDb
+            .update(documentYjsHeads)
+            .set({
+              retiredThroughSeq: sql`greatest(${documentYjsHeads.retiredThroughSeq}, ${compactedThroughSeq})`,
+            })
+            .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
+
           await txDb
             .delete(documentYjsUpdates)
             .where(
@@ -969,16 +995,26 @@ export function createServerDocumentLifecycle(
       await upsertHead(lifecycleDb, docId);
 
       // The Yjs tables FK to documents.id; callers must create the documents row first.
-      const emptyDoc = createCollabYDoc({ gc: false });
-      await journal.checkpoint(docId, Y.encodeStateAsUpdate(emptyDoc), 0);
+      await runInDrizzleTransaction(db as Database, async () => {
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        await lockDocumentMutation(txDb, docId);
+        const authority = await ensureAndReadDocumentAuthorityHead(txDb, docId);
+        const cut = await createDrizzleJournal(txDb).captureCheckpoint(docId, authority);
+        if (cut) await createDrizzleJournal(txDb).storeCheckpoint(cut);
+      });
     },
   };
 }
 
 export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore {
   return {
-    async createCheckpoint(docId, state, reason, upToSeq, captured) {
-      return db.transaction(async (tx) => {
+    async createCheckpoint(cut, reason) {
+      const payload = resolveCheckpointCut(cut);
+      const { documentId: docId, authority: captured, upToSeq } = payload;
+      const state = await materializeCurrentCheckpoint(db, cut);
+      if (state === null) return null;
+      return runInDrizzleTransaction(db as Database, async () => {
+        const tx = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(tx, docId);
         const current = await findDocumentAuthorityHead(tx, docId);
         if (
@@ -987,6 +1023,7 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
           current.generation !== captured.generation
         )
           return null;
+        await payload.validateInputs();
         const checkpointId = await insertCheckpoint(
           tx as JournalDb,
           docId,
