@@ -105,7 +105,11 @@ export const seedCommand: CommandSpec = {
         work: doc.work,
         overwrite,
       });
-      ctx.out.note(`${result.replaced ? "replaced" : "created"} ${result.uri}`);
+      ctx.out.note(
+        result.replaced
+          ? `deleted ${result.previousDocumentId}, created ${result.uri} (${result.documentId})`
+          : `created ${result.uri}`,
+      );
       docs.push(result);
     }
 

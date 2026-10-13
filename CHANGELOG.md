@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- `./mf thread send --no-wait` reports `outcome: "accepted"` (admission only) instead of `complete`.
+
+- `./mf doc put --overwrite` says it deletes and recreates the document (new id), reports the deleted id, and says so when the create fails after the delete.
+
 - `./mf` deadline reports leave running turns and owed messages unknown when no snapshot was read.
 
 - `./mf` deadline reports distinguish an awake run lease from pending writer messages and unconfirmed idle state, without claiming success.

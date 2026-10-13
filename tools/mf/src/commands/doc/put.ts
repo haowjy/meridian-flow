@@ -12,11 +12,19 @@ import { resolveProjectId } from "../project/resolve";
 import { deleteDocument } from "./rm";
 import { PROJECT_OPTION, resolveUri } from "./uri";
 
-/** Creates (or with overwrite, replaces) a tracked markdown document; returns its id. */
+/**
+ * Creates a tracked markdown document; returns its id. With overwrite, a conflict deletes the
+ * existing document and creates a new one at the same URI (new id; the old drafts and history go).
+ */
 export async function putDocument(
   session: Session,
   input: { projectId: string; uri: string; content: string; work?: string; overwrite: boolean },
-): Promise<{ uri: string; documentId: string; replaced: boolean }> {
+): Promise<{
+  uri: string;
+  documentId: string;
+  replaced: boolean;
+  previousDocumentId: string | null;
+}> {
   const target = await resolveUri(session, input.projectId, input.uri, input.work);
   const create = () =>
     session.request<{ status: "created"; documentId: string; uri: string }>(
@@ -26,7 +34,12 @@ export async function putDocument(
     );
   try {
     const created = await create();
-    return { uri: created.uri, documentId: created.documentId, replaced: false };
+    return {
+      uri: created.uri,
+      documentId: created.documentId,
+      replaced: false,
+      previousDocumentId: null,
+    };
   } catch (error) {
     const conflict =
       error instanceof CliError &&
@@ -34,24 +47,47 @@ export async function putDocument(
     if (!conflict) throw error;
     if (!input.overwrite) {
       throw new CliError("usage", `${target.uri} already exists`, {
-        hint: "Pass --overwrite to replace it.",
+        hint: "Pass --overwrite to delete it and create a new document at this URI (new id, old drafts lost).",
       });
     }
-    await deleteDocument(session, input.projectId, target);
-    const created = await create();
-    return { uri: created.uri, documentId: created.documentId, replaced: true };
+    const previousDocumentId = await deleteDocument(session, input.projectId, target);
+    try {
+      const created = await create();
+      return {
+        uri: created.uri,
+        documentId: created.documentId,
+        replaced: true,
+        previousDocumentId,
+      };
+    } catch (createError) {
+      const reason = createError instanceof Error ? createError.message : String(createError);
+      throw new CliError(
+        createError instanceof CliError ? createError.code : "protocol",
+        `${target.uri}: the existing document (${previousDocumentId}) was already deleted, and creating its replacement failed: ${reason}`,
+        {
+          hint: `Re-run ./mf doc put ${target.uri} to create it; the old document and its drafts are not recoverable here.`,
+          details: { previousDocumentId, deleted: true },
+          httpStatus: createError instanceof CliError ? createError.httpStatus : undefined,
+        },
+      );
+    }
   }
 }
 
 export const docPutCommand: CommandSpec = {
   path: ["doc", "put"],
-  summary: "Create a markdown document (seed content)",
+  summary:
+    "Create a markdown document (seed content); --overwrite deletes and recreates it (new id)",
   args: "<uri>",
   route: "POST /api/projects/:projectId/context/:scheme/create",
   options: {
     ...PROJECT_OPTION,
     text: { type: "string", description: "Content (literal, @file, or - for stdin)" },
-    overwrite: { type: "boolean", description: "Replace an existing document" },
+    overwrite: {
+      type: "boolean",
+      description:
+        "If the URI exists, delete that document and create a new one there (new id; the old drafts and history are lost)",
+    },
   },
   examples: [
     `./mf doc put "manuscript://Chapter 1" --text "# Chapter 1"`,
@@ -69,9 +105,10 @@ export const docPutCommand: CommandSpec = {
       work: stringOption(ctx, "work"),
       overwrite: flag(ctx, "overwrite"),
     });
-    ctx.out.result(
-      { projectId, ...result },
-      (value) => `${value.replaced ? "replaced" : "created"} ${value.uri} (${value.documentId})`,
+    ctx.out.result({ projectId, ...result }, (value) =>
+      value.replaced
+        ? `deleted ${value.previousDocumentId}, created ${value.uri} (${value.documentId})`
+        : `created ${value.uri} (${value.documentId})`,
     );
     return undefined;
   },

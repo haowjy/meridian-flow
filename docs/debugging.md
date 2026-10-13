@@ -88,7 +88,8 @@ at its final snapshot; it does not attribute replies to messages.
   `--fields a,b` keeps `type` on every stream line and always keeps `type`,
   `command`, `outcome`, and `reason` on terminal results. CLI errors (usage,
   not found, unavailable) remain on stderr (`{error, code, hint}` under `--json`).
-- Outcomes map to exits: **0 complete**, **1 failed**, **5 cancelled**,
+- Outcomes map to exits: **0 accepted** (`send --no-wait`, admission only) and
+  **0 complete**, **1 failed**, **5 cancelled**,
   **6 unproven**, **8 interrupt**, **124 timeout**. Other exits: **2 usage**,
   **3 not found**, **4 unavailable** (stack, login, terminal socket close).
   `reason` is null for a proven outcome. A timeout's reason names the first
@@ -144,7 +145,7 @@ at its final snapshot; it does not attribute replies to messages.
 - If a message POST loses its HTTP answer, send looks up its `submissionId`
   once through the app's admission route. Accepted resumes following; rejected
   or not seen exits 1; a failed lookup or still-pending admission exits 6
-  `admission_unknown`. `send --no-wait` proves admission only.
+  `admission_unknown`. `send --no-wait` proves admission only and reports `outcome: "accepted"`, never `complete`.
 - Before reporting complete, `send` reads a snapshot. If its admitted user turn
   id is still in `liveState.pending.items`, it exits 6 `unproven` with reason
   `owed`, `stillRunning`, the pending writer messages, and
