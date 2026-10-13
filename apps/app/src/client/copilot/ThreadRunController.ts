@@ -6,6 +6,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { InterruptRespondInput, ThreadTransport } from "@meridian/thread-client";
+import { isDurableBlockEvent } from "@meridian/thread-client";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -20,7 +21,6 @@ import { abortable } from "@/client/chat-submissions/lock";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
-import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 
 type AppendUserMessageFn = typeof appendUserMessage;
@@ -462,7 +462,7 @@ export class ThreadRunController {
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
       if (disposed || this.accountSignal.aborted || !this.isActiveToken(token)) return;
-      applyAguiEventToStore(this.actions, threadId, event);
+      this.actions.applyTurnEvent(threadId, event);
     });
     const markDisposed = () => {
       if (splitFinishTimer) clearTimeout(splitFinishTimer);

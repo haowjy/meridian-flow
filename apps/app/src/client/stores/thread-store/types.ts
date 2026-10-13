@@ -1,5 +1,6 @@
 /** Shared types for the per-thread store. */
 import type {
+  AGUIEvent,
   Block,
   Thread,
   ThreadListItem,
@@ -8,11 +9,14 @@ import type {
   UserMessageBlock,
 } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { EnsureAssistantTurnOptions, TurnStatusPatch } from "@meridian/thread-client";
 import type {
   InterruptResponseEntry,
   InterruptResponseIdentity,
   InterruptResponseState,
 } from "@/core/session/interrupt-response";
+
+export type { EnsureAssistantTurnOptions, TurnStatusPatch };
 
 export type LiveTurnMeta = {
   eventsApplied: number;
@@ -22,30 +26,6 @@ export type LiveTurnMeta = {
    */
   runningTurnId: string | null;
 };
-
-export type EnsureAssistantTurnOptions = {
-  createdAt?: string;
-  prevTurnId?: string | null;
-  writeMode?: Turn["writeMode"];
-};
-
-export type TurnStatusPatch = Partial<
-  Pick<
-    Turn,
-    | "completedAt"
-    | "usage"
-    | "error"
-    | "finishReason"
-    | "inputTokens"
-    | "outputTokens"
-    | "reasoningTokens"
-    | "cacheReadTokens"
-    | "cacheWriteTokens"
-    | "totalCostUsd"
-    | "totalMillicredits"
-    | "responseCount"
-  >
->;
 
 /** Read surface — subscribe with `useThreadStore((s) => …)`. */
 export type ThreadStoreState = {
@@ -86,6 +66,10 @@ export type ThreadStoreActions = {
   ): void;
   pruneStaleAssistantTurns(threadId: string): void;
   bumpEventsApplied(threadId: string): number;
+  /** Reduce one live stream event through this store's turn reducer. */
+  applyTurnEvent(threadId: string, event: AGUIEvent): void;
+  /** Reduce one durable block event; false when it is malformed or for another thread. */
+  applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
   /** Admit a durable block wire sequence, independent of run cursor rewinds. */
   acceptDurableBlockSeq(threadId: string, seq: string): boolean;
   /** Whether an acquired snapshot may affect cache, lifecycle, store, or handoff. */
