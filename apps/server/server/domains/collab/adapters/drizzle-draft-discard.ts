@@ -266,17 +266,17 @@ export function createDrizzleDraftDiscard(
     const { items } = input.selection;
     // Created or edited is the document's visibility now, read under the locks the caller
     // holds: another Work's Apply may have revealed a create since the item was resolved, and
-    // a revealed create is an edited item (§2.2), kept and reset from live, not ended.
-    const hiddenNow = await hiddenDocuments(
-      items.filter((item) => item.origin === "created").map((item) => item.documentId),
-    );
+    // a revealed create is an edited item (§2.2), reset from live with its branch kept. The
+    // draft's create row goes either way; only a hidden document can be tombstoned by it.
+    const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
+    const hiddenNow = await hiddenDocuments(withRows);
     const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
     const created = items.filter(isCreated).map((item) => item.documentId);
     const ended = await endUseReconciled(
       db,
       deps,
       draftId,
-      { drafts: [{ draftId, documentIds: created }] },
+      { drafts: [{ draftId, documentIds: withRows }] },
       "document_discarded",
     );
     // A hidden create another draft still uses stays, but this draft's branches on it end.
