@@ -294,6 +294,28 @@ describe("reply save refusals (postgres)", () => {
     void fixture;
   });
 
+  it("15b: another Work revealing the create while Discard waits for its leases keeps the branch and refuses discarded_edit", async () => {
+    const { second, review, fixture } = await createdThenStaged();
+    const remove = setCollabHook("discard.afterLeases", async () => {
+      remove();
+      await db
+        .update(schema.documents)
+        .set({ hidden: false })
+        .where(eq(schema.documents.id, NEW_ID as never));
+    });
+    expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
+    expect(refused(await harness.commit(second))).toEqual([[NEW_ID, EDIT]]);
+    const [branch] = await db
+      .select()
+      .from(schema.documentBranches)
+      .where(eq(schema.documentBranches.documentId, NEW_ID as never));
+    expect(branch?.status).toBe("active");
+    // Reset from live, not closed: the branch holds exactly what the revealed document does.
+    expect(await fixture.draftMarkdown(branch?.id as string)).toBe(
+      await harness.liveMarkdown(NEW_ID),
+    );
+  });
+
   it("10: a pooled peer and a per-change Discard: a fresh read shows none of the discarded text and the write lands", async () => {
     const { fixture, branchId, responseId, context, core, review } = await setup();
     const preview = await review.activePreview(ALPHA_ID);
@@ -330,6 +352,15 @@ describe("reply save refusals (postgres)", () => {
     expect(refused(await harness.commit(responseId))).toEqual([]);
     expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\nlime\n");
     expect((await fixture.collab.draftReview.items({ workId: WORK_ID })).draftId).not.toBeNull();
+  });
+
+  it("11b: item Discard of a drained item still drops the staged write of a reply opened after Apply", async () => {
+    const { fixture, branchId, responseId, review, write } = await setup();
+    expect(await review.applyAll()).toMatchObject({ status: "completed" });
+    expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
+    expect(await review.discardItem(ALPHA_ID)).toMatchObject({ status: "discarded" });
+    expect(refused(await harness.commit(responseId))).toEqual([[ALPHA_ID, EDIT]]);
+    expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\ngreen\n");
   });
 
   it("12: switching to direct after Apply all while staged still lands the write in the draft", async () => {

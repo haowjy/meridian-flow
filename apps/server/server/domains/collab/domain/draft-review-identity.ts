@@ -36,13 +36,12 @@ export function createDraftReviewIdentity(deps: {
   drafts: Pick<Drafts, "activeForWork">;
   reviewItems: Pick<DraftReviewItems, "resolve">;
 }): DraftReviewIdentity {
-  async function byDocument(workId: WorkId, documentId: DocumentId) {
-    const draft = await deps.drafts.activeForWork(workId);
-    if (!draft) return null;
-    const resolved = await deps.reviewItems.resolve(draft.id, documentId);
+  /** One document of an already selected draft: a key never moves to a replacement draft. */
+  async function inDraft(draftId: DraftId, documentId: DocumentId) {
+    const resolved = await deps.reviewItems.resolve(draftId, documentId);
     return resolved
       ? {
-          draftId: draft.id,
+          draftId,
           itemKey: resolved.item.itemKey,
           documentId,
           draftBranchId: resolved.item.draftBranchId,
@@ -60,8 +59,11 @@ export function createDraftReviewIdentity(deps: {
       if (!itemKey.startsWith(prefix)) return null;
       const documentId = itemKey.slice(prefix.length) as DocumentId;
       if (!isUuid(documentId) || draftItemKey(draft.id, documentId) !== itemKey) return null;
-      return byDocument(workId, documentId);
+      return inDraft(draft.id, documentId);
     },
-    resolveReviewItemByDocument: ({ workId, documentId }) => byDocument(workId, documentId),
+    async resolveReviewItemByDocument({ workId, documentId }) {
+      const draft = await deps.drafts.activeForWork(workId);
+      return draft ? inDraft(draft.id, documentId) : null;
+    },
   };
 }

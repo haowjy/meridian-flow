@@ -2,7 +2,7 @@ import { createTestDocumentLinkScopes } from "./test-support/document-link-scope
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
@@ -252,8 +252,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
-      const [workDraft] = await activeWorkDraft();
-      await collab.pushToLive({ branchId: workDraft.id });
+      await applyDraft(collab, DOC_ID);
       await collab.reverseTurn({
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
@@ -320,8 +319,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
-      const [workDraft] = await activeWorkDraft();
-      await collab.pushToLive({ branchId: workDraft.id });
+      await applyDraft(collab, DOC_ID);
 
       await writeMarkdown(collab, {
         documentId: DOC_ID as never,
@@ -368,8 +366,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
-      const [workDraft] = await activeWorkDraft();
-      await collab.pushToLive({ branchId: workDraft.id });
+      await applyDraft(collab, DOC_ID);
 
       const unrelatedDoc = new Y.Doc({ gc: false });
       unrelatedDoc.getMap("elsewhere").set("note", "writer edit outside the agent paragraph");
@@ -551,20 +548,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.objectContaining({ status: "active" }),
       ]);
     });
-
-    async function activeWorkDraft() {
-      return db
-        .select()
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.documentId, DOC_ID as never),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        )
-        .limit(1);
-    }
   });
 }
 
