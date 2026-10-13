@@ -43,7 +43,7 @@ describeDraftTreeDb("Apply binds what the writer reviewed (postgres)", (start) =
     expect.soft(await s.batchStates(), "nothing staged").toEqual([]);
     expect
       .soft(
-        (await s.review(ascension)).drafts.map((draft) => draft.documentId),
+        (await s.review(ascension)).items.map((item) => item.documentId),
         "its rows still reviewable",
       )
       .toContain(two);
