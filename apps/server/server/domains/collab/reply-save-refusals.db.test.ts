@@ -5,7 +5,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { WorkId } from "@meridian/contracts/runtime";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as Y from "yjs";
 import { drizzleFileAccess, testFileGrant } from "../../test-support/file-grants.js";
@@ -305,10 +305,17 @@ describe("reply save refusals (postgres)", () => {
     });
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     expect(refused(await harness.commit(second))).toEqual([[NEW_ID, EDIT]]);
+    // The draft's own branch, by kind: the closed thread peer shares the document, and an
+    // unordered select returns whichever row Postgres happens to place first.
     const [branch] = await db
       .select()
       .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.documentId, NEW_ID as never));
+      .where(
+        and(
+          eq(schema.documentBranches.documentId, NEW_ID as never),
+          eq(schema.documentBranches.kind, "work_draft"),
+        ),
+      );
     expect(branch?.status).toBe("active");
     // Reset from live, not closed: the branch holds exactly what the revealed document does.
     expect(await fixture.draftMarkdown(branch?.id as string)).toBe(
