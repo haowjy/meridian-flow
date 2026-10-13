@@ -8,7 +8,7 @@ import type { ActivePreview, DraftIntentKeys } from "./draft-projection";
 
 type DraftScope = { projectId: string; workId: string };
 export type DraftRef = DraftScope & { documentId: string; itemKey: string };
-type ListedDraft = { documentId: string; itemKey: string; branchGeneration?: number };
+type ListedDraft = { documentId: string; itemKey: string; branchGeneration?: number | null };
 
 /**
  * What a held failure is, never its wording. `-offline`: the request never got
@@ -21,6 +21,8 @@ export type DraftCommandFailureCode =
   | "apply-refused"
   | "apply-server-error"
   | "apply-unknown"
+  | "apply-blocked"
+  | "discard-unknown"
   | "discard-offline"
   | "discard-refused"
   | "discard-server-error"
@@ -70,6 +72,7 @@ export type ClosedDraft = { documentName: string | null };
 /** Selection identity and addressed settlement, shared with every observing review. */
 export type PendingChangeCommand = ChangeSelection & {
   target: "selection";
+  commandId?: string;
   mode: ChangeCommandMode;
   branchGeneration: number;
   completesDraft?: true;
@@ -81,6 +84,7 @@ export type PendingDraftCommand =
   | PendingChangeCommand
   | {
       target: "all";
+      commandId?: string;
       mode: ChangeCommandMode;
       branchGeneration: number | undefined;
       completesDraft?: true;
@@ -88,7 +92,7 @@ export type PendingDraftCommand =
     };
 
 type DraftClaimRecord =
-  | { phase: "pending"; command: PendingDraftCommand; token: symbol }
+  | { phase: "pending"; command: PendingDraftCommand; token: symbol; commandId?: string }
   | { phase: "failed"; failure: DraftCommandFailure; at: number };
 
 type DraftCommandRecord = {
@@ -104,11 +108,14 @@ const useDraftCommandStore = create<{
   queued: QueuedSelections;
   /** The loop sending each draft's queued clicks; a reset retires it with the queue. */
   drains: Readonly<Record<string, symbol>>;
+  /** Commands whose outcome stayed unknown: the writer's retry of the same body reuses the id. */
+  unknown: Readonly<Record<string, { commandId: string; digest: string }>>;
   clock: number;
 }>(() => ({
   records: {},
   queued: {},
   drains: {},
+  unknown: {},
   clock: 0,
 }));
 
@@ -175,6 +182,30 @@ export function draftCommandKey(draft: DraftRef): string {
   return `${scopePrefix(draft)}${draft.documentId}\u0000${draft.itemKey}`;
 }
 
+/**
+ * The id a command carries. A retry of a command whose outcome stayed unknown, with the same
+ * body, reuses its id so the server answers the first attempt's outcome; any other body is a new
+ * command. `digest` is the body without its id.
+ */
+export function commandIdFor(draft: DraftRef, kind: string, digest: string): string {
+  const held = useDraftCommandStore.getState().unknown[`${draftCommandKey(draft)}\u0000${kind}`];
+  return held?.digest === digest ? held.commandId : crypto.randomUUID();
+}
+
+/** Keep (`unknown`) or drop the id of the command that just ended. */
+export function retainUnknownCommand(
+  draft: DraftRef,
+  kind: string,
+  held: { commandId: string; digest: string } | null,
+): void {
+  const key = `${draftCommandKey(draft)}\u0000${kind}`;
+  useDraftCommandStore.setState((state) => {
+    if (!held && !(key in state.unknown)) return state;
+    const { [key]: _prior, ...rest } = state.unknown;
+    return { unknown: held ? { ...rest, [key]: held } : rest };
+  });
+}
+
 /** Mutations and retention share one update path; empty draft records never survive. */
 function updateDraftRecord(
   key: string,
@@ -232,6 +263,17 @@ export function beginDraftCommand(
   return { draft, epoch: accountEpoch, token };
 }
 
+/** Attach the wire identity only to the still-live claim that owns the request. */
+export function bindClaimCommandId(claim: DraftClaim, commandId: string): void {
+  const record = recordFor(claim.draft);
+  if (!claimIsLive(claim) || record?.phase !== "pending") return;
+  setRecord(claim.draft, () => ({
+    ...record,
+    command: { ...record.command, commandId },
+    commandId,
+  }));
+}
+
 /**
  * The server answered the selection command in flight on this draft and
  * closed the draft. Reviews showing it settle on this before the draft list is
@@ -248,7 +290,12 @@ export function answerDraftCommandClosed(by: DraftClaim | DraftRef, closed: Clos
   )
     return;
   const change = { ...record.command, itemClosed: closed };
-  setRecord(draft, () => ({ phase: "pending", command: change, token: record.token }));
+  setRecord(draft, () => ({
+    phase: "pending",
+    command: change,
+    token: record.token,
+    commandId: record.commandId,
+  }));
 }
 
 /** Publish an addressed selection result before caches refresh or the claim is released. */
@@ -264,6 +311,7 @@ export function answerDraftSelection(
       phase: "pending",
       command: { ...command, outcome },
       token: record.token,
+      commandId: record.commandId,
     }));
 }
 
@@ -348,6 +396,7 @@ export async function readDraftsAfterCommands<T extends ListedDraft>(
   const gone = Object.entries(records).filter(
     ([key, record]) =>
       record.claim?.phase === "failed" &&
+      !["apply-blocked", "apply-unknown", "discard-unknown"].includes(record.claim.failure.code) &&
       record.claim.at <= fence &&
       key.startsWith(prefix) &&
       !stillListed.has(key),
@@ -443,7 +492,7 @@ export function bindDraftCommandAccount(accountId: string): void {
 export function resetDraftCommandRecords(): void {
   accountEpoch += 1;
   const unsent = Object.values(useDraftCommandStore.getState().queued);
-  useDraftCommandStore.setState({ records: {}, queued: {}, drains: {} });
+  useDraftCommandStore.setState({ records: {}, queued: {}, drains: {}, unknown: {} });
   // A click that never got its turn is answered, not left waiting on a queue that is gone.
   for (const entry of unsent) entry.settle({ kind: "blocked" });
 }
@@ -476,6 +525,8 @@ export type ChangeFailureCode =
   | "server-error"
   /** An Apply got no answer: it may or may not have landed. Never read as a refusal. */
   | "unknown"
+  /** The server could not finish this Apply (its batch is blocked). Terminal: never retried automatically. */
+  | "blocked"
   /** The change was updated under the writer; the preview is re-read. */
   | "stale"
   /** The change is no longer in the draft. */

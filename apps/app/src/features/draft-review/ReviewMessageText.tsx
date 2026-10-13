@@ -52,6 +52,14 @@ export function ReviewMessageText({
       );
     case "apply-server-error":
       return <Trans>Couldn't apply this draft. Try again.</Trans>;
+    case "apply-blocked":
+      return <Trans>Apply couldn't finish</Trans>;
+    case "discard-unknown":
+      return (
+        <Trans>
+          Couldn't confirm whether this discarded. Check what is left before you try again.
+        </Trans>
+      );
     case "apply-unknown":
       return (
         <Trans>

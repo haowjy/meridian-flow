@@ -65,7 +65,7 @@ it("focuses this document, then applies and discards its classes without closing
     itemKey: "draft-b",
     documentName: "Other chapter",
   };
-  network.listWorkDrafts.mockResolvedValue({ drafts: [listed, other] });
+  network.listWorkDrafts.mockResolvedValue({ items: [listed, other] });
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
     itemKey: id,
@@ -99,6 +99,8 @@ it("focuses this document, then applies and discards its classes without closing
           "work-a",
           "document-a",
           {
+            commandId: expect.any(String),
+            draftId: "work-draft-a",
             itemKey: "draft-a",
             operationIds: ["1"],
             liveRevisionToken: "live-1",
@@ -118,6 +120,8 @@ it("focuses this document, then applies and discards its classes without closing
           "work-a",
           "document-a",
           {
+            commandId: expect.any(String),
+            draftId: "work-draft-a",
             itemKey: "draft-a",
             closureClassIds: ["class-2"],
             memberPartKeys: [],
@@ -150,7 +154,7 @@ it.each([
   "desktop",
   "phone",
 ] as const)("%s steps with marks hidden without restoring them", async (surface) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
   const navigate = vi.fn();
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);

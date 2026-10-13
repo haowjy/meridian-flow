@@ -358,7 +358,7 @@ export function reviewRoomObservations(
           ) !== null,
         ).preview
       : preview;
-  if (row)
+  if (row && row.branchGeneration !== null)
     actions.push({
       type: "generationObserved",
       ...draft,

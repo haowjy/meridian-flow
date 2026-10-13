@@ -59,7 +59,7 @@ const click = (label: string, within: ParentNode = document) =>
 it("focuses and discards through this document's sheet, keeping its editor through whole Discard", async () => {
   const network = fixture.network;
   network.listWorkDrafts.mockResolvedValue({
-    drafts: [
+    items: [
       listed,
       {
         ...listed,
@@ -114,6 +114,8 @@ it("focuses and discards through this document's sheet, keeping its editor throu
           "work-a",
           "document-a",
           {
+            commandId: expect.any(String),
+            draftId: "work-draft-a",
             itemKey: "draft-a",
             closureClassIds: ["class-1"],
             memberPartKeys: [],
@@ -140,7 +142,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         "project-a",
         "work-a",
         "document-a",
-        { itemKey: "draft-a" },
+        { commandId: expect.any(String), draftId: "work-draft-a", itemKey: "draft-a" },
       ]);
       await act(async () => whole.resolve(discarded(true)));
       await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
@@ -172,7 +174,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
 });
 
 it("closes the sheet on the last change without repeating attribution", async () => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
     operations: [{ ...operation("1"), actorThreadId: "thread-a", actorThreadTitle: "Lore" }],

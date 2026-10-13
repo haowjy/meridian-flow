@@ -79,7 +79,7 @@ beforeEach(() => {
   });
   resetDraftCommandRecords();
   review = null;
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
 });
 afterEach(() => {

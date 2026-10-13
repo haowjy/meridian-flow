@@ -47,7 +47,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
   fixture = createReviewScopeFixture();
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1", "2"));
 });
 afterEach(() => {
@@ -128,7 +128,7 @@ it("a newer proposal beats the old command and a lagging list, with monotonic ca
     expect(probe().presented.controller.inlineReview?.completion?.phase).toBe("pending");
     const next = proposal(2, "3");
     fixture.network.getDraftPreview.mockResolvedValue(next);
-    fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [] });
+    fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
     await act(async () => {
       probe().queryClient.setQueryData(previewKey, next);
       probe().queryClient.setQueryData(listKey, []);
@@ -181,7 +181,7 @@ it("a room-opening read cannot resurrect a change confirmed while the read waite
 
 it("lets the entry read answer before a stale empty list can exit review", async () => {
   const read = deferredReviewAnswer<ReturnType<typeof proposal>>();
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
   fixture.network.getDraftPreview.mockReturnValue(read.promise);
   await fixture.render(async (probe) => {
     probe().queryClient.setQueryData(listKey, []);
@@ -233,7 +233,7 @@ it("reconsiders a protected HTTP 404 when writer carry evidence is withdrawn", a
       getBranchRoom: () => session,
     } as unknown as LiveDocumentSessionRegistry,
   });
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(proposal(1, "1"));
   await fixture.render(async (probe) => {
     await act(async () => probe().presented.controller.enterInlineReview("document-a", "draft-a"));
