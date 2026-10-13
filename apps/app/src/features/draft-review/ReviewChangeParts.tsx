@@ -192,6 +192,7 @@ function OverflowChats({
           key={chat.threadId}
           chat={chat}
           name={displayThreadTitle(chat.title)}
+          fullTitle={chat.title}
           onOpenThread={openThread}
           touch={touch}
         />
@@ -227,18 +228,20 @@ function OverflowChats({
 function ChatLink({
   chat,
   name,
+  fullTitle,
   onOpenThread,
   touch,
 }: {
   chat: ChangeChat;
   name: string;
+  fullTitle: string | null;
   onOpenThread: (threadId: string) => void;
   touch: boolean;
 }) {
   return (
     <button
       type="button"
-      title={name}
+      title={fullTitle ?? name}
       onClick={(event) => {
         event.stopPropagation();
         openChat(chat, onOpenThread);
