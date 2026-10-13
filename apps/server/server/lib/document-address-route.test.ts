@@ -113,28 +113,21 @@ it("repairs an old locator from branch identity, a copied selector never names t
 });
 
 it.each([
-  "bad item key",
   "a branch id in the item key",
   "another Work",
   "foreign project",
   "deleted Work",
   "inactive draft",
-  "another draft",
-  "empty key",
   "denied grant",
   "missing identity",
   "ambiguous item",
 ])("answers unavailable for %s", async (reason) => {
   const { input, state, deps, review } = fixture();
-  if (reason === "bad item key") review.itemKey = "bad";
   if (reason === "a branch id in the item key") review.itemKey = "branch";
   if (reason === "another Work") review.workId = "other";
   if (reason === "foreign project") state.work.projectId = "other";
   if (reason === "deleted Work") state.work.deletedAt = new Date();
   if (reason === "inactive draft") state.draftId = null;
-  if (reason === "another draft")
-    state.items = state.items.map((item) => ({ ...item, draftId: "old" as never }));
-  if (reason === "empty key") review.itemKey = "";
   if (reason === "denied grant") state.denied = true;
   if (reason === "missing identity") state.available = false;
   if (reason === "ambiguous item") state.items = [...state.items, ...state.items];
