@@ -266,7 +266,13 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
     },
     async lockThreadReceipt(threadId) {
       const row = leases.get(threadId);
-      return row ? { ids: [...row.messageIds], turnId: row.turnId } : null;
+      return row
+        ? {
+            ids: [...row.messageIds],
+            turnId: row.turnId,
+            lease: { threadId, runId: row.runId, holderId: row.holderId },
+          }
+        : null;
     },
     async lockReceipt(lease) {
       const row = leases.get(lease.threadId);
