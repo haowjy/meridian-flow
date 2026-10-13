@@ -177,6 +177,8 @@
 
 ### Fixed
 
+- Edit returns a failed message in a never-created fork to the message box immediately, without removing the fork’s Retry or sending the message when creation is retried.
+
 - Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
 - Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
