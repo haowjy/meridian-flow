@@ -1,4 +1,4 @@
-/** Compact projections of thread snapshots for `thread view` / `thread list` (text + JSON). */
+/** Compact renderers over reduced turns (`Turn[]`) for `thread view` / `thread list` (text + JSON). */
 import type { ThreadReferenceProps } from "@meridian/contracts/components";
 import type { ThreadSnapshotResponse } from "@meridian/contracts/protocol";
 import {
@@ -205,6 +205,17 @@ export function compactTurn(turn: Turn, limits: TranscriptLimits): CompactTurn {
   };
 }
 
+/** The reply's text blocks joined in sequence; null when it has none. */
+export function assistantText(turn: Turn | undefined): string | null {
+  if (!turn) return null;
+  const text = [...turn.blocks]
+    .sort((a, b) => a.sequence - b.sequence)
+    .filter((block) => block.blockType === "text")
+    .map((block) => blockPlainText(block.blockType, block.content) ?? block.textContent ?? "")
+    .join("");
+  return text || null;
+}
+
 export function liveStatusLabel(snapshot: Pick<ThreadSnapshotResponse, "liveState">): string {
   const status = snapshot.liveState.status;
   return status.kind === "asleep" ? "asleep" : `awake:${status.phase}`;
@@ -214,21 +225,23 @@ export type TurnSelection = { full: boolean; turnId?: string; last?: number };
 
 /** `--turn` (id or prefix) or the last N turns (all with --full); `total` counts the matches. */
 export function selectTurns(
-  snapshot: ThreadSnapshotResponse,
+  allTurns: readonly Turn[],
   options: TurnSelection,
 ): { turns: Turn[]; total: number } {
   const matched = options.turnId
-    ? snapshot.turns.filter((turn) => turn.id.startsWith(options.turnId ?? ""))
-    : snapshot.turns;
+    ? allTurns.filter((turn) => turn.id.startsWith(options.turnId ?? ""))
+    : [...allTurns];
   const last = options.full || options.turnId ? matched.length : (options.last ?? 20);
   return { turns: matched.slice(-last), total: matched.length };
 }
 
+/** Renders reduced turns beside the snapshot's thread and live-state facts. */
 export function projectThreadView(
   snapshot: ThreadSnapshotResponse,
+  reducedTurns: readonly Turn[],
   options: TranscriptLimits & TurnSelection,
 ): ThreadView {
-  const { turns, total } = selectTurns(snapshot, options);
+  const { turns, total } = selectTurns(reducedTurns, options);
   const { thread } = snapshot;
   return {
     thread: {

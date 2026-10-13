@@ -3,6 +3,7 @@ import { apiThreadSnapshotPath, type ThreadSnapshotResponse } from "@meridian/co
 import { EXIT, type ExitCode } from "../../core/cli-error";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
+import { type LiveDiff, renderLiveDiff } from "./reduced-thread";
 
 export type Outcome =
   | "accepted"
@@ -32,6 +33,8 @@ export type Result = Claim & {
   turnId?: string | null;
   finalText?: string | null;
   next?: string[];
+  liveView?: "matches" | "differs";
+  liveDiff?: LiveDiff[];
 };
 export type TerminalResult<T extends Record<string, unknown> = Record<string, unknown>> = {
   result: Result & T;
@@ -85,6 +88,7 @@ export function finishResult(out: Output, terminal: TerminalResult): ExitCode {
           ? "timeout: last snapshot showed no running turn or owed message, but the chat was awake; idle is unconfirmed"
           : `${result.outcome} ${result.turnId ?? "?"}${result.reason ? ` ${result.reason}` : ""}`,
   );
+  if (result.liveView === "differs" && result.liveDiff) out.note(renderLiveDiff(result.liveDiff));
   for (const next of result.next ?? []) out.note(next);
   return terminal.exitCode;
 }

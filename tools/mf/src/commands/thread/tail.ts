@@ -11,7 +11,7 @@ import {
   requirePositional,
   stringOption,
 } from "../../core/command";
-
+import { type LiveViewReport, ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
 import { followThread } from "./stream";
@@ -57,9 +57,12 @@ export const threadTailCommand: CommandSpec = {
       return lastSnapshot;
     };
     const turnIds = new Set<string>();
+    // A failure event is evidence for the claim whether or not a snapshot already covers it.
     let observedFailure = false;
+    const reduced = new ReducedThread(threadId);
     try {
       const initial = since === undefined || untilIdle ? await readSnapshot() : null;
+      if (initial) reduced.hydrate(initial);
       since ??= initial?.liveState.resumeAfterSeq ?? "0";
       if (initial?.liveState.runningTurnId) turnIds.add(initial.liveState.runningTurnId);
       if (untilIdle && initial && isIdle(initial.liveState))
@@ -72,6 +75,7 @@ export const threadTailCommand: CommandSpec = {
         out: ctx.out,
         full: flag(ctx, "full"),
         textStream: "out",
+        reduced,
         shouldStop: (event) => {
           if ("turnId" in event) turnIds.add(event.turnId);
           if (event.type === "turn.failed") observedFailure = true;
@@ -104,6 +108,7 @@ export const threadTailCommand: CommandSpec = {
         tailResult(threadId, lastSnapshot, turnIds, {
           failed: observedFailure,
           truncated: result.truncated,
+          liveView: reduced.compare(lastSnapshot, turnIds),
         }),
       );
     } catch (error) {
@@ -145,7 +150,10 @@ function tailResult(
   threadId: string,
   snapshot: ThreadSnapshotResponse,
   ids: ReadonlySet<string>,
-  observed = { failed: false, truncated: false },
+  observed: { failed: boolean; truncated: boolean; liveView?: LiveViewReport } = {
+    failed: false,
+    truncated: false,
+  },
 ) {
   const turns = [...ids].map((turnId) => ({
     turnId,
@@ -165,5 +173,6 @@ function tailResult(
     turnId: [...ids].at(-1) ?? null,
     turns,
     idle: true,
+    ...observed.liveView,
   });
 }

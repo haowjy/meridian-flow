@@ -1,4 +1,4 @@
-/** `thread view --blocks`: every persisted block with its timing, so "when did this land" needs no psql. */
+/** `thread view --blocks`: every reduced block with its timing, so "when did this land" needs no psql. */
 import { blockContentRecord, type Turn } from "@meridian/contracts/threads";
 
 export type BlockRow = {

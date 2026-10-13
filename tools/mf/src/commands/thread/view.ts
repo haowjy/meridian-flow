@@ -8,6 +8,7 @@ import {
   stringOption,
 } from "../../core/command";
 import { blockTimings, renderBlocks } from "./block-timing";
+import { ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { projectThreadView, renderThreadView, selectTurns } from "./transcript";
 
@@ -45,15 +46,19 @@ export const threadViewCommand: CommandSpec = {
       "GET",
       apiThreadSnapshotPath(threadId),
     );
+    // Turns come from the shared reducer's store, as the app builds them.
+    const reduced = new ReducedThread(threadId);
+    reduced.hydrate(snapshot);
+    const turns = reduced.turns();
     const selection = {
       full: flag(ctx, "full"),
       turnId: stringOption(ctx, "turn"),
       last: intOption(ctx, "last", 20),
     };
     if (flag(ctx, "blocks")) {
-      ctx.out.result(blockTimings(threadId, selectTurns(snapshot, selection).turns), renderBlocks);
+      ctx.out.result(blockTimings(threadId, selectTurns(turns, selection).turns), renderBlocks);
     } else {
-      ctx.out.result(projectThreadView(snapshot, selection), renderThreadView);
+      ctx.out.result(projectThreadView(snapshot, turns, selection), renderThreadView);
     }
     return undefined;
   },
