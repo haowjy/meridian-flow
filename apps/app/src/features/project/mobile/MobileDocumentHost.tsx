@@ -259,7 +259,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   useMobileRouteBinding({ projectId, workId, route, activate: true });
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
-  const selectedReviewDraftId = useRequestedReview({
+  const selectedReviewItemKey = useRequestedReview({
     container: "editor",
     editorWorkId,
     activeScheme: activeContextScheme,
@@ -284,7 +284,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     documentId: activeLive ? activeEditorDocumentId : null,
     liveSession: activeLive,
     active: true,
-    inReview: Boolean(selectedReviewDraftId),
+    inReview: Boolean(selectedReviewItemKey),
   });
 
   const failed = liveState.kind === "failed" && liveState.documentId === activeTab?.documentId;
@@ -387,7 +387,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
           showToolbar={false}
           ariaLabel={t`Read-only live document`}
           showCollaborationDecorations={false}
-          reviewDraftId={selectedReviewDraftId}
+          reviewItemKey={selectedReviewItemKey}
         />
       </div>
     </MobileDocumentReview>

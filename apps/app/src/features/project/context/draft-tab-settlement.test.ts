@@ -15,7 +15,7 @@ function draftTab(token = "tab-a") {
     schemaType: "document" as const,
     draftOnly: true,
     reviewWorkId: "work-a",
-    reviewDraftId: "draft-a",
+    reviewItemKey: "draft-a",
     tabInstanceToken: token,
   };
 }

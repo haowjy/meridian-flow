@@ -36,10 +36,10 @@ export async function getDraftPreview(
   projectId: string,
   workId: string,
   documentId: string,
-  draftId: string,
+  itemKey: string,
   signal?: AbortSignal,
 ): Promise<DraftPreviewResponse> {
-  const params = new URLSearchParams({ draftId });
+  const params = new URLSearchParams({ itemKey });
   const preview = await getJson<DraftPreviewResponse>(
     `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
     { signal },
@@ -47,8 +47,8 @@ export async function getDraftPreview(
   if (preview.status === "active" && !preview.reviewRoomName) {
     throw new Error("Draft preview response is missing reviewRoomName");
   }
-  if (preview.status === "active" && typeof preview.draftGeneration !== "number") {
-    throw new Error("Draft preview response is missing draftGeneration");
+  if (preview.status === "active" && typeof preview.branchGeneration !== "number") {
+    throw new Error("Draft preview response is missing branchGeneration");
   }
   return preview;
 }
@@ -68,8 +68,8 @@ export async function applyDraft(
     response === null ||
     !("status" in response) ||
     response.status !== "applied" ||
-    !("draftId" in response) ||
-    response.draftId !== request.draftId
+    !("itemKey" in response) ||
+    response.itemKey !== request.itemKey
   ) {
     throw new Error("Draft Apply response did not prove the requested draft was applied");
   }
@@ -87,8 +87,8 @@ export async function applyDraftChanges(
     request,
   );
   if (
-    response.draftId !== request.draftId ||
-    !["applied", "stale", "gone", "draft_only", "incomplete_class"].includes(response.status)
+    response.itemKey !== request.itemKey ||
+    !["applied", "stale", "gone", "whole_item", "incomplete_class"].includes(response.status)
   )
     throw new Error("Draft change Apply response did not identify the requested draft");
   if (

@@ -119,13 +119,13 @@ export function DocumentIdentityBar({
   const { controller } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
-  const reviewDraftId =
-    review?.documentId === tab.documentId && review.shown ? review.draftId : null;
+  const reviewItemKey =
+    review?.documentId === tab.documentId && review.shown ? review.itemKey : null;
   const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.workId);
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
-    !reviewDraftId && !readOnly && location.provisional && location.scheme !== "uploads";
+    !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
 
   return (
@@ -133,7 +133,7 @@ export function DocumentIdentityBar({
       className={cn(
         "@container min-w-0",
         variant === "header" ? "flex-1" : "shrink-0",
-        reviewDraftId &&
+        reviewItemKey &&
           variant === "band" &&
           "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
       )}
@@ -184,10 +184,10 @@ export function DocumentIdentityBar({
             }
           />
         )}
-        {reviewDraftId ? (
+        {reviewItemKey ? (
           <DraftReviewBand
             documentId={tab.documentId}
-            draftId={reviewDraftId}
+            itemKey={reviewItemKey}
             onOpenDraft={openDraft}
             onCloseDraftOnly={onCloseDraftOnly}
           />
@@ -211,7 +211,7 @@ export function DocumentIdentityBar({
             <NamespaceFailureMark failure="set-location" message={passiveFailure} />
           )
         ) : null}
-        {!reviewDraftId ? <DraftReviewChip documentId={tab.documentId} /> : null}
+        {!reviewItemKey ? <DraftReviewChip documentId={tab.documentId} /> : null}
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
@@ -221,10 +221,10 @@ export function DocumentIdentityBar({
           }}
         />
       </div>
-      {reviewDraftId ? (
+      {reviewItemKey ? (
         <DraftReviewFailureNotices
           documentId={tab.documentId}
-          draftId={reviewDraftId}
+          itemKey={reviewItemKey}
           onOpenDraft={openDraft}
         />
       ) : null}

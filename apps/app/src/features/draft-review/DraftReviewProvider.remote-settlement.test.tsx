@@ -48,15 +48,15 @@ vi.mock("@/features/editor/useInlineReviewSync", () => ({
     editor,
     onInlineModelAvailable,
     documentId,
-    draftId,
+    itemKey,
   }: {
     editor: Editor | null;
-    onInlineModelAvailable: (model: string, documentId: string, draftId: string) => void;
+    onInlineModelAvailable: (model: string, documentId: string, itemKey: string) => void;
     documentId: string;
-    draftId: string;
+    itemKey: string;
   }) => {
     useEffect(() => {
-      if (editor) onInlineModelAvailable("model", documentId, draftId);
+      if (editor) onInlineModelAvailable("model", documentId, itemKey);
     }, [editor]);
   },
 }));
@@ -105,9 +105,9 @@ describe("DraftReviewProvider remote settlement", () => {
     const tab = contextTabFromDraftGroup({
       workId: "work-a",
       documentId: "document-a",
-      draftId: "draft-a",
+      itemKey: "draft-a",
       contextLocation: { scheme: "manuscript", path: "/chapter.md" },
-      isNewDocument: true,
+      isNew: true,
     });
     if (!tab) throw new Error("Draft tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
@@ -136,7 +136,7 @@ describe("DraftReviewProvider remote settlement", () => {
     const tab = useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs[0];
     if (!tab) throw new Error("Missing draft overlay");
     useDockDocumentStore.setState({
-      occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", draftId: "draft-a" }),
+      occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", itemKey: "draft-a" }),
     });
     if (container === "dock")
       useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
@@ -180,7 +180,7 @@ describe("DraftReviewProvider remote settlement", () => {
                   // A second admission of this unchanged intrinsic address is the
                   // observable cycle; stop it here so act can report the regression.
                   expect(admission).toHaveBeenCalledTimes(1);
-                  selected?.controller.enterInlineReview(target.documentId, target.draftId);
+                  selected?.controller.enterInlineReview(target.documentId, target.itemKey);
                 },
               }}
             />
@@ -226,7 +226,7 @@ describe("DraftReviewProvider remote settlement", () => {
         fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [] });
         const emptyPreview = {
           ...preview,
-          draftGeneration: mode === "discard" ? 2 : 1,
+          branchGeneration: mode === "discard" ? 2 : 1,
           operations: [],
           hunks: [],
         };
@@ -245,7 +245,7 @@ describe("DraftReviewProvider remote settlement", () => {
         // Empty active preview arrives before the live catalog, just like a remote
         // room reset. Lifecycle alone decides whether this overlay promotes or closes.
         if (container === "dock") {
-          expect(selected?.controller.inlineReview?.draftId).toBe("draft-a");
+          expect(selected?.controller.inlineReview?.itemKey).toBe("draft-a");
           expect(useDockDocumentStore.getState().occupant?.tab).toHaveProperty("draftOnly", true);
           expect(useContextTabsStore.getState().byProject).toEqual({});
         }

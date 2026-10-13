@@ -329,10 +329,10 @@ it.each([
   const rig = await setup(source);
   await rig.replace(B);
   await act(async () =>
-    useDockDocumentStore.getState().setDocumentReview({ workId, draftId: "draft-B" }),
+    useDockDocumentStore.getState().setDocumentReview({ workId, itemKey: "draft-B" }),
   );
   await rig.click("Editor");
-  expect(rig.history.location.search).toContain("draft=draft-B");
+  expect(rig.history.location.search).toContain("item=draft-B");
   expect(rig.history.location.pathname).toContain("/editor/manuscript/B.md");
   expect(useContextTabsStore.getState().byProject[projectId].selectedTabIdByWork[workId]).toBe("B");
   expect(useDockDocumentStore.getState().occupant).toBeNull();

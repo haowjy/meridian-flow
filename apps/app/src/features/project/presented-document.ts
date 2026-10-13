@@ -4,7 +4,7 @@ import { createContext, useContext } from "react";
 import type { DockDocument } from "./dock/dock-document-store";
 import type { ScreenKey } from "./shell/screens";
 
-export type ReviewAddress = { workId: string; draftId: string; changeId?: string };
+export type ReviewAddress = { workId: string; itemKey: string; changeId?: string };
 export type PresentedDocument = {
   container: "editor" | "dock";
   documentId: string | null;
@@ -22,7 +22,7 @@ export function resolvePresentedDocument(input: {
     scheme: ProjectContextTreeScheme | null;
     path: string | null;
     documentId?: string | null;
-    draftId?: string;
+    itemKey?: string;
     changeId?: string;
     draftOnly: boolean;
   };
@@ -37,8 +37,8 @@ export function resolvePresentedDocument(input: {
       path: editor.path,
       draftOnly: editor.draftOnly,
       review:
-        editor.workId && editor.draftId
-          ? { workId: editor.workId, draftId: editor.draftId, changeId: editor.changeId }
+        editor.workId && editor.itemKey
+          ? { workId: editor.workId, itemKey: editor.itemKey, changeId: editor.changeId }
           : null,
     };
   }

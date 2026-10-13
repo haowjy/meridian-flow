@@ -53,14 +53,14 @@ afterEach(() => {
 const draftB = {
   ...listed,
   documentId: "document-b",
-  draftId: "draft-b",
+  itemKey: "draft-b",
   documentName: "Chapter 13",
   contextLocation: { scheme: "manuscript" as const, path: "/chapter-13.md" },
 };
 const draftC = {
   ...listed,
   documentId: "document-c",
-  draftId: "draft-c",
+  itemKey: "draft-c",
   documentName: "Filtered chapter",
   contextLocation: { scheme: "manuscript" as const, path: "/filtered.md" },
 };
@@ -107,14 +107,14 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
   }));
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
-    draftId: id,
+    itemKey: id,
     reviewRoomName: `room-${id}`,
   }));
   const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
   network.applyDraftChanges.mockReturnValueOnce(answer.promise);
   network.discardDraft.mockImplementation(async (_p, _w, _d, request) => ({
     ...discarded(true),
-    draftId: request.draftId,
+    itemKey: request.itemKey,
   }));
   await fixture.render(
     async (probe) => {
@@ -142,7 +142,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
           "work-c",
           "document-b",
           {
-            draftId: "draft-b",
+            itemKey: "draft-b",
             operationIds: ["1"],
             liveRevisionToken: "live-1",
             draftRevisionToken: "draft-1",
@@ -151,7 +151,7 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       ]);
       expect(document.querySelector('[data-review-change-row="class-1"]')).toBeNull();
       expect(probe().presented.controller.inlineReview).toEqual(presentedReview);
-      await act(async () => answer.resolve({ ...applied(false, "1"), draftId: "draft-b" }));
+      await act(async () => answer.resolve({ ...applied(false, "1"), itemKey: "draft-b" }));
       await click("Filter files");
       expect(button("Changes in Filtered chapter")).toBeUndefined();
       await act(async () =>
@@ -165,8 +165,8 @@ it("applies an unopened C row, then discards every C draft despite filtering wit
       await click("Discard");
       await settleReact(() =>
         expect(network.discardDraft.mock.calls).toEqual([
-          ["project-a", "work-c", "document-b", { draftId: "draft-b" }],
-          ["project-a", "work-c", "document-c", { draftId: "draft-c" }],
+          ["project-a", "work-c", "document-b", { itemKey: "draft-b" }],
+          ["project-a", "work-c", "document-c", { itemKey: "draft-c" }],
         ]),
       );
       expect(probe().presented.controller.inlineReview).toEqual(presentedReview);

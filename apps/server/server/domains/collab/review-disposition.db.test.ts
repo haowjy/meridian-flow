@@ -86,7 +86,7 @@ it.each([
     if (after.status !== "active") throw Error("missing after");
     expect(result).toMatchObject({
       status: action === "apply" ? "applied" : "discarded",
-      draftClosed: false,
+      itemClosed: false,
     });
     expect(await f.draftMarkdown(branch.branchId)).toContain("**Beta**");
     expect(await harness.liveMarkdown(ALPHA_ID)).not.toContain("**Beta**");
@@ -113,7 +113,7 @@ it.each([
     );
     expect(formattingResult).toMatchObject({
       status: action === "apply" ? "applied" : "discarded",
-      draftClosed: true,
+      itemClosed: true,
     });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
       action === "apply" ? "Alpha base. Agent\n\n**Beta** base.\n" : "Alpha base.\n\nBeta base.\n",
@@ -190,7 +190,7 @@ it.each([
     );
     expect(await f.collab.draftReview.discardWorkDraft(refreshed)).toMatchObject({
       status: "discarded",
-      draftClosed: true,
+      itemClosed: true,
     });
   } finally {
     harness.destroyWarmState();
@@ -303,7 +303,7 @@ it("accepts the clicked Discard class after repeated independent writer admissio
     );
     expect(await f.collab.draftReview.discardWorkDraft(request)).toMatchObject({
       status: "discarded",
-      draftClosed: false,
+      itemClosed: false,
     });
     expect(await f.draftMarkdown(branch.branchId)).toBe(
       "Alpha sword waits.\n\nBeta shield waits.\n\nGamma waits. Writer keeps typing\n",

@@ -44,10 +44,10 @@ export function useAiDraftLauncher() {
       openAiDraft({
         workId,
         documentId: row.documentId,
-        draftId: row.draft.draftId,
+        itemKey: row.draft.itemKey,
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
-        isNewDocument: row.isNewDocument,
+        isNew: row.isNew,
         ...(focusOperationIds?.length ? { focusOperationIds } : {}),
       }),
     [openAiDraft],
@@ -67,7 +67,7 @@ export function useDockReviewLauncher(projectId: string, document: DockDocument)
       if (tab)
         commitDockDocument(projectId, document.screen, tab, revealDock, claim, {
           workId: target.workId,
-          draftId: target.draftId,
+          itemKey: target.itemKey,
         });
     },
     [projectId, document.screen, revealDock],

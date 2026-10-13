@@ -34,7 +34,7 @@ export function DraftReviewChip({ documentId, touch = false }: DraftReviewChipPr
       projectId: controller.projectId,
       workId: controller.workId,
       documentId,
-      draftId: draft.draftId,
+      itemKey: draft.itemKey,
     })?.code === "review-failed";
 
   return (

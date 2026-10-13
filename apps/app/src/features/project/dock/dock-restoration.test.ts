@@ -308,7 +308,7 @@ it.each([
     ...document,
     screen: "work" as const,
     screenWorkId: "work",
-    review: { workId: "work", draftId: "draft" },
+    review: { workId: "work", itemKey: "draft" },
   };
   const restored = reload(manuscript);
   restored.getState().syncOccupantScope(scope.projectId, scope.screen, scope.workId);
@@ -364,7 +364,7 @@ it.each([
   { screen: ["work"] },
   { review: undefined },
   { review: {} },
-  { review: { workId: "", draftId: "draft" } },
+  { review: { workId: "", itemKey: "draft" } },
 ])("rejects malformed occupant identity: %o", (invalid) => {
   const disk = storage();
   disk.setItem(
@@ -379,7 +379,7 @@ it.each([
 });
 
 it("reloads a draft-only review from its Work list, without catalog membership", async () => {
-  const review = { workId: "work", draftId: "draft" };
+  const review = { workId: "work", itemKey: "draft" };
   const second = reload({
     ...document,
     review,
@@ -387,7 +387,7 @@ it("reloads a draft-only review from its Work list, without catalog membership",
       ...tab,
       draftOnly: true,
       reviewWorkId: "work",
-      reviewDraftId: "draft",
+      reviewItemKey: "draft",
       tabInstanceToken: "old",
     },
   });
@@ -403,15 +403,15 @@ it("reloads a draft-only review from its Work list, without catalog membership",
         {
           ...listed,
           documentId: "doc",
-          draftId: "other-draft",
-          isNewDocument: true,
+          itemKey: "other-draft",
+          isNew: true,
           contextLocation: { scheme: "kb", path: "/Wrong.md" },
         },
         {
           ...listed,
           documentId: "doc",
-          draftId: "draft",
-          isNewDocument: true,
+          itemKey: "draft",
+          isNew: true,
           contextLocation: { scheme: "manuscript", path: "/Current.md" },
         },
       ];
@@ -432,14 +432,14 @@ it("reloads a draft-only review from its Work list, without catalog membership",
       documentId: "doc",
       draftOnly: true,
       reviewWorkId: "work",
-      reviewDraftId: "draft",
+      reviewItemKey: "draft",
       path: "/Current.md",
     },
   });
 });
 it("keeps a manuscript review while validating its renamed live identity", async () => {
   availability.mockResolvedValue(renamedAvailability);
-  const review = { workId: "work", draftId: "draft" };
+  const review = { workId: "work", itemKey: "draft" };
   const replica = resources();
   const restored = await restoreDockDocument(
     { ...document, review },
@@ -447,7 +447,7 @@ it("keeps a manuscript review while validating its renamed live identity", async
       ...replica,
       resources: replica.resources,
       readWorkDrafts: async () => [
-        { ...listed, documentId: "doc", draftId: "draft", isNewDocument: false },
+        { ...listed, documentId: "doc", itemKey: "draft", isNew: false },
       ],
     },
   );
@@ -470,7 +470,7 @@ it("keeps a manuscript review while validating its renamed live identity", async
           ...tab,
           draftOnly: true,
           reviewWorkId: "work",
-          reviewDraftId: "draft",
+          reviewItemKey: "draft",
           tabInstanceToken: "draft-instance",
         },
       },
@@ -483,7 +483,7 @@ it("keeps a manuscript review while validating its renamed live identity", async
 it("round trips a changed selection on the same dock review address", () => {
   const disk = storage();
   const first = createDockDocumentStore(() => disk, "account");
-  const review = { workId: "work", draftId: "draft", changeId: "class:first" };
+  const review = { workId: "work", itemKey: "draft", changeId: "class:first" };
   first.getState().commit(first.getState().claim(), { ...document, review });
   first.getState().setDocumentReview({ ...review, changeId: "class:second" });
   const restored = createDockDocumentStore(() => disk, "account");

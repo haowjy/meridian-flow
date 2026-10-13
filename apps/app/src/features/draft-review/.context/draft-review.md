@@ -180,7 +180,7 @@ or promotes a draft-only tab. A later preview that omits a failed selection
 retires it; a later list omitting a failed draft retires that failure.
 
 Selection `incomplete_class` becomes `stale` and refetches; focus follows shared
-operations if regrouping changed the class ID. `draft_only` refreshes as `stale` (a racing selective request cannot target a
+operations if regrouping changed the class ID. `whole_item` refreshes as `stale` (a racing selective request cannot target a
 whole-draft item). `gone` is not held: the change leaves with failure feedback.
 Applied/discarded selections produce no success toast.
 Only `applied`/`discarded` answers can supply closure, never refusal or stale.
@@ -205,7 +205,7 @@ Synchronous subscription dispatch preserves entry/answer ordering in one flush,
 without consulting the last rendered review identity.
 
 `inlineReview.completion` is the reducer's retained state, not a second command
-store. A covering claim predicts `pending`; `draftClosed: true` supplies `closed`.
+store. A covering claim predicts `pending`; `itemClosed: true` supplies `closed`.
 A non-closing answer or failed/released claim withdraws pending. Closed stays
 sticky while that review remains open, including after claim release. Opening
 later adopts only current cache/claim evidence, not an old closing answer.
@@ -238,7 +238,7 @@ The reducer owns shown generation R and completion K:
 | Row | Input | Result |
 |---|---|---|
 | E | Enter the draft | R is the newest proposal the caches know (a cached preview that lists changes, the list row, a claim); K is the claim's if it acted on R; none known leaves R unresolved |
-| C1, C2 | Claim at R begins covering the last changes, or is answered `draftClosed` | K is pending, or closed (a closed K never goes back) |
+| C1, C2 | Claim at R begins covering the last changes, or is answered `itemClosed` | K is pending, or closed (a closed K never goes back) |
 | C3 | Claim at R ends without a close | A pending K is withdrawn; a closed one stays |
 | C4, C5 | Claim below R, or above it (or R unresolved) | Ignored, or re-enter the claim's generation (a claim that does not cover the last changes sends no action: it acted on a cached preview, which O3 has already taken up) |
 | O1, O2 | Preview or list read below R, or at R | Ignored, or content refresh only |
@@ -322,7 +322,7 @@ and matching Work/path/document/membership; it owns no paint state.
 
 New-document drafts have server document/Yjs state but no live catalog
 membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` and
-`reviewDraftId` in the review overlay, never durable workspace identity.
+`reviewItemKey` in the review overlay, never durable workspace identity.
 Overlay identity includes document, Work and draft; navigation consumes the
 row’s own `contextLocation`, without restricting its document scheme. Hosts acquire only its
 branch; phone `MobileDraftOnlyDocumentHost` delegates to `ContextEditorMountHost`.

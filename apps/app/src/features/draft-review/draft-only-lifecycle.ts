@@ -5,7 +5,7 @@ import type { DraftRef } from "@/client/query/draft-command-record";
 import {
   type ContextTab,
   getContextTabs,
-  matchesReviewDraft,
+  matchesReviewItem,
   useContextTabsStore,
 } from "@/client/stores";
 import {
@@ -31,13 +31,13 @@ function presentation(projectId: string, tab: ContextTab, container: "editor" | 
   return tab.kind === "tracked" &&
     tab.draftOnly &&
     tab.reviewWorkId &&
-    tab.reviewDraftId &&
+    tab.reviewItemKey &&
     tab.tabInstanceToken
     ? {
         projectId,
         documentId: tab.documentId,
         workId: tab.reviewWorkId,
-        draftId: tab.reviewDraftId,
+        itemKey: tab.reviewItemKey,
         token: tab.tabInstanceToken,
         container,
         contextLocation: { scheme: tab.scheme, path: tab.path },
@@ -47,10 +47,9 @@ function presentation(projectId: string, tab: ContextTab, container: "editor" | 
 function matches(tab: ContextTab, draft: DraftRef) {
   return (
     tab.kind === "tracked" &&
-    matchesReviewDraft(tab, {
-      documentId: draft.documentId,
+    matchesReviewItem(tab, {
       reviewWorkId: draft.workId,
-      reviewDraftId: draft.draftId,
+      reviewItemKey: draft.itemKey,
     }) &&
     Boolean(tab.tabInstanceToken)
   );
@@ -64,7 +63,7 @@ function settleDock(draft: DraftRef, promote: boolean): boolean {
   const {
     draftOnly: _,
     reviewWorkId: __,
-    reviewDraftId: ___,
+    reviewItemKey: ___,
     tabInstanceToken: ____,
     ...tab
   } = occupant.tab as Extract<ContextTab, { kind: "tracked" }>;
@@ -110,7 +109,7 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
       },
       remove: (draft) => {
         if (epoch?.aborted) return;
-        removal.discardDraft(draft.projectId, draft.workId, draft.documentId, draft.draftId);
+        removal.discardDraft(draft.projectId, draft.workId, draft.documentId, draft.itemKey);
         settleDock(draft, false);
       },
     }),

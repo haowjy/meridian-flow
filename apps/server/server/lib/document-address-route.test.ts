@@ -21,6 +21,7 @@ function fixture() {
     items: [
       {
         draftId: "whole-draft",
+        itemKey: "whole-draft:hidden",
         draftBranchId: "branch",
         documentId: "hidden",
         path: "kb://Withern",
@@ -60,7 +61,7 @@ function fixture() {
     input,
     state,
     deps,
-    review: { workId: "work", draftBranchId: "branch", documentId: "hidden" },
+    review: { workId: "work", itemKey: "whole-draft:hidden" },
   };
 }
 
@@ -76,13 +77,13 @@ it("selects the branch's hidden document rather than the live path occupant", as
   });
 });
 
-it("repairs an old locator from branch identity, including a copied selector with no document id", async () => {
+it("repairs an old locator from branch identity, a copied selector never names the document", async () => {
   const { input, deps, review } = fixture();
   input.path = "Before rename";
   expect(
     await handleDocumentAddressRequest(deps, input, {
       workId: review.workId,
-      draftBranchId: review.draftBranchId,
+      itemKey: review.itemKey,
     }),
   ).toMatchObject({
     kind: "current",
@@ -91,31 +92,30 @@ it("repairs an old locator from branch identity, including a copied selector wit
 });
 
 it.each([
-  "bad branch",
+  "bad item key",
+  "a branch id in the item key",
   "another Work",
   "foreign project",
   "deleted Work",
   "inactive draft",
   "another draft",
-  "id mismatch",
-  "hidden unused id",
-  "empty id",
+  "empty key",
   "denied grant",
   "missing identity",
-  "ambiguous branch",
+  "ambiguous item",
 ])("answers unavailable for %s", async (reason) => {
   const { input, state, deps, review } = fixture();
-  if (reason === "bad branch") review.draftBranchId = "bad";
+  if (reason === "bad item key") review.itemKey = "bad";
+  if (reason === "a branch id in the item key") review.itemKey = "branch";
   if (reason === "another Work") review.workId = "other";
   if (reason === "foreign project") state.work.projectId = "other";
   if (reason === "deleted Work") state.work.deletedAt = new Date();
   if (reason === "inactive draft") state.draftId = null;
   if (reason === "another draft")
     state.items = state.items.map((item) => ({ ...item, draftId: "old" as never }));
-  if (reason === "id mismatch" || reason === "hidden unused id") review.documentId = "unused";
-  if (reason === "empty id") review.documentId = "";
+  if (reason === "empty key") review.itemKey = "";
   if (reason === "denied grant") state.denied = true;
   if (reason === "missing identity") state.available = false;
-  if (reason === "ambiguous branch") state.items = [...state.items, ...state.items];
+  if (reason === "ambiguous item") state.items = [...state.items, ...state.items];
   expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({ kind: "unavailable" });
 });

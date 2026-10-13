@@ -176,7 +176,7 @@ export type ProjectViewProps = {
   /** The lineage a chat's Scratch route names, in place of a Work. */
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
-  reviewDraftId?: string;
+  reviewItemKey?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
@@ -188,7 +188,7 @@ export type ProjectViewProps = {
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
   onOpenContextTarget: OpenContextRoute;
-  onSetEditorReviewDraftId: (draftId: string | null, changeId?: string) => void;
+  onSetEditorReviewItemKey: (itemKey: string | null, changeId?: string) => void;
 };
 
 export function ProjectView(props: ProjectViewProps) {
@@ -523,7 +523,7 @@ function HydratedReviewControllers({
       scheme: props.activeContextScheme,
       path: props.activeContextPath,
       documentId: props.reviewAddressDocumentId,
-      draftId: props.reviewDraftId,
+      itemKey: props.reviewItemKey,
       changeId: props.reviewChangeId,
       draftOnly: workspace.tabs.some(
         (tab) =>
@@ -556,17 +556,17 @@ function HydratedReviewControllers({
         ? {
             write: (review) => useDockDocumentStore.getState().setDocumentReview(review),
             admit: (target) =>
-              presentedReview.controller.enterInlineReview(target.documentId, target.draftId),
+              presentedReview.controller.enterInlineReview(target.documentId, target.itemKey),
           }
         : {
             write: (review) =>
-              props.onSetEditorReviewDraftId(review?.draftId ?? null, review?.changeId),
+              props.onSetEditorReviewItemKey(review?.itemKey ?? null, review?.changeId),
             admit: openEditorReview,
           },
     [
       props.activeScreen,
       presentedReview.controller.enterInlineReview,
-      props.onSetEditorReviewDraftId,
+      props.onSetEditorReviewItemKey,
       openEditorReview,
     ],
   );

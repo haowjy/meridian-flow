@@ -41,29 +41,29 @@ export function MobileDocumentReview({
 }) {
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
-  const draftId = review?.documentId === documentId && review.shown ? review.draftId : null;
+  const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
   const { openReviewFile } = useAiDraftLauncher();
   const header = useReviewHeader({
     documentId,
-    draftId: draftId ?? "",
+    itemKey: itemKey ?? "",
     onCloseDraftOnly,
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
   const [listOpen, setListOpen] = useState(false);
   useEffect(() => {
-    if (!draftId) setListOpen(false);
-  }, [draftId]);
+    if (!itemKey) setListOpen(false);
+  }, [itemKey]);
 
   return (
     <MobileKeyboardAware>
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {draftId ? (
+        {itemKey ? (
           <ReviewTop header={header} onOpenList={() => setListOpen(true)} />
         ) : (
           <LiveDraftEntry documentId={documentId} />
         )}
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-        {draftId ? (
+        {itemKey ? (
           <ReviewBottom header={header} listOpen={listOpen} onListOpenChange={setListOpen} />
         ) : null}
       </div>

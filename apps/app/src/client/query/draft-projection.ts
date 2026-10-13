@@ -91,11 +91,11 @@ export function projectDraft(
 
 /** Work files are a projection too: no intent ever removes a cached server row. */
 export function projectDraftList<
-  T extends { documentId: string; draftId: string; draftGeneration?: number },
+  T extends { documentId: string; itemKey: string; branchGeneration?: number },
 >(observed: T[], scope: { projectId: string; workId: string }, records: ChangeCommandRecords): T[] {
   return observed.filter(
     (row) =>
-      wholeDraftDisposition(records, { ...scope, ...row }, row.draftGeneration, observed) !==
+      wholeDraftDisposition(records, { ...scope, ...row }, row.branchGeneration, observed) !==
       "apply",
   );
 }

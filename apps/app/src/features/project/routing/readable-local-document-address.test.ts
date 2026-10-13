@@ -169,11 +169,11 @@ describe("gateLiveView", () => {
       isError: false,
       ...state,
     }) as unknown as Parameters<typeof gateLiveView>[1];
-  const group = (isNewDocument: boolean) =>
+  const group = (isNew: boolean) =>
     ({
       documentId: "document-id",
-      isNewDocument,
-      draft: { draftId: "draft-id", status: "active", isNewDocument },
+      isNew,
+      draft: { itemKey: "draft-id", status: "active", isNew },
     }) as unknown as ReviewFileTarget;
   const ready = (...files: ReviewFileTarget[]) => ({ status: "ready", files });
   const noTab = () => false;
@@ -186,7 +186,7 @@ describe("gateLiveView", () => {
     expect(gateLiveView(resolved, manifest([]), ready(group(true)), noTab)).toMatchObject({
       outcome: "ready",
       result: resolved,
-      draftOnly: { draft: { draftId: "draft-id" } },
+      draftOnly: { draft: { itemKey: "draft-id" } },
     });
     // Discarded, or a draft of an existing document: no live view and no review.
     expect(gateLiveView(resolved, manifest([]), ready(), noTab).result).toEqual({

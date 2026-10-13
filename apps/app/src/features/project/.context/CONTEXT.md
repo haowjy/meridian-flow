@@ -522,7 +522,7 @@ overlays. The first segment after `/p/<project>` is always a screen.
 /p/<id>/works/new                        create dialog
 /p/<id>/works/<workId>[?view=files]      Work page
 /p/<id>/editor[?work=<workId>]           Editor, nothing open
-/p/<id>/editor/<scheme>/<path>[?work=…&draft=<draftId>]  document, optionally in review
+/p/<id>/editor/<scheme>/<path>[?work=…&item=<itemKey>]  document, optionally in review
 /p/<id>/editor/browse[/<scheme>/<path>]  folder
 ?settings=<section> on any screen
 ```
@@ -542,7 +542,7 @@ repairs an identity `?work`. Slugs and
 are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
 `repairAddress` rewrites the current entry in place to its canonical path.
-`?draft=` belongs only to a document destination. It names a pending draft in
+`?item=` belongs only to a document destination. It names a pending draft in
 the addressed Work and document, never a separate document. A review address
 is self-describing: the draft belongs to exactly one Work, so a No Work review
 states `?work=` (empty) instead of leaving it to history state or to whichever
@@ -551,7 +551,7 @@ same draft after any Work selection. A live No Work document keeps its clean URL
 review launch pushes history; a launch on the current document replaces the
 entry (`replaceIfSameDocument`). Same document means the same scheme, path, and
 Work: the same path under another Work is a different destination. The review address owner replaces the current
-entry when it adds or removes `?draft=`, so Back does not toggle review.
+entry when it adds or removes `?item=`, so Back does not toggle review.
 
 A route finds its document in one order on desktop and phone
 (`context/route-document-owner.ts`, with `resolveWorkspaceRoute`): the bound
@@ -562,7 +562,7 @@ its document the same way (`routing/launch-locator.ts`: tab, address, draft-only
 admission, live catalog, then the server's identity lookup) and fails rather than
 navigating to a cached path. `gateLiveView` reports `pending`, `failed` or
 `ready`; a failed catalog or draft-list read ends the wait with the route
-boundary's error and Retry (address and `?draft=` kept), and the phone host
+boundary's error and Retry (address and `?item=` kept), and the phone host
 treats a failed address as neither pending nor settled, so it never rejects the route.
 A launch that fails records `review-failed` on the draft's command record, so the
 row or chip the writer clicked shows it ([draft review](../../draft-review/.context/draft-review.md)).
@@ -572,7 +572,7 @@ open keeps the review: once the address has resolved, identity decides whether
 it still names the reviewed document, and while it resolves a different path is
 `pending`, not a different document (`ReviewAddressOwner`). A committed
 rename or move through the identity bar or the tree replaces the current entry
-with the new path in the same history entry, and `?draft=` is never dropped on
+with the new path in the same history entry, and `?item=` is never dropped on
 the way. The removal coordinator's route repair carries the address's review, a
 review launch on the current document never moves the address, and replacing an
 entry with its own URL writes no history. Draft rows (composer strip, the Work

@@ -14,7 +14,7 @@ import {
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   isEditorTab,
-  matchesReviewDraft,
+  matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
   previewReviewOverlayClose,
@@ -707,13 +707,13 @@ export class ContextRemovalCoordinator {
     });
     let consumed: { removed: ContextTab[]; survivors: readonly ContextTab[] } | undefined;
     if (tab.kind !== "new" && tab.draftOnly) {
-      if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewDraftId || !tab.tabInstanceToken)
+      if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewItemKey || !tab.tabInstanceToken)
         return { kind: "noop" };
       const preview = this.workspace.previewReviewTab(projectId, {
         documentId,
         tabInstanceId: tab.tabInstanceId,
         reviewWorkId: tab.reviewWorkId,
-        reviewDraftId: tab.reviewDraftId,
+        reviewItemKey: tab.reviewItemKey,
         tabInstanceToken: tab.tabInstanceToken,
       });
       if (preview.kind === "consumed")
@@ -772,13 +772,13 @@ export class ContextRemovalCoordinator {
     const documentId = addressed.documentId;
     if (!tab) return { kind: "noop" };
     if (tab?.kind !== "new" && tab?.draftOnly) {
-      if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewDraftId || !tab.tabInstanceToken)
+      if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewItemKey || !tab.tabInstanceToken)
         return { kind: "noop" };
       const identity = {
         documentId,
         tabInstanceId: tab.tabInstanceId,
         reviewWorkId: tab.reviewWorkId,
-        reviewDraftId: tab.reviewDraftId,
+        reviewItemKey: tab.reviewItemKey,
         tabInstanceToken: tab.tabInstanceToken,
       };
       const consumed = this.workspace.closeReviewTab(projectId, identity);
@@ -912,19 +912,19 @@ export class ContextRemovalCoordinator {
     projectId: string,
     reviewWorkId: string,
     documentId: string,
-    reviewDraftId: string,
+    reviewItemKey: string,
   ): ContextRemovalOutcome {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.workspace.read(projectId);
     const tab = slice.tabs.find((candidate) =>
-      matchesReviewDraft(candidate, { documentId, reviewWorkId, reviewDraftId }),
+      matchesReviewItem(candidate, { reviewWorkId, reviewItemKey }),
     );
     if (
       tab === undefined ||
       tab.kind !== "tracked" ||
       !tab.draftOnly ||
       tab.reviewWorkId !== reviewWorkId ||
-      tab.reviewDraftId !== reviewDraftId ||
+      tab.reviewItemKey !== reviewItemKey ||
       !tab.tabInstanceId ||
       !tab.tabInstanceToken
     )
@@ -933,7 +933,7 @@ export class ContextRemovalCoordinator {
       documentId,
       tabInstanceId: tab.tabInstanceId,
       reviewWorkId,
-      reviewDraftId,
+      reviewItemKey,
       tabInstanceToken: tab.tabInstanceToken,
     };
     const consumed = this.workspace.closeReviewTab(projectId, identity);
@@ -976,7 +976,7 @@ export class ContextRemovalCoordinator {
       !tab.draftOnly ||
       !tab.tabInstanceId ||
       !tab.reviewWorkId ||
-      !tab.reviewDraftId ||
+      !tab.reviewItemKey ||
       !tab.tabInstanceToken
     )
       return false;
@@ -984,7 +984,7 @@ export class ContextRemovalCoordinator {
       documentId: tab.documentId,
       tabInstanceId: tab.tabInstanceId,
       reviewWorkId: tab.reviewWorkId,
-      reviewDraftId: tab.reviewDraftId,
+      reviewItemKey: tab.reviewItemKey,
       tabInstanceToken: tab.tabInstanceToken,
     };
     const settled = await this.workspace.settleDraft(projectId, identity);

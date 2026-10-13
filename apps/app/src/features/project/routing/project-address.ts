@@ -44,7 +44,7 @@ export type ProjectAddress = {
   /** The Work list's Active tab is the default and is omitted from the address. */
   worksView?: "archived" | "deleted";
   /** Pending draft projected by the current manuscript Editor address. */
-  draftId?: string;
+  itemKey?: string;
   /** Stable selected closure class within the addressed review. */
   changeId?: string;
   settings?: SettingsSection;
@@ -55,7 +55,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["work", "chat", "draft", "change", "settings", "view"]);
+const RECOGNIZED_QUERY = new Set(["work", "chat", "item", "change", "settings", "view"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function uuid(value: string | undefined): string | null {
@@ -189,8 +189,8 @@ export function parseProjectAddress(
   const view = query.get("view");
   const worksView =
     destination.kind === "works" && (view === "archived" || view === "deleted") ? view : undefined;
-  const draftId = destination.kind === "document" ? query.get("draft") || undefined : undefined;
-  const changeId = draftId ? query.get("change") || undefined : undefined;
+  const itemKey = destination.kind === "document" ? query.get("item") || undefined : undefined;
+  const changeId = itemKey ? query.get("change") || undefined : undefined;
   const address: ProjectAddress = {
     projectId,
     destination,
@@ -198,7 +198,7 @@ export function parseProjectAddress(
     ...(lineage ? { lineage } : {}),
     ...(workView ? { workView } : {}),
     ...(worksView ? { worksView } : {}),
-    ...(draftId ? { draftId } : {}),
+    ...(itemKey ? { itemKey } : {}),
     ...(changeId ? { changeId } : {}),
     ...(isSettingsSection(settings) ? { settings } : {}),
   };
@@ -228,7 +228,7 @@ function queryStatesNoWork(address: ProjectAddress): boolean {
   return (
     address.work.kind === "none" &&
     (workIsIdentity(address.destination) ||
-      (address.destination.kind === "document" && address.draftId !== undefined))
+      (address.destination.kind === "document" && address.itemKey !== undefined))
   );
 }
 
@@ -276,8 +276,8 @@ export function projectAddressHref(address: ProjectAddress): string {
   const query = new URLSearchParams();
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   if (context) writeWork(query, address);
-  if (d.kind === "document" && address.draftId) {
-    query.set("draft", address.draftId);
+  if (d.kind === "document" && address.itemKey) {
+    query.set("item", address.itemKey);
     if (address.changeId) query.set("change", address.changeId);
   }
   if (d.kind === "work" && address.workView === "files") query.set("view", "files");
@@ -315,7 +315,7 @@ export function workDetailAddress(
   return {
     ...address,
     destination: { kind: "work", workId: target.workId },
-    draftId: undefined,
+    itemKey: undefined,
     changeId: undefined,
     worksView: undefined,
     workView: target.view === "files" ? "files" : undefined,

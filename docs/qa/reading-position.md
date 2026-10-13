@@ -23,7 +23,7 @@ Run `pnpm dev` in the owned worktree and discover its HTTPS app route with
 5. Delete the remembered paragraph from the other peer and reopen. Expect a
    surviving position or the top, never an error.
 6. Open a Changes card, a search passage, or an inline draft review. Expect
-   that target, not device memory. A URL with `?draft=` or a fragment suppresses
+   that target, not device memory. A URL with `?item=` or a fragment suppresses
    restoration. Heading targeting itself is not implemented by the current
    internal-link follower; this lane does not add it.
 7. Block localStorage, or replace the account's `meridian:reading-position:v1`

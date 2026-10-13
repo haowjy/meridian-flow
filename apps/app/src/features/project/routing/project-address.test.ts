@@ -15,7 +15,7 @@ function parse(href: string) {
 
 describe("readable project addresses", () => {
   it("round trips a stable change only inside a review address", () => {
-    const href = `${P}/editor/manuscript/chapter.md?work=&draft=draft-one&change=class%3Apart%2Ftwo`;
+    const href = `${P}/editor/manuscript/chapter.md?work=&item=draft-one&change=class%3Apart%2Ftwo`;
     const parsed = parse(href);
     expect(parsed).toMatchObject({ kind: "valid", href, address: { changeId: "class:part/two" } });
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
@@ -59,18 +59,18 @@ describe("readable project addresses", () => {
   });
 
   it("round trips review identity only on an Editor document", () => {
-    const href = `${P}/editor/manuscript/chapter.md?work=${WORK}&draft=draft%2Fone`;
+    const href = `${P}/editor/manuscript/chapter.md?work=${WORK}&item=draft%2Fone`;
     expect(parse(href)).toMatchObject({
       kind: "valid",
       href,
-      address: { draftId: "draft/one" },
+      address: { itemKey: "draft/one" },
     });
-    const editor = parse(`${P}/editor?draft=draft-one`);
+    const editor = parse(`${P}/editor?item=draft-one`);
     expect(editor).toMatchObject({ kind: "valid", href: `${P}/editor` });
     if (editor.kind !== "valid") throw new Error(editor.reason);
-    expect(editor.address).not.toHaveProperty("draftId");
-    expect(parse(`${P}/chats?draft=draft-one`)).toMatchObject({ href: `${P}/chats` });
-    expect(parse(`${P}/editor/manuscript/chapter.md?draft=a&draft=b`)).toMatchObject({
+    expect(editor.address).not.toHaveProperty("itemKey");
+    expect(parse(`${P}/chats?item=draft-one`)).toMatchObject({ href: `${P}/chats` });
+    expect(parse(`${P}/editor/manuscript/chapter.md?item=a&item=b`)).toMatchObject({
       kind: "invalid",
       reason: "duplicate:draft",
     });
@@ -81,13 +81,13 @@ describe("readable project addresses", () => {
     // shared, so it names its Work itself. `?work=` reads back as No Work, never as absent.
     const live = parse(`${P}/editor/manuscript/chapter.md?work=`);
     if (live.kind !== "valid") throw new Error(live.reason);
-    const review = { ...live.address, draftId: "draft-one" };
+    const review = { ...live.address, itemKey: "draft-one" };
     expect(projectAddressHref(review)).toBe(
-      `${P}/editor/manuscript/chapter.md?work=&draft=draft-one`,
+      `${P}/editor/manuscript/chapter.md?work=&item=draft-one`,
     );
     expect(parse(projectAddressHref(review))).toMatchObject({
       kind: "valid",
-      address: { work: { kind: "none" }, draftId: "draft-one" },
+      address: { work: { kind: "none" }, itemKey: "draft-one" },
     });
     // The address already says No Work, so no history-state pin repeats it (and no write is needed).
     expect(projectAddressState(review)).toMatchObject({ meridianProjectEmptySelection: undefined });

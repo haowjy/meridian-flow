@@ -27,12 +27,12 @@ it("keeps overlay identity per document, Work and draft", () => {
   const first = store.openTab("overlay-test", {
     ...tab,
     reviewWorkId: "work-a",
-    reviewDraftId: "draft-a",
+    reviewItemKey: "draft-a",
   });
   const second = store.openTab("overlay-test", {
     ...tab,
     reviewWorkId: "work-b",
-    reviewDraftId: "draft-b",
+    reviewItemKey: "draft-b",
   });
   expect(first.kind).toBe("opened");
   expect(second.kind).toBe("opened");
@@ -41,7 +41,7 @@ it("keeps overlay identity per document, Work and draft", () => {
   const reopened = store.openTab("overlay-test", {
     ...tab,
     reviewWorkId: "work-b",
-    reviewDraftId: "draft-b",
+    reviewItemKey: "draft-b",
   });
   expect(reopened).toMatchObject({
     kind: "opened",
@@ -49,12 +49,12 @@ it("keeps overlay identity per document, Work and draft", () => {
   });
   expect(
     getContextTabs("overlay-test").tabs.map((row) =>
-      row.kind !== "new" ? row.reviewDraftId : null,
+      row.kind !== "new" ? row.reviewItemKey : null,
     ),
   ).toEqual(["draft-a", "draft-b"]);
   expect(
     getContextTabs("overlay-test").tabs.filter((row) => isEditorTab(row, "work-b")),
-  ).toMatchObject([{ reviewDraftId: "draft-b" }]);
+  ).toMatchObject([{ reviewItemKey: "draft-b" }]);
 });
 
 afterEach(() => useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} }));
@@ -74,7 +74,7 @@ it.each(["discard", "close"])("%s removes only the addressed Work overlay", asyn
       schemaType: "document",
       draftOnly: true,
       reviewWorkId: work,
-      reviewDraftId: `draft-${work}`,
+      reviewItemKey: `draft-${work}`,
       tabInstanceToken: `token-${work}`,
     });
     if (result.kind !== "opened") throw new Error("not opened");
@@ -127,7 +127,7 @@ it("activates, renames and promotes the exact overlay without hiding another Wor
       schemaType: "document",
       draftOnly: true,
       reviewWorkId: work,
-      reviewDraftId: `draft-${work}`,
+      reviewItemKey: `draft-${work}`,
       tabInstanceToken: `token-${work}`,
     });
     if (result.kind !== "opened" || result.tab.kind !== "tracked") throw new Error("not opened");
@@ -138,7 +138,7 @@ it("activates, renames and promotes the exact overlay without hiding another Wor
   const later = store.openTab(project, {
     ...b,
     tabInstanceId: undefined,
-    reviewDraftId: "later-b",
+    reviewItemKey: "later-b",
     tabInstanceToken: "later-token",
   });
   if (later.kind !== "opened") throw new Error("not opened");
@@ -151,7 +151,7 @@ it("activates, renames and promotes the exact overlay without hiding another Wor
       boundDocumentId: "same",
       locator: { scheme: "kb", path: "/Hero", workId: "b" },
     }),
-  ).toMatchObject({ kind: "owner", tab: { reviewDraftId: "later-b" } });
+  ).toMatchObject({ kind: "owner", tab: { reviewItemKey: "later-b" } });
   expect(
     resolveRouteDocumentOwner({
       workspaceTabs: getContextTabs(project).tabs,
@@ -160,7 +160,7 @@ it("activates, renames and promotes the exact overlay without hiding another Wor
       catalog: null,
       locator: { scheme: "kb", path: "/Hero", workId: "b" },
     }),
-  ).toMatchObject({ kind: "draft-only", tab: { reviewDraftId: "later-b" } });
+  ).toMatchObject({ kind: "draft-only", tab: { reviewItemKey: "later-b" } });
   const removal = new ContextRemovalCoordinator("test-account");
   await removal.writerClose(project, later.tab);
   expect(await removal.writerClose(project, later.tab)).toEqual({ kind: "noop" });
@@ -173,7 +173,7 @@ it("activates, renames and promotes the exact overlay without hiding another Wor
   );
   expect(enriched).toMatchObject({
     kind: "opened",
-    tab: { reviewWorkId: "b", reviewDraftId: "draft-b", tabInstanceToken: "token-b" },
+    tab: { reviewWorkId: "b", reviewItemKey: "draft-b", tabInstanceToken: "token-b" },
   });
   expect(useContextTabsStore.getState().byProject[project]).toBeUndefined();
   await store.selectTab(project, "b", "same", b);

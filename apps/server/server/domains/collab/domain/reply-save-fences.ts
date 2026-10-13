@@ -25,7 +25,7 @@ import type { ApplicationBranchStore } from "./ports/application-branch-store.js
  * the thread peer it staged against, and the draft branch's generation then. Its save
  * resolves exactly these and never provisions another draft.
  */
-export type DraftPin = { draftId: DraftId; branchId: string; generation: number };
+export type ReplyPin = { draftId: DraftId; branchId: string; generation: number };
 
 /**
  * One document's place in a reply: its grant, and with it its destination and the link
@@ -36,7 +36,7 @@ export type ReplyDocument = {
   core: AgentEditCore;
   grant: FileGrant<"edit">;
   linkView: LinkView;
-  pin?: DraftPin;
+  pin?: ReplyPin;
 };
 
 export type ReplyRecord = {
@@ -90,15 +90,15 @@ export function createReplySaveFences(deps: {
   /** A reply's live documents' mutation locks, sorted, after its Work locks (§5.2). */
   lockLiveDocuments(documentIds: readonly DocumentId[]): Promise<void>;
 }): ReplySaveFences {
-  function pinsOf(record: ReplyRecord): (DraftPin & { documentId: DocumentId })[] {
-    const pins = new Map<DocumentId, DraftPin & { documentId: DocumentId }>();
+  function pinsOf(record: ReplyRecord): (ReplyPin & { documentId: DocumentId })[] {
+    const pins = new Map<DocumentId, ReplyPin & { documentId: DocumentId }>();
     for (const [documentId, entry] of [...record.documents, ...record.reversals]) {
       if (entry.pin && !pins.has(documentId)) pins.set(documentId, { documentId, ...entry.pin });
     }
     return [...pins.values()];
   }
 
-  async function leasedBranchIds(pins: readonly DraftPin[]): Promise<string[]> {
+  async function leasedBranchIds(pins: readonly ReplyPin[]): Promise<string[]> {
     const ids = new Set<string>();
     for (const pin of pins) {
       ids.add(pin.branchId);
@@ -109,7 +109,7 @@ export function createReplySaveFences(deps: {
   }
 
   async function stalePins(
-    pins: readonly (DraftPin & { documentId: DocumentId })[],
+    pins: readonly (ReplyPin & { documentId: DocumentId })[],
   ): Promise<Set<DocumentId>> {
     const stale = new Set<DocumentId>();
     const draftActive = new Map<DraftId, boolean>();

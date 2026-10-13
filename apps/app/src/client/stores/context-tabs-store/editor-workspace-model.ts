@@ -41,7 +41,7 @@ export type ContextTab =
       /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
       /** Transient exact draft and tab-generation fence for promoting or closing the review tab. */
-      reviewDraftId?: string;
+      reviewItemKey?: string;
       tabInstanceToken?: string;
       editable: true;
       filetype: Filetype;
@@ -62,7 +62,7 @@ export type ContextTab =
       draftOnly?: boolean;
       /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
-      reviewDraftId?: string;
+      reviewItemKey?: string;
       tabInstanceToken?: string;
       editable: false;
       fileType: DocumentFileType;
@@ -129,20 +129,18 @@ export function isEditorContextTab(tab: ContextTab): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
 }
 
-/** A review draft's semantic address, separate from its mounted instance fence. */
-export type ReviewDraftTabIdentity = {
-  documentId: string;
+/** A review item's semantic address (the item key names its document), separate from its mounted instance fence. */
+export type ReviewItemTabIdentity = {
   reviewWorkId: string;
-  reviewDraftId: string;
+  reviewItemKey: string;
 };
 
-export function matchesReviewDraft(tab: ContextTab, identity: ReviewDraftTabIdentity): boolean {
+export function matchesReviewItem(tab: ContextTab, identity: ReviewItemTabIdentity): boolean {
   return (
     tab.kind !== "new" &&
     Boolean(tab.draftOnly) &&
-    tab.documentId === identity.documentId &&
     tab.reviewWorkId === identity.reviewWorkId &&
-    tab.reviewDraftId === identity.reviewDraftId
+    tab.reviewItemKey === identity.reviewItemKey
   );
 }
 
@@ -155,10 +153,9 @@ export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): bool
     (addressed.kind === "new" ||
       !addressed.draftOnly ||
       (tab.kind !== "new" &&
-        matchesReviewDraft(tab, {
-          documentId: addressed.documentId,
+        matchesReviewItem(tab, {
           reviewWorkId: addressed.reviewWorkId ?? "",
-          reviewDraftId: addressed.reviewDraftId ?? "",
+          reviewItemKey: addressed.reviewItemKey ?? "",
         }) &&
         tab.tabInstanceToken === addressed.tabInstanceToken))
   );

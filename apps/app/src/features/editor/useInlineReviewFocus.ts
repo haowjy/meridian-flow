@@ -21,11 +21,11 @@ import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 export function useInlineReviewFocus({
   editor,
   documentId,
-  draftId,
+  itemKey,
 }: {
   editor: Editor | null;
   documentId: string;
-  draftId: string;
+  itemKey: string;
 }): void {
   const { controller } = useDraftReview();
   const view = useReviewChanges(controller);
@@ -62,20 +62,20 @@ export function useInlineReviewFocus({
       const operationId = inlineReviewFocusIntent(transaction);
       if (!operationId) return;
       const change = view.items.find(({ change }) => change.markKeys.includes(operationId))?.change;
-      if (change) reportFocusedChange({ documentId, draftId }, change);
+      if (change) reportFocusedChange({ documentId, itemKey }, change);
     };
     live.on("transaction", onTransaction);
     return () => {
       live.off("transaction", onTransaction);
     };
-  }, [live, reviewing, documentId, draftId, reportFocusedChange, view.items]);
+  }, [live, reviewing, documentId, itemKey, reportFocusedChange, view.items]);
 
   // Changes that arrive while the writer reviews pulse once.
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
   const arrived = useArrivedChanges(
     changes,
     view.status === "ready",
-    view.documentId && view.draftId ? `${view.documentId}:${view.draftId}` : null,
+    view.documentId && view.itemKey ? `${view.documentId}:${view.itemKey}` : null,
   );
   const pulsed = useMemo(
     () =>

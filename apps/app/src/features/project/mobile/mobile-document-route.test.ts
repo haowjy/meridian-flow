@@ -30,7 +30,7 @@ describe("phone draft-only review route", () => {
     schemaType: "document",
     draftOnly: true,
     reviewWorkId: "work-a",
-    reviewDraftId: "draft-a",
+    reviewItemKey: "draft-a",
   } as const;
   const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
   const route = (

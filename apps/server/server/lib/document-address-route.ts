@@ -1,4 +1,4 @@
-/** Browser address admission validates review branch identity before selecting its draft tree. */
+/** Browser address admission validates the review item identity before selecting its draft tree. */
 import type {
   DocumentAddressResult,
   DocumentAddressReviewSelector,
@@ -37,10 +37,7 @@ export async function handleDocumentAddressRequest(
       return { kind: "unavailable" };
     const listed = await deps.draftReview.items({ workId: review.workId as WorkId });
     const matches = listed.items.filter(
-      (item) =>
-        item.draftId === listed.draftId &&
-        item.draftBranchId === review.draftBranchId &&
-        (review.documentId === undefined || item.documentId === review.documentId),
+      (item) => item.draftId === listed.draftId && item.itemKey === review.itemKey,
     );
     if (!listed.draftId || matches.length !== 1) return { kind: "unavailable" };
     reviewDocumentId = matches[0]?.documentId;

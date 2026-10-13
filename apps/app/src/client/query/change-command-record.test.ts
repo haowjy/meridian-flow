@@ -15,7 +15,7 @@ import {
 } from "./draft-command-record";
 import { previewWithoutKeys } from "./draft-projection";
 
-const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
+const draft = { projectId: "p", workId: "w", documentId: "d", itemKey: "x" };
 const one = { classIds: ["c1"], admissionTokens: ["c1"], operationIds: ["1"] };
 const two = { classIds: ["c2"], admissionTokens: ["c2"], operationIds: ["2", "3"] };
 
@@ -29,8 +29,8 @@ function preview(): DraftPreviewResponse {
   });
   return {
     status: "active",
-    draftId: "x",
-    draftGeneration: 1,
+    itemKey: "x",
+    branchGeneration: 1,
     reviewRoomName: "room",
 
     liveRevisionToken: "l",
@@ -76,7 +76,7 @@ describe("change command record", () => {
       expect(changeCommandState(records, draft, one)).toMatchObject({ code: "offline" });
       expect(changeCommandState(records, draft, two)).toMatchObject({ code: "offline" });
       // Another draft, and a change the selection did not name, show nothing.
-      expect(changeCommandState(records, { ...draft, draftId: "y" }, both)).toBeNull();
+      expect(changeCommandState(records, { ...draft, itemKey: "y" }, both)).toBeNull();
       expect(
         changeCommandState(records, draft, {
           classIds: ["c9"],

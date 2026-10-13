@@ -64,7 +64,7 @@ function WorkSettlement({
     const isOrphan = (draft: DraftRef, activeDrafts: readonly ThreadDraftListItem[]) =>
       draft.workId === workId &&
       !pendingDraftCommand(currentDraftCommandRecords(), draft) &&
-      !activeDrafts.some((row) => row.draftId === draft.draftId);
+      !activeDrafts.some((row) => row.itemKey === draft.itemKey);
     const activeDrafts = drafts.drafts ?? [];
     if (!lifecycle.presentations(projectId).some((draft) => isOrphan(draft, activeDrafts))) return;
 

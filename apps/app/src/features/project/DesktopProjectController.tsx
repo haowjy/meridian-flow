@@ -78,8 +78,8 @@ export function useDesktopProjectController<
           ? presented.review
           : dockDocument?.tab.documentId === tab?.documentId
             ? (dockDocument?.review ?? null)
-            : tab?.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewDraftId
-              ? { workId: tab.reviewWorkId, draftId: tab.reviewDraftId }
+            : tab?.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewItemKey
+              ? { workId: tab.reviewWorkId, itemKey: tab.reviewItemKey }
               : null,
       claim: store.claim,
       isCurrent: store.isCurrent,

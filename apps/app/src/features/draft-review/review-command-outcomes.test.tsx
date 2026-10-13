@@ -23,7 +23,7 @@ import {
 import { settleReact } from "@/test-support/react-dom-harness";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
-const draftB = { documentId: "document-b", draftId: "draft-b" };
+const draftB = { documentId: "document-b", itemKey: "draft-b" };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const ids = (p: ScopeProbe) => p.header.view.items.map(({ change }) => change.classId);
 const failure = (p: ScopeProbe) =>
@@ -62,7 +62,7 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
   const answer = deferredReviewAnswer<DraftDiscardResponse>();
   fixture.network.discardDraft
     .mockReturnValueOnce(answer.promise)
-    .mockResolvedValue({ status: "stale", draftId: "draft-a" });
+    .mockResolvedValue({ status: "stale", itemKey: "draft-a" });
   await fixture.render(async (p) => {
     await open(p);
     let done!: Promise<unknown>;
@@ -77,8 +77,8 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
     await act(async () => {
       answer.resolve({
         status: "stale",
-        draftId: "draft-a",
-        draftClosed: true,
+        itemKey: "draft-a",
+        itemClosed: true,
       } as DraftDiscardResponse);
       await done;
     });
@@ -91,14 +91,14 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
 });
 
 it("a whole batch continues after a late refusal, attributes it to the departed file and never navigates back", async () => {
-  const draftC = { documentId: "document-c", draftId: "draft-c" };
+  const draftC = { documentId: "document-c", itemKey: "draft-c" };
   fixture.network.listWorkDrafts.mockResolvedValue({
     drafts: [listed, listedB, { ...listed, ...draftC, documentName: "Chapter 14" }],
   });
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
   fixture.network.applyDraft
     .mockReturnValueOnce(answer.promise)
-    .mockResolvedValue({ status: "applied", draftId: "draft-b" });
+    .mockResolvedValue({ status: "applied", itemKey: "draft-b" });
   const navigate = vi.fn();
   await fixture.render(
     async (p) => {
@@ -124,7 +124,7 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
       );
       expect(p().header.commandError).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
-      expect(p().presented.controller.inlineReview?.draftId).toBe("draft-c");
+      expect(p().presented.controller.inlineReview?.itemKey).toBe("draft-c");
     },
     { onOpenDraft: navigate },
   );
@@ -134,7 +134,7 @@ it("a batch's current-file failure leaves its review usable and unfinished", asy
   fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
   fixture.network.applyDraft
     .mockRejectedValueOnce(new HttpResponseError("refused", 500, null))
-    .mockResolvedValue({ status: "applied", draftId: "draft-b" });
+    .mockResolvedValue({ status: "applied", itemKey: "draft-b" });
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
@@ -143,7 +143,7 @@ it("a batch's current-file failure leaves its review usable and unfinished", asy
     expect(p().header.commandError).toEqual({ code: "apply-server-error" });
     expect(p().header.finished).toBe(false);
     expect(p().header.completing).toBeNull();
-    expect(p().presented.controller.inlineReview).toMatchObject({ draftId: "draft-a" });
+    expect(p().presented.controller.inlineReview).toMatchObject({ itemKey: "draft-a" });
     expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
     expect(fixture.network.applyDraft.mock.calls.map((call) => call[2])).toEqual([
       "document-a",
@@ -268,7 +268,7 @@ it.each([
         code: command === "applyDraft" ? "apply-offline" : "discard-offline",
       });
       expect(p().header.locked).toBe(false);
-      expect(p().presented.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(p().presented.controller.inlineReview?.itemKey).toBe("draft-a");
       expect(navigate).not.toHaveBeenCalled();
       await reconnect();
       expect(fixture.network.applyDraft).not.toHaveBeenCalled();
@@ -406,26 +406,28 @@ it.each([
   const answer = deferredReviewAnswer<void>();
   if (mode === "apply")
     fixture.network.applyDraft.mockReturnValueOnce(
-      answer.promise.then(() => ({ status: "applied", draftId: "draft-a" })),
+      answer.promise.then(() => ({ status: "applied", itemKey: "draft-a" })),
     );
   else
     fixture.network.discardDraft.mockReturnValueOnce(
-      answer.promise.then(() => ({ status: "discarded", draftId: "draft-a", draftClosed: true })),
+      answer.promise.then(() => ({ status: "discarded", itemKey: "draft-a", itemClosed: true })),
     );
 
   await fixture.render(async (p) => {
     await act(async () => p().presented.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(1));
+    await settleReact(() =>
+      expect(p().presented.controller.inlineReview?.branchGeneration).toBe(1),
+    );
     let done!: Promise<unknown>;
     await act(async () => {
       done = p().presented.controller[mode]("document-a", "draft-a");
     });
     const nextPreview = {
       ...previewOf("new"),
-      draftGeneration: 2,
+      branchGeneration: 2,
       reviewRoomName: "room-generation-2",
     };
-    const nextRow = { ...listed, draftGeneration: 2, updatedAt: "2026-10-09T01:00:00Z" };
+    const nextRow = { ...listed, branchGeneration: 2, updatedAt: "2026-10-09T01:00:00Z" };
     fixture.network.getDraftPreview.mockResolvedValue(nextPreview);
     fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [nextRow] });
     await act(async () => {
@@ -435,12 +437,14 @@ it.each([
       );
       p().queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), [nextRow]);
     });
-    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2));
+    await settleReact(() =>
+      expect(p().presented.controller.inlineReview?.branchGeneration).toBe(2),
+    );
     await act(async () => {
       answer.resolve();
       await done;
     });
-    expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2);
+    expect(p().presented.controller.inlineReview?.branchGeneration).toBe(2);
   });
 });
 
@@ -449,11 +453,11 @@ it.each([
   "discard",
 ] as const)("a new document's one change dispatches whole %s", async (mode) => {
   fixture.network.listWorkDrafts.mockResolvedValue({
-    drafts: [{ ...listed, isNewDocument: true }],
+    drafts: [{ ...listed, isNew: true }],
   });
-  fixture.network.getDraftPreview.mockResolvedValue({ ...preview, isNewDocument: true });
-  fixture.network.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
-  fixture.network.discardDraft.mockResolvedValue({ status: "discarded", draftId: "draft-a" });
+  fixture.network.getDraftPreview.mockResolvedValue({ ...preview, isNew: true });
+  fixture.network.applyDraft.mockResolvedValue({ status: "applied", itemKey: "draft-a" });
+  fixture.network.discardDraft.mockResolvedValue({ status: "discarded", itemKey: "draft-a" });
   await fixture.render(async (p) => {
     await open(p);
     expect(p().header.view.items).toHaveLength(1);
@@ -462,7 +466,7 @@ it.each([
     });
     const request = mode === "apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
     expect(request).toHaveBeenCalledWith("project-a", "work-a", "document-a", {
-      draftId: "draft-a",
+      itemKey: "draft-a",
     });
     expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
   });

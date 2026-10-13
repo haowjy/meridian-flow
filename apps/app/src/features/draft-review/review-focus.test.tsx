@@ -43,7 +43,7 @@ const regrouped = {
   hunks: [hunkOf("1", ["1"]), hunkOf("2", ["2", "5"]), hunkOf("3", ["3"])],
 };
 
-const second = { ...listed, draftId: "draft-b", documentId: "document-b" };
+const second = { ...listed, itemKey: "draft-b", documentId: "document-b" };
 
 async function reviewOpened(probe: () => ScopeProbe) {
   await vi.waitFor(() => expect(fixture.network.listWorkDrafts).toHaveBeenCalled());
@@ -51,7 +51,7 @@ async function reviewOpened(probe: () => ScopeProbe) {
   await vi.waitFor(() => expect(probe().header.view.status).toBe("ready"));
 }
 
-const review = { documentId: "document-a", draftId: "draft-a" };
+const review = { documentId: "document-a", itemKey: "draft-a" };
 const target = (id: string) => ({
   classId: `class-${id}`,
   operationIds: [id],
@@ -106,7 +106,7 @@ describe("a change regrouped more than once", () => {
 
 describe("a command's late answer", () => {
   it("does not move focus in a review the writer opened after sending it", async () => {
-    let answer!: (response: { status: "stale"; draftId: string }) => void;
+    let answer!: (response: { status: "stale"; itemKey: string }) => void;
     fixture.network.applyDraftChanges.mockReturnValue(new Promise((resolve) => (answer = resolve)));
     await fixture.render(async (probe) => {
       await reviewOpened(probe);
@@ -125,7 +125,7 @@ describe("a command's late answer", () => {
       );
 
       await act(async () => {
-        answer({ status: "stale", draftId: "draft-a" });
+        answer({ status: "stale", itemKey: "draft-a" });
         await done;
       });
       expect(probe().presented.controller.focus).toBeNull();
@@ -149,11 +149,11 @@ describe("focus through real review commands", () => {
 
   it("advances after Apply and returns to the refused change with its reason", async () => {
     const accepted = deferredReviewAnswer<ReturnType<typeof applied>>();
-    const refused = deferredReviewAnswer<{ status: "stale"; draftId: string }>();
+    const refused = deferredReviewAnswer<{ status: "stale"; itemKey: string }>();
     fixture.network.applyDraftChanges
       .mockReturnValueOnce(accepted.promise)
       .mockReturnValueOnce(refused.promise)
-      .mockResolvedValue({ status: "stale", draftId: "draft-a" });
+      .mockResolvedValue({ status: "stale", itemKey: "draft-a" });
     await fixture.render(async (probe) => {
       await reviewOpened(probe);
       await act(async () => probe().header.view.focus(probe().header.view.items[1].change));
@@ -167,7 +167,7 @@ describe("focus through real review commands", () => {
         "work-a",
         "document-a",
         expect.objectContaining({
-          draftId: "draft-a",
+          itemKey: "draft-a",
           operationIds: ["2"],
           liveRevisionToken: "live-1",
           draftRevisionToken: "draft-1",
@@ -196,7 +196,7 @@ describe("focus through real review commands", () => {
       });
       expect(probe().header.view.focused?.classId).toBe("class-3");
       await act(async () => {
-        refused.resolve({ status: "stale", draftId: "draft-a" });
+        refused.resolve({ status: "stale", itemKey: "draft-a" });
         await done;
       });
       await vi.waitFor(() => expect(probe().header.view.focused?.classId).toBe("class-1"));

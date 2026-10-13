@@ -39,7 +39,7 @@ export function useDraftView(
     presented.projectId === draft.projectId &&
     presented.workId === draft.workId &&
     open?.documentId === draft.documentId &&
-    open.draftId === draft.draftId;
+    open.itemKey === draft.itemKey;
   const painted = useOpenReviewChanges(presented, { enabled: sharing });
   const entry = useDraftPreviews(enabled && !sharing ? [draft] : [], { openReview: open })[0];
   const preview = entry?.status === "ready" ? listablePreview(entry.preview) : null;
@@ -59,14 +59,14 @@ export function useDraftView(
   const data: DraftChangesData = sharing
     ? {
         documentId: painted.documentId,
-        draftId: painted.draftId,
+        itemKey: painted.itemKey,
         status: painted.status,
         items: painted.items,
         unlisted: painted.unlisted,
       }
     : {
         documentId: draft.documentId,
-        draftId: draft.draftId,
+        itemKey: draft.itemKey,
         status,
         items: status === "ready" ? items : [],
         unlisted: status === "ready" && items.length === 0 && !hiding,

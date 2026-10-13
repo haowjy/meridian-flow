@@ -20,34 +20,34 @@ export function useReconcileReviewFocus(
   controller: DraftReviewController,
   presented?: PresentedDocument | null,
 ): void {
-  const { documentId, draftId, changes, status } = useOpenReviewChanges(controller);
+  const { documentId, itemKey, changes, status } = useOpenReviewChanges(controller);
   const { focus, reportFocusedChange } = controller;
   const restored = useRef<string | null>(null);
   useEffect(() => {
-    if (!documentId || !draftId) {
+    if (!documentId || !itemKey) {
       restored.current = null;
       return;
     }
-    const identity = `${documentId}:${draftId}`;
+    const identity = `${documentId}:${itemKey}`;
     if (restored.current !== identity) {
       if (status !== "ready") return;
       restored.current = identity;
-      if (presented?.review?.draftId === draftId && presented.review.changeId && !focus) {
+      if (presented?.review?.itemKey === itemKey && presented.review.changeId && !focus) {
         // Stable part-key classes survive reload; a handled class falls back silently.
         const change =
           changes.find((item) => item.classId === presented.review?.changeId) ?? changes[0];
-        if (change) controller.focusReviewChange({ documentId, draftId }, change);
+        if (change) controller.focusReviewChange({ documentId, itemKey }, change);
         return;
       }
     }
     const resolved = resolveFocusedChange(changes, focus);
     if (!resolved) return;
-    reportFocusedChange({ documentId, draftId }, resolved);
+    reportFocusedChange({ documentId, itemKey }, resolved);
   }, [
     changes,
     focus,
     documentId,
-    draftId,
+    itemKey,
     reportFocusedChange,
     presented,
     status,

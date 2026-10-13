@@ -68,7 +68,7 @@ export function WorkChanges({
 
   const everyDraft = files.map((file) => ({
     documentId: file.documentId,
-    draftId: file.draft.draftId,
+    itemKey: file.draft.itemKey,
   }));
   const dispose = (mode: "apply" | "discard") => void controller.disposeDrafts(mode, everyDraft);
 

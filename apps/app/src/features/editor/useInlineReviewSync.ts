@@ -29,17 +29,17 @@ export interface UseInlineReviewSyncOptions {
   projectId: string;
   workId: string;
   documentId: string;
-  draftId: string;
+  itemKey: string;
   /**
-   * The draft generation the review shows (`InlineDraftReview.draftGeneration`).
+   * The draft generation the review shows (`InlineDraftReview.branchGeneration`).
    * A preview of another generation is not projected: its model describes a
    * room this editor is not in. Undefined while the review has not learned it.
    */
-  draftGeneration?: number;
+  branchGeneration?: number;
   onInlineModelAvailable?: (
     identity: string,
     documentId: string,
-    draftId: string,
+    itemKey: string,
     operations?: readonly ReviewOperation[],
   ) => void;
 }
@@ -50,12 +50,12 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     projectId,
     workId,
     documentId,
-    draftId,
-    draftGeneration,
+    itemKey,
+    branchGeneration,
     onInlineModelAvailable,
   } = options;
-  const { inline } = useDraftPreview(projectId, workId, documentId, draftId, {
-    enabled: Boolean(projectId && workId && documentId && draftId),
+  const { inline } = useDraftPreview(projectId, workId, documentId, itemKey, {
+    enabled: Boolean(projectId && workId && documentId && itemKey),
   });
   const preview = inline?.preview ?? null;
   const restoring = inline?.restoring;
@@ -78,8 +78,8 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
       return;
     }
 
-    const reviewId = preview.draftId;
-    if (draftGeneration !== undefined && preview.draftGeneration !== draftGeneration) return;
+    const reviewId = preview.itemKey;
+    if (branchGeneration !== undefined && preview.branchGeneration !== branchGeneration) return;
 
     const operations = preview.operations;
     const hunks = preview.hunks;
@@ -97,5 +97,5 @@ export function useInlineReviewSync(options: UseInlineReviewSyncOptions): void {
     editor.commands.setInlineReviewModel(model);
     lastPushedPreviewRef.current = inline;
     onInlineModelAvailable?.(previewIdentity, documentId, reviewId, operations);
-  }, [editor, inline, draftGeneration, documentId, onInlineModelAvailable]);
+  }, [editor, inline, branchGeneration, documentId, onInlineModelAvailable]);
 }

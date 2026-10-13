@@ -64,7 +64,7 @@ type Mode = "apply" | "discard";
 export type ChangeBasis = {
   liveRevisionToken: string;
   draftRevisionToken: string;
-  draftGeneration: number;
+  branchGeneration: number;
 };
 export type DraftCommand =
   | {
@@ -94,12 +94,12 @@ export function listedDocumentName(
   queryClient: QueryClient,
   projectId: string,
   workId: string,
-  draftId: string,
+  itemKey: string,
 ): string | null {
   return (
     queryClient
       .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(projectId, workId))
-      ?.find((item) => item.draftId === draftId)?.documentName ?? null
+      ?.find((item) => item.itemKey === itemKey)?.documentName ?? null
   );
 }
 
@@ -109,17 +109,17 @@ export function newestKnownProposal(queryClient: QueryClient, draft: DraftRef): 
       draft.projectId,
       draft.workId,
       draft.documentId,
-      draft.draftId,
+      draft.itemKey,
     ),
   );
   const row = queryClient
     .getQueryData<ThreadDraftListItem[]>(projectQueryKeys.workDrafts(draft.projectId, draft.workId))
-    ?.find((item) => item.draftId === draft.draftId);
+    ?.find((item) => item.itemKey === draft.itemKey);
   const known = [
     cached?.status === "active" && reviewChangesOfPreview(cached).length > 0
-      ? cached.draftGeneration
+      ? cached.branchGeneration
       : undefined,
-    row?.draftGeneration,
+    row?.branchGeneration,
   ].filter((generation) => generation !== undefined);
   return known.length ? Math.max(...known) : undefined;
 }
@@ -197,14 +197,14 @@ export function startDraftCommand(
       ? beginDraftCommand(draft, {
           target: "all",
           mode,
-          draftGeneration: command.generation,
+          branchGeneration: command.generation,
           ...(command.completesDraft ? { completesDraft: true } : {}),
         })
       : beginChangeCommand(
           draft,
           command.selection,
           mode,
-          command.basis.draftGeneration,
+          command.basis.branchGeneration,
           command.completesDraft,
         );
   if (!claim) return blocked;
@@ -244,13 +244,13 @@ async function execute(
         mutationFn: () => {
           if (!claimIsLive(claim)) throw new Error("Draft command capability revoked");
           if (command.target === "all") {
-            const request = { draftId: draft.draftId };
+            const request = { itemKey: draft.itemKey };
             return mode === "apply"
               ? applyDraft(draft.projectId, draft.workId, draft.documentId, request)
               : discardDraft(draft.projectId, draft.workId, draft.documentId, request);
           }
           const basis = {
-            draftId: draft.draftId,
+            itemKey: draft.itemKey,
             liveRevisionToken: command.basis.liveRevisionToken,
             draftRevisionToken: command.basis.draftRevisionToken,
           };
@@ -273,13 +273,13 @@ async function execute(
       .execute(undefined);
     if (!claimIsLive(claim)) return { kind: "blocked" };
     if (response.status === "applied" || response.status === "discarded") {
-      if (command.target === "all" || ("draftClosed" in response && response.draftClosed))
+      if (command.target === "all" || ("itemClosed" in response && response.itemClosed))
         answerDraftCommandClosed(claim, {
           documentName: listedDocumentName(
             queryClient,
             draft.projectId,
             draft.workId,
-            draft.draftId,
+            draft.itemKey,
           ),
         });
     }
@@ -321,7 +321,7 @@ async function execute(
         rebaseChangeCommand(
           claim,
           retry.selection,
-          retry.basis.draftGeneration,
+          retry.basis.branchGeneration,
           retry.completesDraft,
         );
         return await execute(queryClient, retry, threadId, claim);
@@ -387,7 +387,7 @@ export function runDraftSelection(
   threadId: string | null,
 ): Promise<DraftCommandOutcome> {
   if (!selection.operationIds.length) return Promise.resolve({ kind: "blocked" });
-  const target = { ...scope, documentId: draft.documentId, draftId: draft.draftId };
+  const target = { ...scope, documentId: draft.documentId, itemKey: draft.itemKey };
   if (wholeDraftPending(currentChangeCommandRecords(), target))
     return Promise.resolve({ kind: "blocked" });
   if (cachedActivePreview(queryClient, target) === null)
@@ -406,7 +406,7 @@ function cachedActivePreview(queryClient: QueryClient, draft: DraftRef) {
       draft.projectId,
       draft.workId,
       draft.documentId,
-      draft.draftId,
+      draft.itemKey,
     ),
   );
   return cached?.status === "active" ? cached : null;
@@ -486,7 +486,7 @@ async function sendClick(
       basis: {
         liveRevisionToken: preview.liveRevisionToken,
         draftRevisionToken: preview.draftRevisionToken,
-        draftGeneration: preview.draftGeneration,
+        branchGeneration: preview.branchGeneration,
       },
       completesDraft: coversEveryChange(selection, changes),
     },
@@ -513,7 +513,7 @@ async function sendClick(
             basis: {
               liveRevisionToken: fresh.liveRevisionToken,
               draftRevisionToken: fresh.draftRevisionToken,
-              draftGeneration: fresh.draftGeneration,
+              branchGeneration: fresh.branchGeneration,
             },
             completesDraft: coversEveryChange(resolved.selection, resolved.changes),
           }

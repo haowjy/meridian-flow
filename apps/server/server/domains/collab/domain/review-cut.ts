@@ -80,7 +80,7 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
       preview: {
         status: "active" as const,
         draftId: cut.branch.branchId,
-        draftGeneration: cut.branch.generation,
+        branchGeneration: cut.branch.generation,
         reviewRoomName: branchRoomName(cut.branch.branchId, cut.branch.generation),
         isNewDocument:
           cut.membership.draft.includes(cut.branch.documentId) &&
@@ -139,7 +139,7 @@ function admitApply(
   // Keep fence precedence: stale observations cannot be classified as gone or draft-only.
   if (command.draftRevisionToken !== preview.draftRevisionToken)
     throw new DraftChangeRefusal("stale");
-  if (preview.isNewDocument) throw new DraftChangeRefusal("draft_only");
+  if (preview.isNewDocument) throw new DraftChangeRefusal("whole_item");
   const requested = new Set(command.operationIds);
   if (
     !requested.size ||

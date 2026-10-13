@@ -152,7 +152,7 @@ it.each([
           liveRevisionToken: preview.liveRevisionToken,
           draftRevisionToken: preview.draftRevisionToken,
         }),
-      ).toMatchObject({ draftClosed: false });
+      ).toMatchObject({ itemClosed: false });
       expect((await f.branchStore.getBranch(branchId))?.generation).toBe(snapshot.generation + 1);
       const reconnect = createCollabYDoc({ gc: false });
       documents.push(reconnect);

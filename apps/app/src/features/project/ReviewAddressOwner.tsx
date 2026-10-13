@@ -4,7 +4,7 @@ import type { DraftReviewContextValue } from "@/features/draft-review/DraftRevie
 import type { ContextUri } from "@/lib/context-uri";
 import {
   type AiDraftLaunchTarget,
-  usePendingEditorReviewDraftId,
+  usePendingEditorReviewItemKey,
 } from "./dock/editor-review-handoff";
 import type { PresentedDocument, ReviewAddress } from "./presented-document";
 
@@ -21,10 +21,10 @@ export function ReviewAddressOwner({
   presented: PresentedDocument | null;
   port: ReviewAddressPort;
 }) {
-  const pendingDraftId = usePendingEditorReviewDraftId();
+  const pendingItemKey = usePendingEditorReviewItemKey();
   const restoring = useRef<string | null>(null);
   const ownedReview = useRef<PresentedDocument | null>(null);
-  const requestedDraftId = presented?.review?.draftId;
+  const requestedItemKey = presented?.review?.itemKey;
   const write = (address: ReviewAddress | null) => {
     if (!address && presented?.draftOnly) return;
     port.write(address);
@@ -56,7 +56,7 @@ export function ReviewAddressOwner({
         match === "no" ||
         (presented.review &&
           (presented.review.workId !== review.controller.workId ||
-            (presented.container === "dock" && presented.review.draftId !== inline.draftId)))
+            (presented.container === "dock" && presented.review.itemKey !== inline.itemKey)))
       ) {
         review.controller.exitInlineReview();
         return;
@@ -66,15 +66,15 @@ export function ReviewAddressOwner({
       // The route command already carries this identity. Let it settle instead
       // of competing with itself through an address-owner replacement.
       ownedReview.current = presented;
-      if (presented.container === "editor" && pendingDraftId === inline.draftId) return;
+      if (presented.container === "editor" && pendingItemKey === inline.itemKey) return;
       const changeId = review.controller.focus?.classId;
       if (
-        requestedDraftId !== inline.draftId ||
+        requestedItemKey !== inline.itemKey ||
         ((changeId || !presented.review?.changeId) && presented.review?.changeId !== changeId)
       )
         write({
           workId: review.controller.workId,
-          draftId: inline.draftId,
+          itemKey: inline.itemKey,
           ...(changeId ? { changeId } : {}),
         });
       return;
@@ -85,17 +85,17 @@ export function ReviewAddressOwner({
       restoring.current = null;
       // An exit for a different scope/document must not erase its destination.
       if (
-        requestedDraftId &&
+        requestedItemKey &&
         owned.container === presented?.container &&
         owned.documentId === presented.documentId &&
         owned.review?.workId === presented.review?.workId &&
-        owned.review?.draftId === presented.review?.draftId
+        owned.review?.itemKey === presented.review?.itemKey
       ) {
         write(null);
         return;
       }
     }
-    if (!requestedDraftId) {
+    if (!requestedItemKey) {
       restoring.current = null;
       return;
     }
@@ -111,23 +111,23 @@ export function ReviewAddressOwner({
         !presented.scheme ||
         !presented.review ||
         review.controller.workId !== presented.review.workId ||
-        restoring.current === requestedDraftId
+        restoring.current === requestedItemKey
       )
         return;
-      restoring.current = requestedDraftId;
+      restoring.current = requestedItemKey;
       void port.admit({
         workId: presented.review.workId,
         documentId: presented.documentId,
-        draftId: requestedDraftId,
+        itemKey: requestedItemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },
-        isNewDocument: presented.draftOnly,
+        isNew: presented.draftOnly,
       });
       return;
     }
-    if (pendingDraftId === requestedDraftId) return;
+    if (pendingItemKey === requestedItemKey) return;
     if (review.drafts.status !== "ready" && review.drafts.status !== "empty") return;
-    const group = review.files.find((candidate) => candidate.draft.draftId === requestedDraftId);
-    const draft = group?.draft.draftId === requestedDraftId ? group.draft : null;
+    const group = review.files.find((candidate) => candidate.draft.itemKey === requestedItemKey);
+    const draft = group?.draft.itemKey === requestedItemKey ? group.draft : null;
     const match =
       group?.contextLocation && draft
         ? addressNames(group.documentId, group.contextLocation)
@@ -138,22 +138,22 @@ export function ReviewAddressOwner({
       return;
     }
     if (match === "pending" || !group?.contextLocation || !draft) return;
-    if (restoring.current === requestedDraftId) return;
-    restoring.current = requestedDraftId;
+    if (restoring.current === requestedItemKey) return;
+    restoring.current = requestedItemKey;
     void Promise.resolve(
       port.admit({
         workId: review.controller.workId,
         documentId: group.documentId,
-        draftId: requestedDraftId,
+        itemKey: requestedItemKey,
         contextLocation: group.contextLocation,
         documentName: group.documentName ?? undefined,
-        isNewDocument: draft.isNewDocument === true,
+        isNew: draft.isNew === true,
       }),
     ).catch((error) => {
       restoring.current = null;
       console.error("[review] address restore failed", error);
     });
-  }, [presented, port, pendingDraftId, requestedDraftId, review]);
+  }, [presented, port, pendingItemKey, requestedItemKey, review]);
 
   return null;
 }

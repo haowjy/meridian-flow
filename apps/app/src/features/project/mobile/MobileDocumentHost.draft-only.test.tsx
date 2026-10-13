@@ -73,7 +73,7 @@ const draftTab: ServerContextTab = {
   schemaType: "document",
   draftOnly: true,
   reviewWorkId: "work-a",
-  reviewDraftId: "draft-a",
+  reviewItemKey: "draft-a",
 };
 
 describe("MobileDocumentHost draft-only review", () => {

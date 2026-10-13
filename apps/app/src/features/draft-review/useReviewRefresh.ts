@@ -32,7 +32,7 @@ export function useReviewRefresh({
   projectId: string | null;
   workId: string | null;
   /** The open review's draft, or null when none is open. */
-  review: { documentId: string; draftId: string } | null;
+  review: { documentId: string; itemKey: string } | null;
   /** The review's room, once resolved. */
   session: DocumentSession | null;
   /** The live document of the reviewed draft, when a surface holds it. */
@@ -40,10 +40,10 @@ export function useReviewRefresh({
 }): void {
   const queryClient = useQueryClient();
   const documentId = review?.documentId ?? null;
-  const draftId = review?.draftId ?? null;
+  const itemKey = review?.itemKey ?? null;
 
   useEffect(() => {
-    if (!projectId || !workId || !documentId || !draftId) return;
+    if (!projectId || !workId || !documentId || !itemKey) return;
     const sources: DocumentSession[] = [];
     if (session) sources.push(session);
     if (liveSession) sources.push(liveSession);
@@ -70,7 +70,7 @@ export function useReviewRefresh({
         ),
         queryClient.invalidateQueries(
           {
-            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+            queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, itemKey),
           },
           { cancelRefetch: false },
         ),
@@ -97,5 +97,5 @@ export function useReviewRefresh({
       if (timer !== null) clearTimeout(timer);
       for (const source of sources) source.document.off("update", schedule);
     };
-  }, [projectId, workId, documentId, draftId, session, liveSession, queryClient]);
+  }, [projectId, workId, documentId, itemKey, session, liveSession, queryClient]);
 }

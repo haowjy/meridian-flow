@@ -47,12 +47,12 @@ export const workC = {
 } as Work;
 
 export const listed = {
-  draftId: "draft-a",
+  itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
   contextLocation: null,
   status: "active" as const,
-  draftGeneration: 1,
+  branchGeneration: 1,
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
@@ -67,8 +67,8 @@ export const operation = (id: string) => ({
 
 export const preview = {
   status: "active" as const,
-  draftId: "draft-a",
-  draftGeneration: 1,
+  itemKey: "draft-a",
+  branchGeneration: 1,
 
   reviewRoomName: "review-room-a",
   liveRevisionToken: "live-1",
@@ -81,7 +81,7 @@ export const preview = {
 export const previewOf = (...ids: string[]) => ({ ...preview, operations: ids.map(operation) });
 
 /** The reviewed draft's identity, as a command names it. */
-export const draftA = { documentId: "document-a", draftId: "draft-a" };
+export const draftA = { documentId: "document-a", itemKey: "draft-a" };
 
 /** A selection of these changes (one class each). */
 export const change = (...ids: string[]) => ({
@@ -90,18 +90,18 @@ export const change = (...ids: string[]) => ({
   operationIds: ids,
 });
 
-export const applied = (draftClosed: boolean, id = "2") => ({
+export const applied = (itemClosed: boolean, id = "2") => ({
   status: "applied" as const,
-  draftId: "draft-a",
+  itemKey: "draft-a",
   operationIds: [id],
   closureClassIds: [`class-${id}`],
-  draftClosed,
+  itemClosed,
 });
 
-export const discarded = (draftClosed: boolean) => ({
+export const discarded = (itemClosed: boolean) => ({
   status: "discarded" as const,
-  draftId: "draft-a",
-  draftClosed,
+  itemKey: "draft-a",
+  itemClosed,
 });
 
 export type ScopeProbe = {
@@ -121,7 +121,7 @@ export type ScopeProbe = {
   ) => Promise<() => DraftChangesView>;
 };
 
-export type ReviewedDraft = { documentId: string; draftId: string };
+export type ReviewedDraft = { documentId: string; itemKey: string };
 
 export async function renderReviewScopes(
   run: (probe: () => ScopeProbe) => Promise<void>,
@@ -141,7 +141,7 @@ export async function renderReviewScopes(
   } = {},
 ): Promise<void> {
   const {
-    reviewed: initialReviewed = { documentId: "document-a", draftId: "draft-a" },
+    reviewed: initialReviewed = { documentId: "document-a", itemKey: "draft-a" },
     onOpenDraft = () => {},
     surface = null,
     chatSurface = null,
@@ -192,7 +192,7 @@ export async function renderReviewScopes(
         <RunnerProbe />
         {lateMounted ? <LateReader /> : null}
         {lists.map(({ target, scope }) => (
-          <ChangeList key={target.draftId} target={target} scope={scope} />
+          <ChangeList key={target.itemKey} target={target} scope={scope} />
         ))}
         {surface}
       </>
