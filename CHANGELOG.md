@@ -177,6 +177,7 @@
 
 ### Fixed
 
+- Documents in a narrow pane (the side panel, a narrow Editor window, the phone) give more of their width to the text. Margins follow the pane rather than the screen, and the right margin narrows first while the left keeps room for the drag handle.
 - Settings fits a narrow desktop window. Its sections become tabs along the top and each setting sits under its label, as on a phone, with a margin from the window edge.
 
 - Phone: opening Manuscript, Knowledge Base or Unfiled from Files lists its files again, instead of "This folder no longer exists."
