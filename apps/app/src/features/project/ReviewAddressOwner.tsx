@@ -104,13 +104,15 @@ export function ReviewAddressOwner({
       // Only the address says the writer left. Whether the draft is still in the
       // list is the review's own decision (row X): a list that lags behind a new
       // proposal must not end a review the reducer keeps.
-      const file = review.fileForDocument(inline.documentId);
-      const match =
-        presented?.documentId && presented.documentId !== inline.documentId
-          ? "no"
-          : file
-            ? addressNames(inline.documentId, file.contextLocation)
-            : "pending";
+      // A resolved address identity decides on its own: an unlisted item (its changes
+      // drained) still has an owner. The list's locator is consulted only while the
+      // identity is unresolved.
+      const file = presented?.documentId ? null : review.fileForDocument(inline.documentId);
+      const match = presented?.documentId
+        ? addressNames(inline.documentId, null)
+        : file
+          ? addressNames(inline.documentId, file.contextLocation)
+          : "pending";
       // An inline review that lags a warm change of Work or item yields to the
       // address; it never relabels a newer request with its own identity.
       if (
