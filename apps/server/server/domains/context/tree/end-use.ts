@@ -136,6 +136,19 @@ export class EndUseScopeChangedError extends Error {
 }
 
 /** The scope as it reads now, unlocked. */
+/**
+ * Which of `ids` are hidden now, read in the caller's transaction. Under the caller's
+ * document locks this is the visibility an end of use acts on (another Work's Apply may
+ * have revealed a draft's create since the caller resolved it).
+ */
+export async function hiddenDocumentIds(
+  db: Database,
+  ids: readonly DocumentId[],
+): Promise<ReadonlySet<DocumentId>> {
+  const rows = await loadDocumentIdentityRows(currentDrizzleDb(db), [...new Set(ids)]);
+  return new Set(rows.filter((row) => row.hidden).map((row) => row.id));
+}
+
 export async function readEndUseScope(db: Database, request: EndUseRequest): Promise<EndUseScope> {
   const tx = currentDrizzleDb(db);
   const documentIds = new Set<DocumentId>();

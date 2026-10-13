@@ -17,7 +17,7 @@
 import type { DraftId, ThreadId, WorkId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branchWriteJournal, documentBranches, documents } from "@meridian/database/schema";
+import { branchWriteJournal, documentBranches } from "@meridian/database/schema";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
@@ -29,6 +29,7 @@ import {
   type EndUseRequest,
   EndUseScopeChangedError,
   endUse,
+  hiddenDocumentIds,
   readEndUseScope,
 } from "../../context/tree/end-use.js";
 import type { WorkDraftDisposal, WorkProjectionMutation } from "../../projects/index.js";
@@ -250,15 +251,6 @@ export function createDrizzleDraftDiscard(
     return deps.branches.closeThreadPeersOf([content.branchId], "edit_discarded");
   }
 
-  async function hiddenDocuments(ids: readonly DocumentId[]): Promise<ReadonlySet<DocumentId>> {
-    if (ids.length === 0) return new Set();
-    const rows = await currentDrizzleDb(db)
-      .select({ id: documents.id })
-      .from(documents)
-      .where(and(inArray(documents.id, [...ids]), eq(documents.hidden, true)));
-    return new Set(rows.map((row) => row.id as DocumentId));
-  }
-
   async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
     const { draftId } = input;
     // Only the items arm carries leases and live documents.
@@ -269,7 +261,7 @@ export function createDrizzleDraftDiscard(
     // a revealed create is an edited item (§2.2), reset from live with its branch kept. The
     // draft's create row goes either way; only a hidden document can be tombstoned by it.
     const withRows = items.filter((item) => item.origin === "created").map((i) => i.documentId);
-    const hiddenNow = await hiddenDocuments(withRows);
+    const hiddenNow = await hiddenDocumentIds(db, withRows);
     const isCreated = (item: DiscardItem) => hiddenNow.has(item.documentId);
     const created = items.filter(isCreated).map((item) => item.documentId);
     const ended = await endUseReconciled(
