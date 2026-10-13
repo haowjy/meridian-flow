@@ -260,17 +260,45 @@ curl -sS -X POST "${BASE}/generate" \
 
 **Requires:** `ANTHROPIC_API_KEY` in `.env`.
 
-**Note:** Anthropic adapter is scaffold-only in v1; `buildProviderConfigs` does not register Anthropic yet. Expect failure or skip until the adapter lands.
+Anthropic is enabled by a real key. With no explicit model selection, General
+uses the registry default `claude-sonnet-4-6`.
 
-If enabled in a future release, repeat scenarios 3–5 with:
-
-```json
-"model": "claude-sonnet-4-20250514"
+```bash
+pnpm dev
+pnpm portless:list
+THREAD=$(./mf thread create --title 'Current Claude probe')
+./mf thread send "$THREAD" 'Describe a moonlit mountain in one sentence. Do not use tools.' --json
+./mf thread view "$THREAD" --json
+./mf log --thread "$THREAD" --source gateway --full --json
+pnpm dev --stop
 ```
 
-**Pass (when supported):** HTTP 200; `provider` reflects Anthropic; valid completion/stream/tool response.
+**Pass:** text deltas and a completed reply; the durable transcript includes
+that reply. Gateway `stream.open` / successful `stream.close` correlation names
+`anthropic` and `claude-sonnet-4-6`. Command-union tools (write and work) must
+not cause Anthropic's root `oneOf` / `anyOf` schema rejection.
 
-**Skip** until adapter is implemented.
+Also exercise valid command selection, not just a text reply:
+
+```bash
+pnpm dev
+THREAD=$(./mf thread create --title 'Claude command probe' --json | jq -r .threadId)
+PROBE="Command projection $(date +%s)"
+./mf thread send "$THREAD" "List my works. Create a manuscript document named '$PROBE' containing exactly 'Moonlight silvered the peaks.' Do not change other documents." --json
+./mf thread send "$THREAD" "List my works. Copy '$PROBE' to '$PROBE copy'. Do not change the original." --json
+./mf doc read "manuscript://$PROBE copy"
+./mf thread view "$THREAD" --json
+./mf log --thread "$THREAD" --source gateway --full --json
+pnpm dev --stop
+```
+
+**Pass:** Work `list` and Write `create` / `copy` succeed on their first tool
+calls, with no `invalid_arguments` correction loop. Copy includes its required
+`from.path`. Read-back matches the original sentence; gateway closes are `ok`.
+The projection's command guidance must retain branch purposes, required and
+allowed fields; shared field descriptions identify their commands.
+
+**Skip** only if `ANTHROPIC_API_KEY` is unset.
 
 ---
 
