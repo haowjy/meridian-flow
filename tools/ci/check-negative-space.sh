@@ -161,8 +161,6 @@ if (( ${#local_presence_bypass[@]} > 0 )); then
   exit 1
 fi
 
-printf 'Negative-space guard passed.\n'
-
 # Model-provider env vars carry a FLOW_ prefix so agent CLIs in the same shell
 # never read the app's keys, and SDKs never fall back to their default names.
 bare_provider_env=()
@@ -177,3 +175,5 @@ if (( ${#bare_provider_env[@]} > 0 )); then
   printf '  %s\n' "${bare_provider_env[@]}"
   exit 1
 fi
+
+printf 'Negative-space guard passed.\n'
