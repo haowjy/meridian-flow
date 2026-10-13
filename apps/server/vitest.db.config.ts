@@ -23,6 +23,7 @@ const expectedSuites = [
   "apps/server/server/domains/collab/adapters/response-helper-replay.db.test.ts",
   "apps/server/server/domains/collab/reply-save-refusals.db.test.ts",
   "apps/server/server/domains/collab/draft-commands.db.test.ts",
+  "apps/server/server/domains/collab/draft-items.db.test.ts",
   "apps/server/server/domains/collab/adapters/response-helper-revocation.db.test.ts",
   "apps/server/server/domains/collab/partial-apply.db.test.ts",
   "apps/server/server/domains/collab/review-disposition.db.test.ts",
