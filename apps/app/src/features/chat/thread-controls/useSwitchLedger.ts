@@ -198,13 +198,13 @@ export function useSwitchLedger(input: {
     (row: QueuedControl) => {
       const { id } = row;
       dispatch({ type: "withdraw_started", id });
-      announce(controlWithdrawnCopy(row.control));
       const done = (outcome: "withdrawn" | "already_started" | "not_found") =>
         dispatch({ type: "withdraw_done", id, outcome });
       const onServer = async () => {
         try {
           const { outcome } = await withdrawThreadControl(threadId, id);
           done(outcome);
+          if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
           revalidate();
@@ -221,6 +221,7 @@ export function useSwitchLedger(input: {
       void latest.current.journal.withdraw(id).then((result) => {
         if (result === "admitted") return onServer();
         dispatch({ type: "withdraw_done", id, outcome: result });
+        if (result === "removed") announce(controlWithdrawnCopy(row.control));
       });
     },
     [revalidate, threadId],
