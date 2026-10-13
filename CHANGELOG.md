@@ -177,6 +177,7 @@
 
 ### Fixed
 
+- Message box: in an existing chat, the agent shows as grey text instead of a dimmed chip that looked disabled, and the Work picker uses the same text size as the other pickers.
 - Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
 - Chats explain when your saved messages are waiting for usage, with an Add usage link. Waiting messages send automatically once usage is added.
