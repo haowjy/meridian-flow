@@ -391,6 +391,12 @@ export function TurnList({
                   data-chat-turn-row={transcriptRow ? "settled" : row.kind}
                   data-chat-turn-role={transcriptRow?.turn.role}
                   data-chat-turn-kind={row.kind}
+                  // Compaction and handoff-seed rows draw no turn of their own; the id lets a comparison match them.
+                  data-turn-id={
+                    transcriptRow && (row.kind === "compaction" || row.kind === "handoff-seed")
+                      ? transcriptRow.turn.id
+                      : undefined
+                  }
                   data-chat-turn-continues={transcriptRow?.continuing ? "" : undefined}
                   data-chat-turn-inherited={transcriptRow?.inherited ? "" : undefined}
                   ref={virtualizer.measureElement}
