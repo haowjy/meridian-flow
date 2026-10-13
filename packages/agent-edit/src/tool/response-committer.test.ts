@@ -480,6 +480,120 @@ describe("response committer", () => {
   });
 });
 
+describe("reasoned refusal of staged writes", () => {
+  const peerContext = (responseId: string, peerBranchId: string, turn: string) => ({
+    ...context,
+    turnId: turn,
+    responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, peerBranchId },
+  });
+  const receiptTexts = (
+    result: Awaited<ReturnType<ReturnType<typeof harness>["core"]["commitResponse"]>>,
+  ) =>
+    result.documents.flatMap((document) =>
+      document.receipts.map((receipt) => JSON.stringify(receipt)),
+    );
+
+  it("refuseStaged keeps each write's receipt and lets a later write stage again (U2)", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-refuse";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      peerContext(responseId, "peer-1", "turn-1"),
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Two." },
+      peerContext(responseId, "peer-1", "turn-2"),
+    );
+
+    ctx.core.refuseStaged(responseId, "chapter.md", "discarded_draft");
+    expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(false);
+    // The pool evicts the thread's runtime when a response holds no buffer for the document.
+    await ctx.core.invalidateThreadDocument("chapter.md", THREAD_ID);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Three." },
+      peerContext(responseId, "peer-2", "turn-3"),
+    );
+
+    const saved = await ctx.core.commitResponse(responseId);
+    const receipts = receiptTexts(saved);
+    expect(receipts.filter((text) => text.includes("the user discarded this draft"))).toHaveLength(
+      2,
+    );
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Three."]);
+  });
+
+  it("rolls a staged thread-peer reply back without any coordinator call (U5)", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-rollback";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      peerContext(responseId, "peer-1", "turn-1"),
+    );
+    const withDocument = vi.spyOn(ctx.coordinator, "withDocument");
+
+    await ctx.core.rollbackResponse(responseId);
+
+    expect(withDocument).not.toHaveBeenCalled();
+    expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(false);
+  });
+
+  it("a reply whose every document was refused still receipts each write", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-all-refused";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      peerContext(responseId, "peer-1", "turn-1"),
+    );
+    ctx.core.refuseStaged(responseId, "chapter.md", "discarded_document");
+
+    const saved = await ctx.core.commitResponse(responseId);
+    expect(saved).toMatchObject({ status: "committed", updateCount: 0 });
+    expect(receiptTexts(saved).join()).toContain("the user discarded this new document");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
+  });
+
+  it("retirePeer refuses only the retired peer's writes and leaves a replacement peer's (U6)", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-retire";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Old." },
+      peerContext(responseId, "peer-old", "turn-1"),
+    );
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "New." },
+      peerContext(responseId, "peer-new", "turn-2"),
+    );
+
+    await ctx.core.retirePeer({
+      documentId: "chapter.md",
+      threadId: THREAD_ID,
+      peerBranchId: "peer-old",
+      reason: "discarded_edit",
+    });
+    // A late retirement of a peer the reply no longer holds changes nothing.
+    await ctx.core.retirePeer({
+      documentId: "chapter.md",
+      threadId: THREAD_ID,
+      peerBranchId: "peer-gone",
+      reason: "discarded_edit",
+    });
+
+    const saved = await ctx.core.commitResponse(responseId);
+    expect(
+      receiptTexts(saved).filter((text) => text.includes("the user discarded the text it edited")),
+    ).toHaveLength(1);
+    expect(saved).toMatchObject({ status: "committed", updateCount: 1 });
+    expect(receiptTexts(saved).filter((text) => text.includes('"status":"success"'))).toHaveLength(
+      1,
+    );
+  });
+});
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>((done) => {
