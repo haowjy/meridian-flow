@@ -52,8 +52,8 @@ export function drawLinkAnswer(
           ? t`Doesn't exist yet`
           : inDraft,
     );
-    // The sighted writer reads the same words on hover.
-    draw(element, "title", inDraft);
+    // The sighted writer reads the same words on hover; outside a draft the link's own title stays.
+    draw(element, "title", inDraft ?? (typeof link.title === "string" ? link.title : null));
     // Nothing follows a gone link, so it also loses the pointer and the hover.
     draw(element, "aria-disabled", entry?.state === "gone" ? "true" : null);
   };

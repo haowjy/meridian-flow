@@ -42,7 +42,11 @@ describe("BranchPullService", () => {
         } as unknown as BranchCoordinator,
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
-          ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+          ensureThreadPeerBranch: async () => ({
+            branchId: "peer",
+            upstreamBranchId: "work",
+            state: new Uint8Array(),
+          }),
         },
         debounceMs: 10,
         maxDebounceMs: 50,
@@ -91,7 +95,11 @@ describe("BranchPullService", () => {
         } as unknown as BranchCoordinator,
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
-          ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+          ensureThreadPeerBranch: async () => ({
+            branchId: "peer",
+            upstreamBranchId: "work",
+            state: new Uint8Array(),
+          }),
         },
         diagnostics: { backgroundFailed: () => {} },
         debounceMs: 10,
@@ -137,7 +145,11 @@ describe("BranchPullService", () => {
         } as unknown as BranchCoordinator,
         branches: {
           listActiveWorkDraftBranchIds: async () => ["work"],
-          ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
+          ensureThreadPeerBranch: async () => ({
+            branchId: "peer",
+            upstreamBranchId: "work",
+            state: new Uint8Array(),
+          }),
         },
         diagnostics: { backgroundFailed: failed },
         debounceMs: 10,
