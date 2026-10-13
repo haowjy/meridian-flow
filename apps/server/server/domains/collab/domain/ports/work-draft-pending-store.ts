@@ -37,6 +37,8 @@ export type WorkDraftPendingStore = {
     draftId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, string>>;
+  /** The item keys a staged, unfinished batch of this draft holds: progress, never settlement. */
+  listSettling(draftId: DraftId): Promise<ReadonlySet<string>>;
   /**
    * Distinct pending documents per Work, by the canonical branch → draft → Work mapping:
    * its active draft's branches with reviewable rows and (`hasEffect` or `blocking`), plus

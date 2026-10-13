@@ -132,7 +132,8 @@ export function selectReviewCut(
   };
 }
 
-type SelectionPreview = ReturnType<typeof deriveReviewCut>["preview"];
+export type DerivedReview = ReturnType<typeof deriveReviewCut>["preview"];
+type SelectionPreview = DerivedReview;
 
 function admitApply(
   preview: SelectionPreview,

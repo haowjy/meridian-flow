@@ -1,9 +1,11 @@
 /** Drizzle store for durable branch pushes into the live Yjs journal. */
 import { randomUUID } from "node:crypto";
-import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branchWriteJournal,
+  branchPushSettlementBatches,
+  branchPushSettlementPayloads,
   documentBranches,
   drafts,
   draftTreeChanges,
@@ -37,6 +39,7 @@ import {
   type WorkPushPolicyStore,
 } from "../domain/branch-push-contracts.js";
 import { DraftCommandExistsError } from "../domain/draft-commands.js";
+import { DRAFT_TREE_STEP } from "../domain/draft-tree-payload.js";
 import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type {
@@ -377,6 +380,28 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           ),
         );
       return new Map(rows.flatMap((row) => (row.threadId ? [[row.documentId as DocumentId, row.threadId as string] as const] : [])));
+    },
+    async listSettling(draftId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ payload: branchPushSettlementPayloads.payload })
+        .from(branchPushSettlementPayloads)
+        .innerJoin(
+          branchPushSettlementBatches,
+          eq(branchPushSettlementBatches.id, branchPushSettlementPayloads.batchId),
+        )
+        .where(
+          and(
+            eq(branchPushSettlementPayloads.stepKind, DRAFT_TREE_STEP),
+            eq(branchPushSettlementBatches.state, "pending"),
+            sql`${branchPushSettlementPayloads.payload}->>'draftId' = ${draftId}`,
+          ),
+        );
+      const keys = new Set<string>();
+      for (const { payload } of rows) {
+        const items = (payload as { items?: { itemKey?: string }[] }).items ?? [];
+        for (const item of items) if (item.itemKey) keys.add(item.itemKey);
+      }
+      return keys;
     },
     async listDraftBranchEvidence(draftId, documentIds) {
       const rows = await currentDrizzleDb(db)
