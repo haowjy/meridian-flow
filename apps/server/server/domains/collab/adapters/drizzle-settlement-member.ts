@@ -11,7 +11,6 @@ import {
   branchPushOutboxUpdates,
   branchPushSettlementOutbox,
   branchWriteJournal,
-  documentBranches,
   documentYjsCheckpoints,
   documentYjsHeads,
   documentYjsUpdates,
@@ -21,7 +20,6 @@ import {
   COLLAB_SCHEMA_VERSION,
   createCollabYDoc,
   packCollabSchemaVersion,
-  unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";

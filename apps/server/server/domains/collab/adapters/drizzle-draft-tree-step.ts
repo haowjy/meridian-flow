@@ -19,7 +19,7 @@
  * to the staged generation) and records the writer's command with its terminal result.
  * Apply never closes the draft (§2.4).
  */
-import type { ContextSourceId, DocumentId, DraftId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId } from "@meridian/contracts";
 import type {
   DraftApplyItemResult,
   DraftCommandResult,
@@ -69,7 +69,6 @@ import {
   readDraftTreeRefusal,
 } from "../domain/draft-tree-payload.js";
 import type { Drafts } from "../domain/drafts.js";
-import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
 import type {
   PublicationAdmission,
   PublicationItemHold,
@@ -312,8 +311,7 @@ export function createDrizzleDraftTreeStep(
           if (!admitted.has(item.documentId as DocumentId)) continue;
           const branch = await deps.branches.getBranch(item.draftBranchId);
           if (
-            !branch ||
-            branch.status !== "active" ||
+            branch?.status !== "active" ||
             String(branch.generation) !== item.branchGenerationToken
           ) {
             continue;
