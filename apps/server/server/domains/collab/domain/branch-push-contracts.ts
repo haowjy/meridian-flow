@@ -2,16 +2,19 @@
 
 import type {
   AgentEditCodecFactory,
+  CanonicalBlockIdentity,
   DocumentCoordinator,
   UpdateJournal,
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { DraftCommandResult } from "@meridian/contracts/drafts";
 import type { PendingChangesChoice } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type * as Y from "yjs";
 import type { BranchCoordinator, BranchSnapshot, BranchStore } from "./branch-coordinator.js";
 import type { BranchCriticalSections } from "./branch-critical-sections.js";
+import type { DraftCommandEnvelope } from "./draft-commands.js";
 import type { ChangeEventDelivery } from "./ports/change-event-delivery.js";
 import type { DurableTrailRecord } from "./ports/change-trail-persistence.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
@@ -48,6 +51,8 @@ export type BranchJournalRow = {
   branchId: string;
   generation: number;
   wId: number | null;
+  /** The model's tool call that made this write; null for writer rows and legacy rows. */
+  toolCallId?: string | null;
   source: "agent" | "writer";
   threadId: ThreadId | null;
   turnId: TurnId | null;
@@ -57,6 +62,8 @@ export type BranchJournalRow = {
   draftBaseUpdateSeq: number;
   status: "active" | "pushed" | "discarded" | "rollback_pending";
   updateMeta?: unknown;
+  /** Immutable edit evidence, never inferred from actor or missing text. */
+  editKind?: "write" | "undo" | "redo" | "revert" | "rollback";
 };
 
 export function branchJournalRevision(
@@ -70,6 +77,8 @@ export function branchJournalRevision(
 
 export type PublicationBlockChange = {
   blockId: string;
+  beforeBlockIdentity: CanonicalBlockIdentity | null;
+  afterBlockIdentity: CanonicalBlockIdentity | null;
   beforeText: string | null;
   afterText: string | null;
 };
@@ -92,7 +101,6 @@ export type PushToLiveResult =
       status: "pushed";
       push: PushLineageRow;
       update: Uint8Array;
-      branchReset?: { branchId: string; fromGeneration: number };
     }
   | { status: "already_pushed"; push: PushLineageRow }
   | {
@@ -110,7 +118,14 @@ export type PushToLiveResult =
 /** Durable publication-step inputs staged with a batch, by step kind. */
 export type PublicationPayloads = Readonly<Record<string, JsonValue>>;
 
+export class DraftChangeRefusal extends Error {
+  constructor(readonly status: "stale" | "gone" | "whole_item" | "incomplete_class") {
+    super(status);
+  }
+}
+
 export type PreparedPushCommit = {
+  expectedLiveRevision?: string;
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   pushUpdate: Uint8Array;
@@ -187,13 +202,31 @@ export type TrailContributionReplacement = {
   documentTitles: ReadonlyMap<string, string>;
 };
 
+/** What a per-change Discard left of the item. */
+export type DiscardedChanges = { itemClosed: boolean; itemDisposition?: "applied" | "discarded" };
+
+export type ReviewRowSelection = { journalIds: readonly number[]; expectedLiveRevision: string };
+
+/** A per-change Apply's selection: made under the branch lease, naming the payloads it stages. */
+export type SelectedPublication = {
+  branchId: string;
+  select(
+    branch: BranchSnapshot,
+    rows: BranchJournalRow[],
+  ): Promise<ReviewRowSelection & { payloads: PublicationPayloads }>;
+};
+
 export type PreparedDiscardCommit = {
+  /** Present only for per-change Discard: identical survivor deltas in the next generation. */
+  survivors?: BranchJournalRow[];
+  retireSurvivors?: boolean;
+  expectedLiveRevision?: string;
+  /** Claimed `done` as the transaction's first write; a taken id throws `DraftCommandExistsError`. */
+  command?: { envelope: DraftCommandEnvelope; result: DraftCommandResult };
   branch: BranchSnapshot;
   journalRows: BranchJournalRow[];
   state: Uint8Array;
   stateVector: Uint8Array;
-  replacementUpdateData?: Uint8Array;
-  replacementUpdateDataByJournalId?: ReadonlyMap<number, Uint8Array>;
   reviewedByUserId?: UserId;
 };
 
@@ -202,6 +235,8 @@ export type PushCandidate = {
   documentId: DocumentId;
   /** The reviewable rows the whole-branch state publishes. */
   rows: BranchJournalRow[];
+  /** A selected-rows candidate replays only its rows onto live instead of the whole branch. */
+  materialization: "whole" | "selected_rows";
 };
 
 export type CandidateBatch = {
@@ -209,7 +244,8 @@ export type CandidateBatch = {
   candidates: PushCandidate[];
   payloads?: PublicationPayloads;
   receiptId: string;
-  resetPolicy?: "auto";
+  expectedLiveRevision?: string;
+  command?: DraftCommandEnvelope;
   pushedByUserId?: UserId;
 };
 
@@ -248,23 +284,21 @@ export type PushCommitStore = {
     payloads?: PublicationPayloads;
     /** Items the pre-staging check held: staged with the batch as durable exclusions. */
     holds?: readonly PublicationItemHold[];
+    /** The writer's command, claimed as the transaction's first write (§4.6). */
+    command?: DraftCommandEnvelope;
   }): Promise<
-    { status: "inserted"; pushes: PushLineageRow[] } | { status: "conflict"; push: PushLineageRow }
+    | { status: "inserted"; pushes: PushLineageRow[] }
+    | { status: "conflict"; push: PushLineageRow }
+    /** Another request holds the `commandId`: nothing was staged. */
+    | { status: "command_exists" }
   >;
   commitDiscard(input: PreparedDiscardCommit): Promise<void>;
-  commitTurnRedo(input: PreparedDiscardCommit): Promise<void>;
   /**
    * Seam B for a review that changes several drafts in one transaction: locks
    * their Works (file-access §5) and names the branches whose Work is no longer
    * active, so their drafts stay frozen (D30).
    */
   lockDraftWorks(branchIds: readonly string[]): Promise<ReadonlySet<string>>;
-  markRollbackPending(input: {
-    branchId: string;
-    generation: number;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<number>;
 };
 
 export type WorkPushPolicyStore = {
@@ -284,16 +318,21 @@ export type BranchPushService = {
     branchId: string;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
-    resetPolicy?: "auto";
   }): Promise<PushToLiveResult>;
   /** Publishes several drafts as one batch; one item per requested branch, in request order. */
   pushBranchesToLive(input: {
     /** May be empty when `payloads` carries the whole publication (a branchless Apply). */
     branchIds: readonly string[];
     payloads?: PublicationPayloads;
+    /**
+     * Per-change Apply: publish only the rows this selects from the one branch, chosen under
+     * its lease on every CAS attempt (B3), with the payloads rebuilt from the same selection.
+     */
+    selected?: SelectedPublication;
+    /** The writer's command, claimed in the staging transaction (§4.6). */
+    command?: DraftCommandEnvelope;
     pushedByUserId?: UserId;
     signal?: AbortSignal;
-    resetPolicy?: "auto";
   }): Promise<{
     items: PushToLiveResult[];
     /** Set when a publication step refused the batch; every drafted item is `refused`. */
@@ -302,6 +341,8 @@ export type BranchPushService = {
     heldItems: readonly PublicationItemHold[];
     /** What the publication steps did per published item, decided in completion. */
     outcomes: readonly PublicationItemOutcome[];
+    /** Another request holds the command's id: nothing was staged here. */
+    commandExists?: true;
   }>;
 };
 
@@ -317,38 +358,19 @@ export type SetWorkPushPolicyResult =
   | { status: "updated"; policy: "manual" | "auto" }
   | { status: "confirmation_required"; unpushedCount: number; reason: string };
 
-export type BranchTurnReversal =
-  | { status: "reversed" | "reconciled"; branchId: string; journalIds: number[] }
-  | {
-      status: "cant_undo_dependent" | "nothing_to_undo" | "nothing_to_redo" | "permission_denied";
-      branchId: string;
-      journalIds: number[];
-    };
-
 export type BranchReviewService = {
   discardSelected(input: {
     branchId: string;
-    journalIds: readonly number[];
+    selectRows: (branch: BranchSnapshot, rows: BranchJournalRow[]) => Promise<ReviewRowSelection>;
     reviewedByUserId?: UserId;
+    /** The command to claim `done` in the refork's transaction, built from its outcome. */
+    command?: {
+      envelope: DraftCommandEnvelope;
+      result(outcome: DiscardedChanges): DraftCommandResult;
+    };
   }): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
+    | ({ status: "discarded"; branchId: string; journalIds: number[] } & DiscardedChanges)
     | { status: "nothing_to_undo"; branchId: string; journalIds: number[] }
-  >;
-  /** Reverses one turn on each branch; a branch whose Work is archived is refused. */
-  reverseBranchTurns(input: {
-    branchIds: readonly string[];
-    threadId: ThreadId;
-    turnId: TurnId;
-    direction: "undo" | "redo";
-    reviewedByUserId?: UserId;
-  }): Promise<BranchTurnReversal[]>;
-  markFailedResponseRollbackPending(input: {
-    branchId: string;
-    threadId: ThreadId;
-    turnId: TurnId;
-  }): Promise<
-    | { status: "discarded"; branchId: string; journalIds: number[] }
-    | { status: "rollback_pending"; rowsMarked: number }
   >;
 };
 

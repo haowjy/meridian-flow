@@ -7,13 +7,11 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
 import {
   createResponse,
@@ -22,7 +20,7 @@ import {
   setupResponseDraft,
   stageDraft,
 } from "../test-support/document-edit-receipt-fixture.js";
-import { commitBranchEdit } from "../test-support/draft-review-requests.js";
+import { commitBranchEdit, reviewDriver } from "../test-support/draft-review-requests.js";
 
 describe("document edit receipts (Postgres)", () => {
   const db = createTestDatabase();
@@ -162,12 +160,7 @@ describe("document edit receipts (Postgres)", () => {
       const branch = await fixture.branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
       const branchId = branch.branchId;
       branch.doc.destroy();
-      const target = {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-        draftId: branchId,
-      };
+      const review = reviewDriver(fixture.collab.draftReview);
       let ordinal = 0;
       const replace = async (paragraph: number, text: string) => {
         const snapshot = await fixture.branchStore.getBranch(branchId);
@@ -206,36 +199,24 @@ describe("document edit receipts (Postgres)", () => {
           doc.destroy();
         }
       };
-      const review = async (apply: boolean) => {
-        const preview = await fixture.collab.draftReview.preview(target);
-        if (preview.status !== "active") throw new Error("Missing preview");
+      const reviewRed = async (apply: boolean) => {
+        const preview = await review.activePreview(ALPHA_ID);
         const change = preview.operations.find((op) => op.beforeExcerpt === "red");
         if (!change) throw new Error(`Missing red change: ${JSON.stringify(preview.operations)}`);
-        const command = {
-          ...target,
-          userId: USER_ID as never,
-          closureClassIds: [change.closureClassId],
-          admissionTokens: [change.admissionToken],
-          memberPartKeys: change.partKey ? [change.partKey] : [],
-          liveRevisionToken: preview.liveRevisionToken,
-          draftRevisionToken: preview.draftRevisionToken,
-        };
+        const ids = [change.operationId];
         expect(
           await (apply
-            ? fixture.collab.draftReview.applyWorkDraftChanges({
-                ...command,
-                operationIds: [change.operationId],
-              })
-            : fixture.collab.draftReview.discardWorkDraft(command)),
+            ? review.applyChanges(ALPHA_ID, preview, ids)
+            : review.discardChanges(ALPHA_ID, preview, ids)),
         ).toMatchObject({ status: apply ? "applied" : "discarded" });
       };
       await replace(0, operation === "apply from deletion" ? "" : "gold");
       await replace(1, "azure");
-      await review(false);
+      await reviewRed(false);
       expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n");
       await replace(0, operation === "delete" || operation === "apply deletion" ? "" : "silver");
       const apply = operation.startsWith("apply");
-      await review(apply);
+      await reviewRed(apply);
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe(
         apply
           ? operation === "apply deletion"
@@ -261,18 +242,9 @@ describe("document edit receipts (Postgres)", () => {
         ).toBe("");
       }
       if (apply) {
-        const preview = await fixture.collab.draftReview.preview(target);
-        if (preview.status !== "active") throw new Error("Missing azure preview");
+        const preview = await review.activePreview(ALPHA_ID);
         expect(preview.operations.map((op) => op.afterExcerpt)).toEqual(["azure"]);
-        expect(
-          await fixture.collab.draftReview.applyWorkDraftChanges({
-            ...target,
-            userId: USER_ID as never,
-            operationIds: [preview.operations[0].operationId],
-            liveRevisionToken: preview.liveRevisionToken,
-            draftRevisionToken: preview.draftRevisionToken,
-          }),
-        ).toMatchObject({ status: "applied" });
+        expect(await review.applyChanges(ALPHA_ID, preview)).toMatchObject({ status: "applied" });
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe(await fixture.draftMarkdown(branchId));
       }
     } finally {
@@ -290,36 +262,18 @@ describe("document edit receipts (Postgres)", () => {
         ["red", kind === "insert" ? " gold" : "gold"],
         ["blue", kind === "insert" ? " silver" : "silver"],
       ]);
-      const [draft] = await fixture.collab.draftReview.list({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-      });
-      const target = {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-        draftId: draft.draftId,
-      };
+      const review = reviewDriver(fixture.collab.draftReview);
       expect(await fixture.draftMarkdown(branchId)).toBe(
         kind === "insert" ? "red gold\n\nblue silver\n" : "gold\n\nsilver\n",
       );
       let survivorToken: string | undefined;
       for (let n = 0; n < 2; n++) {
-        const preview = await fixture.collab.draftReview.preview(target);
-        if (preview.status !== "active") throw new Error("Draft disappeared before Discard");
+        const preview = await review.activePreview(ALPHA_ID);
         expect(preview.operations).toHaveLength(2 - n);
         if (n === 0) survivorToken = preview.operations[1].admissionToken;
         else expect(preview.operations[0].admissionToken).toBe(survivorToken);
         expect(
-          await fixture.collab.draftReview.discardWorkDraft({
-            ...target,
-            userId: USER_ID as never,
-            closureClassIds: [preview.operations[0].closureClassId],
-            admissionTokens: [preview.operations[0].admissionToken],
-            memberPartKeys: preview.operations[0].partKey ? [preview.operations[0].partKey] : [],
-            liveRevisionToken: preview.liveRevisionToken,
-            draftRevisionToken: preview.draftRevisionToken,
-          }),
+          await review.discardChanges(ALPHA_ID, preview, [preview.operations[0].operationId]),
         ).toMatchObject({ status: "discarded" });
         expect(await fixture.draftMarkdown(branchId)).toBe(
           n === 0
@@ -345,9 +299,7 @@ describe("document edit receipts (Postgres)", () => {
           .filter((row) => rows.some((original) => original.id === row.id))
           .map((row) => ({ id: row.id, status: row.status })),
       ).toEqual(rows.map((row) => ({ id: row.id, status: "discarded" })));
-      expect(
-        await fixture.collab.draftReview.list({ projectId: PROJECT_ID as never, workId: WORK_ID }),
-      ).toEqual([]);
+      expect(await review.list()).toEqual([]);
     } finally {
       harness.cancelScheduledPulls();
       harness.destroyWarmState();
@@ -365,45 +317,17 @@ describe("document edit receipts (Postgres)", () => {
         ["red", "gold"],
         ["blue", "silver"],
       ]);
-      const target = {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-        draftId: branchId,
-        userId: USER_ID as never,
-      };
-      const before = await fixture.collab.draftReview.preview(target);
-      if (before.status !== "active") throw new Error("Missing preview");
+      const review = reviewDriver(fixture.collab.draftReview);
+      const before = await review.activePreview(ALPHA_ID);
       const a = before.operations.find((op) => op.afterExcerpt === "gold");
       const b = before.operations.find((op) => op.afterExcerpt === "silver");
       if (!a || !b) throw new Error("Missing independent classes");
       expect(a.closureClassId).not.toBe(b.closureClassId);
-      const discardRequest = {
-        ...target,
-        closureClassIds: [b.closureClassId],
-        admissionTokens: [b.admissionToken],
-        memberPartKeys: b.partKey ? [b.partKey] : [],
-        liveRevisionToken: before.liveRevisionToken,
-        draftRevisionToken: before.draftRevisionToken,
-      };
-      const applyRequest = {
-        ...target,
-        operationIds: [b.operationId],
-        liveRevisionToken: before.liveRevisionToken,
-        draftRevisionToken: before.draftRevisionToken,
-      };
-      expect(
-        await fixture.collab.draftReview.discardWorkDraft({
-          ...target,
-          closureClassIds: [a.closureClassId],
-          admissionTokens: [a.admissionToken],
-          memberPartKeys: a.partKey ? [a.partKey] : [],
-          liveRevisionToken: before.liveRevisionToken,
-          draftRevisionToken: before.draftRevisionToken,
-        }),
-      ).toMatchObject({ status: "discarded" });
-      const after = await fixture.collab.draftReview.preview(target);
-      if (after.status !== "active") throw new Error("Missing survivor");
+      const heldB = [b.operationId];
+      expect(await review.discardChanges(ALPHA_ID, before, [a.operationId])).toMatchObject({
+        status: "discarded",
+      });
+      const after = await review.activePreview(ALPHA_ID);
       expect(after.operations).toHaveLength(1);
       expect(after.operations[0].operationId).not.toBe(b.operationId);
       expect(after.operations[0].closureClassId).toBe(b.closureClassId);
@@ -416,8 +340,7 @@ describe("document edit receipts (Postgres)", () => {
           const paragraph = doc.getXmlFragment("prosemirror").get(1) as Y.XmlElement;
           (paragraph.get(0) as Y.XmlText).delete(4, 2);
         });
-        const changed = await fixture.collab.draftReview.preview(target);
-        if (changed.status !== "active") throw new Error("Missing changed class");
+        const changed = await review.activePreview(ALPHA_ID);
         expect(changed.operations.find((op) => op.kind === "agent")?.closureClassId).toBe(
           b.closureClassId,
         );
@@ -426,16 +349,14 @@ describe("document edit receipts (Postgres)", () => {
         );
       }
       if (scenario === "gone") {
-        expect(
-          await fixture.collab.draftReview.discardWorkDraft({
-            ...discardRequest,
-          }),
-        ).toMatchObject({ status: "discarded" });
+        expect(await review.discardChanges(ALPHA_ID, before, heldB)).toMatchObject({
+          status: "discarded",
+        });
       }
       const result =
         scenario === "apply"
-          ? await fixture.collab.draftReview.applyWorkDraftChanges(applyRequest)
-          : await fixture.collab.draftReview.discardWorkDraft(discardRequest);
+          ? await review.applyChanges(ALPHA_ID, before, heldB)
+          : await review.discardChanges(ALPHA_ID, before, heldB);
       expect(result).toMatchObject({
         status:
           scenario === "apply" || scenario === "changed"
@@ -464,29 +385,16 @@ describe("document edit receipts (Postgres)", () => {
         ["red", "gold"],
         ["blue", "silver"],
       ]);
-      const target = { workId: WORK_ID, documentId: ALPHA_ID, draftId: branchId, userId: USER_ID };
-      const before = await fixture.collab.draftReview.preview(target);
-      if (before.status !== "active") throw new Error("Missing preview");
+      const review = reviewDriver(fixture.collab.draftReview);
+      const before = await review.activePreview(ALPHA_ID);
       const a = before.operations.find((op) => op.afterExcerpt === "gold");
       const b = before.operations.find((op) => op.afterExcerpt === "silver");
       if (!a || !b?.partKey) throw new Error("Missing captured classes");
-      const held = {
-        ...target,
-        closureClassIds: [b.closureClassId],
-        admissionTokens: [b.admissionToken],
-        memberPartKeys: [b.partKey],
-        liveRevisionToken: before.liveRevisionToken,
-        draftRevisionToken: before.draftRevisionToken,
-      };
-      if (refork)
-        expect(
-          await fixture.collab.draftReview.discardWorkDraft({
-            ...held,
-            closureClassIds: [a.closureClassId],
-            admissionTokens: [a.admissionToken],
-            memberPartKeys: a.partKey ? [a.partKey] : [],
-          }),
-        ).toMatchObject({ status: "discarded" });
+      if (refork) {
+        expect(await review.discardChanges(ALPHA_ID, before, [a.operationId])).toMatchObject({
+          status: "discarded",
+        });
+      }
       const responseId = await createResponse(db, 2);
       expect(
         await fixture.collab.agentEdit().write(
@@ -502,14 +410,13 @@ describe("document edit receipts (Postgres)", () => {
         ),
       ).toMatchObject({ status: "success", phase: "staged" });
       expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
-      const grown = await fixture.collab.draftReview.preview(target);
-      if (grown.status !== "active") throw new Error("Missing grown class");
+      const grown = await review.activePreview(ALPHA_ID);
       expect(grown.operations.map((op) => op.closureClassId)).not.toContain(b.closureClassId);
       expect(grown.operations.map((op) => op.partKey)).toContain(b.partKey);
       const expectedDraft = refork ? "red\n\nsilver bright\n" : "gold\n\nsilver bright\n";
       expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
-      expect(await fixture.collab.draftReview.discardWorkDraft(held)).toMatchObject({
+      expect(await review.discardChanges(ALPHA_ID, before, [b.operationId])).toMatchObject({
         status: "stale",
       });
       expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
@@ -561,32 +468,17 @@ describe("document edit receipts (Postgres)", () => {
             ),
           );
       }
-      const target = { workId: WORK_ID, documentId: ALPHA_ID, draftId: branchId, userId: USER_ID };
-      const before = await fixture.collab.draftReview.preview(target);
-      if (before.status !== "active") throw new Error("Missing preview");
+      const review = reviewDriver(fixture.collab.draftReview);
+      const before = await review.activePreview(ALPHA_ID);
       const writer = before.operations.find((op) => op.kind === "writer");
       const agent = before.operations.find((op) => op.kind === "agent");
       if (!writer || !agent) throw new Error("Missing classes");
       if (identity === "captured") expect(writer.partKey).toBeDefined();
       else expect(writer.partKey).toBeUndefined();
-      const held = {
-        ...target,
-        closureClassIds: [writer.closureClassId],
-        admissionTokens: [writer.admissionToken],
-        memberPartKeys: writer.partKey ? [writer.partKey] : [],
-        liveRevisionToken: before.liveRevisionToken,
-        draftRevisionToken: before.draftRevisionToken,
-      };
-      expect(
-        await fixture.collab.draftReview.discardWorkDraft({
-          ...held,
-          closureClassIds: [agent.closureClassId],
-          admissionTokens: [agent.admissionToken],
-          memberPartKeys: agent.partKey ? [agent.partKey] : [],
-        }),
-      ).toMatchObject({ status: "discarded" });
-      const after = await fixture.collab.draftReview.preview(target);
-      if (after.status !== "active") throw new Error("Missing writer survivor");
+      expect(await review.discardChanges(ALPHA_ID, before, [agent.operationId])).toMatchObject({
+        status: "discarded",
+      });
+      const after = await review.activePreview(ALPHA_ID);
       expect(after.operations).toHaveLength(1);
       if (identity === "captured") {
         expect(after.operations[0].closureClassId).toBe(writer.closureClassId);
@@ -595,7 +487,7 @@ describe("document edit receipts (Postgres)", () => {
         expect(after.operations[0].closureClassId).not.toBe(writer.closureClassId);
         expect(after.operations[0].admissionToken).not.toBe(writer.admissionToken);
       }
-      expect(await fixture.collab.draftReview.discardWorkDraft(held)).toMatchObject({
+      expect(await review.discardChanges(ALPHA_ID, before, [writer.operationId])).toMatchObject({
         status: identity === "captured" ? "discarded" : "gone",
       });
       expect(await fixture.draftMarkdown(branchId)).toBe(
@@ -635,48 +527,21 @@ describe("document edit receipts (Postgres)", () => {
       expect(before).toHaveLength(1);
       expect(before[0].placement.kind).toBe("pending");
       expect(before[0].frontier).not.toEqual({});
-      const [draft] = await fixture.collab.draftReview.list({
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-      });
-      const target = {
-        projectId: PROJECT_ID as never,
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-        draftId: draft.draftId,
-      };
-      const preview = await fixture.collab.draftReview.preview(target);
-      if (preview.status !== "active") throw new Error("Draft disappeared");
+      const review = reviewDriver(fixture.collab.draftReview);
+      const preview = await review.activePreview(ALPHA_ID);
       expect(preview.operations).toHaveLength(2);
       expect(preview.operations.map((op) => op.partKey).sort()).toEqual(
         edits.map((edit) => `${edit.id}:0`).sort(),
       );
       const gold = preview.operations.find((op) => op.afterExcerpt === "gold");
       if (!gold) throw new Error("Missing gold change");
-      expect(
-        await fixture.collab.draftReview.applyWorkDraftChanges({
-          ...target,
-          userId: USER_ID as never,
-          operationIds: [gold.operationId],
-          liveRevisionToken: preview.liveRevisionToken,
-          draftRevisionToken: preview.draftRevisionToken,
-        }),
-      ).toMatchObject({ status: "applied" });
+      expect(await review.applyChanges(ALPHA_ID, preview, [gold.operationId])).toMatchObject({
+        status: "applied",
+      });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("gold\n\nblue\n");
-      const next = await fixture.collab.draftReview.preview(target);
-      if (next.status !== "active") throw new Error("Remaining draft disappeared");
+      const next = await review.activePreview(ALPHA_ID);
       expect(next.operations).toHaveLength(1);
-      expect(
-        await fixture.collab.draftReview.discardWorkDraft({
-          ...target,
-          userId: USER_ID as never,
-          closureClassIds: [next.operations[0].closureClassId],
-          admissionTokens: [next.operations[0].admissionToken],
-          memberPartKeys: next.operations[0].partKey ? [next.operations[0].partKey] : [],
-          liveRevisionToken: next.liveRevisionToken,
-          draftRevisionToken: next.draftRevisionToken,
-        }),
-      ).toMatchObject({ status: "discarded" });
+      expect(await review.discardChanges(ALPHA_ID, next)).toMatchObject({ status: "discarded" });
       const parts = await db
         .select()
         .from(schema.documentEditParts)

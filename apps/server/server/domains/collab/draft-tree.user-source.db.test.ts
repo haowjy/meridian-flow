@@ -50,7 +50,12 @@ describeDraftTreeDb("Drafted user:// (postgres)", (start, db) => {
       expect.soft(await live.idAt(path), `${path} is hidden live`).toBeNull();
     }
     expect
-      .soft((await s.items(ascension)).map((item) => item.path).sort(), "four review items")
+      .soft(
+        (await s.items(ascension))
+          .map((item) => `${item.contextLocation?.scheme}://${item.contextLocation?.path.slice(1)}`)
+          .sort(),
+        "four review items",
+      )
       .toEqual(["user://copy", "user://existing", "user://kael", "user://notes/deep/peak"]);
     expect.soft(await rows([kael, peak]), "hidden rows in the personal source").toEqual(
       expect.arrayContaining(
@@ -89,7 +94,7 @@ describeDraftTreeDb("Drafted user:// (postgres)", (start, db) => {
 
     expect
       .soft(await s.applyAll(ascension), "both sources in one Apply all")
-      .toMatchObject({ status: "completed", draftClosed: true });
+      .toMatchObject({ status: "completed" });
     expect.soft(await live.idAt("chapter-one")).toBe(chapter);
     expect.soft(await live.idAt("user://notes/peak")).toBe(peak);
     const personalChanges = JSON.stringify(

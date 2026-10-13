@@ -5,6 +5,7 @@ import {
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
@@ -17,6 +18,7 @@ import type {
   BranchPushAccess,
   CollabDomain,
   CollabDrafts,
+  CommandOutcome,
 } from "../../contracts.js";
 import {
   attributionFromMeta,
@@ -233,7 +235,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       runtime.codec,
       links,
     ),
-    drafts: createInMemoryDraftStub(runtime.markdownDocuments),
+    drafts: createInMemoryDraftStub(),
     draftResolver: {
       drafts,
       // No draft branches in memory: a whole draft leases nothing.
@@ -269,9 +271,6 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   },
   async setWorkPushPolicy() {
     throw new Error("Branch push service is not configured");
-  },
-  async markFailedResponseRollbackPending() {
-    throw new Error("Branch review service is not configured");
   },
 };
 
@@ -322,52 +321,54 @@ function createInMemoryBranchPeerStub(
   };
 }
 
-function createInMemoryDraftStub(documents: {
-  readAsMarkdown(
-    documentId: string,
-  ): ReturnType<
-    import("../../domain/markdown-document.js").MarkdownDocumentEngine["readAsMarkdown"]
-  >;
-}): CollabDrafts {
+function createInMemoryDraftStub(): CollabDrafts {
+  const gone = async (input: { draftId: string }): Promise<CommandOutcome> => ({
+    kind: "result",
+    result: { status: "gone", draftId: input.draftId as DraftId },
+  });
   return {
     draftReview: {
       async list() {
         return [];
       },
       async listItems() {
-        return { draftId: null, drafts: [], items: [] };
+        return { draftId: null, items: [], threadTitles: new Map() };
       },
       async items() {
         return { draftId: null, items: [] };
       },
-      async item() {
+      async resolveItem() {
         return null;
       },
-      async applyAll(input) {
-        return { status: "gone", draftId: input.draftId };
+      async resolveItemByDocument() {
+        return null;
       },
       async preview(input) {
-        const live = await documents.readAsMarkdown(input.documentId);
-        if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        return { status: "gone", draftId: input.draftId, live: live.value };
+        return { status: "gone", itemKey: input.itemKey };
       },
-      async applyWorkDraft(input) {
-        return { status: "not_found", draftId: input.item.draftBranchId ?? input.item.itemKey };
+      async lookupCommand() {
+        return { kind: "none" };
       },
-      async discardWorkDraft(input) {
-        return {
-          status: "discarded",
-          draftId: input.draftId,
-        };
-      },
-      async discardAll(input) {
-        return { status: "gone", draftId: input.draftId };
-      },
-    },
-    draftSessionStats: {
-      async listActiveDraftsByWork() {
-        return [];
-      },
+      applyItem: (input) => gone(input.item),
+      applyAll: gone,
+      applyChanges: async (input) => ({
+        kind: "result",
+        result: {
+          status: "gone",
+          draftId: input.envelope.draftId as DraftId,
+          itemKey: input.itemKey,
+        },
+      }),
+      discardItem: (input) => gone(input.item),
+      discardChanges: async (input) => ({
+        kind: "result",
+        result: {
+          status: "gone",
+          draftId: input.envelope.draftId as DraftId,
+          itemKey: input.itemKey,
+        },
+      }),
+      discardAll: gone,
     },
   };
 }

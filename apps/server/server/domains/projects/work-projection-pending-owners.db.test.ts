@@ -1,4 +1,4 @@
-/** PostgreSQL barriers for real discard, redo, push, and rollback Work projection owners. */
+/** PostgreSQL barriers for real discard, push, and rollback Work projection owners. */
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -92,7 +92,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOCUMENT_ID,
         kind: "work_draft",
         draftId: DRAFT_ID,
-        state: Buffer.from([0]),
+        state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
       });
       const availability = createDrizzleProjectContextAvailability(db);
@@ -134,7 +134,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("drives real discard, redo, push, and forced rollback owners", async () => {
+    it("drives real discard, push, and forced rollback owners", async () => {
       const { db, projection } = await fixture();
       const branches = createDrizzleBranchStore(db, {
         workProjection: projection,
@@ -167,7 +167,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: null,
         generation: 1,
         status: "active" as const,
-        state: new Uint8Array([0]),
+        state: new Uint8Array([0, 0]),
         stateVector: new Uint8Array([0]),
         schemaVersion: 1 as never,
       };
@@ -202,15 +202,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const discarded = await projectionState();
       expect(discarded.entityRevision).toBe((appended.entityRevision ?? 0n) + 1n);
-      await pushStore.commitTurnRedo({
-        branch,
-        journalRows: rows,
-        state: branch.state,
-        stateVector: branch.stateVector,
-      });
-      const redone = await projectionState();
-      expect(redone.entityRevision).toBe((discarded.entityRevision ?? 0n) + 1n);
-
+      // The discard closed those rows; the push stages a fresh one.
+      await appendJournal({ kind: "edit" });
+      const staged = await projectionState();
+      const pushRows = await journal.listReviewableJournalRows(BRANCH_ID, 1);
       const validUpdate = Y.encodeStateAsUpdate(new Y.Doc());
       const trail = {
         documentId: DOCUMENT_ID,
@@ -228,7 +223,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         pushes: [
           {
             branch,
-            journalRows: rows,
+            journalRows: pushRows,
             pushUpdate: validUpdate,
             idempotencyKey: "work-projection-pending-owner-push",
             trail,
@@ -238,7 +233,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ],
       });
       const pushed = await projectionState();
-      expect(pushed.entityRevision).toBe((redone.entityRevision ?? 0n) + 1n);
+      expect(pushed.entityRevision).toBe((staged.entityRevision ?? 0n) + 1n);
       expect(BigInt(pushed.catalogEntityRevision ?? "0")).toBe(pushed.entityRevision);
 
       // Withdrawal makes the draft pending again: a refused batch, then a batch whose only

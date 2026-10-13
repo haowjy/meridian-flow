@@ -66,7 +66,6 @@ describe("work push policy", () => {
       workId: WORK_ID,
       draftId: DRAFT_ID,
       selection: { kind: "all_pending" },
-      closeWhenEmpty: true,
       userId: USER_ID,
     });
   });

@@ -17,6 +17,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
+import { reviewDriver } from "./test-support/draft-review-requests.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 if (!enabled || !process.env.DATABASE_URL) {
@@ -298,12 +299,7 @@ describe("change trail (postgres)", () => {
       await warm.pollTrails();
       await warm.pollTrails();
       const [settled] = (await warm.trailRowMembership()).shells;
-      await warm.crossWorkProbeFixture().collab.draftReview.discardWorkDraft({
-        workId: WORK_ID,
-        documentId: ALPHA_ID,
-        draftId: branchId,
-        userId: USER_ID,
-      });
+      await reviewDriver(warm.crossWorkProbeFixture().collab.draftReview).discardItem(ALPHA_ID);
       expect(await db.select().from(schema.changeTrailDirtyLog)).not.toEqual([]);
       warm.destroyWarmState();
       const coldDb = createTestDatabase();

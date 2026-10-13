@@ -9,7 +9,14 @@
  * advisory locks. A draft's create never seeds live content: a new text row gets an empty
  * live Yjs document, and its text lives in the draft's branch.
  */
-import type { ContextSourceId, DocumentId, DraftId, ProjectId } from "@meridian/contracts";
+import type {
+  ContextSourceId,
+  DocumentId,
+  DraftId,
+  ProjectId,
+  ThreadId,
+  TurnId,
+} from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -63,6 +70,8 @@ export async function createInDraft(
     name: string;
     extension: string;
     node: TrackedNode | BinaryNode;
+    /** The chat that made the create, recorded for the review row (§3.3). */
+    createdBy?: { threadId: ThreadId; turnId?: TurnId };
     /** Empty live Yjs for a new text row (never seeded). */
     ensureEmptyContent(documentId: DocumentId): Promise<void>;
     /** The draft's branch on a text document, seeded from its empty live document. */
@@ -134,6 +143,7 @@ export async function createInDraft(
   await recordCreated(db, {
     draftId: input.draftId,
     documentId,
+    ...(input.createdBy ? { createdBy: input.createdBy } : {}),
     location: {
       contextSourceId: slot.contextSourceId,
       parentFolderId: slot.folderId,

@@ -99,18 +99,24 @@ export function createEffectiveDocumentReader(input: {
     const fallback = () => readLive(command, read);
     if (command.destination === "live") return fallback();
     if (command.threadId) {
-      try {
-        const existingPeer = await input.branches.resolveThreadBranch(
-          command.documentId,
-          command.threadId,
-        );
-        existingPeer.doc.destroy();
-        await input.branchPulls.pullThreadPeer({
-          documentId: command.documentId,
-          threadId: command.threadId,
-        });
-      } catch (cause) {
-        if (!(cause instanceof BranchNotFoundError)) throw cause;
+      // A read never ensures a peer or a draft (S1): it pulls a peer the thread already has,
+      // in the Work's active draft.
+      const view = await viewOf(command);
+      if (view.kind === "draft") {
+        try {
+          const existingPeer = await input.branches.resolveThreadBranch(
+            command.documentId,
+            command.threadId,
+          );
+          existingPeer.doc.destroy();
+          await input.branchPulls.pullThreadPeer({
+            documentId: command.documentId,
+            threadId: command.threadId,
+            draftId: view.draftId,
+          });
+        } catch (cause) {
+          if (!(cause instanceof BranchNotFoundError)) throw cause;
+        }
       }
       try {
         const branch = await input.branches.resolveThreadBranch(

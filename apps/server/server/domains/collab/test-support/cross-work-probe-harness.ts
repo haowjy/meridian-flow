@@ -70,6 +70,54 @@ function serializeMarkdown(fixture: CrossWorkProbeFixture, doc: Y.Doc): string {
   );
 }
 
+/** A second Work in the project with its own primary chat and one assistant turn. */
+export async function seedSecondWork(fixture: CrossWorkProbeFixture): Promise<void> {
+  const { db, schema } = fixture;
+  await db
+    .insert(schema.works)
+    .values({
+      id: WORK_B_ID,
+      projectId: PROJECT_ID,
+      createdByUserId: USER_ID,
+      name: "Work B",
+      slug: "work-b",
+      aiWriteMode: "draft",
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.threads)
+    .values({
+      rootThreadId: THREAD_B_ID,
+      id: THREAD_B_ID,
+      projectId: PROJECT_ID,
+      createdByUserId: USER_ID,
+      title: "Work B primary chat",
+      kind: "primary",
+      status: "idle",
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.turns)
+    .values({
+      id: TURN_B_ID,
+      threadId: THREAD_B_ID,
+      position: 1,
+      role: "assistant",
+      origin: "assistant",
+      status: "complete",
+    })
+    .onConflictDoNothing();
+  await db
+    .insert(schema.threadWorks)
+    .values({
+      threadId: THREAD_B_ID,
+      workId: WORK_B_ID,
+      projectId: PROJECT_ID,
+      isPrimary: true,
+    })
+    .onConflictDoNothing();
+}
+
 export async function runCrossWorkProbe(
   fixture: CrossWorkProbeFixture,
   probeCase: "manual" | "auto",
@@ -88,37 +136,7 @@ export async function runCrossWorkProbe(
     markupCodec,
     deliveredEvents,
   } = fixture;
-  await db.insert(schema.works).values({
-    id: WORK_B_ID,
-    projectId: PROJECT_ID,
-    createdByUserId: USER_ID,
-    name: "Work B",
-    slug: "work-b",
-    aiWriteMode: "draft",
-  });
-  await db.insert(schema.threads).values({
-    rootThreadId: THREAD_B_ID,
-    id: THREAD_B_ID,
-    projectId: PROJECT_ID,
-    createdByUserId: USER_ID,
-    title: "Work B primary chat",
-    kind: "primary",
-    status: "idle",
-  });
-  await db.insert(schema.turns).values({
-    id: TURN_B_ID,
-    threadId: THREAD_B_ID,
-    position: 1,
-    role: "assistant",
-    origin: "assistant",
-    status: "complete",
-  });
-  await db.insert(schema.threadWorks).values({
-    threadId: THREAD_B_ID,
-    workId: WORK_B_ID,
-    projectId: PROJECT_ID,
-    isPrimary: true,
-  });
+  await seedSecondWork(fixture);
 
   await persistence.lifecycle.ensureDocument(ALPHA_ID);
   await liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
@@ -266,10 +284,13 @@ export async function runCrossWorkProbe(
   const reviewedPreview =
     probeCase === "manual"
       ? await collab.draftReview.preview({
-          projectId: PROJECT_ID,
           workId: WORK_B_ID,
-          documentId: ALPHA_ID,
-          draftId: branchB.branchId,
+          itemKey: (
+            await collab.draftReview.resolveItemByDocument({
+              workId: WORK_B_ID,
+              documentId: ALPHA_ID,
+            })
+          )?.itemKey as string,
         })
       : null;
   const bResult =

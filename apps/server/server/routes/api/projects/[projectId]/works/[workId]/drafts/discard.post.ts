@@ -14,12 +14,12 @@ export default defineEventHandler(async (event) => {
   if (!request.success) {
     throw createError({ statusCode: 400, message: "Invalid Discard all request" });
   }
-  const projectId = (getRouterParam(event, "projectId") ?? "") as ProjectId;
   const result = await handleDiscardAllWorkDraftRequest(selectDraftRouteServices(app), {
-    projectId,
+    projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
     workId: (getRouterParam(event, "workId") ?? "") as WorkId,
     userId: user.userId,
     request: request.data,
   });
-  return result;
+  event.res.status = result.httpStatus;
+  return result.body;
 });

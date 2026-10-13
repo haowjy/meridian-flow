@@ -34,6 +34,7 @@
 import type { DraftId } from "@meridian/contracts";
 import type { ContextSourceId, DocumentId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
+import type { BranchLockLease } from "../branch-critical-sections.js";
 
 export type PublicationRefusal = { code: string; detail?: JsonValue };
 
@@ -105,6 +106,8 @@ export type SettlementBatchScope =
       members: readonly StagedPublicationMember[];
       /** Items already held for this batch (at the check), never promoted. */
       held: readonly PublicationItemHold[];
+      /** The lease the caller holds over the batch's branches, when it has one. */
+      lease?: BranchLockLease;
     });
 
 export type SettlementPublicationPlan = {
@@ -124,6 +127,11 @@ export type SettlementPublicationPlan = {
   beforeAdmission?(): Promise<PublicationAdmission>;
   /** Settle arrivals and record history, given the members whose text admitted. */
   afterAdmission?(admitted: readonly DocumentId[]): Promise<void>;
+  /**
+   * The batch was refused in completion and is being abandoned, in that same transaction:
+   * a step records what the withdrawal means for its writer's command (§4.6).
+   */
+  onRefused?(reason: PublicationRefusal): Promise<void>;
   afterCommit?(): void | Promise<void>;
 };
 

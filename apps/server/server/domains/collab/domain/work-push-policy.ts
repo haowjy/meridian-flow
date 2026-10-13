@@ -21,8 +21,8 @@ export function createWorkPushPolicy(input: {
   return {
     /**
      * Switching to auto-apply with pending changes needs the writer's choice
-     * (D40): `apply` applies the whole draft as one publication first, closing it
-     * when nothing stays (a held item stays in the draft as a kept change); `keep`
+     * (D40): `apply` applies the whole draft as one publication first (a held item
+     * stays in the draft as a kept change; the draft stays open, §2.4); `keep`
      * leaves it for review. An archived Work's draft is frozen (D30): the Apply
      * refuses under the Work lock.
      */
@@ -43,7 +43,6 @@ export function createWorkPushPolicy(input: {
             workId: policyInput.workId,
             draftId: draft.id,
             selection: { kind: "all_pending" },
-            closeWhenEmpty: true,
             ...(policyInput.pushedByUserId ? { userId: policyInput.pushedByUserId } : {}),
           });
           // Held items stay as kept changes and a draft that closed meanwhile had nothing
