@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 /** Review launches retain the row's locator and reuse the real draft-overlay mount. */
-import { CONTEXT_URI_SCHEMES, isDraftedScheme } from "@meridian/contracts/context-uri";
 import { act, useEffect } from "react";
 import { expect, it } from "vitest";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
@@ -12,9 +11,11 @@ import {
   useOpenEditorReview,
 } from "./editor-review-handoff";
 
-it.each(
-  CONTEXT_URI_SCHEMES.filter(isDraftedScheme),
-)("launches creates and edits at the row's %s locator, retaining one overlay on repeat", async (scheme) => {
+// The locator is passed through unparsed; the default scheme and the cross-source one witness it.
+it.each([
+  "manuscript",
+  "user",
+] as const)("launches creates and edits at the row's %s locator, retaining one overlay on repeat", async (scheme) => {
   const prior = useContextTabsStore.getState();
   useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
   let launch: ReturnType<typeof useOpenEditorReview> | undefined;
