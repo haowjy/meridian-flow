@@ -174,6 +174,7 @@ export type InteractionContext =
       branchGeneration: number;
       /** Host peer identity, for exact retirement independently of generation replay. */
       peerBranchId?: string;
+      upstreamBranchId?: string;
     });
 
 /** Hidden host/session context; not part of the LLM command params. */

@@ -1,7 +1,11 @@
 /** Verifies branch lock ordering, leases, and deadlock-safe re-entry rejection. */
 import { describe, expect, it, vi } from "vitest";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
-import { createBranchCriticalSections } from "./branch-critical-sections.js";
+import {
+  assertBranchLeaseCovers,
+  BranchLeaseScopeError,
+  createBranchCriticalSections,
+} from "./branch-critical-sections.js";
 
 describe("BranchCriticalSections", () => {
   it("deduplicates and sorts lock acquisition while exposing lease coverage", async () => {
@@ -24,6 +28,17 @@ describe("BranchCriticalSections", () => {
       await expect(sections.withBranches(["a", "b"], async () => undefined)).rejects.toThrow(
         "Branch lock re-entry is not allowed for a.",
       );
+    });
+  });
+
+  it("refuses a branch outside the lease with a typed error and acquires nothing", async () => {
+    const mutex = new KeyedMutex();
+    const run = vi.spyOn(mutex, "run");
+    const sections = createBranchCriticalSections(mutex);
+    await sections.withBranches(["a"], async (lease) => {
+      run.mockClear();
+      expect(() => assertBranchLeaseCovers(lease, "b")).toThrow(BranchLeaseScopeError);
+      expect(run).not.toHaveBeenCalled();
     });
   });
 });

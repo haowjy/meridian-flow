@@ -48,8 +48,21 @@ export interface WriteTool {
   hasResponseDocument: ResponseCommitter["hasResponseDocument"];
   prepare: ResponseCommitter["prepare"];
   responseDocuments: ResponseCommitter["responseDocuments"];
-  /** Drop one thread/document pair; a peerBranchId restricts this to that peer's state. */
-  invalidateThreadDocument(docId: string, threadId: string, peerBranchId?: string): Promise<void>;
+  /** Move one response document's staged writes (one peer's, when named) to rejected receipts. */
+  refuseStaged(
+    responseId: string,
+    documentId: string,
+    reason: import("../ports/document-coordinator.js").StagedWriteRejectionReason,
+    peerBranchId?: string,
+  ): void;
+  retirePeer(input: {
+    documentId: string;
+    threadId: string;
+    peerBranchId: string;
+    reason: import("../ports/document-coordinator.js").DiscardedWriteReason;
+  }): Promise<void>;
+  /** Drop one thread/document pair's runtimes and staged writes, for the request that owns them. */
+  invalidateThreadDocument(docId: string, threadId: string): Promise<void>;
   /** Evict one thread's runtimes without revoking its response buffers. */
   evictThread(threadId: string): Promise<void>;
 }
@@ -239,14 +252,21 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
     hasResponseDocument: responseCommitter.hasResponseDocument,
     prepare: responseCommitter.prepare,
     responseDocuments: responseCommitter.responseDocuments,
-    async invalidateThreadDocument(docId, threadId, peerBranchId) {
-      if (!docId || !threadId || peerBranchId === "")
-        throw new Error("invalidateThreadDocument names one document and one thread");
-      responseCommitter.dropForThread(docId, threadId, peerBranchId);
-      await runtimeStore.evictThreadRuntimes(docId, threadId, {
+    refuseStaged: responseCommitter.refuseStaged,
+    async retirePeer(input) {
+      if (!input.documentId || !input.threadId || !input.peerBranchId)
+        throw new Error("Retirement requires a document, thread and peer");
+      responseCommitter.retirePeer(input);
+      await runtimeStore.evictThreadRuntimes(input.documentId, input.threadId, {
         markLiveDocStale: true,
-        peerBranchId,
+        peerBranchId: input.peerBranchId,
       });
+    },
+    async invalidateThreadDocument(docId, threadId) {
+      if (!docId || !threadId)
+        throw new Error("invalidateThreadDocument names one document and one thread");
+      responseCommitter.dropForThread(docId, threadId);
+      await runtimeStore.evictThreadRuntimes(docId, threadId, { markLiveDocStale: true });
     },
     async evictThread(threadId) {
       if (!threadId) throw new Error("evictThread names one thread");

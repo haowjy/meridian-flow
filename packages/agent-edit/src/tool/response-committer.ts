@@ -6,7 +6,14 @@ import type { AgentEditCodecFactory } from "../codec-adapter.js";
 import { type DocHandle, toDocHandle, unwrapDoc } from "../handles.js";
 import { withRunShownLinks } from "../links/shown.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
-import type { DocumentCoordinator, StagedHelperCut } from "../ports/document-coordinator.js";
+import type {
+  DiscardedWriteReason,
+  DocumentCoordinator,
+  DocumentLockOptions,
+  HostSaveLease,
+  StagedHelperCut,
+  StagedWriteRejectionReason,
+} from "../ports/document-coordinator.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
 import type { JournalBatchAppendEntry, JournalCommitKind } from "../ports/update-journal.js";
@@ -63,7 +70,19 @@ export interface ResponseCommitter {
     responseId: string,
     threadId?: string,
   ): { staged: readonly string[]; created: readonly string[] };
-  dropForThread(docId: string, threadId: string, peerBranchId?: string): void;
+  refuseStaged(
+    responseId: string,
+    docId: string,
+    reason: StagedWriteRejectionReason,
+    peerBranchId?: string,
+  ): void;
+  retirePeer(input: {
+    documentId: string;
+    threadId: string;
+    peerBranchId: string;
+    reason: DiscardedWriteReason;
+  }): void;
+  dropForThread(docId: string, threadId: string): void;
   prepare(editScopeId: string, docId: string): Promise<ResponseReadLease | null>;
   stage<T>(
     input: CommandLeaseInput,
@@ -118,6 +137,7 @@ export type CommandDocumentLease = CommandLeaseMethods &
   ({ kind: "prepared" } | { kind: "live"; runtime: RuntimeDocumentState });
 
 export interface ResponseCommitOptions {
+  branchLease?: HostSaveLease;
   signal?: AbortSignal;
   lockTimeoutMs?: number;
   /** Host transaction hook; keeps lifecycle publication aligned with durable commit. */
@@ -225,6 +245,7 @@ function liveRuntime(lease: CommandDocumentLease): RuntimeDocumentState {
 interface ResponseBuffer {
   docs: Map<string, ResponseDocumentBuffer>;
   nextStageSeq: number;
+  refused?: Map<string, StagedResponseUpdate[]>;
   claimedDiscarded: ResponseClaimDiscardedEntry[];
 }
 
@@ -375,6 +396,13 @@ export function createResponseCommitter(deps: {
   }
 
   function applyDiscardedClaims(buffer: ResponseBuffer, result: ResponseCommitSuccessResult): void {
+    for (const [documentId, rejected] of buffer.refused ?? []) {
+      const receipts = renderSettledReceipts([], rejected, null, () => null);
+      const document = result.documents.find((entry) => entry.documentId === documentId);
+      if (document) document.receipts.push(...receipts);
+      else result.documents.push({ documentId, updateCount: 0, receipts });
+    }
+    result.documentCount = result.documents.length;
     if (buffer.claimedDiscarded.length > 0) {
       result.discardedClaims = buffer.claimedDiscarded.map((entry) => ({ ...entry }));
       try {
@@ -399,6 +427,15 @@ export function createResponseCommitter(deps: {
     hasResponseDocument,
     responseDocuments,
     dropForThread,
+    refuseStaged,
+    retirePeer: ({ documentId, threadId, peerBranchId, reason }) => {
+      for (const [responseId, state] of responses)
+        if (
+          state.kind === "buffered" &&
+          state.buffer.docs.get(documentId)?.session.threadId === threadId
+        )
+          refuseStaged(responseId, documentId, reason, peerBranchId);
+    },
     prepare,
     stage,
     drainNotices: (responseId) => {
@@ -453,6 +490,7 @@ export function createResponseCommitter(deps: {
     docBuffer: PreparedResponseDocumentBuffer,
     commit: boolean,
     owns?: () => boolean,
+    access?: DocumentLockOptions,
   ) {
     for (;;) {
       const view = docBuffer.view;
@@ -465,6 +503,7 @@ export function createResponseCommitter(deps: {
           helperCut: { ...view.cut, state: view.cut.state.slice() },
           entries: responseJournalBatch([docBuffer]),
           commit,
+          access,
         });
       } finally {
         source.dispose();
@@ -765,6 +804,7 @@ export function createResponseCommitter(deps: {
         responseId,
         responseStagedCreateOutcome(buffer, [], liveResponseState(responseId)),
       );
+      applyDiscardedClaims(buffer, result);
       finalizeClosed(responseId, owner, "committed", null, bufferThreadId(buffer), options);
       return result;
     }
@@ -869,7 +909,14 @@ export function createResponseCommitter(deps: {
       ): Promise<ResponseCommitDocumentResult> => {
         let replayBase: Y.Doc | undefined;
         if (isPrepared(docBuffer)) {
-          const replayed = await replayDocument(docBuffer, true);
+          const access: DocumentLockOptions = {
+            lease: options.branchLease,
+            pinnedBranchId:
+              docBuffer.interactionContext?.mode === "threadPeer"
+                ? docBuffer.interactionContext.peerBranchId
+                : undefined,
+          };
+          const replayed = await replayDocument(docBuffer, true, undefined, access);
           try {
             await prepareCommitLinks(responseId, docBuffer);
           } catch {
@@ -900,6 +947,13 @@ export function createResponseCommitter(deps: {
           preOwnSnapshot: docBuffer.updates[0]?.preOwnSnapshot,
           reportingCut: replayBase ? Y.encodeStateAsUpdate(replayBase) : undefined,
           interactionContext: docBuffer.interactionContext,
+          access: {
+            lease: options.branchLease,
+            pinnedBranchId:
+              docBuffer.interactionContext?.mode === "threadPeer"
+                ? docBuffer.interactionContext.peerBranchId
+                : undefined,
+          },
           ownTurnId: lastTurnId,
           actor: lastStagedUpdate(docBuffer).actor,
           ownWrites: ownWriteSteps(docBuffer),
@@ -1521,26 +1575,57 @@ export function createResponseCommitter(deps: {
       }));
   }
 
-  function dropForThread(docId: string, threadId: string, peerBranchId?: string): void {
+  function refuseStaged(
+    responseId: string,
+    docId: string,
+    reason: StagedWriteRejectionReason,
+    peerBranchId?: string,
+  ): void {
+    const buffer = activeBuffer(responseId);
+    const doc = buffer?.docs.get(docId);
+    if (!buffer || !doc) return;
+    const belongs = (entry: StagedResponseUpdate) =>
+      !peerBranchId ||
+      (entry.mutation?.mode === "threadPeer" && entry.mutation.peerBranchId === peerBranchId);
+    const rejected = doc.updates
+      .filter(belongs)
+      .map((entry) => ({ ...entry, rejectionReason: reason }));
+    if (!rejected.length) return;
+    doc.updates = doc.updates.filter((entry) => !belongs(entry));
+    buffer.refused ??= new Map();
+    buffer.refused.set(docId, [...(buffer.refused.get(docId) ?? []), ...rejected]);
+    enqueueNotices(responseId, docId, rejected);
+    const epoch = documentEpochs.get(responseId)?.get(docId);
+    if (epoch && (!peerBranchId || epoch.peerBranchId === peerBranchId))
+      epoch.epoch = nextDocumentEpoch++;
+    if (doc.updates.length) {
+      if (isPrepared(doc)) {
+        const rebuilt = yjsUpdateFromState(doc.view.cut.state);
+        for (const entry of doc.updates) Y.applyUpdate(rebuilt, entry.update);
+        doc.view.doc.destroy();
+        doc.view = { ...doc.view, doc: rebuilt };
+      }
+    } else {
+      buffer.refused.set(docId, [
+        ...(buffer.refused.get(docId) ?? []),
+        ...(doc.rejectedUpdates ?? []),
+      ]);
+      if (isPrepared(doc)) doc.view.doc.destroy();
+      buffer.docs.delete(docId);
+    }
+  }
+
+  function dropForThread(docId: string, threadId: string): void {
     for (const docs of documentEpochs.values()) {
       const entry = docs.get(docId);
-      if (entry?.threadId === threadId && (!peerBranchId || entry.peerBranchId === peerBranchId))
-        entry.epoch = nextDocumentEpoch++;
+      if (entry?.threadId === threadId) entry.epoch = nextDocumentEpoch++;
     }
     for (const [responseId, state] of [...responses]) {
       if (state.kind !== "buffered") continue;
       const buffer = state.buffer;
       const docBuffer = buffer.docs.get(docId);
-      const belongs = (entry: StagedResponseUpdate) =>
-        entry.mutation?.threadId === threadId &&
-        (!peerBranchId ||
-          (entry.mutation.mode === "threadPeer" && entry.mutation.peerBranchId === peerBranchId));
-      const ownsCreate =
-        docBuffer?.session.threadId === threadId &&
-        (!peerBranchId ||
-          (docBuffer.interactionContext?.mode === "threadPeer" &&
-            docBuffer.interactionContext.peerBranchId === peerBranchId));
-      if (peerBranchId && !docBuffer?.updates.some(belongs) && !ownsCreate) continue;
+      const belongs = (entry: StagedResponseUpdate) => entry.mutation?.threadId === threadId;
+      const ownsCreate = docBuffer?.session.threadId === threadId;
       let claimedWriteDropped = false;
       let droppedClaimedCount = 0;
       if (docBuffer) {
@@ -1548,22 +1633,8 @@ export function createResponseCommitter(deps: {
         claimedWriteDropped = claimedUpdates.length > 0;
         droppedClaimedCount = claimedUpdates.length;
         docBuffer.updates = docBuffer.updates.filter((entry) => !belongs(entry));
-        if (
-          peerBranchId &&
-          claimedWriteDropped &&
-          docBuffer.updates.length > 0 &&
-          isPrepared(docBuffer)
-        ) {
-          // Remove retired structs from the helper too; a fresh peer may share this reply.
-          const rebuilt = yjsUpdateFromState(docBuffer.view.cut.state);
-          for (const entry of docBuffer.updates) Y.applyUpdate(rebuilt, entry.update);
-          docBuffer.view.doc.destroy();
-          docBuffer.view = { ...docBuffer.view, doc: rebuilt };
-        }
-        if (ownsCreate) {
-          if (docBuffer.createdDocumentBeforeCommit) {
-            docBuffer.discardedBeforeCommit = true;
-          }
+        if (ownsCreate && docBuffer.createdDocumentBeforeCommit) {
+          docBuffer.discardedBeforeCommit = true;
         }
         if (docBuffer.updates.length === 0 && !docBuffer.discardedBeforeCommit) {
           if (isPrepared(docBuffer)) docBuffer.view.doc.destroy();
@@ -1693,6 +1764,9 @@ function hasStagedReceipts(doc: ResponseDocumentBuffer): boolean {
 
 function snapshotResponseBuffer(buffer: ResponseBuffer): ResponseBuffer {
   return {
+    refused: buffer.refused
+      ? new Map([...buffer.refused].map(([id, writes]) => [id, [...writes]]))
+      : undefined,
     nextStageSeq: buffer.nextStageSeq,
     claimedDiscarded: buffer.claimedDiscarded.map((entry) => ({ ...entry })),
     docs: new Map(
@@ -1707,6 +1781,8 @@ function snapshotResponseBuffer(buffer: ResponseBuffer): ResponseBuffer {
 }
 
 function responseBufferHasPendingOutcome(buffer: ResponseBuffer): boolean {
+  // A refused write still owes its receipt, even when its document left the buffer.
+  if (buffer.refused?.size) return true;
   return [...buffer.docs.values()].some(
     (docBuffer) => hasStagedReceipts(docBuffer) || docBuffer.discardedBeforeCommit,
   );

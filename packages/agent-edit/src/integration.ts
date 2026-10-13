@@ -55,14 +55,17 @@ export type {
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type {
+  DiscardedWriteReason,
   DocumentCoordinator,
   DocumentLockOptions,
+  HostSaveLease,
   StagedHelperCut,
   StagedWriteRejectionReason,
   StagedWriteReplayResult,
 } from "./ports/document-coordinator.js";
 export {
   DocumentNotFoundError,
+  hostSaveLeaseBrand,
   isDocumentNotFoundError,
 } from "./ports/document-coordinator.js";
 export type {

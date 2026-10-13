@@ -24,7 +24,6 @@ import {
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
 import { createBranchCriticalSections } from "../../domain/branch-critical-sections.js";
-import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
@@ -40,7 +39,6 @@ import {
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
 import { createThreadPeerCorePool } from "../../domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
-import { reverseTurn } from "../../domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
 import {
@@ -105,16 +103,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    liveHistory: journal,
-    reversalHistory: {
-      branches: {
-        resolveThreadBranch: async (documentId, threadId) => {
-          throw new BranchNotFoundError(documentId, threadId);
-        },
-        getBranch: async () => null,
-      },
-      branchRows: { listJournalRowsForBranch: async () => [] },
-    },
     pullThreadPeer: async () => undefined,
     // Thread cores are the live core here, so nothing is ever pinned to a branch.
     fences: createReplySaveFences({
@@ -133,6 +121,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
     fileAccess,
+    lockWorks: async () => {},
+    lockLiveDocuments: async () => {},
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
@@ -149,22 +139,12 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
-    liveAgentEdit: runtime.liveUtilityCore,
-    reversalStore: journal,
-    liveReversal: {
-      checkDependentLaterLiveRows: async () => ({
-        hasDependents: false,
-        blockingActorTypes: [],
-        checkedUntilSeq: 0,
-      }),
-    },
-    resolveDocumentUri: async (documentId) => documentId,
-    branches: {
-      async checkpointThreadPeer() {},
-      async prepareFailedResponseRollback() {
-        return async () => {};
+    rollback: {
+      async rollbackResponse() {
+        throw new Error("Durable inverse rollback requires the receipt-backed Postgres adapter");
       },
     },
+    branches: { async checkpointThreadPeer() {} },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
   });
@@ -203,21 +183,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       agentEdit: () => agentEdit,
     },
     reversal: {
-      reverseTurn: (input) =>
-        reverseTurn(
-          {
-            reversalStore: journal,
-            agentEdit: runtime.liveUtilityCore,
-            resolveDocumentUri: async (documentId) => documentId,
-            checkDependentLaterLiveRows: async () => ({
-              hasDependents: false,
-              blockingActorTypes: [],
-              checkedUntilSeq: 0,
-            }),
-            refreshDocumentProjection: projections.refresh,
-          },
-          input,
-        ),
+      reverseTurn: async () => {
+        throw new Error("Turn receipts require the durable Postgres receipt adapter");
+      },
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
