@@ -98,6 +98,7 @@ if (!enabled || !databaseUrl) {
         `;
         expect(functions.map((row) => row.name)).toEqual([
           "capture_change_trail_signal",
+          "capture_document_checkpoint_range",
           "change_trail_owners",
           "consume_credit_lots_fifo",
           "enforce_prompt_bake_insert_only",

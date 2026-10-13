@@ -9,6 +9,7 @@ is not a claim that it passed on the current commit.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Composer drafts](composer-drafts.md): per-tab reload, submission hand-off and missing-reference recovery.
+- [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
 - [Draft review](draft-review.md): visual editor and review workflows.
 - [Catalog sidebar](catalog-sidebar.md): rename, move, delete, and loaded/fresh-profile convergence.
 - [Debugging](../debugging.md): CLI reference, logs, and model-request inspection.
@@ -47,6 +48,18 @@ close only that session with `agent-browser --session <name> close`. Never pass
 `--all` to `close`: it closes every agent-browser session on the machine,
 whatever `--session` says, including other teams' probes.
 
+## Dev watcher: sibling installs
+
+Protects #817. With your stack running (`pnpm dev`), note the count of
+`startup.complete` lines in `logs/events/*.jsonl`. In a sibling worktree run
+`pnpm install`, or just hardlink one store file:
+`ln <store file under node_modules/.pnpm> ../probe-link` (the link must be on the
+same filesystem as the store file, so not `/tmp` when that is tmpfs). Remove the
+link afterwards. Wait 10 seconds.
+Expect no new `startup.complete` and no `[nitro] Server built` in
+`logs/portless.log`. Then edit a server source file: one rebuild is expected.
+Without the stack running, this cannot be checked.
+
 ## Document intake
 
 [Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
@@ -82,3 +95,9 @@ Three harness artifacts have produced false defects. Rule them out first.
 ## Device reading memory
 
 [Remember a chapter’s place](reading-position.md) covers reload, shared Editor/side-panel memory, collaborative edits and explicit-target precedence.
+
+## Messages waiting for usage
+
+[Saved messages waiting for usage](usage-waiting.md) covers durable credit blocks,
+existing and New chat, reload, Settings navigation, CLI outcomes and automatic
+recovery after a ledger grant.

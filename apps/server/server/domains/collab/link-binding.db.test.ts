@@ -99,7 +99,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         backgroundTasks: processDetachedWork,
         db,
         eventSink: createNoopEventSink(),
-        environment: { OPENAI_API_KEY: "sk-test-link-binding" },
+        environment: { FLOW_OPENAI_API_KEY: "sk-test-link-binding" },
       });
       const app = composeAppServices(ports);
       const hocuspocus = new Hocuspocus({
