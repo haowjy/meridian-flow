@@ -11,7 +11,7 @@
  * snapshot's status can trail it.
  */
 import type { Turn } from "@meridian/contracts/protocol";
-import { isHandoffSeed } from "./derivation/handoff-seed";
+import { isHandoffSeed } from "@meridian/contracts/threads";
 
 export type ComposerRun =
   /** The latest assistant reply is streaming; the run controller stops it. */

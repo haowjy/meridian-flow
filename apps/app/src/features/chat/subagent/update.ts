@@ -1,12 +1,7 @@
 /** Runtime boundary for durable `subagent_update` notification metadata. */
-import {
-  parseSubagentUpdateMetadata,
-  type SubagentUpdateMetadata,
-} from "@meridian/contracts/spawn";
+import type { SubagentUpdateMetadata } from "@meridian/contracts/spawn";
 
 export type { SubagentUpdateMetadata } from "@meridian/contracts/spawn";
-
-export const readSubagentUpdateMetadata = parseSubagentUpdateMetadata;
 
 /** Merge only contiguous completion notices; any other delivery breaks a group. */
 export function groupAdjacentSubagentUpdates<
