@@ -85,7 +85,9 @@ at its final snapshot; it does not attribute replies to messages.
   snapshot into the shared `@meridian/thread-client` turn store, runs the shared
   `viewTranscript` over it, and prints that view model's rows (`you:`,
   `reply: 3 steps, read 2 docs`, `compaction:`, `queued:`), or `--json` as the
-  versioned `chatView: 1` envelope with row identity, kind and items. Its `inputs`
+  versioned `chatView: 2` envelope with row identity, kind and items (`--full --json` adds
+  tool inputs and results, card content, report payloads, the handoff brief, delivery bodies
+  and writer occurrences; text mode summarizes and omits them). Its `inputs`
   field says what the view was computed from: the snapshot only, with no local
   records, stand-ins or live activity, and inherited history omitted. The app draws
   the same function's output, so compare a chat in the browser by row identity, row

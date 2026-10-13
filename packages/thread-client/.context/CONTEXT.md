@@ -24,21 +24,29 @@ remain late-bound globals, preserving existing reconnect timing.
 decides which rows a chat shows. The app builds the input from its store and hooks;
 `./mf thread view` builds it from a snapshot and says what it left out.
 
-- **Input:** `turns` (local writer turns included), `inherited` (a fork's frozen
+- **Input:** `turns` (local writer turns included), `opening` (a handoff's optimistic
+  seed card, placed first before stand-ins; today's stand-in producers never anchor to
+  it, which is what keeps that order equal to placing stand-ins first), `inherited` (a fork's frozen
   prefix) or omitted, `activity.awaitingSubagents`, `standIns` to place after their
   `prevTurnId`, `queued` writer turn ids, and an `onContractFailure` callback for
   persisted records that miss a contract (the caller decides where it is reported).
 - **Rows:** `turn`, `compaction`, `handoff-seed` and `thread-reference` rows in causal
   order, plumbing and overflow shells dropped. Each carries `identity` (the server turn
-  id, null for a local writer turn; the row kind; the occurrence within the turn), a
+  id, null for any row the server hasn't stated: a local writer turn, the opening seed, a
+  stand-in with no stored turn behind it; provenance comes from the input, never an id's
+  shape; the row kind; the occurrence within the turn), a
   `renderKey` (today's React key, the turn id; nothing compares render keys), inherited
-  marks, delivery events, `continuing` (a later row continues this reply) and, on a
-  reply's last part, `response` (its parts and usage numbers).
+  marks, `deliveries` (the reply's delivery events grouped as drawn: contiguous
+  completions merge into one group), `continuing` (a later row continues this reply)
+  and, on every reply-shaped row, `response` (its parts and usage numbers; a row outside a
+  response group is its own single part).
 - **`writer`:** each writer message's text with reference and skill ranges.
 - **`items`:** per non-writer turn row, `AssistantView`: ordered items (process fold, text,
   report, artifact), each fold's visible tools and `FoldDigest` counts, `finalFrom` (where
   the answer after the last fold starts), the hidden protocol halves and the turn's Work
-  receipts. A fold with nothing visible is kept with `visible: false`.
+  receipts. A fold with nothing visible is kept with `visible: false`. Visible text that a
+  component once computed lives here: a reasoning run's `texts`, an artifact's `text` (plain
+  row body) and `card` (title and outcome).
 - **Not here:** composer, row actions, control rows, interrupts and announcements; and
   strings. The package never formats; callers do.
 

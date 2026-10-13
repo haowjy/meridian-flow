@@ -1,7 +1,7 @@
 /**
  * `thread view`: the chat transcript as the app's view model decides it. Hydrate the snapshot,
  * run `viewTranscript` over its facts, and print rows structurally (text) or as the versioned
- * `chatView: 1` envelope (JSON). Nothing here decides a row; it only prints what the view
+ * `chatView: 2` envelope (JSON). Nothing here decides a row; it only prints what the view
  * model returned, and states `inputs`: what the view was computed from.
  */
 import type { JsonValue, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
