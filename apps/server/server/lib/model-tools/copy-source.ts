@@ -15,8 +15,7 @@ import {
   modelResult,
   splitDocumentFile,
 } from "@meridian/agent-edit/integration";
-import { documentPathKey, type LinkView } from "@meridian/contracts";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import { documentPathKey } from "@meridian/contracts";
 import { copyBinaryDocument } from "../../domains/context/binary-copy.js";
 import type { CopiedFrom } from "../../domains/context/document-metadata.js";
 import type { BinaryFileRef, FileRef } from "../../domains/context/ports/context-port.js";
@@ -144,18 +143,8 @@ export async function readTrackedCopySource(
     };
   }
   const version = outcome.result.read?.version ?? grant.destination.kind;
-  // A published ref means its binding only in the source holder: the copy carries the
-  // document it was bound to (contract §10.6).
-  const view: LinkView =
-    version === "draft" && grant.destination.kind === "draft"
-      ? await deps.documentSync.drafts.viewForWork(grant.destination.workId)
-      : { kind: "live" };
-  const nodes = await deps.documentSync.rebindHolderBoundRefs(outcome.nodes ?? [], {
-    holderId: address.documentId as DocumentId,
-    view,
-  });
   return {
-    nodes: [...nodes],
+    nodes: [...(outcome.nodes ?? [])],
     copiedFrom: { uri: address.uri, version, revision: outcome.revision },
   };
 }

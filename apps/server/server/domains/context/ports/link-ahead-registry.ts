@@ -1,5 +1,4 @@
 /** Port for durable ahead-ref identities (contract §9.2). */
-import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
 export type AheadRegistration = {
@@ -8,11 +7,6 @@ export type AheadRegistration = {
   holderProjectId: ProjectId;
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;
-  /**
-   * The draft whose text holds the ref (an agent mint in its view, an editor mint in its
-   * branch, Apply's cut): the draft's occupant at the address settles it in that view.
-   */
-  draftId?: DraftId;
 };
 
 /** Which holders' index rows a registration recovery reads. */

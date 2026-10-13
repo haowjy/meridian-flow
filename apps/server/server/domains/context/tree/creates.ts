@@ -22,7 +22,6 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { isStorageBackedDocument } from "../adapters/catalog-file-mapper.js";
-import { settleInDraft } from "../adapters/link-ahead-draft-settlements.js";
 import { draftMayHold, loadProjectHolder } from "./draft-ownership.js";
 import { recordCreated } from "./draft-tree-store.js";
 import { tombstoneUnused } from "./end-use.js";
@@ -40,7 +39,6 @@ import type {
 import { filePath, insertDocumentRow, insertFolder, lockDocuments } from "./node-rows.js";
 import { type PlaceResult, place, walkFolders } from "./placement.js";
 import { type TreeHookPoint, treeHook } from "./test-hooks.js";
-import { spellNodeAddresses } from "./tree-addresses.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "./tree-view.js";
 import {
   type DocumentSlot,
@@ -152,32 +150,11 @@ export async function createInDraft(
     },
   });
   if (input.node.kind === "tracked") await input.ensureDraftBranch(documentId);
-  await settleAheadRefsInDraft(db, input.draftId, documentId, slot);
   return Ok({ kind: "created", documentId, joined });
 }
 
 function ambiguous(nodes: readonly { id: string }[]): CreateFault {
   return { code: "ambiguous", ids: nodes.map((node) => node.id) };
-}
-
-/** Each unsettled ahead ref at the draft's address now means this document in the draft (12a rule 1). */
-async function settleAheadRefsInDraft(
-  db: Database,
-  draftId: DraftId,
-  documentId: DocumentId,
-  slot: DocumentSlot,
-): Promise<void> {
-  const [address] = await spellNodeAddresses(currentDrizzleDb(db), [
-    {
-      documentId,
-      contextSourceId: slot.contextSourceId,
-      folderId: slot.folderId,
-      name: slot.name,
-      extension: slot.extension,
-      fileType: "",
-    },
-  ]);
-  if (address) await settleInDraft(db, { draftId, documentId, address });
 }
 
 // ---------------------------------------------------------------------------------------
