@@ -99,18 +99,8 @@ describe("reply save fence", () => {
       "discarded_document",
     ],
     [
-      "upstream gone",
-      (s: ReturnType<typeof scenario>) => s.branches.set(FAKE_UPSTREAM_ID, null),
-      "discarded_document",
-    ],
-    [
       "peer closed",
       (s: ReturnType<typeof scenario>) => s.branches.close("peer-1"),
-      "discarded_edit",
-    ],
-    [
-      "peer gone",
-      (s: ReturnType<typeof scenario>) => s.branches.set("peer-1", null),
       "discarded_edit",
     ],
   ] as const)("refuses with the reason branch state names: %s", async (_name, arrange, reason) => {
@@ -124,6 +114,19 @@ describe("reply save fence", () => {
     expect(s.record.documents.has(DOCUMENT)).toBe(false);
     expect(s.record.receipting.size).toBe(1);
     expect(s.record.participants.size).toBe(1);
+  });
+
+  it("a vanished upstream or peer refuses with the reason a closed one does", async () => {
+    const gone = scenario();
+    gone.branches.set(FAKE_UPSTREAM_ID, null);
+    await expect(gone.fences.confirm(gone.record)).resolves.toEqual([
+      { documentId: DOCUMENT, reason: "discarded_document" },
+    ]);
+    const lost = scenario();
+    lost.branches.set("peer-1", null);
+    await expect(lost.fences.confirm(lost.record)).resolves.toEqual([
+      { documentId: DOCUMENT, reason: "discarded_edit" },
+    ]);
   });
 
   it("the draft's closure outranks a closed upstream and a closed peer", async () => {
