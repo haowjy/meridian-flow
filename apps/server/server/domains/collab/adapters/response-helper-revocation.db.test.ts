@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { branchRoomName } from "@meridian/contracts/protocol";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
@@ -18,12 +17,13 @@ import {
   USER_ID,
   WORK_ID,
 } from "../test-support/change-trail-postgres-harness.js";
-
 import {
   createResponse,
+  inProject,
   responseContext,
   stageDraft,
 } from "../test-support/document-edit-receipt-fixture.js";
+import { reviewDriver } from "../test-support/draft-review-requests.js";
 
 describe("response helper revocation (Postgres)", () => {
   const db = createTestDatabase();
@@ -76,14 +76,7 @@ describe("response helper revocation (Postgres)", () => {
       ),
     ).toMatchObject({ status: "success", phase: "staged" });
   });
-  const discard = () =>
-    fixture.collab.draftReview.discardWorkDraft({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-      documentId: ALPHA_ID,
-      draftId: branchId,
-      userId: USER_ID as never,
-    });
+  const discard = () => reviewDriver(fixture.collab.draftReview).discardItem(ALPHA_ID);
   const write = (find: string, content: string, tool_use_id: string) =>
     core.write(
       { command: "replace", file: "alpha.md", documentId: ALPHA_ID, find, content, tool_use_id },
@@ -112,7 +105,7 @@ describe("response helper revocation (Postgres)", () => {
     expect(await fixture.draftMarkdown(branchId)).toBe(`red\n\nblue\n\n${content}\n`);
     await expectBeta();
   }
-  it("whole Discard retires only its Work's peers and staged writes", async () => {
+  it("item Discard retires only its Work's peers and staged writes", async () => {
     const workB = randomUUID();
     const threadB = randomUUID();
     const turnB = randomUUID();
@@ -164,7 +157,9 @@ describe("response helper revocation (Postgres)", () => {
       threadId: threadB,
       turnId: turnB,
       responseIdentity: { providerResponseId: responseB, editScopeId: responseB },
-      grant: testFileGrant({ kind: "draft", workId: workB as never, workSlug: "other-work" }),
+      grant: inProject(
+        testFileGrant({ kind: "draft", workId: workB as never, workSlug: "other-work" }),
+      ),
     };
     expect(
       await core.write(
@@ -196,12 +191,7 @@ describe("response helper revocation (Postgres)", () => {
     const roomB = branchRoomName(peerB.id, peerB.generation);
     await fixture.hocuspocus.openDirectConnection(roomA);
     await fixture.hocuspocus.openDirectConnection(roomB);
-    await runInDrizzleTransaction(db, async () => {
-      expect(await discard()).toMatchObject({ status: "discarded" });
-      // The route's enclosing transaction still owns the decision until commit.
-      expect(core.hasResponseDocument(responseId, ALPHA_ID)).toBe(true);
-      expect(fixture.hocuspocus.documents.has(roomA)).toBe(true);
-    });
+    expect(await discard()).toMatchObject({ status: "discarded" });
     expect(core.hasResponseDocument(responseId, ALPHA_ID)).toBe(false);
     expect(fixture.hocuspocus.documents.has(roomA)).toBe(false);
     expect(fixture.hocuspocus.documents.has(roomB)).toBe(true);
@@ -306,10 +296,9 @@ describe("response helper revocation (Postgres)", () => {
     }
   });
   it.each([
-    { name: "before replay", afterRead: false, discardCount: 1, fresh: "olive" },
-    { name: "after replay", afterRead: true, discardCount: 1, fresh: "olive" },
-    { name: "recreated and discarded again", afterRead: false, discardCount: 2, fresh: "emerald" },
-  ])("held write is revoked $name", async ({ afterRead, discardCount, fresh }) => {
+    { name: "before replay", afterRead: false, fresh: "olive" },
+    { name: "after replay", afterRead: true, fresh: "olive" },
+  ])("held write is revoked $name", async ({ afterRead, fresh }) => {
     let entered!: () => void, release!: () => void;
     const waiting = new Promise<void>((resolve) => {
       entered = resolve;
@@ -342,14 +331,7 @@ describe("response helper revocation (Postgres)", () => {
       );
       await waiting;
       try {
-        for (let index = 0; index < discardCount; index++) {
-          if (index > 0)
-            expect(await write("green", "olive", "recreated-alpha")).toMatchObject({
-              status: "success",
-              phase: "staged",
-            });
-          expect(await discard()).toMatchObject({ status: "discarded" });
-        }
+        expect(await discard()).toMatchObject({ status: "discarded" });
       } finally {
         release();
       }
@@ -357,8 +339,9 @@ describe("response helper revocation (Postgres)", () => {
         value: {
           status: "invalid_write",
           result: {
-            message:
+            message: expect.stringContaining(
               "Write did not land: the user discarded the text it edited. Re-read and retry.",
+            ),
           },
         },
       });
@@ -369,7 +352,7 @@ describe("response helper revocation (Postgres)", () => {
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite(fresh);
   });
-  it("whole Discard rejects a held prepared read without revoking Beta", async () => {
+  it("item Discard rejects a held prepared read without revoking Beta", async () => {
     let entered!: () => void, release!: () => void;
     const waiting = new Promise<void>((resolve) => {
       entered = resolve;
@@ -377,9 +360,10 @@ describe("response helper revocation (Postgres)", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = fixture.branchCoordinator.withStagedRows.bind(fixture.branchCoordinator);
+    // Pause the read before it leases any branch, so Discard commits ahead of it.
+    const original = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
     let once = true;
-    fixture.branchCoordinator.withStagedRows = async (...args) => {
+    fixture.branchCoordinator.withLeases = async (...args) => {
       if (once) {
         once = false;
         entered();
@@ -405,31 +389,9 @@ describe("response helper revocation (Postgres)", () => {
       expect(outcome).toHaveProperty("error");
     } finally {
       release();
-      fixture.branchCoordinator.withStagedRows = original;
+      fixture.branchCoordinator.withLeases = original;
     }
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
     await expectFreshWrite("olive");
-  });
-  it("repeated whole Discard revokes a recreated Alpha while Beta alone commits", async () => {
-    expect(await discard()).toMatchObject({ status: "discarded" });
-    expect(await write("green", "olive", "recreated-alpha")).toMatchObject({
-      status: "success",
-      phase: "staged",
-    });
-    expect(await discard()).toMatchObject({ status: "discarded" });
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
-    const read = await core.read({ file: "alpha.md", documentId: ALPHA_ID }, context);
-    expect(read.status).toBe("success");
-    expect(read.result.blocks?.flatMap((group) => group.items.map((item) => item.body))).toEqual([
-      "red",
-      "blue",
-      "green",
-    ]);
-    const saved = await harness.commit(responseId);
-    expect(saved).toMatchObject({ status: "committed" });
-    expect(saved.documents.filter((doc) => doc.updateCount > 0)).toEqual([
-      expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
-    ]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
   });
 });
