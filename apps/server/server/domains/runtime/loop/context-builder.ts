@@ -364,19 +364,20 @@ function formatNotice(notice: Notice): string {
 function formatUndoNotices(notices: readonly Notice[]): string {
   const notifications = notices.flatMap((notice) => {
     const data = notice.data;
-    const handles = Array.isArray(data.writeHandles)
-      ? data.writeHandles.filter((handle): handle is string => typeof handle === "string")
+    return typeof data.turnId === "string"
+      ? [
+          {
+            uri: typeof data.uri === "string" ? data.uri : "",
+            turnId: data.turnId,
+            direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
+          },
+        ]
       : [];
-    return handles.map((writeHandle) => ({
-      uri: typeof data.uri === "string" ? data.uri : "",
-      writeHandle,
-      direction: data.direction === "redo" ? ("redo" as const) : ("undo" as const),
-    }));
   });
   const first = new Map<string, (typeof notifications)[number]>();
   const latest = new Map<string, (typeof notifications)[number]>();
   for (const notification of notifications) {
-    const key = `${notification.uri}::${notification.writeHandle}`;
+    const key = `${notification.uri}::${notification.turnId}`;
     if (!first.has(key)) first.set(key, notification);
     latest.set(key, notification);
   }
@@ -388,19 +389,13 @@ function formatUndoNotices(notices: readonly Notice[]): string {
   const sections: string[] = [];
   for (const direction of ["undo", "redo"] as const) {
     // URI, not basename, identifies a document; distinct documents can share a name.
-    const grouped = new Map<string, { label: string; handles: string[] }>();
+    const grouped = new Map<string, string>();
     for (const notification of changes.filter((change) => change.direction === direction)) {
-      const key = notification.uri || notification.writeHandle;
-      const label =
-        filenameFromUri(notification.uri) || notification.uri || notification.writeHandle;
-      const entry = grouped.get(key) ?? { label, handles: [] };
-      entry.handles.push(notification.writeHandle);
-      grouped.set(key, entry);
+      const key = notification.uri || notification.turnId;
+      const label = filenameFromUri(notification.uri) || notification.uri || notification.turnId;
+      grouped.set(key, label);
     }
-    const lines = Array.from(
-      grouped.values(),
-      ({ label, handles }) => `- ${label}: ${handles.join(", ")}`,
-    );
+    const lines = Array.from(grouped.values(), (label) => `- ${label}`);
     if (lines.length === 0) continue;
     sections.push(
       [

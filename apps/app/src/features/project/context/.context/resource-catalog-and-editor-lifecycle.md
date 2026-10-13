@@ -199,3 +199,20 @@ Mounting a catalog consumer respects the five-second query freshness window;
 reactivating a retained editor does not force a fresh request. Stale mounts,
 explicit refetch, wake hints, reconnect/focus, and interval polling still refresh
 catalogs through the same replica owner.
+
+### Multi-Work review representations
+
+Review-only tabs are addressed by document, review Work and draft. A captured
+mounted tab adds its instance ID and token; close, rename and Apply settlement
+must retain that fence across asynchronous navigation. Document identity alone
+is reserved for document-wide availability facts, not representation removal.
+The removal coordinator remains the sole close/Discard owner.
+
+The composed workspace retains durable tabs and each Work's overlays.
+Review selection carries a transient mounted-instance pointer; durable workspace
+selection and persistence continue to name the document.
+`editorTabsForWork` projects one Work's strip: an overlay shadows the durable
+representation only in its own Work. Applying one overlay consumes only its
+exact instance and converges on the durable document, preserving other Works'
+review tabs. Dock restoration already queries the saved review Work and matches
+both draft and document within that list.

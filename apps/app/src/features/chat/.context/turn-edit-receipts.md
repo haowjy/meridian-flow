@@ -1,13 +1,13 @@
 # Turn edit receipts
 
-This page defines the chat contract for committed turn-edit records and reversal.
+This page defines the chat contract for turn-edit records and reversal.
 
-The per-turn receipt is a quiet, default-collapsed record for committed
+The per-turn receipt is a quiet, default-collapsed record for live and pending draft
 document edits. Its header counts documents ("Edited 1 document") and never
 names one, and adds settled `+added −removed words` totals when the trail
 shell has them; document names belong to the expanded rows, which navigate.
 The shell carries header metadata, so collapse never triggers a detail fetch.
-Expanding shows live documents and every authorized durable trail row. Each row
+Expanding shows edited documents and every authorized durable trail row. Each row
 renders concise retained Before and/or After excerpts without a nested
 scrollport. A conversation reveal opened from an editor peer mark expands the
 receipt and brings its exact target row into view.
@@ -15,9 +15,9 @@ receipt and brings its exact target row into view.
 `AssistantTurn` combines server-owned facts: full turn lineage supplies document
 scope, the durable receipt supplies whole-turn Undo/Redo authority, and the
 settled trail supplies historical titles, word totals, and change rows. Both
-direct and draft lineage may produce the same receipt. A draft proposal
-with neither live lineage nor settled trail documents produces no card; after
-Apply, the committed receipt remains visible across reload.
+direct and draft lineage may produce the same receipt. Pending draft lineage shows the same “Edited N documents” card before Apply;
+Apply, Undo and Discard never erase its turn-owned record. Settled live trails
+add retained Before/After excerpts; pending draft rows name the edited files.
 
 The receipt reads server lineage, never tool results. A binary copy (an upload
 such as a PDF, copied at once with no write handle) leaves no journal row, so it
@@ -49,6 +49,16 @@ whether it arrives as receipt state or as a refused command, and points at
 viewing the change, which is what expansion puts on screen. A refused command
 never leaves the card unchanged.
 
+Undo reverses the turn's remaining edits where they are now: pending in the
+Work draft or already applied to live. Branch and live writes remain one atomic
+command. The receipt immediately shows Undoing/Redoing while the command runs;
+Yjs publishes the edit after durable commit and failures stay on the card.
+Pending Undo preserves its generation so Redo can restore it. Review Discard is
+terminal, not Undo: discarded rows never authorize Redo even while other changes
+keep the draft open. Apply/Discard generation resets withdraw old branch
+authority without affecting applied live authority. The server's existing
+dependency and archived-Work guards still apply.
+
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review
 surface.
@@ -73,6 +83,13 @@ It is handed down one stage at a time, and the surface holding a stage reports
 | thread | project shell (`useConversationRevealRouting`) | points the current screen's chat surface at the thread | never — a shell cannot fail to aim a surface |
 | turn | transcript (`useTurnRevealLanding`) | centers the turn's row, waiting for a parked viewport to be measured | settled history holds no such turn |
 | change | turn receipt (`TurnEditsReceipt` → `ChangeViewRows`) | expands the receipt and scrolls the row into view | no authorized trail, the evidence request failed, or the loaded evidence no longer carries the change |
+
+A turn target may also name a `toolCallId`, as a Changes row's chat link does.
+After the turn lands, the transcript scrolls to that tool's row and flashes it
+(`block-reveal-flash`). A row inside a closed process fold is never opened for
+the reveal: the fold's header takes the scroll and the flash, and the turn stays
+the landing when neither is found. The landing also releases follow so a
+transcript that has just mounted does not pin back to the live edge.
 
 An unavailable stage ends the request where its parent left the writer: a
 change row that never renders still leaves them on its turn, a turn that never

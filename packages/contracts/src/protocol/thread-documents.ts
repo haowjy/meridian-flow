@@ -51,6 +51,7 @@ export type TurnReceiptState =
 export type TurnReceiptControl = "undo" | "redo" | "view_change";
 
 export interface TurnReceiptChip {
+  skips?: import("./write-reversal.js").TurnInverseSkip[];
   state: TurnReceiptState;
   control: TurnReceiptControl;
 }
