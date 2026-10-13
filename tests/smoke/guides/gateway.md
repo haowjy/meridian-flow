@@ -8,10 +8,10 @@ End-to-end checks for `@meridian/model-gateway` via the smoke mini-server (`test
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `DEEPSEEK_API_KEY` | Optional | Enables live DeepSeek scenarios |
-| `ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
-| `OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
-| `OPENROUTER_API_KEY` | Optional | Enables live OpenRouter scenarios |
+| `FLOW_DEEPSEEK_API_KEY` | Optional | Enables live DeepSeek scenarios |
+| `FLOW_ANTHROPIC_API_KEY` | Optional | Live Anthropic scenarios (adapter not in v1 spine yet) |
+| `FLOW_OPENAI_API_KEY` | Optional | Live OpenAI scenarios (adapter not in v1 spine yet) |
+| `FLOW_OPENROUTER_API_KEY` | Optional | Enables live OpenRouter scenarios |
 | `MODEL_PROVIDER` | Optional | Set to `mock` to force in-process mock even if keys exist |
 | `PORT` | Optional | Fixed listen port; default is OS-assigned ephemeral |
 
@@ -233,7 +233,7 @@ curl -sS -X POST "${BASE}/generate" \
 
 ## 7. DeepSeek live (optional)
 
-**Requires:** `DEEPSEEK_API_KEY` set to a real key in `.env`. Restart server.
+**Requires:** `FLOW_DEEPSEEK_API_KEY` set to a real key in `.env`. Restart server.
 
 Repeat scenarios **3**, **4**, and **5** with `"model": "deepseek-chat"` in the JSON body.
 
@@ -252,13 +252,13 @@ curl -sS -X POST "${BASE}/generate" \
 
 **Fail:** Auth/network errors, or mock provider used instead of DeepSeek.
 
-**Skip** if `DEEPSEEK_API_KEY` is unset.
+**Skip** if `FLOW_DEEPSEEK_API_KEY` is unset.
 
 ---
 
 ## 8. Anthropic live (optional)
 
-**Requires:** `ANTHROPIC_API_KEY` in `.env`.
+**Requires:** `FLOW_ANTHROPIC_API_KEY` in `.env`.
 
 Anthropic is enabled by a real key. With no explicit model selection, General
 uses the registry default `claude-sonnet-4-6`.
@@ -298,13 +298,13 @@ calls, with no `invalid_arguments` correction loop. Copy includes its required
 The projection's command guidance must retain branch purposes, required and
 allowed fields; shared field descriptions identify their commands.
 
-**Skip** only if `ANTHROPIC_API_KEY` is unset.
+**Skip** only if `FLOW_ANTHROPIC_API_KEY` is unset.
 
 ---
 
 ## 9. OpenAI live (optional)
 
-**Requires:** `OPENAI_API_KEY` in `.env`.
+**Requires:** `FLOW_OPENAI_API_KEY` in `.env`.
 
 **Note:** OpenAI Responses adapter is scaffold-only in v1; provider is not registered yet.
 
