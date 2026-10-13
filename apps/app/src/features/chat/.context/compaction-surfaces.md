@@ -133,7 +133,7 @@ a divider already names (`controlMessageId`) is no longer queued.
 
 One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each
-turn-driven one (dividers and brief seeds), through the global
+turn-driven one (dividers, including write-mode, and brief seeds), through the global
 polite announcer, which reaches rows the virtualized list has scrolled away.
 Status words come from `thread-controls/control-copy.ts`, so the announcement and
 the row say the same thing.

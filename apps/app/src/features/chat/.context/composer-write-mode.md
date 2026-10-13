@@ -49,6 +49,15 @@ the writer picked one there. Switching never touches drafts: the dock keeps
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
+Caches follow authoritative order. A chat's cached mode comes from its snapshot
+and from its newest divider (`useWriteModeSync`); an applied answer patches it only
+when the cached snapshot has not yet seen that divider turn. The Work's default
+is never patched from a divider or an answer: both invalidate the Works query and the
+versioned Works acquisition refetches it (`client/query/write-mode-cache.ts`).
+Switch announcements follow the same reconciled state: queued and failed from the
+queued rows (`useSwitchAnnouncements`), applied from the divider
+(`useControlTurnAnnouncements`); a switch back announces nothing.
+
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state
 must never imply that nothing is pending.
