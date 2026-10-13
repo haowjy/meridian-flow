@@ -1,6 +1,6 @@
 /** Sanitizer boundary tests for sensitive fields and numeric gateway metrics. */
 import { describe, expect, it } from "vitest";
-import { unknownToEventPayload } from "./emit-event.js";
+import { errorMessageOf, unknownToEventPayload } from "./emit-event.js";
 import type { EventRecord } from "./ports/event-sink.js";
 import { MAX_EVENT_RECORD_BYTES, sanitizeEventRecord, serializedEventBytes } from "./safe-event.js";
 
@@ -128,6 +128,19 @@ describe("sanitizeEventRecord byte boundary", () => {
     expect(event.correlation).toBeUndefined();
     expect(event.stream).toBeUndefined();
     expect(event.payload).toMatchObject({ truncated: true, reason: "record_byte_limit" });
+  });
+});
+
+describe("errorMessageOf", () => {
+  it("keeps an internal error's message bounded, drops quoted text and secrets, and survives the sanitizer", () => {
+    const error = new Error(
+      `Branch branch_1 failed on "the dragon is her father" with Bearer abc.def-ghi ${"x ".repeat(300)}`,
+    );
+    const payload = errorMessageOf(error);
+    expect(payload?.errorMessage).toMatch(/^Branch branch_1 failed on … with \[redacted-secret\]/);
+    expect(payload?.errorMessage.length).toBeLessThanOrEqual(200);
+    expect(sanitize({ ...payload })).toEqual(payload);
+    expect(errorMessageOf("not an error")).toBeUndefined();
   });
 });
 

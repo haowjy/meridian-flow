@@ -6,7 +6,12 @@ import type {
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import {
+  type EventSink,
+  emitEvent,
+  errorMessageOf,
+  unknownToEventPayload,
+} from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
@@ -61,6 +66,7 @@ export function createResponseTransactionDiagnostics(
       payload: {
         responseTransactionId: input.responseTransactionId,
         ...unknownToEventPayload(input.cause),
+        ...errorMessageOf(input.cause),
       },
     });
   };
