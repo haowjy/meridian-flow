@@ -57,6 +57,15 @@ tab that only saw the record leave the journal keeps it as a witness row, with i
 on the toolbar, until its own inbox lists the id, a divider names it, or the refetch
 started at the removal resolves.
 
+Caches follow authoritative order. A chat's cached mode comes from its snapshot
+and from its newest divider (`useWriteModeSync`); an applied answer patches it only
+when the cached snapshot has not yet seen that divider turn. The Work's default
+is never patched from a divider or an answer: both invalidate the Works query and the
+versioned Works acquisition refetches it (`client/query/write-mode-cache.ts`).
+Switch announcements follow the same reconciled state: queued and failed from the
+queued rows (`useSwitchAnnouncements`), applied from the divider
+(`useControlTurnAnnouncements`); a switch back announces nothing.
+
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state
 must never imply that nothing is pending.

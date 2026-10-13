@@ -242,6 +242,7 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
   const groups = new Map<string, readonly Turn[]>();
   const continuing = Array.from({ length: rows.length }, () => false);
   let parts: Turn[] = [];
+  let lastPart = -1;
   const finish = () => {
     const end = parts.at(-1);
     if (end) groups.set(end.id, parts);
@@ -261,11 +262,14 @@ function responseGroups(rows: readonly TranscriptRow[], awaitingSubagents: boole
       case "handoff-seed":
       case "thread-reference":
       case "write-mode":
+        // The divider ends continuation too: the reply before it is finished.
+        if (lastPart >= 0 && parts.length) continuing[lastPart] = false;
         finish();
         continue;
       case "turn":
         if (row.turn.role === "assistant") {
           parts.push(row.turn);
+          lastPart = index;
           continuing[index] = continuesResponse(rows, index, awaitingSubagents);
           if (!continuing[index]) finish();
         } else if (row.turn.role !== "user" || !parts.length) finish();
