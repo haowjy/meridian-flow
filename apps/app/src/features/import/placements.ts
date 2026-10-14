@@ -1,17 +1,43 @@
-/** Where an import's status row sits: the destination folder, or each area a Meridian export fills. */
+/**
+ * Where an import shows in the tree: the areas and folders it opens when it
+ * starts.
+ */
+import { t } from "@lingui/core/macro";
+import type { ImportSummary } from "@meridian/contracts";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { CatalogContextView } from "@/client/query/context-catalog-projection";
-import { type ImportScheme, isImportScheme } from "./destination";
+import { type ImportDestination, type ImportScheme, isImportScheme } from "./destination";
 import { fullyRead, type ImportState } from "./import-state";
 import { catalogPathOfUri } from "./tree-projection";
 
 export type Placement = { scheme: ImportScheme; path: string; folderId: string | null };
 
+/** The folder an import was started on, from the server's summary alone. */
+export function destinationFromSummary(summary: ImportSummary): ImportDestination {
+  const uri = summary.destination.folderUri;
+  const scheme = (uri.match(/^([a-z]+):\/\//)?.[1] ?? "kb") as ImportDestination["scheme"];
+  const path = catalogPathOfUri(uri) ?? "/";
+  return {
+    scheme,
+    path,
+    uri,
+    name: path === "/" ? areaLabel(scheme) : path.slice(path.lastIndexOf("/") + 1),
+    folderId: summary.destination.folderId,
+  };
+}
+
+function areaLabel(scheme: ImportDestination["scheme"]): string {
+  return scheme === "manuscript"
+    ? t`Manuscript`
+    : scheme === "unfiled"
+      ? t`Unfiled`
+      : t`Knowledge Base`;
+}
+
 export function placementsOf(state: ImportState): Placement[] {
   const local = state.local;
   if (local) {
     const areas = new Set(local.rows.map((row) => row.scheme));
-    // A Meridian export's rows go to several areas at once; each gets a status row.
+    // A Meridian export's rows go to several areas at once; each opens.
     if (areas.size > 1 || (areas.size === 1 && !areas.has(local.destination.scheme)))
       return [...areas].map((scheme) => ({ scheme, path: "/", folderId: null }));
     return [
@@ -34,41 +60,8 @@ export function placementsOf(state: ImportState): Placement[] {
     }
     if (areas.size > 0) return [...areas].map((scheme) => ({ scheme, path: "/", folderId: null }));
   }
-  const destination = state.report?.summary.destination;
-  const scheme = destination?.folderUri.match(/^([a-z]+):\/\//)?.[1];
-  if (!destination || !scheme || !isImportScheme(scheme as ProjectContextTreeScheme)) return [];
-  return [
-    {
-      scheme: scheme as ImportScheme,
-      path: catalogPathOfUri(destination.folderUri) ?? "/",
-      folderId: destination.folderId,
-    },
-  ];
-}
-
-/**
- * The tree folder (by catalog id) each import's status row belongs under in this
- * scheme: the folder it was invoked on, followed by id wherever it has moved,
- * falling back to the area root when it is gone. A path can name another folder
- * after a rename, so it never stands in for the id.
- */
-export function statusParents(
-  catalog: CatalogContextView,
-  scheme: ProjectContextTreeScheme,
-  states: readonly ImportState[],
-): Map<string, string[]> {
-  const byParent = new Map<string, string[]>();
-  for (const state of states) {
-    if (state.dismissing || state.report?.summary.dismissedAt) continue;
-    for (const placement of placementsOf(state)) {
-      if (placement.scheme !== scheme) continue;
-      const folder = placement.folderId
-        ? catalog.normalized.entries.get(placement.folderId)
-        : undefined;
-      const parentId =
-        placement.folderId && folder?.kind === "folder" ? placement.folderId : catalog.root.entryId;
-      byParent.set(parentId, [...(byParent.get(parentId) ?? []), state.importId]);
-    }
-  }
-  return byParent;
+  if (!state.report) return [];
+  const destination = destinationFromSummary(state.report.summary);
+  if (!isImportScheme(destination.scheme)) return [];
+  return [{ scheme: destination.scheme, path: destination.path, folderId: destination.folderId }];
 }

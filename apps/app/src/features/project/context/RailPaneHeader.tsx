@@ -85,7 +85,7 @@ export function RailPaneHeader({
         <span className="mr-2 shrink-0 text-caption text-ink-muted">{dropLabel}</span>
       ) : null}
       {expanded && actions && dropState !== "over" ? (
-        <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 has-[[data-state=open]]:opacity-100">
           {actions}
         </span>
       ) : null}

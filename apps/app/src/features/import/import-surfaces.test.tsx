@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The import surfaces mounted over a real coordinator and store: the status row
- * the tree draws and the pane's document notice. The server is the fake import
+ * The pane's document notice mounted over a real coordinator and store. The server is the fake import
  * server; the project context is a coordinator handed in through the provider seam.
  */
 import { i18n } from "@lingui/core";
 import type { ImportEntryReport, ImportReport } from "@meridian/contracts";
-import { act, useSyncExternalStore } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { fakeImportServer } from "./fake-import-server";
@@ -22,9 +21,6 @@ vi.mock("./ImportProvider", async (actual) => ({
   useImports: () => ({ coordinator: context.coordinator, openContinue: () => {} }),
   useOptionalImports: () => ({ coordinator: context.coordinator, openContinue: () => {} }),
 }));
-vi.mock("./import-route", () => ({
-  useImportRoute: () => ({ openReport: () => {}, closeReport: () => {} }),
-}));
 vi.mock("@/client/query/useContextCatalog", () => ({
   useContextCatalogView: () => ({
     catalog: { findDocument: () => ({ importPending: context.importPending }) },
@@ -32,7 +28,6 @@ vi.mock("@/client/query/useContextCatalog", () => ({
 }));
 
 import { ImportDocumentNotice } from "./ImportDocumentNotice";
-import { ImportStatusRow } from "./ImportStatusRow";
 
 beforeAll(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -105,38 +100,6 @@ function report(overrides: Partial<ImportReport> = {}): ImportReport {
   };
 }
 
-/** The tree's way of drawing status rows: one per id in the coordinator's snapshot. */
-function Tree({ coordinator }: { coordinator: ImportCoordinator }) {
-  const snapshot = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot);
-  return (
-    <>
-      {snapshot.ids.map((id) => (
-        <ImportStatusRow key={id} importId={id} paddingLeft={16} />
-      ))}
-    </>
-  );
-}
-
-describe("ImportStatusRow", () => {
-  it("hides at once when a big finished import is dismissed, without breaking the tree", async () => {
-    const server = fakeImportServer();
-    const entries = Array.from({ length: 501 }, (_, id) => entry(id, "landed"));
-    const finished = report({ state: "finished", entries });
-    server.api.listOpen = async () => [finished];
-    server.api.dismiss = () => new Promise(() => {});
-    const coordinator = new ImportCoordinator("p", server.api);
-    context.coordinator = coordinator;
-    await coordinator.refreshOpen();
-    coordinator.store("import-1").installReport(finished);
-    const element = await mount(<Tree coordinator={coordinator} />);
-    expect(element.textContent).toContain("Import");
-
-    await act(async () => void coordinator.dismiss("import-1"));
-
-    expect(element.textContent).toBe("");
-  });
-});
-
 describe("ImportDocumentNotice", () => {
   const tab = { kind: "editable", documentId: "doc-0", scheme: "kb" } as never;
 
@@ -147,6 +110,8 @@ describe("ImportDocumentNotice", () => {
     let reads = 0;
     server.api.changes = async () => {
       reads += 1;
+      // The landing clears the catalog's pending flag too.
+      context.importPending = false;
       return {
         ...report({ entries: [entry(0, "landed")], version: "2", state: "finished" }),
       };
@@ -178,6 +143,6 @@ describe("ImportDocumentNotice", () => {
 
     const element = await mount(<ImportDocumentNotice projectId="p" tab={tab} />);
 
-    expect(element.textContent).toContain("This file's import is paused.");
+    expect(element.textContent).toContain("This file's import stopped partway.");
   });
 });

@@ -10,7 +10,6 @@ import type {
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
-import { ImportStatusRow } from "@/features/import/ImportStatusRow";
 import { useImportRowActions } from "@/features/import/use-import-row-actions";
 import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
@@ -51,12 +50,15 @@ export type TreeEnv = {
   };
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   onRequestDelete: (target: DeleteTarget) => void;
-  /** Opens the import dialog on a folder; absent where the area takes no imports. */
-  importHere?: (
-    folder: { entryId: string; path: string; uri: string; name: string } | null,
-  ) => void;
-  /** Import ids whose status row sits first among each folder's children, by folder id. */
-  importStatusByParent?: ReadonlyMap<string, readonly string[]>;
+  /** Opens the OS picker for an import into a folder; absent where the area takes no imports. */
+  importHere?: {
+    /** False where the browser cannot pick a whole folder. */
+    folders: boolean;
+    start: (
+      folder: { entryId: string; path: string; uri: string; name: string } | null,
+      kind: "folder" | "files",
+    ) => void;
+  };
   isExpanded: (entryId: string) => boolean;
   toggleEntry: (entryId: string) => void;
   catalog: CatalogContextView;
@@ -100,9 +102,6 @@ export function TreeChildren({
           siblings={siblings}
         />
       ) : null}
-      {env.importStatusByParent?.get(parentId)?.map((importId) => (
-        <ImportStatusRow key={importId} importId={importId} paddingLeft={rowPaddingLeft(depth)} />
-      ))}
       {children.map((child) =>
         child.import?.client ? (
           <ClientRow key={child.entryId} node={child} depth={depth} />
@@ -190,7 +189,12 @@ function DirRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
-    importHere: env.importHere ? () => env.importHere?.(folder) : undefined,
+    importHere: env.importHere
+      ? {
+          folders: env.importHere.folders,
+          start: (kind) => env.importHere?.start(folder, kind),
+        }
+      : undefined,
     siblings,
   });
   const isOpen = env.isExpanded(dir.entryId);

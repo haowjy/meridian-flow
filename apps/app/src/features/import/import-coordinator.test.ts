@@ -145,6 +145,26 @@ describe("ImportCoordinator.stop", () => {
   });
 });
 
+describe("a clean finish", () => {
+  it("is dismissed for the writer only once the catalog has drawn every row it held", async () => {
+    const server = fakeImportServer();
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = coordinator.start(vault(), destination);
+    const store = await settled(coordinator, importId);
+    for (let tick = 0; tick < 200 && displayOf(store.getSnapshot()) !== "finished"; tick += 1)
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(displayOf(store.getSnapshot())).toBe("finished");
+    expect(server.calls.dismiss).toBe(0);
+
+    const keys = store.getSnapshot().local?.rows.map((row) => row.key) ?? [];
+    coordinator.handOff(importId, keys);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(server.calls.dismiss).toBe(1);
+    coordinator.dispose();
+  });
+});
+
 /** A report the server holds for an import another tab started: one file still arriving. */
 function serverReport(): ImportReport {
   return {

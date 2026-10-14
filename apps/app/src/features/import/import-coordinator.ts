@@ -3,7 +3,6 @@
  * dismiss. Owns one store per import and the list of open imports. Navigate
  * first: `start` returns the import id at once and does the rest in the background.
  */
-import { t } from "@lingui/core/macro";
 import type { ImportFailureReason, ImportSummary } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import { clientRowsFor } from "./client-rows";
@@ -12,10 +11,10 @@ import type { ImportDestination } from "./destination";
 import { type ImportApi, importApi } from "./import-api-port";
 import type { ImportState } from "./import-state";
 import { ImportStore } from "./import-store";
-import { type BuiltManifest, buildManifest, bytesToHash, type HeldFile } from "./manifest";
+import { type BuiltManifest, buildManifest, type HeldFile } from "./manifest";
 import { announceMilestones } from "./milestones";
+import { destinationFromSummary } from "./placements";
 import type { Selection } from "./selection";
-import { catalogPathOfUri } from "./tree-projection";
 import { type UploadOutcome, UploadQueue } from "./uploader";
 
 /** Imports over this many files redraw the tree no more often than every few seconds. */
@@ -23,8 +22,6 @@ const BIG_IMPORT = 500;
 const BIG_IMPORT_TREE_MS = 3000;
 
 export type ImportsSnapshot = { ids: readonly string[]; states: readonly ImportState[] };
-
-export type RevealRequest = { scheme: string; path: string; nonce: number };
 
 export type OpenImports = {
   summaries: readonly ImportSummary[];
@@ -44,9 +41,6 @@ export class ImportCoordinator {
   private readonly runs = new Map<string, Run>();
   private readonly plans = new Map<string, Promise<unknown>>();
   private readonly startedAt = new Map<string, number>();
-  private startedListeners = new Set<() => void>();
-  private revealListeners = new Set<() => void>();
-  private revealed: RevealRequest | null = null;
   private open: OpenImports = { summaries: [], loaded: false, failed: false };
   private readonly listeners = new Set<() => void>();
   private openTimer: ReturnType<typeof setTimeout> | undefined;
@@ -57,7 +51,7 @@ export class ImportCoordinator {
     private readonly api: ImportApi = importApi,
   ) {}
 
-  // The imports this tab shows, for the tree's status rows and arriving rows.
+  // The imports this tab shows, for the tree's arriving rows.
   readonly subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -99,30 +93,24 @@ export class ImportCoordinator {
       ids.every((id, index) => id === this.snapshot.ids[index]) &&
       states.every((state, index) => state === this.snapshot.states[index]);
     if (!same) this.snapshot = { ids, states };
+    this.settle(states);
     for (const listener of [...this.listeners]) listener();
   }
 
-  /** Surfaces that must get out of the way when an import starts (the phone's drawer). */
-  subscribeStarted(listener: () => void) {
-    this.startedListeners.add(listener);
-    return () => {
-      this.startedListeners.delete(listener);
-    };
+  /**
+   * A clean finish leaves nothing on screen, so its report is dismissed for the
+   * writer once the catalog draws every row this tab was holding for it. A failed
+   * dismiss is left alone: it only keeps an invisible report in the open list.
+   */
+  private settle(states: readonly ImportState[]) {
+    for (const state of states) {
+      if (state.report?.summary.state !== "finished" || state.dismissing || state.dismissFailed)
+        continue;
+      const local = state.local;
+      if (local && local.rows.length > local.handedOff.size) continue;
+      void this.dismiss(state.importId);
+    }
   }
-  notifyStarted() {
-    for (const listener of [...this.startedListeners]) listener();
-  }
-
-  /** Ask the tree to open a folder and show it (the report's Open on a folder root). */
-  reveal(request: { scheme: string; path: string }) {
-    this.revealed = { ...request, nonce: (this.revealed?.nonce ?? 0) + 1 };
-    for (const listener of [...this.revealListeners]) listener();
-  }
-  readonly subscribeReveal = (listener: () => void) => {
-    this.revealListeners.add(listener);
-    return () => this.revealListeners.delete(listener);
-  };
-  readonly getReveal = () => this.revealed;
 
   getOpen(): OpenImports {
     return this.open;
@@ -139,7 +127,7 @@ export class ImportCoordinator {
     return store;
   }
 
-  /** Imports to show a status row for: this tab's runs, then the server's open ones, newest first. */
+  /** Imports to show: this tab's runs, then the server's open ones, newest first. */
   private computeKnown(): string[] {
     const ids = new Set<string>();
     const local = [...this.stores.values()].filter((store) => store.getSnapshot().local);
@@ -173,7 +161,7 @@ export class ImportCoordinator {
     store.update((state) => ({
       ...state,
       local: {
-        phase: { kind: "preparing", totalBytes: bytesToHash(selection), planning: false },
+        phase: { kind: "preparing" },
         destination,
         roots: selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })),
         rows,
@@ -196,19 +184,11 @@ export class ImportCoordinator {
   ) {
     const run = this.runFor(store);
     let built: BuiltManifest;
-    let lastPaint = 0;
     try {
       built = await buildManifest(selection, {
         importId: store.importId,
         destinationUri: destination.uri,
         signal: run.controller.signal,
-        onHashed: (hashedBytes) => {
-          // Progress has its own channel: the tree must not re-render for it.
-          const now = performance.now();
-          if (now - lastPaint < 250) return;
-          lastPaint = now;
-          store.setHashed(hashedBytes);
-        },
       });
     } catch {
       return; // Stopped while preparing; `stop` already ended the run.
@@ -228,11 +208,7 @@ export class ImportCoordinator {
   private async plan(store: ImportStore, built: BuiltManifest, run: Run) {
     store.setLocal((local) => ({
       ...local,
-      phase: {
-        kind: "preparing",
-        totalBytes: local.phase.kind === "preparing" ? local.phase.totalBytes : 0,
-        planning: true,
-      },
+      phase: { kind: "preparing" },
     }));
     const planning = this.api.plan(this.projectId, built.manifest);
     this.plans.set(store.importId, planning);
@@ -527,28 +503,6 @@ export class ImportCoordinator {
     for (const importId of [...this.runs.keys()]) this.retire(importId);
     for (const store of this.stores.values()) store.dispose();
   }
-}
-
-/** The folder an import was started on, from the server's summary alone. */
-export function destinationFromSummary(summary: ImportSummary): ImportDestination {
-  const uri = summary.destination.folderUri;
-  const scheme = (uri.match(/^([a-z]+):\/\//)?.[1] ?? "kb") as ImportDestination["scheme"];
-  const path = catalogPathOfUri(uri) ?? "/";
-  return {
-    scheme,
-    path,
-    uri,
-    name: path === "/" ? areaLabel(scheme) : path.slice(path.lastIndexOf("/") + 1),
-    folderId: summary.destination.folderId,
-  };
-}
-
-function areaLabel(scheme: ImportDestination["scheme"]): string {
-  return scheme === "manuscript"
-    ? t`Manuscript`
-    : scheme === "unfiled"
-      ? t`Unfiled`
-      : t`Knowledge Base`;
 }
 
 function retired(run: Run): boolean {

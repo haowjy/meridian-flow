@@ -1,5 +1,5 @@
 /**
- * The one display state every surface shows (status row, report header, pane
+ * The one display state every surface shows (indicator, popover, pane
  * notice), derived from the server's summary and what this tab is doing.
  */
 import type { ImportCounts, ImportRefusalCode, ImportSummary } from "@meridian/contracts";
@@ -18,7 +18,7 @@ export type ImportDisplayState =
 
 /** What this tab is doing for the import. */
 export type LocalPhase =
-  | { kind: "preparing"; totalBytes: number; planning: boolean }
+  | { kind: "preparing" }
   | { kind: "uploading" }
   | { kind: "idle" }
   | { kind: "not-started"; code: ImportRefusalCode | null };

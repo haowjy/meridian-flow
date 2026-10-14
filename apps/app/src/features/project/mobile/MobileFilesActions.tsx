@@ -1,4 +1,4 @@
-/** The phone's `+` menu in the Files browser: New file, New folder and, where it applies, Import…. */
+/** The phone's `+` menu in the Files browser: New file, New folder and, where it applies, Import… (Folder…, Files…). */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { isImportScheme } from "@/features/import/destination";
@@ -29,16 +29,19 @@ export function MobileFilesActions({
       onSelect={onSelect}
       onImport={
         importable
-          ? () => {
+          ? (kind) => {
               const node = folder ? catalog?.findPath(folder) : catalog?.root;
               const dir = node?.kind === "dir" ? node : null;
-              imports.openImport({
-                scheme,
-                path: dir && folder ? dir.path : "/",
-                uri: dir && folder ? dir.uri : `${scheme}://`,
-                name: dir && folder ? dir.name : schemeLabel(scheme),
-                folderId: dir && folder ? dir.entryId : null,
-              });
+              imports.pick(
+                {
+                  scheme,
+                  path: dir && folder ? dir.path : "/",
+                  uri: dir && folder ? dir.uri : `${scheme}://`,
+                  name: dir && folder ? dir.name : schemeLabel(scheme),
+                  folderId: dir && folder ? dir.entryId : null,
+                },
+                kind,
+              );
             }
           : undefined
       }

@@ -15,17 +15,26 @@ import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
 export type EntryCapabilities = readonly Exclude<
   EntryAction,
-  "new-file" | "new-folder" | "import" | "retry-import"
+  "new-file" | "new-folder" | "import-folder" | "import-files" | "retry-import"
 >[];
 export type EntryCreation = (kind: ContextCreateKind, parentPath: string) => void;
+
+/** Starts an import into a folder; `folders` is false where the browser cannot pick one. */
+export type ImportHere = { start: (kind: "folder" | "files") => void; folders: boolean };
 
 export function entryActions(
   capabilities: EntryCapabilities,
   create?: EntryCreation,
-  importHere?: () => void,
+  importHere?: ImportHere,
 ): readonly EntryAction[] {
   return create
-    ? ["new-file", "new-folder", ...(importHere ? (["import"] as const) : []), ...capabilities]
+    ? [
+        "new-file",
+        "new-folder",
+        ...(importHere?.folders ? (["import-folder"] as const) : []),
+        ...(importHere ? (["import-files"] as const) : []),
+        ...capabilities,
+      ]
     : capabilities;
 }
 
@@ -54,8 +63,8 @@ export function useEntryInteraction({
   /** Creation may ask an arriving row to open its naming field. */
   requestRename?: boolean;
   onRenameDone?: () => void;
-  /** Opens the import dialog for this folder; only folders offer it. */
-  importHere?: () => void;
+  /** Opens the OS picker for an import into this folder; only folders offer it. */
+  importHere?: ImportHere;
   /** Sends a file whose import failed again; a failed file's menu leads with it. */
   retryImport?: () => void;
 }) {
@@ -87,7 +96,8 @@ export function useEntryInteraction({
     if (!actions.includes(action)) return;
     if (action === "rename") setRenaming(true);
     else if (action === "move") setMoving(true);
-    else if (action === "import") importHere?.();
+    else if (action === "import-folder") importHere?.start("folder");
+    else if (action === "import-files") importHere?.start("files");
     else if (action === "retry-import") retryImport?.();
     else if (action === "new-file" || action === "new-folder")
       create?.(

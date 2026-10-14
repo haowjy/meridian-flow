@@ -32,9 +32,7 @@ const derive = (input: {
 
 describe("deriveDisplayState", () => {
   it("is preparing until the server has answered, and importing while this tab uploads", () => {
-    expect(derive({ local: { kind: "preparing", totalBytes: 1, planning: false } })).toBe(
-      "preparing",
-    );
+    expect(derive({ local: { kind: "preparing" } })).toBe("preparing");
     expect(derive({ state: "ready", counts: {}, local: { kind: "uploading" } })).toBe("importing");
   });
 

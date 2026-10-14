@@ -1,8 +1,8 @@
-/** The shared way to choose files: hidden inputs, a drop zone and the two buttons. */
+/** The shared way to choose files: hidden inputs, and (for Continue) a drop zone with two buttons. */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
-import { type DragEvent, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type DragEvent, type RefObject, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,48 @@ export function useFileDragOver(onFiles: (items: DroppedItems) => void) {
 
 type Reader = ReturnType<typeof useSelectionReader>;
 
+/**
+ * The two hidden file inputs behind "Folder…" and "Files…": the OS picker opens
+ * when the caller clicks one through its ref. A pick hands over its files and
+ * clears the input so the same choice can be made again.
+ */
+export function PickInputs({
+  folderRef,
+  filesRef,
+  onPick,
+}: {
+  folderRef: RefObject<HTMLInputElement | null>;
+  filesRef: RefObject<HTMLInputElement | null>;
+  onPick: (files: File[]) => void;
+}) {
+  const handle = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    onPick(files);
+  };
+  return (
+    <>
+      <input
+        ref={folderRef}
+        type="file"
+        hidden
+        data-import-input="folder"
+        // The attribute is non-standard; React passes it through as written.
+        {...{ webkitdirectory: "" }}
+        onChange={handle}
+      />
+      <input
+        ref={filesRef}
+        type="file"
+        multiple
+        hidden
+        data-import-input="files"
+        onChange={handle}
+      />
+    </>
+  );
+}
+
 export function useSelectionPicker(reader: Reader) {
   const folderInput = useRef<HTMLInputElement>(null);
   const filesInput = useRef<HTMLInputElement>(null);
@@ -65,33 +107,11 @@ export function useSelectionPicker(reader: Reader) {
   const [choosingAgain, setChoosingAgain] = useState(false);
   const drag = useFileDragOver((items) => void reader.drop(items));
   const inputs = (
-    <>
-      <input
-        ref={folderInput}
-        type="file"
-        hidden
-        data-import-input="folder"
-        // The attribute is non-standard; React passes it through as written.
-        {...{ webkitdirectory: "" }}
-        onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
-          event.target.value = "";
-          void reader.pick(files);
-        }}
-      />
-      <input
-        ref={filesInput}
-        type="file"
-        multiple
-        hidden
-        data-import-input="files"
-        onChange={(event) => {
-          const files = Array.from(event.target.files ?? []);
-          event.target.value = "";
-          void reader.pick(files);
-        }}
-      />
-    </>
+    <PickInputs
+      folderRef={folderInput}
+      filesRef={filesInput}
+      onPick={(files) => void reader.pick(files)}
+    />
   );
   return {
     inputs,

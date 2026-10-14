@@ -7,15 +7,11 @@ import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
-import { useOptionalImports } from "@/features/import/ImportProvider";
-import { ImportReportPage } from "@/features/import/ImportReportPage";
-import { useImportRoute } from "@/features/import/import-route";
 import { ChatSurface } from "../chat/ChatSurface";
 import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeAllowsCreation, schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
-import { useOpenImportedDocument } from "../context/use-open-imported-document";
 import { useDockViewStore } from "../dock/dock-view-store";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
@@ -60,11 +56,6 @@ export function MobileProject(props: MobileProjectProps) {
   };
   useDockReveal((view) => openChatSheet(view));
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Starting an import closes the drawer so the arriving rows are what the writer sees.
-  const imports = useOptionalImports();
-  useEffect(() => imports?.coordinator.subscribeStarted(() => setDrawerOpen(false)), [imports]);
-  const importReportId = useImportRoute().activeImportId;
-  const openImportedDocument = useOpenImportedDocument(props.editorWorkId);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
   const localTab =
@@ -79,8 +70,7 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  const importReportActive = useImportRoute().activeImportId !== null;
-  const crumbs = contextBreadcrumbSegments(props, importReportActive);
+  const crumbs = contextBreadcrumbSegments(props);
   const workDeletion = useWorkDeletion(props.projectId, props.routeWork, props.routeCommands);
   const work = useWorkChrome(
     props.projectId,
@@ -150,14 +140,7 @@ export function MobileProject(props: MobileProjectProps) {
               : undefined)
           }
         >
-          {renderActiveView(
-            props,
-            workDeletion,
-            creating,
-            () => setCreating(null),
-            localTab,
-            importReportId ? { importId: importReportId, open: openImportedDocument } : null,
-          )}
+          {renderActiveView(props, workDeletion, creating, () => setCreating(null), localTab)}
         </ProjectRouteBoundary>
       </main>
       <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
@@ -239,7 +222,6 @@ function renderActiveView(
   creating: TreeCreationRequest | null,
   onCreateDone: () => void,
   localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>,
-  importReport?: { importId: string; open: (uri: string) => void } | null,
 ) {
   switch (props.activeScreen) {
     case "work":
@@ -270,10 +252,6 @@ function renderActiveView(
         return <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />;
       }
       if (!props.contextLive) return null;
-      if (importReport)
-        return (
-          <ImportReportPage importId={importReport.importId} onOpenDocument={importReport.open} />
-        );
       return (
         <DraftReviewBoundary value={props.editorReview}>
           <EditorReviewIntentClaimant
@@ -313,13 +291,8 @@ function renderActiveView(
   }
 }
 
-function contextBreadcrumbSegments(
-  props: ReviewScopedProjectProps,
-  importReport = false,
-): MobileBreadcrumbSegment[] {
+function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
-  if (importReport)
-    return [{ label: t`Files`, onSelect: () => props.onExitContextScheme() }, { label: t`Import` }];
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
   const filesLabel = t`Files`;

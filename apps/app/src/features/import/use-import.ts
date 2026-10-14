@@ -21,8 +21,7 @@ export type ImportView = {
 
 /**
  * One import's state, its display state and its counts. `watch` keeps the
- * store polling while this surface is mounted; a status row that only needs
- * counts watches as "row" and rides the open-imports list.
+ * store polling while this surface is mounted.
  */
 export function useImport(importId: string, watch: Watch): ImportView {
   const store = useImportStore(importId);
