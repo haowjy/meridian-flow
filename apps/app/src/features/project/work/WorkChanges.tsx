@@ -14,8 +14,14 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { MoreHorizontal } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  draftCommandFailure,
+  draftOverrode,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,11 +53,31 @@ export function WorkChanges({
   const discards = useHeadlessDiscards(projectId, workId);
   const touch = usePhoneShell() === true;
   const listed = drafts.files ?? [];
+  const records = useDraftCommandRecords();
+  // A file the server stops listing stays while it holds a failure or an overwrite notice, until that is
+  // dismissed or resolved: the writer must not see a refused Apply vanish as if it had succeeded.
+  const seen = useRef<{ workId: string; files: Map<string, ReviewFileTarget> }>({
+    workId,
+    files: new Map(),
+  });
+  if (seen.current.workId !== workId) seen.current = { workId, files: new Map() };
+  for (const file of listed) seen.current.files.set(file.draft.itemKey, file);
+  const noticed = [...seen.current.files.values()].filter((file) => {
+    const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
+    return (
+      !listed.some((other) => other.draft.itemKey === file.draft.itemKey) &&
+      (draftCommandFailure(records, draft) !== null || draftOverrode(records, draft).length > 0)
+    );
+  });
   // A file stays on the page while one of its Discards can still be undone, even once the server stops listing it.
   const files = [
     ...listed,
+    ...noticed,
     ...discards.entries
-      .filter((entry) => !listed.some((file) => file.draft.itemKey === entry.file.draft.itemKey))
+      .filter(
+        (entry) =>
+          ![...listed, ...noticed].some((file) => file.draft.itemKey === entry.file.draft.itemKey),
+      )
       .map((entry) => entry.file)
       .filter(
         (file, at, all) =>

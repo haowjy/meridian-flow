@@ -57,7 +57,10 @@ export function WorkChangeFile({
     file,
     discards,
   });
-  if (expanded && (view.status === "gone" || view.finished)) return null;
+  // No changes left is not nothing to say: a held failure or overwrite notice keeps the file until it is
+  // dismissed or resolved.
+  const noticed = refused !== null || overrode.length > 0;
+  if (expanded && !noticed && (view.status === "gone" || view.finished)) return null;
   const wholeDocument = expanded && isWholeDocumentChange(view);
   const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
