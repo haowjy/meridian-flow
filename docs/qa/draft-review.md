@@ -22,8 +22,8 @@ and dock hosts.
   syntax lives in
   `apps/server/server/domains/runtime/gateway/adapters/mock/write-directive.ts`.
 - Drive the UI with `agent-browser` (snapshot → click by ref → re-snapshot).
-  Browsing live with no `?work=`, the Work scope has no draft list, so no chip shows for another
-Work's draft; that is the existing scope rule, not a miss. Use `?work=<the drafting Work>` for the chip.
+  Browsing live with no `?work=`, there is no Version chip for another Work's draft; the open
+  document's draft hint (below) says so instead. Use `?work=<the drafting Work>` for the chip.
 
 Capture `agent-browser console` and `errors` at the end of every scenario —
   a clean console is part of every pass criterion below.
@@ -989,7 +989,26 @@ then the phone 390x844 with touch emulation.
 5. **No regression.** New file at a free name, and at a name a visible document holds (the
    second takes the free name, `Chapter 2 (2)`).
 
-Browsing live with no `?work=`, the Work scope has no draft list, so no chip shows for another
-Work's draft; that is the existing scope rule, not a miss. Use `?work=<the drafting Work>` for the chip.
+With no `?work=` the document shows the draft hint instead of the Live chip (see the next section).
 
 Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
+
+## An open document says when a draft has changes to it (browser, #757)
+
+`GET /api/projects/:p/documents/:d/drafts` answers the active drafts in the project with changes to the
+document (`draftId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
+review. The editor shows a line under the identity row for every draft other than the one the view works
+in: "A draft has changes to this (Northern Arc)" with Review, or "2 drafts have changes to this" with a
+menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
+at 390x844.
+
+1. **The owner's flow, in No Work.** The AI drafts `manuscript://Chapter 2` in Work A. With no Work open,
+   New file `Chapter 2`. PASS: one row, and the hint naming Work A appears with no reload; Review opens
+   Work A's review of Chapter 2. Time the `create-untitled` response to the hint (a `fetch` wrapper and a
+   `MutationObserver` on `[data-document-draft-hint]`); note `uptime`.
+2. **A live document a draft edits.** Open it with no Work and from Work B: the hint. Open it in Work A: the
+   Live chip only, no hint.
+3. **After Discard** of Work A's draft (Work page, Discard all changes): the hint goes on this device at
+   once, and on another device on focus or the catalog wake.
+4. **A document no draft touches** shows no hint.
+5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.
