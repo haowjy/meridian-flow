@@ -54,12 +54,7 @@ export function createRunSessions(deps: {
   runClaim: RunClaim;
   delivery: Pick<
     RuntimeDelivery,
-    | "settleStaleExecution"
-    | "releaseExecution"
-    | "refreshPending"
-    | "selectPending"
-    | "answerRunState"
-    | "stop"
+    "settleStaleExecution" | "releaseExecution" | "selectPending" | "answerRunState" | "stop"
   >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };

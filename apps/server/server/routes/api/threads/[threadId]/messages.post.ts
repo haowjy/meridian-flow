@@ -54,7 +54,6 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
     return {
       threadId,
       userTurnId: result.userTurnId,
-      steersTurnId: result.steersTurnId,
       runStateVersion: result.runStateVersion,
       resumeAfterSeq: result.resumeAfterSeq,
       snapshotFloorNextSeq: result.snapshotFloorNextSeq,

@@ -187,7 +187,6 @@ import {
   type RunTurnPort,
   readAgentChain,
   readChainPermission,
-  readPendingInbox,
   readRunStateAtHead,
   requireWritableThread,
   type ShownLinkStore,
@@ -800,7 +799,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    headSeq: (id) => threadEventHub.headSeq(id),
     runClaim: runClaim,
     notices: ports.notices,
     runStarter,
@@ -887,7 +885,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const threadLock = createDrizzleThreadLock(ports.db, threadEventHub);
   const inbox = delivery;
-  const readPending = (threadId: ThreadId) => readPendingInbox(delivery, threadId);
   const reportPublisher = createReportPublisher({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -1113,7 +1110,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       statusReader: ports.statusReader,
       threads: ports.threadRepos.threads,
       executionReports: ports.threadRepos.executionReports,
-      readPending,
       readRunState: (threadId) => readRunStateAtHead(ports.db, threadId),
     }),
     documentSync: ports.documentSync,
@@ -1412,12 +1408,6 @@ export function createInMemoryAppServices(): AppServices {
       },
       async readRunningTurnId() {
         return null;
-      },
-      async readOpenExecutionId() {
-        return null;
-      },
-      async readPending() {
-        return { items: [] };
       },
       async readRunState() {
         throw new Error("in-memory thread runtime has no run state");

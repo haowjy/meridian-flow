@@ -268,7 +268,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
         const queued = await switchTo(runtime, "direct");
         expect(queued.response).toMatchObject({
-          pending: { control: { kind: "write_mode", mode: "direct" } },
+          runState: { items: [{ control: { kind: "write_mode", mode: "direct" } }] },
           turnId: null,
         });
         expect((await create(reply.call, "after")).result).toMatchObject({
@@ -339,9 +339,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const [turn] = await switchTurns();
         expect(switched?.response).toMatchObject({
           id: switched?.response.id,
-          pending: null,
+          runState: { items: [], mode: "direct" },
           turnId: turn?.id,
-          mode: "direct",
         });
         expect(await modeOf(THREAD.threadId)).toBe("direct");
         const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
@@ -365,7 +364,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           () => switchTo(runtime, "direct"),
         );
         expect(switched?.response).toMatchObject({
-          pending: { control: { kind: "write_mode", mode: "direct" } },
+          runState: { items: [{ control: { kind: "write_mode", mode: "direct" } }] },
           turnId: null,
         });
         expect(await modeOf(THREAD.threadId)).toBe("draft");

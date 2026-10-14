@@ -55,9 +55,7 @@ describe("buildThreadSnapshot ancestors", () => {
         {
           read: async () => ({ kind: "asleep" as const }),
           readRunningTurnId: async () => null,
-          readOpenExecutionId: async () => null,
           readMany: async () => new Map(),
-          readPending: async () => ({ items: [] }),
           readRunState: async () => EMPTY_RUN_STATE,
         },
         thread.id as ThreadId,

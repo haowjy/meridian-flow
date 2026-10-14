@@ -149,12 +149,10 @@ export interface RuntimeDelivery
   applyDueSwitches(threadId: ThreadId): Promise<boolean>;
   /** Whether a message waits behind the queued switch, so the next request boundary ends the reply. */
   yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
-  /** Reclassify expired leases after recovery or a backstop release. */
-  refreshPending(threadId: ThreadId): Promise<void>;
   /**
    * Under a newly acquired claim, before anything else the holder does: repair
    * every orphaned turn (primary and child-report paths), then end the stale
-   * lease row's execution (journal `execution.ended` when a turn carries it) and
+   * lease row's execution and
    * delete the row in one transaction. A no-op on a settled thread.
    */
   settleStaleExecution<T = void>(

@@ -21,9 +21,7 @@ const UNDELIVERED_HEAD = 23_081_000n;
 const LIVE_STATE: ThreadLiveState = {
   threadId: THREAD_ID,
   status: { kind: "asleep" as const },
-  runningTurnId: null,
   activity: { children: [] },
-  pending: { items: [] },
   runState: EMPTY_RUN_STATE,
   resumeAfterSeq: "0",
 };

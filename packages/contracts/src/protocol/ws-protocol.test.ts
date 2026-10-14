@@ -22,9 +22,7 @@ function subscribedFrameWithQueuedControl(control: ControlBody): string {
     state: {
       threadId: "thread-1",
       status: { kind: "awake", phase: "generating", cancelRequested: false },
-      runningTurnId: "turn-1",
       activity: { children: [] },
-      pending: { items: queued },
       runState: {
         version: "6999",
         items: queued,
@@ -48,7 +46,6 @@ describe("thread socket frames", () => {
 
     expect(parsed?.type).toBe("subscribed");
     if (parsed?.type !== "subscribed") return;
-    expect(parsed.state.pending.items[0]?.control).toEqual(control);
     expect(parsed.state.runState.items[0]?.control).toEqual(control);
     expect(parseWsServerMessage(encodeWsServerMessage(parsed))).toEqual(parsed);
   });

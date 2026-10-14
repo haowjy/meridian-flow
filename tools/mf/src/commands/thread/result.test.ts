@@ -46,9 +46,7 @@ const snapshot = (): ThreadSnapshotResponse => ({
   liveState: {
     threadId: THREAD_ID,
     status: { kind: "asleep" },
-    runningTurnId: null,
     activity: { children: [] },
-    pending: { items: [] },
     runState: {
       version: "0",
       items: [],
@@ -58,7 +56,6 @@ const snapshot = (): ThreadSnapshotResponse => ({
       blocked: null,
     },
     resumeAfterSeq: "0",
-    openExecutionId: null,
   },
   actionRequired: false,
   nextSeq: "1",

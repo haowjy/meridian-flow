@@ -106,9 +106,7 @@ function liveState(seq: string, pendingItems: unknown[] = []) {
   return {
     threadId: THREAD_ID,
     status: { kind: "asleep" },
-    runningTurnId: null,
     activity: { children: [] },
-    pending: { items: pendingItems },
     runState: {
       version: seq,
       items: pendingItems,
@@ -184,8 +182,8 @@ function createFake() {
           .find((turn) => ["streaming", "waiting_interrupt"].includes(turn.status))?.id ?? null);
 
   /** The chat's whole run-state record, as the server publishes it. */
-  const runStateRecord = (version: string, items: unknown[], blocked: boolean) => {
-    const turn = runningTurn();
+  const runStateRecord = (version: string, items: unknown[], blocked: boolean, ended = false) => {
+    const turn = ended ? null : runningTurn();
     return {
       version,
       items,
@@ -196,23 +194,18 @@ function createFake() {
     };
   };
 
-  const publishRunState = (items: unknown[], blocked: boolean) =>
+  const publishRunState = (items: unknown[], blocked: boolean, ended = false) =>
     publish({
       type: "CUSTOM",
       name: "meridian.run_state",
-      value: runStateRecord(nextSeq(), items, blocked),
+      value: runStateRecord(nextSeq(), items, blocked, ended),
     } as AGUIEvent);
 
   const currentLiveState = () => {
     const runningTurnId = runningTurn();
     return {
       ...liveState(String(journal.length), pendingItems),
-      pending: {
-        items: pendingItems,
-        ...(blockedForUsage ? { blocked: { reason: "credits_exhausted" } } : {}),
-      },
       runState: runStateRecord(String(journal.length), pendingItems, blockedForUsage),
-      runningTurnId,
       status:
         runningTurnId || leaseReleasePending || snapshotPolicy.awake
           ? { kind: "awake", phase: "generating", cancelRequested: false }
@@ -249,13 +242,8 @@ function createFake() {
       rawEvent: { writeMode: null, executionId, reservedForUserTurnIds },
     } as AGUIEvent);
   };
-  /** The followed reply's execution ended: its terminal finish or error carried no successor. */
-  const publishEnded = (runId: string) =>
-    publish({
-      type: "CUSTOM",
-      name: "meridian.execution.ended",
-      value: { executionId: executionOf.get(runId) ?? `execution-${runId}` },
-    } as AGUIEvent);
+  /** The followed reply's execution ended: the record that follows carries no open execution. */
+  const publishEnded = (_runId: string) => publishRunState(pendingItems, blockedForUsage, true);
 
   const runScenario = (text: string) => {
     runCounter += 1;
@@ -557,7 +545,6 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: first.id,
           runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
@@ -628,7 +615,6 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: runningTurnId,
           runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
@@ -694,7 +680,6 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: runningTurnId,
           runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
@@ -770,7 +755,6 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
           runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
@@ -840,7 +824,6 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
           runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
@@ -885,7 +868,6 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
           runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
@@ -911,7 +893,6 @@ function createFake() {
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
-          steersTurnId: null,
           runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
@@ -925,7 +906,6 @@ function createFake() {
         threadId: THREAD_ID,
         submissionId: body.submissionId,
         userTurnId: `turn-u${runCounter}`,
-        steersTurnId: null,
         runStateVersion: null,
         resumeAfterSeq,
         snapshotFloorNextSeq: resumeAfterSeq,

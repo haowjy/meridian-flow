@@ -2,14 +2,7 @@
  * Folds the thread socket's AG-UI stream into compact, dotted CLI events
  * (codex-exec style) and renders each as one text line.
  */
-import {
-  EXECUTION_ENDED_EVENT,
-  MESSAGES_DELIVERED_EVENT,
-  readExecutionEnded,
-  readMessagesDelivered,
-  readRunStartedMeta,
-  type SequencedEvent,
-} from "@meridian/contracts/protocol";
+import { readRunStartedMeta, type SequencedEvent } from "@meridian/contracts/protocol";
 import { oneLine, truncate } from "../../core/output";
 
 export type CliEvent =
@@ -49,15 +42,6 @@ export type CliEvent =
       interruptId: string;
     }
   | { type: "turn.finished"; seq: string; turnId: string }
-  | {
-      type: "messages.delivered";
-      seq: string;
-      byTurnId: string | null;
-      executionId: string | null;
-      userTurnIds: readonly string[];
-    }
-  /** Every turn the execution reserved is terminal; it does no further work. */
-  | { type: "execution.ended"; seq: string; executionId: string }
   | {
       type: "turn.failed";
       seq: string;
@@ -189,14 +173,6 @@ export class RunEventMapper {
 
   private mapCustom(seq: string, name: string, value: unknown): CliEvent[] {
     const record = (value ?? {}) as Record<string, unknown>;
-    if (name === EXECUTION_ENDED_EVENT) {
-      const ended = readExecutionEnded(value);
-      return ended ? [{ type: "execution.ended", seq, executionId: ended.executionId }] : [];
-    }
-    if (name === MESSAGES_DELIVERED_EVENT) {
-      const delivered = readMessagesDelivered(value);
-      return delivered ? [{ type: "messages.delivered", seq, ...delivered }] : [];
-    }
     if (name === "meridian.interrupt") {
       const state = String(record.state);
       const type =
@@ -250,10 +226,6 @@ export function renderEventLine(event: CliEvent, full: boolean): string | null {
       return `${event.type} ${event.interruptId}`;
     case "turn.finished":
       return `turn.finished ${event.turnId}`;
-    case "messages.delivered":
-      return null;
-    case "execution.ended":
-      return `execution.ended ${event.executionId}`;
     case "turn.failed":
       return `turn.failed ${event.message}${event.failureReason ? ` (failure reason: ${event.failureReason})` : ""}`;
   }

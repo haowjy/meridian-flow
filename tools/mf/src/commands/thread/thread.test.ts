@@ -245,7 +245,6 @@ describe("thread", () => {
       });
       expect(records.map((record) => record.type)).not.toContain("turn.started");
       expect(records.map((record) => record.type)).toContain("turn.finished");
-      expect(records.at(-2)).toMatchObject({ type: "execution.ended" });
       expect(records.at(-1)).toMatchObject({
         type: "result",
         command: "thread.events",

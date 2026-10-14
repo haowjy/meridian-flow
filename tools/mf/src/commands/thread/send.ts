@@ -222,7 +222,7 @@ async function followToOutcome(
   // reply reserved for this user turn is ours. Never the next start in the
   // stream: the early cursor replays others', and another client's can follow.
   // Not a redesign (#768): it keeps the old successor/finish shape on execution facts.
-  let ourTurn: string | null = admitted.steersTurnId;
+  let ourTurn: string | null = null;
   let ourExecution: string | null = null;
   let lastSeq = admitted.resumeAfterSeq;
   let truncated = false;
@@ -251,6 +251,10 @@ async function followToOutcome(
   // (one claim per thread: another execution can start only after that end).
   let continuing = false;
   let recover = false;
+  // A reply started in this stream. Before one, the open execution is the one the message joined.
+  let startSeen = false;
+  // Set when the execution M joined has ended with M still waiting: how long to wait for a start.
+  let grace: number | null = null;
   // The shared reducer follows the same events the log prints, from admission's
   // cursor. There is deliberately no snapshot read here: this send's turns are
   // built from their own events, and a read would sit outside the deadline. A
@@ -258,61 +262,82 @@ async function followToOutcome(
   // `shouldStop` below reconciles with the durable snapshot.
   const reduced = new ReducedThread(threadId);
   const transport = createThreadClient(session);
+  const ENDED_GRACE_MS = 1500;
   const isOurs = (turnId: string) => ourTurn === turnId;
   try {
     const deadlineAt = Date.now() + input.timeoutMs;
     for (;;) {
-      const followed = await followThread({
-        session,
-        transport,
-        threadId,
-        lastSeq,
-        deadlineAt,
-        out,
-        full: input.full,
-        textStream: "err",
-        reduced,
-        shouldStop(event: CliEvent) {
-          if (event.type === "event") {
-            const runState = runStateOfEvent(event);
-            if (runState) blocked = blockedOutcome(runState);
-            if (blocked) return true;
-          }
-          if (event.type === "turn.started") {
-            const answers = event.reservedForUserTurnIds.includes(admitted.userTurnId);
-            const successor =
-              continuing ||
-              (ourExecution !== null &&
-                event.executionId === ourExecution &&
-                event.turnId !== ourTurn);
-            if (answers || successor) {
-              ourTurn = event.turnId;
-              ourExecution = event.executionId;
-              continuing = false;
+      let followed: Awaited<ReturnType<typeof followThread>>;
+      try {
+        followed = await followThread({
+          session,
+          transport,
+          threadId,
+          lastSeq,
+          deadlineAt: grace === null ? deadlineAt : Math.min(deadlineAt, grace),
+          out,
+          full: input.full,
+          textStream: "err",
+          reduced,
+          shouldStop(event: CliEvent) {
+            if (event.type === "event") {
+              const runState = runStateOfEvent(event);
+              if (runState) blocked = blockedOutcome(runState);
+              if (blocked) return true;
+              // No execution is open: ours ended, or (no start seen yet) the one this message
+              // joined at admission did. Once another reply started, only our own finish counts.
+              if (runState && runState.execution === null) {
+                if (continuing) return true;
+                if (ourTurn === null && !startSeen && grace === null) {
+                  // Not yet an answer: the next execution may be the one that takes M.
+                  grace = Date.now() + ENDED_GRACE_MS;
+                  return true;
+                }
+              }
+            }
+            if (event.type === "turn.started") {
+              startSeen = true;
+              grace = null;
+              const answers = event.reservedForUserTurnIds.includes(admitted.userTurnId);
+              const successor =
+                continuing ||
+                (ourExecution !== null &&
+                  event.executionId === ourExecution &&
+                  event.turnId !== ourTurn);
+              if (answers || successor) {
+                ourTurn = event.turnId;
+                ourExecution = event.executionId;
+                continuing = false;
+              }
+              return false;
+            }
+            if (event.type === "turn.finished") {
+              if (!isOurs(event.turnId)) return false;
+              continuing = true;
+              return false;
+            }
+            if (event.type === "turn.failed") {
+              recover = ourTurn !== null || !startSeen;
+              return recover;
+            }
+            if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
+              interrupt = { turnId: event.turnId, interruptId: event.interruptId };
+              return true;
             }
             return false;
-          }
-          if (event.type === "turn.finished") {
-            if (!isOurs(event.turnId)) return false;
-            continuing = true;
-            return false;
-          }
-          if (event.type === "execution.ended") {
-            if (!continuing || (ourExecution !== null && event.executionId !== ourExecution))
-              return false;
-            return true;
-          }
-          if (event.type === "turn.failed") {
-            recover = ourTurn !== null;
-            return recover;
-          }
-          if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
-            interrupt = { turnId: event.turnId, interruptId: event.interruptId };
-            return true;
-          }
-          return false;
-        },
-      });
+          },
+        });
+      } catch (error) {
+        // The grace ran out with no reply starting for M: what is left is the snapshot's word.
+        if (
+          grace !== null &&
+          error instanceof CliError &&
+          error.code === "timeout" &&
+          Date.now() < deadlineAt
+        )
+          break;
+        throw error;
+      }
       lastSeq = followed.lastSeq;
       truncated ||= followed.truncated;
       if (blocked) {
@@ -331,6 +356,7 @@ async function followToOutcome(
         }
         continue;
       }
+      if (grace !== null && !recover) continue;
       if (!recover) break;
       recover = false;
       continuing = false;
@@ -397,7 +423,9 @@ async function followToOutcome(
           : { outcome: "unproven", reason: "unconfirmed" };
   // Writer admission reuses the user turn id as the inbox id. A finished
   // steered run cannot prove this send while that same message remains pending.
-  if (claim.outcome === "complete" && message.owed()) {
+  // With no reply of ours named, an execution that ended with M still waiting is the same case.
+  message.take(snapshot.liveState.runState);
+  if ((claim.outcome === "complete" || ourTurn === null) && message.owed()) {
     return terminalResult(
       "thread.send",
       { outcome: "unproven", reason: "owed" },
@@ -485,7 +513,6 @@ export const threadSendCommand: CommandSpec = {
           threadId,
           submissionId,
           userTurnId: admitted.userTurnId,
-          steersTurnId: admitted.steersTurnId,
           resumeAfterSeq: admitted.resumeAfterSeq,
           // Nothing waits here to remove it; clear it with `./mf mock clear --id` when done.
           mockScriptId,

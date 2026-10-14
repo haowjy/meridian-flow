@@ -18,7 +18,7 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
   const reduced = new ReducedThread(THREAD);
   // The projection stopped at seq 97 while the journal head is 103: deltas 98..103 exist only as events.
   expect(reduced.hydrate({ turns: [], nextSeq: "104" })).toBe(true);
-  // The golden stream carries `messages.delivered` mid-text and `execution.ended` last; a
+  // The golden stream carries a `run_state` record at each end; a
   // write-mode switch frame lands mid-reply. None of them is transcript content.
   const replay = [...SIMPLE_TEXT_TURN_AGUI];
   replay.splice(

@@ -247,7 +247,6 @@ else
       expect(events.map((row) => row.eventType)).toEqual([
         "block.updated",
         "agent.run_completed",
-        "inbox.changed",
         "run_state.changed",
       ]);
       expect(events[0]?.payload).toMatchObject({
@@ -568,7 +567,6 @@ else
       const events = await journalEventsByThread(db, ids.caller);
       expect(events.map((row) => row.eventType)).toEqual([
         "agent.run_completed",
-        "inbox.changed",
         "run_state.changed",
       ]);
     });

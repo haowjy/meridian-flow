@@ -427,6 +427,8 @@ export function createInMemoryThreadLock(): ThreadLock {
 export function createInMemoryRuntimeDelivery(
   deps: Omit<Parameters<typeof createDeliveryAdapter>[0], "leaseStore" | "runClaim"> & {
     runClaim: ReturnType<typeof createInMemoryRunClaim>;
+    /** The thread's journal head as the socket numbers its frames: the in-memory record's version. */
+    headSeq(threadId: ThreadId): Promise<bigint>;
   },
 ) {
   return createDeliveryAdapter({

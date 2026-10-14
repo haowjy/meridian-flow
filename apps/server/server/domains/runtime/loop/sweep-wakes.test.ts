@@ -32,7 +32,7 @@ describe("sweepWakes", () => {
     for (let i = 0; i < 3; i++) {
       ({ cursor: afterThreadId } = await sweepWakes({
         eventSink: createInMemoryEventSink(),
-        delivery: { ...inbox, async refreshPending() {} },
+        delivery: inbox,
         authority,
         limit: 1,
         afterThreadId,

@@ -25,7 +25,6 @@ import type {
   Thread,
   ThreadActivity,
   ThreadListItem,
-  ThreadPendingInbox,
   ThreadStatus,
   Turn,
   TurnContextPreview,
@@ -55,29 +54,12 @@ export type ThreadLiveState = {
   threadId: string;
   /** Derived from the live lease, not the durable thread row. */
   status: ThreadStatus;
-  runningTurnId: string | null;
   /** Direct subagent activity for this thread; derived, never a turn block. */
   activity: ThreadActivity;
-  /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
-  pending: ThreadPendingInbox;
   /** What the chat is doing, read with the journal head in one transaction; `version` is that head. */
   runState: RunState;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
-};
-
-/**
- * Live state read in the snapshot's own repeatable-read transaction, so its
- * execution fact is coherent with the snapshot's turns. The WS `subscribed`
- * state is assembled from separate reads and deliberately lacks it.
- */
-export type SnapshotLiveState = ThreadLiveState & {
-  /**
-   * The open execution's id when some snapshot turn carries it, regardless of
-   * heartbeat expiry; else null. An execution on a snapshot turn that is not
-   * this id has ended.
-   */
-  openExecutionId: string | null;
 };
 
 export type CreateProjectRequest = {
@@ -523,7 +505,7 @@ export const stopRequestSchema = z.strictObject({
 
 /**
  * An accepted Retry: 201 when this request started it, 200 on a replay. The
- * execution is what a client follows until `meridian.execution.ended`; it may end
+ * execution is what a client follows until the run-state record shows another or none; it may end
  * on a cancelled compaction without ever reserving the new reply. `turn` is the
  * new reply when this request id names it, else null (a replay matched by the
  * request's first reserved turn, `metadata.retryReplyId`, before the reply was
@@ -567,13 +549,8 @@ export type ThreadAvailableSkillsResponse = {
 
 export type SendMessageResponse = {
   threadId: string;
-  /** Owed until a later fact says it was delivered (`Turn.delivery`, `meridian.messages.delivered`). */
+  /** Owed until the run-state record stops listing it (`runStateVersion` is where that is first read). */
   userTurnId: string;
-  /**
-   * The live reply this message was steered into; null when it waits for a new
-   * execution. A Stop hint only: it may be cancelled, and it answers nothing.
-   */
-  steersTurnId: string | null;
   /**
    * The stream version of the run-state record this admission's own transaction published, stored so
    * a replay answers the same value. Null for an admission recorded before run state existed.
@@ -615,7 +592,7 @@ export type ThreadSnapshotResponse = {
     outputTokens: number;
     cacheResets: number;
   };
-  liveState: SnapshotLiveState;
+  liveState: ThreadLiveState;
   actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;

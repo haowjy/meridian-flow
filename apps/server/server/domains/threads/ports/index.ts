@@ -28,7 +28,6 @@ export type {
   ThreadChild,
   ThreadDocument,
   ThreadDocumentRepository,
-  ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
   ThreadRunStateReader,
