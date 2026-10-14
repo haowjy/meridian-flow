@@ -47,9 +47,9 @@ A status whose address can't be spelled is `gone`. Link presence ("in a draft",
 deleted, gone) reads only this status.
 
 `treeState(D, edited, only)` lists D's created documents (only those ids when `only` is
-given) and the edited documents the caller names, each spelled at D's location and at
-its row's, with the first conflict that applies: a clash with another node at the
-target path or a needed folder's path, `deleted_live`, `relocated`, else `none`.
+given) and the edited documents the caller names, each spelled at its row's location
+(the row is the only location), with the first conflict that applies: a clash with
+another node at the target path or a needed folder's path, `deleted_live`, else `none`.
 
 `lineages(view, ids)` is the bulk file-facts reader: visible locations, deleted
 identity fallback and folder chains are read for the set. `lineage` delegates
@@ -72,8 +72,8 @@ for a single id. Neither exposes hidden nodes outside the requested draft.
 | `node-locations.ts` | location claims (`claimDocumentLocation`), relocation history (`recordLocationHistory`) and `bumpLocationVersions` |
 | `draft-ownership.ts` | `draftMayHold` and its loaders (a draft's holder, a source's or document's owner); `draftReachKept`, whether a move keeps every draft that may hold a node able to |
 | `draft-tree-store.ts` | `draft_tree_changes` writes: `recordCreated` (a draft's `created` rows) and `dropDocumentRows` |
-| `folder-normalization.ts` | what live folder operations do to hidden nodes: a visible folder arriving at a hidden folder's path absorbs it (never refused; clashes are read through the tree view); a live delete, or a move out of where drafts can hold a folder, splits hidden contents into ancestor-closed hidden twins (`planSplit` from a snapshot, `applySplit` once). Change rows follow |
-| `node-moves.ts` | the phased batch move: `prepareMoves` builds one node-keyed plan before any write, then `vacateMoves`, `installMoves`, `recordMoves`. The live mover runs all four; Apply's draft tree step (`collab/adapters/drizzle-draft-tree-step.ts`) runs prepare, vacate and install before text admission and record after it |
+| `folder-normalization.ts` | what live folder operations do to hidden nodes: a visible folder arriving at a hidden folder's path absorbs it (never refused; clashes are read through the tree view); a live delete, or a move out of where drafts can hold a folder, splits hidden contents into ancestor-closed hidden twins (`planSplit` from a snapshot, `applySplit` once). Only rows move; no change rows are repointed |
+| `node-moves.ts` | the phased batch move: `prepareMoves` builds one node-keyed plan before any write, then `vacateMoves`, `installMoves`, `recordMoves`. Only the live mover (`moveNodes`, via the context-fs tree mutation store) runs them; Apply's draft tree step (`collab/adapters/drizzle-draft-tree-step.ts`) reveals and restores through `placement.ts` and does not move nodes |
 | `test-hooks.ts` | test-only hook points (`setTreeHook`) that DB suites use to interleave fences; no-ops in production |
 
 ## Catalog and locks
