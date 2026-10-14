@@ -654,8 +654,7 @@ export function useContextCatalogWake(
     () =>
       projectId
         ? resources?.onIdentityChanged((changed) => {
-            if (changed === projectId)
-              void queryClient.invalidateQueries(allWorkDraftsOf(projectId));
+            if (changed === projectId) invalidateDraftReads(queryClient, projectId);
           })
         : undefined,
     [projectId, queryClient, resources],
@@ -682,6 +681,14 @@ export function useContextCatalogWake(
         : undefined,
     [onColdWorkHint, projectId, queryClient, resources, transport],
   );
+}
+
+/** Every draft read of the project: each Work's list and each document's hints. */
+function invalidateDraftReads(queryClient: QueryClient, projectId: string): void {
+  void queryClient.invalidateQueries(allWorkDraftsOf(projectId));
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+  });
 }
 
 /** Every mounted draft list of the project, whatever Work it belongs to. */
@@ -745,6 +752,9 @@ export function pullContextCatalogOnHint(
           ? { queryKey: projectQueryKeys.workDrafts(projectId, requestedScope.workId) }
           : allWorkDraftsOf(projectId),
       );
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+      });
     })
     .catch(() => undefined);
 }

@@ -324,6 +324,9 @@ function createInMemoryDraftStub(): CollabDrafts {
       async listItems() {
         return { draftId: null, items: [], threadTitles: new Map() };
       },
+      async draftsChangingDocument() {
+        return [];
+      },
       async items() {
         return { draftId: null, items: [] };
       },

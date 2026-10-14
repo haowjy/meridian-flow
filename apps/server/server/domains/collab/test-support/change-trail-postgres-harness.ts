@@ -745,6 +745,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     diagnostics: createDraftReviewDiagnostics(eventSink),
     drafts: workDrafts,
     reviewItems,
+    pending: durableWorkDraftPendingStore,
     identity,
     discard: createDraftDiscard({
       drafts: workDrafts,

@@ -116,6 +116,11 @@ msgstr "{0, plural, one {Changes in # more document did not apply} other {Change
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"
 
+#. placeholder {0}: others.length
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "{0, plural, other {# drafts have changes to this}}"
+msgstr "{0, plural, other {# drafts have changes to this}}"
+
 #. placeholder {0}: list( entries.map( ({ name, outcome }) => `${name} ${outcome === "succeeded" ? i18n._("finished") : i18n._("stopped")}`, ), )
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "{0}"
@@ -395,6 +400,15 @@ msgstr "3 by 3, header row"
 #: src/features/chat/DeletedChatNotice.tsx
 msgid "A chat you had open was deleted."
 msgstr "A chat you had open was deleted."
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "A draft has changes to this"
+msgstr "A draft has changes to this"
+
+#. placeholder {0}: only.label
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "A draft has changes to this ({0})"
+msgstr "A draft has changes to this ({0})"
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -3478,6 +3492,10 @@ msgstr "Retry Work"
 msgid "Returned from the billing portal."
 msgstr "Returned from the billing portal."
 
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Review"
+msgstr "Review"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
@@ -4657,6 +4675,10 @@ msgstr "Unknown"
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
+
+#: src/features/editor/DocumentDraftHint.tsx
+msgid "Unnamed draft"
+msgstr "Unnamed draft"
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/mobile/MobileProject.tsx
