@@ -6,8 +6,10 @@
  * "Discarding", cancelled by Undo) until the edit lands.
  *
  * An entry owns its history and a lease on its room until Undo, so collapsing, filtering or reopening the
- * file never retires the document the Undo writes into. The surface owns the hook, so leaving it ends
- * every Undo (the Discards stay): the leases are released and the histories dropped.
+ * file never retires the document the Undo writes into. The hook's lifetime is the surface's and, beneath
+ * it, one Work's: leaving the surface or rebinding the chat to another Work ends every Undo (the Discards
+ * stay): the leases are released, the histories dropped, pending work cancelled and its late completion
+ * fenced out by the scope's epoch. The persistent chat is never remounted for it.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -52,25 +54,40 @@ export type HeadlessDiscards = {
 };
 
 let sequence = 0;
+const NO_ENTRIES: readonly DiscardedEntry[] = [];
 const NOTHING: RoomDiscard = { undo: () => {}, release: () => {} };
 
 export function useHeadlessDiscards(projectId: string, workId: string): HeadlessDiscards {
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
-  const [entries, setEntries] = useState<readonly DiscardedEntry[]>([]);
+  const scope = `${projectId}:${workId}`;
+  const [held, setHeld] = useState<{ scope: string; entries: readonly DiscardedEntry[] }>({
+    scope,
+    entries: [],
+  });
+  // Rows of an earlier Work are never shown, not even for the render before the scope's cleanup runs.
+  const entries = held.scope === scope ? held.entries : NO_ENTRIES;
+  const setEntries = useCallback(
+    (update: (entries: readonly DiscardedEntry[]) => readonly DiscardedEntry[]) =>
+      setHeld((current) => ({
+        scope,
+        entries: update(current.scope === scope ? current.entries : NO_ENTRIES),
+      })),
+    [scope],
+  );
   const owner = useRef(`headless-discard:${++sequence}`);
   const histories = useRef(new Map<string, Held>());
   /** The room each entry's history writes into, held for as long as the entry is. */
   const leases = useRef(new Map<string, string>());
-  const mounted = useRef(true);
+  /** Bumps whenever the scope ends; work begun under an earlier epoch must not publish. */
+  const epoch = useRef(0);
 
   useEffect(() => {
-    mounted.current = true;
     const ownerId = owner.current;
     const held = histories.current;
     const leased = leases.current;
     return () => {
-      mounted.current = false;
+      epoch.current += 1;
       for (const done of held.values()) {
         if (done instanceof Promise) void done.then((result) => result?.release());
         else done.release();
@@ -79,7 +96,7 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
       leased.clear();
       registry.releaseBranchRooms(ownerId);
     };
-  }, [registry]);
+  }, [registry, scope]);
 
   /** Hold `roomName` for this entry, or (null) let it go, keeping every other entry's room. */
   const lease = useCallback(
@@ -115,7 +132,7 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
         { id, file, change, index, phase: result ? "discarded" : "failed" },
       ]);
     },
-    [registry, lease],
+    [registry, lease, setEntries],
   );
 
   const discardFile = useCallback(
@@ -127,10 +144,12 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
         documentId: file.documentId,
         itemKey: file.draft.itemKey,
       };
+      const born = epoch.current;
+      const current = () => epoch.current === born;
       setEntries((held) => [...held, { id, file, change: null, index: 0, phase: "pending" }]);
       const done = (async () => {
         const meta = await queryClient.fetchQuery(draftMetaQueryOptions(draft));
-        if (meta.kind !== "text" || !mounted.current) return null;
+        if (meta.kind !== "text" || !current()) return null;
         // Cancelled while the room was looked up: nothing is leased or written.
         if (!histories.current.has(id)) return NOTHING;
         lease(id, meta.roomName);
@@ -148,7 +167,7 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
       })().catch(() => null);
       histories.current.set(id, done);
       void done.then((result) => {
-        if (!mounted.current || !histories.current.has(id)) return;
+        if (!current() || !histories.current.has(id)) return;
         if (result === NOTHING) {
           histories.current.delete(id);
           lease(id, null);
@@ -160,7 +179,7 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
         setEntries((held) => held.map((entry) => (entry.id === id ? { ...entry, phase } : entry)));
       });
     },
-    [projectId, workId, queryClient, registry, lease],
+    [projectId, workId, queryClient, registry, lease, setEntries],
   );
 
   const undo = useCallback(
@@ -172,7 +191,7 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
       if (done instanceof Promise) void done.then((result) => result?.undo());
       else done?.undo();
     },
-    [lease],
+    [lease, setEntries],
   );
 
   return {
