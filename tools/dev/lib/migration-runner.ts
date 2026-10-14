@@ -47,7 +47,8 @@ class MigrationDataStepError extends Error {
   readonly migrationPath: string;
 
   constructor(step: MigrationDataStep, migrationPath: string, phase: string, cause: unknown) {
-    super(`Data step ${stepKey(step)} ${phase} failed before ${migrationPath}`, { cause });
+    const reason = cause instanceof Error ? `: ${cause.message}` : "";
+    super(`Data step ${stepKey(step)} ${phase} failed before ${migrationPath}${reason}`, { cause });
     this.name = "MigrationDataStepError";
     this.dataStep = stepKey(step);
     this.migrationPath = migrationPath;

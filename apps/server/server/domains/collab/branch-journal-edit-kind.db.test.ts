@@ -52,7 +52,7 @@ it("returns editKind from the pending part's origin, whatever its placement or t
       .where(eq(documentEdits.id, undoPart.editId));
     await db
       .update(documentEditParts)
-      .set({ placement: { kind: "retired" } as never })
+      .set({ placement: { kind: "discarded" } })
       .where(eq(documentEditParts.id, undoPart.id));
     await db
       .delete(documentEditParts)

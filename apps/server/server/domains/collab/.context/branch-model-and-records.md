@@ -15,7 +15,7 @@ Five names that look alike and are not. Code, docs and wire types keep them apar
 ```text
 Work 1──1 active draft 1──* item ──0..1── branch 1──* thread peer
                               │                  │
-                              │                  └ room: branchRoomName(branchId, generation)
+                              │                  └ room: branchRoomName(branchId)
                               └ presented address (workId, itemKey) ─ command (commandId)
 ```
 
@@ -217,9 +217,9 @@ comes from context's tree views, never a Yjs manifest.
   inverses use agent attribution. Bookkeeping rows also use `system`. Settlement appends exact authored rows followed by one
   `reconcile` row carrying canonical replay coverage, not a new semantic edit.
   Immutable edit parts and certified aliases own reversal correspondence.
-- `document_branches` stores branch snapshots/state vectors/generation.
+- `document_branches` stores branch snapshots, state vectors, `review_base` revision and rebase cuts.
 - `branch_write_journal` stores branch write rows and review status.
-- `push_lineage` stores publication identity, typed branch generation, and
+- `push_lineage` stores publication identity and
   idempotency lineage. The change trail is the sole durable publication record;
   lineage never duplicates block diffs.
 

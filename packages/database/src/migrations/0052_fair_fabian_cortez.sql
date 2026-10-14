@@ -4,13 +4,16 @@
 --
 -- 1. Rewrite document_edit_parts in committed batches: strip `generation` from placement and origin,
 --    `retired` becomes `discarded`, only rows that change are touched. Each touched row fires
---    capture_change_trail_part (never disabled), so batches stay small and commit between rounds.
+--    capture_change_trail_part (never disabled), so batches stay small and commit between rounds. The
+--    trigger's owner lookup is a recursive CTE whose row estimate trips JIT compilation (about 300 ms per
+--    call on a small table), so each batch transaction runs with jit off.
 DO $$
 DECLARE
   last_id bigint := 0;
   batch_end bigint;
 BEGIN
   LOOP
+    PERFORM set_config('jit', 'off', true);
     SELECT max(id) INTO batch_end FROM (
       SELECT id FROM document_edit_parts
       WHERE id > last_id
