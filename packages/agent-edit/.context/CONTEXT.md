@@ -15,6 +15,8 @@ Read the page that owns the seam you are changing:
   semantic certification, edit application, and forward inverses.
 - [Write invariants](write-invariants.md) — block identity, destructive-edit
   safety, synchronization, and resolver constraints.
+- [Diff and review model](diff-review.md): `@meridian/agent-edit/diff`, the
+  base, changes, content Apply and local Discard, the rebase, and late peers.
 - [Link identity](link-correspondence.md) — ref assignment at every write
   door, find-splice restoration, shown-link facts, and exact correspondence.
 - [Write tool surface](write-tool-surface.md) — lifecycle behavior, outcomes,

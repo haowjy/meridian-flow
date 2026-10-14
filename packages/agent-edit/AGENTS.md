@@ -50,6 +50,13 @@ before and after cuts without acquiring or applying to a live document.
 - Keep the kernel CRDT-neutral but be honest that v1 content currency is
   ProseMirror via `@meridian/markup`.
 
+- `./diff` is the pure review model shared by browser, server and migration:
+  `blocksEqual` decides `has_effect`, `projectReview` produces the changes,
+  `composeGroups` builds the Apply and local Discard patches, and `rebase`
+  merges live into a draft. Never reimplement any of them beside it; two
+  copies of "what changed" disagree on `has_effect` and the Work page lies.
+  See [`.context/diff-review.md`](.context/diff-review.md).
+
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 
 ## Forward inverse primitive (host-owned policy)
