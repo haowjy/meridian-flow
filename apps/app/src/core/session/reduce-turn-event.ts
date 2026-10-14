@@ -7,8 +7,11 @@ import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/con
 import {
   blockContentRecord,
   EventType,
+  EXECUTION_ENDED_EVENT,
   interruptIdForBlock,
+  MESSAGES_DELIVERED_EVENT,
   readRunStartedMeta,
+  WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
@@ -1079,7 +1082,11 @@ export function applyAguiEventToStore(
         event.name === "meridian.turn_change_trail.updated" ||
         event.name === "meridian.turn_change_trail.settled" ||
         event.name === WORK_CONTEXT_PROJECTION_EVENT ||
-        event.name === "meridian.inbox.changed"
+        event.name === "meridian.inbox.changed" ||
+        // Run-boundary frames: the run controller and switch view consume them.
+        event.name === WRITE_MODE_SWITCHED_EVENT ||
+        event.name === MESSAGES_DELIVERED_EVENT ||
+        event.name === EXECUTION_ENDED_EVENT
       ) {
         return;
       }
