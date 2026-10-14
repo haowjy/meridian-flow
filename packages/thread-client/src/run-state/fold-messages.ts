@@ -1,13 +1,12 @@
 /**
  * The message folds: busy, the queued tray, the Stop and Cancel queue bodies, what a hand-back
- * hides, and when a Retry is spent. Pure selectors over the run-state view; they decide nothing
+ * hides. Pure selectors over the run-state view; they decide nothing
  * about which record is newer or when an intent retires (`run-state-view.ts` does).
  *
  * They read only `message` and `handBack` intents, and only items with `intent === "message"` and
  * writer provenance. A switch, or a control row, never counts toward busy, the tray or Stop.
  */
 
-import { compareSeq } from "@meridian/contracts/protocol";
 import type { HandBackScope, PendingInboxItem, StopRequest } from "@meridian/contracts/threads";
 import type { RunStateView } from "./run-state-view";
 
@@ -120,20 +119,6 @@ export function handBackCandidates(view: RunStateView, scope: HandBackScope): st
     .filter((item) => item.seq <= scope.seenThrough)
     .map((item) => item.id);
   return [...new Set([...ids, ...scope.mine])];
-}
-
-/**
- * Whether a Retry has done its work: the reply turn exists, or the held record, at or after the
- * Retry answer's version, shows an execution other than the Retry's, or none.
- */
-export function retryRetired(
-  view: RunStateView,
-  retry: { executionId: string | null; answerVersion: string; replyTurnExists: boolean },
-): boolean {
-  if (retry.replyTurnExists) return true;
-  const record = view.record;
-  if (!record || compareSeq(record.version, retry.answerVersion) < 0) return false;
-  return record.execution === null || record.execution.executionId !== retry.executionId;
 }
 
 /** Where this tab's Stop control stands. Other tabs never see Stopping: they see the record. */

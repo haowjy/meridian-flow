@@ -8,7 +8,6 @@ import {
   isBlockedForUsage,
   isBusy,
   isOwed,
-  retryRetired,
   stopRequest,
   stopStatus,
   usageBlockedMessages,
@@ -179,19 +178,5 @@ describe("message folds", () => {
     const answered = answerIntent(later, "handBack", "req", "3999");
     expect(hiddenWriterTurns(answered).size).toBe(2);
     expect(hiddenWriterTurns(receiveRecord(answered, record("3999"))).size).toBe(0);
-  });
-
-  it("retires a Retry once the reply exists or the record shows another execution or none", () => {
-    // Risk: a Retry stand-in that never leaves, or leaves before the record shows its execution.
-    const retry = { executionId: "e2", answerVersion: "5999", replyTurnExists: false };
-    const running = viewOf(
-      record("5999", { execution: { executionId: "e2", currentTurnId: "r" } }),
-    );
-    expect(retryRetired(running, retry)).toBe(false);
-    expect(retryRetired(running, { ...retry, replyTurnExists: true })).toBe(true);
-    expect(retryRetired(receiveRecord(running, record("6999")), retry)).toBe(true);
-    // An older record says nothing about it.
-    expect(retryRetired(viewOf(record("4999")), retry)).toBe(false);
-    expect(retryRetired(INITIAL_RUN_STATE_VIEW, retry)).toBe(false);
   });
 });
