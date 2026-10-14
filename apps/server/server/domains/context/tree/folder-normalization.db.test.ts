@@ -440,6 +440,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft((await document(notes)).hidden, "still hidden after Apply").toBe(true);
     });
 
+    it("answers a path two of a draft's documents share with the clash, never one of them (absorb)", async () => {
+      const scenario = await start();
+      const ascension = await scenario.work("Ascension", "draft");
+      await scenario.seedLiveFolder("drafts");
+      const first = await scenario.model(ascension).create("drafts/note", "First.");
+      const second = await scenario.model(ascension).create("ideas/note", "Second.");
+      expect.soft(await scenario.writer.move("drafts", "ideas"), "no live refusal").toMatchObject({
+        ok: true,
+      });
+
+      const view = scenario.view(ascension);
+      const clash = { ok: false, error: { code: "invalid_operation" } };
+      expect.soft(await view.stat("ideas/note"), "stat").toMatchObject(clash);
+      expect.soft(await view.read("ideas/note"), "read").toMatchObject(clash);
+      expect.soft(await view.ls("ideas"), "listing the folder both landed in").toMatchObject({
+        ok: true,
+      });
+      expect.soft((await document(first)).hidden && (await document(second)).hidden).toBe(true);
+    });
+
     it("refuses a batch whose final namespace puts a document at a folder's alias, folders aside (#766)", async () => {
       const scenario = await start();
       const source = scenario.project.sources.manuscript;
