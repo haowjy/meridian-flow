@@ -180,8 +180,13 @@ export interface RuntimeDelivery
     } | null>,
     options?: {
       signal?: AbortSignal;
-      /** A Retry starts a reply by itself: a queued switch is due at its run start. */
-      retry?: boolean;
+      /**
+       * The failed reply a Retry re-answers. A Retry starts a reply by itself,
+       * so a queued switch is due at its run start; once any switch has landed,
+       * looking past trailing switch turns must still reach this reply, else
+       * the Retry is refused (a newer message or another Retry moved the leaf).
+       */
+      retryOf?: TurnId;
     },
   ): Promise<T>;
   /** Persists a response and delivers `ids` by `byTurn`, the assistant it answers them with. */

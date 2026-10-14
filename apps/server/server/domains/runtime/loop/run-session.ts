@@ -3,7 +3,6 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import {
-  isWriteModeSwitchTurn,
   type ThreadRepository,
   type TurnRepository,
   TurnStartConflictError,
@@ -24,6 +23,7 @@ import {
   UnsettledPlaceholderError,
 } from "./run-turn-port.js";
 import type { RuntimeDelivery } from "./runtime-delivery.js";
+import { pastTrailingSwitches } from "./write-mode-switch.js";
 
 type RunSession = {
   controller: AbortController;
@@ -168,12 +168,6 @@ export function createRunSessions(deps: {
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
       heartbeat.unref();
-      if (
-        "expectedLeafTurnId" in input &&
-        input.expectedLeafTurnId &&
-        (await deps.repos.turns.getLatestByThread(threadId))?.id !== input.expectedLeafTurnId
-      )
-        throw new ReplyRetryUnavailableError(threadId);
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,
@@ -249,14 +243,6 @@ export function createRunSessions(deps: {
     }
   }
 
-  /** A switch applied after a failed reply must not take Retry away; the retry chains after it. */
-  async function pastTrailingSwitches(turn: Turn): Promise<Turn | null> {
-    let current: Turn | null = turn;
-    while (current && isWriteModeSwitchTurn(current) && current.prevTurnId)
-      current = await deps.repos.turns.findById(current.prevTurnId as TurnId);
-    return current;
-  }
-
   async function startDrain(threadId: ThreadId): Promise<void> {
     try {
       const run = await prepare({ threadId, drain: true });
@@ -323,7 +309,7 @@ export function createRunSessions(deps: {
         failedTurn.role !== "assistant" ||
         failedTurn.status !== "error" ||
         !latestTurn ||
-        (await pastTrailingSwitches(latestTurn))?.id !== failedTurn.id
+        (await pastTrailingSwitches(deps.repos.turns, latestTurn))?.id !== failedTurn.id
       )
         return refuse();
 
@@ -334,7 +320,6 @@ export function createRunSessions(deps: {
           drain: true,
           replyTurnId: input.replyTurnId,
           retryOf: input.failedTurnId,
-          expectedLeafTurnId: latestTurn.id,
         });
       } catch (error) {
         const raced = await accepted();

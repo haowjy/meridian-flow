@@ -737,7 +737,7 @@ async function runDrainTurn(
     },
     {
       signal: input.signal,
-      retry: !!input.replyTurnId,
+      retryOf: input.retryOf,
     },
   );
 
