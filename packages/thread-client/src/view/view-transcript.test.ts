@@ -93,6 +93,17 @@ it("draws a pending Retry in the failed reply's place, even with a message sent 
     activity: { awaitingSubagents: false },
   });
   expect(ids(pending)).toEqual(["u1", "r1", "u2"]);
+  // Risk: a pending switch's notice at the tail while its turn lands before the Retry's reply,
+  // so it jumps when the frame arrives. `awaiting_run` sits before the stand-in from the press
+  // until the stored turn replaces it; `waiting` (a reply holds the chat) stays at the tail.
+  const slot = (switchAwaitsRun: boolean) =>
+    viewTranscript({
+      turns: base,
+      standIns: [standIn],
+      switchAwaitsRun,
+      activity: { awaitingSubagents: false },
+    }).controlSlot;
+  expect([slot(true), slot(false)]).toEqual([1, 3]);
   // Refused: the stand-in goes, and nothing supersedes the failed reply.
   expect(ids(viewTranscript({ turns: base, activity: { awaitingSubagents: false } }))).toEqual([
     "u1",

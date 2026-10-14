@@ -51,6 +51,11 @@ export type TranscriptViewInput = {
    * turn or a stand-in).
    */
   retried?: ReadonlySet<string>;
+  /**
+   * A queued switch applies when the next run starts (`awaiting_run` in the record). Its notice
+   * then sits before that run's reply stand-in (`controlSlot`), where its turn will land.
+   */
+  switchAwaitsRun?: boolean;
   /** Called for a persisted record that misses its contract. The caller decides where it is reported. */
   onContractFailure?: (failure: PersistedContractFailure) => void;
 };
@@ -92,6 +97,12 @@ export type TranscriptView = {
   writer: ReadonlyMap<string, WriterText>;
   /** Items of every turn row that is not a writer message (replies, custom-block system cards), by turn id. */
   items: ReadonlyMap<string, AssistantView>;
+  /**
+   * The index in `rows` before which a queued switch's notice sits: the first reply stand-in
+   * the server doesn't have yet when `switchAwaitsRun`, else `rows.length` (the tail). A switch
+   * a reply holds the chat for applies after that reply, so it stays at the tail.
+   */
+  controlSlot: number;
   /** Where a child's latest line is shown: child thread id to the reply's turn id. */
   revealTurnByChildThreadId: ReadonlyMap<string, string>;
 };
@@ -160,9 +171,16 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
       queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
     };
   });
+  const standInReplies = new Set(
+    standIns.filter((turn) => turn.role === "assistant" && !stored.has(turn.id)).map((t) => t.id),
+  );
+  const standInAt = input.switchAwaitsRun
+    ? rows.findIndex((row) => row.kind === "turn" && standInReplies.has(row.turn.id))
+    : -1;
   return {
     turns,
     rows,
+    controlSlot: standInAt < 0 ? rows.length : standInAt,
     writer,
     items,
     revealTurnByChildThreadId: model.latestRevealTurnByChildThreadId,

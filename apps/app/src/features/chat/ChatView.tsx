@@ -29,6 +29,7 @@ import {
   hiddenWriterTurns,
   isAwaitingExecution,
   isBusy,
+  switchState,
   usageBlockedMessages,
   viewTranscript,
   waitingWriterMessages,
@@ -192,6 +193,10 @@ export function ChatView({
   );
   const hiddenTurnIds = useMemo(() => hiddenWriterTurns(runState), [runState]);
   const usageBlocked = usageBlockedMessages(runState).length > 0;
+  const switchAwaitsRun = useMemo(
+    () => switchState(runState)?.rows.some((row) => row.awaitsRun) ?? false,
+    [runState],
+  );
   const inheritedTranscript = inherited.view?.transcript ?? null;
   const opening = useMemo(
     () =>
@@ -222,6 +227,7 @@ export function ChatView({
         queued: queuedWriterTurnIds,
         hidden: hiddenTurnIds,
         retried: retriedReplies,
+        switchAwaitsRun,
         onContractFailure: reportPersistedContractFailure,
       }),
     [
@@ -233,6 +239,7 @@ export function ChatView({
       hiddenTurnIds,
       retriedReplies,
       standIns,
+      switchAwaitsRun,
     ],
   );
   const { turns } = view;

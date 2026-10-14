@@ -168,6 +168,7 @@ export function useSwitchView(input: {
         control: { kind: "write_mode" as const, mode: row.mode },
         status: row.status,
         ...(row.awaitingServer ? { awaitingServer: true } : {}),
+        ...(row.awaitsRun ? { awaitsRun: true } : {}),
       })),
     [folded.rows],
   );
