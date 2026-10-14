@@ -1,6 +1,14 @@
 /** Loads current-generation Work-draft journal evidence for pending-review classification. */
 import type { DraftId } from "@meridian/contracts";
-import type { DocumentId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
+
+/** An active draft with changes to one document, oldest first, and the Work it came from. */
+export type DocumentDraftOrigin = {
+  draftId: DraftId;
+  originWorkId: WorkId;
+  /** The origin Work's name; null for the locked No Work row, which has none to show. */
+  originWorkName: string | null;
+};
 
 export type WorkDraftPendingEvidence = {
   branch: {
@@ -41,5 +49,9 @@ export type WorkDraftPendingStore = {
    * its active draft's branches with reviewable rows and (`hasEffect` or `blocking`), plus
    * that draft's change rows. The one membership predicate of `draft-review-items.ts`.
    */
+  listDraftsChangingDocument(input: {
+    projectId: ProjectId;
+    documentId: DocumentId;
+  }): Promise<DocumentDraftOrigin[]>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
 };

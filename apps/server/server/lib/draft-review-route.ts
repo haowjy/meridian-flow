@@ -9,6 +9,7 @@
 import type { DraftCommandId, DraftId } from "@meridian/contracts";
 import { isProjectScopedScheme, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
+  type DocumentDraftHintsResponse,
   DRAFT_COMMAND_CONFLICT_CODE,
   DRAFT_COMMAND_UNKNOWN_CODE,
   type DraftApplyAllRequest,
@@ -33,6 +34,7 @@ import {
   type DraftCommandEnvelope,
 } from "../domains/collab/domain/draft-commands.js";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
+import { draftItemKey } from "../domains/collab/domain/draft-tree-payload.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-draft-review-service.js";
 import { type FileGrant, type FileNeed, isFileAccessDenied } from "../domains/file-policy/index.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
@@ -362,6 +364,34 @@ export async function handleWorkDraftListRequest(
     items: listed.items
       .filter((item) => readable.has(item.documentId) || item.deletedLive)
       .map((item) => toWireItem(item, listed.threadTitles)),
+  };
+}
+
+/**
+ * Which active drafts in the project have changes to one live document, from any view. It
+ * authorizes like the review routes: the project owner, and a read grant on the document
+ * (a document the writer cannot read gets an empty answer, not a hint of its drafts).
+ */
+export async function handleDocumentDraftHintsRequest(
+  deps: DraftRouteServices,
+  input: { projectId: ProjectId; documentId: DocumentId; userId: UserId },
+): Promise<DocumentDraftHintsResponse> {
+  const project = await deps.projects.findById(input.projectId);
+  if (!project || project.userId !== input.userId || project.deletedAt) {
+    throw createError({ statusCode: 404, message: "Document not found" });
+  }
+  const readable = await deps.fileAccess.listAccess({ accountId: input.userId }, [
+    input.documentId,
+  ]);
+  if (!readable.has(input.documentId)) return { items: [] };
+  const drafts = await deps.documentSync.draftReview.draftsChangingDocument(input);
+  return {
+    items: drafts.map((draft) => ({
+      draftId: draft.draftId,
+      itemKey: draftItemKey(draft.draftId, input.documentId),
+      label: draft.originWorkName,
+      originWorkId: draft.originWorkId,
+    })),
   };
 }
 
