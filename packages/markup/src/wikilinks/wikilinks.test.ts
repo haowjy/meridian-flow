@@ -1,17 +1,45 @@
 /** Fixture and boundary contracts for the shared wiki-style Markdown scanner. */
 
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { markdownParser } from "../markdown-parse.js";
 import { locate, rankWikilinkMatches, scanWikilinks, splitFrontmatter } from "./index.js";
 
-const fixture = (name: string) =>
-  readFileSync(new URL(`./fixtures/${name}.md`, import.meta.url), "utf8");
+const frontmatterChapter = [
+  "---",
+  "aliases: [Gate Opening, First Chapter]",
+  "tags: [serial, progression-fantasy]",
+  "status: revised",
+  "---",
+  "# Chapter 1",
+  "",
+  "[[Lin Feng|the protagonist]] saw [[Cultivation Realms#Foundation]] and [[Sects]].",
+  "",
+  "%% This reveal belongs in chapter twenty. %%",
+  "",
+  "![[map.png]]",
+  "",
+  "See [[Cultivation Realms#^core-oath]].",
+  "",
+].join("\n");
 
-describe("fixture vault", () => {
+const linkedChapter = [
+  "---",
+  "aliases: [The First Trial]",
+  "---",
+  "# The First Trial",
+  "",
+  "Previously: [[Chapter 1]]. Read [the register](../Lore/Sects.md) and [a ledger](Sects%20and%20Clans.md).",
+  "",
+  "![[Chapter 1]]",
+  "",
+  "[[Lin Feng|Lin]] chose the empty bowl. %% Cut this hint? %%",
+  "",
+].join("\n");
+
+describe("chapter vectors", () => {
   it("recognizes Chapter 1 without rewriting its text", () => {
-    const input = fixture("Chapter 1 - The Gate");
+    const input = frontmatterChapter;
     const { source, findings } = scanWikilinks(input);
     expect(source).toBe(input);
     const frontmatter = findings.find((finding) => finding.kind === "frontmatter");
@@ -50,8 +78,8 @@ describe("fixture vault", () => {
     for (const link of links) expect(source.slice(link.from, link.to)).toMatch(/^!?\[\[.*\]\]$/);
   });
 
-  it("recognizes Ch 2's note embed and ordinary Markdown links", () => {
-    const { findings } = scanWikilinks(fixture("Ch 2"));
+  it("recognizes a note embed and ordinary Markdown links", () => {
+    const { findings } = scanWikilinks(linkedChapter);
     expect(
       findings.filter((finding) => finding.kind === "wikilink" && !finding.embed),
     ).toHaveLength(2);
@@ -166,15 +194,6 @@ describe("syntax boundaries", () => {
     const link = findings.find((finding) => finding.kind === "wikilink");
     expect(link?.from).toBe(source.indexOf("[[After]]"));
     expect(source.slice(link?.from, link?.to)).toBe("[[After]]");
-  });
-
-  it("keeps already-parsed paste text and its offsets without repeating ingress", () => {
-    const text = "| A |\n| --- |\n| first\\\nsecond |\n\n[[After]]";
-    const { source, findings } = scanWikilinks(text, { preprocessed: true });
-    expect(source).toBe(text);
-    expect(findings.find((finding) => finding.kind === "wikilink")?.from).toBe(
-      text.indexOf("[[After]]"),
-    );
   });
 
   it("reports unclosed comments through EOF without leaking their links", () => {

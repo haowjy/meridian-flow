@@ -37,8 +37,6 @@ export type WikilinkSyntaxFinding =
 export type WikilinkScanOptions = {
   /** Prose projections use their host's node/mark semantics, not Markdown block or code syntax. */
   context?: "markdown" | "prose";
-  /** Skip ingress for already-parsed source; findings index the supplied text. */
-  preprocessed?: boolean;
 };
 
 export type WikilinkScan = {
@@ -159,7 +157,7 @@ export function scanWikilinks(sourceText: string, options: WikilinkScanOptions =
   // Split raw YAML first: table-looking properties must never enter the table preprocessor.
   const prose = options.context === "prose";
   let source = sourceText;
-  if (!options.preprocessed && !prose) {
+  if (!prose) {
     const rawFrontmatter = splitFrontmatter(sourceText).frontmatter;
     const protectedRanges: SourceRange[] = rawFrontmatter ? [rawFrontmatter] : [];
     protectedRanges.push(...discoverComments(sourceText, protectedRanges));

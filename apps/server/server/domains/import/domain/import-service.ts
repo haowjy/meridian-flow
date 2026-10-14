@@ -606,7 +606,7 @@ export function createImportService(deps: {
       let record = await repo.read(manifest.importId, projectId);
       if (!record) {
         const destination = await tree.destination(manifest.destination.folderUri);
-        const nodes = planWithDerivedIds(manifest, { projectId }, destination.folderId);
+        const nodes = await planWithDerivedIds(manifest, { projectId }, destination.folderId);
         const existingLinks = await tree.existingLinks();
         await repo.transaction(() =>
           repo.insert(

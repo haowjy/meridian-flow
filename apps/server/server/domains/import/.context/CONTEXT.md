@@ -99,6 +99,14 @@ and wiki-links; a batch above 1 lands through multipart receives. Keep
 its output in the work directory, not the repository. It is not part of the
 correctness gate.
 
+## Classification
+
+`domain/classify.ts` shares the chat-upload classifier (`file-intake`): `file-type` binary
+signatures first, then the extension/MIME table for text, so an RTF or archive lands as a stored
+file rather than a Markdown note of raw code. Import only has the manifest's 512-byte sniff, which
+bounds what a signature can see. DOCX is chosen by extension and converted with Mammoth to HTML,
+then unified (`rehype-remark`, GFM, `remark-stringify`) to Markdown.
+
 ## Landing and storage
 
 A multipart receive prepares its selection once (`domain/prepared-selection.ts`):
