@@ -184,6 +184,7 @@ export function createRuntimeHarness(
         workContext,
         repos,
         eventWriter,
+        headSeq: (id) => journal.headSeq(id),
         notices,
         runClaim: runClaim as ReturnType<typeof createInMemoryRunClaim>,
         inbox,

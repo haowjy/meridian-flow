@@ -102,6 +102,8 @@ export function createDeliveryAdapter(
     runStarter: RunStarter;
     schedulePostCommit(task: () => Promise<void>): void;
     publishStatus?(threadId: ThreadId): Promise<void>;
+    /** The thread's journal head as the socket numbers its frames. */
+    headSeq(threadId: ThreadId): Promise<bigint>;
     writeModeSwitch: WriteModeSwitchPort;
   },
 ): RuntimeDelivery {
@@ -992,6 +994,7 @@ export function createDeliveryAdapter(
         if (!thread) throw new Error(`Thread not found: ${threadId}`);
         return thread.aiWriteMode;
       },
+      headSeq: deps.headSeq,
       applyDueSwitches,
       replyHolds: async (id) => (await deps.runClaim.holder(id)) !== null,
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),

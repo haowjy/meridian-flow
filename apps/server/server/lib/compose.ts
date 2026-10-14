@@ -797,6 +797,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolRegistry,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
+    headSeq: (id) => threadEventHub.headSeq(id),
     runClaim: runClaim,
     notices: ports.notices,
     runStarter,
@@ -1222,6 +1223,7 @@ export function createInMemoryAppServices(): AppServices {
   const inbox = createInMemoryInbox();
   const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
+  const journal = createInMemoryEventJournalWriter();
   const delivery = createInMemoryRuntimeDelivery({
     backgroundTasks,
     workContext: {
@@ -1230,7 +1232,8 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     repos: threadRepos,
-    eventWriter: createInMemoryEventJournalWriter(),
+    eventWriter: journal,
+    headSeq: (id) => journal.headSeq(id),
     notices,
     runClaim,
     inbox,

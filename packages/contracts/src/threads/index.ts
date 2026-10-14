@@ -165,13 +165,28 @@ export {
   writeModeControlBodySchema,
 } from "./control-body.js";
 export type EnqueueThreadControlRequest = { id: string; control: ControlBody };
+/**
+ * The answer to a control request, read in one transaction under the thread
+ * lock. `seq` is the thread's journal head (the last frame seq the socket
+ * carries, the same space as the snapshot's `nextSeq - 1`) at that read; the
+ * switch state it reports is exactly the state after every frame at or below
+ * it. Only switch transitions need that lock, so later frames at higher
+ * seqs can change the switch state only by being later switch transitions.
+ */
 export type EnqueueThreadControlResponse = {
   id: string;
+  /** The thread's queued write-mode switch (not necessarily this request's row), or null. */
   pending: PendingInboxItem | null;
   turnId: string | null;
+  /** Decimal string of the journal head at the read. */
+  seq: string;
+  /** The thread's applied write mode at the same read. */
+  mode: AiWriteMode;
 };
 export type WithdrawThreadControlResponse = {
   outcome: "withdrawn" | "already_started";
+  /** Decimal string of the journal head after the withdrawal; same clock as the enqueue answer. */
+  seq: string;
 };
 
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */

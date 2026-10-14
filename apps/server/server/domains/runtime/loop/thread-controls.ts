@@ -5,7 +5,13 @@
  */
 import { setTimeout as sleep } from "node:timers/promises";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { ControlBody, ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
+import type {
+  ControlBody,
+  PendingInboxItem,
+  ThreadPendingInbox,
+  Turn,
+  WithdrawThreadControlResponse,
+} from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { queuedWriteModeSwitch } from "./next-inbox-work.js";
 import type { InboxMessage, MessageDraft } from "./ports.js";
@@ -41,6 +47,8 @@ export function createThreadControls(deps: {
   enqueueSettled(draft: MessageDraft, cancelledIds: readonly string[]): Promise<void>;
   selectPending(threadId: ThreadId): Promise<InboxMessage[]>;
   threadWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
+  /** The thread's journal head in the socket's cursor space: the last frame seq it holds. */
+  headSeq(threadId: ThreadId): Promise<bigint>;
   /** Applies due switches under the run claim; false when the claim was busy. */
   applyDueSwitches(threadId: ThreadId): Promise<boolean>;
   /** Whether a reply holds the chat: its release wake applies the switch. */
@@ -106,13 +114,16 @@ export function createThreadControls(deps: {
         return { created: true, apply: true };
       });
       if (outcome.apply) await applyIdleSwitch(input.threadId);
-      // One read under the lock: a switch applies under it too, so the answer
-      // never pairs a pre-apply turn read with a post-apply queue read.
+      // One read under the lock: every switch transition commits under it, so
+      // the mode and queue read here are the server's switch state as of `seq`,
+      // and the answer never pairs a pre-apply turn read with a post-apply queue.
       const response = await deps.withThreadLock(input.threadId, async () => {
         const turn = await deps.findControlTurn(input.threadId, input.id);
-        const pending =
-          (await deps.pending(input.threadId)).items.find((item) => item.id === input.id) ?? null;
-        return { id: input.id, pending, turnId: turn?.id ?? null };
+        const pending = (await deps.pending(input.threadId)).items.find(isQueuedSwitch) ?? null;
+        const mode = await deps.threadWriteMode(input.threadId);
+        // Last, so it is at or past the frame of every transition read above.
+        const seq = (await deps.headSeq(input.threadId)).toString();
+        return { id: input.id, pending, turnId: turn?.id ?? null, seq, mode };
       });
       return { created: outcome.created, response };
     },
@@ -121,10 +132,10 @@ export function createThreadControls(deps: {
         const row = await deps.findMessage(controlId);
         if (row?.threadId !== threadId || row.intent !== "control")
           throw new ThreadControlError(404, "control_not_found");
-        if (await deps.findControlTurn(threadId, controlId)) return { outcome: "already_started" };
-        if (row.deliveredAt) return { outcome: "withdrawn" };
-        await deps.acknowledge(threadId, [controlId]);
-        return { outcome: "withdrawn" };
+        let outcome: WithdrawThreadControlResponse["outcome"] = "withdrawn";
+        if (await deps.findControlTurn(threadId, controlId)) outcome = "already_started";
+        else if (!row.deliveredAt) await deps.acknowledge(threadId, [controlId]);
+        return { outcome, seq: (await deps.headSeq(threadId)).toString() };
       }),
   };
 }
@@ -133,4 +144,8 @@ function sameControl(left: ControlBody, right: ControlBody): boolean {
   if (left.kind === "compact")
     return right.kind === "compact" && left.instructions === right.instructions;
   return right.kind === "write_mode" && left.mode === right.mode;
+}
+
+function isQueuedSwitch(item: PendingInboxItem): boolean {
+  return item.control?.kind === "write_mode";
 }
