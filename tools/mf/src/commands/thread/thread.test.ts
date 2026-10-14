@@ -662,8 +662,15 @@ describe("thread", () => {
       isolated.publish({ type: EventType.RUN_ERROR, message: "orphaned" });
       isolated.publish({
         type: EventType.CUSTOM,
-        name: "meridian.inbox.changed",
-        value: { items: [] },
+        name: "meridian.run_state",
+        value: {
+          version: "9999",
+          items: [],
+          sentThrough: 0,
+          execution: null,
+          mode: "direct",
+          blocked: null,
+        },
       });
       const result = await isolated.mf([
         "thread",
@@ -683,7 +690,7 @@ describe("thread", () => {
         .map((line) => JSON.parse(line));
       expect(records).toContainEqual(expect.objectContaining({ type: "turn.failed" }));
       expect(records).toContainEqual(
-        expect.objectContaining({ type: "event", name: "meridian.inbox.changed" }),
+        expect.objectContaining({ type: "event", name: "meridian.run_state" }),
       );
       expect(records.at(-1)).toMatchObject({
         outcome: "timeout",
