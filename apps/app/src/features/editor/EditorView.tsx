@@ -255,7 +255,9 @@ function ReviewError({ props }: { props: EditorViewProps }) {
               <Trans>Retry</Trans>
             </Button>
           ) : null}
+          {/* A text draft is discarded in its editor (Ctrl+Z undoes it); with none open only a whole item can be. */}
           {props.reviewItemKey &&
+          controller.wholeItem &&
           controller.inlineReview?.documentId === props.documentId &&
           controller.inlineReview.itemKey === props.reviewItemKey ? (
             <Button
