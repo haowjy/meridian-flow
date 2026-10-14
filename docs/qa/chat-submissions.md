@@ -173,7 +173,13 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
    default is refetched, never patched from a divider.
 9. Steer, then switch, during a reply: once the later reply ends, the earlier one
    shows Copy and its actions (the divider ends continuation).
-10. Read the live region (`[role=status]`) through a queued switch, its apply and a
+10. Two devices (two named browser sessions, one account, a slow reply): device 1 sends and
+    chooses the other mode, so both show the queued row. Device 2 chooses the original mode.
+    Sample both pages per frame (a MutationObserver and `requestAnimationFrame` over the row,
+    Withdraw and the toolbar label): device 2's row disappears at its click and never comes
+    back, the toolbar never reverts, device 1's row clears when the answer lands, and the
+    server's inbox holds only the message with no divider. Repeat three times.
+11. Read the live region (`[role=status]`) through a queued switch, its apply and a
     switch back: "Switch to … queued", then "Switched to …", then nothing for the switch back.
     Reload with a switch queued: nothing is announced. A failed switch announces once, and
     Retry or Withdraw clears "Couldn't switch…".
