@@ -119,7 +119,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
     ...panelTab,
     documentId: "document-a",
     ...(draftOnly
-      ? { reviews: { ["work-a"]: { itemKey: "draft-a", tabInstanceToken: "token" } } }
+      ? { reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "token" } } }
       : {}),
   };
   fixture.network.listWorkDrafts.mockResolvedValue({

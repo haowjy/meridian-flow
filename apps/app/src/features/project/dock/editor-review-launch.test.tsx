@@ -68,7 +68,7 @@ it.each([
           if (isNew)
             expect(tabs[0]).toMatchObject({
               reviews: {
-                ["work-a"]: { itemKey: "branch-a", tabInstanceToken: expect.any(String) },
+                "work-a": { itemKey: "branch-a", tabInstanceToken: expect.any(String) },
               },
             });
         }
