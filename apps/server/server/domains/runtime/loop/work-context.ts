@@ -98,23 +98,26 @@ export function describeWriteMode(input: {
       return {
         label: "archived in auto-apply",
         instructions: [
-          "Changes outside scratch:// go live right away, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
+          "Changes outside scratch:// are written straight into the writer's documents, but this Work's scratch:// and any draft it kept are frozen. To change those, unarchive it with work unarchive.",
         ],
       };
     }
     return {
       label: "archived in draft mode",
       instructions: [
-        "This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch this chat to auto-apply: changes outside scratch:// then go live and the draft stays frozen.",
+        "This Work's draft and scratch:// are frozen, so your changes are refused. Unarchive it with work unarchive, or ask the user to switch this chat to auto-apply: changes outside scratch:// are then written straight into the writer's documents, and the draft stays frozen.",
       ],
     };
   }
   if (input.mode === "direct")
-    return { label: "auto-apply", instructions: ["Your changes go live right away."] };
+    return {
+      label: "auto-apply",
+      instructions: ["Your changes are written straight into the writer's documents."],
+    };
   return {
     label: "draft mode",
     instructions: [
-      "Your changes wait in this Work's draft, except scratch:// changes, which go live.",
+      "Your changes wait in this Work's draft for the writer to review, except scratch:// changes, which are written straight away.",
       "The writer reviews and applies the draft; nothing outside this Work sees it before then. When you draft a change, tell the user it is waiting for their review.",
     ],
   };
