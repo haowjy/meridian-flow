@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
 import * as Y from "yjs";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
+import { releaseDocumentStorage, tombstoneDocuments } from "../context/tree/node-rows.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
   ALPHA_ID,
@@ -272,6 +273,58 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
     expect(
       await db.select().from(schema.documentEdits).where(eq(schema.documentEdits.kind, "rollback")),
     ).toHaveLength(2);
+  } finally {
+    harness.cancelScheduledPulls();
+    harness.destroyWarmState();
+  }
+});
+
+it("a tombstoned draft document with released storage does not stop another document's rollback", async () => {
+  const { harness, view, responseId, context } = await fixture();
+  try {
+    const actor = {
+      kind: "agent" as const,
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      responseId,
+      editScopeId: responseId,
+    };
+    const live = {
+      ...context,
+      responseIdentity: undefined,
+      actor,
+      grant: testFileGrant({ kind: "live" }, ALPHA_ID),
+    };
+    const draft = {
+      ...live,
+      grant: testFileGrant({ kind: "draft", workId: WORK_ID, workSlug: "atomicity-work" }, BETA_ID),
+    };
+    await view.collab.agentEdit().read({ file: "alpha.md", documentId: ALPHA_ID }, live);
+    await view.collab.agentEdit().read({ file: "beta.md", documentId: BETA_ID }, draft);
+    for (const [documentId, file, ctx] of [
+      [ALPHA_ID, "alpha.md", live],
+      [BETA_ID, "beta.md", draft],
+    ] as const)
+      expect(
+        await asGrantedWriter(() =>
+          view.collab
+            .agentEdit()
+            .write(
+              { command: "insert", documentId, file, content: "Agent.", tool_use_id: file },
+              ctx,
+            ),
+        ),
+      ).toMatchObject({ status: "success" });
+    // What Discard of a draft-created document leaves: tombstoned row, released storage, edit rows kept.
+    await db.transaction(async (tx) => {
+      await tombstoneDocuments(tx as never, [BETA_ID]);
+      await releaseDocumentStorage(tx as never, [BETA_ID]);
+    });
+    await view.collab.finalizeResponseRollback(
+      { providerResponseId: responseId, editScopeId: responseId },
+      { threadId: THREAD_ID, turnId: TURN_ID },
+    );
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();

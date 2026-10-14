@@ -9,10 +9,12 @@ import { QueryClientContext } from "@tanstack/react-query";
 import { useContext, useEffect, useMemo } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
+  catalogScopeReady,
   contextCatalogQueryOptions,
   projectResourceCatalogView,
 } from "@/client/query/useContextCatalog";
 import { useIsProjectPendingCreation } from "@/client/query/useProjectCreation";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import {
   useAccountResourceProjection,
@@ -30,6 +32,7 @@ export function useReferenceBrowserCatalog(
   const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId ?? "");
   const projectPending = useIsProjectPendingCreation(projectId);
+  const lineagePending = useIsThreadPendingCreation(rootThreadId);
   const scopes = useMemo(
     () =>
       projectId
@@ -38,9 +41,9 @@ export function useReferenceBrowserCatalog(
             { kind: "user" as const, userId: "self" },
             ...(workId ? [{ kind: "work" as const, projectId, workId }] : []),
             ...(rootThreadId ? [{ kind: "lineage" as const, projectId, rootThreadId }] : []),
-          ]
+          ].filter((scope) => catalogScopeReady(scope, true, lineagePending))
         : [],
-    [projectId, workId, rootThreadId],
+    [projectId, workId, rootThreadId, lineagePending],
   );
   useEffect(() => {
     if (!queryClient || !projectId || !resources || projectPending) return;

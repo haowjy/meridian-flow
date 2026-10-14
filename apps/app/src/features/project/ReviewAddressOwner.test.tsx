@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 /** Address ownership keeps inline review and Editor history on one document. */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { act, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { getContextTabs, reviewEntryOf, useContextTabsStore } from "@/client/stores";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useDraftReviewScopeValue } from "@/features/draft-review/DraftReviewProvider";
-import { createReviewScopeFixture, listed, work } from "@/test-support/draft-review-scope";
+import {
+  createReviewScopeFixture,
+  listed,
+  ReviewTestProviders,
+  work,
+} from "@/test-support/draft-review-scope";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { contextTabFromDraftGroup } from "./context/context-tab-from-draft";
 import {
@@ -347,9 +352,9 @@ describe("ReviewAddressOwner", () => {
     }
     try {
       await withReactRoot(
-        <QueryClientProvider client={query}>
+        <ReviewTestProviders client={query}>
           <PendingAddress />
-        </QueryClientProvider>,
+        </ReviewTestProviders>,
         async () => {
           await vi.waitFor(() => expect(selected.controller.reviewRoomError).toBe(true));
           expect(address).toBe("draft-a");

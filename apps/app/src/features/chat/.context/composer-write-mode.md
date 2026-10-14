@@ -77,14 +77,20 @@ news), `run-state/run-state-view.ts` (records, intents, answers) and `run-state/
 an icon for the mode (no compaction mark, rule or icon). It is the pending switch at the
 transcript tail and the applied switch turn. A pending switch reads "Switched to …" while no reply
 holds the chat (it applies when the next run is admitted) and "Switch to … queued" while one does.
+"Holds the chat" is a server fact, never the client's running-reply flag: the row reads the record
+item's `deliveryState === "waiting"` (the server lists the switch behind a run that held the chat
+first), and the announcer reads the same fact. Only the unlisted `sending` row, which has no record
+item yet, falls back to the flag.
 Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
 the Work default follows the writer's latest choice, Stop included. The bridge row is the
 transcript layer's: an applied switch whose turn has not rendered shows the notice with no Stop,
 keyed by the `write_mode.switched` frame's turn, until that turn renders.
 
 No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
-mode but never rewrites an existing row's, and a queued or cancelled switch (the control's POST) and a `switched` frame invalidate the Works query
-and the project thread lists instead.
+mode but never rewrites an existing row's. Instead the control's POST, Stop's withdraw and a
+queued-switch transition in the pending inbox (`queuedSwitchKey` in `pending-inbox.ts`, so another
+tab's included) call `invalidateWriteModeReads` (thread and Works reads), and a `switched` frame
+invalidates the project thread data. The queue POST does not invalidate the chat feed.
 
 The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
 Work's draft list, in the trigger and the menu option; with none it reads "Draft".

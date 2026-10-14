@@ -33,6 +33,11 @@ table or reserved client 999.
   `drizzle-turn-edit-targets.ts` keeps them out of response-scoped discovery, so no
   deployment creates a new `wN` handle from them. Lineage follows effects and aliases,
   so `revert` of an old write still restores it.
+- **Tombstones.** `readTurnEditTargets` excludes tombstoned documents through the tree's
+  `documentNotDeletedSql` (`context/tree/tree-view-sql.ts`), so a Discarded
+  draft-created document, or one the writer deleted, is never a rollback or revert
+  target: its storage is released and there is nothing to lock. Final address
+  liveness stays with the lineage reader.
 - **Placements** are `pending` (`branchId`, `rowId`), `live` (`seq`) or `discarded`.
   Edit status is derived from the draft's text (`draft-edit-status.ts`): applied when
   the part's text lies in no review change, pending when it lies inside one, discarded

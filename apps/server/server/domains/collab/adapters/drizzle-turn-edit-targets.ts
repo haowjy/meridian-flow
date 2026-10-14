@@ -1,7 +1,11 @@
-/** Canonical immutable turn targets shared by authorization, lineage and inverse admission. */
+/**
+ * Canonical immutable turn targets shared by authorization, lineage and inverse admission:
+ * documents the turn edited that are not tombstoned. Final address liveness stays with the lineage reader.
+ */
 import type { Database } from "@meridian/database";
 import { documentEditParts, documentEdits } from "@meridian/database";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId } from "../domain/turn-live-lineage.js";
 
@@ -20,6 +24,8 @@ export async function readTurnEditTargets(
     .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
     .where(
       and(
+        // Lineage hides tombstoned documents, and a Discarded draft-created one has no storage left to lock.
+        documentNotDeletedSql(documentEdits.documentId),
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
         inArray(documentEdits.kind, ["write", "revert"]),
