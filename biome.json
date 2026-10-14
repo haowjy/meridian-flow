@@ -73,6 +73,7 @@
         "apps/server/server/domains/runtime/loop/run-session.ts",
         "apps/server/server/domains/runtime/loop/inbox-context.ts",
         "apps/server/server/domains/runtime/handoff/brief-service.ts",
+        "apps/server/server/domains/runtime/adapters/runtime-delivery.ts",
         "apps/server/server/domains/runtime/spawn/thread-ls.ts",
         "apps/server/server/domains/runtime/spawn/resolve-readable-thread.ts",
         "**/*.test.ts",

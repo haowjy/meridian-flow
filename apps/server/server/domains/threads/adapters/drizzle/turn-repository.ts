@@ -233,7 +233,7 @@ export function createDrizzleTurnRepository(
           .returning();
         if (!row) {
           if (!input.id) throw new Error("Failed to create turn");
-          const existing = await this.findById(input.id);
+          const existing = await graph.findById(input.id);
           if (!existing) throw new Error("Failed to create turn");
           return existing;
         }

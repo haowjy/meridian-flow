@@ -1,4 +1,5 @@
 /** Shared delivery transitions. Concrete adapters supply one compatible transaction/store bundle. */
+
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type {
@@ -12,6 +13,7 @@ import { isPendingPlaceholder, isTerminalTurnStatus, type Turn } from "@meridian
 import type { NoticePort } from "../../notices/index.js";
 import { SystemUpdateMetadataCodec } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
@@ -507,10 +509,10 @@ export function createDeliveryAdapter(
   async function materializePrefix(threadId: ThreadId) {
     const { selection, work } = await selectForPreparation(threadId, "prefix");
     const turns = await Promise.all(
-      work.batch.map((message) => deps.repos.turns.findById(message.id)),
+      work.batch.map((message) => turnGraph(deps.repos.turns).findById(message.id)),
     );
     const leaf = selection.activeLeafTurnId;
-    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
+    const leafTurn = leaf ? await turnGraph(deps.repos.turns).findById(leaf) : null;
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const plan = planMessageTurns({
       threadId,
@@ -562,7 +564,7 @@ export function createDeliveryAdapter(
     const { control } = selected;
     const mode = control.body.mode;
     const leaf = thread.activeLeafTurnId as TurnId | null;
-    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
+    const leafTurn = leaf ? await turnGraph(deps.repos.turns).findById(leaf) : null;
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const { turn, block } = writeModeSwitchTurn({
       threadId,
@@ -627,11 +629,13 @@ export function createDeliveryAdapter(
     const committed: InboxMessage[] = [];
     const committedWorkIds: string[] = [];
     const expectedLeaf = selection.activeLeafTurnId as TurnId | null;
-    const expectedLeafTurn = expectedLeaf ? await deps.repos.turns.findById(expectedLeaf) : null;
+    const expectedLeafTurn = expectedLeaf
+      ? await turnGraph(deps.repos.turns).findById(expectedLeaf)
+      : null;
     if (expectedLeaf && !expectedLeafTurn) throw new Error(`Missing causal turn: ${expectedLeaf}`);
     let leaf: TurnId | null = expectedLeaf;
     while (leaf && !input.knownTurnIds.has(leaf)) {
-      const turn = await deps.repos.turns.findById(leaf);
+      const turn = await turnGraph(deps.repos.turns).findById(leaf);
       if (!turn) throw new Error(`Missing causal turn: ${leaf}`);
       if (isPendingPlaceholder(turn))
         throw new Error("Unexpected pending placeholder in adoption tail");
@@ -993,7 +997,7 @@ export function createDeliveryAdapter(
       )
         return true;
       if (thread.originType !== "fork" || !thread.originTurnId) return false;
-      const cutoff = await deps.repos.turns.findById(thread.originTurnId as TurnId);
+      const cutoff = await turnGraph(deps.repos.turns).findById(thread.originTurnId as TurnId);
       if (!cutoff) return false;
       thread = await deps.repos.threads.findByIdIncludingDeleted(cutoff.threadId as ThreadId);
       throughPosition = cutoff.position;
