@@ -85,7 +85,52 @@ turn must carry its execution id for the execution to show.
   `user_turn_admissions.run_state_version` so a replay answers the same value. Rows from before the
   column answer `null`.
 - **Transitional.** `inbox.changed` and the old answer fields still ship beside the record until the
-  app moves onto it.
+  app moves onto it. A hand-back also appends `inbox.changed`.
+
+## Stop and hand-back
+
+`POST /api/threads/:id/stop` (`StopRequest`: `requestId`, `seenThrough`, `seenExecutionId`, `mine`) is one
+chat command decided under the thread lock from rows (`RuntimeDelivery.stop`, `loop/stop-rule.ts`). It
+cancels the open execution and **hands back** the waiting writer messages no execution has taken on;
+their content comes back in the answer for the acting tab's composer. A message is either handed back or
+answered, never both: a message is handed back only if, under the lock, it is undelivered and in no
+receipt (or in the receipt of a compaction this same press cancels, which is stripped of it in the same
+transaction). Adoption and `bindTurn` validate under the same lock and refuse a flagged lease.
+
+- **The rule** (`decideStop`, pure, judged on the facts before any write). P is the writer rows at or
+  below `seenThrough` plus `mine`; L is the writer rows above it that are not `mine`. An execution
+  *takes on* a message when it is in the lease receipt or one of its turns delivered it. E (the lease
+  row, expiry ignored, when a turn carries its id) is cancelled when the writer saw it or it took on a
+  message in P, unless it took on a message in L. `decideHandBack` classifies each covered message:
+  `gone` (another request handed it back), hand back (undelivered, in no receipt, or in a cancelled
+  compaction's receipt), otherwise `answered`.
+- **`handBack`** is the same operation for the queue's x and Cancel queue (Q adds their route): scope
+  `ids` or `seen`, never cancels. Both write one `thread_hand_backs` row per request id in the request's
+  transaction (fingerprint of the body, `handed_back` / `answered` / `gone`, `cancelled_execution_id`).
+  **A replay returns that stored decision**, the handed-back messages' content read from their turns, and
+  a fresh `runState`; it flags nothing. The same id with another body is `HandBackConflictError` (409).
+  `gone` for a `seen` scope covers handed-back rows above the last message a reply answered.
+- **Applying a decision.** The hand-back row first (inbox rows reference it), then `inbox.ack` with
+  `{ handedBackBy }` (delivered, no deliverer), the cancelled compaction's receipt strip, one journal
+  event `messages.handed_back { userTurnIds, requestId }`, the usage-block clear, and `cancel_requested`
+  on E's row matched by execution id with no expiry predicate. The run session then aborts its own run
+  when it holds the flagged execution; a replay never aborts a newer one.
+- **Nothing is deleted.** The handed-back message's inbox row, turn and blocks stay for diagnostics.
+
+### Leaving the chat: the graph and the conversation
+
+`turns.listByThread` is the **graph** (positions, `prevTurnId`, the leaf, fork cutoffs) and still returns
+a handed-back turn; the leaf does not move, because positions are unique per chat and allocated from it.
+The **conversation** is the graph without handed-back user turns and their blocks
+(`turns.listHandedBackIds`). Content readers use the conversation:
+`loadThreadConversationContext` (resolves forks and cutoffs on the graph, filters last, returns the
+inherited prefix and the local turns apart), `listConversationTurns`, `listConversationBlocks`, run
+start (`orchestrator.ts` keeps the graph for the leaf, positions and known ids), the compaction
+projection (a pin to a handed-back turn drops; a cut at one resolves to the last turn before its
+successor, `resolveCut`), the snapshot, the summary-path walk, both transcript-page key builders with
+the count and ordinal SQL (`notHandedBackSql`), `listMessageDeliveries`, `listLatestLocalRequesterText`,
+and the chat-activity projection (`0049`). `stop-protocol.db.test.ts` row 37 pins every one of these
+and fails if a new file reads turns, blocks or transcript rows without being a named graph reader.
 
 ## Command selection and release wake
 
