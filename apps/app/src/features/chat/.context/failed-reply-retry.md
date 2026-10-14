@@ -12,7 +12,7 @@ reply itself.
 | Not the latest turn, never retried | The quiet line "This response failed.", with no action (the writer never acted on it) |
 | Retried (accepted or pending) | Not drawn: the Retry's row takes its place |
 | A retry that failed too | One failure, the newest, in that same place |
-| Its Retry was refused | Adds the muted note "Couldn't retry." while it is the latest turn |
+| Its Retry was refused | Adds the muted note "Couldn't retry." on that reply, even if another reply landed below it, until the writer's next action (Retry again, or send) |
 | The provider declined it | "The AI provider turned this request down." with **Retry** when latest and a retry handler is present |
 
 "Latest" is `endsTranscript` in `TurnList`: no visible row follows, and a
@@ -52,8 +52,9 @@ snapshot) replaces that.
   Nothing was written. The stand-in goes, the snapshot refreshes, and the
   failed reply carries the generic refused note. The cause never reaches the
   writer; `reportRetryRefused` (`error-telemetry.ts`) logs it for diagnostics.
-  Pressing Retry again clears the note, and so does any row landing below the
-  failed reply: like Retry, the note belongs to the current reply only.
+  Pressing Retry again clears the note, and so does the writer sending a message
+  (`clearRefused`). A row landing below the failed reply (the other tab's reply
+  that caused the 409) does not: the note says what became of the press.
 - **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
   retry. Try again." with its own Retry, which re-sends the same id for the same
   failed reply. If the lost request landed, the server answers the replay with

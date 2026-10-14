@@ -69,6 +69,8 @@ export type RetryStandIns = {
    * Retry from `from`. A failed stand-in re-sends under its own id; any other
    * turn gets a new stand-in from `build`, which may decline with null.
    */
+  /** The writer acted elsewhere (sent a message): refusals are answered, so they clear. */
+  clearRefused: () => void;
   retry: (from: Turn, build: (input: { id: string; leaf: Turn | null }) => Turn | null) => void;
 };
 
@@ -247,6 +249,8 @@ export function useRetryStandIns(input: {
     [patch, send],
   );
 
+  const clearRefused = useCallback(() => setRefused(NO_REFUSALS), []);
+
   const standIns = useMemo(
     () => reconciled.standIns.map((entry) => entry.turn),
     [reconciled.standIns],
@@ -258,5 +262,5 @@ export function useRetryStandIns(input: {
   );
   const retried = reconciled.hidden;
 
-  return { standIns, requestOf, refused, retried, retry };
+  return { standIns, requestOf, refused, retried, clearRefused, retry };
 }

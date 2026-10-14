@@ -285,8 +285,9 @@ export function TurnList({
                     replyRetry.retry(turn);
                   }
                 : undefined,
-              // Like Retry, the refused note is only for the current reply.
-              refused: endsTranscript && replyRetry.refused.has(turn.id),
+              // The refused note is the state of what the writer did, so it stays on the reply
+              // even when another tab's reply landed below it; the next action clears it.
+              refused: replyRetry.refused.has(turn.id),
               requestLost: standIn === "failed",
             }
           : undefined;

@@ -414,6 +414,7 @@ export function ChatView({
   const dock = useDraftDock({ threadId, generating });
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
+    replyRetry.clearRefused();
     const recorded = await submissions.submit(envelope);
     if (recorded) requestTailFollow();
     return recorded;

@@ -27,7 +27,8 @@ export type ErrorBlockProps = {
   onRetry?: () => void;
   /**
    * The server refused this turn's last Retry; the cause stays in diagnostics.
-   * Shown only while the error is current: once the chat moves on, it is history.
+   * Shown until the writer's next action (another Retry, or a send), even once the chat has
+   * moved on, because it says what became of that press.
    */
   retryRefused?: boolean;
 };
@@ -59,7 +60,12 @@ export function ErrorBlock({
   retryRefused = false,
 }: ErrorBlockProps) {
   if (!isLatest) {
-    return <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>;
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-caption text-muted-foreground">{copy(kind, false)}</p>
+        {retryRefused ? <RefusedNote /> : null}
+      </div>
+    );
   }
   return (
     <ActiveError kind={kind} onRetry={onRetry}>
