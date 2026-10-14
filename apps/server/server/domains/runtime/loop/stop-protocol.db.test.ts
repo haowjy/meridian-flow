@@ -845,7 +845,7 @@ else
       const rig = await rigWith({ summarizer });
       const m2 = (await rig.send(rig.threadId, "M2 hidden words")).userTurnId;
       await handBack(rig, crypto.randomUUID(), ids([m2]));
-      const leaf = await rig.repos.turns.findById(m2 as never);
+      const leaf = await turnGraph(rig.repos.turns).findById(m2 as never);
       expect((await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId).toBe(m2);
       await rig.delivery.enqueue({
         id: crypto.randomUUID(),

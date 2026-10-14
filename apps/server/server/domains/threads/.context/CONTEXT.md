@@ -317,7 +317,7 @@ transactions. See [runtime delivery](../../runtime/.context/delivery.md).
 | `ThreadRepository` | Thread lifecycle plus writer-facing project lists (`kind: "primary"` only) and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. Get-by-id still returns subagents. |
 | `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with Favorite, title-search, and nullable Work-association filters before pagination. Project and Work Chats hide archived chats. |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
-| `TurnRepository` | `create / findById / findByControlId / listByThread / listPendingPlaceholdersForThread / listPendingPlaceholders / getLatestByThread / findRunningAssistantId / updateStatus / recomputeRollups` |
+| `TurnRepository` | `create / findById / findByControlId / listByThread (conversation) / listPendingPlaceholdersForThread / listPendingPlaceholders / `turnGraph(turns).{listByThread,findById,latest}` (graph) / findRunningAssistantId / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / upsert / replaceExisting / findById / listByTurn / listByThread`. Blocks carry no model-only state: compaction elisions live in the compaction turn's metadata, never on block rows. |
 | `ModelResponseRepository` | `create / findById / listByTurn / listByThread / findLatestByThread / sumUsageByThread / cacheResetContext` |
 | `ThreadRepositories` | aggregate of the repositories + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
