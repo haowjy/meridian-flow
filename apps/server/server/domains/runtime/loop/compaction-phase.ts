@@ -66,9 +66,10 @@ export async function executeCompaction({
   // The last check before the captured history reaches the summarizer. A Stop on another server has no
   // local abort: it flags the lease in the transaction that hands the adopted message back, so a set
   // flag means this history may hold a message that left the chat. The loop's catch turns the throw
-  // into the cancel exit.
-  const claim = await deps.runClaim.read(input.threadId);
-  if (claim?.kind === "awake" && claim.cancelRequested) throw new CompactionCancelledError();
+  // into the cancel exit. Stop cancels an expired lease that is still held, so the read is this
+  // execution's own row whatever its expiry; a missing or reassigned row never authorizes the history.
+  const owned = await deps.runClaim.readOwned(input.lease);
+  if (!owned || owned.cancelRequested) throw new CompactionCancelledError();
   let summary: SummaryOutcome;
   try {
     input.signal?.throwIfAborted();

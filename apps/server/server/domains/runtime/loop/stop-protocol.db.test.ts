@@ -463,11 +463,17 @@ else
       expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([run.userTurnId]);
 
       // The press commits after the reservation and before execute(): the run holds M1 in its
-      // prepared history and has no local abort.
+      // prepared history and has no local abort. The heartbeat has also expired; Stop still cancels
+      // the held lease, and execute() must still see it.
+      await db
+        .update(schema.threadRunLeases)
+        .set({ expiresAt: new Date(Date.now() - 60_000) })
+        .where(eq(schema.threadRunLeases.threadId, rig.threadId));
       const response = await press(rig, { seenThrough: await seqOf(rig, run.userTurnId) }, true);
       expect(response.cancelledExecutionId).toBe(run.executionId);
       expect(response.handedBack.map(({ userTurnId }) => userTurnId)).toEqual([run.userTurnId]);
       expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([]);
+      expect((await rig.runClaim.read(rig.threadId as never)).kind).toBe("asleep");
       expect(await run.execute()).toMatchObject({ status: "cancelled" });
       await processDetachedWork.drain();
       expect(summarizer.calls).toHaveLength(0);
