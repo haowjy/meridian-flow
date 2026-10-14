@@ -179,7 +179,7 @@
     "apps/app/src/features/project/routing/chat-navigation.test.tsx": 4,
     "apps/app/src/features/project/routing/document-address-canonical.test.ts": 2,
     "apps/app/src/features/project/routing/document-address-review.test.ts": 3,
-    "apps/app/src/features/project/routing/editor-review-launch-navigation.test.ts": 2,
+    "apps/app/src/features/project/routing/editor-review-launch-navigation.test.ts": 5,
     "apps/app/src/features/project/routing/history-traversal.test.ts": 3,
     "apps/app/src/features/project/routing/project-address-resolution.test.ts": 2,
     "apps/app/src/features/project/routing/project-address.test.ts": 18,
