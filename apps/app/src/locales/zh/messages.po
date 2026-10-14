@@ -953,7 +953,7 @@ msgstr ""
 msgid "Close chat"
 msgstr ""
 
-#: src/features/project/dock/DockDocumentActions.tsx
+#: src/features/project/dock/DockDocumentCommands.tsx
 msgid "Close document"
 msgstr ""
 
@@ -1016,7 +1016,6 @@ msgstr ""
 msgid "Collapse changes"
 msgstr ""
 
-#: src/features/project/dock/DockDocumentActions.tsx
 #: src/features/project/dock/DockHeader.tsx
 msgid "Collapse dock"
 msgstr ""
@@ -1810,10 +1809,6 @@ msgstr ""
 
 #: src/features/chat/useDraftDock.ts
 msgid "Document"
-msgstr ""
-
-#: src/features/project/dock/DockDocumentActions.tsx
-msgid "Document actions"
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -2986,7 +2981,7 @@ msgstr ""
 msgid "Open full screen"
 msgstr ""
 
-#: src/features/project/dock/DockDocumentActions.tsx
+#: src/features/project/dock/DockDocumentCommands.tsx
 msgid "Open in Editor"
 msgstr ""
 
@@ -4476,7 +4471,7 @@ msgstr ""
 msgid "This switch already happened."
 msgstr ""
 
-#: src/features/project/dock/DockDocumentActions.tsx
+#: src/features/project/dock/DockDocumentCommands.tsx
 #: src/features/project/shell/WorkspaceNavBody.tsx
 msgid "This view couldn’t open."
 msgstr ""
