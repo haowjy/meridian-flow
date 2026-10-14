@@ -66,11 +66,13 @@ body too). Every editable phone document (the ordinary route, the local pointer
 and a draft-only document) renders `ContextDocumentHost` directly, inside a
 `relative min-h-0 flex-1` frame that is a direct child of a flex column
 (`MobileDocumentReview`'s, or the local pointer's own, since no review wraps
-it), with `presentation={PHONE_DOCUMENT_PRESENTATION}` and `readOnly`. It does not use
+it), with `presentation={PHONE_DOCUMENT_PRESENTATION}`. It does not use
 `ContextEditorMountHost`, the desktop's warm-set LRU with a frame of its own.
 
 `PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`) is the whole
-phone difference: no remote carets or selections, the accessible name "Read-only
+phone difference: it never types (`editable: false`, no toolbar; the host's
+`readOnly` stays the Work's archived scope, which the room-scope check compares
+with the room's access), no remote carets or selections, the accessible name "Read-only
 live document", presence suspended from the click that requests a review (desktop
 waits for the resolved room), and the binding owner id
 `mobile-project-document-host`. Everything else is the shared host: paint scope,

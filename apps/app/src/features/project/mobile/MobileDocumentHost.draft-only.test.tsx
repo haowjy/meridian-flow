@@ -36,6 +36,7 @@ vi.mock("@/features/editor/PassageNotice", () => ({ PassageNotice: () => null })
 vi.mock("@/features/editor/WriterHandoffLossNotice", () => ({
   WriterHandoffLossNotice: () => null,
 }));
+vi.mock("../dock/DockDocumentIdentity", () => ({ useDockArchivedWork: () => null }));
 vi.mock("../context/use-live-document-binding", () => ({ useLiveDocumentBinding: live.binding }));
 vi.mock("../context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => coordinator,
@@ -82,7 +83,7 @@ const draftTab: ServerContextTab = {
 };
 
 describe("MobileDocumentHost draft-only review", () => {
-  it("hosts the branch read-only, binds the route to the draft's document, and opens no live room", async () => {
+  it("hosts the branch, binds the route to the draft's document, and opens no live room", async () => {
     await withReactRoot(
       <MobileDocumentHost
         projectId="project-a"
@@ -102,7 +103,7 @@ describe("MobileDocumentHost draft-only review", () => {
         await act(async () => undefined);
         const host = document.querySelector("[data-document-host]");
         expect(host?.getAttribute("data-document")).toBe("document-draft");
-        expect(host?.getAttribute("data-read-only")).toBe("true");
+        expect(host?.getAttribute("data-read-only")).toBe("false");
         expect(hosted.presentation).toBe(PHONE_DOCUMENT_PRESENTATION);
         expect(document.body.textContent).not.toContain("Couldn't open this document.");
         expect(live.binding).not.toHaveBeenCalled();
@@ -138,7 +139,7 @@ describe("MobileDocumentHost draft-only review", () => {
         await act(async () => undefined);
         const host = document.querySelector("[data-document-host]");
         expect(host?.getAttribute("data-document")).toBe("document-draft");
-        expect(host?.getAttribute("data-read-only")).toBe("true");
+        expect(host?.getAttribute("data-read-only")).toBe("false");
         expect(hosted.presentation).toBe(PHONE_DOCUMENT_PRESENTATION);
         expect(live.binding).not.toHaveBeenCalled();
       },
