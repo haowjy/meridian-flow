@@ -96,6 +96,12 @@ mid-append or mid-projection. Dropped claims are either closed as `rolledBack`
 when nothing remains or retained as `discardedClaims` alongside surviving commit
 results; pending create cleanup remains visible through `stagedCreates`.
 
+`retirePeer` and `dropForThread` share one lease revocation (`revokeEpochs`): they
+advance the matching document epochs whether or not a buffer exists, so a command
+whose lease was issued before its first `stageUpdate` is refused at its write. Only
+the receipt policy differs: `retirePeer` refuses the exact peer's staged rows as
+receipts, `dropForThread` drops the thread's rows.
+
 `commitResponse()` and `rollbackResponse()` report create outcomes for hosts
 that created path placeholders before journal commit: committed creates keep
 their path, while only pre-commit discards are cleanup candidates.

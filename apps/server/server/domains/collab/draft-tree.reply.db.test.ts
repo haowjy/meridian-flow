@@ -18,6 +18,7 @@ import {
   type ScenarioWork,
 } from "../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
+import { type LeaseObserver, observeLeases } from "../../test-support/lease-observer.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -42,9 +43,36 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await deleteDrizzleRows(db, [users]);
     });
 
+    let leases: LeaseObserver;
     async function start() {
-      const runtime = await runtimes.compose();
+      leases = observeLeases();
+      const runtime = await runtimes.compose({ criticalSections: leases.sections });
       return draftTreeScenario(db, { runtime, runtimes });
+    }
+
+    /**
+     * Interleave options and the assertion for a branch-lease wait: at release the contender had
+     * attempted its acquisition and not entered its callback; after release it entered.
+     */
+    function leaseWait() {
+      let atRelease: { waiting: number; entered: number } | undefined;
+      return {
+        options: {
+          waitMs: 300,
+          beforeRelease: () => {
+            atRelease = { waiting: leases.waiting().length, entered: leases.entered() };
+          },
+        },
+        expectWaited(label: string) {
+          expect
+            .soft(atRelease?.waiting, `${label}: attempted, not yet entered`)
+            .toBeGreaterThan(0);
+          expect.soft(leases.waiting(), `${label}: none left waiting`).toEqual([]);
+          expect
+            .soft(leases.entered(), `${label}: entered after release`)
+            .toBeGreaterThan(atRelease?.entered ?? Number.POSITIVE_INFINITY);
+        },
+      };
     }
 
     /** A live chapter the writer made, with one paragraph. */
@@ -203,15 +231,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const leasedByClose = await scenario.work("Close leases first", "draft");
       const second = await liveChapter(scenario, "close-leases-first.md");
       const waitingSave = await staged(scenario, leasedByClose, "close-leases-first.md");
+      const saveWait = leaseWait();
       const closeThenSave = await interleave(
         db,
         () => scenario.discard(leasedByClose, "all"),
         "discard.afterLeases",
         () => waitingSave.save(),
-        { waitMs: 300 },
+        saveWait.options,
       );
       expect.soft(closeThenSave.a, "the close finishes").toMatchObject({ ok: true });
-      expect.soft(closeThenSave.bBlocked, "the save waited on the leases").toBe(true);
+      saveWait.expectWaited("the save waited on the leases");
       expect.soft(closeThenSave.b, "then saves").toMatchObject({ ok: true });
       expect
         .soft(closeThenSave.b.ok && refusedIn(closeThenSave.b.value), "refusing it stale")
@@ -225,18 +254,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const third = await liveChapter(scenario, "save-leases-first.md");
       const holdingSave = await staged(scenario, leasedBySave, "save-leases-first.md");
       const [draftBefore] = await draftsOf(leasedBySave);
+      const closeWait = leaseWait();
       const saveThenClose = await interleave(
         db,
         () => holdingSave.save(),
         "save.afterWorkLock",
         () => scenario.discard(leasedBySave, "all"),
-        { waitMs: 300 },
+        closeWait.options,
       );
       expect.soft(saveThenClose.a, "the save finishes").toMatchObject({ ok: true });
       expect
         .soft(saveThenClose.a.ok && refusedIn(saveThenClose.a.value), "keeping its document")
         .toEqual([]);
-      expect.soft(saveThenClose.bBlocked, "the close waited on the leases").toBe(true);
+      closeWait.expectWaited("the close waited on the leases");
       expect.soft(saveThenClose.b, "then closes").toMatchObject({ ok: true });
       expect
         .soft(await savedRows(draftBefore?.id ?? "", third), "the save landed in the draft")
@@ -260,11 +290,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             content: "Immediate draft.",
           });
         const close = () => scenario.discard(work, "all");
+        const wait = leaseWait();
         const run =
           first === "write"
-            ? await interleave(db, write, "access.afterLeases", close, { waitMs: 300 })
-            : await interleave(db, close, "discard.afterLeases", write, { waitMs: 300 });
-        expect.soft(run.bBlocked, `${first} first: the other waits on its leases`).toBe(true);
+            ? await interleave(db, write, "access.afterLeases", close, wait.options)
+            : await interleave(db, close, "discard.afterLeases", write, wait.options);
+        wait.expectWaited(`${first} first: the other waits on its leases`);
         const wrote = first === "write" ? run.a : run.b;
         const closed = first === "write" ? run.b : run.a;
         expect.soft(closed, `${first} first: the close finishes`).toMatchObject({ ok: true });
