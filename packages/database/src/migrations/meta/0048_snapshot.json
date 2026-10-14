@@ -3736,12 +3736,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "steers_turn_id": {
-          "name": "steers_turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "run_state_version": {
           "name": "run_state_version",
           "type": "text",
