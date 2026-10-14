@@ -275,7 +275,7 @@ describe("ReviewAddressOwner", () => {
       ],
     });
     fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", itemKey: "draft-a" });
-    useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+    useContextTabsStore.setState({ byProject: {} });
     useContextTabsStore.getState().openTab(
       "project-a",
       contextTabFromDraftGroup({

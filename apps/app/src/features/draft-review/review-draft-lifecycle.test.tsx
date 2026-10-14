@@ -94,7 +94,6 @@ beforeEach(() => {
   useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   useContextTabsStore.setState({
     byProject: {},
-    _reviewOverlayByProject: {},
     _workspaceHydrated: false,
   });
   useContextTabsStore.getState().openTab("project-a", draftTab);
@@ -273,8 +272,7 @@ it.each([
   useDockDocumentStore.setState({
     occupant: dockDocument("project-a", "chat", draftTab as NonNullable<typeof draftTab>, null),
   });
-  if (container === "dock")
-    useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+  if (container === "dock") useContextTabsStore.setState({ byProject: {} });
   const claim = useDockDocumentStore.getState().claim();
   fixture.network.applyDraft.mockResolvedValue(itemApplied());
   await fixture.render(async (p) => {
@@ -287,7 +285,6 @@ it.each([
     if (container === "both") {
       expect(live).toBeDefined();
       expect(live).not.toHaveProperty("draftOnly");
-      expect(useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs).toEqual([]);
     } else expect(tabs()).toEqual([]);
     expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
     expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
