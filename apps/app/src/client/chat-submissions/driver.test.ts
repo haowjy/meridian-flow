@@ -236,6 +236,46 @@ describe("the journal driver", () => {
   });
 });
 
+it.each([
+  "refusal",
+  "retry",
+  "remint",
+  "creation",
+] as const)("%s rewrite refusal leaves the attempted row failed without changing durable identity", async (transition) => {
+  const r = rig({
+    lookup: async ({ submissionId }) => ({ kind: "rejected", submissionId, code: "refused" }),
+  });
+  const original = {
+    ...record(),
+    creation: transition === "creation" || transition === "refusal" ? record().creation : undefined,
+    state: transition === "retry" ? ("rejected" as const) : undefined,
+  };
+  r.records.set("record-1", original);
+  const statuses: Array<{ status: string; local?: boolean }> = [];
+  try {
+    const owner = r.mount({
+      journal: { entries: () => [...r.records.values()], record: () => false, retire: () => false },
+      status: (_entry, status, local) => {
+        statuses.push({ status, local });
+      },
+      ...(transition === "refusal"
+        ? {
+            create: async () => {
+              throw new HttpResponseError("refused", 400, null);
+            },
+          }
+        : {}),
+    }).owner;
+    if (transition === "retry" || transition === "remint") await owner.retry("sub-1");
+    else await owner.drive("thread_1");
+    expect(statuses.at(-1)).toEqual({ status: "error", local: true });
+    expect(r.records.get("record-1")).toEqual(original);
+    expect(r.scenario.appendRequests).toHaveLength(0);
+  } finally {
+    r.dispose();
+  }
+});
+
 it("reports a projection exception and fails only the attempted record", async () => {
   const reported = vi.fn();
   vi.stubGlobal("reportError", reported);
