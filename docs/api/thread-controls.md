@@ -55,6 +55,11 @@ Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
 message, another control kind, or a row in another thread returns 409
 (`control_id_conflict`); so does replaying an id with a different body.
 
+The `Thread` shape served by the project thread list and the thread reads carries
+`effectiveAiWriteMode`: the queued switch's mode while one is pending, else the
+applied `aiWriteMode`. It is read in the same query as the row. Clients show it
+until the snapshot's switch record arrives.
+
 ## Withdraw
 
 `POST /api/threads/:threadId/controls/:controlId/withdraw`, no body.

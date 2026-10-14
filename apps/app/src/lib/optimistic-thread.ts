@@ -18,6 +18,7 @@ export function makeOptimisticThread(input: {
     projectId: input.projectId,
     workId: input.workId ?? null,
     aiWriteMode: input.aiWriteMode,
+    effectiveAiWriteMode: input.aiWriteMode,
     userId: OPTIMISTIC_OWNER_ID,
     kind: "primary",
     status: "idle",

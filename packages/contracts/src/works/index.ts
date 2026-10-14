@@ -1,4 +1,4 @@
-export { type AiWriteMode, aiWriteModeSchema } from "./ai-write-mode.js";
+export { type AiWriteMode, aiWriteModeSchema, effectiveAiWriteMode } from "./ai-write-mode.js";
 
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { AiWriteMode } from "./ai-write-mode.js";

@@ -379,7 +379,6 @@ export function TurnList({
         return (
           <QueuedControlRows
             controls={row.controls}
-            replyRunning={busy}
             onStop={
               withdraw
                 ? (control) => {

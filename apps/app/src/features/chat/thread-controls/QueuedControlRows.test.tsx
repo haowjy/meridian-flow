@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * A pending switch is a writer-action notice, not a compaction: no dashed rule, and
- * its words and Stop depend on whether a reply holds the chat.
+ * its words depend on whether a reply it can't affect holds the chat.
  */
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
@@ -26,16 +26,10 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 
-async function render(controls: QueuedControl[], replyRunning: boolean) {
+async function render(controls: QueuedControl[]) {
   const host = document.createElement("div");
   await act(async () =>
-    createRoot(host).render(
-      <QueuedControlRows
-        controls={controls}
-        replyRunning={replyRunning}
-        onStop={() => undefined}
-      />,
-    ),
+    createRoot(host).render(<QueuedControlRows controls={controls} onStop={() => undefined} />),
   );
   return host;
 }
@@ -47,18 +41,24 @@ const draftSwitch: QueuedControl = {
 };
 
 it("shows an idle pending switch as the applied notice with its Stop, and no rule", async () => {
-  const host = await render([draftSwitch], false);
+  const host = await render([draftSwitch]);
   expect(host.textContent).toContain("Switched to draft mode");
   expect(host.querySelector("[aria-label='Stop switch to draft mode']")).not.toBeNull();
   expect(host.querySelector(".border-dashed")).toBeNull();
 });
 
-it("says a switch is queued while a reply runs, and names Stop for a compaction apart", async () => {
-  const host = await render(
-    [draftSwitch, { id: "c", control: { kind: "compact" }, status: "queued" }],
-    true,
-  );
+it("says a switch is queued while a reply it can't affect runs, and names Stop for a compaction apart", async () => {
+  const host = await render([
+    { ...draftSwitch, waiting: true },
+    { id: "c", control: { kind: "compact" }, status: "queued" },
+  ]);
   expect(host.textContent).toContain("Switch to draft mode queued");
   expect(host.querySelector("[aria-label='Stop compaction']")).not.toBeNull();
   expect(host.querySelectorAll(".border-dashed")).toHaveLength(1);
+});
+
+it("shows Stop from the first frame, disabled while the switch's post is unanswered", async () => {
+  const host = await render([{ ...draftSwitch, status: "sending", awaitingServer: true }]);
+  const stop = host.querySelector<HTMLButtonElement>("[aria-label='Stop switch to draft mode']");
+  expect(stop?.disabled).toBe(true);
 });
