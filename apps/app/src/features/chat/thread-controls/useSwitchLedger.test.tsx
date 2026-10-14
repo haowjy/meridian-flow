@@ -86,10 +86,8 @@ let withdrawOutcome: "removed" | "admitted" | "kept" = "removed";
 let turns: unknown[] = [];
 let repaint: () => void = () => undefined;
 
-function Probe() {
-  const [, render] = React.useReducer((n: number) => n + 1, 0);
-  repaint = render;
-  const host = useThreadSnapshotSync("T");
+/** Production's shape: the history host sits above the ledger's host and hands its snapshot down. */
+function Ledger({ host }: { host: ReturnType<typeof useThreadSnapshotSync> }) {
   const journal: SwitchJournal = {
     pending: records as unknown as SwitchJournal["pending"],
     submit: () => true,
@@ -108,6 +106,12 @@ function Probe() {
     journal,
   });
   return null;
+}
+
+function Probe() {
+  const [, render] = React.useReducer((n: number) => n + 1, 0);
+  repaint = render;
+  return <Ledger host={useThreadSnapshotSync("T")} />;
 }
 
 const tick = (ms = 20) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
@@ -144,13 +148,18 @@ describe("useSwitchLedger", () => {
     let release: (value: unknown) => void = () => undefined;
     api.getThreadSnapshot
       .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
-      .mockImplementation(async () => wire());
+      // A real response takes time: the cache settles before the host's accepted snapshot is
+      // delivered, and that gap must not read as an insufficient success.
+      .mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return wire();
+      });
     await mount();
     await show([record("s1")]);
     await show([]);
     expect(view.rows.map((row) => row.id)).toEqual(["s1"]);
     await act(async () => release(wire()));
-    await tick(100);
+    await tick(150);
     expect(api.getThreadSnapshot).toHaveBeenCalledTimes(2);
     expect(view.rows).toEqual([]);
     expect(view.writeMode).toBe("direct");
