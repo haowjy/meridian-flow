@@ -615,6 +615,10 @@ msgstr "Alt text"
 msgid "An entry named {name} already exists in this location."
 msgstr "An entry named {name} already exists in this location."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Another document is already at this name. Rename or remove it, then apply again."
+msgstr "Another document is already at this name. Rename or remove it, then apply again."
+
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
 msgstr "Another Work already has this name. Choose a different name."
@@ -4122,6 +4126,7 @@ msgid "That change couldn't be made."
 msgstr "That change couldn't be made."
 
 #: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewToast.tsx
 msgid "That change is no longer in the draft."
 msgstr "That change is no longer in the draft."
@@ -4245,6 +4250,10 @@ msgstr "The requested passage in {name} wasn't specific enough."
 msgid "The requested passage wasn't specific enough."
 msgstr "The requested passage wasn't specific enough."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The server couldn't do that. Try again."
+msgstr "The server couldn't do that. Try again."
+
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
 msgstr "the source chat"
@@ -4314,6 +4323,10 @@ msgstr "This browser would not let the page write to the clipboard. The removed 
 msgid "This cell is not merged."
 msgstr "This cell is not merged."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This change belongs with others. Select all of them and try again."
+msgstr "This change belongs with others. Select all of them and try again."
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr "This change is no longer reversible."
@@ -4325,6 +4338,10 @@ msgstr "This change is no longer reversible."
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change no longer matches the chapter text, so it can't be reversed."
 msgstr "This change no longer matches the chapter text, so it can't be reversed."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This change only applies together with the rest of the document. Apply the whole document instead."
+msgstr "This change only applies together with the rest of the document. Apply the whole document instead."
 
 #: src/features/draft-review/ReviewChangeParts.tsx
 msgid "This change was updated. Check it and apply again."
@@ -4436,6 +4453,10 @@ msgstr "This diagram stopped parsing. Showing the last version that rendered."
 msgid "This diagram stopped parsing. The preview is the last version that rendered."
 msgstr "This diagram stopped parsing. The preview is the last version that rendered."
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
+msgstr "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
+
 #: src/core/editor/images/image-uploads.ts
 msgid "This document is not taking changes right now."
 msgstr "This document is not taking changes right now."
@@ -4448,6 +4469,14 @@ msgstr "This document is read only right now."
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This document is still opening."
 msgstr "This document is still opening."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was deleted from your project after the draft started. Check it, then apply again."
+msgstr "This document was deleted from your project after the draft started. Check it, then apply again."
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was renamed to a name that is now in use. Check it, then apply again."
+msgstr "This document was renamed to a name that is now in use. Check it, then apply again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."

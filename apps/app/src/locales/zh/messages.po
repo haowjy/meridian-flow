@@ -615,6 +615,10 @@ msgstr ""
 msgid "An entry named {name} already exists in this location."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Another document is already at this name. Rename or remove it, then apply again."
+msgstr ""
+
 #: src/client/query/work-update-failure.ts
 msgid "Another Work already has this name. Choose a different name."
 msgstr ""
@@ -4122,6 +4126,7 @@ msgid "That change couldn't be made."
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewToast.tsx
 msgid "That change is no longer in the draft."
 msgstr ""
@@ -4245,6 +4250,10 @@ msgstr ""
 msgid "The requested passage wasn't specific enough."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The server couldn't do that. Try again."
+msgstr ""
+
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "the source chat"
 msgstr ""
@@ -4314,6 +4323,10 @@ msgstr ""
 msgid "This cell is not merged."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This change belongs with others. Select all of them and try again."
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change is no longer reversible."
 msgstr ""
@@ -4324,6 +4337,10 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change no longer matches the chapter text, so it can't be reversed."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This change only applies together with the rest of the document. Apply the whole document instead."
 msgstr ""
 
 #: src/features/draft-review/ReviewChangeParts.tsx
@@ -4436,6 +4453,10 @@ msgstr ""
 msgid "This diagram stopped parsing. The preview is the last version that rendered."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
+msgstr ""
+
 #: src/core/editor/images/image-uploads.ts
 msgid "This document is not taking changes right now."
 msgstr ""
@@ -4447,6 +4468,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This document is still opening."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was deleted from your project after the draft started. Check it, then apply again."
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was renamed to a name that is now in use. Check it, then apply again."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
