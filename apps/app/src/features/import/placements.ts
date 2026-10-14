@@ -66,9 +66,9 @@ function areaLabel(scheme: ImportDestination["scheme"]): string {
       : t`Knowledge Base`;
 }
 
-/** The target of one import: from the run's predicted rows, else from its status. */
+/** The target of one import: from the run's predicted rows until the status is read in full, then from the status. */
 export function targetOf(state: ImportState): ImportTarget | null {
-  const local = state.local;
+  const local = fullyRead(state.status) ? null : state.local;
   if (local) {
     const schemes = [...new Set(local.rows.map((row) => row.scheme))];
     const rootIds = local.rows

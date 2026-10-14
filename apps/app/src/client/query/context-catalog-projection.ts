@@ -7,6 +7,23 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { CatalogCacheView, ParentRef, ResourceDestination } from "@meridian/resource-replica";
 
+/**
+ * The import's own run, once the plan is accepted: what it is doing and what the
+ * writer can do about it. The mark's menu and the future progress popup read this.
+ */
+export type ImportRunInfo = {
+  importId: string;
+  /** Sending: files are arriving. Interrupted: the server wants files this tab does not hold. */
+  kind: "sending" | "stopping" | "interrupted" | "failed";
+  arrived: number;
+  total: number;
+  failed: number;
+  /** Files the import still lacks (arriving or failed); what Stop here gives up. */
+  remaining: number;
+  /** This tab holds the files, so Retry can send the failed ones. */
+  canRetry: boolean;
+};
+
 /** How an import touches a row: drawn by the importing tab, still arriving, or failed. */
 export type ImportRowInfo = {
   /** Not a catalog entry yet; the importing tab draws it from its selection. */
@@ -16,6 +33,8 @@ export type ImportRowInfo = {
   /** An import into this folder is still reading what the writer chose. */
   reading?: true;
   /** The plan was refused or lost; this row carries the import's warning, Try again and Discard. */
+  /** The accepted import's own state, carried by its root row, destination or area header. */
+  run?: ImportRunInfo;
   notStarted?: { importId: string; code: ImportRefusalCode | null };
   failure?: {
     importId: string;

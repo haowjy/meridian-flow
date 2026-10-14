@@ -106,6 +106,11 @@ msgstr "{0, plural, one {# call} other {# calls}}"
 msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
 msgstr "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
 
+#. placeholder {0}: run.failed
+#: src/features/import/reason-copy.ts
+msgid "{0, plural, one {# file didn't import.} other {# files didn't import.}}"
+msgstr "{0, plural, one {# file didn't import.} other {# files didn't import.}}"
+
 #. placeholder {0}: step.send
 #: src/features/import/ContinueImportDialog.tsx
 msgid "{0, plural, one {# file hasn't arrived yet.} other {# files haven't arrived yet.}}"
@@ -190,6 +195,12 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 #: src/features/project/context/ContextViewer.tsx
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
+
+#. placeholder {0}: run.arrived
+#. placeholder {1}: run.total
+#: src/features/import/reason-copy.ts
+msgid "{0} of {1} files have arrived."
+msgstr "{0} of {1} files have arrived."
 
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
@@ -1204,6 +1215,10 @@ msgstr "Connection lost. Retrying… attempt {0}"
 #: src/features/import/ImportDocumentNotice.tsx
 msgid "Continue import"
 msgstr "Continue import"
+
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Continue import…"
+msgstr "Continue import…"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -3700,6 +3715,10 @@ msgstr "Retry"
 msgid "Retry changes"
 msgstr "Retry changes"
 
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Retry failed files"
+msgstr "Retry failed files"
+
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Retry import"
 msgstr "Retry import"
@@ -3905,6 +3924,10 @@ msgstr "Sending"
 msgid "Sending your answer…"
 msgstr "Sending your answer…"
 
+#: src/features/import/reason-copy.ts
+msgid "Sending your files. {progress}"
+msgstr "Sending your files. {progress}"
+
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
 msgstr "Sent a message to {line}"
@@ -4083,8 +4106,13 @@ msgid "Stop compaction"
 msgstr "Stop compaction"
 
 #: src/features/import/StopImportDialog.tsx
+#: src/features/project/context/ImportRunMark.tsx
 msgid "Stop here"
 msgstr "Stop here"
+
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Stop import"
+msgstr "Stop import"
 
 #: src/features/chat/FormBlock.tsx
 msgid "Stop run"
@@ -4120,6 +4148,10 @@ msgstr "Stopping compaction"
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Stopping the handoff brief"
 msgstr "Stopping the handoff brief"
+
+#: src/features/import/reason-copy.ts
+msgid "Stopping the import."
+msgstr "Stopping the import."
 
 #: src/features/draft-review/operation-change-text.ts
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -4376,6 +4408,10 @@ msgstr "The header row does not merge into the body."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
 msgstr "The header row stays first."
+
+#: src/features/import/reason-copy.ts
+msgid "The import paused. {progress} Continue to send the rest."
+msgstr "The import paused. {progress} Continue to send the rest."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."

@@ -38,7 +38,9 @@ import { ImportCoordinator, type ImportsSnapshot, type SelectionRead } from "./i
 import type { CatalogReader } from "./import-handoff";
 import { readDropped } from "./read-dropped";
 import { readPicked } from "./read-picked";
+import { runInfoOf } from "./run-mark";
 import { PickInputs } from "./SelectionPicker";
+import { StopImportDialog } from "./StopImportDialog";
 import type { Selection } from "./selection";
 import { refusalOf } from "./selection-limits";
 
@@ -46,6 +48,7 @@ export type PickKind = "folder" | "files";
 
 type DialogRequest =
   | { kind: "continue"; importId: string; key: number }
+  | { kind: "stop"; importId: string; remaining: number; key: number }
   | { kind: "refused"; message: string; key: number };
 
 type ImportsApi = {
@@ -55,6 +58,8 @@ type ImportsApi = {
   /** Start importing what was dropped from outside into `destination`. */
   drop(destination: ImportDestination, items: DroppedItems): void;
   openContinue(importId: string): void;
+  /** Ask whether to stop the import; confirming runs the coordinator's stop. */
+  openStop(importId: string): void;
 };
 
 const ImportsContext = createContext<ImportsApi | null>(null);
@@ -144,6 +149,15 @@ export function ImportProvider({
         );
       },
       openContinue: (importId) => setRequest({ kind: "continue", importId, key: Date.now() }),
+      openStop: (importId) => {
+        const run = coordinator.view(importId);
+        setRequest({
+          kind: "stop",
+          importId,
+          remaining: run ? (runInfoOf(importId, run.state)?.remaining ?? 0) : 0,
+          key: Date.now(),
+        });
+      },
     }),
     [coordinator, guarded],
   );
@@ -171,6 +185,17 @@ export function ImportProvider({
           importId={request.importId}
           coordinator={coordinator}
           onClose={() => setRequest(null)}
+        />
+      ) : null}
+      {request?.kind === "stop" ? (
+        <StopImportDialog
+          key={request.key}
+          remaining={request.remaining}
+          onKeep={() => setRequest(null)}
+          onStop={() => {
+            void coordinator.stop(request.importId);
+            setRequest(null);
+          }}
         />
       ) : null}
       {request?.kind === "refused" ? (
