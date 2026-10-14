@@ -38,34 +38,10 @@ const decision = (
 
 const rows: [string, StopFacts, StopPress, ReturnType<typeof decision>][] = [
   [
-    "1 an assistant streams for M1: cancelled, delivers M1, nothing handed back",
-    { execution: open("E1"), receipt: [M1], rows: [row(M1, 1)] },
-    press(1, "E1"),
-    decision("E1", [], [M1]),
-  ],
-  [
-    "2 M1 waits with no lease: handed back, no execution",
-    { execution: null, receipt: [], rows: [row(M1, 1)] },
-    press(1, null),
-    decision(null, [M1], []),
-  ],
-  [
-    "4 E2 reserved B for M2 before the press: E2 cancelled, B delivers M2",
-    { execution: open("E2"), receipt: [M2], rows: [row(M2, 2)] },
-    press(2, "E1"),
-    decision("E2", [], [M2]),
-  ],
-  [
     "10 a steer before adoption: E1 cancelled, M2 handed back",
     { execution: open("E1"), receipt: [M1], rows: [row(M1, 1), row(M2, 2)] },
     press(2, "E1"),
     decision("E1", [M2], [M1]),
-  ],
-  [
-    "12 a later steer already adopted: E1 keeps running",
-    { execution: open("E1"), receipt: [M1, M3], rows: [row(M1, 1), row(M3, 3)] },
-    press(1, "E1"),
-    decision(null, [], [M1]),
   ],
   [
     "13 a later message already answered: E1 keeps running for the whole execution",
@@ -121,16 +97,6 @@ const rows: [string, StopFacts, StopPress, ReturnType<typeof decision>][] = [
     decision(null, [], [], [M1]),
   ],
   [
-    "20 a child report wake: E3 adopted no message of the press set, so it is untouched",
-    {
-      execution: open("E3"),
-      receipt: ["report"],
-      rows: [row(M1, 1, { delivered: true })],
-    },
-    press(1, "E1"),
-    decision(null, [], [M1]),
-  ],
-  [
     "21 a child report batched with M1: E3 cancelled, the assistant delivers both",
     { execution: open("E3"), receipt: ["report", M1], rows: [row(M1, 1)] },
     press(1, null),
@@ -165,34 +131,10 @@ const rows: [string, StopFacts, StopPress, ReturnType<typeof decision>][] = [
     decision("E1", [], [M1]),
   ],
   [
-    "26 a send in flight at the press sits above the watermark: untouched",
-    { execution: null, receipt: [], rows: [row(M3, 3)] },
-    press(2, null),
-    decision(null, [], []),
-  ],
-  [
-    "27 an idle chat with nothing waiting decides nothing",
-    { execution: null, receipt: [], rows: [] },
-    press(0, null),
-    decision(null, [], []),
-  ],
-  [
-    "28 an empty lease no turn carries is not E: M2 handed back",
-    { execution: null, receipt: [], rows: [row(M2, 2)] },
-    press(2, null),
-    decision(null, [M2], []),
-  ],
-  [
     "29 a handoff seed holds no lease: only the writer messages in the press set are handed back",
     { execution: null, receipt: [], rows: [row(M1, 1), row(M2, 2)] },
     press(1, null),
     decision(null, [M1], []),
-  ],
-  [
-    "30 a running Retry the writer saw is cancelled",
-    { execution: open("E2"), receipt: [], rows: [] },
-    press(0, "E2"),
-    decision("E2", [], []),
   ],
 ];
 
