@@ -14,6 +14,7 @@ import { removeChatRow } from "@/client/query/chat-projections";
 import {
   invalidateProjectThreadData,
   invalidateWorkThreads,
+  invalidateWriteModeReads,
 } from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
 import type { ComposerSubmitEnvelope } from "@/components/app/composer";
@@ -260,7 +261,7 @@ export class ChatSubmissionOwner {
         ).then((response) => {
           // The list rows carry the pending mode (`effectiveAiWriteMode`); a queued or cancelled
           // switch changes it, and the toolbar reads it before the snapshot lands.
-          void invalidateProjectThreadData(queryClient, projectId);
+          void invalidateWriteModeReads(queryClient, projectId);
           return response;
         });
       },

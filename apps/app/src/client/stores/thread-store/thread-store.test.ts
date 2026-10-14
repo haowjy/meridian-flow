@@ -78,11 +78,22 @@ it("a thread upsert inserts a new list row with its mode but never rewrites an e
   const { createThreadCache } = await import("./thread-cache");
   const client = new QueryClient();
   const key = ["projects", "project-1", "threads"];
-  const thread = { id: "thread-1", projectId: "project-1", aiWriteMode: "direct" } as never;
+  const thread = {
+    id: "thread-1",
+    projectId: "project-1",
+    aiWriteMode: "direct",
+    effectiveAiWriteMode: "direct",
+  } as never;
   const cache = createThreadCache(client);
+  type Row = { aiWriteMode: string; effectiveAiWriteMode: string };
+  const row = () => client.getQueryData<Row[]>(key)?.[0];
   cache.upsertThread(thread);
-  expect(client.getQueryData<{ aiWriteMode: string }[]>(key)?.[0]?.aiWriteMode).toBe("direct");
-  // The list's own refetch owns the field: an older snapshot's mode must not replace it.
-  cache.upsertThread({ ...(thread as object), aiWriteMode: "draft" } as never);
-  expect(client.getQueryData<{ aiWriteMode: string }[]>(key)?.[0]?.aiWriteMode).toBe("direct");
+  expect([row()?.aiWriteMode, row()?.effectiveAiWriteMode]).toEqual(["direct", "direct"]);
+  // The list's own refetch owns both fields: an older snapshot's modes must not replace them.
+  cache.upsertThread({
+    ...(thread as object),
+    aiWriteMode: "draft",
+    effectiveAiWriteMode: "draft",
+  } as never);
+  expect([row()?.aiWriteMode, row()?.effectiveAiWriteMode]).toEqual(["direct", "direct"]);
 });

@@ -1187,7 +1187,7 @@ else
       const threadMode = async (rig: Rig) =>
         (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode;
 
-      it("serves the pending mode on the thread and the project list until Stop", async () => {
+      it("serves the pending mode on the thread and the project list until switch-back or Stop", async () => {
         const rig = await manualFixture();
         const served = async () => {
           const listed = (await rig.repos.threads.listByProject(rig.ids.project as never)).find(
@@ -1200,6 +1200,9 @@ else
         await switchMode(rig, "draft");
         expect(await served()).toEqual(["direct", "draft", "draft"]);
         await switchMode(rig, "direct");
+        expect(await served()).toEqual(["direct", "direct", "direct"]);
+        const queued = await switchMode(rig, "draft");
+        await rig.delivery.withdrawControl(rig.threadId, queued.response.id);
         expect(await served()).toEqual(["direct", "direct", "direct"]);
       });
 
