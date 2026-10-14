@@ -251,10 +251,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                             editScopeId: query.responseIdentity.editScopeId,
                           }
                         : {}),
-                      restorationAliases: part.aliases.map((alias) => ({
-                        source: { ...alias.source, length: alias.len },
-                        target: { ...alias.target, length: alias.len },
-                      })),
                     },
                   })
                   .returning({ id: branchWriteJournal.id });

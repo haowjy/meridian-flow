@@ -190,11 +190,7 @@ point. No notice source skips this split.
 Notice selection and acknowledgement do not imply a history turn. The shared
 inbox planner formats the batch first and appends a notices turn only for
 non-whitespace content; canceled or empty notices are still consumed in the
-adoption transaction and do not themselves split a running reply. Writer
-reversal notices must retain redo records: an undo/redo pair before delivery
-cancels for that document URI and write handle. An undo alone reports unwanted
-edits; a redo arriving after an earlier batch reports restored edits. Other
-notice sections survive reversal cancellation.
+adoption transaction and do not themselves split a running reply.
 
 ### Work context
 

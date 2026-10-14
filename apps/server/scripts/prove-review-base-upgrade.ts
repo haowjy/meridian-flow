@@ -720,7 +720,7 @@ async function main(): Promise<void> {
     check(
       "the failure names the migration and the step",
       !interrupted.ok &&
-        interrupted.message.includes("0053_lucky_vivisector.sql") &&
+        interrupted.message.includes("0053_dbr_drop_branch_generation_columns.sql") &&
         interrupted.message.includes("review-base-conversion@1"),
       interrupted,
     );
@@ -743,7 +743,7 @@ async function main(): Promise<void> {
     await drainBatches(sql);
     const directory = path.join(work, "cuts");
     await cp(MIGRATIONS, directory, { recursive: true });
-    const file = path.join(directory, "0052_fair_fabian_cortez.sql");
+    const file = path.join(directory, "0052_dbr_drop_generation_from_indexes_and_parts.sql");
     const original = await readFile(file, "utf8");
     const statements = original.split("--> statement-breakpoint");
     let enforced = 0;
@@ -753,7 +753,10 @@ async function main(): Promise<void> {
         [...statements.slice(0, cutAt), "\nSELECT 1 / 0;\n"].join("--> statement-breakpoint"),
       );
       const failed = await migrate(cutUrl, { directory });
-      if (failed.ok || !failed.message.includes("0052_fair_fabian_cortez.sql"))
+      if (
+        failed.ok ||
+        !failed.message.includes("0052_dbr_drop_generation_from_indexes_and_parts.sql")
+      )
         check(`cut ${cutAt} fails in 0052`, false, failed);
       if (await refusesBadPlacement(sql, 9100 + cutAt)) enforced += 1;
     }
@@ -827,7 +830,7 @@ async function main(): Promise<void> {
     check(
       "an unconvertible draft stops the run, naming migration, step, branch and document ids",
       !stuck.ok &&
-        message.includes("0053_lucky_vivisector.sql") &&
+        message.includes("0053_dbr_drop_branch_generation_columns.sql") &&
         message.includes("review-base-conversion@1") &&
         message.includes("branch-unresolved") &&
         message.includes(DOCS.unresolved),

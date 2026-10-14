@@ -58,7 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       },
     });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {

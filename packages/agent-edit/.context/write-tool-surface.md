@@ -37,9 +37,9 @@ the session runtime immediately while `ResponseCommitter` buffers the exact
 updates and mutation metadata that will be committed. Per-write echoes therefore
 initially reflect cumulative response-local state; `commitResponse` returns
 receipts recomputed against the settled projection for host publication. Without
-a response id, the same command path appends and projects immediately. Undo/redo
-never buffer, and they never save buffered writes either: the host treats a
-`write` `undo` or `redo` as a save boundary and commits the reply before it, so
+a response id, the same command path appends and projects immediately. `revert`
+never buffers, and it never saves buffered writes either: the host treats a
+`write` `revert` as a save boundary and commits the reply before it, so
 the prepared-lease gate requires the host to save buffered writes before an
 inverse command.
 
@@ -136,11 +136,11 @@ rolls back and undoes like one. `tool/copy-rules.ts` holds the `from` rules.
 A copy's receipt is bounded (`tool/copy-receipt.ts`): `copied: { from, blocks }`
 plus, for a block copy, the first and last new block as a short `copied`
 prefix group. The staged write keeps the summary so the settled receipt says
-the same. An undo that leaves the document empty notes that it still exists.
+the same. A revert that leaves the document empty notes that it still exists.
 
 `tool/interaction-mode.ts` is the sole owner of `mutationMode` and
 `interactionContextForAttempt`. The mode (`"threadPeer"` plus
-`branchGeneration`, or `"live"`) is required end-to-end.
+`peerBranchId`, or `"live"`) is required end-to-end.
 
 Within a session, idempotency keys are scoped by response id, then turn id; with
 neither, the session is the fallback scope.
@@ -190,6 +190,5 @@ matrices protect placement, restoration holds, model stack policy and rollback.
 
 Successful edits carry a model-facing `w<N>` reserved per document/thread before
 staging. `read(format: "edits", before?: "w<N>")` pages immutable entries.
-`undo` and `redo` accept `count` (1–20); `revert` names one `edit` handle and makes
-an ordinary new edit. There are no `to`, `since`, `last` or `all` selectors.
+`revert` names one `edit` handle and makes an ordinary new edit. There are no `to`, `since`, `last` or `all` selectors.
 The host owns policy and notices; handles never reach the writer's card.

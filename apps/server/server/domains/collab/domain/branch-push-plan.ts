@@ -1,5 +1,3 @@
-/** Pure document materialization and integration primitives for branch pushes. */
-import { createHash } from "node:crypto";
 import {
   type BlockRef,
   decodeUpdateForDependencies,
@@ -46,10 +44,6 @@ export function assertRowsIntegrated(
       }
     }
   }
-}
-
-export function wholeBranchPushUpdate(input: { branchDoc: Y.Doc; liveDoc: Y.Doc }): Uint8Array {
-  return Y.encodeStateAsUpdate(input.branchDoc, Y.encodeStateVector(input.liveDoc));
 }
 
 export function publicationBlockChanges(input: {

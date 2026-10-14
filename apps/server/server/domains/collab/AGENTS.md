@@ -6,29 +6,37 @@ editor UI or transport-shell policy.
 
 ## Mental model
 
-- Live documents, per-thread peers, and per-Work review drafts are real Y.Docs.
-  Sync propagates between them; journals are durable and runtime state is
-  reconstructible.
+- Live documents, per-thread peers, and per-Work draft text branches are real
+  Y.Docs. Journals are durable and runtime state is reconstructible.
+- A text branch holds two fragments: `prosemirror` (the draft text the writer
+  and the AI edit) and the server-owned `review_base` (live's text as of the
+  branch's `base_revision`). The review is the browser's projection of one
+  against the other. The server stores no review operations, classes or
+  tokens, and a draft change has no server identity beyond what the projection
+  recomputes (`changeId`).
+- A text branch shares no Yjs lineage with live. It is seeded as fresh items
+  written by the reserved server client (`DRAFT_SERVER_CLIENT_ID`), and it
+  catches up to live by a three-way content rebase (base, live, draft) on live's
+  certified cut, not by a Yjs pull. Only thread peers still pull their Work
+  draft's Yjs state.
 - A Work draft is shared by every thread editing the same document in that Work.
-  Document Apply publishes its whole current branch. Per-change Apply and Discard
-  share server-vended dependency-closed classes, never client-reconstructed turns.
-  Per-change Apply fences both preview revisions. Discard fences the live revision
-  and server-vended evidence of complete closed rows and rich class effect, not
-  unrelated draft typing. Both
-  use current-cut snapshot CAS at durable commit; document Apply and whole
-  Discard remain unfenced.
-- Writer source rows retain their identities through attribution. Only dependency
-  closure owns change membership; block proximity never joins writer edits.
-- Independent deleting edits from separate chats stay separate: forward writes
-  and Work publication journal transaction deltas, not cumulative state-vector
-  tombstones. Keep genuine dependency closure, including retained cumulative rows
-  and same-client clock prefixes. Draft agent writes use one fresh client and one
-  journal row per paragraph per logical write, atomically published per reply.
-  Recognized adjacent splits/merges and contiguous inserted/removed runs stay one
-  segment. Independent writes never join merely for sharing a paragraph.
+  Apply is a content merge: the change the writer saw merges into live's current
+  text, and live text it replaced comes back as `overrode`. No draft bytes reach
+  live and no live bytes enter a text branch. Apply never closes the draft.
+- Discard is a writer edit. A change, "Discard draft", the strip and a Work row
+  set draft text back to the base inside the room, undone by Ctrl+Z or the row's
+  Undo, with no command. Only two kernel commands close anything: item Discard
+  (a created, binary or live-deleted item) and Discard all. The kernel closes
+  branches and never resets text from live.
+- A writer or AI edit that leaves the draft equal to its base leaves the item
+  unlisted but addressable; its room, history and next proposal stay.
+- Independent deleting edits from separate chats stay separate: draft agent
+  writes use one fresh client and one journal row per paragraph per logical
+  write, atomically published per reply.
 - Each live document has a durable authority head whose identity, generation,
   and admission sequence fence every connection and mutation.
-- `@meridian/agent-edit` owns schema-safe mutation and forward inverse computation. This
+- `@meridian/agent-edit` owns schema-safe mutation, the pure `diff` core (review
+  projection, rebase, late-peer recovery) and forward inverse computation. This
   domain owns authorization, persistence, coordination, settlement, and trail
   projection around that core.
 
@@ -39,16 +47,25 @@ editor UI or transport-shell policy.
 - Admit novel writer content durably before Yjs apply, broadcast, or ack. Route
   live and branch writes through their coordinator-owned admission seams.
 - Reject writer updates with reserved client IDs or mutations in the reserved
-  provenance namespace before durable append or Yjs apply.
+  provenance namespace (including `review_base`) before durable append or Yjs
+  apply.
 - Yjs merge is trusted. Destructive effects inform marks and receipts but never
-  veto an otherwise valid merge; receipt Undo/Redo remains reversal authority.
-- Branch Y.Docs use `gc: false`; inverse classification requires their full
-  struct history.
+  veto an otherwise valid merge; undo recovers.
+- Branch Y.Docs use `gc: false`: Apply rebuilds the writer's review frame from a
+  `Y.snapshot`, and inverse classification needs the full struct history.
+- Every server write into a text branch (seed, rebase, Apply's base patch, late
+  recovery) is computed against the state it compare-and-swaps onto, under the
+  branch lease, through the one `writeBranchState`. Never store a server-client
+  delta and replay it later: its struct ids collide with the next write of
+  client 1, and Yjs drops the replay silently.
+- `has_effect` is `review_base ≠ prosemirror`, written by every branch write
+  through that same capability so the Work projection sees it. Never compute it
+  elsewhere or derive membership from journal rows.
 - Any content apply after an `await` must obey the documented WebSocket
   concurrency fence. Do not assume a coordinator lock excludes socket writes.
 - Model reads and writes go through the thread-peer pool with a caller-computed
   destination; nothing in collab decides live versus draft from a thread's
-  mode. Scratch and uploads are never drafted, and `ensureWorkDraftBranch`
+  mode. Scratch and uploads are never drafted, and `ensureDraftBranch`
   throws if asked to.
 - A reply saves once: every document it wrote, live or drafted, in one
   transaction. Live text reaches open editors only after commit.
@@ -80,45 +97,42 @@ inside their existing mutation transactions and locks. Each logical model edit
 reserves one ordinal before staging; capture receives that same ordinal for its
 immutable row, so results, receipts and journal parts name the same edit. Response
 and turn grouping do not allocate or merge handles. Parts retain delta bytes
-independently of journal compaction. Apply moves placement at completed admission
-to the authored live row, not the reconcile row; Discard and empty-draft reset
-make discarded and retired placements terminal. Per-change Discard re-forks from
-live and surviving journal rows with their immutable edit/part identity; it
-creates no inverse edit or restoration copy. Card Undo/Redo and failed-response rollback use these immutable parts and the
-forward inverse primitive. Card authorization and change-viewer discovery share immutable edit/placement
-targets with inverse admission; mutation and branch transport journals are not
-authorization lineage. The card's control is a dry run of that same policy,
-Redo first; one action lands in one view per document. Pending inverses in a
-draft hold root identities against inverses elsewhere. Their writes use ordinary
-journal rows, never status reversal or row replacement. Only inverse policies
-acquire the outer transition lock. Model `write undo/redo/revert` and `read(format: "edits")` use the same immutable
-store through `model-document-edits.ts`. `model-inverse-policy.ts` owns one
-all-or-nothing stack per thread/document, with action-history pops, consumed
-undo actions and current-destination admission. User-actuated entries refuse
-model stack commands; revert is a new edit in the current destination.
+independently of journal compaction.
 
-`hasEffect` compares prose plus managed manifest membership to the draft's durable
-`liveCut` (the last pulled live state), using `documentEffectsEqual`. Prose review
-and publication use `documentProseEqual`; manifest review operations are separate.
-Pending lists and Work notifications read this flag or `blocking`; journal row
-count alone is not visible effect. A skip marks a holding draft blocking so its
-Apply/Discard remains reachable even when its prose equals live.
+A part's placement is `pending` (in a text branch), `live` or `discarded`. Content
+Apply moves no part: whether an edit's text has been applied is derived from the
+draft's text (`draft-edit-status.ts`: applied when it lies in no review change,
+pending when it lies inside one). Item Discard and Discard all make the closed
+branch's pending parts `discarded`, terminal.
+
+Two inverse paths use these immutable parts and the forward inverse primitive:
+the model's `write revert` and failed-response rollback. `revert` is a new edit
+in the thread's current destination (the active draft's text branch, ensured and
+seeded if absent, or live); in a draft it shows as a change the writer applies.
+Pending inverses in a draft hold root identities against inverses elsewhere, and
+their writes use ordinary journal rows, never status reversal or row replacement.
+Only inverse policies acquire the outer transition lock. Stored `undo` and `redo`
+edit kinds remain readable history; nothing writes them.
+
+`has_effect` and `blocking` decide whether an edited item is listed (see
+[Membership in `branch-model-and-records.md`](.context/branch-model-and-records.md#membership)).
+A skipped inverse hold marks its draft blocking so the item stays reachable even
+when its text equals its base.
 
 Save and rollback take `ModelResponseIdentity`, never a string that could mean
 either provider response or helper scope. `document_edits.response_id` retains
 provider authorship; `edit_scope_id` selects the rotated scope. Failed-scope
-rollback includes its durable undo, redo and revert edits and restores stack
-availability from non-rolled-back actions. Provider FKs are unchanged.
+rollback includes its durable `revert` edits. Provider FKs are unchanged.
 
 Model edit inspection shares one invocation-local context per immutable view:
-prepared lineage and classifications, with a shared rollback-membership and
-effective-action index for that history. Display placement and current-destination
-admission remain separate views. Redo preview reuses the locked inspection;
-every scratch advance invalidates its context before the next planned step.
-Never retain these contexts across invocations or document mutation.
+prepared lineage and classifications, with a shared rollback-membership index
+for that history. Display placement and current-destination admission remain
+separate views. Every scratch advance invalidates its context before the next
+planned step. Never retain these contexts across invocations or document
+mutation.
 
-Model inverse `count` measures edits in both directions. Multi-edit Undo plans
-on a scratch copy, admits atomically, and stores one action per target edit.
-Redo restores the last undone edit first; insufficient counts refuse with the
-available count and no mutation. All actions retain the shared edit scope for
-failed-scope rollback. Card grouping and writer-only redo are unchanged.
+Model `revert` targets one immutable edit by handle. It plans on a scratch copy,
+reverts the parts and blocks the writer left alone, and reports the rest
+("revert 1 of 2"); with nothing left it refuses `nothing_to_revert` and mutates
+nothing. All inverse edits retain the shared edit scope for failed-scope
+rollback.

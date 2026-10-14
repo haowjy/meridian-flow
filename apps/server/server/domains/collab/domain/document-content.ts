@@ -5,14 +5,6 @@ import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { ClockRange } from "./journal-clock-owners.js";
 
-/** Complete settlement effect: rich prose and managed manifest membership. */
-export function documentEffectsEqual(live: Y.Doc, draft: Y.Doc): boolean {
-  return (
-    isDeepStrictEqual(live.getMap("documents").toJSON(), draft.getMap("documents").toJSON()) &&
-    documentProseEqual(live, draft)
-  );
-}
-
 /** Review prose excludes manifest changes, which have their own review operations. */
 export function documentProseEqual(live: Y.Doc, draft: Y.Doc): boolean {
   return isDeepStrictEqual(

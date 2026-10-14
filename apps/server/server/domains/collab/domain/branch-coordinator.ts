@@ -32,7 +32,7 @@ import {
   admitWriterUpdate,
   replicateFrozenIdentity,
 } from "./document-mutation-policy.js";
-import { draftDiffersFromBase, draftSchema, writeBaseFrom } from "./draft-rebase.js";
+import { draftDiffersFromBase, draftSchema } from "./draft-rebase.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 

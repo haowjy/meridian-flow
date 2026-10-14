@@ -55,7 +55,6 @@ const expectedSuites = [
   "apps/server/server/domains/collab/collab-domain.response-writes.db.test.ts",
   "apps/server/server/domains/collab/draft-write-visibility.db.test.ts",
   "apps/server/server/domains/collab/adapters/response-helper-replay.db.test.ts",
-  "apps/server/server/domains/collab/reply-save-refusals.db.test.ts",
   "apps/server/server/domains/collab/response-rollback.db.test.ts",
   "apps/server/server/domains/collab/collab-domain.image-paths.db.test.ts",
   "apps/server/server/domains/collab/response-save-destinations.db.test.ts",

@@ -22,8 +22,9 @@ the rows pending. The durable turn keeps notice bytes identical on every later
 request, which the frozen prefix's Anthropic cache breakpoints require (thread
 AGENTS.md / runtime CONTEXT.md).
 
-The domain contains only notices that affect a later model call: `undo`,
-`awareness_degraded`, and writer-origin `work_switched`. A Work-switch notice is
+The domain contains only notices that affect a later model call:
+`awareness_degraded`, `draft_write_invisible` (a reply's words went into draft text
+the writer had already discarded locally), and writer-origin `work_switched`. A Work-switch notice is
 one-shot causal context; it does not replace the persistent hidden Work-context
 update. The model can't switch Works
 ([rule](../../runtime/.context/tools.md#permissions)).

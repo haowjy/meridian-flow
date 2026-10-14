@@ -17,11 +17,11 @@ changing state, Discard or Apply. This file maps ownership.
 | Review frame (`projectReview(diffBlocks(base, draft))`, snapshot, pins), applied-change identity | `review-frame.ts`, `review-model.ts` |
 | Visible changes and their failures, derived once per room from the frame and command records | `review-visible.ts`, `review-runtime.ts` |
 | Room-scoped review runtime: one frame stream per draft, editor or headless, record reconciliation | `review-runtime.ts`, `useReviewRuntime.ts` |
-| Local Discard (one change, whole draft) as one undo step | `draft-discard.ts` |
+| Local Discard (one change, Discard draft) as one undo step | `draft-discard.ts` |
 | Discard from a surface with no editor (strip, Work rows), Undo on the row | `room-discard.ts`, `useHeadlessDiscards.ts`, `DiscardedRow.tsx` |
 | Chat attribution hint (which chats' edits overlap a change): fetched and matched once per room by the runtime | `review-runtime.ts`, `chat-changes.ts` |
 | Apply snapshot, acknowledgement wait, unopened-draft read | `useDraftApply.ts` |
-| Apply records (applied changes, failures, overrode, whole-draft claim) | `client/query/draft-command-record.ts` |
+| Apply records (applied changes, failures, overrode, whole-item claim) | `client/query/draft-command-record.ts` |
 | Apply lifecycle (claim, prepare, send, outcome) and item Discard | `client/query/draft-command-executor.ts` |
 | Creation-bound Work command capability | `useWorkDraftCommands.tsx` |
 | Draft metadata (base, branch room) | `client/query/useDraftMeta.ts` (`useDraftMeta`) |
@@ -42,26 +42,26 @@ Paths outside this directory are relative to `apps/app/src`.
 
 - Review is a pure function of the text. Never store review state beside the
   document; a move, undo, cut or paste changes the text and the review follows.
-- Discard of a change or the whole draft is local, instant and one Ctrl+Z step:
+- Discard of a change or of a document's draft is local, instant and one Ctrl+Z step:
   it writes the draft fragment under the editor's own undo origin and the server learns it
   as any edit. Off the editor, an expanded row edits the room it already holds
   (`useHeadlessDiscards.discardChange`, synchronous) and reads "Discarded" with Undo only after
   the edit exists. A chat-wide Discard on a collapsed file acquires its room first and reads
   "Discarding" with Cancel until then. `changeRows` is the one row state: an entry replaces
-  its change's row, never sits beside it. Whole-draft Applying/Discarding shows on the file
-  (`FileCommandStatus`) from the command records, on the Work page and the strip alike. Item and Work Discard close the draft
-  on the server; a new document's Discard is one.
+  its change's row, never sits beside it. Whole-item Applying/Discarding shows on the file
+  (`FileCommandStatus`) from the command records, on the Work page and the strip alike. Item Discard (a new, binary or live-deleted
+  document) and the Work page's Discard all close on the server.
 - Every change row carries the frame it was listed from. Apply sends that frame's
   snapshot; Discard finds its pinned position and content hash again in the current text
   (`draft-discard.ts`). Never rebind a click to the runtime's newest frame.
 - A clicked change is found again by its pinned position and content hash
   (`draft-discard.ts`). If the text under it changed, Discard is a no-op, never
   a guess at a neighbour.
-- Apply sends `ContentApplyRequest` with the snapshot of the projection the writer
-  clicked, after the server holds every update it contains. `overrode` is a
+- Apply (`apply-changes` for named changes, `apply` for an item) sends the snapshot of
+  the projection the writer clicked, after the server holds every update it contains. `overrode` is a
   dismissible notice per draft, not a gate.
-- Empty drafts stay open; "No changes left" is derived from the projection.
-  There are no generations, completion claims or remounts.
+- An item with no changes left stays open and in its room; "No changes left" is derived from the projection.
+  Its room is remounted only when the server returns a new room name.
 - Only red and green: no writer, merged or restoring tones. Chat names are a
   best-effort hint on a change; nothing gates on them.
 - Never add a surface-local command lock, optimistic hide or completion store;
@@ -74,14 +74,14 @@ Paths outside this directory are relative to `apps/app/src`.
   writer clicked in. A control outside the editor but belonging to its surface (the review band, the
   phone header) names that surface ("editor" or "dock"); only a row that sits in no editor (Work
   page, strip) takes the longest-attached one.
-- A whole-draft Apply from an open editor flushes that editor's projection at the click
+- A whole-item Apply from an open editor flushes that editor's projection at the click
   (`handle.projectNow()`) and sends that frame, so words typed inside the debounce apply. Per-change
   Apply and a headless file Apply keep the frame their row was drawn from.
 - A held Discard owns its history and a lease on its room until Undo (`useHeadlessDiscards`),
   whether the row was expanded or collapsed. A row is drawn only from a room its reader holds.
 - An Apply whose change a peer removed while it waited keeps its Applying and its failure on
   the file (`reconcileChangeRecords`), never on a surviving twin and never as a row.
-- Every rendered Apply (per change, open new document, whole draft) carries the frame its
+- Every rendered Apply (per change, open new document, whole item) carries the frame its
   button was drawn from.
 - Focus readers are pure. Reconcile once per scope.
 - Review chrome, strip and change rows each use one line. Success has no toast.

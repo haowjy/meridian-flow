@@ -35,7 +35,7 @@ The memory-only runtime replica is distinct from that host-owned branch.
   turns written Markdown into nodes runs ref assignment over the replaced span
   before block alignment and no-op detection, and applies the assigned nodes as
   they are. An unchanged link keeps its old attrs verbatim and emits no format
-  item; copies, undo, redo and reply save never assign. Ahead refs a write
+  item; copies, revert and reply save never assign. Ahead refs a write
   mints are registered before it applies or locks anything
   ([link identity](link-correspondence.md)). A host whose door runs inside its
   own transaction binds the whole document first, outside it, and hands the
@@ -56,7 +56,7 @@ Scope addresses are view-scoped; durable identity is the CRDT item tuple within
 its document, with content recorded separately as evidence. When canonical state advances, the runtime rebuilds and resolves the
 writer-requested command against the current document instead of requiring a
 reread. A missing target returns ordinary `not_found`. Any wrong-target residual
-is visible in the result receipt and recoverable through durable undo lineage;
+is visible in the result receipt and recoverable through durable inverse lineage;
 target uncertainty never becomes an approval or refusal gate on the writer's
 instruction.
 
@@ -67,12 +67,12 @@ instruction.
   from Markdown as a merge strategy.
 - **Public mutations stay at turn/tool seams.** Low-level mutators
   (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
-  root; callers mutate through `write()` or the write-level undo/redo seams.
+  root; callers mutate through `write()` or the write-level `revert` seam.
 - **Coordinator/runtime failures → `internal_error`**, not
   `document_not_found`. Only document-missing from the coordinator is
   `document_not_found`.
 - **Turn identity is durable.** Reversal groups rows by journal mutation
-  metadata, so restart/recovery does not depend on live in-memory undo state.
+  metadata, so restart/recovery does not depend on live in-memory inverse state.
 
 ### Sync engine — the write loop
 
@@ -141,8 +141,8 @@ going blind to a concurrent human edit.
   prefix context/copied groups exist. Concurrent
   blocks and tombstones sit in `concurrent.runs`; placement, not another block
   relation, conveys their concurrent semantics.
-- **Tool results have one typed form and one rendering.** Read, mutation, undo,
-  redo, and write errors return a `meridian.agent-edit.v1` result.
+- **Tool results have one typed form and one rendering.** Read, mutation, revert,
+  and write errors return a `meridian.agent-edit.v1` result.
   `renderAgentEditResult` (`tool/result-text.ts`) is the only path from it to
   the model's text: a status line, notes, then `hash|text` blocks. Hosts keep
   the typed result beside the text and never parse the text back (D43).

@@ -192,6 +192,84 @@ Write migrations as if production data exists ([decision][kb-real-data]).
 - **Regeneration drops hand edits.** Reapply these online-safety edits whenever
   a branch regenerates migrations after merging the base.
 
+### Data steps
+
+Some upgrades need code between two SQL migrations. A data step is
+`{ id, version, preflight, run }` in the registry
+([`tools/dev/lib/migration-data-steps.ts`](../../../tools/dev/lib/migration-data-steps.ts));
+its implementation lives in [`../src/migration-steps/`](../src/migration-steps),
+which uses the release's own code (the review-base conversion calls
+`@meridian/agent-edit/diff`), so no frozen copy of that code exists.
+
+- **The marker is the anchor.** The migration the step must precede carries
+  `-- data-step: <id>@<version>` on its first line. The registry is keyed by
+  `id@version`, so a renumber changes nothing in it, and the SQL hash the
+  history already checks covers the marker.
+- **Strict at run time.** Before any work, the runner refuses a pending
+  migration whose marker names an unregistered `id@version` (no step, or
+  another version), and a registered step marked by more than one migration.
+  A registered step with no marker in the history being run has nothing
+  pending. That every registered step is anchored exactly once, on the first
+  line, is a repository invariant asserted in
+  `tools/dev/lib/migration-data-steps.test.ts`.
+- **Order.** Under the migration advisory lock, `preflight` runs read-only
+  before the run's first pending migration, so a refusal leaves the database as
+  the previous release left it; `run` runs immediately before its anchor, in the
+  same run. Steps are restartable (a converted row is marked by its own data).
+- **Failures name ids, never prose.** A step failure stops the run naming the
+  migration, the step, and the branch and document ids, and says to repair or
+  recover, never to discard.
+
+### The diff-based review upgrade
+
+One `pnpm db:migrate` upgrades a database that ran the old review model. The
+migrations are named by role:
+
+| Role | Migration | Does |
+|---|---|---|
+| A1 | `0048_dbr_review_base_columns` | `document_branches.base_revision`, `rebase_cuts`, `push_lineage.apply_payload` (all metadata-only), and `has_effect` defaults `false` |
+| A2 | `0049_dbr_trail_owners_content_apply` | `change_trail_owners` gains the content-Apply arm |
+| B1 index drop | `0050_dbr_drop_edit_action_index` | no-transaction `DROP INDEX CONCURRENTLY` over `document_edits.action_id` |
+| B1 column drop | `0051_dbr_drop_edit_action_columns` | bounded `DROP COLUMN` for `action_id` and `consumes` |
+| B2 | `0052_dbr_drop_generation_from_indexes_and_parts` | no-transaction: rewrites `document_edit_parts` in committed batches (strip `generation`, `retired` becomes `discarded`), rebuilds the five indexes under temporary names then renames, adds `document_edit_parts_placement_kind_valid` `NOT VALID` beside the old check, validates it, then drops the old check |
+| B3 | `0053_dbr_drop_branch_generation_columns` | the anchor, marked `-- data-step: review-base-conversion@1`: guards, then drops `document_branches.generation`, `live_cut`, `discarded_state_vector`, `branch_write_journal.generation`, `push_lineage.branch_generation` |
+
+Online rules for this chain, each a review rule beyond the lint:
+
+- **B1** splits in two because one file is either no-transaction or
+  transactional: the concurrent index drop first, the short bounded column
+  drops second.
+- **B2** touches only rows that change, in committed batches with `jit = off`
+  (each rewritten row fires `capture_change_trail_part`, whose recursive owner
+  lookup trips JIT compilation; the trigger is never disabled). There is never
+  a window without a placement check, and every statement is re-runnable.
+- **B3** is the only file that destroys data (`live_cut` is the only copy of a
+  pre-`review_base` draft's baseline), so it runs only after the step has
+  converted every eligible branch and begins with a `DO` guard that raises a
+  named error when an index still uses a dropped column, an eligible branch
+  has no `base_revision`, or any settlement batch is `pending` or `blocked`.
+  The guards are defense in depth and fire only if the step was bypassed.
+
+The `review-base-conversion@1` step converts every active `work_draft` branch
+with a NULL `base_revision` (the predicate shared by the converter and the B3
+guard): the base is the `live_cut` text, or the branch's own text when it has no
+journal rows, and a branch with journal rows and no cut stops the run with its
+ids. Each row is one compare-and-swap on its full prior `state`; it writes
+`review_base`, recomputes `has_effect`, and sets `base_revision` to the
+initialized-unknown sentinel so the first rebase merges live's edits since. Its
+preflight refuses with batch ids and states if any settlement batch is `pending`
+or `blocked`, because this release changed the member protocol and the
+`draft_tree` payload; the runbook is to let the old release's recovery drain
+them, stop it, and run `db:migrate`. Fresh databases pass (the preflight reads
+history first). Servers stop before `db:migrate` and start after it; the lock
+does not fence application writers. The populated-upgrade proof is
+[`docs/qa/review-base-upgrade.md`](../../../docs/qa/review-base-upgrade.md).
+
+`draft_commands` rows are historical records and are not migrated. The
+`branch_write_journal` columns `reviewed_by`, `reviewed_at` and `pushed_at`, and
+`push_lineage.journal_ids` (`NOT NULL`, written `'{}'` by content Apply), have no
+runtime writer but stay because they hold historical values.
+
 Migration lint enforces the marker, chunk isolation, `IF NOT EXISTS` and the
 `NOT VALID` / concurrent-drop warnings. Re-runnability beyond `IF NOT EXISTS`,
 lock_timeout scope and data preservation are review rules.

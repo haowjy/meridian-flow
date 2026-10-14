@@ -31,6 +31,7 @@ tools/dev/
 │   ├── tailscale-stale-routes.ts     Parse serve/funnel status; find dead-target routes
 │   ├── migration-history.ts   Migration identity; repository-history comparison; database plan
 │   ├── migration-runner.ts    Locked, history-checked programmatic migrator (`runMigrations`)
+│   ├── migration-data-steps.ts  Versioned data-step registry; the `-- data-step:` marker is the anchor
 │   ├── migration-sql.ts       Shared marker/encoding, identifier and chunk parsing for runner + lint
 │   ├── app-boot-contract.ts   Exact child-owned smoke route contract
 │   ├── app-boot-smoke.ts      Shared child lifecycle + route probe harness
@@ -212,6 +213,16 @@ Two consumers compare it:
   EXISTS` it names, drop that index concurrently if it exists and is INVALID;
   then autocommit each breakpoint chunk; record history last. A failure leaves
   partial effects and no history row, so the retry reruns the whole file.
+- **Data steps** (`lib/migration-data-steps.ts`): a migration whose SQL carries
+  `-- data-step: <id>@<version>` is the anchor of a registered step. Before the
+  run's first pending migration, `runMigrations` plans the steps (refusing a
+  pending marker with no registered `id@version`, and a step marked by more than
+  one migration) and runs each due step's read-only `preflight`; immediately
+  before an anchor it runs the step. Both happen inside the advisory-locked run,
+  so one `pnpm db:migrate` converts and migrates. Step bodies live in
+  `packages/database/src/migration-steps/` because tools may not import
+  application code. A step failure is a `MigrationDataStepError` naming the
+  anchor and phase.
 - **Lost backend:** cleanup never sends `ROLLBACK` or unlock to a dead session
   (termination already released the lock), and cleanup errors never replace the
   file-aware failure that `formatMigrationFailure` prints.

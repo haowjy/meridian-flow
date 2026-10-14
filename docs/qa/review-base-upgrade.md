@@ -5,6 +5,11 @@ A script-backed check that one `pnpm db:migrate` upgrades a populated train data
 `consumes`, `retired` and generation placements, `draft_commands` of every kind, and legacy pending, blocked and
 zero-member `draft_tree` batches) to the diff-based review model. Not part of `pnpm test:all`.
 
+The subject is migrations `0048` to `0053` and the registered data step `review-base-conversion@1`
+(`packages/database/src/migration-steps/review-base-conversion.ts`), which the runner executes between `0052` and
+`0053`, whose first line carries its marker. The step turns each active `work_draft` branch's `live_cut` into its
+`review_base`; `0053` drops the columns.
+
 ```bash
 DATABASE_URL=<local server url> pnpm --filter @meridian/server exec tsx scripts/prove-review-base-upgrade.ts
 ```
@@ -16,13 +21,16 @@ Assertions, each printed as `ok - ...`:
   and the same command succeeds after the batches drain;
 - one invocation: every `review_base` reads as its old `live_cut` text (or its own text when never written), draft
   text unchanged, `has_effect` recomputed, placements rewritten, new index definitions, the narrowed check enforced
-  and validated, the six columns gone, `reviewed_*`, `pushed_at` and `journal_ids` kept, `draft_commands` and
-  historical edit kinds unchanged, the dirty-log volume reported;
+  and validated, the seven dropped columns gone (`document_edits.action_id` and `consumes`,
+  `document_branches.generation`, `live_cut` and `discarded_state_vector`, `branch_write_journal.generation`,
+  `push_lineage.branch_generation`; the script's assertion text says "six"), `reviewed_*`, `pushed_at` and
+  `journal_ids` kept, `draft_commands` and historical edit kinds unchanged, the dirty-log volume reported;
 - a restored soft-deleted Work rebases on the converted base and the writer's deletion survives;
-- a second migrate is a no-op; fresh and upgraded schema dumps are equal;
+- a second migrate is a no-op; a fresh install passes the preflight and the step finds nothing; fresh and upgraded
+  schema dumps are equal;
 - a conversion interrupted after two rows, and 0052 cut at every statement, rerun to the same end state, with the
   placement check enforcing after every cut;
-- the B3 guards fire when the step is bypassed; an unconvertible draft stops the run naming migration, step, branch
+- the B3 guards (0053) fire when the step is bypassed, naming branch ids or unfinished batches, and destroy nothing; an unconvertible draft stops the run naming migration, step, branch
   and document ids, says to repair or recover the baseline, and the repaired run finishes.
 
 Record the commit, date and the printed assertions in the active work directory.

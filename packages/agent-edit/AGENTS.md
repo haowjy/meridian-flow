@@ -41,7 +41,7 @@ before and after cuts without acquiring or applying to a live document.
 - Public reads go through `read()`; mutations go through `write()` /
   response lifecycle APIs. The narrow browser-safe `./yjs-mutation` subpath is
   the pinned private-Yjs adapter for host-owned reconstruction transactions; it
-  does not own retirement policy, persistence, attribution or undo orchestration.
+  does not own retirement policy, persistence, attribution or inverse orchestration.
 - Do not bypass `ResponseCommitter` or infer durability from live projection; the
   journal boundary decides whether rollback may discard or must recover.
 - Destructive policy is report-only: Yjs merge never blocks an agent write.
@@ -49,6 +49,13 @@ before and after cuts without acquiring or applying to a live document.
   feeds branch-settlement sweep or apply authority.
 - Keep the kernel CRDT-neutral but be honest that v1 content currency is
   ProseMirror via `@meridian/markup`.
+
+- `./diff` is the pure review model shared by browser, server and migration:
+  `blocksEqual` decides `has_effect`, `projectReview` produces the changes,
+  `composeGroups` builds the Apply and local Discard patches, and `rebase`
+  merges live into a draft. Never reimplement any of them beside it; two
+  copies of "what changed" disagree on `has_effect` and the Work page lies.
+  See [`.context/diff-review.md`](.context/diff-review.md).
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
 
@@ -59,17 +66,15 @@ restoration lineage, and admission. The browser-safe `yjs-mutation.ts` owns
 retained-struct lookup, visibility, splitting, redone hydration/capture and
 low-level UndoManager execution, pinned to Yjs 13.6.31. `computeInverse` returns one edit
 per target edit, with transaction-delta parts and aliases; the host persists
-those edits under the policy's action IDs. Model Undo uses one action per target
-edit, including multi-edit counts committed atomically; card actions may group
-edits. Normalization is per edit, never per action.
+those edits under the policy's action IDs. Model `revert` and failed-reply rollback use one action
+per target edit. Normalization is per edit, never per action.
 `prepareEditRoots` exposes batched classification, root inspection and inverse
 computation over one immutable view. Hosts reuse that prepared lineage within
 an invocation; after advancing a scratch plan, rebuild it before inspecting or
 computing again. It is not a persisted cache.
 
 This primitive does not route commands or choose destinations. The server uses
-it for receipt actions, failed-response rollback and the model's per-document
-undo/redo/revert stack. Model tools and `read(format: "edits")` reach immutable
+it for failed-response rollback and the model's `revert`. Model tools and `read(format: "edits")` reach immutable
 parts through the host `DocumentEdits` port, behind the prepared-lease gate,
 never the branch journal facade or staged-write queue. There is no hosted
 reconstruction-based reversal endpoint or reserved undo client.

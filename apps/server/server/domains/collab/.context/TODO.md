@@ -1,11 +1,5 @@
 # collab TODO
 
-## Per-change Apply Undo
-
-Expose a per-change Apply Undo action through the existing immutable edit-part
-and forward-turn inverse authority. Apply currently confirms settlement only;
-this does not require a separate reversal planner or mutable reversal receipt.
-
 ## Paths that hold a pooled connection while taking another
 
 The live-pull deadlock (10 concurrent pulls each held a root transaction and
@@ -25,13 +19,6 @@ Reproduce each with more concurrent callers than the pool's size (the PR 2
 perf bench's item 9 shows how), then restructure so no path waits for a
 connection while holding one. See
 [file-policy performance](../../file-policy/.context/performance.md).
-
-## Draft preview fails on empty paragraphs
-
-The draft-preview endpoint returns HTTP 500 when a draft contains an empty
-paragraph: `Cannot anchor text offset in block <id> (paragraph) without text`.
-Reproduce at the draft-preview anchoring seam and make empty text blocks a
-supported preview input.
 
 ## Code files become a display lens; cross-schema rename becomes a metadata flip
 
@@ -68,10 +55,12 @@ order.
 Profile before changing. `threadPeerContext` in
 `domain/thread-peer-core-pool.ts` calls `pullThreadPeer`
 (`domain/branch-pulls.ts`) on each drafted call outside an open response
-document. The pull encodes a full live snapshot, then reads the whole branch
-for the attribution baseline. Span runs on 2026-10-08 (500-document seed)
-measured 96–131 ms for a first write and 90–162 ms for later writes. Cost grows
-with retained Yjs bytes in this workload; Work-size scaling was not measured.
+document. The pull encodes a full live snapshot, rebases the Work draft onto
+live's certified cut, then reads the whole branch for the attribution baseline.
+Span runs on 2026-10-08 (500-document seed, before the content rebase)
+measured 96–131 ms for a first write and 90–162 ms for later writes; re-measure
+with the rebase in the path. Cost grows with retained Yjs bytes in this workload;
+Work-size scaling was not measured.
 Likely direction: reuse coherent captured live and peer state, and coalesce redundant
 root pulls. Keep the pull-time baseline and the final fence intact. Evidence:
 `experiments/draft-write-perf.md` and `experiments/spans-tables.md` in the
@@ -83,14 +72,28 @@ The 2026-10-08 repeated overwrite/restore probe still shows a later-write slope
 after attribution falls to single-digit milliseconds. Profile full-state
 materialization, encodes, persistence, and thread-peer checkpointing in
 `domain/branch-coordinator.ts` before choosing incremental update/checkpoint
-storage. Preserve the final concurrency fence, generation CAS, durable recovery,
+storage. Preserve the final concurrency fence, the full-state branch CAS, durable recovery,
 and delete-only changes. This is the remaining owner of the unfulfilled overall
 approximately 10% later/first target, alongside the peer pull task above. Evidence:
 `experiments/draft-speed-fix-probe.md` in the model-tool-surface work item.
 
-## Thread-peer vs Work-draft generation split
+## Unused columns left by the diff-based review landing
 
-Thread-peer branches and Work-draft branches have independent generation
-counters. A reset bumps the Work-draft generation; thread peers must be
-individually evicted. Missing one invalidation path reintroduces stale state.
-A unified generation scheme or tiered invalidation API is the long-term shape.
+`branch_write_journal.reviewed_by`, `reviewed_at` and `pushed_at` have no
+writer; retiring the columns needs a migration, and `push_lineage.journal_ids`
+(`NOT NULL`, written `'{}'` by content members) can go with it.
+
+## Empty text branches stay open
+
+A text branch whose draft equals its base stays active (its room, history and the
+next proposal's identity survive), and every live edit rebases each active text
+branch on the document. `gc: false` histories grow until Discard all, archive or
+purge. Measure the cost on a long-lived Work before choosing an idle close.
+
+## A blocked settlement batch stops its document's rebases and Applies
+
+`blocked` is reserved for corrupt durable authority. A blocked batch fences
+rebases (`fenced`) and Applies (`settlement_unfinished`) on its documents until a
+human repairs it, and its command observes as `blocked`. The settlement owner
+reports the block once (`settlement.batch_blocked`); there is no repair tool or
+withdrawal path yet.

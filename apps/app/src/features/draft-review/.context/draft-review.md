@@ -5,8 +5,8 @@
 
 ## The model
 
-A draft is a branch room with two fragments: `review_base` (the live
-text as of the draft's last rebase; the server advances it, so it is not the creation snapshot) and `prosemirror` (the draft). The review is
+An item's text branch room holds two fragments: `review_base` (the live
+text as of the branch's last rebase; the server advances it, so it is not the creation snapshot) and `prosemirror` (the item's text). The review is
 `projectReview(diffBlocks(base, draft))` from `@meridian/agent-edit/diff`,
 recomputed in the browser whenever either fragment changes. Group ids are
 content hashes (equal hashes get a `~n` suffix). An empty `review_base` is a
@@ -51,17 +51,23 @@ Discard reverts the deletion with it.
 A surface with no editor (strip, Work rows) does the same edit through `room-discard.ts`:
 `useHeadlessDiscards` writes the discard with an `Y.UndoManager` that tracks
 only it and keeps a lease on the room until Undo, and the row reads "Discarded" with Undo until
-the writer leaves. Item and Work Discard
-and a new document's Discard are server Discards (`discardDraft` `{draftId}`, via
-`discardDraftItem`) that close the draft; a later write opens a new one.
+the writer leaves. Item Discard (a created, binary or live-deleted item; `discardDraftItem`
+sends `{draftId, itemKey}`) and the Work page's Discard all (`discard_draft`) are the only
+server Discards; they close the item or the draft, and a later write opens a new text branch
+with a new room name.
 
 ## Apply
 
-`ContentApplyRequest {commandId, draftId, scope: "change"|"draft", groupIds?,
-snapshot?}`. `snapshot` is a base64 `Y.encodeSnapshot` of the projection the writer
-clicked in: an open editor's projection and a listed row's room projection each carry
-their own snapshot, chosen by the click and never read at send time. Responses:
-`applied`, `already_live`, `not_found`, `gone`, `failed`.
+Apply is content Apply: the change merges into live's current text. The client's
+`ApplyCommand` has scope `"change"` (named changes of one item, wire `apply-changes` with
+`{draftId, itemKey, commandId, changeIds, snapshot}`) or `"item"` (wire `apply` with an
+optional `snapshot`). Apply all sends the listed items with their `locationToken`s and no
+snapshots: the server applies each as it stands when it stages (staging is consent).
+`snapshot` is a base64 `Y.encodeSnapshot` of the projection the writer clicked in: an open
+editor's projection and a listed row's room projection each carry their own snapshot,
+chosen by the click and never read at send time. Item results: `applied`, `already_live`,
+`held`, `not_found`, `failed` (with a reason), and on the item routes `stale`, `whole_item`
+and `gone`; `stale` is the item's location moving, never live text moving.
 
 Apply is one lifecycle per draft (`draft-command-record`, `draft-command-executor`),
 used by every entry point (card, stepper, Apply draft, strip row, Work row, Apply
@@ -80,7 +86,7 @@ failure lands on that draft's row.
   the draft "completing", never "No changes left".
 - `applied.overrode` is published per draft and shown, with the same copy, on the
   open review, the strip row and the Work row.
-- Whole-draft Apply holds one claim per draft (`beginDraftCommand`).
+- Whole-item Apply holds one claim per item (`beginDraftCommand`).
 
 ## Surfaces
 

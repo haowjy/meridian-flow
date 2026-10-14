@@ -17,7 +17,7 @@ import {
   journalAttributionByChangedBlock,
   preparedTrailChanges,
 } from "./branch-trail-projection.js";
-import { documentEffectsEqual } from "./document-content.js";
+import { documentProseEqual } from "./document-content.js";
 
 const schema = buildDocumentSchema();
 const codec = mdxCodec({ schema });
@@ -40,19 +40,6 @@ function cloneDoc(source: Y.Doc): Y.Doc {
   return doc;
 }
 
-it("treats a manifest-only difference as an effect but not a publication block change", () => {
-  const live = createDoc("Alpha");
-  const draft = cloneDoc(live);
-  try {
-    draft.getMap("documents").set("managed-document", true);
-    expect(documentEffectsEqual(live, draft)).toBe(false);
-    expect(publicationBlockChanges({ model, beforeDoc: live, afterDoc: draft })).toEqual([]);
-  } finally {
-    live.destroy();
-    draft.destroy();
-  }
-});
-
 it("names the author of a block replacement in the trail and counts retyping as no effect", () => {
   const live = createDoc("red\n\nControl");
   const draft = cloneDoc(live);
@@ -72,7 +59,7 @@ it("names the author of a block replacement in the trail and counts retyping as 
     const text = unwrapBlock(model.getBlocks(toDocHandle(retyped))[0]).get(0) as Y.XmlText;
     text.delete(0, text.length);
     text.insert(0, "red");
-    expect(documentEffectsEqual(live, retyped)).toBe(true);
+    expect(documentProseEqual(live, retyped)).toBe(true);
     retyped.destroy();
   } finally {
     live.destroy();

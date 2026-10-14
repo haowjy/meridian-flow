@@ -93,7 +93,7 @@ Yjs. Edit text (`insert.newText`, `textRanges.output`) is semantic-IR
 provenance only. Every agent
 text edit lowers through ProseMirror (`applyInlineReplacements`), the single
 inline mutation seam. `applyTextEdit` remains as the
-model's plain-text verb for undo repair and trims unchanged edge text before
+model's plain-text verb and trims unchanged edge text before
 touching Yjs.
 
 | Kind | Mechanism |
@@ -110,8 +110,7 @@ parents, so a non-empty requested document never leaves a cleared trailing block
 
 `forward-inverse.ts` computes a new edit from immutable target parts, durable
 restoration aliases and the current view. The host persists its parts under an
-action ID and chooses its policy and destination. Model stack commands, writer
-card actions and failed-response rollback all use this primitive. Journal history
+action ID and chooses its policy and destination. Model `revert` and failed-response rollback both use this primitive. Journal history
 is never marked reversed, and no historical UndoManager is rebuilt.
 
 Forward-write attribution comes from explicit actor context and immutable receipts,
