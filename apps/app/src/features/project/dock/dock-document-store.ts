@@ -1,6 +1,6 @@
 /** Browser-tab-local, account-stamped document slot for the project dock. */
 import { create } from "zustand";
-import { type ContextTab, soleReview } from "@/client/stores";
+import { type ContextTab, isDraftOnly } from "@/client/stores";
 import type { ReviewAddress, ReviewAddressAdmission } from "../presented-document";
 import type { ScreenKey } from "../shell/screens";
 import {
@@ -123,8 +123,7 @@ export function createDockDocumentStore(
       setDocumentReview: (review) =>
         set((state) => {
           const document = state.occupant;
-          if (!document || (document.tab.kind === "tracked" && document.tab.draftOnly && !review))
-            return state;
+          if (!document || (isDraftOnly(document.tab) && !review)) return state;
           if (
             document.review?.workId === review?.workId &&
             document.review?.itemKey === review?.itemKey &&
@@ -207,13 +206,32 @@ export function useDockDocument(screen: ScreenKey, projectId: string): DockDocum
   return useDockDocumentStore((state) => dockDocumentOnScreen(state.occupant, screen, projectId));
 }
 
-/** Overlay identity is intrinsic; callers cannot carry a draft-only tab as live. */
+/**
+ * Dock admission. The dock presents one review, so a draft-only tab keeps only
+ * the selected Work's entry (the requested review's, else the tab's first), never
+ * the workspace's membership, and the review address is that entry's.
+ */
 export function dockDocument(
   projectId: string,
   screen: DockDocument["screen"],
   tab: ContextTab,
   review: ReviewAddress | null,
 ): DockDocument {
-  const intrinsic = (tab.kind === "tracked" ? soleReview(tab) : undefined) ?? review;
-  return { projectId, screen, screenWorkId: null, tab, review: intrinsic };
+  if (tab.kind !== "tracked" || !tab.reviews || !isDraftOnly(tab))
+    return { projectId, screen, screenWorkId: null, tab, review };
+  const workId = review && tab.reviews[review.workId] ? review.workId : Object.keys(tab.reviews)[0];
+  const entry = tab.reviews[workId];
+  return {
+    projectId,
+    screen,
+    screenWorkId: null,
+    tab: { ...tab, reviews: { [workId]: entry } },
+    review: {
+      workId,
+      itemKey: entry.itemKey,
+      ...(review?.workId === workId && review.itemKey === entry.itemKey && review.changeId
+        ? { changeId: review.changeId }
+        : {}),
+    },
+  };
 }

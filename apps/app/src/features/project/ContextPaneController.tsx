@@ -12,6 +12,7 @@ import {
   type ContextTab,
   editorTabsForWork,
   getContextTabs,
+  isDraftOnly,
   matchesTabInstance,
   replaceOwner,
   useContextTabs,
@@ -212,10 +213,10 @@ export function ContextViewerSurfaceController({
     if (
       !active ||
       !activeTab ||
-      activeTab.draftOnly ||
+      isDraftOnly(activeTab) ||
       removalState.selection.status !== "bound" ||
       workspaceRoute.kind !== "owner" ||
-      workspaceRoute.tab.draftOnly ||
+      isDraftOnly(workspaceRoute.tab) ||
       workspaceRoute.tab.documentId !== removalState.selection.identity.documentId
     )
       return;
@@ -233,7 +234,7 @@ export function ContextViewerSurfaceController({
   // route. Their activation must not depend on search-param validation.
   const paneState = deriveContextPaneState({
     activeTab,
-    tabs,
+    tabs: visibleTabs,
     masked: isProjectRouteMasked(mask),
     destination:
       activeContextScheme !== null && activeContextPath && openTabKey
