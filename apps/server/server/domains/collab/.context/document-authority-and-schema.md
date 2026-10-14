@@ -122,10 +122,8 @@ markdown engine (each method prepares after loading its doc), the edit core
 per command through `DocumentLinksPort`),
 the branch peer (effective Markdown, hashlines and revision, in the reader's
 thread), the reply's save (by thread),
-and offline reconciliation. Draft preview owns one
-enclosing scope for both sides and prepares the draft holder in its Work's
-view for the `y2:` revision; it does not serialize whole-document Markdown.
-Selective Apply/Discard recompute that scoped revision with their selection. ContextFS
+and offline reconciliation. The draft review serves no
+whole-document Markdown; the browser projects the room. ContextFS
 search owns one for all matching documents in its source. Branch push opens
 its scope before branch locks and prepares its trail docs under them; its
 settlement keeps its own scope. Wrappers name every method, so a new method
@@ -139,8 +137,7 @@ The view is explicit everywhere. The engine's `serializeDocument` and
 `serializeVersionedDocument` take it, and an effective read names its version
 (`EffectiveReadVersion`: live, or draft with its Work). The thread pool routes
 each model call's view on `WriteContext.linkView`: the destination it chose
-for a read or write, and for an undo or redo the side whose history it
-reverses (a draft side in the Work whose draft holds that history). At a
+for a read, write or `revert`. At a
 reply's save each document spells in the destination it was pinned to. A
 thread core asked to spell without a routed view throws.
 
@@ -161,17 +158,13 @@ that empty destination is written back over it, even once it became addressable.
 the snapshot.
 
 **Durable whole-document projections route through this engine.** Push
-completion and trail forward actions inject `DurableProjectionSerializer`
+completion injects `DurableProjectionSerializer`
 (`Pick<MarkdownDocumentEngine, "serializeDocument">` in
-`domain/ports/durable-projection.ts`). They never accept a schema-blind
+`domain/ports/durable-projection.ts`). It never accepts a schema-blind
 `{model, codec}` bag. `PreparedPushCommit` must not carry a prepared markdown
 projection or live snapshot; settlement derives the projection from the durable
 journal at completion time. This keeps serialization inside the fenced
 settlement cut and preserves verbatim code-document output.
-
-Trail forward actions serialize from a **scratch** `Y.Doc` they apply the
-committed update to, before mutating the shared live document — never from the
-live doc, which a WebSocket mutation may change mid-serialize (LOCK-WS).
 
 `isCorruptDurableProjectionError` is the single narrowing predicate:
 `DocumentSyncError` with `code: "corrupt_state"` (a registered non-tracked
@@ -205,7 +198,10 @@ checkpoint at the same journal cut cannot replace it. The context caller contrac
 Writer admission rejects reserved client IDs and insertion or deletion in the
 reserved provenance namespace before durable append and Yjs apply. The
 reserved namespace is server-owned certification state, not a client write
-surface.
+surface. A text branch's `review_base` root is server-owned the same way
+(`SERVER_OWNED_ROOTS` in `domain/provenance.ts`): only the rebase, seeding and the
+Apply base patch write it, as `DRAFT_SERVER_CLIENT_ID`, and a deletion there is
+refused only when the range holds a live item or unknown clocks.
 
 WebSocket admission compares the bundle's declared schema version with the
 specific live or Work-draft branch head before sync. The check runs per

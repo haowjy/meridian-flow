@@ -12,9 +12,8 @@ apply authority.
 The response phase-C path enforces this in
 `@meridian/agent-edit`'s `applyCommittedUpdateWithRecheck`. Branch push also
 enforces the invariant while holding sorted branch locks followed by sorted live
-document locks. Reversal `executePrepared` snapshots around the durable write,
-then delegates its final recheck and apply to `applyCommittedUpdateWithRecheck`.
-Do not treat the coordinator mutex as coverage for WebSocket mutations.
+document locks. A live `revert` journals under the same coordinator and document
+locks and publishes only after commit (recover, refresh, then the rebase flush). Do not treat the coordinator mutex as coverage for WebSocket mutations.
 
 Push settlement splits recheck from apply on purpose: the recheck runs inside
 the batch's completion transaction, under every document mutation lock, and
@@ -36,3 +35,14 @@ Live writer-admission failure closes with `1013 writer-journal-admission-failed`
 (`closeTransport` → `wsPeer.close`). Do not rely on throwing
 `permissionDenied`: Hocuspocus swallows a thrown error's `.code`, so only the
 direct peer close preserves the declared code and reason.
+
+## Branch writer-admission close
+
+A refused branch (review room) frame ends the room instead of reconnecting. A
+closed text branch closes with `4206 branch-closed`; a refusal that repeats on
+every retry (reserved client id or namespace, a stale update, a branch that is not a
+writer draft) closes with `4410 write-refused`, which is terminal on the client
+and logged as `branch_writer.refused` with a `reason`; any failure that is not a
+verdict closes with `1013 branch-update-admission-failed` and may reconnect. A
+reconnect's frames that the branch already contains are acknowledged with no
+admission, so a clean reconnect after a rebase raises no refusal.
