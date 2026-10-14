@@ -1,6 +1,12 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
+
+import { captureRebaseCut, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { allocateDocumentClient, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
+import {
+  allocateDocumentClient,
+  buildDocumentSchema,
+  COLLAB_SCHEMA_VERSION,
+} from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
@@ -80,8 +86,10 @@ class MemoryBranchStore implements BranchStore {
     return this.branches.get(branchId) ?? null;
   }
 
+  readonly cuts: Uint8Array[] = [];
+
   async readRebaseCuts(): Promise<Uint8Array[]> {
-    return [];
+    return this.cuts;
   }
 
   async updateBranchSnapshot(input: {
@@ -226,6 +234,64 @@ describe("BranchCoordinator", () => {
     ).resolves.toEqual({ admitted: false });
     expect(store.journal).toHaveLength(1);
     expect(reports).toEqual([]);
+  });
+
+  // Risk (D32): a reconnect repeats the client's whole delete set; recovering a late deletion erased words
+  // the writer wrote back since (K1-1). Late deletions of rebased text are log-only, so replay is inert.
+  it("never lets a replayed late deletion erase words written since", async () => {
+    const schema = buildDocumentSchema();
+    const para = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
+    const fragmentTexts = (doc: Y.Doc) =>
+      readBlocks(doc.getXmlFragment("prosemirror"), schema).map((block) => block.textContent);
+    const server = new Y.Doc({ gc: false });
+    server.clientID = 1;
+    server.transact(() =>
+      writeBlocks(server.getXmlFragment("prosemirror"), schema, [
+        para("alpha beta gamma"),
+        para("tail"),
+      ]),
+    );
+    const peer = materialize(branchSnapshot({ branchId: "seed", doc: server }));
+    peer.clientID = 1000;
+    let deletion: Uint8Array = new Uint8Array();
+    peer.once("update", (update: Uint8Array) => {
+      deletion = update;
+    });
+    ((peer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText).delete(6, 5);
+    const store = new MemoryBranchStore();
+    store.cuts.push(captureRebaseCut(server));
+    server.transact(
+      () =>
+        writeBlocks(server.getXmlFragment("prosemirror"), schema, [
+          para("tail"),
+          para("ALPHA beta gamma"),
+        ]),
+      "rebase",
+    );
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: server }));
+    const coordinator = createBranchCoordinator({ store });
+    const room = materialize(storedBranch(store, "work"));
+    const commit = (updateData: Uint8Array) =>
+      coordinator.commitWriterUpdate({ branchId: "work", updateData, roomDocument: room });
+    const current = () => fragmentTexts(materialize(storedBranch(store, "work")));
+
+    await commit(deletion);
+    expect(current()).toEqual(["tail", "ALPHA beta gamma"]);
+    const writer = materialize(storedBranch(store, "work"));
+    writer.clientID = allocateDocumentClient(writer);
+    let retype: Uint8Array = new Uint8Array();
+    writer.once("update", (update: Uint8Array) => {
+      retype = update;
+    });
+    ((writer.getXmlFragment("prosemirror").get(1) as Y.XmlElement).get(0) as Y.XmlText).insert(
+      16,
+      "!",
+    );
+    await commit(retype);
+    expect(current()).toEqual(["tail", "ALPHA beta gamma!"]);
+
+    await commit(deletion);
+    expect(current()).toEqual(["tail", "ALPHA beta gamma!"]);
   });
 
   it("rejects reserved namespace deletion against the snapshot it would commit", async () => {

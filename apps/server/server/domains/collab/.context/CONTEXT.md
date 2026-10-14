@@ -459,8 +459,7 @@ refuse it as `incomplete_class`. Only document-level Apply/Discard can handle it
 Preview diagnostics reach the domain's event-sink adapter as a warning with the
 document correlation and affected hunk count, never document content.
 
-`domain/draft-review-attribution.ts` owns replay, restoration aliases, range
-ownership and completeness. `domain/document-difference.ts` owns block alignment,
+`domain/document-difference.ts` owns block alignment,
 identity-aware semantic changes with complete effect evidence, text gaps and
 anchors, without review authority.
 `domain/document-content.ts` owns both equality scopes. `documentProseEqual`
@@ -492,20 +491,6 @@ restored prose through co-located effect coverage, without changing text ownersh
 The text/tombstone guesses retire with the old model-undo engine in undo step 4.
 `domain/draft-review-operations.ts` owns writer grouping, presentation and classes. The complete difference enters
 that grouping unchanged; missing authorship never filters out a hunk.
-
-Browser Undo restoration claims are untrusted. `domain/writer-restoration.ts`
-certifies new claims/targets against retained tombstones, exact content and
-structural anchors under the admission lock. Same-parent map overwrites stay
-writer-authored even after honest Undo: overwrite ancestry plus equal value
-cannot distinguish restoration from a manual re-set. Recreated-container
-copies use the pre-widening conservative rule: a certified parent identity and
-a directly certified left-sibling slot (or an actual first slot), not a claimed
-inventory or skipped-sibling trace. Browser claims cannot supply coverage when
-their own content, range, live target or parent fails certification. Rich
-restorations may lose AI attribution on unproved formatting/text slots; this is
-the deliberate fallback, not grounds to infer correspondence. Ambiguous
-correspondence must never credit writer text to the AI. Only certified journal
-metadata enters cold attribution replay; the claims map itself remains untrusted.
 
 ### Complete-effect terminal settlement
 

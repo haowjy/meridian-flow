@@ -634,10 +634,6 @@ on refusal, without a navigation change.
 - On both desktop and phone, check that the short loss sentence appears on the
   affected document, not another tab or a global toast. Leave review and return:
   the notice remains until dismissed, and dismissal does not undo rescued text.
-- Run the certification and forged-claim controls with
-  `pnpm --filter @meridian/server test server/domains/collab/domain/writer-restoration.test.ts`.
-  This verifies cold attribution replay as well as complete attribute and rich
-  paragraph aliases; it is not browser interaction evidence.
 
 ## Response replay after repeated Discards
 

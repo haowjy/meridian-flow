@@ -35,7 +35,6 @@ import {
 import { draftDiffersFromBase, draftSchema, writeBaseFrom } from "./draft-rebase.js";
 import { currentResponseTransactionId, enlistResponseParticipant } from "./response-transaction.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
-import { certifyWriterRestorations } from "./writer-restoration.js";
 
 export type BranchKind = "work_draft" | "thread_peer";
 export type BranchStatus = "active" | "closed";
@@ -558,9 +557,6 @@ export function createBranchCoordinator(input: {
       updateData: inputWriter.updateData,
       source: "writer" as const,
       actorUserId: inputWriter.actorUserId,
-      updateMeta: {
-        restorationAliases: certifyWriterRestorations(currentDocument, inputWriter.updateData),
-      },
     };
     if (!hasLostEdits(lost)) return persistJournaledUpdate(snapshot, journal, currentDocument);
     const before = Y.snapshot(currentDocument);
@@ -576,7 +572,8 @@ export function createBranchCoordinator(input: {
       fragmentName: PROSEMIRROR_FRAGMENT_NAME,
       clientId: DRAFT_SERVER_CLIENT_ID,
     });
-    // A deletion-only update that hit dead copies (a reconnect repeating tombstones) changes nothing.
+    // A deletion-only update that hit dead copies (a reconnect repeating tombstones) changes nothing, and a
+    // late deletion is log-only (D32): it is never replayed against the rebased text.
     if (bytesEqual(Y.encodeStateAsUpdate(currentDocument), Y.encodeStateAsUpdate(doc))) {
       doc.destroy();
       return false;
@@ -854,8 +851,9 @@ export function createBranchCoordinator(input: {
                   if (snapshot.status !== "active")
                     throw new BranchClosedError(inputWriter.branchId);
                 },
+                // Containment first: a repeated delete set is no new instruction, so recovery judges
+                // only what the document has not seen.
                 isContained: () =>
-                  !hasLostEdits(lost) &&
                   documentContainment.contains(currentDocument, inputWriter.updateData),
                 append: () => persistWriterUpdate(snapshot, inputWriter, currentDocument, lost),
               });
