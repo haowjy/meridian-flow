@@ -10,6 +10,7 @@ import {
 } from "../../threads/index.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { createLocalTurn } from "./local-turn.js";
+import { queuedWriteModeSwitch } from "./next-inbox-work.js";
 import { type CurrentTurn, DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import {
   NoPendingWakeError,
@@ -47,7 +48,11 @@ export function createRunSessions(deps: {
   runClaim: RunClaim;
   delivery: Pick<
     RuntimeDelivery,
-    "settleStaleExecution" | "releaseExecution" | "refreshPending" | "selectPending"
+    | "settleStaleExecution"
+    | "releaseExecution"
+    | "refreshPending"
+    | "selectPending"
+    | "applyDueSwitches"
   >;
   handoffBriefs: import("../ports/handoff-briefs.js").HandoffBriefStopper;
   repos: { turns: TurnRepository; threads: Pick<ThreadRepository, "findById"> };
@@ -327,6 +332,14 @@ export function createRunSessions(deps: {
       )
         return refuse();
 
+      // A Retry starts a reply, so a pending switch applies first and the retry chains after it.
+      let leafTurn = latestTurn;
+      if (queuedWriteModeSwitch(await deps.delivery.selectPending(input.threadId))) {
+        if (!(await deps.delivery.applyDueSwitches(input.threadId, true)))
+          throw new ReplyRetryPendingError(input.threadId);
+        leafTurn = (await deps.repos.turns.getLatestByThread(input.threadId)) ?? latestTurn;
+      }
+
       let run: PreparedRun;
       try {
         run = await prepare({
@@ -334,7 +347,7 @@ export function createRunSessions(deps: {
           drain: true,
           replyTurnId: input.replyTurnId,
           retryOf: input.failedTurnId,
-          expectedLeafTurnId: latestTurn.id,
+          expectedLeafTurnId: leafTurn.id,
         });
       } catch (error) {
         const raced = await accepted();
@@ -362,9 +375,9 @@ export function createRunSessions(deps: {
           createLocalTurn({
             id: input.replyTurnId,
             threadId: input.threadId,
-            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : latestTurn.id,
+            prevTurnId: firstTurn?.role === "compaction" ? firstTurn.id : leafTurn.id,
             position:
-              (firstTurn?.role === "compaction" ? firstTurn.position : latestTurn.position) + 1,
+              (firstTurn?.role === "compaction" ? firstTurn.position : leafTurn.position) + 1,
             role: "assistant",
             origin: "assistant",
             status: "pending",

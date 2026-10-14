@@ -1,7 +1,7 @@
 /**
  * Wraps the run claim so a short claim (`hold`, `withExclusiveThread`) that
  * turned another claim attempt away wakes its chat on release. The turned-away
- * attempt (a wake, an idle switch's apply) found the chat busy and gave up;
+ * attempt (a wake) found the chat busy and gave up;
  * a reply's lease already wakes on release, but a short claim did not, so the
  * work it blocked waited for the sweep.
  *

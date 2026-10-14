@@ -3,7 +3,6 @@
  * with boundary reservation. Every request writes its own row, so a replay
  * always finds it and answers that row's state.
  */
-import { setTimeout as sleep } from "node:timers/promises";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   ControlBody,
@@ -17,13 +16,6 @@ import { queuedWriteModeSwitch } from "./next-inbox-work.js";
 import type { InboxMessage, MessageDraft } from "./ports.js";
 import type { ThreadControls } from "./runtime-delivery.js";
 import type { ThreadLock } from "./thread-lock.js";
-
-/**
- * Pauses between the route's attempts to apply an idle chat's switch past a
- * short exclusive claim (about 2 s in all). Short claims finish in
- * milliseconds; a reply's claim is never waited for.
- */
-const IDLE_APPLY_RETRY_MS = [10, 25, 50, 100, 200, 400, 400, 400, 400] as const;
 
 export class ThreadControlError extends Error {
   constructor(
@@ -49,28 +41,49 @@ export function createThreadControls(deps: {
   threadWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
   /** The thread's journal head in the socket's cursor space: the last frame seq it holds. */
   headSeq(threadId: ThreadId): Promise<bigint>;
-  /** Applies due switches under the run claim; false when the claim was busy. */
-  applyDueSwitches(threadId: ThreadId): Promise<boolean>;
-  /** Whether a reply holds the chat: its release wake applies the switch. */
-  replyHolds(threadId: ThreadId): Promise<boolean>;
+  /** The Work's default follows the writer's latest choice, applied or not. */
+  setWorkDefault(threadId: ThreadId, mode: AiWriteMode): Promise<void>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
   pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
   acknowledge(threadId: ThreadId, ids: readonly string[]): Promise<void>;
   hasCompletedReply(threadId: ThreadId): Promise<boolean>;
 }): ThreadControls {
-  /**
-   * An idle chat's switch applies before the route answers. A short claim
-   * (idle materialization, a rebind) only delays it, so retry while no reply
-   * holds the chat. No wake runs beside these attempts: a wake applying the
-   * switch would race the answer. A claim that outlasts the retries saw them
-   * turned away, so its release wakes the chat; a reply's release does too.
-   */
-  async function applyIdleSwitch(threadId: ThreadId) {
-    for (const pause of [0, ...IDLE_APPLY_RETRY_MS]) {
-      if (pause > 0) await sleep(pause);
-      if (await deps.applyDueSwitches(threadId)) return;
-      if (await deps.replyHolds(threadId)) return;
+  /** Writes the control's row; false when the id was already seen (a replay). */
+  async function enqueueRow(
+    input: { threadId: ThreadId; id: string; control: ControlBody },
+    draft: MessageDraft,
+  ): Promise<boolean> {
+    const existing = await deps.findMessage(input.id);
+    if (existing) {
+      if (
+        existing.threadId !== input.threadId ||
+        existing.intent !== "control" ||
+        !sameControl(existing.body as ControlBody, input.control)
+      )
+        throw new ThreadControlError(409, "control_id_conflict");
+      return false;
     }
+    if (input.control.kind === "compact") {
+      if (!(await deps.hasCompletedReply(input.threadId)))
+        throw new ThreadControlError(409, "compact_requires_completed_reply");
+      await deps.enqueue(draft);
+      return true;
+    }
+    const queued = queuedWriteModeSwitch(await deps.selectPending(input.threadId));
+    const unchanged = queued
+      ? queued.body.mode === input.control.mode
+      : (await deps.threadWriteMode(input.threadId)) === input.control.mode;
+    if (queued || unchanged) {
+      // A switch back cancels the queued switch; a same-mode request leaves
+      // things alone. Either way the row is written already acknowledged,
+      // so nothing shows in the chat and a replay finds it settled.
+      await deps.enqueueSettled(draft, queued && !unchanged ? [queued.id] : []);
+      if (!unchanged) await deps.setWorkDefault(input.threadId, input.control.mode);
+      return true;
+    }
+    await deps.enqueueWithoutWake(draft);
+    await deps.setWorkDefault(input.threadId, input.control.mode);
+    return true;
   }
   return {
     async enqueueControl(input) {
@@ -82,50 +95,24 @@ export function createThreadControls(deps: {
         provenance: { kind: "writer", actorId: input.actorId },
         idempotencyKey: input.id,
       };
-      const outcome = await deps.withThreadLock(input.threadId, async () => {
-        const existing = await deps.findMessage(input.id);
-        if (existing) {
-          if (
-            existing.threadId !== input.threadId ||
-            existing.intent !== "control" ||
-            !sameControl(existing.body as ControlBody, input.control)
-          )
-            throw new ThreadControlError(409, "control_id_conflict");
-          return { created: false, apply: false };
-        }
-        if (input.control.kind === "compact") {
-          if (!(await deps.hasCompletedReply(input.threadId)))
-            throw new ThreadControlError(409, "compact_requires_completed_reply");
-          await deps.enqueue(draft);
-          return { created: true, apply: false };
-        }
-        const queued = queuedWriteModeSwitch(await deps.selectPending(input.threadId));
-        const unchanged = queued
-          ? queued.body.mode === input.control.mode
-          : (await deps.threadWriteMode(input.threadId)) === input.control.mode;
-        if (queued || unchanged) {
-          // A switch back cancels the queued switch; a same-mode request leaves
-          // things alone. Either way the row is written already acknowledged,
-          // so nothing shows in the chat and a replay finds it settled.
-          await deps.enqueueSettled(draft, queued && !unchanged ? [queued.id] : []);
-          return { created: true, apply: false };
-        }
-        await deps.enqueueWithoutWake(draft);
-        return { created: true, apply: true };
-      });
-      if (outcome.apply) await applyIdleSwitch(input.threadId);
       // One read under the lock: every switch transition commits under it, so
-      // the mode and queue read here are the server's switch state as of `seq`,
-      // and the answer never pairs a pre-apply turn read with a post-apply queue.
-      const response = await deps.withThreadLock(input.threadId, async () => {
+      // the mode and queue read at the end are the server's switch state as of `seq`.
+      return deps.withThreadLock(input.threadId, async () => {
+        const created = await enqueueRow(input, draft);
         const turn = await deps.findControlTurn(input.threadId, input.id);
         const pending = (await deps.pending(input.threadId)).items.find(isQueuedSwitch) ?? null;
         const mode = await deps.threadWriteMode(input.threadId);
         // Last, so it is at or past the frame of every transition read above.
         const seq = (await deps.headSeq(input.threadId)).toString();
-        return { id: input.id, pending, turnId: turn?.id ?? null, seq, mode };
+        return {
+          created,
+          response: { id: input.id, pending, turnId: turn?.id ?? null, seq, mode },
+        };
       });
-      return { created: outcome.created, response };
+    },
+    async effectiveWriteMode(threadId) {
+      const queued = queuedWriteModeSwitch(await deps.selectPending(threadId));
+      return queued?.body.mode ?? (await deps.threadWriteMode(threadId));
     },
     withdrawControl: (threadId, controlId) =>
       deps.withThreadLock(threadId, async () => {
@@ -134,7 +121,12 @@ export function createThreadControls(deps: {
           throw new ThreadControlError(404, "control_not_found");
         let outcome: WithdrawThreadControlResponse["outcome"] = "withdrawn";
         if (await deps.findControlTurn(threadId, controlId)) outcome = "already_started";
-        else if (!row.deliveredAt) await deps.acknowledge(threadId, [controlId]);
+        else if (!row.deliveredAt) {
+          await deps.acknowledge(threadId, [controlId]);
+          // Withdrawing a pending switch is the writer's latest choice: the chat's own mode.
+          if (row.body.kind === "write_mode")
+            await deps.setWorkDefault(threadId, await deps.threadWriteMode(threadId));
+        }
         // The ack's frame is appended inline above, so the queue and mode read here are the
         // switch state after the withdrawal; `seq` is read last, at or past that frame.
         const pending = (await deps.pending(threadId)).items.find(isQueuedSwitch) ?? null;

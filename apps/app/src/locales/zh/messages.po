@@ -1072,11 +1072,8 @@ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
-msgid "Compaction stopped"
-msgstr ""
-
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Compaction withdrawn"
+msgid "Compaction stopped"
 msgstr ""
 
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
@@ -1539,6 +1536,12 @@ msgstr ""
 msgid "Couldn't stop the compaction. Try again."
 msgstr ""
 
+#: src/features/chat/thread-controls/QueuedControlRows.tsx
+#: src/features/chat/thread-controls/useSwitchView.ts
+#: src/features/chat/thread-controls/useThreadControls.ts
+msgid "Couldn't stop. Try again."
+msgstr ""
+
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't switch to auto-apply."
 msgstr ""
@@ -1557,12 +1560,6 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't update that Work"
-msgstr ""
-
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
-#: src/features/chat/thread-controls/useSwitchView.ts
-#: src/features/chat/thread-controls/useThreadControls.ts
-msgid "Couldn't withdraw. Try again."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3784,15 +3781,25 @@ msgstr "状态未知"
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
+#: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Stop"
 msgstr "停止"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Stop compaction"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Stop run"
+msgstr ""
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Stop switch to auto-apply"
+msgstr ""
+
+#: src/features/chat/thread-controls/control-copy.ts
+msgid "Stop switch to draft mode"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -3874,15 +3881,15 @@ msgid "Switch screens or manage your account."
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
+msgid "Switch stopped"
+msgstr ""
+
+#: src/features/chat/thread-controls/control-copy.ts
 msgid "Switch to auto-apply queued"
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Switch to draft mode queued"
-msgstr ""
-
-#: src/features/chat/thread-controls/control-copy.ts
-msgid "Switch withdrawn"
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
@@ -4802,18 +4809,6 @@ msgstr "你在想什么？"
 #: src/components/app/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
-
-#: src/features/chat/thread-controls/QueuedControlRows.tsx
-msgid "Withdraw"
-msgstr ""
-
-#: src/features/chat/thread-controls/control-copy.ts
-msgid "Withdraw compaction"
-msgstr ""
-
-#: src/features/chat/thread-controls/control-copy.ts
-msgid "Withdraw switch"
-msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat/NewThreadComposerToolbar.tsx
