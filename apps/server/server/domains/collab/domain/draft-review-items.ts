@@ -32,13 +32,7 @@ export type DraftReviewItem = {
   documentName: string | null;
   /** Canonical URI in the draft's view (the last address for one deleted live). */
   path: string | null;
-  /** The live URI when it differs from `path` (revealed, then moved live). */
-  livePath: string | null;
-  conflict:
-    | { code: "path_taken"; path: string }
-    | { code: "rename_replaced"; livePath: string }
-    | { code: "deleted_live" }
-    | null;
+  conflict: { code: "path_taken"; path: string } | { code: "deleted_live" } | null;
   tokens: {
     locationToken: string;
     liveTextToken: string | null;
@@ -160,7 +154,6 @@ function toItem(
   const isNew = node.origin === "created" && node.hidden;
   const writers = evidence?.agentThreadIds ?? [];
   const path = node.target.uri;
-  const livePath = node.live.uri !== path && !node.hidden ? node.live.uri : null;
   return {
     draftId,
     itemKey: draftItemKey(draftId, node.nodeId),
@@ -174,7 +167,6 @@ function toItem(
     branchGeneration: evidence?.branch.generation ?? null,
     documentName: documentTitleFromUri(path),
     path,
-    livePath,
     conflict: conflictOf(node),
     deletedLive,
     tokens: {
@@ -194,8 +186,6 @@ function conflictOf(node: TreeStateNode): DraftReviewItem["conflict"] {
   switch (node.conflict.kind) {
     case "clash":
       return { code: "path_taken", path: node.conflict.uri ?? node.conflict.at };
-    case "relocated":
-      return { code: "rename_replaced", livePath: node.live.uri ?? node.live.path };
     case "deleted_live":
       return { code: "deleted_live" };
     case "none":

@@ -345,21 +345,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     // §6.4: Create by id reveals only a hidden identity of the caller's project, found by
-    // its physical row (not the draft's address).
+    // its physical row.
     it.each([
-      {
-        name: "a hidden document its draft places in another source",
-        async arrange(scenario: DraftTreeScenario) {
-          const drafting = await scenario.work("Drafting", "draft");
-          const id = await scenario.model(drafting).create("draft-place/x", "Placed elsewhere.");
-          // The draft has it in KB; the row stays in Manuscript.
-          await db
-            .update(draftTreeChanges)
-            .set({ contextSourceId: scenario.project.sources.kb, parentFolderId: null })
-            .where(eq(draftTreeChanges.nodeId, id));
-          return { id, destination: undefined };
-        },
-      },
       {
         name: "a hidden document revealed into a Work's unprovisioned Scratch",
         async arrange(scenario: DraftTreeScenario) {

@@ -165,7 +165,7 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   IDs, returning canonical folder entries or independent tombstones. Folder
   tombstones retire namespace refresh work, never descendant document content;
   reversible Work/lineage hiding remains authority unavailability. The optional
-  internal `view` reads draft locations; omitted means live. Hidden rows outside
+  internal `view` reads a draft's view; omitted means live. Hidden rows outside
   the view are missing, documents and folders alike.
 
 - **Unified `ContextPort`** — single port interface (`ports/context-port.ts`)
@@ -352,7 +352,7 @@ it. Arrival hooks, each once against the operation's final tree:
 | Binary upload, figure upload | `createBinaryDocument`, after persisting the live identity in the same transaction | the store transaction's namespace keys |
 | Move-in (file, overwrite, folder) | tree store, once after all DML | every participating namespace |
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
-| Draft Apply (warm and recovery) | the draft tree step's `afterAdmission`, once for every reveal, restore and relocation of the batch | Work → draft → current and final namespaces → document locks |
+| Draft Apply (warm and recovery) | the draft tree step's `afterAdmission`, once for every reveal and restore of the batch | Work → draft → current and final namespaces → document locks |
 
 A draft's hidden create is no arrival: refs waiting at its address stay paths
 until the document goes live. A reveal is an arrival at the creator's path,

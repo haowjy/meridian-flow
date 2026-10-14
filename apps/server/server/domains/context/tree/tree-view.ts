@@ -35,7 +35,6 @@ import {
 } from "./tree-addresses.js";
 import {
   type DocumentIdentityRow,
-  type DraftLocation,
   loadActiveDraftUses,
   loadDocumentIdentityRows,
   loadDocumentIdsAt,
@@ -193,8 +192,6 @@ export type TreeStateNode = {
      * document holds the path of a folder the target needs.
      */
     | { kind: "clash"; withNode: NodeRef; at: string; uri: string | null }
-    /** Created, revealed, then moved or renamed live: Apply names it back. */
-    | { kind: "relocated" }
     /** Created-and-revealed or edited, then deleted live: Apply restores it (decision 7, F9). */
     | { kind: "deleted_live" };
 };
@@ -277,7 +274,6 @@ export function coordinatesKey(
 
 type VisibleDocumentRow = Omit<VisibleDocument, "path"> & {
   createdAt: Date;
-  draftLocated: boolean;
 };
 type VisibleFolderRow = {
   id: FolderId;
@@ -626,7 +622,7 @@ export function createTreeReader(
     const hiddenIds = [...rows.values()]
       .filter((row) => row.hidden && !row.deleted)
       .map((row) => row.id);
-    const uses = new Map<DocumentId, ReturnType<typeof draftUse>[]>();
+    const uses = new Map<DocumentId, DraftUse[]>();
     for (const use of await loadActiveDraftUses(tx(), hiddenIds)) {
       uses.set(use.documentId, [...(uses.get(use.documentId) ?? []), draftUse(use)]);
     }
@@ -647,7 +643,7 @@ export function createTreeReader(
       } else if (shown) {
         const own =
           row.hidden && view.kind === "draft"
-            ? uses.get(id)?.find((use) => use.use.draftId === view.draftId)?.use
+            ? uses.get(id)?.find((use) => use.draftId === view.draftId)
             : undefined;
         decided.set(id, {
           kind: "visible",
@@ -658,16 +654,16 @@ export function createTreeReader(
       } else if (row.hidden) {
         const usedBy = uses.get(id) ?? [];
         const chosen =
-          (view.kind === "draft" && usedBy.find((use) => use.use.draftId === view.draftId)) ||
+          (view.kind === "draft" && usedBy.find((use) => use.draftId === view.draftId)) ||
           usedBy[0];
         decided.set(
           id,
           chosen
             ? {
                 kind: "hidden",
-                location: draftedLocation(row, chosen.location),
-                draft: chosen.use,
-                usedBy: usedBy.map((use) => use.use),
+                location: rowLocation(row),
+                draft: chosen,
+                usedBy,
               }
             : { kind: "gone" },
         );
@@ -760,39 +756,30 @@ export function createTreeReader(
     const created = isUuid(draftId)
       ? await loadDraftCreatedDocuments(tx(), draftId, only?.filter(isUuid))
       : [];
-    const createdIds = new Set(created.map((each) => each.row.id));
+    const createdIds = new Set(created.map((row) => row.id));
     const editedRows = await loadDocumentIdentityRows(
       tx(),
       [...new Set(edited)].filter((id) => isUuid(id) && !createdIds.has(id)),
     );
-    const items: {
-      origin: "created" | "edited";
-      row: DocumentIdentityRow;
-      draft: DraftLocation | null;
-    }[] = [
+    const items: { origin: "created" | "edited"; row: DocumentIdentityRow }[] = [
       // A tombstone is no longer the draft's: repair-on-touch drops its row (§12.4).
       ...created
-        .filter((each) => !(each.row.hidden && each.row.deleted))
-        .map((each) => ({
-          origin: "created" as const,
-          row: each.row,
-          draft: each.draft.contextSourceId === null ? null : each.draft,
-        })),
+        .filter((row) => !(row.hidden && row.deleted))
+        .map((row) => ({ origin: "created" as const, row })),
       // A hidden document the draft didn't create isn't in the draft's view.
-      ...editedRows
-        .filter((row) => !row.hidden)
-        .map((row) => ({ origin: "edited" as const, row, draft: null })),
+      ...editedRows.filter((row) => !row.hidden).map((row) => ({ origin: "edited" as const, row })),
     ];
-    const targets = items.map(({ row, draft }) => ({
-      contextSourceId: (draft?.contextSourceId ?? row.contextSourceId) as ContextSourceId,
-      parentFolderId: draft ? draft.parentFolderId : row.folderId,
-      name: draft?.name ?? row.name,
-      extension: draft?.extension ?? row.extension,
+    // A draft's document is a real row: its place in the draft is its row's.
+    const targets = items.map(({ row }) => ({
+      contextSourceId: row.contextSourceId,
+      parentFolderId: row.folderId,
+      name: row.name,
+      extension: row.extension,
     }));
-    const chains = await loadFolderChains(tx(), [
-      ...items.map(({ row }) => row.folderId),
-      ...targets.map((target) => target.parentFolderId),
-    ]);
+    const chains = await loadFolderChains(
+      tx(),
+      items.map(({ row }) => row.folderId),
+    );
     const chainOf = (folderId: FolderId | null) =>
       folderId === null ? [] : (chains.get(folderId) ?? []);
 
@@ -828,43 +815,22 @@ export function createTreeReader(
       return null;
     };
 
-    // Both locations spelled from the same read as the paths and the version token.
+    // Spelled from the same read as the paths and the version token.
     const spelled = await spellNodeAddresses(
       tx(),
-      items.flatMap(({ row }, item) => {
-        const target = targets[item] as (typeof targets)[number];
-        return [
-          rowLocation(row),
-          {
-            ...rowLocation(row),
-            contextSourceId: target.contextSourceId,
-            folderId: target.parentFolderId,
-            name: target.name,
-            extension: target.extension,
-          },
-        ];
-      }),
+      items.map(({ row }) => rowLocation(row)),
       chains,
     );
 
-    return items.map(({ origin, row, draft }, item): TreeStateNode => {
+    return items.map(({ origin, row }, item): TreeStateNode => {
       const target = targets[item] as (typeof targets)[number];
       const liveChain = chainOf(row.folderId);
       const clash = clashOf(item);
-      const liveUri = spelled[item * 2]?.uri ?? null;
-      const targetAddress = spelled[item * 2 + 1] ?? null;
+      const address = spelled[item]?.uri ?? null;
       const targetPath = folderPath(
         chainOf(target.parentFolderId),
         renderFilename(target.name, target.extension),
       );
-      const relocated =
-        origin === "created" &&
-        !row.hidden &&
-        draft !== null &&
-        (draft.contextSourceId !== row.contextSourceId ||
-          draft.parentFolderId !== row.folderId ||
-          draft.name !== row.name ||
-          draft.extension !== row.extension);
       return {
         nodeKind: "document",
         nodeId: row.id,
@@ -876,7 +842,7 @@ export function createTreeReader(
           contextSourceId: row.contextSourceId,
           folderId: row.folderId,
           path: folderPath(liveChain, renderFilename(row.name, row.extension)),
-          uri: liveUri,
+          uri: address,
           deleted: row.deleted,
           deletedAncestors: liveChain.filter((folder) => folder.deleted).map((folder) => folder.id),
         },
@@ -884,20 +850,18 @@ export function createTreeReader(
           ...target,
           path: targetPath,
           dir: [...chainOf(target.parentFolderId)].reverse().map((folder) => folder.name),
-          uri: targetAddress?.uri ?? null,
+          uri: address,
         },
         locationVersion: row.locationVersion,
         conflict: clash
           ? {
               kind: "clash",
               ...clash,
-              uri: sameSourceUri(targetAddress?.uri ?? null, targetPath, clash.at),
+              uri: sameSourceUri(address, targetPath, clash.at),
             }
           : !row.hidden && row.deleted
             ? { kind: "deleted_live" }
-            : relocated
-              ? { kind: "relocated" }
-              : { kind: "none" },
+            : { kind: "none" },
       };
     });
   }
@@ -1018,22 +982,6 @@ function rowLocation(
   };
 }
 
-function draftedLocation(row: DocumentIdentityRow, draft: DraftLocation): NodeLocation {
-  return draft.contextSourceId === null
-    ? rowLocation(row)
-    : {
-        documentId: row.id,
-        contextSourceId: draft.contextSourceId,
-        folderId: draft.parentFolderId,
-        name: draft.name ?? row.name,
-        extension: draft.extension ?? row.extension,
-        fileType: row.fileType,
-      };
-}
-
-function draftUse(use: Awaited<ReturnType<typeof loadActiveDraftUses>>[number]) {
-  return {
-    use: { draftId: use.draftId, originWorkId: use.originWorkId, createdAt: use.draftCreatedAt },
-    location: use as DraftLocation,
-  };
+function draftUse(use: Awaited<ReturnType<typeof loadActiveDraftUses>>[number]): DraftUse {
+  return { draftId: use.draftId, originWorkId: use.originWorkId, createdAt: use.draftCreatedAt };
 }
