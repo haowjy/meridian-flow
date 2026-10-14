@@ -5,7 +5,7 @@
  */
 import type { DraftId, WorkId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { documentBranches, drafts } from "@meridian/database/schema";
+import { drafts } from "@meridian/database/schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { assertDraftWriteJoinAllowed } from "../../../shared/draft-write-join.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -72,11 +72,6 @@ export function createDrizzleDraftStore(db: Database): DraftStore {
         .update(drafts)
         .set({ status: "closed", closedAt: at })
         .where(and(eq(drafts.id, draftId), eq(drafts.status, "active")));
-      // Both kinds: a reply mid-write into one of them then refuses stale (contract §2.1).
-      await tx()
-        .update(documentBranches)
-        .set({ status: "closed", updatedAt: at })
-        .where(and(eq(documentBranches.draftId, draftId), eq(documentBranches.status, "active")));
     },
     async byIds(draftIds) {
       const ids = [...new Set(draftIds)].filter(isUuid);

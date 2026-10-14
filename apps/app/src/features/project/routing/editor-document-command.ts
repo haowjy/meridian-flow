@@ -9,6 +9,7 @@ import {
   matchesTabInstance,
   useContextTabsStore,
 } from "@/client/stores";
+import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { resolveLaunchLocator } from "./launch-locator";
@@ -109,6 +110,8 @@ export function createEditorDocumentCommand({
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
           if (installed.tab.kind === "tracked") admitDraftReview(installed.tab);
           selected = installed.tab;
+          if (options?.focus && installed.tab.tabInstanceId)
+            armEditorFocus(installed.tab.tabInstanceId);
         }
         if (selected && resolvedWorkId)
           void useContextTabsStore

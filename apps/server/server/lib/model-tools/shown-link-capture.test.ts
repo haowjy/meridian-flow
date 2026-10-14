@@ -207,7 +207,7 @@ async function harness(
     [TARGET, "target"],
     [HIDDEN, "hidden"],
   ] as const) {
-    await userStore.createDocument({
+    await userStore.createDocumentRecordIfAbsent({
       id,
       folderId: null,
       name,

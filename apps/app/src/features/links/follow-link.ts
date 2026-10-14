@@ -32,6 +32,8 @@ export const CHECKING_DELAY_MS = 250;
  */
 export type LinkDocumentRef = {
   documentId: string;
+  /** A document the writer just created: its editor takes the caret. */
+  focus?: true;
   review?: {
     workId: string;
     itemKey: string;

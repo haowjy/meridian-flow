@@ -20,6 +20,11 @@ import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton"
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
+import {
+  isProjectRouteMasked,
+  ProjectRouteBoundary,
+  type ProjectRouteMask,
+} from "../routing/ProjectRouteBoundary";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
@@ -28,6 +33,7 @@ import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState, MissingDestination } from "./context-pane-state";
 import { schemeLabel } from "./context-schemes";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
+import { PendingDocumentPath } from "./PendingDocumentPath";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import { recentOpening } from "./recent-opening";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
@@ -41,6 +47,11 @@ export type ContextViewerProps = {
   projectId: string;
   /** Shell-resolved Editor Work for all reads, suggestions, and mutations. */
   editorWorkId: string | null;
+  /** What masks the document body. The tab strip and the address stay outside it. */
+  mask: ProjectRouteMask;
+  /** The address the Editor was asked for, shown as the path while the body is masked. */
+  route: { scheme: ProjectContextTreeScheme; path: string | null } | null;
+  onSelectContextPath: (path: string, scheme: ProjectContextTreeScheme) => void;
   /** The Editor's Work, when it has one. */
   editorWork: Work | null;
   tabs: ContextTab[];
@@ -71,6 +82,9 @@ export type ContextViewerProps = {
 export function ContextViewer({
   projectId,
   editorWorkId,
+  mask,
+  route,
+  onSelectContextPath,
   editorWork,
   tabs,
   paneState,
@@ -116,6 +130,7 @@ export function ContextViewer({
   }, [active, openedDocumentId, projectId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
+  const masked = isProjectRouteMasked(mask);
   const name = activeTab?.name;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
   // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it.
@@ -164,73 +179,86 @@ export function ContextViewer({
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
-      {/* The page sheet — the lit paper rising out of the L-shaped chrome;
+      {masked && route ? (
+        <PendingDocumentPath
+          scheme={route.scheme}
+          path={route.path}
+          onSelectContextPath={onSelectContextPath}
+        />
+      ) : null}
+      <ProjectRouteBoundary {...mask}>
+        {/* The page sheet — the lit paper rising out of the L-shaped chrome;
           the center slot's chrome shows in the corner notches. */}
-      <PaintHold
-        status={name ? t`Opening ${name}` : t`Opening draft`}
-        className="page-sheet relative"
-      >
-        <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
-        {activeTab ? (
-          <DocumentPaneChrome
-            projectId={projectId}
-            tab={activeTab}
-            archivedWork={editorFrozen ? archivedEditorWork : null}
-            onCloseTab={onCloseTab}
-            identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
-          />
-        ) : null}
-        {/* The TRACKED editor host stays mounted while ANY tracked tab is
+        <PaintHold
+          status={name ? t`Opening ${name}` : t`Opening draft`}
+          className="page-sheet relative"
+        >
+          <PaintCapture surface={`${paneState.kind}:${activeTabId ?? optimisticTab?.id ?? ""}`} />
+          {activeTab ? (
+            <DocumentPaneChrome
+              projectId={projectId}
+              tab={activeTab}
+              archivedWork={editorFrozen ? archivedEditorWork : null}
+              onCloseTab={onCloseTab}
+              identity={{ editorWorkId, readOnly: fileFrozen, onCommitted, onOpenExisting }}
+            />
+          ) : null}
+          {/* The TRACKED editor host stays mounted while ANY tracked tab is
             open — even when the active tab is a viewer — so the warm-set
             editors aren't torn down on a quick image/PDF detour. We just
             hide the whole host when the active tab isn't tracked. */}
-        {trackedTabs.length > 0 ? (
-          <PaintScope active={activeIsEditable}>
-            <div
-              className={
-                activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
-              }
-            >
-              <ContextEditorMountHost
+          {trackedTabs.length > 0 ? (
+            <PaintScope active={activeIsEditable}>
+              <div
+                className={
+                  activeIsEditable ? "flex min-h-0 flex-1 flex-col" : "pointer-events-none hidden"
+                }
+              >
+                <ContextEditorMountHost
+                  projectId={projectId}
+                  trackedTabs={trackedTabs}
+                  activeTabId={activeIsEditable ? activeTabId : null}
+                  active={active}
+                  // Warm editors are hidden, so following the front tab is enough.
+                  readOnly={editorFrozen}
+                  onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+                />
+              </div>
+            </PaintScope>
+          ) : null}
+          {activeTab?.kind === "viewer" ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ContextViewerHost
                 projectId={projectId}
-                trackedTabs={trackedTabs}
-                activeTabId={activeIsEditable ? activeTabId : null}
-                active={active}
-                // Warm editors are hidden, so following the front tab is enough.
-                readOnly={editorFrozen}
-                onUntitledBecameNonEmpty={onUntitledBecameNonEmpty}
+                editorWorkId={editorWorkId}
+                tab={activeTab}
               />
             </div>
-          </PaintScope>
-        ) : null}
-        {activeTab?.kind === "viewer" ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
-          </div>
-        ) : null}
-        {optimisticTab ? (
-          <div className="relative min-h-0 flex-1" aria-busy>
-            <DelayedContentSkeleton
-              key={JSON.stringify([projectId, optimisticTab.id])}
-              className="absolute inset-0"
+          ) : null}
+          {optimisticTab ? (
+            <div className="relative min-h-0 flex-1" aria-busy>
+              <DelayedContentSkeleton
+                key={JSON.stringify([projectId, optimisticTab.id])}
+                className="absolute inset-0"
+              />
+            </div>
+          ) : null}
+          {paneState.kind === "dead-route" ? (
+            <MissingDocumentState destination={paneState.destination} />
+          ) : null}
+          {paneState.kind === "empty-workspace" ? (
+            <RecentDocumentsLanding
+              projectId={projectId}
+              editorWorkId={editorWorkId}
+              onNewDocument={onNewDocument}
             />
-          </div>
-        ) : null}
-        {paneState.kind === "dead-route" ? (
-          <MissingDocumentState destination={paneState.destination} />
-        ) : null}
-        {paneState.kind === "empty-workspace" ? (
-          <RecentDocumentsLanding
-            projectId={projectId}
-            editorWorkId={editorWorkId}
-            onNewDocument={onNewDocument}
-          />
-        ) : null}
-        {paneState.kind === "route-error" ? <RouteErrorState /> : null}
-        {controller.inlineReview?.shown ? (
-          <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
-        ) : null}
-      </PaintHold>
+          ) : null}
+          {paneState.kind === "route-error" ? <RouteErrorState /> : null}
+          {controller.inlineReview?.shown ? (
+            <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
+          ) : null}
+        </PaintHold>
+      </ProjectRouteBoundary>
     </div>
   );
 }

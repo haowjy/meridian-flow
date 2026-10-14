@@ -1,8 +1,9 @@
 /** Pool routing per document (D19, D42), live undo routing, and read-version checks (D41). */
 
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { harness } from "../../../../../../packages/agent-edit/src/tool/test-support/write-tool-harness.js";
+import { observeLeases } from "../../../test-support/lease-observer.js";
 import type { FileDestination } from "../../file-policy/index.js";
 import {
   createFakeBranchTable,
@@ -13,7 +14,6 @@ import {
   inProcessResponseTransactions,
 } from "../test-support/thread-peer-pool-fakes.js";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
-import { createBranchCriticalSections } from "./branch-critical-sections.js";
 import { createReplySaveFences } from "./reply-save-fences.js";
 import { createThreadPeerCorePool } from "./thread-peer-core-pool.js";
 
@@ -26,7 +26,8 @@ function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
   const drafts = createFakeDrafts();
   const branches = createFakeBranchTable({ documentId: "ch12", threadId: THREAD_ID });
   const fileAccess = createFakeFileAccess();
-  const criticalSections = createBranchCriticalSections();
+  const leases = observeLeases();
+  const criticalSections = leases.sections;
   const fences = createReplySaveFences({
     liveUtilityCore,
     branches,
@@ -36,7 +37,7 @@ function poolPorts(liveUtilityCore: ReturnType<typeof asLiveAgentEditCore>) {
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
-  return { drafts, branches, fences, criticalSections, fileAccess };
+  return { drafts, branches, fences, leases, fileAccess };
 }
 
 function createPool() {
@@ -229,25 +230,25 @@ describe("reasoned refusal and retirement through the pool", () => {
   });
 
   it("rolls a reply back inside its leases without touching a branch (U5)", async () => {
-    const { pool, threadCore, branches, criticalSections } = createPool();
+    const { pool, threadCore, branches, leases } = createPool();
     await pool.write(insertCh12, context(draftA, "reply-1"));
-    const held = vi.spyOn(criticalSections, "withBranches");
     branches.getBranch.mockClear();
-    let rolledBackUnderLease = false;
+    let heldDuringRollback: string[][] = [];
     threadCore.rollbackResponse.mockImplementation(async (responseId: string) => {
-      rolledBackUnderLease = held.mock.calls.length === 1;
+      heldDuringRollback = leases.holding();
       return {
         status: "rolledBack" as const,
         responseId,
         stagedCreates: { committed: [], discarded: [] },
       };
     });
+    const before = leases.entered();
 
     await pool.rollbackResponse("reply-1");
 
-    expect(held).toHaveBeenCalledTimes(1);
-    expect(held.mock.calls[0]?.[0]).toEqual(["peer-1", "upstream-1"]);
-    expect(rolledBackUnderLease).toBe(true);
+    expect(heldDuringRollback).toEqual([["peer-1", "upstream-1"]]);
+    expect(leases.entered() - before).toBe(1);
+    expect(leases.holding()).toEqual([]);
     expect(branches.getBranch).not.toHaveBeenCalled();
   });
 

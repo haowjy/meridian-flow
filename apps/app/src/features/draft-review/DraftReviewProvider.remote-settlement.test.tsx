@@ -72,7 +72,14 @@ vi.mock("@/components/app/PaintHold", () => ({
     work({ read: undefined }),
   usePaintCoverProjection: () => () => {},
 }));
-const resources = { acquireCatalog: vi.fn(), acquireCatalogAfter: vi.fn() };
+const resources = {
+  acquireCatalog: vi.fn(),
+  acquireCatalogAfter: vi.fn(),
+  observeProjection: (_project: string, next: (snapshot: unknown) => void) => {
+    next({ records: [], folders: [], catalogs: [] });
+    return () => {};
+  },
+};
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 let promote: ReturnType<typeof vi.spyOn>;
 let replica: ReturnType<typeof vi.spyOn>;
@@ -115,7 +122,7 @@ describe("DraftReviewProvider remote settlement", () => {
     });
     if (!tab) throw new Error("Draft tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
-    fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+    fixture.network.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
     // An observation joined from before the Apply would say the document is absent.
     resources.acquireCatalog.mockResolvedValue({ entries: new Map() });
     resources.acquireCatalogAfter.mockResolvedValue({

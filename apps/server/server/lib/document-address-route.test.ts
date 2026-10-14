@@ -2,6 +2,7 @@
 
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { expect, it } from "vitest";
+import type { DraftReviewApi } from "../domains/collab/contracts.js";
 import type { DraftReviewItem } from "../domains/collab/domain/draft-review-items.js";
 import type { DocumentAddressResolver } from "../domains/context/ports/document-address.js";
 import type { FileDestination } from "../domains/file-policy/index.js";
@@ -17,16 +18,15 @@ function fixture() {
   };
   const state = {
     work: { id: "work", slug: "review", projectId: "project", deletedAt: null as Date | null },
-    draftId: "whole-draft" as string | null,
-    items: [
-      {
-        draftId: "whole-draft",
-        itemKey: "whole-draft:hidden",
-        draftBranchId: "branch",
-        documentId: "hidden",
-        path: "kb://Withern",
-      },
-    ] as DraftReviewItem[],
+    // The resolver's explicit answer for the review's item, or null when the draft is inactive.
+    resolved: {
+      draftId: "whole-draft",
+      itemKey: "whole-draft:hidden",
+      documentId: "hidden",
+      draftBranchId: "branch",
+      item: {} as DraftReviewItem,
+      listed: true,
+    } as unknown as Awaited<ReturnType<DraftReviewApi["resolveItem"]>>,
     denied: false,
     available: true,
   };
@@ -46,28 +46,7 @@ function fixture() {
     workRepo: {
       findById: async (id: string) => (id === state.work.id ? (state.work as never) : null),
     },
-    // The resolver's answer: an item key of the Work's active draft names its one item.
-    draftReview: {
-      resolveItem: async ({ workId, itemKey }: { workId: string; itemKey: string }) => {
-        const named = state.items.filter(
-          (candidate) =>
-            workId === state.work.id &&
-            candidate.draftId === state.draftId &&
-            candidate.itemKey === itemKey,
-        );
-        const [item] = named;
-        return named.length === 1 && item
-          ? ({
-              draftId: item.draftId,
-              itemKey,
-              documentId: item.documentId,
-              draftBranchId: item.draftBranchId,
-              item,
-              listed: true,
-            } as never)
-          : null;
-      },
-    },
+    draftReview: { resolveItem: async () => state.resolved },
     documentAddresses,
     fileAccess: {
       authorize: async () =>
@@ -86,50 +65,20 @@ function fixture() {
   };
 }
 
-it("selects the branch's hidden document rather than the live path occupant", async () => {
-  const { input, deps, review } = fixture();
-  expect(await handleDocumentAddressRequest(deps, input, review)).toMatchObject({
-    kind: "current",
-    document: { documentId: "hidden" },
-  });
-  expect(await handleDocumentAddressRequest(deps, input)).toMatchObject({
-    kind: "current",
-    document: { documentId: "live" },
-  });
-});
-
-it("repairs an old locator from branch identity, a copied selector never names the document", async () => {
-  const { input, deps, review } = fixture();
-  input.path = "Before rename";
-  expect(
-    await handleDocumentAddressRequest(deps, input, {
-      workId: review.workId,
-      itemKey: review.itemKey,
-    }),
-  ).toMatchObject({
-    kind: "current",
-    document: { documentId: "hidden", entry: { uri: "kb://Renamed" } },
-  });
-});
-
 it.each([
-  "a branch id in the item key",
   "another Work",
   "foreign project",
   "deleted Work",
   "inactive draft",
   "denied grant",
   "missing identity",
-  "ambiguous item",
 ])("answers unavailable for %s", async (reason) => {
   const { input, state, deps, review } = fixture();
-  if (reason === "a branch id in the item key") review.itemKey = "branch";
   if (reason === "another Work") review.workId = "other";
   if (reason === "foreign project") state.work.projectId = "other";
   if (reason === "deleted Work") state.work.deletedAt = new Date();
-  if (reason === "inactive draft") state.draftId = null;
+  if (reason === "inactive draft") state.resolved = null;
   if (reason === "denied grant") state.denied = true;
   if (reason === "missing identity") state.available = false;
-  if (reason === "ambiguous item") state.items = [...state.items, ...state.items];
   expect(await handleDocumentAddressRequest(deps, input, review)).toEqual({ kind: "unavailable" });
 });

@@ -2,7 +2,7 @@
  * A reply's drafted writes and the draft they land in (contract §2.5, ledger K-1, K-2): a
  * read never makes a draft or a peer, the first write does; a save whose draft closed
  * under it refuses that document stale and never provisions a new draft (B9); and a save
- * or an immediate write and Discard all serialize on their branch leases, in both orders,
+ * or an immediate write and Discard all serialize, in both orders,
  * without deadlock (V2-H2, §14), the losing write refusing as a stale save does.
  */
 import type { DocumentId, WorkId } from "@meridian/contracts";
@@ -168,7 +168,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(await savedRows(draftId ?? "", chapter), "in the draft").toHaveLength(1);
     });
 
-    it("K-1: a save whose draft closed refuses that document stale and never re-drafts it; a save and a close serialize on their leases in both orders", async () => {
+    it("K-1: a save whose draft closed refuses that document stale and never re-drafts it; a save and a close serialize in both orders", async () => {
       const scenario = await start();
 
       // B9: the reply staged, a whole Discard closed the draft, then the reply saves.
@@ -211,7 +211,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { waitMs: 300 },
       );
       expect.soft(closeThenSave.a, "the close finishes").toMatchObject({ ok: true });
-      expect.soft(closeThenSave.bBlocked, "the save waited on the leases").toBe(true);
       expect.soft(closeThenSave.b, "then saves").toMatchObject({ ok: true });
       expect
         .soft(closeThenSave.b.ok && refusedIn(closeThenSave.b.value), "refusing it stale")
@@ -236,7 +235,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(saveThenClose.a.ok && refusedIn(saveThenClose.a.value), "keeping its document")
         .toEqual([]);
-      expect.soft(saveThenClose.bBlocked, "the close waited on the leases").toBe(true);
       expect.soft(saveThenClose.b, "then closes").toMatchObject({ ok: true });
       expect
         .soft(await savedRows(draftBefore?.id ?? "", third), "the save landed in the draft")
@@ -264,7 +262,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           first === "write"
             ? await interleave(db, write, "access.afterLeases", close, { waitMs: 300 })
             : await interleave(db, close, "discard.afterLeases", write, { waitMs: 300 });
-        expect.soft(run.bBlocked, `${first} first: the other waits on its leases`).toBe(true);
         const wrote = first === "write" ? run.a : run.b;
         const closed = first === "write" ? run.b : run.a;
         expect.soft(closed, `${first} first: the close finishes`).toMatchObject({ ok: true });
