@@ -88,8 +88,10 @@ Paths outside this directory are relative to `apps/app/src`.
   button was drawn from.
 - Focus readers are pure. Reconcile once per scope.
 - Review chrome, strip and change rows each use one line. Success has no toast.
-- A draft-only tab is the document's one tab, never persisted; its address (document and item key)
-  reopens it. Only a command's own outcome settles it (`useWorkDraftCommands.settleTab`: an Apply that
+- A draft-only tab is the document's one tab.
+  The Editor never persists it (Editor persistence strips `reviews`); its address (document and item key)
+  reopens it. The dock persists its single `reviews` entry, since nothing else tells a restored tab from
+  a live document under review; draft-only settlement removes a stale entry. Only a command's own outcome settles it (`useWorkDraftCommands.settleTab`: an Apply that
   closed the item promotes it, an item Discard removes it). A list, a metadata read or a 404 never does.
 - Presentational components receive props and callbacks, not controllers.
 
