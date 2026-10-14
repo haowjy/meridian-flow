@@ -528,9 +528,19 @@ it is listed.
    still writing. PASS: the base renders at once as one Ctrl+Z step; the reply keeps writing and
    its later edits show as NEW changes; words it wrote into the discarded text vanish and the
    receipt says "Some of this reply's words went into text you discarded." (Probe G).
-4. **Work page Apply all during the reply.** Files tab, All changes, Apply all changes. PASS: live
-   has the text saved before the click, and the document stays under Changes to review for the
-   late writes.
+4. **Work page Apply all during the reply.** The page sends no snapshot for a collapsed file, so
+   the server freezes the file's text when it stages the command (staging is the consent), after
+   its catch-up rebase and before it reads live. Hold the request at that point to time the
+   reply's writes exactly: pause the Apply all request in the browser (`agent-browser` network
+   route or a devtools breakpoint) after the click, and read the draft with `./mf doc read` while
+   it is held. PASS, by when each write became durable in the draft. Writes saved before the
+   server froze the text are in live, so a reply write that lands while the request is still
+   held is in live with the text the click saw. Writes saved after the freeze are not in live
+   and the document stays under Changes to review with them. Check both sides with two replies
+   (one saved before releasing the hold, one after the batch completes). Do not expect live to
+   equal "the text saved before the click". Separately, Apply from an open editor flushes its
+   own frame at the click: its snapshot is that click-time frame, so a later reply write is
+   always left in review.
 5. **Work page Discard all during the reply.** The same menu, Discard all changes, confirm (at
    390x844 too: the question and both buttons stay on screen). PASS: the list is empty, live is
    unchanged, the in-flight writes fail with "You discarded this draft, so the change wasn't

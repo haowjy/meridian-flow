@@ -8,9 +8,10 @@
  * unconvertible draft stops the run with ids; fresh and upgraded schemas are equal and a second migrate is a no-op.
  *
  * Run: `pnpm --filter @meridian/server exec tsx scripts/prove-review-base-upgrade.ts` (see docs/qa/review-base-upgrade.md).
- * It creates `r4b_proof_*` databases on the DATABASE_URL server and drops them when it finishes.
+ * It creates `r4b_proof_<run id>_*` databases on the DATABASE_URL server and drops only those when it finishes.
  */
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -54,8 +55,12 @@ function check(label: string, ok: boolean, detail?: unknown): void {
   if (!ok) throw new Error(`Assertion failed: ${label}`);
 }
 
+/** Every database this invocation makes carries its own random prefix, so concurrent runs share nothing. */
+const RUN = `r4b_proof_${randomBytes(4).toString("hex")}`;
+const proofDatabase = (role: string) => `${RUN}_${role}`;
+
+/** Creates a database that must not exist; only a successful create is tracked for cleanup. */
 async function createDatabase(name: string, template?: string): Promise<string> {
-  await admin.unsafe(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
   await admin.unsafe(`CREATE DATABASE ${name}${template ? ` TEMPLATE ${template}` : ""}`);
   created.push(name);
   return urlOf(name);
@@ -337,7 +342,7 @@ const realStep = MIGRATION_DATA_STEPS[0];
 async function main(): Promise<void> {
   const journal = await readJournal();
   const work = await mkdtemp(path.join(tmpdir(), "r4b-proof-"));
-  const trainUrl = await createDatabase("r4b_proof_train");
+  const trainUrl = await createDatabase(proofDatabase("train"));
   const train = open(trainUrl);
   const dir = path.join(work, "stage");
   const names = journalIndex(journal, "0037_old_adam_destine");
@@ -371,7 +376,7 @@ async function main(): Promise<void> {
   await train.end();
 
   // -- 1. The preflight refuses with ids before any migration of the run applies ---------------
-  const refusedUrl = await createDatabase("r4b_proof_refused", "r4b_proof_train");
+  const refusedUrl = await createDatabase(proofDatabase("refused"), proofDatabase("train"));
   {
     const sql = open(refusedUrl);
     const before = await schemaDumpAndHistory(sql, refusedUrl);
@@ -410,7 +415,7 @@ async function main(): Promise<void> {
   }
 
   // -- 2. The populated upgrade, one invocation ------------------------------------------------
-  const upgradedUrl = await createDatabase("r4b_proof_upgraded", "r4b_proof_train");
+  const upgradedUrl = await createDatabase(proofDatabase("upgraded"), proofDatabase("train"));
   const upgraded = open(upgradedUrl);
   await drainBatches(upgraded);
   const beforeDigest = await digest(upgraded);
@@ -663,7 +668,7 @@ async function main(): Promise<void> {
   );
 
   // -- 3. Fresh install ------------------------------------------------------------------------
-  const freshUrl = await createDatabase("r4b_proof_fresh");
+  const freshUrl = await createDatabase(proofDatabase("fresh"));
   const fresh = await migrate(freshUrl);
   check(
     "a fresh install succeeds (preflight passes when 0044 never ran; the step finds nothing)",
@@ -681,7 +686,7 @@ async function main(): Promise<void> {
   );
 
   // -- 4. Interruption in the conversion ---------------------------------------------------------
-  const brokenUrl = await createDatabase("r4b_proof_interrupted", "r4b_proof_train");
+  const brokenUrl = await createDatabase(proofDatabase("interrupted"), proofDatabase("train"));
   {
     const sql = open(brokenUrl);
     await drainBatches(sql);
@@ -737,7 +742,7 @@ async function main(): Promise<void> {
   }
 
   // -- 5. Interruption between the no-transaction statements of 0052 ------------------------------
-  const cutUrl = await createDatabase("r4b_proof_cuts", "r4b_proof_train");
+  const cutUrl = await createDatabase(proofDatabase("cuts"), proofDatabase("train"));
   {
     const sql = open(cutUrl);
     await drainBatches(sql);
@@ -777,7 +782,7 @@ async function main(): Promise<void> {
   }
 
   // -- 6. B3 guards fire when the step is bypassed ---------------------------------------------------
-  const bypassUrl = await createDatabase("r4b_proof_bypass", "r4b_proof_train");
+  const bypassUrl = await createDatabase(proofDatabase("bypass"), proofDatabase("train"));
   {
     const sql = open(bypassUrl);
     await drainBatches(sql);
@@ -813,7 +818,7 @@ async function main(): Promise<void> {
   }
 
   // -- 7. An unconvertible draft stops the run with ids, then a repaired baseline lets it finish --------
-  const stuckUrl = await createDatabase("r4b_proof_unresolved", "r4b_proof_train");
+  const stuckUrl = await createDatabase(proofDatabase("unresolved"), proofDatabase("train"));
   {
     const sql = open(stuckUrl);
     await drainBatches(sql);

@@ -68,7 +68,7 @@ function apply(input: {
 }
 
 describe("content Apply placement", () => {
-  it("keeps the change in the second of two equal paragraphs when live adds a third", () => {
+  it("applies the change once, to a fixed one of the equal paragraphs, when live adds another", () => {
     const same = "The gate stood open at dawn.";
     const result = apply({
       base: [p(same), p(same), p("Tail.")],
@@ -76,7 +76,14 @@ describe("content Apply placement", () => {
       live: [p(same), p(same), p(same), p("Tail.")],
       pick: () => true,
     });
-    expect(texts(result.merged).filter((t) => t.includes("wide"))).toHaveLength(1);
+    // Equal paragraphs are ambiguous to a content merge; the accepted rule is a fixed one (the last).
+    const gate = "The gate stood open at dawn.";
+    expect(texts(result.merged)).toEqual([
+      gate,
+      gate,
+      "The gate stood wide open at dawn.",
+      "Tail.",
+    ]);
     expect(result.leftInReview).toBe(0);
   });
 

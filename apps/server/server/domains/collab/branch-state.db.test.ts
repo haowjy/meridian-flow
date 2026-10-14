@@ -1,4 +1,4 @@
-/** writeBranchState on real Postgres: the effect reaches the Work projection, cuts round-trip, a lost CAS writes nothing. */
+/** writeBranchState on real Postgres: a lost CAS writes nothing, cuts round-trip. The effect reaching the Work projection is `projects/work-projection-pending-owners.db.test.ts`'s. */
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -100,12 +100,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workProjection: projection,
         drafts: createDrizzleDraftStore(db),
       });
-      // The Work's pending membership still needs a journal row beside the effect (R2 drops that).
-      await branches.appendJournal({
-        branchId: BRANCH_ID,
-        updateData: new Uint8Array([1]),
-        source: "agent",
-      });
       return { db, branches };
     }
 
@@ -137,36 +131,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const state = (value: number[]) => ({
       state: new Uint8Array(value),
       stateVector: new Uint8Array([0]),
-    });
-
-    // Risk: an effect change the Work page never sees (the count query moves, the projection does not).
-    it("publishes a changed effect to the Work and catalog projection, and a repeated one not at all", async () => {
-      const { db, branches } = await fixture();
-      const write = (expectedState: number[], next: number[], hasEffect: boolean) =>
-        runInDrizzleTransaction(db, () =>
-          branches.writeBranchState({
-            branchId: BRANCH_ID,
-            expectedState: new Uint8Array(expectedState),
-            ...state(next),
-            effect: { kind: "text", hasEffect },
-          }),
-        );
-      const initial = await projectionState();
-
-      // The last change is applied: the item leaves the Work's pending count.
-      await expect(write([0, 0], [0, 1], false)).resolves.toBe(true);
-      const emptied = await projectionState();
-      expect(emptied.entityRevision).toBe((initial.entityRevision ?? 0n) + 1n);
-      expect(BigInt(emptied.catalogEntityRevision ?? "0")).toBe(emptied.entityRevision);
-
-      // Same effect, new bytes: nothing moved for the Work page.
-      await expect(write([0, 1], [0, 2], false)).resolves.toBe(true);
-      await expect(projectionState()).resolves.toEqual(emptied);
-
-      // A writer types again: the item is pending once more.
-      await expect(write([0, 2], [0, 3], true)).resolves.toBe(true);
-      const typed = await projectionState();
-      expect(typed.entityRevision).toBe((emptied.entityRevision ?? 0n) + 1n);
     });
 
     // Risk: a lost compare-and-swap that still moves the effect or the base the winner wrote.
