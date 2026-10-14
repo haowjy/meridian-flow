@@ -2,15 +2,30 @@
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
-import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
+import type {
+  AppendBranchJournalInput,
+  BranchSnapshot,
+  BranchStore,
+  PersistBranchInput,
+} from "../branch-coordinator.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
+import type { BlockingSettlement } from "../draft-rebase.js";
 import type { PeerRetirementCause, RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
-    appendJournal(
-      input: import("../branch-coordinator.js").AppendBranchJournalInput,
-    ): Promise<void>;
+    appendJournal(input: AppendBranchJournalInput): Promise<void>;
+    /**
+     * The one runtime write of a branch's state, on the caller's ambient transaction, inside the Work
+     * projection: the CAS on the full prior state writes the state, the effect arm and the optional
+     * `baseRevision`, `rebaseCuts` and journal rows together or not at all. False when the CAS lost;
+     * the caller retries or reports.
+     */
+    writeBranchState(
+      input: PersistBranchInput & { journals?: readonly AppendBranchJournalInput[] },
+    ): Promise<boolean>;
+    /** The oldest pending or blocked settlement batch with a member on the document (the rebase fence). */
+    blockingApplySettlement(documentId: DocumentId): Promise<BlockingSettlement | null>;
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
     /** Every active branch of the draft, both kinds. */
     listActiveDraftBranchIds(draftId: DraftId): Promise<string[]>;

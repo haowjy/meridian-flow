@@ -176,7 +176,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
       drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
       closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
-      rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     authorityHeads,

@@ -90,8 +90,6 @@ class MemoryBranchStore implements BranchStore {
 
   async updateBranchSnapshot(input: {
     branchId: string;
-    expectedGeneration: number;
-    expectedStateVector: Uint8Array;
     expectedState: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
@@ -126,7 +124,7 @@ class MemoryBranchStore implements BranchStore {
   private persist(
     input: {
       branchId: string;
-      expectedGeneration: number;
+      expectedGeneration?: number;
       expectedStateVector?: Uint8Array;
       expectedState?: Uint8Array;
     },
@@ -137,7 +135,9 @@ class MemoryBranchStore implements BranchStore {
       return false;
     }
     const current = this.branches.get(input.branchId);
-    if (!current || current.generation !== input.expectedGeneration) return false;
+    if (!current) return false;
+    if (input.expectedGeneration !== undefined && current.generation !== input.expectedGeneration)
+      return false;
     if (input.expectedStateVector && !bytesEqual(current.stateVector, input.expectedStateVector)) {
       return false;
     }
@@ -150,7 +150,6 @@ class MemoryBranchStore implements BranchStore {
 
   async commitBranchMutation(input: {
     branchId: string;
-    expectedGeneration: number;
     expectedState?: Uint8Array;
     state: Uint8Array;
     stateVector: Uint8Array;
@@ -199,7 +198,6 @@ describe("BranchCoordinator", () => {
     await expect(
       coordinator.commitWriterUpdate({
         branchId: "work",
-        expectedGeneration: 1,
         updateData: Y.encodeStateAsUpdate(branchDoc),
         actorUserId: "user-1",
         roomDocument: materialize(storedBranch(store, "work")),
@@ -224,12 +222,11 @@ describe("BranchCoordinator", () => {
     await expect(
       coordinator.commitWriterUpdate({
         branchId: "work",
-        expectedGeneration: 1,
         updateData,
         actorUserId: "user-1",
         roomDocument,
       }),
-    ).rejects.toThrow("reserved provenance");
+    ).rejects.toThrow("server-owned state");
 
     expect(store.journal).toHaveLength(0);
     expect(materialize(storedBranch(store, "work")).getMap(PROVENANCE_TARGETS_TYPE).size).toBe(1);
@@ -503,8 +500,8 @@ describe("a save's owned session (U1)", () => {
   });
 });
 
-describe("containment replacement (U3)", () => {
-  it("replaces a peer whose state its upstream no longer contains, and merges one that is only behind", async () => {
+describe("peer containment", () => {
+  it("never replaces a peer its upstream lacks: it reports, and still merges one that is only behind", async () => {
     const shared = docWithText("base");
     const store = new MemoryBranchStore();
     const dropped = cloneOf(shared);
@@ -518,12 +515,17 @@ describe("containment replacement (U3)", () => {
         upstreamBranchId: "work",
       }),
     );
-    const coordinator = createBranchCoordinator({ store });
+    const notContained = vi.fn();
+    const coordinator = createBranchCoordinator({ store, onPeerNotContained: notContained });
 
-    // The upstream reforked from live, losing the peer's saved text.
+    // With no reset or refork an upstream only grows: a peer that is ahead of it is a bug to report,
+    // not a state to repair by resetting the peer.
     await pull(coordinator, "peer", cloneOf(shared));
-    expect(storedBranch(store, "peer").generation).toBe(2);
-    expect(materialize(storedBranch(store, "peer")).getText("content").toString()).toBe("base");
+    expect(notContained).toHaveBeenCalledWith({ branchId: "peer", upstreamBranchId: "work" });
+    expect(storedBranch(store, "peer").generation).toBe(1);
+    expect(materialize(storedBranch(store, "peer")).getText("content").toString()).toBe(
+      "base discarded",
+    );
 
     const behind = cloneOf(shared);
     store.branches.set(
@@ -537,8 +539,9 @@ describe("containment replacement (U3)", () => {
     );
     const ahead = cloneOf(shared);
     ahead.getText("content").insert(4, " more");
+    notContained.mockClear();
     await pull(coordinator, "behind", ahead);
-    expect(storedBranch(store, "behind").generation).toBe(1);
+    expect(notContained).not.toHaveBeenCalled();
     expect(materialize(storedBranch(store, "behind")).getText("content").toString()).toBe(
       "base more",
     );

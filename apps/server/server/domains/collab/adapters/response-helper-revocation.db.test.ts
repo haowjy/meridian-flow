@@ -105,135 +105,6 @@ describe("response helper revocation (Postgres)", () => {
     expect(await fixture.draftMarkdown(branchId)).toBe(`red\n\nblue\n\n${content}\n`);
     await expectBeta();
   }
-  it("item Discard retires only its Work's peers and staged writes", async () => {
-    const workB = randomUUID();
-    const threadB = randomUUID();
-    const turnB = randomUUID();
-    const responseB = randomUUID();
-    await db.insert(schema.works).values({
-      id: workB as never,
-      projectId: PROJECT_ID,
-      createdByUserId: USER_ID,
-      name: "Other Work",
-      slug: "other-work",
-    });
-    await db.insert(schema.threads).values({
-      id: threadB as never,
-      rootThreadId: threadB as never,
-      projectId: PROJECT_ID,
-      createdByUserId: USER_ID,
-      title: "Other chat",
-      kind: "primary",
-      status: "idle",
-      aiWriteMode: "draft",
-    });
-    await db.insert(schema.threadWorks).values({
-      threadId: threadB as never,
-      workId: workB as never,
-      projectId: PROJECT_ID,
-      isPrimary: true,
-    });
-    await db.insert(schema.turns).values({
-      id: turnB as never,
-      threadId: threadB as never,
-      position: 1,
-      role: "assistant",
-      origin: "assistant",
-      status: "complete",
-    });
-    await db.insert(schema.modelResponses).values({
-      id: responseB as never,
-      turnId: turnB as never,
-      sequence: 1,
-      provider: "mock",
-      model: "mock",
-      requestMessageCount: 1,
-      predictedCacheState: "cold",
-      predictedCacheReason: "facts_unavailable",
-    });
-    const contextB = {
-      ...context,
-      sessionId: threadB,
-      threadId: threadB,
-      turnId: turnB,
-      responseIdentity: { providerResponseId: responseB, editScopeId: responseB },
-      grant: inProject(
-        testFileGrant({ kind: "draft", workId: workB as never, workSlug: "other-work" }),
-      ),
-    };
-    expect(
-      await core.write(
-        {
-          command: "replace",
-          file: "alpha.md",
-          documentId: ALPHA_ID,
-          find: "green",
-          content: "emerald",
-          tool_use_id: "other-work-alpha",
-        },
-        contextB,
-      ),
-    ).toMatchObject({ status: "success", phase: "staged" });
-    const branchB = await fixture.branchStore.resolveWorkDraftBranchForThread(
-      ALPHA_ID,
-      threadB as never,
-    );
-    branchB.doc.destroy();
-    const peers = await db
-      .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.kind, "thread_peer"));
-    const peerA = peers.find((peer) => peer.documentId === ALPHA_ID && peer.threadId === THREAD_ID);
-    const peerB = peers.find((peer) => peer.documentId === ALPHA_ID && peer.threadId === threadB);
-    if (!peerA || !peerB) throw new Error("Missing the two active Work peers");
-    expect(peerB.upstreamBranchId).toBe(branchB.branchId);
-    const roomA = branchRoomName(peerA.id, peerA.generation);
-    const roomB = branchRoomName(peerB.id, peerB.generation);
-    await fixture.hocuspocus.openDirectConnection(roomA);
-    await fixture.hocuspocus.openDirectConnection(roomB);
-    expect(await discard()).toMatchObject({ status: "discarded" });
-    expect(core.hasResponseDocument(responseId, ALPHA_ID)).toBe(false);
-    expect(fixture.hocuspocus.documents.has(roomA)).toBe(false);
-    expect(fixture.hocuspocus.documents.has(roomB)).toBe(true);
-    const [closedA] = await db
-      .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, peerA.id));
-    const [activeB] = await db
-      .select()
-      .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, peerB.id));
-    expect(closedA.status).toBe("closed");
-    expect(activeB.status).toBe("active");
-    expect(await core.commitResponse(responseB)).toMatchObject({
-      status: "committed",
-      documents: expect.arrayContaining([
-        expect.objectContaining({ documentId: ALPHA_ID, updateCount: 1 }),
-      ]),
-    });
-    expect(await fixture.draftMarkdown(branchB.branchId)).toBe("red\n\nblue\n\nemerald\n");
-    const savedA = await harness.commit(responseId);
-    expect(savedA.documents.filter((doc) => doc.updateCount > 0)).toEqual([
-      expect.objectContaining({ documentId: BETA_ID, updateCount: 1 }),
-    ]);
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
-    const freshResponse = await createResponse(db, 3);
-    expect(
-      await core.write(
-        {
-          command: "replace",
-          file: "alpha.md",
-          documentId: ALPHA_ID,
-          find: "green",
-          content: "olive",
-          tool_use_id: "fresh-after-discard",
-        },
-        responseContext(freshResponse),
-      ),
-    ).toMatchObject({ status: "success", phase: "staged" });
-    expect(await harness.commit(freshResponse)).toMatchObject({ status: "committed" });
-    expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nolive\n");
-  });
   it("delayed retirement preserves a fresh peer's write in the same reply", async () => {
     const oldPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
     oldPeer.doc.destroy();
@@ -266,7 +137,7 @@ describe("response helper revocation (Postgres)", () => {
       const freshPeer = await fixture.branchStore.resolveThreadBranch(ALPHA_ID, THREAD_ID);
       freshPeer.doc.destroy();
       expect(freshPeer.branchId).not.toBe(oldPeer.branchId);
-      const room = branchRoomName(freshPeer.branchId, freshPeer.generation);
+      const room = branchRoomName(freshPeer.branchId);
       await fixture.hocuspocus.openDirectConnection(room);
       release();
       expect(await pending).toMatchObject({ status: "discarded" });

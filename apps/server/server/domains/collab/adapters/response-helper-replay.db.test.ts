@@ -72,50 +72,6 @@ describe("response helper replay (Postgres)", () => {
     harness.destroyWarmState();
   });
   afterAll(() => closeDatabase(db));
-  it.each([
-    false,
-    true,
-  ])("first write paused during Discard rebases on the current generation (empty: %s)", async (empty) => {
-    const { fixture, branchId, responseId, write, review } = await setupResponseDraft(
-      db,
-      harness,
-      empty,
-    );
-    let entered!: () => void, release!: () => void;
-    const waiting = new Promise<void>((resolve) => {
-      entered = resolve;
-    });
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    // Pause the write before it leases its branches, so Discard commits ahead of it.
-    const withLeases = fixture.branchCoordinator.withLeases.bind(fixture.branchCoordinator);
-    let paused = false;
-    fixture.branchCoordinator.withLeases = async (...args) => {
-      if (!paused) {
-        paused = true;
-        entered();
-        await gate;
-      }
-      return withLeases(...args);
-    };
-    const writing = write("green", "lime");
-    await waiting;
-    try {
-      await review("gold");
-    } finally {
-      release();
-      fixture.branchCoordinator.withLeases = withLeases;
-    }
-    expect(await writing).toMatchObject({ status: "success", phase: "staged" });
-    expect(await harness.commit(responseId)).toMatchObject({
-      status: "committed",
-      documents: [{ updateCount: 1 }],
-    });
-    expect(await fixture.draftMarkdown(branchId)).toBe(
-      empty ? "red\n\nblue\n\nlime\n" : "red\n\nazure\n\nlime\n",
-    );
-  });
   async function expectDroppedCommit(
     draft: Awaited<ReturnType<typeof setupResponseDraft>>,
     dropped: Awaited<ReturnType<typeof draft.write>>[],
@@ -378,7 +334,6 @@ describe("response helper replay (Postgres)", () => {
         expect(
           await fixture.branchCoordinator.commitWriterUpdate({
             branchId,
-            expectedGeneration: snapshot.generation,
             updateData: Y.mergeUpdates(updates),
             roomDocument: room,
             actorUserId: USER_ID as never,

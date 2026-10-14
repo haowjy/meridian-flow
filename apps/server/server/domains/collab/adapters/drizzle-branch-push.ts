@@ -14,7 +14,9 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -39,6 +41,7 @@ import {
 } from "../domain/branch-push-contracts.js";
 import { persistDurableTrailRecords } from "../domain/branch-trail-projection.js";
 import { DraftCommandExistsError } from "../domain/draft-commands.js";
+import { draftDiffersFromBase } from "../domain/draft-rebase.js";
 import { DRAFT_TREE_STEP } from "../domain/draft-tree-payload.js";
 import type { ChangeTrailPersistence } from "../domain/ports/change-trail-persistence.js";
 import type {
@@ -47,7 +50,6 @@ import type {
 } from "../domain/ports/work-draft-pending-store.js";
 import { placeDraftRows } from "./drizzle-document-edits.js";
 import { attachBatchWithinTx, claimCommandWithinTx } from "./drizzle-draft-commands.js";
-import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { readLiveReviewRevision } from "./drizzle-draft-review-live.js";
 import {
   assertRootOwnedSettlement,
@@ -635,11 +637,17 @@ async function commitPreparedDiscard(
         ),
       );
   }
-  await refreshDraftEffect(db, input.branch.branchId, undefined, true);
-  await db
-    .update(documentBranches)
-    .set({ blocking: false })
-    .where(eq(documentBranches.id, input.branch.branchId));
+  // The discard moved the draft's state: its effect is what the new document differs from its base.
+  const discarded = createCollabYDoc({ gc: false });
+  try {
+    Y.applyUpdate(discarded, input.state);
+    await db
+      .update(documentBranches)
+      .set({ hasEffect: draftDiffersFromBase(discarded), blocking: false })
+      .where(eq(documentBranches.id, input.branch.branchId));
+  } finally {
+    discarded.destroy();
+  }
 }
 
 async function findLineage(db: DrizzleDb, idempotencyKey: string): Promise<PushLineageRow | null> {

@@ -84,7 +84,7 @@ export function deriveReviewCut(cut: ReviewCut, model: YProsemirrorDocumentModel
         draftId: cut.item.draftId,
         itemKey: cut.item.itemKey,
         branchGeneration: cut.branch.generation,
-        reviewRoomName: branchRoomName(cut.branch.branchId, cut.branch.generation),
+        reviewRoomName: branchRoomName(cut.branch.branchId),
         isNewDocument: cut.item.isNew,
         item: cut.item,
         liveRevisionToken: cut.live.revision,

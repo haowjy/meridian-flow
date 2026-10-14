@@ -53,12 +53,26 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
 ]);
 /**
  * Finite diagnostic codes, allowed by key and by exactly these values (the
- * settlement, reply-pin and hidden-node repair events). Default-deny stays: any
+ * settlement, reply-pin, hidden-node repair, draft rebase and branch-writer refusal events). Default-deny stays: any
  * other value under these keys is redacted.
  */
 const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   code: new Set(["corrupt_settlement_authority", "corrupt_state"]),
   effect: new Set(["warm_rooms", "publication_step"]),
+  placed: new Set(["exact", "fallback"]),
+  reason: new Set([
+    "base_uninitialized",
+    "branch_closed",
+    "client-schema-superseded",
+    "document-schema-stale",
+    "merge_failed",
+    "mutation_policy",
+    "not_writer_draft",
+    "record_byte_limit",
+    "reserved_client_id",
+    "reserved_namespace",
+    "stale_update",
+  ]),
   refusal: new Set(["integration"]),
   stage: new Set(["claim", "execute", "handoff"]),
   trigger: new Set(["create", "read"]),
@@ -88,7 +102,6 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   originType: new Set(["fork", "handoff"]),
   outcome: new Set(["cancelled", "error", "ok"]),
   phase: new Set(["committed", "skeleton", "staged"]),
-  reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
   ...DIAGNOSTIC_CODE_ENUMS,
   source: new Set(["agent", "connection", "local", "redis", "system", "unknown", "writer"]),
   status: new Set([

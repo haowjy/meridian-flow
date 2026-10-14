@@ -118,23 +118,16 @@ export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
   primeReservedNamespaceIndex(document: Y.Doc): void;
   headSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
-  resolveBranchHocuspocusRoom(
-    branchId: string,
-    generation: number,
-  ): Promise<{
+  resolveBranchHocuspocusRoom(branchId: string): Promise<{
     branchId: string;
     documentId: DocumentId;
     /** The Work whose draft the room is; its lifecycle caps the room's access. */
     workId: WorkId;
-    generation: number;
     schemaVersion: CollabSchemaVersion;
     status: "active";
   } | null>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
-  loadHocuspocusBranchState(
-    branchId: string,
-    generation: number,
-  ): Promise<{ state: Uint8Array; generation: number } | undefined>;
+  loadHocuspocusBranchState(branchId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
     documentId: DocumentId;
     document: Y.Doc;
@@ -149,7 +142,6 @@ export type CollabTransport = {
     update: Uint8Array;
     origin: UpdateOrigin;
     document: Y.Doc;
-    expectedGeneration: number;
   }): Promise<void>;
   writerIngressBarrier: WriterIngressBarrier;
   persistConnectionUpdate(input: {
@@ -164,13 +156,8 @@ export type CollabTransport = {
   storeHocuspocusBranch(branchId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
   drainHocuspocusBranchPersistence(branchId: string): Promise<void>;
-  /** Narrow close affordance for durable shadow-probe T6 and branch reset plumbing. */
+  /** Narrow close affordance for durable shadow-probe T6 and branch close plumbing. */
   closeHocuspocusBranchRoom(branchId: string): void;
-  rejectStaleBranchSyncStep1(input: {
-    branchId: string;
-    generation: number;
-    clientStateVector: Uint8Array;
-  }): Promise<boolean>;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
@@ -517,8 +504,8 @@ export type DocumentAttribution = {
 
 /** Background work the domain schedules itself, stopped when the app shuts down. */
 export type CollabLifecycle = {
-  /** Drops debounced live-to-draft pulls that haven't started; running pulls finish. */
-  dispose(): void;
+  /** Shutdown: drops debounced pulls, lets running ones finish, then destroys the process replicas. */
+  dispose(): void | Promise<void>;
 };
 
 export type CollabDomain = CollabTransport &

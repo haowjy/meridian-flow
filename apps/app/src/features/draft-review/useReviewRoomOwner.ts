@@ -259,7 +259,7 @@ export function useReviewRoomOwner({
             room?.kind === "branch" &&
             connection?.kind !== "reset" &&
             session.hasUnacknowledgedEdits()
-              ? room.generation
+              ? (generation ?? null)
               : null,
         });
         if (connection?.kind === "reset") {

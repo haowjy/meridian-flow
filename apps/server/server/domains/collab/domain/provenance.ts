@@ -1,5 +1,6 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
+import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import {
   type LineageRange,
   type SemanticEditIRV1,
@@ -17,7 +18,9 @@ export const PROVENANCE_RESERVED_TYPES = [
   PROVENANCE_TARGETS_TYPE,
   "__meridian_provenance_targets_v1",
 ] as const;
-const RESERVED_TYPE_NAMES = new Set<string>(PROVENANCE_RESERVED_TYPES);
+/** Top-level types only the server writes: provenance facts and a text branch's `review_base`. */
+export const SERVER_OWNED_ROOTS = [...PROVENANCE_RESERVED_TYPES, REVIEW_BASE_FRAGMENT] as const;
+const RESERVED_TYPE_NAMES = new Set<string>(SERVER_OWNED_ROOTS);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),
 );
@@ -651,17 +654,29 @@ function assertDecodedUpdateOutsideReservedNamespace(
   };
 
   if (incoming.some((struct) => hasReservedAncestor(struct))) {
-    throw new ReservedNamespaceAdmissionError("Client update authors reserved provenance state");
+    throw new ReservedNamespaceAdmissionError("Client update authors server-owned state");
   }
   for (const [client, ranges] of decoded.ds.clients) {
     for (const range of ranges) {
-      if (reserved.overlaps({ clientID: client, clock: range.clock, length: range.len })) {
-        throw new ReservedNamespaceAdmissionError(
-          "Client update deletes reserved provenance state",
-        );
+      if (
+        reserved.overlaps({ clientID: client, clock: range.clock, length: range.len }) &&
+        hasLiveItem(referenceDocument, client, range.clock, range.len)
+      ) {
+        throw new ReservedNamespaceAdmissionError("Client update deletes server-owned state");
       }
     }
   }
+}
+
+/** A reconnect's cumulative delete set repeats tombstones the server already made: only a live item is a write. */
+function hasLiveItem(doc: Y.Doc, client: number, clock: number, length: number): boolean {
+  const known = Y.getState(doc.store, client);
+  if (clock + length > known) return true;
+  for (let c = clock; c < clock + length; c++) {
+    const item = Y.getItem(doc.store, Y.createID(client, c));
+    if (item instanceof Y.Item && !item.deleted) return true;
+  }
+  return false;
 }
 
 function isPlainProseFastPath(
@@ -903,7 +918,7 @@ type DecodedUpdate = {
 
 function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
   const index = new ReservedRangeIndex();
-  for (const name of PROVENANCE_RESERVED_TYPES) {
+  for (const name of SERVER_OWNED_ROOTS) {
     const type = doc.share.get(name);
     if (type) collectTypeStructs(type, index);
   }

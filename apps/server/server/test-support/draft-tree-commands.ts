@@ -106,7 +106,7 @@ export interface ScenarioWriter {
     work: ScenarioWork,
     documentId: DocumentId,
     edit: (doc: Y.Doc) => void,
-  ): Promise<{ branchId: string; generation: number }>;
+  ): Promise<{ branchId: string }>;
 }
 
 /** What a reader sees through its context port: a writer's live port, or a Work thread's. */
@@ -193,10 +193,7 @@ export interface DraftTreeCommands {
     options?: { items?: readonly ThreadDraftListItem[]; draftId?: string },
   ): Promise<DraftCommandResult>;
   /** The Work draft's branch of this document, as its review room names it. */
-  draftBranch(
-    work: ScenarioWork,
-    documentId: DocumentId,
-  ): Promise<{ branchId: string; generation: number }>;
+  draftBranch(work: ScenarioWork, documentId: DocumentId): Promise<{ branchId: string }>;
 }
 
 /** The review item of `documentId`; throws when the list has none. */
@@ -472,18 +469,17 @@ export function draftTreeCommands(
       const sync = ports().documentSync;
       const room = await draftBranch(work, documentId);
       const document = new Y.Doc({ gc: false });
-      const loaded = await sync.loadHocuspocusBranchState(room.branchId, room.generation);
+      const loaded = await sync.loadHocuspocusBranchState(room.branchId);
       if (loaded) Y.applyUpdate(document, loaded.state);
       const before = Y.encodeStateVector(document);
       edit(document);
       await sync.admitBranchWriterUpdate({
         branchId: room.branchId,
-        expectedGeneration: room.generation,
         update: Y.encodeStateAsUpdate(document, before),
         origin: { type: "user", userId },
         document,
       });
-      return { branchId: room.branchId, generation: room.generation };
+      return { branchId: room.branchId };
     },
   };
 
@@ -495,7 +491,7 @@ export function draftTreeCommands(
     if (preview.status !== "active") throw new Error(`The draft of ${documentId} is gone`);
     const room = parseYjsRoomName(preview.reviewRoomName);
     if (room?.kind !== "branch") throw new Error(`Not a branch room: ${preview.reviewRoomName}`);
-    return { branchId: room.branchId, generation: room.generation };
+    return { branchId: room.branchId };
   }
 
   function view(of: ScenarioWork | "live"): ScenarioView {

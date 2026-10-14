@@ -6,6 +6,7 @@ import type {
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import {
   type EventSink,
   emitEvent,
@@ -17,6 +18,7 @@ import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
+import type { DraftRebaseDiagnostics } from "../domain/draft-rebase.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
@@ -24,16 +26,38 @@ import type { DraftReviewDiagnostics } from "../domain/work-draft-review-service
 
 export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDiagnostics {
   return {
-    backgroundFailed({ documentId, cause }) {
+    backgroundFailed({ documentId, branchId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
         source: "collab.branch_pull",
         name: "background.failed",
-        correlation: { documentId },
+        correlation: { documentId, ...(branchId ? { branchId } : {}) },
         payload: unknownToEventPayload(cause),
       });
     },
+  };
+}
+
+/** The rebase's own failures: one event per transition, ids in correlation and a finite code in the payload. */
+export function createDraftRebaseDiagnostics(eventSink?: EventSink): DraftRebaseDiagnostics {
+  const report = (
+    name: string,
+    reason: string,
+    input: { branchId: string; documentId: DocumentId },
+  ) => {
+    if (!eventSink) return;
+    emitEvent(eventSink, {
+      level: "error",
+      source: "collab.draft_rebase",
+      name,
+      correlation: { documentId: input.documentId, branchId: input.branchId },
+      payload: { reason },
+    });
+  };
+  return {
+    uninitializedBase: (input) => report("base.uninitialized", "base_uninitialized", input),
+    mergeFailed: (input) => report("merge.failed", "merge_failed", input),
   };
 }
 

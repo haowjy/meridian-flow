@@ -10,7 +10,7 @@ afterEach(() => vi.useRealTimers());
 
 describe("BranchRoomPool.rebuild", () => {
   it("does not reopen a room whose last owner released while the retired session drained", async () => {
-    const room = branchRoomName("draft-pool", 1);
+    const room = branchRoomName("draft-pool");
     let finishDrain!: () => void;
     const draining = new Promise<void>((resolve) => {
       finishDrain = resolve;
@@ -55,7 +55,7 @@ describe("BranchRoomPool.rebuild", () => {
   });
 
   it("reopens the room for the owner that still holds it", async () => {
-    const room = branchRoomName("draft-pool-held", 1);
+    const room = branchRoomName("draft-pool-held");
     let resetListener: (snapshot: unknown) => void = () => {};
     let opened = 0;
     const pool = new BranchRoomPool({
@@ -91,7 +91,7 @@ describe("BranchRoomPool.rebuild", () => {
 
 describe("BranchRoomPool.release", () => {
   it("never reopens a reset room for the owner that remains", async () => {
-    const room = branchRoomName("draft-pool-two-owners", 1);
+    const room = branchRoomName("draft-pool-two-owners");
     let finishDrain!: () => void;
     const draining = new Promise<void>((resolve) => {
       finishDrain = resolve;

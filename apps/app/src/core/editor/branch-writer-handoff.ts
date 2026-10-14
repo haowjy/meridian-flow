@@ -129,12 +129,8 @@ export class BranchWriterHandoff {
         if (!this.current(branchId, entry)) return;
         const room = roomKey ? parseYjsRoomName(roomKey) : null;
         if (!roomKey) outcome = "refused";
-        else if (
-          room?.kind === "branch" &&
-          room.branchId === branchId &&
-          room.generation >= entry.retirement.source.generation
-        ) {
-          entry.retirement.ref.writerChanges?.(room.generation);
+        else if (room?.kind === "branch" && room.branchId === branchId) {
+          entry.retirement.ref.writerChanges?.(entry.retirement.source.generation);
           this.deps.pool.retain(owner, [{ ...entry.retirement.ref, roomKey }]);
           const session = await this.deps.pool.rebuild(roomKey);
           if (!this.current(branchId, entry)) return;
@@ -148,7 +144,7 @@ export class BranchWriterHandoff {
             const { update, pending, lost } = deliverableUpdate(
               session.document,
               entry.retirement,
-              room.generation > entry.retirement.source.generation,
+              false,
             );
             if (lost) entry.retirement.ref.writerLoss?.();
             if (update) {

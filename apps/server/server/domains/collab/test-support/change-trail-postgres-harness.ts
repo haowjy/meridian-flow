@@ -49,6 +49,7 @@ import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js"
 import type { SettlementPublicationStep } from "../domain/ports/settlement-publication.js";
 import { writeMarkdown } from "./bound-writes.js";
 import { commitSegmentRows } from "./branch-update-writes.js";
+import { draftRebaseDeps } from "./draft-rebase-deps.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
 const { createDb } = await import("@meridian/database");
@@ -426,6 +427,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     branchCoordinator,
     branches: branchStore,
     concurrentJournalWatermarks: watermarks,
+    ...draftRebaseDeps({ journal: persistence.journal, branchCoordinator, branches: branchStore }),
   });
   const notices = createDrizzleNoticePort(db);
   const changeTrails = createDrizzleChangeTrailAggregateWriter(db);

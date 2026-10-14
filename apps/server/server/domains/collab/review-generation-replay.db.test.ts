@@ -116,7 +116,6 @@ it.each([
       await f.branchCoordinator.commitWriterUpdate({
         branchId: branch.branchId,
         updateData: deliverable,
-        expectedGeneration: next.generation,
         roomDocument: next.doc,
         actorUserId: USER_ID,
       }),
