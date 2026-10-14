@@ -39,6 +39,17 @@ export type TranscriptViewInput = {
   standIns?: readonly Turn[];
   /** Ids of accepted writer turns the model hasn't read yet. */
   queued?: ReadonlySet<string>;
+  /**
+   * Writer turns a hand-back request in flight hides (`hiddenWriterTurns`): they leave the
+   * transcript with no row, as they will when the server's answer removes them.
+   */
+  hidden?: ReadonlySet<string>;
+  /**
+   * Failed replies whose accepted Retry the stored turns do not show yet: the Retry's target,
+   * carried explicitly. A Retry the turns do show says so itself (`metadata.retryOf`, on a stored
+   * turn or a stand-in).
+   */
+  retried?: ReadonlySet<string>;
   /** Called for a persisted record that misses its contract. The caller decides where it is reported. */
   onContractFailure?: (failure: PersistedContractFailure) => void;
 };
@@ -94,12 +105,30 @@ function responseOf(parts: readonly Turn[]): NonNullable<ViewRow["response"]> {
 
 const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
 
+/** The failed reply a turn is the Retry of, from the first reserved turn's (or a stand-in's) `metadata.retryOf`. */
+function retryTarget(turn: Turn): string | null {
+  const { metadata } = turn;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
+  const target = (metadata as { retryOf?: unknown }).retryOf;
+  return typeof target === "string" ? target : null;
+}
+
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const standIns = input.standIns ?? [];
-  const turns = placeStandIns(
+  const placed = placeStandIns(
     input.opening ? [input.opening, ...input.turns] : input.turns,
     standIns,
   );
+  // The transcript is not a log: a failed reply the writer retried is not drawn (its Retry
+  // is, in its place), and neither is a message handed back. Stand-ins were placed first, with
+  // the failed reply as their anchor, so a pending Retry sits exactly where it was. A chain of
+  // failed retries draws only the newest. The turns stay in the store; this is drawing only.
+  const retried = new Set(input.retried);
+  for (const turn of placed) {
+    const target = retryTarget(turn);
+    if (target !== null) retried.add(target);
+  }
+  const turns = placed.filter((turn) => !retried.has(turn.id) && !input.hidden?.has(turn.id));
   // Provenance is stated, never read from an id's shape: only the server's own turns are named.
   const stored = new Set(input.turns.map((turn) => turn.id));
   const unconfirmed = new Set(standIns.map((turn) => turn.id).filter((id) => !stored.has(id)));

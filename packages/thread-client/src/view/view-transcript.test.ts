@@ -75,3 +75,72 @@ it("keys every row but names a server identity only for turns the server stated,
   // A system card is its own single response part, so it keeps the settled action row.
   expect(view.rows[3]?.response?.parts.map((part) => part.id)).toEqual(["c1"]);
 });
+
+const ids = (view: ReturnType<typeof viewTranscript>) => view.rows.map((row) => row.turn.id);
+
+it("draws a pending Retry in the failed reply's place, even with a message sent after it", () => {
+  // Risk: the stand-in drifting below a later message, or the failed reply drawn beside its Retry.
+  const failed = turn("f", "assistant", "u1", { status: "error" });
+  const base = [turn("u1", "user", null), failed, turn("u2", "user", "f")];
+  const standIn = turn("r1", "assistant", "f", {
+    status: "pending",
+    blocks: [],
+    metadata: { retryOf: "f" },
+  });
+  const pending = viewTranscript({
+    turns: base,
+    standIns: [standIn],
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(pending)).toEqual(["u1", "r1", "u2"]);
+  // Refused: the stand-in goes, and nothing supersedes the failed reply.
+  expect(ids(viewTranscript({ turns: base, activity: { awaitingSubagents: false } }))).toEqual([
+    "u1",
+    "f",
+    "u2",
+  ]);
+  // Accepted, and the store has no turn that names it yet: the explicit target holds F out.
+  expect(
+    ids(
+      viewTranscript({
+        turns: [...base, turn("r1", "assistant", "u2", { status: "streaming" })],
+        retried: new Set(["f"]),
+        activity: { awaitingSubagents: false },
+      }),
+    ),
+  ).toEqual(["u1", "u2", "r1"]);
+});
+
+it("draws one failure for a chain of failed retries, the newest", () => {
+  // Risk: every failed attempt stacking up as "This response failed." lines.
+  const view = viewTranscript({
+    turns: [
+      turn("u1", "user", null),
+      turn("f", "assistant", "u1", { status: "error" }),
+      // The Retry's first reserved turn can be a compaction, not the reply: it carries retryOf.
+      turn("c1", "compaction", "f", { metadata: { retryOf: "f" } }),
+      turn("r1", "assistant", "c1", { status: "error" }),
+      turn("r2", "assistant", "r1", { status: "error", metadata: { retryOf: "r1" } }),
+    ],
+    activity: { awaitingSubagents: false },
+  });
+  expect(view.rows.filter((row) => row.turn.status === "error").map((row) => row.turn.id)).toEqual([
+    "r2",
+  ]);
+  expect(ids(view)).toEqual(["u1", "c1", "r2"]);
+});
+
+it("leaves a handed-back message out and keeps history and later sends", () => {
+  // Risk: a hand-back hiding delivered history or a message sent after the press.
+  const view = viewTranscript({
+    turns: [
+      turn("m1", "user", null),
+      turn("a1", "assistant", "m1"),
+      turn("m2", "user", "a1"),
+      turn("m3", "user", "m2"),
+    ],
+    hidden: new Set(["m2"]),
+    activity: { awaitingSubagents: false },
+  });
+  expect(ids(view)).toEqual(["m1", "a1", "m3"]);
+});

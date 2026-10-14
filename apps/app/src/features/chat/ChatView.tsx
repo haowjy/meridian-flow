@@ -172,7 +172,7 @@ export function ChatView({
   // turn it followed until the server has it.
   const intent = derivation?.intent;
   const { localSeeds } = brief;
-  const { standIns: replyStandIns } = replyRetry;
+  const { standIns: replyStandIns, retried: retriedReplies } = replyRetry;
   const activity = useThreadActivity({
     threadId,
     seed: snapshotLiveState,
@@ -214,9 +214,18 @@ export function ChatView({
         activity: { awaitingSubagents },
         standIns,
         queued: queuedWriterTurnIds,
+        retried: retriedReplies,
         onContractFailure: reportPersistedContractFailure,
       }),
-    [awaitingSubagents, inheritedTranscript, storedTurns, opening, queuedWriterTurnIds, standIns],
+    [
+      awaitingSubagents,
+      inheritedTranscript,
+      storedTurns,
+      opening,
+      queuedWriterTurnIds,
+      retriedReplies,
+      standIns,
+    ],
   );
   const { turns } = view;
   // Live announcements follow the server's replies: a Retry's stand-in speaks

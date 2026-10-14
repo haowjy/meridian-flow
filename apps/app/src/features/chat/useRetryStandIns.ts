@@ -58,6 +58,11 @@ export type RetryStandIns = {
   /** Turns whose Retry the server refused; nothing was written. */
   refused: ReadonlySet<string>;
   /**
+   * Failed replies whose Retry is pending or accepted but no stored turn names it yet
+   * (`metadata.retryOf`): `viewTranscript` leaves them out, so the Retry stands in their place.
+   */
+  retried: ReadonlySet<string>;
+  /**
    * Retry from `from`. A failed stand-in re-sends under its own id; any other
    * turn gets a new stand-in from `build`, which may decline with null.
    */
@@ -98,8 +103,14 @@ export function useRetryStandIns(input: {
   lostCopy: string;
   /** Whether a stand-in's reservation ended without creating its turn: nothing will now. */
   retired?: (standIn: StandInIdentity) => boolean;
+  /**
+   * The Retry replaces the turn it retries in the transcript (a failed reply's Retry), so the
+   * pressed turn stays out of view while the Retry is pending and until a stored turn carries
+   * `metadata.retryOf` for it. Not for a handoff brief's Retry.
+   */
+  supersedes?: boolean;
 }): RetryStandIns {
-  const { retired } = input;
+  const { retired, supersedes = false } = input;
   const { threadId, storedTurns } = input;
   const [local, setLocal] = useState<readonly StandIn[]>([]);
   const [refused, setRefused] = useState(NO_REFUSALS);
@@ -120,13 +131,24 @@ export function useRetryStandIns(input: {
   }, []);
 
   const storedIds = useMemo(() => new Set(storedTurns.map((turn) => turn.id)), [storedTurns]);
-  // Once the snapshot has the turn, it is the authority. A request whose
-  // reservation ended without the turn is over: nothing will create it now.
+  // The failed replies a stored turn says were retried. The Retry's first reserved turn carries
+  // it, which can be a compaction or a switch turn ahead of the reply.
+  const evidenced = useMemo(() => {
+    const targets = new Set<string>();
+    for (const turn of storedTurns) {
+      const target = (turn.metadata as { retryOf?: unknown } | null)?.retryOf;
+      if (typeof target === "string") targets.add(target);
+    }
+    return targets;
+  }, [storedTurns]);
+  // Once the snapshot has the turn, it is the authority (and, for a Retry that supersedes, has
+  // the turn that says so). A request whose reservation ended without the turn is over:
+  // nothing will create it now.
   const settles = useCallback(
     (entry: StandIn) =>
-      storedIds.has(entry.turn.id) ||
+      (storedIds.has(entry.turn.id) && (!supersedes || evidenced.has(entry.from))) ||
       (retired?.({ id: entry.turn.id, executionId: entry.executionId }) ?? false),
-    [retired, storedIds],
+    [evidenced, retired, storedIds, supersedes],
   );
   useEffect(() => {
     setLocal((current) => {
@@ -230,12 +252,21 @@ export function useRetryStandIns(input: {
     [patch, send],
   );
 
-  const unstored = useMemo(() => local.filter((entry) => !settles(entry)), [local, settles]);
+  const unsettled = useMemo(() => local.filter((entry) => !settles(entry)), [local, settles]);
+  // An entry the store has by id but whose Retry it doesn't show yet is no stand-in, only a target.
+  const unstored = useMemo(
+    () => unsettled.filter((entry) => !storedIds.has(entry.turn.id)),
+    [storedIds, unsettled],
+  );
   const standIns = useMemo(() => unstored.map((entry) => entry.turn), [unstored]);
   const requestOf = useCallback(
     (turnId: string) => unstored.find((entry) => entry.turn.id === turnId)?.request ?? null,
     [unstored],
   );
+  const retried = useMemo(
+    () => new Set(supersedes ? unsettled.map((entry) => entry.from) : []),
+    [supersedes, unsettled],
+  );
 
-  return { standIns, requestOf, refused, retry };
+  return { standIns, requestOf, refused, retried, retry };
 }

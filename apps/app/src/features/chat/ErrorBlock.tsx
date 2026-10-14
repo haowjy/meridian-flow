@@ -16,7 +16,8 @@ export type ErrorBlockKind = "generation" | "retry" | "provider-declined";
 
 export type ErrorBlockProps = {
   /**
-   * Whether this error is current: no visible turn follows the errored one.
+   * Whether this error is current: no visible turn follows the errored one. A failed reply
+   * the writer retried is not drawn at all, so the quiet line is only for one never retried.
    * - `true` → full tinted block with icon + message.
    * - `false` → quiet historical marker: single muted line, no background.
    */
