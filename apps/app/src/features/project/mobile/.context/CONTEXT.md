@@ -62,28 +62,26 @@ Settings is an auxiliary routed surface (`?settings=`), not a drawer/sidebar des
 ### Document sessions: mobile is a registry owner
 
 Mobile documents are read-only for users but live for AI edits (a review's draft
-body too). Editable context
-documents still mount `EditorView` with the TipTap/Yjs binding active:
+body too). Every editable phone document (the ordinary route, the local pointer
+and a draft-only document) renders `ContextDocumentHost` directly, inside a
+`relative min-h-0 flex-1` frame that is a direct child of a flex column
+(`MobileDocumentReview`'s, or the local pointer's own, since no review wraps
+it), with `presentation={PHONE_DOCUMENT_PRESENTATION}`. It does not use
+`ContextEditorMountHost`, the desktop's warm-set LRU with a frame of its own.
 
-```tsx
-<EditorView editable={false} showToolbar={false} showCollaborationDecorations={false} />
-```
+`PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`) is the whole
+phone difference: it never types (`editable: false`, no toolbar; the host's
+`readOnly` stays the Work's archived scope, which the room-scope check compares
+with the room's access), no remote carets or selections, the accessible name "Read-only
+live document", presence suspended from the click that requests a review (desktop
+waits for the resolved room), and the binding owner id
+`mobile-project-document-host`. Everything else is the shared host: paint scope,
+the failure card with Retry, `useActiveReviewBinding` and the room-scope check.
 
-`MobileDocumentHost` owns the registry open-set for the phone route. It retains
-exactly the active editable document under the owner id
-`mobile-project-document-host`, retains `[]` when no editable document is open,
-and releases the owner on unmount. This is separate from the desktop tab strip's
-open-tab set; phone navigation derives the active tab from the context tree and
-does not write to desktop tabs.
-
-The same resolved editable document is published into the persistent Editor
-review value through `useActiveReviewBinding`, which also leases live presence.
-The phone suspends presence for the requested review; desktop waits for its
-resolved room. Hosts pass only requested draft identity to `EditorView`; the
-adapter reads its canonical room and Work from the scope.
-
-This ownership is mandatory. Mounting `EditorView` directly without `retain()`
-creates Yjs sessions that the registry cannot know are closed.
+The phone must stay on the shared session boundary. Only `ContextTabSessionBoundary`
+probes local content and holds the adoption-eligible lease that completes a
+stranded adoption; a phone that binds the live room itself is refused with
+`adoption-pending` for as long as the local copy is reserved.
 
 ### Draft review on the phone
 
@@ -254,9 +252,9 @@ The top bar names the current screen/location once. Inner views suppress their
 own duplicate headers on phone by composing body-only shared modules with phone
 chrome:
 
-- `MobileDocumentHost` renders `EditorView` without toolbar/header chrome and
-  disables collaboration cursor/selection decorations through the typed editor
-  option.
+- `MobileDocumentHost` renders the shared document host without toolbar/header chrome
+  and disables collaboration cursor/selection decorations through the phone
+  presentation value.
 - Non-tracked mobile documents use `ContextViewerBareHost`, which composes the
   read-only viewer frame without a name/path header because the breadcrumb
   already names the file.
