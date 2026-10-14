@@ -41,7 +41,7 @@ type Event =
   | { stamp: number; mode: Mode; queued?: Queued }
   | { drop: string }
   | { withdraw: string; failed?: boolean }
-  | { withdrawn: string; j: number };
+  | { withdrawn: string; j: number; mode: Mode; queued?: Queued };
 
 const snapshot = (j: number, mode: Mode, ...queued: Queued[]): Event => ({
   snapshot: j,
@@ -131,11 +131,20 @@ function step({ state, journal }: Harness, event: Event): Harness {
   }
   if ("withdraw" in event)
     return dispatch({ type: "withdraw", id: event.withdraw, failed: event.failed });
-  return dispatch({ type: "withdrawn", id: event.withdrawn, seq: head(event.j) });
+  return dispatch({
+    type: "withdrawn",
+    id: event.withdrawn,
+    answer: answerFacts(head(event.j), event.mode, event.queued),
+  });
 }
 
 /** Rows read `id:status`, with `:awaiting` for a switch the server may hold. */
-const SCENARIOS: { name: string; steps: [Event, mode: Mode, rows: string[]][] }[] = [
+const SCENARIOS: {
+  name: string;
+  steps: [Event, mode: Mode, rows: string[]][];
+  /** The intents (`kind:id`) the view still holds after the last step, where lifecycle is the risk. */
+  retained?: string[];
+}[] = [
   {
     name: "R1: a delayed cancel-out answer says nothing about a switch queued after it",
     steps: [
@@ -266,9 +275,21 @@ const SCENARIOS: { name: string; steps: [Event, mode: Mode, rows: string[]][] }[
       [{ withdraw: "s1" }, "direct", []],
       [{ withdraw: "s1", failed: true }, "draft", ["s1:withdraw_failed"]],
       [{ withdraw: "s1" }, "direct", []],
-      [{ withdrawn: "s1", j: 2 }, "direct", []],
+      [{ withdrawn: "s1", j: 2, mode: "direct" }, "direct", []],
       [inbox(at(2)), "direct", []],
     ],
+    retained: [],
+  },
+  {
+    name: "a Withdraw on a quiet chat retires on its own answer, with no later record to reach it",
+    steps: [
+      [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
+      [{ withdraw: "s1" }, "direct", []],
+      // The withdrawal's own frame is at J*1000; its answer is the head, J*1000+999.
+      [inbox(at(2)), "direct", []],
+      [{ withdrawn: "s1", j: 2, mode: "direct" }, "direct", []],
+    ],
+    retained: [],
   },
   {
     name: "a switched frame answers its control: a delayed HTTP answer cannot ghost after a switch back",
@@ -311,5 +332,10 @@ it("derives the switch rows and toolbar mode from server facts at one seq and un
         label,
       ).toEqual(rows);
     });
+    if (scenario.retained)
+      expect(
+        harness.state.view.intents.map((intent) => `${intent.kind}:${intent.id}`),
+        `${scenario.name} (retained)`,
+      ).toEqual(scenario.retained);
   }
 });

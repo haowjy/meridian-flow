@@ -205,8 +205,9 @@ export function useSwitchView(input: {
       dispatch({ type: "withdraw", id });
       const onServer = async () => {
         try {
-          const { outcome, seq } = await withdrawThreadControl(threadId, id);
-          dispatch({ type: "withdrawn", id, seq });
+          const answer = await withdrawThreadControl(threadId, id);
+          const { outcome } = answer;
+          dispatch({ type: "withdrawn", id, answer });
           if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));

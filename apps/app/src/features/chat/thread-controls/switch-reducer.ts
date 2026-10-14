@@ -19,6 +19,7 @@ import {
   recordFromAnswer,
   recordFromSnapshot,
   type SnapshotFacts,
+  type SwitchAnswerFacts,
   type SwitchFrame,
   seedFrames,
 } from "./switch-record";
@@ -31,7 +32,7 @@ export type SwitchAction =
   | { type: "frame"; frame: SwitchFrame }
   | { type: "journal"; switches: readonly JournalSwitch[] }
   | { type: "withdraw"; id: string; failed?: boolean }
-  | { type: "withdrawn"; id: string; seq: string }
+  | { type: "withdrawn"; id: string; answer: SwitchAnswerFacts }
   | { type: "dropWithdraw"; id: string };
 
 export function reduceSwitch(state: SwitchState, action: SwitchAction): SwitchState {
@@ -93,7 +94,13 @@ function reduceView(
         failed: action.failed,
       });
     case "withdrawn":
-      return answerIntent(view, "withdraw", action.id, action.seq);
+      // Like the enqueue answer: the server's facts at its head, then the intent's answer.
+      return answerIntent(
+        receiveRecord(view, recordFromAnswer(view.record, action.answer)),
+        "withdraw",
+        action.id,
+        action.answer.seq,
+      );
     case "dropWithdraw":
       return dropIntent(view, "withdraw", action.id);
   }
