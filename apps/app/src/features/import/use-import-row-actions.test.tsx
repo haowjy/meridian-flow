@@ -3,7 +3,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { ImportRunInfo } from "@/client/query/context-catalog-projection";
+import type { ImportRunInfo } from "./tree-rows";
 import { type ImportRowActions, useImportRowActions } from "./use-import-row-actions";
 
 const imports = vi.hoisted(() => ({

@@ -1,4 +1,5 @@
 /** Where an import lands: an area root or a folder inside Manuscript, Knowledge Base or Unfiled. */
+import { t } from "@lingui/core/macro";
 import { IMPORT_SCHEMES, type ImportScheme } from "@meridian/contracts";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
@@ -25,4 +26,23 @@ export function joinCatalogPath(parent: string, name: string): string {
 export function parentCatalogPath(path: string): string {
   const slash = path.lastIndexOf("/");
   return slash <= 0 ? "/" : path.slice(0, slash);
+}
+
+export function areaLabel(scheme: ImportScheme): string {
+  return scheme === "manuscript"
+    ? t`Manuscript`
+    : scheme === "unfiled"
+      ? t`Unfiled`
+      : t`Knowledge Base`;
+}
+
+/** Where an import lands when started on, or dropped onto, a folder (null: the area's root). */
+export function destinationOf(
+  scheme: ProjectContextTreeScheme,
+  folder: { entryId: string; path: string; uri: string; name: string } | null,
+): ImportDestination | null {
+  if (!isImportScheme(scheme)) return null;
+  return folder
+    ? { scheme, path: folder.path, uri: folder.uri, name: folder.name, folderId: folder.entryId }
+    : { scheme, path: "/", uri: `${scheme}://`, name: areaLabel(scheme), folderId: null };
 }

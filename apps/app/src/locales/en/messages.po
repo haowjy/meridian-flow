@@ -1472,7 +1472,7 @@ msgid "Couldn't finish that step"
 msgstr "Couldn't finish that step"
 
 #. placeholder {0}: failureSentence(reason)
-#: src/features/project/context/NamespaceFailureMark.tsx
+#: src/features/project/context/ImportRowStatus.tsx
 msgid "Couldn't import this file. {0}"
 msgstr "Couldn't import this file. {0}"
 
@@ -2601,7 +2601,7 @@ msgstr "Keep editing"
 msgid "Keep importing"
 msgstr "Keep importing"
 
-#: src/features/import/placements.ts
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
 msgstr "Knowledge Base"
@@ -2776,7 +2776,7 @@ msgstr "Looking for the document this link names."
 msgid "Manage billing"
 msgstr "Manage billing"
 
-#: src/features/import/placements.ts
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
 msgstr "Manuscript"
@@ -3701,10 +3701,9 @@ msgstr "Resume my documents on any device"
 #: src/features/import/ImportDocumentNotice.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
-#: src/features/project/context/ContextTreeRows.tsx
+#: src/features/project/context/ImportRowStatus.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -4837,7 +4836,7 @@ msgid "Today"
 msgstr "Today"
 
 #. placeholder {0}: dir.name
-#. placeholder {0}: node.name
+#. placeholder {0}: row.name
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Toggle folder {0}"
 msgstr "Toggle folder {0}"
@@ -4964,7 +4963,7 @@ msgstr "Undoing…"
 msgid "Undone in your draft. Apply it to change your manuscript."
 msgstr "Undone in your draft. Apply it to change your manuscript."
 
-#: src/features/import/placements.ts
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
 msgstr "Unfiled"

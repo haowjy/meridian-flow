@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ImportRunInfo } from "@/client/query/context-catalog-projection";
 import { runSentence } from "./reason-copy";
+import type { ImportRunInfo } from "./tree-rows";
 
 const run = (total: number, arrived: number): ImportRunInfo => ({
   importId: "i",

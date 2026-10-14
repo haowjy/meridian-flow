@@ -10,6 +10,7 @@ import { displayOf } from "./import-store";
 import { buildManifest } from "./manifest";
 import type { Selection } from "./selection";
 import { withImportRows } from "./tree-projection";
+import { rowName } from "./tree-rows";
 
 const announced = vi.hoisted(() => [] as string[]);
 vi.mock("@/client/stores/thread-store/announcements", () => ({
@@ -811,8 +812,8 @@ describe("ImportCoordinator seen ids and bridges", () => {
       findDocument: () => null,
     } as never;
     const names = withImportRows(empty, "kb", view ? [view] : [])
-      .children("root")
-      .map((node) => node.name);
+      .rows("root")
+      .map(rowName);
     expect(names).not.toContain("vault");
 
     // The other rows are bridged until their bridges close; then the finished run retires.
@@ -916,8 +917,8 @@ describe("ImportCoordinator lifetime", () => {
       await until(() => planned);
       const names = () =>
         withImportRows(emptyCatalog(), "kb", coordinator.getSnapshot().imports)
-          .children("root")
-          .map((node) => node.name);
+          .rows("root")
+          .map(rowName);
       expect(names()).toContain("vault");
       await coordinator.refreshOpen();
       await coordinator.read(importId);

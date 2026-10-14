@@ -7,10 +7,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus, ImportIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  CatalogFile as ContextFile,
-  ImportRowInfo,
-} from "@/client/query/context-catalog-projection";
+import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
@@ -18,7 +15,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { type ImportDestination, isImportScheme } from "@/features/import/destination";
+import { destinationOf, isImportScheme } from "@/features/import/destination";
 import { ImportMenuItems } from "@/features/import/ImportMenuItems";
 import {
   type PickKind,
@@ -26,7 +23,8 @@ import {
   useOptionalImports,
 } from "@/features/import/ImportProvider";
 import { canPickFolders } from "@/features/import/SelectionPicker";
-import { useImportedCatalog } from "@/features/import/use-imported-catalog";
+import { type ImportRowInfo, rowId, rowKind } from "@/features/import/tree-rows";
+import { useImportedTree } from "@/features/import/use-imported-tree";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -134,26 +132,6 @@ export function ContextTreePanel({
   );
 }
 
-/** Where an import lands when dropped on, or started from, this target. */
-function importDestination(target: TreeDropTarget): ImportDestination | null {
-  if (!isImportScheme(target.scheme)) return null;
-  return target.folder
-    ? {
-        scheme: target.scheme,
-        path: target.folder.path,
-        uri: target.folder.uri,
-        name: target.folder.name,
-        folderId: target.folder.entryId,
-      }
-    : {
-        scheme: target.scheme,
-        path: "/",
-        uri: `${target.scheme}://`,
-        name: schemeLabel(target.scheme),
-        folderId: null,
-      };
-}
-
 function SchemeSection({
   catalogState,
   projectId,
@@ -184,16 +162,17 @@ function SchemeSection({
   // lands inside.
   const { isComplete, isError, refetch } = catalogState;
   const imports = useOptionalImports();
-  const catalog = useImportedCatalog(catalogState.catalog, scheme);
+  const catalog = catalogState.catalog;
+  const tree = useImportedTree(catalog, scheme);
   const folderIds = useMemo(() => {
-    if (!catalog || !isComplete) return null;
+    if (!tree || !isComplete) return null;
     return treeFolderIds((parentId) =>
-      catalog
-        .children(parentId ?? catalog.root.entryId)
-        .filter((entry) => entry.kind === "dir")
-        .map((entry) => entry.entryId),
+      tree
+        .rows(parentId ?? tree.root.entryId)
+        .filter((row) => rowKind(row) === "dir")
+        .map(rowId),
     );
-  }, [catalog, isComplete]);
+  }, [tree, isComplete]);
   const { expanded, setExpanded, isExpanded, toggleEntry, setExpandedEntryIds } = useTreeExpansion(
     projectId,
     `editor:${scheme}:${isWorkScopedProjectContextScheme(scheme) ? editorWorkId : "project"}`,
@@ -301,9 +280,9 @@ function SchemeSection({
   const importRoutes = useMemo<TreeDropRoutes>(
     () => ({
       files: {
-        accepts: (target) => importDestination(target) !== null,
+        accepts: (target) => destinationOf(target.scheme, target.folder) !== null,
         drop: (target, items) => {
-          const destination = importDestination(target);
+          const destination = destinationOf(target.scheme, target.folder);
           if (destination) dropImport?.(destination, items);
         },
       },
@@ -313,7 +292,7 @@ function SchemeSection({
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
-      catalog
+      tree
         ? ({
             projectId,
             owner: { workId: editorWorkId },
@@ -339,12 +318,12 @@ function SchemeSection({
               ? {
                   folders: canPickFolders(),
                   start: (folder, kind) => {
-                    const destination = importDestination({ scheme, folder });
+                    const destination = destinationOf(scheme, folder);
                     if (destination) pickImport?.(destination, kind);
                   },
                 }
               : undefined,
-            catalog,
+            tree,
             isExpanded,
             toggleEntry,
           } satisfies TreeEnv)
@@ -364,7 +343,7 @@ function SchemeSection({
       onCreateDone,
       isExpanded,
       toggleEntry,
-      catalog,
+      tree,
     ],
   );
 
@@ -380,11 +359,11 @@ function SchemeSection({
       onExpandedChange={handleExpandedChange}
       onOpenExpanded={() => setExpanded(true)}
       onRequestCreate={requestCreate}
-      importInfo={catalog?.root.import}
+      importInfo={tree?.statusOf(tree.root.entryId)}
       onImport={
         importable
           ? (kind) => {
-              const destination = importDestination({ scheme, folder: null });
+              const destination = destinationOf(scheme, null);
               if (destination) pickImport?.(destination, kind);
             }
           : undefined
@@ -396,17 +375,17 @@ function SchemeSection({
     <TreeDropScope routes={importRoutes}>
       <section>
         {header}
-        {expanded && catalog && env ? (
+        {expanded && tree && env ? (
           <TreeEnvProvider value={env}>
             <div>
-              <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+              <TreeChildren parentId={tree.root.entryId} parentPath="" depth={1} />
               {/* "No context files yet." is a claim about the tree, so it waits
                 for a RESOLVED tree. While the query is in flight with nothing
                 cached the pane body stays blank (no spinner) — prefetch at
                 mount makes that window nearly unhittable. */}
               {isError ? (
                 <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-              ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
+              ) : tree.rows(tree.root.entryId).length === 0 && !creating ? (
                 <EmptyHint depth={1}>
                   <Trans>No context files yet.</Trans>
                 </EmptyHint>

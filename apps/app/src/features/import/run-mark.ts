@@ -4,9 +4,10 @@
  * Stop dialog need. A pure function of the import's state; the tree projection
  * places it and the mark's menu offers the commands each kind allows.
  */
-import type { ImportRunInfo } from "@/client/query/context-catalog-projection";
+
 import { effectiveCounts, type ImportState } from "./import-state";
 import { displayOf } from "./import-store";
+import type { ImportRunInfo } from "./tree-rows";
 
 export function runInfoOf(
   importId: string,

@@ -5,10 +5,9 @@
  * when no predicted root row can. One contract for the tree, the phone listing and
  * the progress panel.
  */
-import { t } from "@lingui/core/macro";
 import type { ImportScheme, ImportSummary } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { ImportDestination } from "./destination";
+import { areaLabel, type ImportDestination } from "./destination";
 import { fullyRead, type ImportState } from "./import-state";
 
 /** An area, or a folder in it (null: the area's own root header). */
@@ -56,14 +55,6 @@ export function destinationFromSummary(summary: ImportSummary): ImportDestinatio
     name: path === "/" ? areaLabel(scheme) : path.slice(path.lastIndexOf("/") + 1),
     folderId: summary.destination.folderId,
   };
-}
-
-function areaLabel(scheme: ImportDestination["scheme"]): string {
-  return scheme === "manuscript"
-    ? t`Manuscript`
-    : scheme === "unfiled"
-      ? t`Unfiled`
-      : t`Knowledge Base`;
 }
 
 /** The target of one import: from the run's predicted rows until the status is read in full, then from the status. */

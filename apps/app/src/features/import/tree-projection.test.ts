@@ -17,6 +17,7 @@ import type { LocalPhase } from "./display-state";
 import type { ImportState } from "./import-state";
 import { targetOf } from "./placements";
 import { type ProjectedImport, withImportRows } from "./tree-projection";
+import { type ImportedTree, rowId, rowKind, rowName } from "./tree-rows";
 
 type Tree =
   | { dir: string; name: string; kids: Tree[] }
@@ -85,11 +86,11 @@ function catalogOf(...top: Tree[]): CatalogContextView {
 }
 
 /** The drawn tree as text: `~` arriving, `!` failed, `*` drawn by the importing tab alone. */
-function drawn(view: CatalogContextView, parentId = "root", depth = 0): string[] {
-  return view.children(parentId).flatMap((node) => {
-    const mark = `${node.import?.client ? "*" : ""}${node.import?.arriving ? "~" : ""}${node.import?.failure ? "!" : ""}`;
-    const line = `${"  ".repeat(depth)}${node.name}${mark}`;
-    return node.kind === "dir" ? [line, ...drawn(view, node.entryId, depth + 1)] : [line];
+function drawn(view: ImportedTree, parentId = "root", depth = 0): string[] {
+  return view.rows(parentId).flatMap((row) => {
+    const mark = `${row.origin === "import" ? "*" : ""}${row.status?.arriving ? "~" : ""}${row.status?.failure ? "!" : ""}`;
+    const line = `${"  ".repeat(depth)}${rowName(row)}${mark}`;
+    return rowKind(row) === "dir" ? [line, ...drawn(view, rowId(row), depth + 1)] : [line];
   });
 }
 
@@ -280,8 +281,8 @@ describe("withImportRows", () => {
       importOf({ accepted, seen: ["art", "m2"] }),
     ]);
     expect(drawn(view)).toEqual(["Art~", "  map0.png*~", "  map1.png*~!", "  map2.png"]);
-    const failed = view.children("art").find((node) => node.name === "map1.png");
-    expect(failed?.kind === "file" && failed.import?.failure).toMatchObject({
+    const failed = view.rows("art").find((row) => rowName(row) === "map1.png");
+    expect(failed?.status?.failure).toMatchObject({
       entryId: 1,
       reason: "upload_failed",
       canRetry: false,
@@ -333,12 +334,12 @@ describe("withImportRows", () => {
 
   it("16: a refused plan puts the warning on the root row, or the destination for loose files", () => {
     const phase: LocalPhase = { kind: "not-started", code: "too_many_files" };
-    const marks = (view: CatalogContextView, parentId = "root"): string[] =>
+    const marks = (view: ImportedTree, parentId = "root"): string[] =>
       view
-        .children(parentId)
-        .flatMap((node) => [
-          `${node.name}${node.import?.notStarted ? "!" : ""}${node.import?.arriving ? "~" : ""}`,
-          ...(node.kind === "dir" ? marks(view, node.entryId) : []),
+        .rows(parentId)
+        .flatMap((row) => [
+          `${rowName(row)}${row.status?.notStarted ? "!" : ""}${row.status?.arriving ? "~" : ""}`,
+          ...(rowKind(row) === "dir" ? marks(view, rowId(row)) : []),
         ]);
     const folderRows = [
       { ...row("book", null, "dir", "Book"), relPath: "" },
@@ -370,7 +371,9 @@ describe("withImportRows", () => {
       held: true,
       roots: [{ rootId: 0, kind: "folder", name: "Export" }],
     });
-    expect(withImportRows(catalogOf(), "kb", [unreadable]).root.import?.notStarted).toMatchObject({
+    expect(
+      withImportRows(catalogOf(), "kb", [unreadable]).statusOf("root")?.notStarted,
+    ).toMatchObject({
       code: "export_marker_invalid",
     });
     // A valid export goes straight to its areas, so it has no root folder row either.
@@ -380,10 +383,11 @@ describe("withImportRows", () => {
       roots: [{ rootId: 0, kind: "folder", name: "Export" }],
     });
     const manuscript = withImportRows(catalogOf(), "manuscript", [routed]);
-    expect(manuscript.root.import?.notStarted).toMatchObject({ importId: "i" });
+    expect(manuscript.statusOf("root")?.notStarted).toMatchObject({ importId: "i" });
     // Another area is not its business: that view is the catalog's own.
-    const kb = catalogOf();
-    expect(withImportRows(kb, "kb", [routed])).toBe(kb);
+    const kb = withImportRows(catalogOf(), "kb", [routed]);
+    expect(kb.statusOf("root")).toBeUndefined();
+    expect(drawn(kb)).toEqual([]);
   });
 
   it("5: an unlanded file stays under its folder after the writer moves it to another area", () => {
@@ -392,31 +396,29 @@ describe("withImportRows", () => {
     const view = withImportRows(manuscript, "manuscript", [importOf({ accepted, seen: ["art"] })]);
     expect(drawn(view, "art")).toEqual(["map0.png*~"]);
     // An area the import cannot land in keeps its own view.
-    const away = catalogOf();
-    expect(
-      withImportRows(away, "unfiled", [
-        importOf({ accepted: { entries: [entry(0, "m0", "art")] }, seen: ["art"] }),
-      ]),
-    ).toBe(away);
+    const away = withImportRows(catalogOf(), "unfiled", [
+      importOf({ accepted: { entries: [entry(0, "m0", "art")] }, seen: ["art"] }),
+    ]);
+    expect(drawn(away)).toEqual([]);
   });
 
   it("shows the destination as reading while the selection is read", () => {
     const reading = importOf({ phase: { kind: "reading", count: 3 }, folderId: "dest", rows: [] });
     const view = withImportRows(catalogOf(dir("dest", "Lore")), "kb", [reading]);
-    expect(view.children("root")[0].import?.reading).toBe(true);
+    expect(view.statusOf("dest")?.reading).toBe(true);
     const atRoot = withImportRows(catalogOf(), "kb", [
       importOf({ phase: { kind: "reading", count: 3 }, rows: [] }),
     ]);
-    expect(atRoot.root.import?.reading).toBe(true);
+    expect(atRoot.statusOf("root")?.reading).toBe(true);
   });
 
   it("marks the destination as preparing until the server answers", () => {
     const preparing = importOf({ phase: { kind: "preparing" }, folderId: "dest", rows: [] });
     const view = withImportRows(catalogOf(dir("dest", "Lore")), "kb", [preparing]);
-    expect(view.children("root")[0].import?.preparing).toEqual({ importId: "i" });
+    expect(view.statusOf("dest")?.preparing).toEqual({ importId: "i" });
     const answered = importOf({ phase: { kind: "preparing" }, folderId: "dest", accepted: {} });
     const after = withImportRows(catalogOf(dir("dest", "Lore")), "kb", [answered]);
-    expect(after.children("root")[0].import?.preparing).toBeUndefined();
+    expect(after.statusOf("dest")?.preparing).toBeUndefined();
   });
 
   it("offers Retry only while this tab holds the files", () => {
@@ -424,8 +426,7 @@ describe("withImportRows", () => {
       entries: [entry(1, "m1", null, { state: "failed", reason: "upload_failed" })],
     };
     const held = withImportRows(catalogOf(), "kb", [importOf({ accepted, held: true })]);
-    const node = held.children("root")[0];
-    expect(node.kind === "file" && node.import?.failure?.canRetry).toBe(true);
+    expect(held.rows("root")[0]?.status?.failure?.canRetry).toBe(true);
   });
 });
 
@@ -433,7 +434,7 @@ describe("run marks", () => {
   const book = dir("book", "Book");
   const picked: ImportStatus["roots"] = [{ rootId: 0, kind: "folder", name: "Book", id: "book" }];
   const runOf = (item: ProjectedImport) =>
-    withImportRows(catalogOf(book), "kb", [item]).children("root")[0]?.import?.run;
+    withImportRows(catalogOf(book), "kb", [item]).statusOf("book")?.run;
 
   it("marks a root folder sending, with how many files arrived", () => {
     const run = runOf(
@@ -484,6 +485,6 @@ describe("run marks", () => {
         },
       }),
     ]);
-    expect(view.root.import?.run?.kind).toBe("sending");
+    expect(view.statusOf("root")?.run?.kind).toBe("sending");
   });
 });

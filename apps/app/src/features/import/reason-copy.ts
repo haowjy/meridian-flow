@@ -1,7 +1,7 @@
 /** Failure reasons and refusals as sentences. The server sends codes; the app writes the words. */
 import { plural, t } from "@lingui/core/macro";
 import type { ImportEntryReason, ImportRefusalCode } from "@meridian/contracts";
-import type { ImportRunInfo } from "@/client/query/context-catalog-projection";
+import type { ImportRunInfo } from "./tree-rows";
 
 const serverError = () => t`Something went wrong on our side. Try again.`;
 

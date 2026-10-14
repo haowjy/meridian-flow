@@ -1472,7 +1472,7 @@ msgid "Couldn't finish that step"
 msgstr ""
 
 #. placeholder {0}: failureSentence(reason)
-#: src/features/project/context/NamespaceFailureMark.tsx
+#: src/features/project/context/ImportRowStatus.tsx
 msgid "Couldn't import this file. {0}"
 msgstr ""
 
@@ -2601,7 +2601,7 @@ msgstr ""
 msgid "Keep importing"
 msgstr ""
 
-#: src/features/import/placements.ts
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Knowledge Base"
 msgstr ""
@@ -2776,7 +2776,7 @@ msgstr ""
 msgid "Manage billing"
 msgstr ""
 
-#: src/features/import/placements.ts
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Manuscript"
 msgstr ""
@@ -3701,10 +3701,9 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/import/ImportDocumentNotice.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
-#: src/features/project/context/ContextTreeRows.tsx
+#: src/features/project/context/ImportRowStatus.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
@@ -4837,7 +4836,7 @@ msgid "Today"
 msgstr "今天"
 
 #. placeholder {0}: dir.name
-#. placeholder {0}: node.name
+#. placeholder {0}: row.name
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Toggle folder {0}"
 msgstr ""
@@ -4964,7 +4963,7 @@ msgstr ""
 msgid "Undone in your draft. Apply it to change your manuscript."
 msgstr ""
 
-#: src/features/import/placements.ts
+#: src/features/import/destination.ts
 #: src/features/project/context/context-schemes.ts
 msgid "Unfiled"
 msgstr ""
