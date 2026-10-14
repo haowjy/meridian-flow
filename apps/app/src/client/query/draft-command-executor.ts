@@ -33,7 +33,6 @@ import {
   beginChangeCommand,
   beginDraftCommand,
   beginIntentDrain,
-  bindClaimCommandId,
   type ChangeFailureCode,
   type ChangeSelection,
   claimIsLive,
@@ -143,36 +142,34 @@ export function newestKnownProposal(queryClient: QueryClient, draft: DraftRef): 
   return known.length ? Math.max(...known) : undefined;
 }
 
+/**
+ * The one draft-read invalidation: hints, lists, previews and link answers all
+ * re-read after any command. `documentId` narrows previews to one document;
+ * a Work-wide command omits it and refreshes every document's.
+ */
 function refresh(
   queryClient: QueryClient,
-  draft: DraftRef,
+  scope: Scope & { documentId?: string },
   threadId: string | null,
   preview = true,
 ): Promise<void> {
-  bumpDraftLinkEpoch(draft.projectId);
+  bumpDraftLinkEpoch(scope.projectId);
   if (threadId) {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
   }
-  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(draft.projectId) });
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(scope.projectId) });
   void queryClient.invalidateQueries({
-    queryKey: projectQueryKeys.documentDraftHintsOf(draft.projectId),
+    queryKey: projectQueryKeys.documentDraftHintsOf(scope.projectId),
   });
+  const documents = ["projects", scope.projectId, "works", scope.workId, "documents"];
   return Promise.all([
     queryClient.invalidateQueries({
-      queryKey: projectQueryKeys.workDrafts(draft.projectId, draft.workId),
+      queryKey: projectQueryKeys.workDrafts(scope.projectId, scope.workId),
     }),
     preview
       ? queryClient.invalidateQueries({
-          queryKey: [
-            "projects",
-            draft.projectId,
-            "works",
-            draft.workId,
-            "documents",
-            draft.documentId,
-            "draft",
-          ],
+          queryKey: scope.documentId ? [...documents, scope.documentId, "draft"] : documents,
         })
       : Promise.resolve(),
   ]).then(() => undefined);
@@ -333,7 +330,6 @@ async function execute(
     const commandId = commandIdFor(draft, kind, digest);
     // The body is frozen from here: every resend of this command carries this id and these bytes.
     const request = { ...body, commandId };
-    bindClaimCommandId(claim, commandId);
     const send = (): Promise<CommandWire> => {
       if (!claimIsLive(claim)) throw new Error("Draft command capability revoked");
       if (!body) return Promise.resolve({ status: "gone", draftId: "", itemKey: draft.itemKey });
@@ -803,21 +799,7 @@ async function executeWorkWide(
   const outcomes = new Map<string, DraftCommandOutcome>();
   let held: { commandId: string; digest: string } | null = null;
   const live = () => claims.some(({ claim }) => claimIsLive(claim));
-  const refreshWork = () => {
-    bumpDraftLinkEpoch(scope.projectId);
-    if (threadId) {
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
-      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
-    }
-    return Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDrafts(scope.projectId, scope.workId),
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["projects", scope.projectId, "works", scope.workId, "documents"],
-      }),
-    ]).then(() => undefined);
-  };
+  const refreshWork = () => refresh(queryClient, scope, threadId);
   const settle = (
     each: (claim: DraftClaim, row: ThreadDraftListItem) => DraftCommandOutcome | null,
   ) => {
@@ -851,7 +833,6 @@ async function executeWorkWide(
     const digest = JSON.stringify(items);
     const commandId = commandIdFor(claims[0].claim.draft, `work-${mode}`, digest);
     held = { commandId, digest };
-    for (const { claim } of claims) bindClaimCommandId(claim, commandId);
     const settled = await queryClient
       .getMutationCache()
       .build<
