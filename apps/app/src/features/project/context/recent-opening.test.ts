@@ -17,6 +17,12 @@ const tab = {
 describe("recentOpening", () => {
   it("opens a live document and refuses a draft-only review", () => {
     expect(recentOpening("p", tab, "now")?.documentId).toBe("doc-1");
-    expect(recentOpening("p", { ...tab, draftOnly: true } as ContextTab, "now")).toBeNull();
+    expect(
+      recentOpening(
+        "p",
+        { ...tab, reviews: { w: { itemKey: "i", tabInstanceToken: "t" } } } as ContextTab,
+        "now",
+      ),
+    ).toBeNull();
   });
 });

@@ -71,7 +71,6 @@ const draftTab: ServerContextTab = {
   editable: true,
   filetype: "markdown",
   schemaType: "document",
-  draftOnly: true,
   reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" } },
 };
 

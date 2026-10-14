@@ -33,7 +33,7 @@ import {
   readAccountRecents,
   subscribeAccountRecents,
 } from "@/client/recents";
-import { useContextTabs, useContextTabsStore } from "@/client/stores";
+import { reviewEntryOf, useContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
   readRecentRoutes,
@@ -538,10 +538,8 @@ function HydratedReviewControllers({
       changeId: props.reviewChangeId,
       draftOnly: workspace.tabs.some(
         (tab) =>
-          tab.kind === "tracked" &&
-          tab.draftOnly &&
           tab.documentId === props.reviewAddressDocumentId &&
-          Boolean(props.editorWorkId && tab.reviews?.[props.editorWorkId]),
+          Boolean(props.editorWorkId && reviewEntryOf(tab, props.editorWorkId)),
       ),
     },
   });

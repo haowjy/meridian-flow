@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type ContextTab,
   editorTabsForWork,
   getContextTabs,
+  isDraftOnly,
   rehydrateEditorWorkspace,
   useContextTabsStore,
 } from "@/client/stores";
@@ -19,7 +21,6 @@ function draftTab(token = "tab-a", workId = "work-a", itemKey = "draft-a") {
     editable: true as const,
     filetype: "markdown" as const,
     schemaType: "document" as const,
-    draftOnly: true,
     reviews: { [workId]: { itemKey, tabInstanceToken: token } },
   };
 }
@@ -98,7 +99,7 @@ describe("draft tab settlement", () => {
     const slice = getContextTabs(project);
     expect(slice.tabs).toHaveLength(1);
     expect(slice.tabs[0]).toMatchObject({ documentId: "document-a", resourceHandle: "handle-h" });
-    expect(slice.tabs[0]?.draftOnly).toBeUndefined();
+    expect(slice.tabs[0] && isDraftOnly(slice.tabs[0])).toBe(false);
     expect(slice.selectedTabIdByWork).toEqual({ "work-a": "document-a" });
   });
 
@@ -143,7 +144,7 @@ describe("draft tab settlement", () => {
       reviews: { "work-a": shared.reviews!["work-a"]! },
     });
     expect(getContextTabs("project-a").tabs).toHaveLength(1);
-    expect(getContextTabs("project-a").tabs[0]?.draftOnly).toBeUndefined();
+    expect(isDraftOnly(getContextTabs("project-a").tabs[0] as ContextTab)).toBe(false);
     expect(inWork("work-a")).toEqual(["document-a"]);
     expect(inWork("work-b")).toEqual(["document-a"]);
   });
@@ -197,7 +198,7 @@ describe("draft tab settlement", () => {
     // The removal guard no longer repairs the address away from the draft.
     expect(updateSearch).not.toHaveBeenCalled();
     expect(getContextTabs("project-a").tabs).toMatchObject([
-      { documentId: "document-a", draftOnly: true },
+      { documentId: "document-a", reviews: expect.any(Object) },
     ]);
   });
 });
