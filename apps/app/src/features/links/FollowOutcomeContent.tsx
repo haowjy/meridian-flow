@@ -21,7 +21,6 @@ import { type LineageKey, useLineageTitle } from "@/client/query/useLineageTitle
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { addressDocumentName, type LinkFollowOutcome, linkTargetLabel } from "@/core/editor/links";
-import { requestEditorFocus } from "@/features/editor/focus-on-open";
 import { documentLocation, schemeIcon } from "@/features/project/context/context-schemes";
 
 import type { LinkDocumentRef } from "./follow-link";
@@ -167,8 +166,7 @@ export function FollowOutcomeContent({
               const documentId = await create(creation);
               if (!documentId) return;
               onClose();
-              requestEditorFocus(documentId);
-              await onOpen({ documentId });
+              await onOpen({ documentId, focus: true });
             }}
           >
             {t`Create “${name}”`}
