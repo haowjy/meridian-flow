@@ -65,6 +65,8 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
     expect(changes.roots.map((root) => root.rootId)).toEqual([0]);
     const finished = await service.finish(plan.importId, projectId);
     expect(finished?.counts).toMatchObject({ notImported: 2, skipped: 1 });
+    // The open list is nonterminal imports only: a finished one is read by id.
+    expect(await service.listOpen(projectId)).toEqual([]);
     const dismissed = await service.dismiss(plan.importId, projectId);
     expect(dismissed.dismissedAt).not.toBeNull();
     expect(BigInt(dismissed.version)).toBeGreaterThan(BigInt(finished?.version ?? "0"));

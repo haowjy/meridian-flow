@@ -261,12 +261,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         const rows = await tx()
           .select()
           .from(imports)
-          .where(
-            and(
-              eq(imports.projectId, projectId),
-              or(sql`${imports.state} <> 'finished'`, isNull(imports.dismissedAt)),
-            ),
-          )
+          .where(and(eq(imports.projectId, projectId), sql`${imports.state} <> 'finished'`))
           .orderBy(desc(imports.createdAt));
         return Promise.all(rows.map((row) => summary(record(row))));
       }),
