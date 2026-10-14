@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vite
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray) => strings[0],
 }));
+let onEvent: (frame: unknown) => void = () => undefined;
 const api = vi.hoisted(() => ({ withdrawThreadControl: vi.fn() }));
 vi.mock("@/client/api/threads-api", () => api);
 const announcements = vi.hoisted(() => ({
@@ -17,16 +18,24 @@ const announcements = vi.hoisted(() => ({
 }));
 vi.mock("@/client/stores", () => announcements);
 vi.mock("@/client/providers/TransportProvider", () => ({
-  useThreadTransport: () => ({ subscribe: () => () => undefined }),
+  useThreadTransport: () => ({
+    subscribe: (_id: string, handlers: { onEvent: (frame: unknown) => void }) => {
+      onEvent = handlers.onEvent;
+      return () => undefined;
+    },
+  }),
 }));
 vi.mock("@/client/query/project-invalidation", () => ({
   invalidateProjectThreadData: vi.fn(),
+  invalidateWriteModeReads: vi.fn(),
 }));
 
+import { EventType } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
+import { invalidateWriteModeReads } from "@/client/query/project-invalidation";
 import { type SwitchJournal, type SwitchView, useSwitchView } from "./useSwitchView";
 
 type SwitchViewInput = Parameters<typeof useSwitchView>[0];
@@ -232,4 +241,29 @@ it("announces a switch as queued from the server's delivery state, not the runni
   replyRunning = false;
   await show([answered("a1", "awaiting_run", "4"), answered("a2", "waiting", "5")]);
   expect(announcements.announce).toHaveBeenLastCalledWith("Switch to draft mode queued");
+});
+
+it("invalidates thread and Works reads when a write-mode switch enters or leaves the pending inbox, not on other inbox changes", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+    ),
+  );
+  const inbox = (items: unknown[]) => ({
+    seq: "5",
+    event: { type: EventType.CUSTOM, name: "meridian.inbox.changed", value: { items } },
+  });
+  const control = { id: "c1", control: { kind: "write_mode", mode: "draft" } };
+  const message = { id: "m1", intent: "message" };
+  const frame = async (items: unknown[]) => act(async () => onEvent(inbox(items)));
+  await frame([message]);
+  expect(invalidateWriteModeReads).not.toHaveBeenCalled();
+  await frame([message, control]);
+  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(1);
+  await frame([control]);
+  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(1);
+  await frame([]);
+  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(2);
 });
