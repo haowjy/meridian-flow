@@ -257,6 +257,19 @@ locked set. It keeps its own root transaction, not the runtime inbox owner.
 The change-trail scheduler count is dispatched outbox rows, not reconciliation
 transitions or settlement-recovery attempts. Other lanes report candidate counts.
 
+## Settlement failure reporting
+
+A failed batch retries with a backoff capped at 60 s; there is no dead letter.
+Reports carry ids in correlation and codes from `DIAGNOSTIC_CODE_ENUMS`:
+
+- `settlement.batch_failed` (warn) on every failed attempt except the 10th.
+- `settlement.batch_stuck` (error) once, at attempt 10.
+- `settlement.batch_blocked` (error, with `code`) on every transition to blocked.
+- `settlement.failure_record_failed` (error) when the failure record cannot be written.
+
+Only `DurableTrailSeedError` (a corrupt trail seed) blocks a batch at claim; any
+other claim failure is recorded as an ordinary failed attempt.
+
 ## Undo-restored publication ownership
 
 `branch-trail-projection.ts` retains physical replay for structural replacement
