@@ -5,16 +5,27 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { FilePlus, FolderInput, FolderPlus } from "lucide-react";
+import { FilePlus, FolderPlus, ImportIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type ImportDestination, isImportScheme } from "@/features/import/destination";
-import { useImportsSnapshot, useOptionalImports } from "@/features/import/ImportProvider";
+import { ImportMenuItems } from "@/features/import/ImportMenuItems";
+import {
+  type PickKind,
+  useImportsSnapshot,
+  useOptionalImports,
+} from "@/features/import/ImportProvider";
 import { placementsOf } from "@/features/import/placements";
+import { canPickFolders } from "@/features/import/SelectionPicker";
 import { pseudoRowId } from "@/features/import/tree-projection";
-import { useImportedCatalog, useRevealRequest } from "@/features/import/use-imported-catalog";
+import { useImportedCatalog } from "@/features/import/use-imported-catalog";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -233,12 +244,6 @@ function SchemeSection({
       });
     }
   }, [importSnapshot, scheme, setExpanded, revealPath, setExpandedEntryIds, catalog]);
-  const reveal = useRevealRequest(scheme);
-  useEffect(() => {
-    if (!reveal) return;
-    setExpanded(true);
-    revealPath(reveal.path);
-  }, [reveal, setExpanded, revealPath]);
   // The plan's answer gives the new top-level folders real ids; they open one level too.
   const opened = useRef(new Set<string>());
   useEffect(() => {
@@ -289,18 +294,19 @@ function SchemeSection({
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
   const importable = imports !== null && isImportScheme(scheme);
-  const openImport = imports?.openImport;
+  const pickImport = imports?.pick;
+  const dropImport = imports?.drop;
   const importRoutes = useMemo<TreeDropRoutes>(
     () => ({
       files: {
         accepts: (target) => importDestination(target) !== null,
         drop: (target, items) => {
           const destination = importDestination(target);
-          if (destination) openImport?.(destination, items);
+          if (destination) dropImport?.(destination, items);
         },
       },
     }),
-    [openImport],
+    [dropImport],
   );
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
@@ -328,12 +334,14 @@ function SchemeSection({
             onSelectFile,
             onRequestDelete: deleteConfirm.requestDelete,
             importHere: importable
-              ? (folder) => {
-                  const destination = importDestination({ scheme, folder });
-                  if (destination) openImport?.(destination);
+              ? {
+                  folders: canPickFolders(),
+                  start: (folder, kind) => {
+                    const destination = importDestination({ scheme, folder });
+                    if (destination) pickImport?.(destination, kind);
+                  },
                 }
               : undefined,
-            importStatusByParent: imported.statusByParent,
             catalog,
             isExpanded,
             toggleEntry,
@@ -350,11 +358,10 @@ function SchemeSection({
       requestCreate,
       deleteConfirm.requestDelete,
       importable,
-      openImport,
+      pickImport,
       onCreateDone,
       isExpanded,
       toggleEntry,
-      imported.statusByParent,
       catalog,
     ],
   );
@@ -373,9 +380,9 @@ function SchemeSection({
       onRequestCreate={requestCreate}
       onImport={
         importable
-          ? () => {
+          ? (kind) => {
               const destination = importDestination({ scheme, folder: null });
-              if (destination) openImport?.(destination);
+              if (destination) pickImport?.(destination, kind);
             }
           : undefined
       }
@@ -430,12 +437,23 @@ function AreaHeader({
   onExpandedChange: (expanded: boolean) => void;
   onOpenExpanded: () => void;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
-  /** Present where the area takes imports. */
-  onImport?: () => void;
+  /** Present where the area takes imports: opens the OS picker for a folder or files. */
+  onImport?: (kind: PickKind) => void;
 }) {
   const rootTarget = useMemo<TreeDropTarget>(() => ({ scheme, folder: null }), [scheme]);
   // Hovering a collapsed area during a drag opens it.
   const drop = useTreeDropTarget(rootTarget, { onSpring: () => !expanded && onOpenExpanded() });
+  // Actions show on a collapsed header too; running one opens the area so its result is visible.
+  const create = (kind: ContextCreateKind) => {
+    if (!expanded) onOpenExpanded();
+    onRequestCreate(kind, "");
+  };
+  const pick = onImport
+    ? (kind: PickKind) => {
+        if (!expanded) onOpenExpanded();
+        onImport(kind);
+      }
+    : undefined;
   return (
     <RailPaneHeader
       label={schemeLabel(scheme)}
@@ -451,15 +469,22 @@ function AreaHeader({
             <PaneHeaderActionButton
               icon={FilePlus}
               label={t`New file`}
-              onClick={() => onRequestCreate("file", "")}
+              onClick={() => create("file")}
             />
             <PaneHeaderActionButton
               icon={FolderPlus}
               label={t`New folder`}
-              onClick={() => onRequestCreate("folder", "")}
+              onClick={() => create("folder")}
             />
-            {onImport ? (
-              <PaneHeaderActionButton icon={FolderInput} label={t`Import…`} onClick={onImport} />
+            {pick ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <PaneHeaderActionButton icon={ImportIcon} label={t`Import…`} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <ImportMenuItems onPick={pick} />
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
           </>
         ) : undefined

@@ -1,19 +1,18 @@
 /**
- * The notice above a document that is an import's file: still arriving, paused,
- * didn't import, or written in before its text arrived. The arriving state needs
+ * The notice above a document that is an import's file: still arriving, stopped
+ * partway, didn't import, or written in before its text arrived. The arriving state needs
  * only the catalog's flag, so it shows after a reload and through a link; the
  * rest need the import's own entry for this document.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FolderInput, Loader2, TriangleAlert } from "lucide-react";
-import { type ReactNode, useEffect, useMemo } from "react";
+import { ImportIcon, Loader2, TriangleAlert } from "lucide-react";
+import { useEffect, useMemo } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
 import { Button } from "@/components/ui/button";
 import { useImports, useImportsSnapshot, useOptionalImports } from "./ImportProvider";
-import { useImportRoute } from "./import-route";
 import { effectiveEntry } from "./import-state";
 import { failureSentence } from "./reason-copy";
 import { useImport } from "./use-import";
@@ -79,12 +78,11 @@ function Notice({
   return pending ? <ArrivingNotice className={className} /> : null;
 }
 
-function ArrivingNotice({ className, action }: { className?: string; action?: ReactNode }) {
+function ArrivingNotice({ className }: { className?: string }) {
   return (
     <DocumentNotice
       className={className}
       icon={<Loader2 aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
-      action={action}
     >
       <Trans>This file is still importing. Its text will appear here.</Trans>
     </DocumentNotice>
@@ -102,7 +100,6 @@ function EntryNotice({
   className?: string;
 }) {
   const { coordinator, openContinue } = useImports();
-  const route = useImportRoute();
   const { state, display } = useImport(importId, "notice");
   const raw = useMemo(() => {
     for (const entry of state.report?.entries.values() ?? [])
@@ -112,16 +109,6 @@ function EntryNotice({
   if (!raw) return null;
   const entry = effectiveEntry(state, raw);
   const holds = state.local?.held != null;
-  const view = (
-    <Button
-      size="sm"
-      variant="outline"
-      className="[@media(pointer:coarse)]:min-h-11"
-      onClick={() => route.openReport(importId)}
-    >
-      <Trans>View import</Trans>
-    </Button>
-  );
 
   if (entry.state === "failed") {
     const wroteHere = entry.reason === "edited_before_arrival";
@@ -134,7 +121,13 @@ function EntryNotice({
           holds ? coordinator.retry(importId, [entry.entryId]) : openContinue(importId)
         }
       >
-        {wroteHere ? <Trans>Add imported text at the top</Trans> : <Trans>Retry</Trans>}
+        {!holds ? (
+          <Trans>Continue import</Trans>
+        ) : wroteHere ? (
+          <Trans>Add imported text at the top</Trans>
+        ) : (
+          <Trans>Retry</Trans>
+        )}
       </Button>
     );
     return (
@@ -146,7 +139,7 @@ function EntryNotice({
             className={wroteHere ? "size-4 text-status-warning" : "size-4 text-destructive"}
           />
         }
-        action={holds ? retry : view}
+        action={retry}
       >
         {wroteHere
           ? t`You wrote here before the imported text arrived.`
@@ -156,14 +149,23 @@ function EntryNotice({
   }
 
   if (entry.state !== "planned" && entry.state !== "landing") return null;
-  if (display !== "paused") return <ArrivingNotice className={className} action={view} />;
+  if (display !== "paused") return <ArrivingNotice className={className} />;
   return (
     <DocumentNotice
       className={className}
-      icon={<FolderInput aria-hidden className="size-4 text-status-warning" />}
-      action={view}
+      icon={<ImportIcon aria-hidden className="size-4 text-status-warning" />}
+      action={
+        <Button
+          size="sm"
+          variant="outline"
+          className="[@media(pointer:coarse)]:min-h-11"
+          onClick={() => (holds ? coordinator.resume(importId) : openContinue(importId))}
+        >
+          <Trans>Continue import</Trans>
+        </Button>
+      }
     >
-      {t`This file's import is paused.`}
+      {t`This file's import stopped partway.`}
     </DocumentNotice>
   );
 }

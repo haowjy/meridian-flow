@@ -3,9 +3,8 @@ import { plural, t } from "@lingui/core/macro";
 import { announce } from "@/client/stores/thread-store/announcements";
 import { effectiveCounts } from "./import-state";
 import { displayOf, type ImportStore } from "./import-store";
-import { buildReportModel } from "./report-model";
 
-/** Announce when this tab's import changes state: finished, paused, needs attention, didn't start, stopped. */
+/** Announce when this tab's import changes state: finished, stopped, interrupted, files failed, didn't start. */
 export function announceMilestones(store: ImportStore) {
   let last = displayOf(store.getSnapshot());
   return store.subscribe(() => {
@@ -19,20 +18,11 @@ export function announceMilestones(store: ImportStore) {
       case "finished": {
         const stopped =
           state.stop === "stopped" || (state.report?.summary.counts.notImported ?? 0) > 0;
-        if (stopped) announce(t`Import stopped.`);
-        else {
-          const looks = buildReportModel(state).worthALookCount;
-          announce(
-            plural(looks, {
-              one: "Import finished. # worth a look.",
-              other: "Import finished. # worth a look.",
-            }),
-          );
-        }
+        announce(stopped ? t`Import stopped.` : t`Import finished.`);
         break;
       }
       case "paused":
-        announce(t`Import paused.`);
+        announce(t`Import stopped partway.`);
         break;
       case "needs-attention": {
         const failed = effectiveCounts(state)?.failed ?? 0;

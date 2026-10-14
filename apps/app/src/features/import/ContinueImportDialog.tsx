@@ -27,7 +27,6 @@ import {
 import type { ImportCoordinator } from "./import-coordinator";
 import { fullyRead } from "./import-state";
 import { type BuiltManifest, buildManifest, bytesToHash } from "./manifest";
-import { namesSentence } from "./report-copy";
 import { PickZone, useSelectionPicker } from "./SelectionPicker";
 import { useSelectionReader } from "./use-selection-reader";
 
@@ -37,6 +36,16 @@ type Step =
   | { kind: "match"; built: BuiltManifest; send: number }
   | { kind: "mismatch"; difference: SelectionDifference }
   | { kind: "failed" };
+
+/** "Book", "Book and Notes.md", "Book and 3 files". */
+function namesSentence(names: readonly string[]): string {
+  const [first, ...rest] = names;
+  if (!first) return "";
+  if (rest.length === 0) return first;
+  if (rest.length === 1) return t`${first} and ${rest[0]}`;
+  const count = rest.length;
+  return plural(count, { one: `${first} and # file`, other: `${first} and # files` });
+}
 
 function differenceSentence(difference: SelectionDifference): string {
   const name = difference.name;

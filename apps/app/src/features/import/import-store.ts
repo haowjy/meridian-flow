@@ -23,7 +23,8 @@ import {
 const POLL_MS = 2000;
 const NOTICE_POLL_MS = 5000;
 
-export type Watch = "report" | "notice" | "row";
+/** `report`: an open popover reading the numbers; `notice`: an indicator or pane notice keeping up. */
+export type Watch = "report" | "notice";
 
 export class ImportStore {
   private state: ImportState;
@@ -57,21 +58,6 @@ export class ImportStore {
   };
 
   readonly getSnapshot = () => this.state;
-
-  // Hashing progress is its own channel so only the status row and report header re-render.
-  private hashed = 0;
-  private readonly hashedListeners = new Set<() => void>();
-  readonly subscribeHashed = (listener: () => void) => {
-    this.hashedListeners.add(listener);
-    return () => {
-      this.hashedListeners.delete(listener);
-    };
-  };
-  readonly getHashed = () => this.hashed;
-  setHashed(bytes: number) {
-    this.hashed = bytes;
-    for (const listener of [...this.hashedListeners]) listener();
-  }
 
   get importId() {
     return this.state.importId;
@@ -185,9 +171,6 @@ export class ImportStore {
     });
   }
 
-  private readonly wantsEntries = () =>
-    [...this.watchers.values()].some((kind) => kind === "report" || kind === "notice");
-
   /** One read: the whole report the first time or when forced, else only what changed. */
   async refresh(forceFull = false): Promise<void> {
     if (this.polling || this.disposed) return;
@@ -201,7 +184,7 @@ export class ImportStore {
       // A forced read is whole: roots and lapsed claims change without moving the version.
       if (fullyRead(report) && !forceFull) {
         this.mergeChanges(await this.api.changes(this.projectId, this.importId, report.cursor));
-      } else if (forceFull || this.wantsEntries() || this.state.local) {
+      } else if (forceFull || this.watchers.size > 0 || this.state.local) {
         this.update((state) => ({ ...state, load: state.report ? state.load : "loading" }));
         this.installReport(await this.api.report(this.projectId, this.importId));
       }

@@ -1,9 +1,11 @@
 /**
- * The project's import host: one coordinator, the dialog, the unload warning and
- * the open-imports list. Surfaces (tree headers, status rows, the report) reach
- * it through `useImports()`; none of them owns import state.
+ * The project's import host: one coordinator, the hidden pickers, the unload
+ * warning and the Continue dialog. Surfaces (tree rows and headers, the pane notice) reach it through `useImports()`; none of
+ * them owns import state. Picking or dropping starts the import at once: there
+ * is no confirm step.
  */
-import { plural } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import {
   createContext,
   type ReactNode,
@@ -11,26 +13,43 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { announce } from "@/client/stores/thread-store/announcements";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { DroppedItems } from "@/lib/dropped-items";
 import { ContinueImportDialog } from "./ContinueImportDialog";
 import type { ImportDestination } from "./destination";
-import { ImportDialog } from "./ImportDialog";
 import { ImportCoordinator, type ImportsSnapshot } from "./import-coordinator";
-import { useImportRoute } from "./import-route";
+import { readDropped } from "./read-dropped";
+import { readPicked } from "./read-picked";
+import { PickInputs } from "./SelectionPicker";
 import type { Selection } from "./selection";
+import { refusalOf } from "./selection-limits";
+
+export type PickKind = "folder" | "files";
 
 type DialogRequest =
-  | { kind: "import"; destination: ImportDestination; dropped?: DroppedItems; key: number }
-  | { kind: "continue"; importId: string; key: number };
+  | { kind: "continue"; importId: string; key: number }
+  | { kind: "refused"; message: string; key: number };
 
 type ImportsApi = {
   coordinator: ImportCoordinator;
-  openImport(destination: ImportDestination, dropped?: DroppedItems): void;
+  /** Open the OS picker; choosing something starts the import into `destination`. */
+  pick(destination: ImportDestination, kind: PickKind): void;
+  /** Start importing what was dropped from outside into `destination`. */
+  drop(destination: ImportDestination, items: DroppedItems): void;
   openContinue(importId: string): void;
 };
 
@@ -55,9 +74,11 @@ export function ImportProvider({
   children: ReactNode;
 }) {
   const coordinator = useMemo(() => new ImportCoordinator(projectId), [projectId]);
-  const route = useImportRoute();
-  const phone = usePhoneShell();
   const [request, setRequest] = useState<DialogRequest | null>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
+  const filesInput = useRef<HTMLInputElement>(null);
+  // The OS picker answers later, through the input's change event.
+  const picking = useRef<{ destination: ImportDestination; kind: PickKind } | null>(null);
 
   useEffect(() => {
     const stop = coordinator.watchOpen();
@@ -78,21 +99,14 @@ export function ImportProvider({
     return () => window.removeEventListener("beforeunload", warn);
   }, [coordinator]);
 
-  const api = useMemo<ImportsApi>(
-    () => ({
-      coordinator,
-      openImport: (destination, dropped) =>
-        setRequest({ kind: "import", destination, dropped, key: Date.now() }),
-      openContinue: (importId) => setRequest({ kind: "continue", importId, key: Date.now() }),
-    }),
-    [coordinator],
-  );
-
   const begin = useCallback(
-    (selection: Selection, destination: ImportDestination) => {
-      setRequest(null);
-      const importId = coordinator.start(selection, destination);
-      coordinator.notifyStarted();
+    (selection: Selection, destination: ImportDestination, source: PickKind | "drop") => {
+      const refusal = refusalOf(selection, source);
+      if (refusal) {
+        setRequest({ kind: "refused", message: refusal, key: Date.now() });
+        return;
+      }
+      coordinator.start(selection, destination);
       const files = selection.roots.reduce((sum, root) => sum + root.files.length, 0);
       const into = destination.name;
       announce(
@@ -101,27 +115,43 @@ export function ImportProvider({
           other: `Importing # files into ${into}.`,
         }),
       );
-      // The phone shows the destination folder, its status row first; the desktop
-      // opens the report beside the arriving rows.
-      if (phone)
-        route.showFolder(destination.scheme, destination.path === "/" ? "" : destination.path);
-      else route.openReport(importId);
     },
-    [coordinator, route, phone],
+    [coordinator],
+  );
+
+  const api = useMemo<ImportsApi>(
+    () => ({
+      coordinator,
+      pick: (destination, kind) => {
+        picking.current = { destination, kind };
+        (kind === "folder" ? folderInput : filesInput).current?.click();
+      },
+      drop: (destination, items) => {
+        void readDropped(items).then((selection) => begin(selection, destination, "drop"));
+      },
+      openContinue: (importId) => setRequest({ kind: "continue", importId, key: Date.now() }),
+    }),
+    [coordinator, begin],
+  );
+
+  const picked = useCallback(
+    async (files: File[]) => {
+      const choice = picking.current;
+      picking.current = null;
+      if (!choice) return;
+      begin(await readPicked(files), choice.destination, choice.kind);
+    },
+    [begin],
   );
 
   return (
     <ImportsContext.Provider value={api}>
       {children}
-      {request?.kind === "import" ? (
-        <ImportDialog
-          key={request.key}
-          destination={request.destination}
-          dropped={request.dropped}
-          onImport={(selection) => begin(selection, request.destination)}
-          onClose={() => setRequest(null)}
-        />
-      ) : null}
+      <PickInputs
+        folderRef={folderInput}
+        filesRef={filesInput}
+        onPick={(files) => void picked(files)}
+      />
       {request?.kind === "continue" ? (
         <ContinueImportDialog
           key={request.key}
@@ -130,7 +160,31 @@ export function ImportProvider({
           onClose={() => setRequest(null)}
         />
       ) : null}
+      {request?.kind === "refused" ? (
+        <RefusedDialog message={request.message} onClose={() => setRequest(null)} />
+      ) : null}
     </ImportsContext.Provider>
+  );
+}
+
+/** A pick or drop that cannot start has no row to carry the reason, so say it here. */
+function RefusedDialog({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>
+            <Trans>Nothing to import</Trans>
+          </DialogTitle>
+          <DialogDescription>{message}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button className="[@media(pointer:coarse)]:min-h-11">{t`Close`}</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

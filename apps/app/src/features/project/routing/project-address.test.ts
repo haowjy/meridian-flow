@@ -104,22 +104,3 @@ describe("readable project addresses", () => {
     expect(parseProjectAddress(`${P}/editor`, search).kind).toBe("invalid");
   });
 });
-
-describe("an import report address", () => {
-  const IMPORT = "9f1c7a62-2d1e-4f0b-8f43-0e5c0d3f7a11";
-
-  it("round-trips as the Editor's own address", () => {
-    const parsed = parseProjectAddress(`${P}/editor/imports/${IMPORT}`);
-    expect(parsed).toMatchObject({
-      kind: "valid",
-      address: { destination: { kind: "import", importId: IMPORT } },
-      href: `${P}/editor/imports/${IMPORT}`,
-    });
-  });
-
-  it("refuses an import address without a valid id", () => {
-    expect(parseProjectAddress(`${P}/editor/imports`).kind).toBe("invalid");
-    expect(parseProjectAddress(`${P}/editor/imports/not-an-id`).kind).toBe("invalid");
-    expect(parseProjectAddress(`${P}/editor/imports/${IMPORT}/extra`).kind).toBe("invalid");
-  });
-});

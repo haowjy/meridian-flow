@@ -12,23 +12,28 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FilePlus, FolderInput, FolderPlus, Plus } from "lucide-react";
+import { FilePlus, FolderPlus, ImportIcon, Plus } from "lucide-react";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { ImportMenuItems } from "@/features/import/ImportMenuItems";
+import type { PickKind } from "@/features/import/ImportProvider";
 
 import type { ContextCreateKind } from "../context/context-create-kind";
 
 export type MobileCreateEntryMenuProps = {
   /** Triggered when the user selects "New file" or "New folder". */
   onSelect: (kind: ContextCreateKind) => void;
-  /** Present where the area takes imports: opens the import dialog on this folder. */
-  onImport?: () => void;
+  /** Present where the area takes imports: opens the OS picker for an import into this folder. */
+  onImport?: (kind: PickKind) => void;
 };
 
 export function MobileCreateEntryMenu({ onSelect, onImport }: MobileCreateEntryMenuProps) {
@@ -59,10 +64,15 @@ export function MobileCreateEntryMenu({ onSelect, onImport }: MobileCreateEntryM
           <Trans>New folder</Trans>
         </DropdownMenuItem>
         {onImport ? (
-          <DropdownMenuItem className="cursor-pointer" onSelect={onImport}>
-            <FolderInput className="size-4 text-muted-foreground" aria-hidden />
-            <Trans>Import…</Trans>
-          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="cursor-pointer">
+              <ImportIcon className="size-4 text-muted-foreground" aria-hidden />
+              <Trans>Import…</Trans>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <ImportMenuItems onPick={onImport} />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>

@@ -107,8 +107,7 @@ export function ExportProjectDialog({
           </DialogTitle>
           <DialogDescription>
             <Trans>
-              A ZIP of Markdown files and folders that Obsidian can open. Includes Manuscript,
-              Knowledge Base and Unfiled.
+              A ZIP of Markdown files and folders. Includes Manuscript, Knowledge Base and Unfiled.
             </Trans>
           </DialogDescription>
         </DialogHeader>
@@ -154,7 +153,7 @@ export function ExportProjectDialog({
                       one: `# link points to ${where}, which won't be included.`,
                       other: `# links point to ${where}, which won't be included.`,
                     })}{" "}
-                    <Trans>They'll stay as Meridian links and won't open in Obsidian.</Trans>
+                    <Trans>They'll stay as Meridian links and won't open outside Meridian.</Trans>
                   </p>
                 ) : null}
                 {result.pendingDrafts > 0 ? (

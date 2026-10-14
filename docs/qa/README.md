@@ -43,6 +43,28 @@ queue. Stop only your stack with `pnpm dev --stop` when finished.
 [Writer names at intake](document-intake.md) covers prose suffixes, MIME inference,
 DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
 
+## Import
+
+Run on an owned worktree and database; use `pnpm dev:local` if the app's fixed
+port is taken. Copy `apps/server/server/domains/import/__fixtures__/notes-folder`
+somewhere outside the repository, then:
+
+1. Log in at `/api/auth/dev-login`, open a project's Editor, expand Knowledge
+   Base and hover its header. The Import… icon opens a menu with Folder… and
+   Files….
+2. Choose Folder… and give the real hidden input the copy:
+   `agent-browser upload '[data-import-input="folder"]' <copy>`. The import
+   starts with no dialog and the folder appears in the tree, muted until its
+   files land, with the area and the new folder expanded.
+3. A clean finish leaves no report, status row or badge. Open
+   `Chapters/Chapter 1 - The Gate`: Properties sits under the path bar, aligned
+   with the prose, with list values as chips.
+4. Repeat with Files… and with a drop onto a folder row (highlighted "Import
+   here"). Pick an empty folder: a dialog says there is nothing to import.
+5. To see a failed file, make a send fail (block the import's file requests in
+   the browser's network tools). The file's row shows the warning and its
+   document shows the notice with Retry.
+
 ## Before you call it a defect
 
 Two harness races have produced false defects. Rule them out first.

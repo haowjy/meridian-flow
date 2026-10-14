@@ -11,7 +11,6 @@ import type {
 } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { InlineEdit } from "@/components/ui/use-inline-edit";
-import { ImportStatusRow } from "@/features/import/ImportStatusRow";
 import { useImportRowActions } from "@/features/import/use-import-row-actions";
 import { useImportedCatalog } from "@/features/import/use-imported-catalog";
 import { cn } from "@/lib/utils";
@@ -270,11 +269,10 @@ function FolderListingBody({
 
   const shown = imported.catalog ?? catalog;
   const children = shown.children(dir.entryId);
-  const statusIds = imported.statusByParent.get(dir.entryId) ?? [];
   const folders = children.filter((child): child is ContextDir => child.kind === "dir");
   const files = children.filter((child): child is ContextFile => child.kind === "file");
 
-  if (folders.length === 0 && files.length === 0 && statusIds.length === 0) {
+  if (folders.length === 0 && files.length === 0) {
     return (
       <ListingStatus tone="muted">
         <Trans>This folder is empty.</Trans>
@@ -294,11 +292,6 @@ function FolderListingBody({
 
   return (
     <ul className="flex flex-col">
-      {statusIds.map((importId) => (
-        <li key={importId}>
-          <ImportStatusRow importId={importId} paddingLeft={16} variant="phone" />
-        </li>
-      ))}
       {folders.map((child) => (
         <MobileFolderRow
           key={child.entryId}

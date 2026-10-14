@@ -17,8 +17,6 @@ import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
-import { ImportReportPage } from "@/features/import/ImportReportPage";
-import { useImportRoute } from "@/features/import/import-route";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
@@ -30,7 +28,6 @@ import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import { recentOpening } from "./recent-opening";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
-import { useOpenImportedDocument } from "./use-open-imported-document";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
@@ -90,11 +87,7 @@ export function ContextViewer({
   // mount their own viewer surface for the active one only (heavy
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
-  // An import's report is an address of its own; while it shows, no tab is in front.
-  const importRoute = useImportRoute();
-  const reportId = importRoute.activeImportId;
-  const openByUri = useOpenImportedDocument(editorWorkId);
-  const activeTab = reportId ? null : paneState.kind === "document" ? paneState.tab : null;
+  const activeTab = paneState.kind === "document" ? paneState.tab : null;
   // Recency is recorded from the tab actually in front of the writer, not from
   // the intent to open. The device record is written in this effect, before the
   // POST; a parked restored tab is not an open.
@@ -109,7 +102,7 @@ export function ContextViewer({
     if (!opening) return;
     recordOpenedDocument(opening);
   }, [active, openedDocumentId, projectId, recordOpenedDocument]);
-  const optimisticTab = !reportId && paneState.kind === "optimistic-loading" ? paneState.tab : null;
+  const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
   // A chat's Scratch belongs to no Work, so archiving the Editor's Work never freezes it.
@@ -152,7 +145,7 @@ export function ContextViewer({
         onClose={onCloseTab}
         onNewDocument={onNewDocument}
         onShowRecents={onShowRecents}
-        recentsActive={!reportId && paneState.kind === "empty-workspace"}
+        recentsActive={paneState.kind === "empty-workspace"}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
@@ -195,8 +188,7 @@ export function ContextViewer({
             <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
           </div>
         ) : null}
-        {reportId ? <ImportReportPage importId={reportId} onOpenDocument={openByUri} /> : null}
-        {optimisticTab && !reportId ? (
+        {optimisticTab ? (
           <div className="relative min-h-0 flex-1" aria-busy>
             <DelayedContentSkeleton
               key={JSON.stringify([projectId, optimisticTab.id])}
@@ -204,17 +196,17 @@ export function ContextViewer({
             />
           </div>
         ) : null}
-        {!reportId && paneState.kind === "dead-route" ? (
+        {paneState.kind === "dead-route" ? (
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
-        {!reportId && paneState.kind === "empty-workspace" ? (
+        {paneState.kind === "empty-workspace" ? (
           <RecentDocumentsLanding
             projectId={projectId}
             editorWorkId={editorWorkId}
             onNewDocument={onNewDocument}
           />
         ) : null}
-        {!reportId && paneState.kind === "route-error" ? <RouteErrorState /> : null}
+        {paneState.kind === "route-error" ? <RouteErrorState /> : null}
       </div>
     </div>
   );
