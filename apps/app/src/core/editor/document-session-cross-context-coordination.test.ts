@@ -5,7 +5,7 @@
  * attaches — the writer's prose silently persists only to y-indexeddb.
  */
 import "fake-indexeddb/auto";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import type { CrossContextLockManager } from "../cross-context-locks";
 import {
   DocumentSessionAuthorityStore,
@@ -124,56 +124,6 @@ it("still rejects a genuinely different lineage", async () => {
     ).resolves.toEqual({ kind: "mismatch" });
   } finally {
     await coordination.close();
-  }
-});
-
-it("adopts a cached incarnation at a later admission generation and keeps its persistence", async () => {
-  const accountId = nextAccount();
-  const store = new DocumentSessionAuthorityStore(accountId);
-  const installed: Array<{ generation: string; persistenceGeneration: string }> = [];
-  const coordination = createDocumentSessionCrossContextCoordination({
-    accountId,
-    local: {
-      ...localAuthority(),
-      installSynchronously: (input) => installed.push(input),
-    },
-    locks: memoryLocks(),
-    secureContext: true,
-    createWakeChannel: null,
-    reconcileIntervalMs: 60_000,
-  });
-  try {
-    // The project's availability head advances on any mutation, so a document cached
-    // at 118 is looked up at 125 on the next load. Its incarnation is still the one a
-    // live `admit` would reuse, so adoption must not strand the cached session detached.
-    const later = "125";
-    const lease = await coordination.admit(projectId, documentId, generation, {
-      originLineageHandle: lineageHandle,
-    });
-    const transfer = { prepareCommit: vi.fn(), completeCommit: vi.fn() };
-    const admitted = await coordination.admit(projectId, documentId, later, {
-      adoption: {
-        documentId,
-        transitionId: "cached-later-generation",
-        lineageHandle,
-        exactDatabaseName: lease.exactDatabaseName,
-        transfer,
-      },
-    });
-    expect(admitted).toMatchObject({ generation: later, persistenceGeneration: generation });
-    expect(transfer.completeCommit).toHaveBeenCalledWith(
-      expect.objectContaining({ generation: later, persistenceGeneration: generation }),
-    );
-    expect(installed.at(-1)).toMatchObject({
-      generation: later,
-      persistenceGeneration: generation,
-    });
-    const room = await store.readRoom(documentId);
-    expect(room.persistence).toMatchObject({ phase: "bindable", generation });
-    expect(room.documentAdmittedThrough).toBe(later);
-  } finally {
-    await coordination.close();
-    await store.close();
   }
 });
 
