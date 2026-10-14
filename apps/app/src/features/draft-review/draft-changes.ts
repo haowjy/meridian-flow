@@ -47,7 +47,7 @@ export type DraftChangesView = DraftChangesData & {
   /** Every Apply and Discard disables on this. */
   locked: boolean;
   apply: (change: ReviewChange) => Promise<void>;
-  discard: (change: ReviewChange) => Promise<void>;
+  discard: (change: ReviewChange) => Promise<unknown>;
   /** Changes discarded in place on a surface without an editor: their rows read "Discarded" with Undo. */
   discarded?: readonly DiscardedEntry[];
   undoDiscard?: (entryId: string) => void;

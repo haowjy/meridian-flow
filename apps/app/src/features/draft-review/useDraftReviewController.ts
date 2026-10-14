@@ -13,7 +13,7 @@ import {
   useDraftCommandRecords,
 } from "@/client/query/draft-command-record";
 import { isWholeItem, useDraftMeta } from "@/client/query/useDraftMeta";
-import { discardAll, discardChange } from "./draft-discard";
+import { discardAll, discardChange, undoDiscard } from "./draft-discard";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -90,6 +90,8 @@ export type DraftReviewController = {
    * that sits in no editor names none and takes the longest-attached), undone by that editor's Ctrl+Z.
    */
   discardOpenChange: (change: ReviewChange, editor?: EditorRef | null) => "discarded" | "stale";
+  /** Undo the Discard just made in that editor's surface history. */
+  undoDiscard: (editor?: EditorRef | null) => void;
   /** Apply the whole draft (stays open and empty), as `frame` showed it when the writer clicked. */
   apply: (
     documentId: string,
@@ -293,6 +295,14 @@ export function useDraftReviewController({
     [commands.dispositionLocked, inlineReview, runtimeOf, startDraft, wholeItem],
   );
 
+  const undoOpenDiscard = useCallback(
+    (editor?: EditorRef | null) => {
+      const handle = inlineReview && runtimeOf(inlineReview)?.editorHandle(editor ?? undefined);
+      if (handle) undoDiscard(handle);
+    },
+    [inlineReview, runtimeOf],
+  );
+
   const apply = useCallback(
     (documentId: string, itemKey: string, frame?: ReviewFrame | null) =>
       startDraft("apply", { documentId, itemKey }, { frame }).outcome,
@@ -331,6 +341,7 @@ export function useDraftReviewController({
       setInlineReviewShown,
       applyOpenChange,
       discardOpenChange,
+      undoDiscard: undoOpenDiscard,
       apply,
       discard,
       startDraft,
@@ -361,6 +372,7 @@ export function useDraftReviewController({
       setInlineReviewShown,
       applyOpenChange,
       discardOpenChange,
+      undoOpenDiscard,
       apply,
       discard,
       startDraft,
