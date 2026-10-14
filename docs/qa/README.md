@@ -91,7 +91,10 @@ worktree's API origin and inspect the rendered detail/open-list responses:
 4. Pick a small file, then send a 52 MiB body for its id. The response must be a
    durable failed/too_large entry, not a 413 leaving the import awaiting. Send
    Stop immediately afterwards to check keep-alive transport remains usable.
-5. After the app and organize lanes merge, drive the real Folder/Files picker on
+5. Seed `revealed_at` on an organizing import in the owned database (D2 later
+   performs that transition). Browser Stop must return 409 `import_finished`;
+   detail must remain organizing with no acknowledgement.
+6. After the app and organize lanes merge, drive the real Folder/Files picker on
    desktop and phone: toast appears immediately, Continue sends only missing
    files, project navigation does not interrupt upload, Stop discards everything
    before reveal, and successful reveal shows complete documents. Verify note

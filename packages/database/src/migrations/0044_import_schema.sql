@@ -35,6 +35,7 @@ CREATE TABLE "imports" (
 	"claims_without_progress" integer DEFAULT 0 NOT NULL,
 	"fell_back" boolean DEFAULT false NOT NULL,
 	"reason" text,
+	"revealed_at" timestamp with time zone,
 	"finished_at" timestamp with time zone,
 	"acknowledged_at" timestamp with time zone,
 	"objects_swept_at" timestamp with time zone,

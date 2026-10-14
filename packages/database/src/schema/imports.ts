@@ -34,6 +34,7 @@ export const imports = pgTable(
     claimsWithoutProgress: integer("claims_without_progress").notNull().default(0),
     fellBack: boolean("fell_back").notNull().default(false),
     reason: text("reason"),
+    revealedAt: timestamp("revealed_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
     objectsSweptAt: timestamp("objects_swept_at", { withTimezone: true }),

@@ -104,6 +104,7 @@ export function createImportUploadService(deps: {
             claimsWithoutProgress: 0,
             fellBack: false,
             reason: null,
+            revealedAt: null,
             finishedAt: null,
             acknowledgedAt: null,
             objectsSweptAt: null,
@@ -290,8 +291,9 @@ export function createImportUploadService(deps: {
     async stop(id: string, projectId: string) {
       await repo.transaction(async () => {
         const record = await requireRecord(id, projectId, true);
+        if (record.revealedAt || record.state === "finished")
+          throw new ImportError(409, "import_finished");
         if (record.state === "cancelled") return;
-        if (record.state === "finished") throw new ImportError(409, "import_finished");
         const now = await repo.now();
         await repo.update(id, {
           state: "cancelled",

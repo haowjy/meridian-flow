@@ -29,6 +29,7 @@ export interface ImportRecord {
   claimsWithoutProgress: number;
   fellBack: boolean;
   reason: ImportSummary["reason"];
+  revealedAt: Date | null;
   finishedAt: Date | null;
   acknowledgedAt: Date | null;
   objectsSweptAt: Date | null;

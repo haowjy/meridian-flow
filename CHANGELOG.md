@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Refuse Stop after an import reveals, while its catalog publication finishes.
+
+- Persist the import reveal boundary before catalog publication completes.
+
 - Stage import uploads before organizing. Resume missing files, discard on Stop, and fail oversized files individually.
 
 - Define prepared import progress and durable placement generations for an atomic organize reveal.

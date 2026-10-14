@@ -1,5 +1,5 @@
 {
-  "id": "a08f5fe0-5ba2-4dc4-9cd3-ad6a26cf0686",
+  "id": "8c571e35-3a83-4c40-be1b-70ef38728d6f",
   "prevId": "df05f70b-b924-4992-9153-16c9aba4c987",
   "version": "7",
   "dialect": "postgresql",
@@ -6946,6 +6946,12 @@
         "reason": {
           "name": "reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revealed_at": {
+          "name": "revealed_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
