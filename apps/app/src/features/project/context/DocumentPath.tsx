@@ -10,6 +10,7 @@
  * lists. The identity row owns collapse priority; parent crumbs yield before controls.
  */
 import { t } from "@lingui/core/macro";
+import { ChevronRight } from "lucide-react";
 import { type ReactNode, useCallback, useMemo } from "react";
 import { useLineageTitle } from "@/client/query/useLineageTitle";
 import { useProject } from "@/client/query/useProjectList";
@@ -37,7 +38,7 @@ export function DocumentPath({
   trailing?: ReactNode;
 }) {
   return (
-    <span data-identity-path className="flex min-w-16 flex-1 items-center gap-1">
+    <span data-identity-path className="flex min-w-16 items-center gap-1">
       <CrumbRow location={location} browse={{ projectId, tab }} />
       {trailing}
     </span>
@@ -83,7 +84,9 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
       </span>
       {crumb(
         "leaf",
-        <span className={cn("truncate", location.provisional && "italic")}>{location.leaf}</span>,
+        <span data-path-leaf className={cn("truncate", location.provisional && "italic")}>
+          {location.leaf}
+        </span>,
         folders.length + 1,
         "min-w-16 flex-1 text-ink-muted",
       )}
@@ -92,11 +95,7 @@ function CrumbRow({ location, browse }: { location: TabLocation; browse: Browse 
 }
 
 function Separator() {
-  return (
-    <span aria-hidden className="shrink-0 opacity-60">
-      ›
-    </span>
-  );
+  return <ChevronRight aria-hidden className="size-3 shrink-0 opacity-60" />;
 }
 
 type PathMenu = {
