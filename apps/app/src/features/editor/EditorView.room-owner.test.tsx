@@ -383,14 +383,10 @@ it("entering review holds the live frame until review paints", async () => {
   }, false);
 });
 
-it("a draft-only tab without a review is terminal, not an empty pending editor", async () => {
+it("a draft-only tab whose route has no review item yet is pending, never the gone-draft card", async () => {
   draftOnly = true;
   await run(async () => {
-    expect(document.body.textContent).toContain("Couldn't open this draft.");
-    expect(document.querySelector("[data-paint-hold]")).toBeNull();
-    expect(
-      [...document.querySelectorAll("button")].some((node) => node.textContent === "Close"),
-    ).toBe(true);
+    expect(document.body.textContent).not.toContain("Couldn't open");
   }, false);
 });
 

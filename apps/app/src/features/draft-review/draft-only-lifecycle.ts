@@ -27,22 +27,17 @@ export interface DraftOnlyContainer {
   remove(draft: DraftRef): void;
 }
 
-function presentation(projectId: string, tab: ContextTab, container: "editor" | "dock") {
-  return tab.kind === "tracked" &&
-    tab.draftOnly &&
-    tab.reviewWorkId &&
-    tab.reviewItemKey &&
-    tab.tabInstanceToken
-    ? {
-        projectId,
-        documentId: tab.documentId,
-        workId: tab.reviewWorkId,
-        itemKey: tab.reviewItemKey,
-        token: tab.tabInstanceToken,
-        container,
-        contextLocation: { scheme: tab.scheme, path: tab.path },
-      }
-    : null;
+function presentations(projectId: string, tab: ContextTab, container: "editor" | "dock") {
+  if (tab.kind !== "tracked" || !tab.draftOnly) return [];
+  return Object.entries(tab.reviews ?? {}).map(([workId, entry]) => ({
+    projectId,
+    documentId: tab.documentId,
+    workId,
+    itemKey: entry.itemKey,
+    token: entry.tabInstanceToken,
+    container,
+    contextLocation: { scheme: tab.scheme, path: tab.path },
+  }));
 }
 function matches(tab: ContextTab, draft: DraftRef) {
   return (
@@ -50,8 +45,7 @@ function matches(tab: ContextTab, draft: DraftRef) {
     matchesReviewItem(tab, {
       reviewWorkId: draft.workId,
       reviewItemKey: draft.itemKey,
-    }) &&
-    Boolean(tab.tabInstanceToken)
+    })
   );
 }
 
@@ -62,9 +56,7 @@ function settleDock(draft: DraftRef, promote: boolean): boolean {
     return false;
   const {
     draftOnly: _,
-    reviewWorkId: __,
-    reviewItemKey: ___,
-    tabInstanceToken: ____,
+    reviews: __,
     ...tab
   } = occupant.tab as Extract<ContextTab, { kind: "tracked" }>;
   useDockDocumentStore.setState((state) =>
@@ -80,14 +72,13 @@ export function useDraftOnlyLifecycle(projectId: string): DraftOnlyContainer {
     () => ({
       presentations: (project) => {
         if (epoch?.aborted) return [];
-        const editor = getContextTabs(project).tabs.flatMap((tab) => {
-          const value = presentation(project, tab, "editor");
-          return value ? [value] : [];
-        });
+        const editor = getContextTabs(project).tabs.flatMap((tab) =>
+          presentations(project, tab, "editor"),
+        );
         const occupant = useDockDocumentStore.getState().occupant;
         const dock =
-          occupant?.projectId === project ? presentation(project, occupant.tab, "dock") : null;
-        return dock ? [...editor, dock] : editor;
+          occupant?.projectId === project ? presentations(project, occupant.tab, "dock") : [];
+        return [...editor, ...dock];
       },
       subscribe: (listener) => {
         const stopEditor = useContextTabsStore.subscribe(listener);

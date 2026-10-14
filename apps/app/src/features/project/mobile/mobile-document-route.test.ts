@@ -29,8 +29,7 @@ describe("phone draft-only review route", () => {
     filetype: "markdown",
     schemaType: "document",
     draftOnly: true,
-    reviewWorkId: "work-a",
-    reviewItemKey: "draft-a",
+    reviews: { ["work-a"]: { itemKey: "draft-a", tabInstanceToken: "token" } },
   } as const;
   const emptyCatalog = { findPath: () => null, findDocument: () => null } as never;
   const route = (

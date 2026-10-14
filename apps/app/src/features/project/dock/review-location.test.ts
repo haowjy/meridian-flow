@@ -17,8 +17,7 @@ it.each(CONTEXT_URI_SCHEMES)("admits a %s review in its matching document and Wo
     scheme,
     path: "/characters/Hero",
     draftOnly: true,
-    reviewWorkId: "work",
-    reviewItemKey: "draft",
+    reviews: { ["work"]: { itemKey: "draft", tabInstanceToken: expect.any(String) } },
   });
   const host = { editorWorkId: "work", activeScheme: scheme, documentId: "hero" };
   expect(admissible(intent, host)).toBe(true);

@@ -46,7 +46,7 @@ export async function resolveLaunchLocator(input: {
     (candidate) =>
       candidate.kind !== "new" &&
       candidate.documentId === documentId &&
-      (!candidate.draftOnly || candidate.reviewWorkId === requested.workId),
+      (!candidate.draftOnly || Boolean(requested.workId && candidate.reviews?.[requested.workId])),
   );
   if (tab && tab.kind !== "new" && requested.workId) {
     return { ...routeTargetForTab(tab, requested.workId), documentId };
