@@ -4,7 +4,7 @@
  * file already queued or in flight is never sent twice. A failed batch is retried
  * one file at a time so a single bad file fails alone and the rest land.
  */
-import type { ImportEntryStatus } from "@meridian/contracts";
+import type { ImportFilesResult } from "@meridian/contracts";
 import { planBatches } from "./batching";
 import { IMPORT_SCHEDULING } from "./limits";
 import type { HeldFile } from "./manifest";
@@ -12,10 +12,10 @@ import type { HeldFile } from "./manifest";
 export type SendFiles = (
   parts: readonly HeldFile[],
   signal: AbortSignal,
-) => Promise<{ entries: ImportEntryStatus[] }>;
+) => Promise<Pick<ImportFilesResult, "entries">>;
 
 export type UploadOutcome =
-  | { kind: "answered"; entry: ImportEntryStatus }
+  | { kind: "answered"; entry: ImportFilesResult["entries"][number] }
   | { kind: "failed"; entryId: number; cause: unknown };
 
 const BUSY_BACKOFF_MS = [400, 1000, 2500];

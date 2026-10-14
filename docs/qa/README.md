@@ -94,12 +94,27 @@ worktree's API origin and inspect the rendered detail/open-list responses:
 5. Seed `revealed_at` on an organizing import in the owned database (D2 later
    performs that transition). Browser Stop must return 409 `import_finished`;
    detail must remain organizing with no acknowledgement.
-6. After the app and organize lanes merge, drive the real Folder/Files picker on
-   desktop and phone: toast appears immediately, Continue sends only missing
-   files, project navigation does not interrupt upload, Stop discards everything
-   before reveal, and successful reveal shows complete documents. Verify note
-   properties and links using the notes-folder fixture under
-   `apps/server/server/domains/import/__fixtures__/`.
+6. Drive Folder/Files on desktop and a 393×852 touch phone in both themes.
+   Reading appears immediately. Only the pending folder root appears in the
+   tree/Files listing; tapping it opens the activity card. On phone the activity
+   bar must not cover the first row. On desktop the card fits the rail and does
+   not collide with the development tools button.
+7. Pause upload by reloading before all bytes arrive. After 60 seconds Continue
+   asks for the original folder. Repick with one changed file and one missing
+   file: only awaiting files send, the changed file is marked, and the missing
+   choice stays inline. Navigate to another project during upload and confirm
+   activity continues with the source project title. Stop in Reading, Uploading,
+   Organizing, and Adding uses one confirmation and discards everything before
+   reveal. Cancelling that confirmation resumes the same activity.
+8. Until the organize lane is available, exercise Waiting, ready counts, Adding,
+   Didn't finish (Try again and Stop), and Done through the app's fake import API.
+   Keep Adding through the revealed-but-unpublished interval. A lost Stop race
+   says it finished before it could stop and waits for finished. Record fake
+   evidence separately from real-server evidence. Clean Done acknowledges only
+   after six visible seconds; needs-a-look results stay until dismissed.
+9. Once organize is available, verify atomic reveal and complete documents with
+   the notes-folder fixture under
+   `apps/server/server/domains/import/__fixtures__/`, including properties and links.
 
 The DB upload suite covers overlapping receipts, cumulative byte overflow,
 per-user admission, expiry, tombstones, key-age fences, and binary retention.

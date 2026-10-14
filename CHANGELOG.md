@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep imports running across projects in an activity card. Resume uploads, discard with Stop, and show only a pending root until the whole import appears.
+
 - Refuse Stop after an import reveals, while its catalog publication finishes.
 
 - Persist the import reveal boundary before catalog publication completes.

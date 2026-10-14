@@ -4,6 +4,7 @@ import { t } from "@lingui/core/macro";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
+import { useHasActivityToast } from "@/components/app/toast-registry";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DraftReviewBoundary } from "@/features/draft-review/DraftReviewProvider";
@@ -52,6 +53,7 @@ export function MobileProject(props: MobileProjectProps) {
     setChatOpen(true);
   };
   useDockReveal(openChatSheet);
+  const hasActivity = useHasActivityToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -125,6 +127,7 @@ export function MobileProject(props: MobileProjectProps) {
               : undefined
         }
       />
+      {hasActivity ? <div aria-hidden className="h-16 shrink-0" /> : null}
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
         <ProjectRouteBoundary
           destinationKey={props.routeLocationKey}

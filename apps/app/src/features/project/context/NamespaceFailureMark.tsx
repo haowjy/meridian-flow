@@ -4,8 +4,8 @@
  * icon with a tooltip; the Work Files tab has room to say it in words.
  */
 import { t } from "@lingui/core/macro";
+import { TriangleAlert } from "lucide-react";
 import type { CatalogDirectory, CatalogFile } from "@/client/query/context-catalog-projection";
-import { FailureMark } from "./FailureMark";
 
 type NamespaceFailure = NonNullable<
   CatalogFile["namespaceFailure"] | CatalogDirectory["namespaceFailure"]
@@ -45,4 +45,24 @@ export function NamespaceFailureMark({
 }) {
   const message = customMessage ?? namespaceFailureMessage(failure, folder, move);
   return <FailureMark message={message} labelled={labelled} />;
+}
+
+function FailureMark({ message, labelled }: { message: string; labelled?: boolean }) {
+  if (labelled)
+    return (
+      <span className="flex min-w-0 items-center gap-1 text-xs text-destructive">
+        <TriangleAlert aria-hidden className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{message}</span>
+      </span>
+    );
+  return (
+    <span
+      role="img"
+      className="flex size-7 shrink-0 items-center justify-center text-destructive"
+      aria-label={message}
+      title={message}
+    >
+      <TriangleAlert aria-hidden className="size-3.5" />
+    </span>
+  );
 }

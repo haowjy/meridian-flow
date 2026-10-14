@@ -185,3 +185,13 @@ export function useToastVisible(key: string): boolean {
     () => false,
   );
 }
+
+/** Layout reserves space for the phone bar without subscribing to progress ticks. */
+export function useHasActivityToast(): boolean {
+  const registry = useToastRegistry();
+  return useSyncExternalStore(
+    registry.subscribe,
+    () => registry.getSnapshot().toasts.length > 0,
+    () => false,
+  );
+}

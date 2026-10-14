@@ -19,15 +19,6 @@ export type ImportDestination = {
   folderId: string | null;
 };
 
-export function joinCatalogPath(parent: string, name: string): string {
-  return parent === "/" ? `/${name}` : `${parent}/${name}`;
-}
-
-export function parentCatalogPath(path: string): string {
-  const slash = path.lastIndexOf("/");
-  return slash <= 0 ? "/" : path.slice(0, slash);
-}
-
 export function areaLabel(scheme: ImportScheme): string {
   return scheme === "manuscript"
     ? t`Manuscript`

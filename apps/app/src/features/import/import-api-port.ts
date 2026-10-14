@@ -1,30 +1,22 @@
-/** The network calls the coordinator makes, as one seam so tests can stand in for the server. */
+/** The coordinator's HTTP seam, replaceable by a durable fake for workflow tests. */
 import {
-  finishImport,
-  getImportChanges,
-  getImportStatus,
+  acknowledgeImport,
+  createImport,
+  getImportDetail,
   listOpenImports,
-  planImport,
-  resumeImport,
+  retryImport,
   sendImportFiles,
+  skipImportFiles,
+  stopImport,
 } from "@/client/api/imports-api";
-
-export type ImportApi = {
-  plan: typeof planImport;
-  send: typeof sendImportFiles;
-  finish: typeof finishImport;
-  resume: typeof resumeImport;
-  status: typeof getImportStatus;
-  changes: typeof getImportChanges;
-  listOpen: typeof listOpenImports;
-};
-
-export const importApi: ImportApi = {
-  plan: planImport,
+export const importApi = {
+  create: createImport,
   send: sendImportFiles,
-  finish: finishImport,
-  resume: resumeImport,
-  status: getImportStatus,
-  changes: getImportChanges,
+  skip: skipImportFiles,
+  stop: stopImport,
+  retry: retryImport,
+  acknowledge: acknowledgeImport,
+  detail: getImportDetail,
   listOpen: listOpenImports,
 };
+export type ImportApi = typeof importApi;

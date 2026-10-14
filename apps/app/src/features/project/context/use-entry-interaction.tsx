@@ -15,7 +15,7 @@ import { useEntryRenameRepair } from "./use-repair-on-fresh-failure";
 
 export type EntryCapabilities = readonly Exclude<
   EntryAction,
-  "new-file" | "new-folder" | "import-folder" | "import-files" | "retry-import"
+  "new-file" | "new-folder" | "import-folder" | "import-files"
 >[];
 export type EntryCreation = (kind: ContextCreateKind, parentPath: string) => void;
 
@@ -50,7 +50,6 @@ export function useEntryInteraction({
   requestRename,
   onRenameDone,
   importHere,
-  retryImport,
 }: {
   projectId: string;
   node: CatalogNode;
@@ -66,7 +65,6 @@ export function useEntryInteraction({
   /** Opens the OS picker for an import into this folder; only folders offer it. */
   importHere?: ImportHere;
   /** Sends a file whose import failed again; a failed file's menu leads with it. */
-  retryImport?: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [moving, setMoving] = useState(false);
@@ -87,10 +85,7 @@ export function useEntryInteraction({
   const actions: readonly EntryAction[] =
     node.kind === "dir" && node.navigationOnly
       ? []
-      : [
-          ...(retryImport ? (["retry-import"] as const) : []),
-          ...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined),
-        ];
+      : [...entryActions(capabilities, create, node.kind === "dir" ? importHere : undefined)];
   useEntryRenameRepair(node, () => setRenaming(true), actions.includes("rename"));
   const onAction = (action: EntryAction) => {
     if (!actions.includes(action)) return;
@@ -98,7 +93,6 @@ export function useEntryInteraction({
     else if (action === "move") setMoving(true);
     else if (action === "import-folder") importHere?.start("folder");
     else if (action === "import-files") importHere?.start("files");
-    else if (action === "retry-import") retryImport?.();
     else if (action === "new-file" || action === "new-folder")
       create?.(
         action === "new-file" ? "file" : "folder",

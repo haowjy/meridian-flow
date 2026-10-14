@@ -12,7 +12,6 @@ import {
   ImportIcon,
   type LucideIcon,
   Pencil,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui";
@@ -50,7 +49,6 @@ import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 // ─── Action types ────────────────────────────────────────────────────────────
 
 export type EntryAction =
-  | "retry-import"
   | "new-file"
   | "new-folder"
   | "import-folder"
@@ -70,7 +68,6 @@ type EntryActionSpec = {
 };
 
 const ENTRY_ACTIONS: readonly EntryActionSpec[] = [
-  { action: "retry-import", label: <Trans>Retry import</Trans>, icon: RotateCcw, group: "create" },
   { action: "new-file", label: <Trans>New file</Trans>, icon: FilePlus, group: "create" },
   { action: "new-folder", label: <Trans>New folder</Trans>, icon: FolderPlus, group: "create" },
   {

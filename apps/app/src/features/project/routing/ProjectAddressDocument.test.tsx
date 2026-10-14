@@ -56,7 +56,6 @@ function documentResult(kind: "current" | "alias"): DocumentAddressResult {
         path: ["doc"],
         uri: "kb://project/doc",
         aliases: [],
-        importPending: false,
         hasProperties: false,
         provisionalName: false,
         editable: true,

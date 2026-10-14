@@ -18,8 +18,6 @@ type CatalogFileBase = {
   provisionalName: boolean;
   /** The document has imported properties to show; they load by document id. */
   hasProperties: boolean;
-  /** The document is an import placeholder whose text has not landed yet. */
-  importPending?: boolean;
   /** Present only for a locally owned resource not yet represented by server authority. */
   resourceHandle?: string;
   resourceState?: "local" | "acknowledged";

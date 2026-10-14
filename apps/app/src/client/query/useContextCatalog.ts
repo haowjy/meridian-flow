@@ -217,7 +217,6 @@ function overlayResourceCatalogView(
       path,
       uri,
       provisionalName: location.provisional,
-      importPending: installed?.kind === "file" ? installed.importPending : false,
       hasProperties: installed?.kind === "file" ? installed.hasProperties : false,
       ...record.resource.classification,
     } satisfies CatalogFileEntry);
@@ -277,7 +276,6 @@ export function projectCatalogFile(
     uri: entry.uri,
     provisionalName: entry.provisionalName,
     hasProperties: entry.hasProperties,
-    importPending: entry.importPending,
   };
   if (entry.editable) {
     return {

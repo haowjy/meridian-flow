@@ -2,7 +2,7 @@
  * ToastRegion: the app-wide "Activity" region that stacks the toasts owners
  * register in the `ToastRegistry`. It knows nothing about what a toast is for.
  *
- * Desktop (fine pointer): bottom-left, 16px from the window edges, 320px wide,
+ * Desktop (fine pointer): 240px wide inside the default 264px rail, above its account/navigation footer,
  * stacking upward with the newest at the bottom. At most three are expanded;
  * older ones fold into a "+N more" row above that reveals them all.
  *
@@ -169,7 +169,7 @@ export function ToastRegion() {
     <section
       aria-label={t`Activity`}
       className={cn(
-        "pointer-events-none fixed bottom-4 left-4 z-40 flex w-80 flex-col gap-2",
+        "pointer-events-none fixed bottom-24 left-3 z-40 flex w-60 flex-col gap-2",
         // Scrolling clips a card's shadow at the region edge, so the long list drops it.
         showAll && "max-h-[calc(100svh-2rem)] overflow-y-auto [&_article]:shadow-none",
       )}

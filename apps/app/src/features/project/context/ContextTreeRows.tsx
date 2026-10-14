@@ -3,21 +3,23 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { ChevronRight, Folder, FolderOpen } from "lucide-react";
-import { createContext, type KeyboardEvent, type ReactNode, useContext, useMemo } from "react";
+import { ChevronRight, Folder, FolderOpen, LoaderCircle } from "lucide-react";
+import {
+  createContext,
+  type KeyboardEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import type {
   CatalogDirectory as ContextDir,
   CatalogFile as ContextFile,
   CatalogNode as ContextNode,
 } from "@/client/query/context-catalog-projection";
-import {
-  type ImportedTree,
-  type ImportRowInfo,
-  type PendingRow,
-  rowId,
-  siblingsOf,
-} from "@/features/import/tree-rows";
-import { useImportRowActions } from "@/features/import/use-import-row-actions";
+import { useToastRegistry } from "@/components/app/toast-registry";
+import { type ImportedTree, type PendingRow, rowId, siblingsOf } from "@/features/import/tree-rows";
 import { cn } from "@/lib/utils";
 import { type DeleteTarget, EntryKebabButton } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -30,8 +32,6 @@ import {
   contextTreeRowGrowClassName,
 } from "./context-row-geometry";
 import { EntryNameField } from "./EntryNameField";
-import { ImportFailureMark, PendingRowStatus } from "./ImportRowStatus";
-import { ImportRunMark } from "./ImportRunMark";
 import { LinkUpdateNote } from "./LinkUpdateNote";
 import { NamespaceFailureMark } from "./NamespaceFailureMark";
 import { type TreeDropTarget, useTreeDropTarget } from "./tree-drop/tree-drop";
@@ -117,18 +117,11 @@ export function TreeChildren({
         row.origin === "import" ? (
           <PendingTreeRow key={row.id} row={row} depth={depth} />
         ) : row.node.kind === "dir" ? (
-          <DirRow
-            key={rowId(row)}
-            dir={row.node}
-            status={row.status}
-            depth={depth}
-            siblings={siblings}
-          />
+          <DirRow key={rowId(row)} dir={row.node} depth={depth} siblings={siblings} />
         ) : (
           <FileRow
             key={rowId(row)}
             file={row.node}
-            status={row.status}
             depth={depth}
             siblings={siblings}
             parent={parent}
@@ -191,12 +184,10 @@ export function ContextTreeEntry({
 
 function DirRow({
   dir,
-  status,
   depth,
   siblings,
 }: {
   dir: ContextDir;
-  status?: ImportRowInfo;
   depth: number;
   siblings: readonly ContextEntrySibling[];
 }) {
@@ -253,9 +244,9 @@ function DirRow({
           style={{ paddingLeft: rowPaddingLeft(depth) }}
         >
           <Twistie expanded={isOpen} />
-          <RowIcon icon={isOpen ? FolderOpen : Folder} muted={status?.arriving} />
+          <RowIcon icon={isOpen ? FolderOpen : Folder} />
           <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-            <span className={cn("truncate", status?.arriving && "text-ink-muted")}>{dir.name}</span>
+            <span className="truncate">{dir.name}</span>
             <LinkUpdateNote
               projectId={env.projectId}
               subject={{ kind: "folder", id: dir.entryId }}
@@ -268,7 +259,6 @@ function DirRow({
               <Trans>Import here</Trans>
             </span>
           ) : null}
-          <ImportRunMark info={status} />
           {dir.namespaceFailure ? (
             <NamespaceFailureMark
               failure={dir.namespaceFailure}
@@ -293,13 +283,11 @@ function DirRow({
 
 function FileRow({
   file,
-  status,
   depth,
   siblings,
   parent,
 }: {
   file: ContextFile;
-  status?: ImportRowInfo;
   depth: number;
   siblings: readonly ContextEntrySibling[];
   parent: DropFolder | null;
@@ -307,7 +295,6 @@ function FileRow({
   const env = useTreeEnv();
   // A file is not a drop target of its own: it hands the drop to its folder (or the area).
   const { dropProps } = useTreeDropTarget({ scheme: env.scheme, folder: parent });
-  const importRow = useImportRowActions(status);
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
@@ -316,7 +303,6 @@ function FileRow({
     capabilities: env.capabilities,
     create: env.creation?.request,
     onRequestDelete: env.onRequestDelete,
-    retryImport: importRow?.retry,
     siblings,
   });
   const select = () => env.onSelectFile(env.scheme, file);
@@ -339,9 +325,9 @@ function FileRow({
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
         <span className="h-7 w-4 shrink-0" aria-hidden />
-        <RowIcon icon={fileKindIcon(file)} muted={status?.arriving} />
+        <RowIcon icon={fileKindIcon(file)} />
         <span className="ml-0.5 flex min-w-0 flex-1 flex-col justify-center">
-          <span className={cn("truncate", status?.arriving && "text-ink-muted")}>{file.name}</span>
+          <span className="truncate">{file.name}</span>
           <LinkUpdateNote
             projectId={env.projectId}
             subject={{ kind: "file", id: file.documentId }}
@@ -349,7 +335,6 @@ function FileRow({
             layout="stacked"
           />
         </span>
-        {status?.failure ? <ImportFailureMark reason={status.failure.reason} /> : null}
         {file.namespaceFailure ? (
           <NamespaceFailureMark
             failure={file.namespaceFailure}
@@ -364,53 +349,34 @@ function FileRow({
 
 /** A row the importing tab draws before the server has made it: muted, inert, no menu. */
 function PendingTreeRow({ row, depth }: { row: PendingRow; depth: number }) {
-  const env = useTreeEnv();
-  if (row.kind === "dir") {
-    const open = env.isExpanded(row.id);
-    const toggle = () => env.toggleEntry(row.id);
-    return (
-      <>
-        {/* biome-ignore lint/a11y/useSemanticElements: matches the folder rows beside it. */}
-        <div
-          role="button"
-          tabIndex={0}
-          aria-expanded={open}
-          aria-label={t`Toggle folder ${row.name}`}
-          onClick={toggle}
-          onKeyDown={activateOnKey(toggle)}
-          className={cn(
-            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-ink-muted hover:bg-sidebar-accent/50",
-            contextTreeRowGrowClassName,
-          )}
-          style={{ paddingLeft: rowPaddingLeft(depth) }}
-        >
-          <Twistie expanded={open} />
-          <RowIcon icon={open ? FolderOpen : Folder} muted />
-          <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
-          <PendingRowStatus
-            status={row.status}
-            retryClassName="shrink-0 rounded-md px-1.5 text-xs"
-          />
-        </div>
-        {open ? <TreeChildren parentId={row.id} parentPath={null} depth={depth + 1} /> : null}
-      </>
-    );
-  }
+  const registry = useToastRegistry();
+  const element = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    element.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   return (
-    <div
-      aria-disabled
-      title={row.status.arriving ? t`Still arriving` : undefined}
+    <button
+      type="button"
+      ref={element}
+      data-import-root={row.id}
+      onClick={() => registry.reveal(row.importId)}
       className={cn(
-        "mx-2 flex items-center rounded-md pr-1 text-sm text-ink-muted",
+        "focus-ring mx-2 flex w-[calc(100%-1rem)] items-center rounded-md pr-2 text-left text-sm text-ink-muted hover:bg-sidebar-accent/50",
         contextTreeRowGrowClassName,
       )}
       style={{ paddingLeft: rowPaddingLeft(depth) }}
     >
-      <span className="h-7 w-4 shrink-0" aria-hidden />
-      <RowIcon icon={fileKindIcon(row.name)} muted />
+      <span className="w-4 shrink-0" aria-hidden />
+      <RowIcon icon={Folder} muted />
       <span className="ml-0.5 min-w-0 flex-1 truncate">{row.name}</span>
-      <PendingRowStatus status={row.status} retryClassName="shrink-0 rounded-md px-1.5 text-xs" />
-    </div>
+      <LoaderCircle
+        aria-hidden
+        className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+      />
+      <span className="sr-only">
+        <Trans>Import in progress. Show activity</Trans>
+      </span>
+    </button>
   );
 }
 

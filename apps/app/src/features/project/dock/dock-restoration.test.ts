@@ -100,7 +100,6 @@ function resources(snapshot = empty) {
                 parentId: "manuscript",
                 aliases: [],
                 provisionalName: false,
-                importPending: false,
                 hasProperties: false,
                 observationVersion: "1",
                 editable: true as const,
