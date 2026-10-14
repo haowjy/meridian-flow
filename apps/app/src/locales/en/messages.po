@@ -111,6 +111,16 @@ msgstr "{0, plural, one {# part stayed} other {# parts stayed}}"
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
+#. placeholder {0}: stuck.length
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
+msgstr "{0, plural, one {Couldn't move # item back.} other {Couldn't move # items back.}}"
+
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "{0, plural, one {Couldn't move # item to {destinationName}.} other {Couldn't move # items to {destinationName}.}}"
+msgstr "{0, plural, one {Couldn't move # item to {destinationName}.} other {Couldn't move # items to {destinationName}.}}"
+
 #. placeholder {0}: editedDocuments.size
 #: src/features/chat/thinking-digest.ts
 #~ msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
@@ -120,6 +130,11 @@ msgstr "{0, plural, one {Changes in # more document did not apply} other {Change
 #: src/features/chat/thinking-digest.ts
 #~ msgid "{0, plural, one {edited # document} other {edited # documents}}"
 #~ msgstr "{0, plural, one {edited # document} other {edited # documents}}"
+
+#. placeholder {0}: moving.length
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
+msgstr "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 
 #. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
@@ -260,6 +275,11 @@ msgstr "{days, plural, one {# day left} other {# days left}}"
 #: src/lib/date-groups.ts
 msgid "{days}d"
 msgstr "{days}d"
+
+#. placeholder {0}: refusal.entry.name
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "{destinationName} already has {0}"
+msgstr "{destinationName} already has {0}"
 
 #: src/features/chat/tool-result-preview.ts
 msgid "{documents, plural, one {# document} other {# documents}}"
@@ -784,6 +804,10 @@ msgstr "Cache resets"
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Calls"
 msgstr "Calls"
+
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "Can't go inside itself"
+msgstr "Can't go inside itself"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Can't undo"
@@ -1454,6 +1478,20 @@ msgstr "Couldn't load Work."
 #: src/components/app/QueryErrorRow.tsx
 msgid "Couldn't load. Check your connection."
 msgstr "Couldn't load. Check your connection."
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "Couldn't move {0} back."
+msgstr "Couldn't move {0} back."
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "Couldn't move {0} to {destinationName}."
+msgstr "Couldn't move {0} to {destinationName}."
+
+#: src/features/project/context/entry-drag/move-notice.tsx
+msgid "Couldn't move it back."
+msgstr "Couldn't move it back."
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 msgid "Couldn't move this entry. Try again."
@@ -2748,6 +2786,10 @@ msgstr "Move row up"
 msgid "Move to {0}"
 msgstr "Move to {0}"
 
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "Move to {destinationName}"
+msgstr "Move to {destinationName}"
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 msgid "Move up"
 msgstr "Move up"
@@ -2755,6 +2797,11 @@ msgstr "Move up"
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Move…"
 msgstr "Move…"
+
+#. placeholder {0}: first.name
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "Moved {0} to {destinationName}."
+msgstr "Moved {0} to {destinationName}."
 
 #. placeholder {0}: folder ?? ""
 #: src/features/project/context/LinkUpdateNote.tsx
@@ -4682,6 +4729,7 @@ msgstr "Undid change to Work {0}."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
+#: src/features/project/context/entry-drag/move-notice.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "Undo"

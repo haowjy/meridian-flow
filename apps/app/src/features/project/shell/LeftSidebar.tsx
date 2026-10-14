@@ -14,7 +14,9 @@ import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
+import { MoveNotice } from "../context/entry-drag/move-notice";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { DragHint } from "../context/tree-drop/drag-hint";
 import { useDockDocument } from "../dock/dock-document-store";
 import { useDockDocumentTab } from "../dock/use-dock-document-tab";
 import { useDockPlacement } from "../dock/use-dock-placement";
@@ -90,7 +92,7 @@ export function LeftSidebar({
   return (
     <nav
       aria-label={t`Workspace navigation`}
-      className="flex h-full min-h-0 w-full flex-col text-foreground"
+      className="relative flex h-full min-h-0 w-full flex-col text-foreground"
     >
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton
@@ -131,6 +133,8 @@ export function LeftSidebar({
           />
         ) : null}
       </WorkspaceNavBody>
+      <MoveNotice />
+      <DragHint />
     </nav>
   );
 }
