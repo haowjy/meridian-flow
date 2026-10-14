@@ -25,6 +25,7 @@ import type {
   TurnRepository,
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
+import { TURN_GRAPH, type TurnGraph } from "../../ports/turn-graph.js";
 import { notHandedBackSql } from "./handed-back.js";
 import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
@@ -43,7 +44,7 @@ export function latestLocalRequesterTextSql(threadIds: readonly ThreadId[]) {
           FROM ${schema.turns} AS candidate
          WHERE candidate.thread_id = listed.id
            AND candidate.role = 'user'
-           AND ${notHandedBackSql("candidate")}
+           AND ${notHandedBackSql("candidate.id")}
            AND CASE
                  WHEN listed.kind = 'subagent'
                    THEN candidate.origin = 'system'
@@ -122,8 +123,34 @@ export function createDrizzleTurnRepository(
   db: DrizzleDatabase,
   workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
 ): TurnRepository {
+  const active = () => currentDrizzleDb(db);
+  /** The graph: every turn, handed back or not. The conversation reads below add the predicate. */
+  const graph: TurnGraph = {
+    async listByThread(threadId) {
+      const rows = await active()
+        .select()
+        .from(schema.turns)
+        .where(eq(schema.turns.threadId, threadId))
+        .orderBy(asc(schema.turns.position));
+      return rows.map(mapTurn);
+    },
+    async findById(id) {
+      const [row] = await active().select().from(schema.turns).where(eq(schema.turns.id, id));
+      return row ? mapTurn(row) : null;
+    },
+    async latest(threadId) {
+      const [row] = await active()
+        .select()
+        .from(schema.turns)
+        .where(eq(schema.turns.threadId, threadId))
+        .orderBy(desc(schema.turns.position))
+        .limit(1);
+      return row ? mapTurn(row) : null;
+    },
+  };
   return {
     ...createDrizzleTranscriptReader(db),
+    [TURN_GRAPH]: graph,
     async create(input: CreateTurnInput) {
       return runInDrizzleTransaction(db, async () => {
         await lockThreadForTurnTransition(db, input.threadId);
@@ -312,10 +339,10 @@ export function createDrizzleTurnRepository(
       return new Map(rows.map((row) => [row.id, { byTurnId: row.byTurnId ?? null }]));
     },
     async findById(id: TurnId) {
-      const [row] = await currentDrizzleDb(db)
+      const [row] = await active()
         .select()
         .from(schema.turns)
-        .where(eq(schema.turns.id, id));
+        .where(and(eq(schema.turns.id, id), notHandedBackSql("turns.id")));
       return row ? mapTurn(row) : null;
     },
     async findLatestHandoffSeed(threadId) {
@@ -349,10 +376,10 @@ export function createDrizzleTurnRepository(
       return row ? mapTurn(row) : null;
     },
     async listByThread(threadId) {
-      const rows = await currentDrizzleDb(db)
+      const rows = await active()
         .select()
         .from(schema.turns)
-        .where(eq(schema.turns.threadId, threadId))
+        .where(and(eq(schema.turns.threadId, threadId), notHandedBackSql("turns.id")))
         .orderBy(asc(schema.turns.position));
       return rows.map(mapTurn);
     },
@@ -383,15 +410,6 @@ export function createDrizzleTurnRepository(
         .orderBy(asc(schema.turns.id))
         .limit(limit);
       return rows.map((row) => ({ ...row, role: row.role as Turn["role"] }));
-    },
-    async getLatestByThread(threadId) {
-      const [row] = await currentDrizzleDb(db)
-        .select()
-        .from(schema.turns)
-        .where(eq(schema.turns.threadId, threadId))
-        .orderBy(desc(schema.turns.position))
-        .limit(1);
-      return row ? mapTurn(row) : null;
     },
     async findRunningAssistantId(threadId, options) {
       const [row] = await currentDrizzleDb(db)

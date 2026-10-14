@@ -1,4 +1,5 @@
 /** Provider-request contract: dynamic context and same-Agent derivation preserve prompt bytes. */
+
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -20,6 +21,7 @@ import {
   SubagentDerivationError,
   type ThreadAgentSwapDeps,
 } from "../../../threads/index.js";
+import { turnGraph } from "../../../threads/ports/turn-graph.js";
 import type { Gateway, Message, ModelInfo, Tool } from "../../gateway/index.js";
 import type { ImageAssetPort } from "../../ports/image-asset.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
@@ -552,7 +554,7 @@ describe("frozen prompt provider requests", () => {
       content: "---\nname: Writer\nmode: primary\n---\n\nAdvanced writer.",
       expectedRevisionId: rig.original.selection.definitionRevisionId,
     });
-    const sourceCutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     for (let index = 0; index < 2; index += 1) {
       const { thread: fork } = await forkThreadAgent(rig.derive, {
@@ -607,7 +609,7 @@ describe("frozen prompt provider requests", () => {
       slug: "new-writer",
       content: "---\nname: New Writer\nmode: primary\n---\n\nNew writer prompt.",
     });
-    const sourceCutoff = await rig.repos.turns.getLatestByThread(rig.thread.id);
+    const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     const { thread: handoff } = await handoffThreadAgent(rig.derive, {
       id: crypto.randomUUID(),

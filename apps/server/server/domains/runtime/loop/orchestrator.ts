@@ -94,14 +94,13 @@ import type {
 } from "../../threads/index.js";
 import {
   agentRequestMetadata,
-  listConversationBlocks,
-  listConversationTurns,
   loadThreadConversationContext,
   readThreadActivity,
   ThreadConversationContextError,
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -596,7 +595,7 @@ async function runDrainTurn(
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
       if (!preparationError) {
         try {
-          const previousBlocks = await listConversationBlocks(deps.repos, input.threadId);
+          const previousBlocks = await deps.repos.blocks.listByThread(input.threadId);
           const prepareInput = {
             deps,
             thread: setupThread,
@@ -813,7 +812,7 @@ async function loadRunStartContext(
   contextError: ThreadConversationContextError | null;
 }> {
   const { repos } = deps;
-  const priorTurns = await repos.turns.listByThread(thread.id);
+  const priorTurns = await turnGraph(repos.turns).listByThread(thread.id);
   let conversation: Awaited<ReturnType<typeof loadThreadConversationContext>>;
   try {
     conversation = await loadThreadConversationContext(
@@ -835,7 +834,7 @@ async function loadRunStartContext(
     });
     return {
       priorTurns,
-      localTurns: await listConversationTurns(repos, thread.id),
+      localTurns: await repos.turns.listByThread(thread.id),
       inheritedTurns: [],
       inheritedBlocks: [],
       prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
@@ -1706,7 +1705,7 @@ async function executeLoop({
   const allTurns: Turn[] = [...initialTurns, reservedTurn];
   const allBlocks: Block[] = [
     ...inheritedBlocks,
-    ...(await listConversationBlocks(repos, input.threadId)),
+    ...(await repos.blocks.listByThread(input.threadId)),
   ];
   // The reservation already prepared this request, so its first generation is
   // not another boundary.

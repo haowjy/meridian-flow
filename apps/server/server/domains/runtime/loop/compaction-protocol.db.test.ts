@@ -1,4 +1,5 @@
 /** Compaction's two commits exercise real inbox, lease, epoch, and journal transactions. */
+
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { eq, inArray } from "drizzle-orm";
@@ -9,6 +10,7 @@ import {
   encodeImageInclusionMetadata,
   loadThreadConversationContext,
 } from "../../threads/index.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { processDetachedWork } from "../detached-work.js";
 import { ImageAssetResolutionError } from "../ports/image-asset.js";
 import { createConversationSummarizer } from "../summary/conversation-summarizer.js";
@@ -1139,7 +1141,7 @@ else
       });
       expect((await original.execute()).status).toBe("error");
       await processDetachedWork.drain();
-      const failedReply = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failedReply = await turnGraph(rig.repos.turns).latest(rig.threadId);
       expect(failedReply).toMatchObject({ role: "assistant", status: "error" });
       if (!failedReply) throw new Error("Failed automatic compaction reply was not persisted");
 

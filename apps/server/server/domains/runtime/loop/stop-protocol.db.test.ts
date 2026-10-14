@@ -4,13 +4,12 @@
  * is the decision alone are `stop-rule.test.ts`. Every case also runs the publication parity check.
  */
 
-import { globSync, readFileSync } from "node:fs";
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
-import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { markRunStateChanged, readRunStateAtHead } from "../adapters/drizzle-run-state.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
@@ -672,7 +671,7 @@ else
       expect(await journalTypes(rig, "messages.handed_back")).toHaveLength(2);
     });
 
-    it("row 37: a handed-back message is in no conversation read, and a later reader that skips the conversation read fails here", async () => {
+    it("row 37: a handed-back message is in no conversation read, and the repository ports return the conversation by default", async () => {
       const rig = await rigWith();
       const main = await rig.repos.threads.findById(rig.threadId);
       if (!main) throw new Error("Expected the chat");
@@ -692,13 +691,30 @@ else
           originTurnId: m3 as never,
         })
       ).thread;
-      const [turn2, turn3] = [
-        await rig.repos.turns.findById(m2 as never),
-        await rig.repos.turns.findById(m3 as never),
-      ];
+      const graph = turnGraph(rig.repos.turns);
+      const [turn2, turn3] = [await graph.findById(m2 as never), await graph.findById(m3 as never)];
       // The graph keeps both turns: M3 chains after the hidden M2, at its own position.
       expect(turn3?.prevTurnId).toBe(m2);
       expect(turn3?.position).toBe((turn2?.position ?? 0) + 1);
+      expect((await graph.listByThread(rig.threadId as never)).map(({ id }) => id)).toContain(m2);
+
+      // The port reads a later reader reaches without knowing about hand-back: all omit M2. Its blocks
+      // stay stored for diagnostics, so they are looked up by the table.
+      const turns = rig.repos.turns;
+      expect(await turns.findById(m2 as never)).toBeNull();
+      expect((await turns.listByThread(rig.threadId as never)).map(({ id }) => id)).not.toContain(
+        m2,
+      );
+      const m2Blocks = await db
+        .select({ id: schema.turnBlocks.id })
+        .from(schema.turnBlocks)
+        .where(eq(schema.turnBlocks.turnId, m2));
+      expect(m2Blocks.length).toBeGreaterThan(0);
+      expect(await rig.repos.blocks.listByTurn(m2 as never)).toEqual([]);
+      expect(await rig.repos.blocks.findById(m2Blocks[0]?.id as string)).toBeNull();
+      expect(
+        (await rig.repos.blocks.listByThread(rig.threadId as never)).map(({ turnId }) => turnId),
+      ).not.toContain(m2);
 
       // The snapshot.
       const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
@@ -802,43 +818,6 @@ else
           ...(await rig.repos.turns.listLatestLocalRequesterText([rig.threadId as never])).values(),
         ].join(""),
       ).not.toContain("M5 hidden preview");
-
-      // Structural: every reader of turns, blocks or transcript rows is either a conversation read or a
-      // named graph reader. A new reader that skips the conversation read fails here until it is routed
-      // through `loadThreadConversationContext`, `listConversationTurns` or `listConversationBlocks`, or
-      // it is added to the graph readers below with its reason.
-      const root = new URL("../../../", import.meta.url).pathname;
-      const reads =
-        /\.(?:turns|blocks)\.listByThread\(|\.(?:readTranscriptItems|countConversationTurns|findConversationTurnByOrdinal)\(/;
-      const graphReaders = new Set([
-        "domains/threads/domain/thread-conversation-context.ts", // the conversation read itself
-        "domains/threads/domain/transcript-page.ts", // pages, counts and ordinals filter in SQL
-        "domains/threads/thread-snapshot.ts", // graph walk for the leaf, output filtered
-        "domains/runtime/loop/orchestrator.ts", // graph for the leaf and positions, content from the loader
-        "domains/threads/domain/prompt-epochs.ts", // assistant boundaries only
-        "domains/runtime/loop/prefix-cache-state.ts", // model responses and timing only
-        "domains/runtime/adapters/runtime-delivery.ts", // completed replies in the lineage
-        "domains/runtime/spawn/orphan-report-repair.ts", // child execution chains, no writer content
-        "domains/runtime/handoff/brief-request.ts", // graph walk for the last summary attempt
-      ]);
-      const offenders: string[] = [];
-      for (const file of globSync("domains/**/*.ts", { cwd: root })) {
-        const path = file.replaceAll("\\", "/");
-        if (
-          /\.(test|db\.test)\.ts$|__tests__|__conformance__|\/adapters\/(drizzle|in-memory)\//.test(
-            path,
-          )
-        )
-          continue;
-        if (path.endsWith("/ports/repositories.ts")) continue;
-        if (reads.test(readFileSync(`${root}${path}`, "utf8")) && !graphReaders.has(path))
-          offenders.push(path);
-      }
-      expect(offenders).toEqual([]);
-      // The derive source reads the common loader and never the graph.
-      expect(
-        readFileSync(`${root}domains/threads/domain/derive-conversation.ts`, "utf8"),
-      ).toContain("loadThreadConversationContext(");
     });
 
     it("row 38: a replay returns the stored decision after the compaction that held the message dies", async () => {

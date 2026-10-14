@@ -1,7 +1,9 @@
 /** Connected listing follows spawn and cutoff-owner edges, with bounded pages. */
+
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import type { InternalThreadRepositories } from "../../threads/ports/repositories.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { listReadableThreads } from "./thread-ls.js";
 
 export function defineThreadLsContract(
@@ -65,7 +67,7 @@ export function defineThreadLsContract(
       text: string,
       options: { origin?: "writer" | "system"; metadata?: Record<string, string> } = {},
     ) {
-      const previous = await repos.turns.getLatestByThread(thread.id as ThreadId);
+      const previous = await turnGraph(repos.turns).latest(thread.id as ThreadId);
       const turn = await repos.turns.create({
         threadId: thread.id,
         prevTurnId: previous?.id ?? null,

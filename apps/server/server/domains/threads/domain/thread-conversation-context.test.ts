@@ -1,6 +1,8 @@
 /** Fork history hydration resolves the cutoff owner and refuses incomplete lineage. */
+
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { TURN_GRAPH, turnGraph } from "../ports/turn-graph.js";
 import {
   loadThreadConversationContext,
   type ThreadConversationContextDeps,
@@ -20,8 +22,10 @@ function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ThreadConve
       findByIdIncludingDeleted: async (id: string) => threads.find((t) => t.id === id) ?? null,
     },
     turns: {
-      listByThread: async (id: string) => turns.filter((t) => t.threadId === id),
-      findById: async (id: string) => turns.find((t) => t.id === id) ?? null,
+      [TURN_GRAPH]: {
+        listByThread: async (id: string) => turns.filter((t) => t.threadId === id),
+        findById: async (id: string) => turns.find((t) => t.id === id) ?? null,
+      },
       listHandedBackIds: async () => new Set<string>(),
     },
     blocks: {
@@ -92,7 +96,7 @@ describe("loadThreadConversationContext", () => {
     const owner = thread("owner");
     const fork = thread("fork", { originType: "fork", originTurnId: "after-cutoff" });
     const deps = depsFor([owner, fork], [turn("after-cutoff", "owner")], []);
-    deps.turns.listByThread = async () => [];
+    turnGraph(deps.turns).listByThread = async () => [];
 
     await expect(loadThreadConversationContext(deps, fork)).rejects.toMatchObject({
       code: "cutoff_not_in_transcript",

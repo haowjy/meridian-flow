@@ -11,6 +11,7 @@ import {
   eventSeqForJournalEvent,
   TurnStartConflictError,
 } from "../../threads/index.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { readRunStateAtHead } from "../adapters/drizzle-run-state.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
@@ -400,7 +401,7 @@ else
 
       const first = await drainControls(rig);
       await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
       expect(first.status).toBe("error");
       expect(failed).toMatchObject({ role: "assistant", status: "error" });
       if (!failed) throw new Error("Failed reply was not persisted");
@@ -459,7 +460,7 @@ else
         role: "assistant",
         status: "error",
       });
-      expect((await rig.repos.turns.getLatestByThread(rig.threadId))?.id).toBe(replyTurnId);
+      expect((await turnGraph(rig.repos.turns).latest(rig.threadId))?.id).toBe(replyTurnId);
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
       expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
       await expect(
@@ -484,7 +485,7 @@ else
       });
       await drainControls(rig);
       await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
       if (!failed) throw new Error("Failed reply was not persisted");
       const winningId = crypto.randomUUID();
       const first = await rig.orchestrator.retryReply({
@@ -513,7 +514,7 @@ else
     it("acknowledges a crashed reply's adopted messages and leaves queued work for Retry", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       const rig = await manualFixture({ gateway });
-      const previous = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const previous = await turnGraph(rig.repos.turns).latest(rig.threadId);
       if (!previous) throw new Error("Expected fixture history");
       const adopted = [];
       let prevTurnId = previous.id;
@@ -646,7 +647,7 @@ else
       });
       await drainControls(rig);
       await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
       if (!failed) throw new Error("Failed reply was not persisted");
 
       const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
@@ -1945,7 +1946,7 @@ else
         });
         expect((await drainControls(rig)).status).toBe("error");
         await processDetachedWork.drain();
-        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
         if (!failed) throw new Error("Failed reply was not persisted");
         const applied = await switchMode(rig, "draft");
         fail = false;
@@ -2096,7 +2097,7 @@ else
         });
         await drainControls(rig);
         await processDetachedWork.drain();
-        const f1 = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const f1 = await turnGraph(rig.repos.turns).latest(rig.threadId);
         expect(f1).toMatchObject({ role: "assistant", status: "error" });
         expect((await identity(f1?.id)).reservedForUserTurnIds).toEqual([m1.id]);
 
@@ -2188,7 +2189,7 @@ else
         });
         await drainControls(rig);
         await processDetachedWork.drain();
-        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
         expect(failed).toMatchObject({ role: "assistant", status: "error" });
         return failed?.id as never;
       }
@@ -2268,12 +2269,13 @@ else
         // and the leaf only after the winner's reply finished.
         const latestRead = gate();
         const latestReleased = gate();
-        const getLatestByThread = rig.repos.turns.getLatestByThread.bind(rig.repos.turns);
-        rig.repos.turns.getLatestByThread = async (threadId) => {
-          rig.repos.turns.getLatestByThread = getLatestByThread;
+        const graph = turnGraph(rig.repos.turns);
+        const latest = graph.latest.bind(graph);
+        graph.latest = async (threadId) => {
+          graph.latest = latest;
           latestRead.open();
           await latestReleased.promise;
-          return getLatestByThread(threadId);
+          return latest(threadId);
         };
         const statusRead = gate();
         const read = rig.runClaim.read.bind(rig.runClaim);
@@ -2360,7 +2362,7 @@ else
         // A crash after repair committed the turn's error but before the end:
         // the turn carries the execution, the expired row remains.
         const executionId = crypto.randomUUID();
-        const leaf = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const leaf = await turnGraph(rig.repos.turns).latest(rig.threadId);
         const repaired = await rig.repos.turns.create({
           threadId: rig.threadId,
           prevTurnId: leaf?.id as never,
