@@ -506,7 +506,9 @@ export function createImportService(deps: {
           const allocated = allocate({ ...current, storageUrl }, parent);
           await tree.land(parent, allocated, bound, bytes);
           await repo.updateEntry(entry.id, {
-            ...allocated,
+            name: allocated.name,
+            uri: allocated.uri,
+            storageUrl,
             state: "landed",
             created: true,
             reason: null,

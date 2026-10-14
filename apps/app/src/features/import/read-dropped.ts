@@ -3,6 +3,7 @@ import {
   EXPORT_MARKER_FILENAME,
   importPathDisposition,
   normalizeNamePath,
+  overFileBudget,
 } from "@meridian/contracts";
 import type { DroppedItems } from "@/lib/dropped-items";
 import { isImportableName, normalizeName } from "./path-rules";
@@ -10,12 +11,18 @@ import { readSideFile, type SelectedRoot, type Selection, unreadableReason } fro
 
 type Walk = {
   root: SelectedRoot;
-  seen: { count: number };
+  seen: Seen;
   report: (count: number, name: string) => void;
   signal?: AbortSignal;
 };
 
+/** What the drop has spent of the file budget so far, across roots. */
+type Seen = { count: number; unreadable: number };
+
 const FILE_BATCH = 24;
+
+/** Refusal is certain once the budget is spent: more reading cannot bring a selection back under it. */
+const spent = (seen: Seen) => overFileBudget(seen.count, seen.unreadable);
 
 export async function readDropped(
   items: DroppedItems,
@@ -25,13 +32,13 @@ export async function readDropped(
   } = {},
 ): Promise<Selection> {
   const selection: Selection = { roots: [], leftOut: [] };
-  const seen = { count: 0 };
+  const seen: Seen = { count: 0, unreadable: 0 };
   const report = options.onProgress ?? (() => {});
   const entries = items.entries.filter((entry) => entry !== null);
   // Browsers without entries (or items that were not files) still give loose files.
   const sources: (FileSystemEntry | File)[] = entries.length > 0 ? entries : items.files;
   for (const source of sources) {
-    if (options.signal?.aborted) break;
+    if (options.signal?.aborted || spent(seen)) break;
     const name = source.name;
     const kind = source instanceof File || source.isFile ? "file" : "folder";
     if (
@@ -60,6 +67,7 @@ export async function readDropped(
         report(seen.count, name);
       } catch (error) {
         root.unreadable.push({ path: "", reason: unreadableReason(error) });
+        seen.unreadable += 1;
       }
       selection.roots.push(root);
       continue;
@@ -102,13 +110,14 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
         path: normalizeNamePath(childPath),
         reason: child.isDirectory ? "folder_unreadable" : "unreadable",
       });
+      walk.seen.unreadable += 1;
       continue;
     }
     if (child.isDirectory) subdirectories.push(child as FileSystemDirectoryEntry);
     else files.push(child as FileSystemFileEntry);
   }
   for (let start = 0; start < files.length; start += FILE_BATCH) {
-    if (walk.signal?.aborted) return;
+    if (walk.signal?.aborted || spent(walk.seen)) return;
     const batch = files.slice(start, start + FILE_BATCH);
     const opened = await Promise.allSettled(batch.map(entryFile));
     opened.forEach((result, index) => {
@@ -120,12 +129,13 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
         walk.seen.count += 1;
       } else {
         walk.root.unreadable.push({ path: entryPath, reason: unreadableReason(result.reason) });
+        walk.seen.unreadable += 1;
       }
     });
     walk.report(walk.seen.count, walk.root.name);
   }
   for (const child of subdirectories) {
-    if (walk.signal?.aborted) return;
+    if (walk.signal?.aborted || spent(walk.seen)) return;
     const childPath = normalizeNamePath(path ? `${path}/${child.name}` : child.name);
     try {
       walk.root.folders.push(childPath);
@@ -136,8 +146,11 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
       walk.root.folders = walk.root.folders.filter(
         (folder) => folder !== childPath && !folder.startsWith(prefix),
       );
-      walk.root.files = walk.root.files.filter((file) => !file.path.startsWith(prefix));
+      const kept = walk.root.files.filter((file) => !file.path.startsWith(prefix));
+      walk.seen.count -= walk.root.files.length - kept.length;
+      walk.root.files = kept;
       walk.root.unreadable.push({ path: childPath, reason: "folder_unreadable" });
+      walk.seen.unreadable += 1;
     }
   }
 }

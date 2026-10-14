@@ -1,7 +1,8 @@
 /** Import landing: receives, leases, Finish fencing, object cleanup and per-file failures. Barriers sit at public port boundaries. */
 
 import { IMPORT_ADMISSION } from "@meridian/contracts";
-import { linkAheadRefs } from "@meridian/database/schema";
+import { importEntries, linkAheadRefs } from "@meridian/database/schema";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ObjectStorePort } from "../storage/index.js";
 import { barrier, importDbEnabled, loose, useImportDb } from "./__test-support__/import-db.js";
@@ -384,5 +385,14 @@ describe.skipIf(!importDbEnabled)("import landing (postgres)", () => {
       name: "map (2)",
       documentId: plan.entries.find((entry) => entry.entryId === 3)?.documentId,
     });
+    // Hydration rewrites column fields, so only the stored JSON shows a leak.
+    const [row] = await fx.db
+      .select({ spec: importEntries.spec })
+      .from(importEntries)
+      .where(and(eq(importEntries.importId, plan.importId), eq(importEntries.entryId, 3)));
+    expect(Object.keys(row.spec as object).sort()).toEqual(
+      expect.not.arrayContaining(["id", "order", "version", "state", "uri", "storageUrl"]),
+    );
+    expect(row.spec).toMatchObject({ name: "map (2)" });
   });
 });

@@ -1,6 +1,11 @@
 /** Strict selection validation and content-based resume identity. */
 import { createHash } from "node:crypto";
-import { IMPORT_ADMISSION, type ImportManifest, type ImportRefusalCode } from "@meridian/contracts";
+import {
+  IMPORT_ADMISSION,
+  type ImportManifest,
+  type ImportRefusalCode,
+  overFileBudget,
+} from "@meridian/contracts";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { z } from "zod";
@@ -136,7 +141,7 @@ export function validateManifest(raw: unknown): ImportManifest {
     refuse("manifest_invalid");
   }
   const value = parsed.data;
-  if (value.entries.length + (value.unreadable?.length ?? 0) > IMPORT_ADMISSION.files)
+  if (overFileBudget(value.entries.length, value.unreadable?.length ?? 0))
     refuse("too_many_files", { limit: IMPORT_ADMISSION.files });
   const roots = new Map(value.roots.map((root) => [root.rootId, root]));
   if (roots.size !== value.roots.length) refuse("duplicate_root_id");

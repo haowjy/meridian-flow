@@ -25,6 +25,19 @@ export const IMPORT_ADMISSION = {
   sideFileBytes: 1024 * 1024,
 } as const;
 
+/**
+ * How many of the file budget a selection spends: readable files (manifest entries)
+ * plus unreadable items. The browser's refusal and drop traversal and the server's
+ * manifest validation all count through this, so none can admit what another refuses.
+ */
+export function importFileCount(readable: number, unreadable: number): number {
+  return readable + unreadable;
+}
+
+export function overFileBudget(readable: number, unreadable: number): boolean {
+  return importFileCount(readable, unreadable) > IMPORT_ADMISSION.files;
+}
+
 const NEVER_SENT_NAMES = new Set([".DS_Store", "Thumbs.db", "desktop.ini"]);
 
 /**
