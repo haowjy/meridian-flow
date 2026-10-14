@@ -142,7 +142,6 @@ if (!RUN) {
       });
       expect(walkLinkOccurrences(result.blocks)[0]?.attrs.ref).toBe(`doc:${NOTES}`);
       expect(result.aheadRefs).toEqual([]);
-      expect(result.invalidTargets).toEqual([]);
       for (const target of [DELETED, FOREIGN, SECRET]) {
         const invalid = await binder.bindMarkdown({
           ...input,
@@ -152,7 +151,6 @@ if (!RUN) {
           ref: null,
           href: "",
         });
-        expect(invalid.invalidTargets).toEqual([{ occurrence: 0, documentId: target }]);
       }
       await expect(
         createLinkBinder(deps).bindMarkdown({ ...input, targets: new Map() } as never),
@@ -196,7 +194,6 @@ if (!RUN) {
         ...input,
         targets: new Map([[0, FOREIGN as DocumentId]]),
       });
-      expect(bound.invalidTargets).toEqual([{ occurrence: 0, documentId: FOREIGN }]);
       expect(walkLinkOccurrences(bound.blocks)[0]?.attrs).toMatchObject({ ref: null, href: "" });
     });
 
@@ -216,7 +213,7 @@ if (!RUN) {
       };
       await expect(binder.bindMarkdown({ ...input, view: DRAFT })).rejects.toThrow("live");
       const bound = await binder.bindMarkdown(input);
-      expect(bound.invalidTargets).toEqual([{ occurrence: 0, documentId: DRAFTED }]);
+      expect(walkLinkOccurrences(bound.blocks)[0]?.attrs).toMatchObject({ ref: null, href: "" });
     });
 
     async function seed() {

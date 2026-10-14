@@ -181,7 +181,7 @@ export function useImportDb() {
     appPorts = await createProductionAppPorts({
       db,
       eventSink: createNoopEventSink(),
-      environment: { OPENAI_API_KEY: "sk-test-import" },
+      environment: { FLOW_OPENAI_API_KEY: "sk-test-import" },
     });
     app = composeAppServices(appPorts);
     hocuspocus = new Hocuspocus({

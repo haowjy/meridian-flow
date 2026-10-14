@@ -100,7 +100,6 @@ describe("planned link binding", () => {
       { occurrence: 1, ref: refs[1] },
     ]);
     expect(subject.registered).toEqual([refs[0], refs[1]]);
-    expect(result.invalidTargets).toEqual([]);
   });
 
   it("adjacent occurrences sharing a written href keep their own identities", async () => {
@@ -143,7 +142,6 @@ describe("planned link binding", () => {
       targets: new Map([[0, invalidId]]),
     });
     expect(walkLinkOccurrences(result.blocks)[0]?.attrs).toMatchObject({ ref: null, href: "" });
-    expect(result.invalidTargets).toEqual([{ occurrence: 0, documentId: invalidId }]);
     expect(subject.registered).toEqual([]);
   });
 

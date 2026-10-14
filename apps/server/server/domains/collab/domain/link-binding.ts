@@ -71,7 +71,6 @@ export interface BoundWrite {
   /** Code files bind to one code block; the engine refuses content of the other shape. */
   readonly schemaType: YjsTrackedSchemaType;
   readonly aheadRefs: readonly { occurrence: number; ref: string }[];
-  readonly invalidTargets: readonly { occurrence: number; documentId: DocumentId }[];
   readonly [boundBrand]: true;
 }
 
@@ -179,7 +178,6 @@ export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBi
         markdown: text,
         schemaType: "code",
         aheadRefs: [],
-        invalidTargets: [],
       } as unknown as BoundWrite;
     },
   };
@@ -246,7 +244,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
         markdown,
         schemaType,
         aheadRefs: [],
-        invalidTargets: [],
       });
 
     const { markdown } = input;
@@ -290,7 +287,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
       scope,
       shown: [],
     });
-    const invalidTargets: { occurrence: number; documentId: DocumentId }[] = [];
     const pendingMints: (AheadMint & { awaitedDocumentId: DocumentId })[] = [];
     const attrs = occurrences.map((occurrence, index) => {
       const target = input.targets?.get(index);
@@ -320,7 +316,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
             return { ...occurrence.attrs, ref: fresh.ref, href: fresh.href };
           }
         }
-        invalidTargets.push({ occurrence: index, documentId: target ?? ("" as DocumentId) });
         return { ...occurrence.attrs, ref: null, href: "" };
       }
       return { ...occurrence.attrs, ref };
@@ -341,7 +336,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
     const aheadRefs = attrs.flatMap((attrs, occurrence) =>
       attrs?.ref && mintedRefs.has(attrs.ref) ? [{ occurrence, ref: attrs.ref }] : [],
     );
-    return boundWrite({ ...finish(nodes, markdown), aheadRefs, invalidTargets });
+    return boundWrite({ ...finish(nodes, markdown), aheadRefs });
   }
 
   return {
@@ -370,7 +365,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
           markdown,
           schemaType,
           aheadRefs: [],
-          invalidTargets: [],
         });
       }
       const blocks = deps.codec.parse(markdown).blocks;
@@ -384,7 +378,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
         markdown,
         schemaType,
         aheadRefs: [],
-        invalidTargets: [],
       });
     },
   };

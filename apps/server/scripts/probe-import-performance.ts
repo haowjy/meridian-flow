@@ -45,7 +45,7 @@ const db = createDb(databaseUrl, { max: 8 });
 const appPorts = await createProductionAppPorts({
   db,
   eventSink: createNoopEventSink(),
-  environment: { OPENAI_API_KEY: "sk-probe-import" },
+  environment: { FLOW_OPENAI_API_KEY: "sk-probe-import" },
 });
 const app = composeAppServices(appPorts);
 const hocuspocus = new Hocuspocus({

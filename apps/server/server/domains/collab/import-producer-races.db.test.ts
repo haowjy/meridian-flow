@@ -67,7 +67,7 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
     ports = await createProductionAppPorts({
       db,
       eventSink: createNoopEventSink(),
-      environment: { OPENAI_API_KEY: "sk-test-races" },
+      environment: { FLOW_OPENAI_API_KEY: "sk-test-races" },
     });
     app = composeAppServices(ports);
     hp = new Hocuspocus({
