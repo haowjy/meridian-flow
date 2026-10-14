@@ -1869,7 +1869,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       ...payloads,
       [DRAFT_TREE_STEP]: encodeDraftTreePayload({
         draftId,
-        command: { shape: "item", itemKeys: [...branchIds], decided: [...decided] },
+        command: { shape: "all", itemKeys: [], decided: [...decided] },
         items: [],
       }),
     });
