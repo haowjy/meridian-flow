@@ -11,6 +11,7 @@ import { createImportUploadService, importSummary } from "./domain/upload-servic
 import type { OrganizeWake } from "./ports/organize-wake.js";
 
 export { IMPORT_LIMITS, ImportError } from "./domain/manifest.js";
+export type { ImportPart } from "./domain/receipt.js";
 
 const processAdmission = createImportAdmission();
 export type ImportService = ReturnType<typeof createImportUploadService>;

@@ -1,35 +1,18 @@
 /** Upload-first import commands: immutable selection, staged receipts, and short row-locked transitions. */
-import { createHash } from "node:crypto";
-import {
-  IMPORT_ADMISSION,
-  type ImportDetail,
-  type ImportFilesResult,
-  type ImportSkipsInput,
-  type ImportSummary,
-} from "@meridian/contracts";
-import { splitFrontmatter } from "@meridian/markup/wikilinks";
-import { frontmatterAliases } from "../../context/index.js";
-import type { ObjectStorePort } from "../../storage/index.js";
 import type {
-  ImportEntry,
-  ImportEntryPatch,
-  ImportRecord,
-  ImportRepository,
-} from "../ports/import-repository.js";
+  ImportDetail,
+  ImportFilesResult,
+  ImportSkipsInput,
+  ImportSummary,
+} from "@meridian/contracts";
+import type { ObjectStorePort } from "../../storage/index.js";
+import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
 import type { ImportDestination } from "../ports/import-tree-writer.js";
 import type { OrganizeWake } from "../ports/organize-wake.js";
-import { classify } from "./classify.js";
 import { IMPORT_LIMITS, ImportError, selectionFingerprint, validateSelection } from "./manifest.js";
-import type { FileReceipt } from "./receipt.js";
-import type { ImportAdmission } from "./receive-admission.js";
+import { type ImportPart, prepareReceipts, receiptPatches } from "./receipt.js";
+import { type ImportAdmission, inReceiveScope } from "./receive-admission.js";
 import { selectionRows } from "./selection.js";
-import { stagingKey, stagingKeyTime } from "./staging-key.js";
-export interface ImportPart {
-  entryId: number;
-  bytes: Uint8Array;
-  changedAfterPick?: boolean;
-  tooLarge?: boolean;
-}
 export function createImportUploadService(deps: {
   repository: ImportRepository;
   objects: ObjectStorePort;
@@ -127,151 +110,66 @@ export function createImportUploadService(deps: {
       projectId: string,
       readParts: (signal: AbortSignal) => Promise<ImportPart[]>,
     ): Promise<ImportFilesResult> {
-      const release = deps.admission.enter(id);
-      if (!release) throw new ImportError(429, "import_busy");
-      const signal = AbortSignal.timeout(10 * 60 * 1000);
-      let pulse: ReturnType<typeof setInterval> | undefined;
-      const execute = async (): Promise<ImportFilesResult> => {
-        try {
-          const record = await requireRecord(id, projectId);
-          // A lost final response may be replayed after completion: received parts still answer idempotently.
-          pulse = setInterval(() => {
-            void repo
-              .transaction(async () => {
-                const row = await repo.lock(id);
-                if (row?.state === "uploading")
-                  await repo.update(id, { lastActivityAt: await repo.now() });
-              })
-              .catch(deps.reportError);
-          }, 30_000);
+      return inReceiveScope(
+        {
+          importId: id,
+          admission: deps.admission,
+          authorize: () => requireRecord(id, projectId),
+          pulse: () =>
+            repo.transaction(async () => {
+              const row = await repo.lock(id);
+              if (row?.state === "uploading")
+                await repo.update(id, { lastActivityAt: await repo.now() });
+            }),
+          reportError: deps.reportError,
+        },
+        async (record, signal) => {
+          // Lost final responses replay even after completion without replacing received bytes.
           const parts = await readParts(signal);
-          signal.throwIfAborted();
-          if (parts.length > IMPORT_ADMISSION.partsPerRequest)
-            throw new ImportError(413, "too_many_parts", {
-              limit: IMPORT_ADMISSION.partsPerRequest,
-            });
-          if (new Set(parts.map((p) => p.entryId)).size !== parts.length)
-            throw new ImportError(400, "duplicate_import_entry_id");
-          if (
-            parts.length > 1 &&
-            parts.reduce((n, p) => n + p.bytes.byteLength, 0) > IMPORT_ADMISSION.requestBytes
-          )
-            throw new ImportError(413, "import_request_too_large", {
-              limit: IMPORT_ADMISSION.requestBytes,
-            });
-          const entries = new Map(
-            (await repo.entries(id)).filter((e) => e.kind === "file").map((e) => [e.entryId, e]),
-          );
-          for (const part of parts)
-            if (!entries.has(part.entryId)) throw new ImportError(404, "entry_not_found");
-          const receipts: {
-            entry: ImportEntry;
-            part: ImportPart;
-            receipt: FileReceipt;
-          }[] = [];
-          for (const part of parts) {
-            signal.throwIfAborted();
-            const entry = entries.get(part.entryId) as ImportEntry;
-            if (entry.receipt) continue;
-            uploading(record);
-            if (entry.state !== "awaiting") continue;
-            if (part.tooLarge || part.bytes.byteLength > IMPORT_ADMISSION.fileBytes) continue;
-            const root = record.roots.find((r) => r.rootId === entry.selection.rootId);
-            const filename = entry.selection.path.split("/").at(-1) || root?.name || "";
-            const facts = await classify(filename, part.bytes);
-            const key = stagingKey(id, part.entryId);
-            const put = await deps.objects.put(key, part.bytes, facts.mimeType);
-            if (!put.ok) throw new Error(put.error.message);
-            receipts.push({
-              entry,
-              part,
-              receipt: {
-                objectKey: key,
-                receivedSize: part.bytes.byteLength,
-                storageUrl: put.value.storageUrl,
-                facts,
-                sha256: createHash("sha256").update(part.bytes).digest("hex"),
-                aliases:
-                  facts.kind === "note"
-                    ? frontmatterAliases(
-                        splitFrontmatter(Buffer.from(part.bytes).toString("utf8")).frontmatter
-                          ?.text ?? "",
-                      )
-                    : [],
-              },
-            });
-          }
+          const candidates = await prepareReceipts(repo, deps.objects, record, parts, signal);
+          const entryIds = parts.map((part) => part.entryId);
           await repo.transaction(async () => {
             const current = await requireRecord(id, projectId, true);
-            if (signal.aborted) return;
+            signal.throwIfAborted();
             if (current.state !== "uploading") return;
-            const now = await repo.now();
-            const live = new Map((await repo.entries(id)).map((e) => [e.id, e]));
-            let receivedBytes = current.counts.receivedBytes;
-            const patches: { id: string; patch: ImportEntryPatch }[] = [];
-            for (const part of parts) {
-              const entry = entries.get(part.entryId) as ImportEntry;
-              if (live.get(entry.id)?.state !== "awaiting") continue;
-              const receipt = receipts.find((r) => r.entry.id === entry.id);
-              if (
-                part.tooLarge ||
-                part.bytes.byteLength > IMPORT_ADMISSION.fileBytes ||
-                receivedBytes + part.bytes.byteLength > IMPORT_ADMISSION.totalBytes
-              ) {
-                patches.push({ id: entry.id, patch: { state: "failed", reason: "too_large" } });
-              } else if (
-                receipt &&
-                now.getTime() - stagingKeyTime(receipt.receipt.objectKey) <
-                  IMPORT_LIMITS.receiptAgeMs
-              ) {
-                receivedBytes += part.bytes.byteLength;
-                patches.push({
-                  id: entry.id,
-                  patch: {
-                    state: "received",
-                    reason: part.changedAfterPick ? "changed_after_pick" : null,
-                    receipt: receipt.receipt,
-                  },
-                });
-              }
-            }
+            const entries = await repo.fileEntries(id, entryIds);
+            const patches = receiptPatches(
+              candidates,
+              entries,
+              await repo.now(),
+              current.counts.receivedBytes,
+            );
+            signal.throwIfAborted();
             await repo.updateEntries(id, patches);
             await complete(current);
+            // A deadline during a database wait rolls back this transaction as well.
+            signal.throwIfAborted();
           });
-          const result = await after(id, projectId);
-          const answered = new Map((await repo.entries(id)).map((e) => [e.entryId, e]));
+          const summary = await after(id, projectId);
+          const answered = new Map(
+            (await repo.fileEntries(id, entryIds)).map((entry) => [entry.entryId, entry]),
+          );
           return {
-            summary: result,
+            summary,
             entries: parts.map((part) => {
-              const entry = answered.get(part.entryId) as ImportEntry;
+              const entry = answered.get(part.entryId)!;
               return { entryId: part.entryId, state: entry.state, reason: entry.reason };
             }),
           };
-        } finally {
-          if (pulse) clearInterval(pulse);
-          release();
-        }
-      };
-      let onTimeout: () => void = () => {};
-      const timeout = new Promise<never>((_, reject) => {
-        onTimeout = () => {
-          if (pulse) clearInterval(pulse);
-          reject(new ImportError(408, "import_busy"));
-        };
-        signal.addEventListener("abort", onTimeout, { once: true });
-      });
-      try {
-        return await Promise.race([execute(), timeout]);
-      } finally {
-        signal.removeEventListener("abort", onTimeout);
-      }
+        },
+      );
     },
     async skips(id: string, projectId: string, input: ImportSkipsInput) {
       await repo.transaction(async () => {
         const record = await requireRecord(id, projectId, true);
         uploading(record);
         const entries = new Map(
-          (await repo.entries(id)).filter((e) => e.kind === "file").map((e) => [e.entryId, e]),
+          (
+            await repo.fileEntries(
+              id,
+              input.entries.map((item) => item.entryId),
+            )
+          ).map((e) => [e.entryId, e]),
         );
         for (const item of input.entries)
           if (!entries.has(item.entryId)) throw new ImportError(404, "entry_not_found");

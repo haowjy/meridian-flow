@@ -118,6 +118,20 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           .orderBy(importEntries.ordinal)
       ).map(projectEntry);
     },
+    async fileEntries(importId, entryIds) {
+      return (
+        await tx()
+          .select()
+          .from(importEntries)
+          .where(
+            and(
+              eq(importEntries.importId, importId),
+              eq(importEntries.kind, "file"),
+              inArray(importEntries.entryId, entryIds),
+            ),
+          )
+      ).map((row) => projectEntry(row) as Extract<ImportEntry, { kind: "file" }>);
+    },
     async updateEntries(importId, patches) {
       // Presence flags distinguish omitted fields from explicit NULL. Each values column is typed,
       // including all-NULL batches; chunking bounds bind parameters, not transaction concurrency.

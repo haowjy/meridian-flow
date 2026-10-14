@@ -2,8 +2,7 @@
 import { IMPORT_ADMISSION } from "@meridian/contracts";
 import Busboy from "busboy";
 import type { H3Event } from "nitro/h3";
-import type { ImportPart } from "../domains/import/domain/upload-service.js";
-import { IMPORT_LIMITS, ImportError } from "../domains/import/index.js";
+import { IMPORT_LIMITS, ImportError, type ImportPart } from "../domains/import/index.js";
 
 export async function readBoundedBody(
   event: Pick<H3Event, "req">,
@@ -123,11 +122,12 @@ export async function readImportParts(
       oversized = true;
       buffered -= size;
       chunks.length = 0;
-      parts.push({ entryId, bytes: new Uint8Array(), tooLarge: true });
+      parts.push({ kind: "oversize", entryId });
     });
     file.on("end", () => {
       if (!file.truncated)
         parts.push({
+          kind: "bytes",
           entryId,
           bytes: Buffer.concat(chunks, size),
           ...(changed.has(entryId) ? { changedAfterPick: true } : {}),

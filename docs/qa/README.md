@@ -83,6 +83,9 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    returns uploading, a pending root identity (`created: false`), and one failed
    `too_large` file. No Context folder or document exists yet.
 2. Send one numbered multipart file, with its id in `X-Import-Changed-Entries`.
+   Repeat with a 200-part request (distinct numbered files under 8 MiB). All 200
+   must be received, selection sizes must stay unchanged, and changed-file
+   attention must count once. A header naming an absent part must return 400.
    Detail reports received/changed_after_pick; replay the part and confirm the
    receipt remains unchanged. Reload and confirm the other file is awaiting.
 3. Skip the missing file with `not_found`. State becomes organizing without any

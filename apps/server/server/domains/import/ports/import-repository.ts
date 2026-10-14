@@ -75,6 +75,10 @@ export interface ImportRepository {
   insert(record: ImportRecord, entries: ImportEntry[]): Promise<void>;
   update(id: string, patch: ImportPatch): Promise<void>;
   entries(id: string): Promise<ImportEntry[]>;
+  fileEntries(
+    importId: string,
+    entryIds: number[],
+  ): Promise<Extract<ImportEntry, { kind: "file" }>[]>;
   updateEntries(
     importId: string,
     patches: { id: string; patch: ImportEntryPatch }[],

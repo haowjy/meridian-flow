@@ -50,9 +50,7 @@ describe("bounded import bodies", () => {
     form.append("3", new Blob(["hello"]), "a.md");
     const ok = new Request("https://import.test/", { method: "POST", body: form });
     const parts = await readImportParts({ req: ok });
-    expect(parts.map((part) => [part.entryId, new TextDecoder().decode(part.bytes)])).toEqual([
-      [3, "hello"],
-    ]);
+    expect(parts).toEqual([{ kind: "bytes", entryId: 3, bytes: Buffer.from("hello") }]);
     const bad = new FormData();
     bad.append("x", new Blob(["hello"]), "a.md");
     expect(
@@ -77,7 +75,5 @@ it("reports a grown oversized part by entry id instead of rejecting the entire r
     ],
     { "content-type": "multipart/form-data; boundary=probe" },
   );
-  expect(await readImportParts(event)).toEqual([
-    { entryId: 7, bytes: new Uint8Array(), tooLarge: true },
-  ]);
+  expect(await readImportParts(event)).toEqual([{ kind: "oversize", entryId: 7 }]);
 });

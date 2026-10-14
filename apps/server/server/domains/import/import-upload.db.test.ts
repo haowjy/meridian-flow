@@ -49,7 +49,9 @@ describe.runIf(enabled)("durable upload", () => {
     })),
   });
   const send = (id: string, entryId: number, text = "hello") =>
-    service().receive(id, projectId, async () => [{ entryId, bytes: Buffer.from(text) }]);
+    service().receive(id, projectId, async () => [
+      { kind: "bytes", entryId, bytes: Buffer.from(text) },
+    ]);
   beforeEach(async () => {
     await deleteDrizzleRows(db, [imports, users]);
     await db.insert(users).values(conformanceUserValues(userId, "upload-first"));
@@ -173,7 +175,12 @@ describe.runIf(enabled)("durable upload", () => {
     const input = selection();
     await service().create(projectId, userId, input);
     await service().receive(input.importId, projectId, async () => [
-      { entryId: 0, bytes: Buffer.from("---\naliases: [Hero]\n---\nhi"), changedAfterPick: true },
+      {
+        kind: "bytes",
+        entryId: 0,
+        bytes: Buffer.from("---\naliases: [Hero]\n---\nhi"),
+        changedAfterPick: true,
+      },
     ]);
     expect((await repository.entries(input.importId)).find((e) => e.entryId === 0)).toMatchObject({
       reason: "changed_after_pick",

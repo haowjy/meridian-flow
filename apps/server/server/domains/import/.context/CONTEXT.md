@@ -42,8 +42,13 @@ be less than one hour by database time. Cumulative received bytes are checked
 under that same lock; overflow fails the entry with `too_large`. The transaction
 updates retained counts and activity, then moves to organizing if no awaiting
 entry remains. An already-received part replays without replacing its bytes,
-including after completion. Receives pulse activity every 30 seconds and time
-out after ten minutes; an expired receive cannot commit a receipt.
+including after completion. Receive separates the lifetime scope, object preparation,
+and synchronous ordered admission decisions under the lock. Only the request's
+file ids are fetched. The adapter persists receipt patches in bounded typed SQL
+batches; uniform transitions use import/state (and optionally id-set) predicates.
+Receives pulse activity every 30 seconds and time out after ten minutes. The scope
+keeps admission until execution settles, even after its response deadline. Abort
+checks around database waits roll back an expired receive's transaction.
 
 ## Commands and cleanup
 
