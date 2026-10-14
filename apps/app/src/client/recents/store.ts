@@ -360,8 +360,7 @@ export class DeviceAccountRecentsStore {
    */
   followIdentity(accountId: string, projectId: string, from: string, to: string): boolean {
     const state = this.bound(accountId);
-    if (!state || !state.items.some((i) => i.projectId === projectId && i.documentId === from))
-      return false;
+    if (!state?.items.some((i) => i.projectId === projectId && i.documentId === from)) return false;
     const moved = state.items.map((item) =>
       item.projectId === projectId && item.documentId === from ? { ...item, documentId: to } : item,
     );
