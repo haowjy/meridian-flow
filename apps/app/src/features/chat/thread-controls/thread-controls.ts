@@ -57,6 +57,12 @@ export type QueuedControl = {
   status: QueuedControlStatus;
   /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
   awaitingServer?: boolean;
+  /**
+   * A switch the server will not apply at the next run's start: a reply that already held
+   * the chat when it was made has to finish first. A switch made in an idle chat is not
+   * waiting, whatever starts after it. Only the words depend on it.
+   */
+  waiting?: boolean;
 };
 
 export type ControlAction =
