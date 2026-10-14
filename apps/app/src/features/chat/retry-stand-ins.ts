@@ -5,12 +5,18 @@
  * id once it arrives.
  */
 import type { Turn } from "@meridian/contracts/protocol";
+import { classifyTurn } from "./transcript-model";
 
 /**
  * The stored turns with each stand-in placed after the turn it followed when
  * the writer pressed Retry. Turns the server adds later land below it, so a
  * stand-in never drifts to the bottom of the chat or outranks a newer turn.
  * A stand-in whose previous turn is not in view goes at the end.
+ *
+ * Write-mode switches that directly follow the anchor stay above the stand-in:
+ * the server commits a queued switch before it reserves the Retry's reply, so a
+ * snapshot can hold the switch without the reply. Any other newer turn still
+ * outranks the stand-in.
  */
 export function placeStandIns(stored: Turn[], local: readonly Turn[]): Turn[] {
   if (!local.length) return stored;
@@ -23,6 +29,12 @@ export function placeStandIns(stored: Turn[], local: readonly Turn[]): Turn[] {
     }
     // Earlier stand-ins that followed the same turn stay ahead of this one.
     let at = after + 1;
+    while (
+      placed[at] &&
+      !local.includes(placed[at] as Turn) &&
+      classifyTurn(placed[at] as Turn) === "write-mode"
+    )
+      at++;
     while (local.includes(placed[at] as Turn) && placed[at]?.prevTurnId === standIn.prevTurnId)
       at++;
     placed.splice(at, 0, standIn);
