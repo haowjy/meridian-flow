@@ -29,9 +29,9 @@ export type LocalDocumentSessionTransfer = Readonly<{
   lineageHandle: string;
   exactDatabaseName: string;
   /** Throws before the durable ownership transition if the owner record moved. */
-  prepareCommit(): void;
+  prepareCommit(): undefined;
   /** Converges owner memory inside the commit's one operation-lock section: it cannot await. */
-  completeCommit(ownership: TransferredDocumentSessionOwnership): void;
+  completeCommit(ownership: TransferredDocumentSessionOwnership): undefined;
 }>;
 
 export type LocalDocumentSessionHandoff = Readonly<{

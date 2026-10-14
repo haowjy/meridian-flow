@@ -168,7 +168,7 @@ export type LocalAdoptionState =
 /** The fenced commit: the reservation it consumes, and the synchronous hook that runs inside it. */
 export type LocalAdoptionCommit = LocalAdoptionPendingReceipt & {
   /** Runs inside the commit's IndexedDB transaction, so it must not await. */
-  beforeWrite(persistenceGeneration: AvailabilityGeneration): void;
+  beforeWrite(persistenceGeneration: AvailabilityGeneration): undefined;
 };
 
 function encodeKeyPart(value: string): string {

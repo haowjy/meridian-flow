@@ -22,8 +22,8 @@ export type AdmittedDocumentLease = LiveDocumentSessionLease & {
  */
 export type LocalAdoptionAdmission = LocalAdoptionPendingReceipt & {
   transfer: {
-    prepareCommit(admitted: AdmittedDocumentLease): void;
-    completeCommit(admitted: AdmittedDocumentLease): void;
+    prepareCommit(admitted: AdmittedDocumentLease): undefined;
+    completeCommit(admitted: AdmittedDocumentLease): undefined;
   };
 };
 
