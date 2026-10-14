@@ -463,7 +463,10 @@ function createFake() {
       const concatenated = body.blocks.map((block) => block.text ?? "").join("");
       if (concatenated !== body.text) return send(400, { message: "text must equal blocks" });
       const resumeAfterSeq = String(journal.length);
-      if (body.text === "steer behind completed run") {
+      // "yielded": a queued switch ends A's execution at the boundary before M is drained,
+      // so no successor starts and M stays owed.
+      const yielded = body.text === "steer behind yielded switch";
+      if (body.text === "steer behind completed run" || yielded) {
         runCounter += 1;
         const userTurnId = `turn-u${runCounter}`;
         const first: FakeTurn = {
@@ -481,11 +484,14 @@ function createFake() {
           error: null,
           text: "",
         };
-        turns.push(
-          first,
-          { id: userTurnId, role: "user", status: "complete", error: null, text: body.text },
-          second,
-        );
+        turns.push(first, {
+          id: userTurnId,
+          role: "user",
+          status: "complete",
+          error: null,
+          text: body.text,
+        });
+        if (!yielded) turns.push(second);
         pendingItems.push({
           id: userTurnId,
           seq: runCounter,
@@ -498,8 +504,12 @@ function createFake() {
         scheduleReply(() => {
           first.status = "complete";
           first.text = "First answer";
-          second.status = "streaming";
           publish({ type: "RUN_FINISHED", threadId: THREAD_ID, runId: first.id } as AGUIEvent);
+          if (yielded) {
+            publishEnded(first.id);
+            return;
+          }
+          second.status = "streaming";
           publishStart(second.id, [userTurnId], first.id);
           const finishSecond = () => {
             second.status = "complete";
