@@ -11,11 +11,12 @@
  * `TEST_BUDGET_UPDATE=1 pnpm test` so the increase is a reviewable line in the
  * diff rather than silent drift.
  *
- * Wall time is reported on every run and only blocks in CI. On a shared dev
- * host the same suite varies by more than 2x with machine load alone (measured
- * 53s to 85s for the identical 2,414 cases), so a blocking local ceiling would
- * be the flake this guard exists to avoid. Set TEST_DURATION_CEILING_SECONDS to
- * override; set TEST_DURATION_CEILING_STRICT=1 to block outside CI too.
+ * Wall time is reported on every run and NEVER blocks. It is a property of the
+ * machine and of the worker count as much as of the suite: the identical 2,414
+ * cases measured 53s to 85s on one shared host, and the DB suite runs 89s at
+ * four local workers against 266-322s serially in CI. A hard gate on that number
+ * fails on configuration and runner load rather than on a regression, so it
+ * warns. The comparison value comes from TEST_DURATION_REFERENCE_SECONDS.
  *
  * Memory is sampled across the whole run and DOES block on every run, CI or
  * not: unlike wall time it is a property of the suite rather than of the load
@@ -30,7 +31,7 @@ import type { Reporter, TestModule } from "vitest/node";
 
 const BASELINE_PATH = fileURLToPath(new URL("./test-case-baseline.json", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const DEFAULT_CEILING_SECONDS = 150;
+const DEFAULT_DURATION_REFERENCE_SECONDS = 150;
 const DEFAULT_MEMORY_CEILING_MB = 4096;
 const SAMPLE_INTERVAL_MS = 250;
 const startedAt = performance.now();
@@ -141,20 +142,22 @@ export default class TestBudgetReporter implements Reporter {
 
     const grown = this.observed.size > 0 ? this.summary(baseline) : undefined;
     const elapsed = (performance.now() - startedAt) / 1_000;
-    const ceiling = Number(process.env.TEST_DURATION_CEILING_SECONDS ?? DEFAULT_CEILING_SECONDS);
-    const strict = process.env.CI === "true" || process.env.TEST_DURATION_CEILING_STRICT === "1";
-    const overCeiling = elapsed > ceiling;
+    const reference = Number(
+      process.env.TEST_DURATION_REFERENCE_SECONDS ?? DEFAULT_DURATION_REFERENCE_SECONDS,
+    );
 
     if (grown) process.stderr.write(`\nTest budget: ${grown}\n`);
-    const duration = `Test duration: ${elapsed.toFixed(1)}s / ${ceiling}s ceiling`;
-    if (overCeiling && strict) failures.push(`${duration} - over the ceiling`);
-    else
+    const duration = `Test duration: ${elapsed.toFixed(1)}s / ${reference}s reference`;
+    if (elapsed > reference) {
       process.stderr.write(
-        `${duration}${overCeiling ? " (over ceiling; not blocking outside CI)" : ""}\n`,
+        `::warning::${duration} — ${(elapsed - reference).toFixed(1)}s over. Wall time tracks the machine and the worker count, not only the suite, so it does not fail the run. Treat it as a signal to check what changed.\n`,
       );
+    } else {
+      process.stderr.write(`${duration}\n`);
+    }
 
-    // Memory blocks everywhere, unlike duration: it is a property of the suite,
-    // not of how busy the machine is.
+    // Memory blocks, unlike duration: it is a property of the suite, not of how
+    // busy the machine is.
     const peakMb = Math.round(this.peakRssBytes / (1024 * 1024));
     const memoryCeilingMb = Number(process.env.TEST_MEMORY_CEILING_MB ?? DEFAULT_MEMORY_CEILING_MB);
     const memory = `Peak memory: ${peakMb} MB / ${memoryCeilingMb} MB ceiling`;

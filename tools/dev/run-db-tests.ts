@@ -80,11 +80,12 @@ async function main(): Promise<void> {
       )
     : [];
   // Test-bound against real Postgres and serial in CI, so the DB suite's wall
-  // clock is the sum of every test: 322s on a CI runner against 89s at four
-  // local workers. The unit suite's shared 150s default would fail every CI DB
-  // run, so the DB suite carries its own. `pnpm test:all` inherits it for the
-  // unit half too; that run is not part of `pnpm check`.
-  const durationCeilingSeconds = process.env.TEST_DURATION_CEILING_SECONDS ?? "600";
+  // clock is the sum of every test: 266-322s on a CI runner against 89s at four
+  // local workers. Wall time warns rather than blocks, and this is the value the
+  // warning compares against, so the DB suite's serial shape gets its own.
+  // `pnpm test:all` inherits it for the unit half too; that run is not in
+  // `pnpm check`.
+  const durationReferenceSeconds = process.env.TEST_DURATION_REFERENCE_SECONDS ?? "600";
 
   try {
     if (local) {
@@ -123,7 +124,7 @@ async function main(): Promise<void> {
       ],
       databaseUrl,
       {
-        TEST_DURATION_CEILING_SECONDS: durationCeilingSeconds,
+        TEST_DURATION_REFERENCE_SECONDS: durationReferenceSeconds,
         ...(workerDatabaseUrls.length > 0
           ? {
               DB_TEST_DATABASE_URLS: JSON.stringify(
