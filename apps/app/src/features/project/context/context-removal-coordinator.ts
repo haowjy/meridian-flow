@@ -78,7 +78,12 @@ type ContextRemovalWorkingSetPort = {
 
 export type ContextRemovalRoutePort = {
   readSearch(projectId: string): ProjectSearch;
-  updateSearch(projectId: string, update: (latest: ProjectSearch) => ProjectSearch): void;
+  updateSearch(
+    projectId: string,
+    update: (latest: ProjectSearch) => ProjectSearch,
+    /** Set when the update moves this same document to a new locator rather than replacing it. */
+    relocated?: { documentId: string },
+  ): void;
   transition(
     projectId: string,
     target: ContextRouteTarget | { kind: "clear" },
@@ -539,8 +544,12 @@ export class ContextRemovalCoordinator {
         }
         if (route && routeSearch && settledPlan.routeSearch) {
           const nextRouteSearch = settledPlan.routeSearch;
-          route.updateSearch(projectId, (latest) =>
-            projectSearchEquals(latest, routeSearch) ? nextRouteSearch : latest,
+          route.updateSearch(
+            projectId,
+            (latest) => (projectSearchEquals(latest, routeSearch) ? nextRouteSearch : latest),
+            settledPlan.relocatedRouteDocumentId
+              ? { documentId: settledPlan.relocatedRouteDocumentId }
+              : undefined,
           );
         }
         this.publish(state);

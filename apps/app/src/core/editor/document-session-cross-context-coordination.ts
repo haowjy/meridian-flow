@@ -3,7 +3,6 @@ import type {
   AccountId,
   AvailabilityCommandId,
   AvailabilityGeneration,
-  LiveDocumentSessionLease,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { type CrossContextLockManager, nativeLocks } from "../cross-context-locks";
@@ -11,13 +10,15 @@ import {
   compareAvailabilityGeneration,
   DocumentSessionAuthorityStore,
   type LocalAdoptionPendingReceipt,
+  type LocalAdoptionState,
   type PendingDrain,
-  type PersistenceAuthority,
   storedTerminalLineage,
 } from "./document-session-authority-store";
 import {
+  type AdmittedDocumentLease,
   DocumentSessionCoordinationError,
   type DocumentSessionCrossContextCoordination,
+  type LocalAdoptionAdmission,
   type LocalLineageTerminalPort,
   type LocalSessionAuthority,
 } from "./document-session-coordination-contract";
@@ -44,10 +45,6 @@ type LocalAdmission = {
   incarnation: import("./document-session-authority-store").BindablePersistenceAuthority;
   exactDatabaseName: string;
 };
-type LocalAdoptionLease = LiveDocumentSessionLease & {
-  persistenceGeneration: AvailabilityGeneration;
-  exactDatabaseName: string;
-};
 type CoordinationLifecycle = "open" | "closing" | "closed";
 type CoordinationCloseLedger = {
   reconciliation: "pending" | "settled" | "not-applicable";
@@ -55,49 +52,11 @@ type CoordinationCloseLedger = {
   store: "pending" | "settled";
 };
 
-/**
- * One lineage policy for advisory inspection and commit-time revalidation.
- * A bindable incarnation is reusable at any later admission generation (as in
- * `admit`); only a persistence newer than the lookup is a different incarnation.
- */
-function classifyLocalLineage(
-  authority: PersistenceAuthority | undefined,
-  lookup: { lineageHandle: string; exactDatabaseName: string; generation: AvailabilityGeneration },
-): "clear" | "adopting" | "bindable" | "terminal" | "mismatch" {
-  if (!authority) return "clear";
-  if (
-    authority.exactDatabaseName !== lookup.exactDatabaseName ||
-    (authority.phase === "bindable"
-      ? authority.originLineageHandle !== undefined &&
-        authority.originLineageHandle !== lookup.lineageHandle
-      : authority.lineageHandle !== lookup.lineageHandle)
-  )
-    return "mismatch";
-  if (authority.phase === "terminal-local") return "terminal";
-  if (authority.phase === "adopting-local")
-    return authority.targetGeneration === null ||
-      compareAvailabilityGeneration(authority.targetGeneration, lookup.generation) === 0
-      ? "adopting"
-      : "mismatch";
-  return compareAvailabilityGeneration(authority.generation, lookup.generation) <= 0
-    ? "bindable"
-    : "mismatch";
-}
-
 class Coordination implements DocumentSessionCrossContextCoordination {
   private readonly store: DocumentSessionAuthorityStore;
   private readonly abort = new AbortController();
   private readonly holds = new Map<DocumentId, DocumentHolds>();
   private readonly admissions = new Map<DocumentId, Map<ProjectId, LocalAdmission>>();
-  private readonly localAdoptions = new Map<
-    DocumentId,
-    {
-      projectId: ProjectId;
-      generation: AvailabilityGeneration;
-      exactDatabaseName: string;
-      acquired: { document: boolean; access: boolean };
-    }
-  >();
   private readonly wakeup: DocumentSessionWakeup;
   private reconcilePromise: Promise<void> | null = null;
   private readonly readiness: Promise<void>;
@@ -174,23 +133,14 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
-    originLineageHandle?: string,
-  ): Promise<
-    LiveDocumentSessionLease & {
-      persistenceGeneration: AvailabilityGeneration;
-      exactDatabaseName: string;
-    }
-  > {
+    options: { originLineageHandle?: string; adoption?: LocalAdoptionAdmission } = {},
+  ): Promise<AdmittedDocumentLease> {
+    const { originLineageHandle, adoption } = options;
     await this.requireReady();
     this.assertAdmissionOpen();
     for (;;) {
       let barrier: AvailabilityGeneration | null = null;
-      let installed:
-        | (LiveDocumentSessionLease & {
-            persistenceGeneration: AvailabilityGeneration;
-            exactDatabaseName: string;
-          })
-        | null = null;
+      let installed: AdmittedDocumentLease | null = null;
       await this.documentLocks.withOperation(documentId, async () => {
         await this.recovery.helpPendingUnderOperation(documentId);
         this.assertAdmissionOpen();
@@ -198,11 +148,24 @@ class Coordination implements DocumentSessionCrossContextCoordination {
         const acquired = await this.ensureSharedHolds(documentId, projectId);
         let durableAdmitted = false;
         try {
+          const lease = { accountId: this.accountId, projectId, documentId, generation };
           const decision = await this.store.admit({
             documentId,
             projectId,
             generation,
             originLineageHandle,
+            adoption: adoption && {
+              transitionId: adoption.transitionId,
+              lineageHandle: adoption.lineageHandle,
+              exactDatabaseName: adoption.exactDatabaseName,
+              documentId,
+              beforeWrite: (persistenceGeneration) =>
+                adoption.transfer.prepareCommit({
+                  ...lease,
+                  persistenceGeneration,
+                  exactDatabaseName: adoption.exactDatabaseName,
+                }),
+            },
           });
           if (decision.kind === "generation-revoked") {
             throw new DocumentSessionCoordinationError(
@@ -214,7 +177,6 @@ class Coordination implements DocumentSessionCrossContextCoordination {
             throw new Error("Pending drain survived operation help");
           }
           if (decision.kind === "pending-local-adoption") {
-            await this.releaseNewHolds(documentId, projectId, acquired);
             throw new DocumentSessionCoordinationError(
               "adoption-pending",
               `Local lineage transition is pending for ${documentId}`,
@@ -226,7 +188,6 @@ class Coordination implements DocumentSessionCrossContextCoordination {
             return;
           }
           this.assertAdmissionOpen();
-          const lease = { accountId: this.accountId, projectId, documentId, generation };
           this.local.installSynchronously({
             documentId,
             projectId,
@@ -254,6 +215,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
             persistenceGeneration: decision.persistenceGeneration,
             exactDatabaseName: decision.exactDatabaseName,
           };
+          adoption?.transfer.completeCommit(installed);
         } catch (error) {
           if (!durableAdmitted) await this.releaseNewHolds(documentId, projectId, acquired);
           throw error;
@@ -277,9 +239,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     void this.reconcilePending("operation").catch(() => undefined);
   }
 
-  async beginLocalAdoption(
-    receipt: LocalAdoptionPendingReceipt,
-  ): Promise<LocalAdoptionPendingReceipt> {
+  async beginLocalAdoption(receipt: LocalAdoptionPendingReceipt): Promise<LocalAdoptionState> {
     await this.requireReady();
     this.assertAdmissionOpen();
     return this.documentLocks.withOperation(receipt.documentId, () =>
@@ -292,155 +252,6 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     return this.documentLocks.withOperation(receipt.documentId, () =>
       this.store.abortLocalAdoption(receipt),
     );
-  }
-
-  async inspectLocalLineage(input: {
-    documentId: DocumentId;
-    lineageHandle: string;
-    exactDatabaseName: string;
-    generation: AvailabilityGeneration;
-  }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch"> {
-    await this.requireReady();
-    return this.documentLocks.withOperation(input.documentId, async () => {
-      return classifyLocalLineage((await this.store.readRoom(input.documentId)).persistence, input);
-    });
-  }
-
-  async commitLocalAdoption(
-    projectId: ProjectId,
-    generation: AvailabilityGeneration,
-    pending: LocalAdoptionPendingReceipt,
-    transfer: Readonly<{
-      prepareCommit(admitted: LocalAdoptionLease): void;
-      completeCommit(admitted: LocalAdoptionLease): Promise<void>;
-    }>,
-  ): Promise<LocalAdoptionLease> {
-    await this.requireReady();
-    this.assertAdmissionOpen();
-    let admitted: LocalAdoptionLease | undefined;
-    let acquiredHolds: { document: boolean; access: boolean } | undefined;
-    await this.documentLocks.withOperation(pending.documentId, async () => {
-      const acquired = await this.ensureSharedHolds(pending.documentId, projectId);
-      acquiredHolds = acquired;
-      this.localAdoptions.set(pending.documentId, {
-        projectId,
-        generation,
-        exactDatabaseName: pending.exactDatabaseName,
-        acquired,
-      });
-      let finalized = false;
-      try {
-        const authority = (await this.store.readRoom(pending.documentId)).persistence;
-        let lease: LocalAdoptionLease;
-        if (authority?.phase === "bindable") {
-          if (
-            classifyLocalLineage(authority, {
-              lineageHandle: pending.lineageHandle,
-              exactDatabaseName: pending.exactDatabaseName,
-              generation,
-            }) !== "bindable"
-          )
-            throw new Error("Bindable local adoption authority changed before session transfer");
-          // The incarnation is reused at any later admission generation: the canonical
-          // `admit` stamps a missing origin, checks fences and advances heads.
-          const decision = await this.store.admit({
-            documentId: pending.documentId,
-            projectId,
-            generation,
-            originLineageHandle: pending.lineageHandle,
-          });
-          if (
-            decision.kind !== "admitted" ||
-            decision.exactDatabaseName !== pending.exactDatabaseName
-          )
-            throw new DocumentSessionCoordinationError(
-              decision.kind === "generation-revoked" ? "generation-revoked" : "adoption-pending",
-              `Cached incarnation could not be admitted at generation ${generation}`,
-            );
-          lease = {
-            accountId: this.accountId,
-            projectId,
-            documentId: pending.documentId,
-            generation,
-            persistenceGeneration: decision.persistenceGeneration,
-            exactDatabaseName: decision.exactDatabaseName,
-          };
-          transfer.prepareCommit(lease);
-        } else {
-          lease = {
-            accountId: this.accountId,
-            projectId,
-            documentId: pending.documentId,
-            generation,
-            persistenceGeneration: generation,
-            exactDatabaseName: pending.exactDatabaseName,
-          };
-          const bound = await this.store.bindLocalAdoptionGeneration({
-            ...pending,
-            targetGeneration: generation,
-          });
-          transfer.prepareCommit(lease);
-          await this.store.finalizeLocalAdoption({
-            ...bound,
-            targetGeneration: generation,
-          });
-        }
-        finalized = true;
-        admitted = lease;
-      } finally {
-        if (!finalized) {
-          this.localAdoptions.delete(pending.documentId);
-          await this.releaseNewHolds(pending.documentId, projectId, acquired);
-        }
-      }
-    });
-    if (!admitted) throw new Error("Local adoption did not finalize");
-    const lease = admitted;
-    const { persistenceGeneration } = lease;
-
-    let terminal = false;
-    await this.documentLocks.withOperation(pending.documentId, async () => {
-      const authority = (await this.store.readRoom(pending.documentId)).persistence;
-      if (
-        authority?.phase === "bindable" &&
-        authority.generation === persistenceGeneration &&
-        authority.exactDatabaseName === pending.exactDatabaseName &&
-        authority.originLineageHandle === pending.lineageHandle
-      ) {
-        this.local.installSynchronously({
-          documentId: pending.documentId,
-          projectId,
-          generation,
-          persistenceGeneration: persistenceGeneration,
-          exactDatabaseName: pending.exactDatabaseName,
-        });
-        let projects = this.admissions.get(pending.documentId);
-        if (!projects) {
-          projects = new Map();
-          this.admissions.set(pending.documentId, projects);
-        }
-        projects.set(projectId, {
-          generation,
-          incarnation: authority,
-          exactDatabaseName: pending.exactDatabaseName,
-        });
-        this.localAdoptions.delete(pending.documentId);
-        await transfer.completeCommit(lease);
-        return;
-      }
-      terminal = authority?.phase === "terminal-local" || authority === null;
-      if (!terminal) throw new Error("Local adoption authority changed before owner convergence");
-    });
-    if (terminal) {
-      if (acquiredHolds && this.localAdoptions.delete(pending.documentId))
-        await this.releaseNewHolds(pending.documentId, projectId, acquiredHolds);
-      await this.reconcilePending("operation");
-      throw new DocumentSessionCoordinationError(
-        "generation-revoked",
-        `Generation ${generation} was revoked during local adoption`,
-      );
-    }
-    return lease;
   }
 
   async revokeDocument(
@@ -698,16 +509,6 @@ class Coordination implements DocumentSessionCrossContextCoordination {
   }
 
   private async drainLocal(documentId: DocumentId, pending: PendingDrain): Promise<void> {
-    const adoption = this.localAdoptions.get(documentId);
-    if (
-      pending.kind === "document" &&
-      adoption &&
-      adoption.generation === pending.incarnation?.generation &&
-      adoption.exactDatabaseName === pending.incarnation.exactDatabaseName
-    ) {
-      this.localAdoptions.delete(documentId);
-      await this.releaseNewHolds(documentId, adoption.projectId, adoption.acquired);
-    }
     const projects = this.admissions.get(documentId);
     if (!projects) return;
     if (pending.kind === "document") {

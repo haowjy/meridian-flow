@@ -240,31 +240,6 @@ export function remintCreateConflict(input: {
   };
 }
 
-export function planSessionAdoptionGeneration(
-  record: ResourceRecord,
-  generation: string,
-): ResourceWrite | null {
-  assertAvailabilityGeneration(generation);
-  const adoption = record.resource.obligations.sessionAdoption;
-  if (!adoption) return null;
-  if (adoption.generation === generation) return null;
-  if (adoption.generation !== null) throw new Error("Session adoption generation is immutable");
-  return {
-    expectedRevision: record.resource.revision,
-    next: {
-      resource: {
-        ...record.resource,
-        revision: record.resource.revision + 1,
-        obligations: {
-          ...record.resource.obligations,
-          sessionAdoption: { ...adoption, generation },
-        },
-      },
-      intents: record.intents,
-    },
-  };
-}
-
 /** A cached acknowledged session can render locally before fresh remote admission completes. */
 export function planCachedSessionAdoption(input: {
   record: ResourceRecord;
@@ -293,7 +268,6 @@ export function planCachedSessionAdoption(input: {
             documentId: record.resource.identity.documentId,
             identityRevision: record.resource.identity.revision,
             exactDatabaseName: record.resource.content.databaseName,
-            generation: null,
           },
         },
       },
@@ -302,9 +276,13 @@ export function planCachedSessionAdoption(input: {
   };
 }
 
-export function acknowledgeSessionAdoption(record: ResourceRecord): ResourceWrite | null {
-  const adoption = record.resource.obligations.sessionAdoption;
-  if (!adoption || adoption.generation === null) return null;
+/** Settles the obligation; `generation` is the committed incarnation's, the one the resource now carries. */
+export function acknowledgeSessionAdoption(
+  record: ResourceRecord,
+  generation: string,
+): ResourceWrite | null {
+  assertAvailabilityGeneration(generation);
+  if (!record.resource.obligations.sessionAdoption) return null;
   if (record.resource.lifecycle.kind !== "acknowledged") return null;
   const { sessionAdoption: _completed, ...obligations } = record.resource.obligations;
   return {
@@ -315,7 +293,7 @@ export function acknowledgeSessionAdoption(record: ResourceRecord): ResourceWrit
         revision: record.resource.revision + 1,
         lifecycle: {
           kind: "acknowledged",
-          availabilityGeneration: adoption.generation,
+          availabilityGeneration: generation,
         },
         obligations,
       },
@@ -375,7 +353,6 @@ export function recordAcquiredResourceContent(input: {
             documentId: record.resource.identity.documentId,
             identityRevision: record.resource.identity.revision,
             exactDatabaseName: input.databaseName,
-            generation: input.generation,
           },
         },
       },

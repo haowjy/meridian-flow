@@ -373,8 +373,12 @@ cannot enumerate or settle presentations. Hidden restore candidates are not life
   destination with Retry/Close. Remote confirmed-Discard omission plus fresh
   catalog absence closes it.
 - Draft-only Editor tabs are never persisted and are skipped by durable route
-  continuity. The dock persists its review address and rebuilds its tab from
-  the Work’s draft list. `pullContextCatalogOnHint` wakes mounted draft lists after manifest
+  continuity (Editor persistence strips `reviews`). The dock persists its review
+  address and its one `reviews` entry, which is the only record that a restored
+  tab is draft-only rather than a live document under review; restore admits the
+  address with the server, not from the draft list. Draft-only settlement removes
+  a stale entry once a fresh catalog cut shows the draft gone or the document
+  live. `pullContextCatalogOnHint` wakes mounted draft lists after manifest
   changes so another page can classify remote Apply/Discard without reload.
 
 Server Discard of a new document also removes its Work-manifest entry; subsequent

@@ -37,6 +37,7 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
+import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import {
   bindDocumentAddressReview,
   documentAddressQueryOptions,
@@ -89,7 +90,6 @@ import {
   type NavigationOptions,
   type ProjectRouteCommands,
   type ProjectSearch,
-  projectSearchEquals,
   type RouteWorkResolution,
   routeWorkIssue,
   type WorkDetailTarget,
@@ -565,8 +565,6 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
-  const itemStillListed = (itemKey: string | undefined) =>
-    !editorDrafts.files || editorDrafts.files.some((file) => file.draft.itemKey === itemKey);
   const setEditorReviewItemKey = useCallback((itemKey: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
@@ -795,33 +793,16 @@ function ReadableProjectDestination({
             contextRemovalRoute={{
               transition: (_id, target, prepared) => closeDestination(target, prepared),
               readSearch: () => search,
-              updateSearch: (_id, update) => {
-                const next = update(search);
-                if (projectSearchEquals(next, search)) return;
-                if (next.scheme && next.path !== undefined)
-                  void openContext(
-                    {
-                      scheme: next.scheme,
-                      path: next.path,
-                      workId: next.work,
-                      rootThreadId: next.chat,
-                    },
-                    {
-                      replace: true,
-                      // The coordinator relocates the document the address names,
-                      // or falls back to another. Either way the review follows
-                      // the address until ReviewAddressOwner, which knows
-                      // the document's identity, decides it no longer applies.
-                      // An item the drafts list no longer holds (a Discard took it)
-                      // names nothing, so the fallback document opens without it.
-                      itemKey: itemStillListed(address.itemKey) ? address.itemKey : undefined,
-                    },
-                  );
-                else if (next.screen === "work")
-                  void go(toDestination({ kind: "works" }), { replace: true });
-                else if (next.screen === "context")
-                  void go(toDestination({ kind: "editor" }), { replace: true });
-              },
+              updateSearch: (_id, update, relocated) =>
+                applyContextRemovalSearchUpdate({
+                  search,
+                  update,
+                  itemKey: address.itemKey,
+                  relocated,
+                  openContext,
+                  goWorks: () => void go(toDestination({ kind: "works" }), { replace: true }),
+                  goEditor: () => void go(toDestination({ kind: "editor" }), { replace: true }),
+                }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
             activeContextScheme={editorDocument.activeContextScheme}
