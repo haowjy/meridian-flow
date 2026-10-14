@@ -65,6 +65,7 @@ import {
 } from "./draft-command-record";
 import { classifyDraftCommandRejection } from "./draft-command-rejection";
 import { settleCommand } from "./draft-command-transport";
+import { bumpDraftLinkEpoch } from "./draft-link-epoch";
 import { projectDraft } from "./draft-projection";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
@@ -148,6 +149,7 @@ function refresh(
   threadId: string | null,
   preview = true,
 ): Promise<void> {
+  bumpDraftLinkEpoch(draft.projectId);
   if (threadId) {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
@@ -799,6 +801,7 @@ async function executeWorkWide(
   let held: { commandId: string; digest: string } | null = null;
   const live = () => claims.some(({ claim }) => claimIsLive(claim));
   const refreshWork = () => {
+    bumpDraftLinkEpoch(scope.projectId);
     if (threadId) {
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
