@@ -133,7 +133,9 @@ const { enlistResponseParticipant, runResponseTransaction } = await import(
   "../domain/response-transaction.js"
 );
 const { createResponseWriteFinalizer } = await import("../domain/response-write-finalizer.js");
-const { createPostDurabilityNoticeService } = await import("../domain/reversal-notices.js");
+const { createPostDurabilityNoticeService, createReversalNoticePort } = await import(
+  "../domain/reversal-notices.js"
+);
 const { createBranchThreadPeerAgentEditCore } = await import("../thread-peer-composition.js");
 const { createTurnReversalService } = await import("../domain/turn-reversal-service.js");
 const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
@@ -700,6 +702,12 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     resolveDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,
+    notices: createReversalNoticePort({
+      notices,
+      documentUriResolver: resolveDocumentUri,
+      diagnostics: createReversalNoticeDiagnostics(eventSink),
+    }),
+    workProjection: { mutatePendingBranches: (_branchIds, operation) => operation() },
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,

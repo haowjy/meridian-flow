@@ -10,6 +10,7 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
+import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-branch-push.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -89,6 +90,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
     db,
     availability: { advance: async () => {} },
     catalog: { upsertWorkAuthorities: async () => {} },
+    pending: createDrizzleWorkDraftPendingStore(db),
   } as unknown as Parameters<typeof createWorkProjectionMutation>[0]);
   const branches = createFixtureBranchStore(db, {
     workProjection: projection,

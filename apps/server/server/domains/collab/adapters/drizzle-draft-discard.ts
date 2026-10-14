@@ -133,7 +133,7 @@ async function closeDraftBranches(
 
 /**
  * The kernel's whole-draft arm: every document the draft created ends its use (tombstoned
- * and released when no draft uses it), then the draft closes with every branch and its
+ * and released when no draft uses it), then the draft row closes after every branch (closed above) and its
  * settlements. The caller holds every branch's lease, the draft and its verified scope.
  */
 export async function discardWholeLocked(
