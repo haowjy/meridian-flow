@@ -563,6 +563,8 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
+  const itemStillListed = (itemKey: string | undefined) =>
+    !editorDrafts.files || editorDrafts.files.some((file) => file.draft.itemKey === itemKey);
   const setEditorReviewItemKey = useCallback((itemKey: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
@@ -808,7 +810,9 @@ function ReadableProjectDestination({
                       // or falls back to another. Either way the review follows
                       // the address until ReviewAddressOwner, which knows
                       // the document's identity, decides it no longer applies.
-                      itemKey: address.itemKey,
+                      // An item the drafts list no longer holds (a Discard took it)
+                      // names nothing, so the fallback document opens without it.
+                      itemKey: itemStillListed(address.itemKey) ? address.itemKey : undefined,
                     },
                   );
                 else if (next.screen === "work")
