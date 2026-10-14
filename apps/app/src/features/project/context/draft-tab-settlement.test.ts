@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getContextTabs, rehydrateEditorWorkspace, useContextTabsStore } from "@/client/stores";
+import {
+  editorTabsForWork,
+  getContextTabs,
+  rehydrateEditorWorkspace,
+  useContextTabsStore,
+} from "@/client/stores";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
-function draftTab(token = "tab-a") {
+function draftTab(token = "tab-a", workId = "work-a", itemKey = "draft-a") {
   return {
     kind: "tracked" as const,
     documentId: "document-a",
@@ -15,9 +20,7 @@ function draftTab(token = "tab-a") {
     filetype: "markdown" as const,
     schemaType: "document" as const,
     draftOnly: true,
-    reviewWorkId: "work-a",
-    reviewItemKey: "draft-a",
-    tabInstanceToken: token,
+    reviews: { [workId]: { itemKey, tabInstanceToken: token } },
   };
 }
 
@@ -99,6 +102,46 @@ describe("draft tab settlement", () => {
     expect(slice.selectedTabIdByWork).toEqual({ "work-a": "document-a" });
   });
 
+  it("keeps one tab per document with an entry per Work, so Works neither take nor close each other's", async () => {
+    const coordinator = new ContextRemovalCoordinator("account-a");
+    const store = useContextTabsStore.getState();
+    const inWork = (workId: string) =>
+      editorTabsForWork(getContextTabs("project-a").tabs, workId).map((tab) => tab.documentId);
+    store.openTab("project-a", draftTab("tab-b", "work-b", "draft-b"));
+    const tabs = getContextTabs("project-a").tabs;
+    expect(tabs).toHaveLength(1);
+    expect(inWork("work-a")).toEqual(["document-a"]);
+    expect(inWork("work-b")).toEqual(["document-a"]);
+    expect(tabs[0]).toMatchObject({
+      reviews: {
+        "work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" },
+        "work-b": { itemKey: "draft-b", tabInstanceToken: "tab-b" },
+      },
+    });
+
+    // Discard in A leaves B's entry and tab; A no longer shows it.
+    coordinator.discardDraft("project-a", "work-a", "draft-a");
+    expect(inWork("work-a")).toEqual([]);
+    expect(inWork("work-b")).toEqual(["document-a"]);
+    // The last entry's Discard closes the tab.
+    coordinator.discardDraft("project-a", "work-b", "draft-b");
+    expect(getContextTabs("project-a").tabs).toEqual([]);
+
+    // Apply in A settles the one tab for every Work.
+    store.openTab("project-a", draftTab());
+    store.openTab("project-a", draftTab("tab-b", "work-b", "draft-b"));
+    const shared = getContextTabs("project-a").tabs[0];
+    if (shared?.kind !== "tracked") throw new Error("Expected tracked draft tab");
+    await coordinator.promoteAppliedDraft("project-a", {
+      ...shared,
+      reviews: { "work-a": shared.reviews!["work-a"]! },
+    });
+    expect(getContextTabs("project-a").tabs).toHaveLength(1);
+    expect(getContextTabs("project-a").tabs[0]?.draftOnly).toBeUndefined();
+    expect(inWork("work-a")).toEqual(["document-a"]);
+    expect(inWork("work-b")).toEqual(["document-a"]);
+  });
+
   it("never persists a draft-only tab, so a reload reopens it from its review address", async () => {
     await rehydrateEditorWorkspace("account-persist");
     const store = useContextTabsStore.getState();
@@ -142,7 +185,7 @@ describe("draft tab settlement", () => {
     // The refused draft is still pending: Review installs its overlay again.
     const opened = useContextTabsStore.getState().openTab("project-a", draftTab("reopened"));
     if (opened.kind !== "opened" || opened.tab.kind !== "tracked") throw new Error("not opened");
-    coordinator.admitDraftReview("project-a", opened.tab);
+    coordinator.admitDraftReview("project-a", opened.tab, "work-a");
     select();
 
     // The removal guard no longer repairs the address away from the draft.

@@ -7,6 +7,7 @@ import {
   getContextTabs,
   matchesReviewItem,
   matchesTabInstance,
+  soleReview,
   useContextTabsStore,
 } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
@@ -44,7 +45,7 @@ export function createEditorDocumentCommand({
   accountId: string;
   read: () => EditorCommandSnapshot;
   lookup: Parameters<typeof resolveLaunchLocator>[0]["lookup"];
-  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>) => void;
+  admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>, workId: string) => void;
 }): OpenContextRoute {
   return async (request, options) => {
     const current = read();
@@ -87,7 +88,7 @@ export function createEditorDocumentCommand({
       // destination that resolves, so every re-select or restore of it carries that.
       const itemKey =
         options?.itemKey ??
-        (options?.tab ? reviewItemKeyOf(options.tab) : undefined) ??
+        (options?.tab ? reviewItemKeyOf(options.tab, requested.workId) : undefined) ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
@@ -108,7 +109,8 @@ export function createEditorDocumentCommand({
             .getState()
             .openTab(projectId, preparedTab, undefined, resolvedWorkId ?? undefined);
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
-          if (installed.tab.kind === "tracked") admitDraftReview(installed.tab);
+          if (installed.tab.kind === "tracked" && resolvedWorkId)
+            admitDraftReview(installed.tab, resolvedWorkId);
           selected = installed.tab;
           if (options?.focus && installed.tab.tabInstanceId)
             armEditorFocus(installed.tab.tabInstanceId);
@@ -263,8 +265,9 @@ export function prepareEditorDestination(
     state,
   };
 }
-function reviewItemKeyOf(tab: ContextTab): string | undefined {
-  return tab.kind === "tracked" && tab.draftOnly === true ? tab.reviewItemKey : undefined;
+function reviewItemKeyOf(tab: ContextTab, workId: string | undefined): string | undefined {
+  if (tab.kind !== "tracked" || tab.draftOnly !== true) return undefined;
+  return (workId ? tab.reviews?.[workId]?.itemKey : undefined) ?? soleReview(tab)?.itemKey;
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */

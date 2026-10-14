@@ -57,6 +57,13 @@ export type EditorWorkspaceCommand =
       kind: "settle-draft";
       projectId: string;
       tab: ContextTab;
+    }
+  | {
+      /** Discard in one Work: drops that Work's entry; the tab closes only when no Work reviews it. */
+      kind: "drop-review";
+      projectId: string;
+      workId: string;
+      tabInstanceId: string;
     };
 
 export type EditorWorkspaceCommandResult =
@@ -186,19 +193,11 @@ export function parseEditorWorkspace(
 export function durableContextTab(tab: ContextTab): ContextTab {
   const tabInstanceId = tab.tabInstanceId ?? crypto.randomUUID();
   if (tab.kind === "new") return { ...tab, tabInstanceId };
-  const {
-    draftOnly: _,
-    reviewWorkId: _reviewWorkId,
-    reviewItemKey: _reviewItemKey,
-    tabInstanceToken: _tabInstanceToken,
-    ...persisted
-  } = tab;
+  const { draftOnly: _, reviews: _reviews, ...persisted } = tab;
   return { ...persisted, tabInstanceId } as ContextTab;
 }
 
 function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
-  const leftDraft = left.kind === "new" ? null : left;
-  const rightDraft = right.kind === "new" ? null : right;
   return (
     left.tabInstanceId === right.tabInstanceId &&
     left.documentId === right.documentId &&
@@ -210,9 +209,7 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
         left.scheme === right.scheme &&
         left.path === right.path &&
         left.workId === right.workId &&
-        left.rootThreadId === right.rootThreadId)) &&
-    leftDraft?.reviewItemKey === rightDraft?.reviewItemKey &&
-    leftDraft?.tabInstanceToken === rightDraft?.tabInstanceToken
+        left.rootThreadId === right.rootThreadId))
   );
 }
 
@@ -390,6 +387,28 @@ export function reduceEditorWorkspace(
       ),
     });
   }
+  if (command.kind === "drop-review") {
+    const workspace = current.projects[command.projectId];
+    const tab = workspace?.tabs.find(
+      (candidate) => candidate.tabInstanceId === command.tabInstanceId,
+    );
+    if (!workspace || !tab || tab.kind === "new" || !tab.reviews?.[command.workId])
+      return outcome("stale", current);
+    const { [command.workId]: _dropped, ...reviews } = tab.reviews;
+    const closes = Object.keys(reviews).length === 0;
+    const selections = Object.fromEntries(
+      Object.entries(workspace.selectedTabIdByWork).filter(
+        ([workId, documentId]) =>
+          documentId !== tab.documentId || (!closes && workId !== command.workId),
+      ),
+    );
+    return replaceProject(current, command.projectId, {
+      tabs: closes
+        ? workspace.tabs.filter((candidate) => candidate !== tab)
+        : workspace.tabs.map((candidate) => (candidate === tab ? { ...tab, reviews } : candidate)),
+      selectedTabIdByWork: selections,
+    });
+  }
   if (command.kind === "reconcile-resource") {
     const workspace = current.projects[command.projectId];
     if (!workspace) return outcome("not-referenced", current);
@@ -479,12 +498,14 @@ export function reduceEditorWorkspace(
           ...existingWithoutResourceOwnership,
           ...tab,
           tabInstanceId: existing.tabInstanceId,
+          // Each Work keeps the entry it first opened; another Work's draft adds its own.
           ...(existing.kind !== "new" && existing.draftOnly
             ? {
                 draftOnly: true,
-                reviewWorkId: existing.reviewWorkId,
-                reviewItemKey: existing.reviewItemKey,
-                tabInstanceToken: existing.tabInstanceToken,
+                reviews: {
+                  ...(tab.kind !== "new" && tab.draftOnly ? tab.reviews : undefined),
+                  ...existing.reviews,
+                },
               }
             : {}),
         } as ContextTab)

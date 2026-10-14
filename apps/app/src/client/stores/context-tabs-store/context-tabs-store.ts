@@ -22,12 +22,7 @@ import {
 export type TrackedTabPatch = Partial<
   Omit<
     Extract<ContextTab, { kind: "tracked" }>,
-    | keyof TabOwner
-    | "tabInstanceId"
-    | "draftOnly"
-    | "reviewWorkId"
-    | "reviewItemKey"
-    | "tabInstanceToken"
+    keyof TabOwner | "tabInstanceId" | "draftOnly" | "reviews"
   >
 > &
   TabOwner;
@@ -43,7 +38,9 @@ export {
   type ProjectTabsSlice,
   type ReviewItemTabIdentity,
   replaceOwner,
+  reviewEntryOf,
   type ServerContextTab,
+  soleReview,
   type TabOwner,
   tabContextOwner,
 } from "./editor-workspace-model";
@@ -93,6 +90,7 @@ type ContextTabsActions = {
     next: ProjectTabsSlice,
   ) => Promise<void>;
   settleDraft: (projectId: string, tab: ContextTab) => Promise<DraftWorkspaceSettlementReceipt>;
+  dropReviewEntry: (projectId: string, workId: string, tabInstanceId: string) => void;
 };
 
 export type DraftWorkspaceSettlementReceipt = { kind: "settled" } | { kind: "not-settled" };
@@ -179,7 +177,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             (editorWorkId === undefined ||
               installed.kind === "new" ||
               !installed.draftOnly ||
-              installed.reviewWorkId === editorWorkId)
+              installed.reviews?.[editorWorkId] !== undefined)
             ? { kind: "opened", tab: installed }
             : { kind: "not-opened" };
         },
@@ -285,6 +283,10 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
             };
           }),
 
+        dropReviewEntry: (projectId, workId, tabInstanceId) => {
+          dispatchResult(() => ({ kind: "drop-review", projectId, workId, tabInstanceId }));
+        },
+
         settleDraft: async (projectId, tab) => {
           if (tab.kind === "new") return { kind: "not-settled" };
           const result = dispatchResult(() => ({ kind: "settle-draft", projectId, tab }));
@@ -323,12 +325,24 @@ export function commitPlannedContextRemoval(
   input: {
     documentIds: readonly string[];
     workspaceSelection?: { workId: string; documentId: string | null };
+    /** A Work's Discard drops only its entry; the tab survives while another Work reviews it. */
+    dropReviewOf?: string;
   },
 ): ContextTab[] {
   const documentIds = new Set(input.documentIds);
+  const before = sliceFor(useContextTabsStore.getState(), projectId);
+  const removed = before.tabs.filter((tab) => documentIds.has(tab.documentId));
+  if (input.dropReviewOf) {
+    for (const tab of removed)
+      if (tab.tabInstanceId)
+        useContextTabsStore
+          .getState()
+          .dropReviewEntry(projectId, input.dropReviewOf, tab.tabInstanceId);
+  }
   const slice = sliceFor(useContextTabsStore.getState(), projectId);
-  const removed = slice.tabs.filter((tab) => documentIds.has(tab.documentId));
-  const tabs = slice.tabs.filter((tab) => !documentIds.has(tab.documentId));
+  const tabs = input.dropReviewOf
+    ? slice.tabs
+    : slice.tabs.filter((tab) => !documentIds.has(tab.documentId));
   const selectedTabIdByWork = { ...slice.selectedTabIdByWork };
   if (input.workspaceSelection) {
     const { workId, documentId } = input.workspaceSelection;

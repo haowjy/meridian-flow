@@ -184,7 +184,8 @@ async function setup(source: ScreenKey = "context") {
         documentCatalog: null,
       }),
       lookup: async () => ({ kind: "failed" }),
-      admitDraftReview: (tab) => removal.admitDraftReview(projectId, tab),
+      admitDraftReview: (tab, reviewWorkId) =>
+        removal.admitDraftReview(projectId, tab, reviewWorkId),
     });
     const entry = useSyncExternalStore(
       (listener) => history.subscribe(listener),

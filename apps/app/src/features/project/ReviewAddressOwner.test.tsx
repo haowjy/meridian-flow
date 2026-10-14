@@ -330,7 +330,7 @@ describe("ReviewAddressOwner", () => {
               tab.kind === "tracked" &&
               tab.draftOnly &&
               tab.documentId === documentId &&
-              tab.reviewWorkId === "work-a",
+              tab.reviews?.["work-a"],
           ),
         },
       });

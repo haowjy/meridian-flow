@@ -70,7 +70,10 @@ function draftOnlyOwner({
 }): ServerContextTab | null {
   const owner = resolveWorkspaceRoute({
     tabs: (workspaceTabs ?? []).filter(
-      (tab) => tab.kind !== "new" && tab.draftOnly === true && tab.reviewWorkId === locator.workId,
+      (tab) =>
+        tab.kind !== "new" &&
+        tab.draftOnly === true &&
+        Boolean(locator.workId && tab.reviews?.[locator.workId]),
     ),
     selectedDocumentId: undefined,
     locator,

@@ -91,6 +91,7 @@ type EditorWorkspacePort = {
     input: {
       documentIds: readonly string[];
       workspaceSelection?: { workId: string; documentId: string | null };
+      dropReviewOf?: string;
     },
   ): ContextTab[];
   settleDraft(
@@ -861,22 +862,14 @@ export class ContextRemovalCoordinator {
     const tab = slice.tabs.find((candidate) =>
       matchesReviewItem(candidate, { reviewWorkId, reviewItemKey }),
     );
-    if (
-      tab === undefined ||
-      tab.kind !== "tracked" ||
-      !tab.draftOnly ||
-      tab.reviewWorkId !== reviewWorkId ||
-      tab.reviewItemKey !== reviewItemKey ||
-      !tab.tabInstanceId ||
-      !tab.tabInstanceToken
-    )
-      return { kind: "noop" };
+    if (tab === undefined || tab.kind !== "tracked" || !tab.tabInstanceId) return { kind: "noop" };
     if (this.unavailable()) return { kind: "noop" };
     const state = this.project(projectId);
     const transition = reduceRepresentedRemoval(state.selection, [tab], {
       cause: "draft-discard",
       documentIds: [tab.documentId],
       tabInstanceId: tab.tabInstanceId,
+      reviewWorkId,
     });
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning);
@@ -889,10 +882,14 @@ export class ContextRemovalCoordinator {
    * leaves its draft pending, so the removal guard that keeps Back and late
    * address resolution from resurrecting a discarded address no longer applies.
    */
-  admitDraftReview(projectId: string, tab: Extract<ContextTab, { kind: "tracked" }>): void {
+  admitDraftReview(
+    projectId: string,
+    tab: Extract<ContextTab, { kind: "tracked" }>,
+    workId: string,
+  ): void {
     const state = this.projects.get(projectId);
-    if (!state || !tab.draftOnly || !tab.reviewWorkId) return;
-    state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, tab.reviewWorkId)));
+    if (!state || !tab.draftOnly || !tab.reviews?.[workId]) return;
+    state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, workId)));
   }
 
   /** A server-applied draft-only tab becomes the ordinary tab, in place. */
@@ -904,9 +901,7 @@ export class ContextRemovalCoordinator {
       this.unavailable() ||
       !tab.draftOnly ||
       !tab.tabInstanceId ||
-      !tab.reviewWorkId ||
-      !tab.reviewItemKey ||
-      !tab.tabInstanceToken
+      Object.keys(tab.reviews ?? {}).length === 0
     )
       return false;
     const settled = await this.workspace.settleDraft(projectId, tab);
@@ -1017,6 +1012,9 @@ export class ContextRemovalCoordinator {
 
     this.workspace.commit(projectId, {
       documentIds: plan.outcome.removed.map((tab) => tab.documentId),
+      ...(intent.cause === "draft-discard" && intent.reviewWorkId
+        ? { dropReviewOf: intent.reviewWorkId }
+        : {}),
       ...(state.activeWorkId
         ? {
             workspaceSelection: {
