@@ -23,6 +23,7 @@ const expectedSuites = [
   "apps/server/server/domains/import/import-reports.db.test.ts",
   "apps/server/server/domains/context/adapters/drizzle-context-children.db.test.ts",
   "apps/server/server/domains/collab/document-landing.db.test.ts",
+  "apps/server/server/domains/collab/seed-batch.db.test.ts",
   "apps/server/server/domains/collab/branch-pulls-locks.db.test.ts",
   "apps/server/server/domains/collab/adapters/drizzle-document-edits.db.test.ts",
   "apps/server/server/domains/collab/adapters/response-helper-replay.db.test.ts",

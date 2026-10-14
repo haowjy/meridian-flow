@@ -17,6 +17,7 @@ export {
   type ImportLinkBinderDeps,
   type LinkBinder,
   LinkBindingInsideTransactionError,
+  type PlannedMarkdownInput,
 } from "./domain/link-binding.js";
 export {
   type DocumentLinkScopes,
@@ -25,6 +26,7 @@ export {
   type LinkScopeKey,
   type ScopePrepareRequest,
 } from "./domain/ports/document-link-scope.js";
+export type { PreparedSeed } from "./domain/ports/initial-document-seeds.js";
 export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,

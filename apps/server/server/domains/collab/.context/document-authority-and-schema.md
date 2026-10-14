@@ -63,6 +63,17 @@ fresh or against the holder's current document (`against: "current"`: every
 link that stays corresponds to itself and keeps its ref, so an overwrite
 keeps refs verbatim), and registers the ahead refs it minted.
 
+**Batch seeds for documents created together.** `prepareSeed` encodes a fresh
+`BoundWrite` as a first state outside any transaction (no journal, no room: the
+document does not exist yet), and `insertInitialStates` writes heads and
+sequence-0 checkpoints set-wise inside the creator's transaction, under
+`seedInitialDocument`'s authority and head invariants but throwing, not
+no-oping, on a document that already has state. The import binder's
+`bindPlannedMarkdown` binds a holder that does not exist yet (scope read by its
+address, write naming its planned id); a target in `planned` binds `doc:<id>`
+without resolution, since a ref is authority and resolves once the row exists.
+`announceSeeds` runs the write hook after commit.
+
 A bound write is desired state: its assigned blocks, plus the holder it was
 bound for and whether it was bound fresh. It is applied as agent-edit's
 ordinary whole-document overwrite (the correspondence a `create` with
