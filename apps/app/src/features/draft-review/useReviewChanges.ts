@@ -17,7 +17,11 @@ import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
 /** The open review's model: a draft's changes plus the review's focus and stepping. */
-export type ReviewChangesView = DraftChangesView & {
+export type ReviewChangesView = Omit<DraftChangesView, "discard"> & {
+  /** Resolves true when a local edit reverted the change, so `undoLastDiscard` can take it back. */
+  discard: (change: ReviewChange) => Promise<boolean>;
+  /** Undo the last Discard authored in this view's surface. */
+  undoLastDiscard: () => void;
   /** The frame this view's rows were drawn from: what a whole-draft Apply carries. */
   frame: ReviewFrame | null;
   /** The applied entries in force: the manuscript stops painting the changes they name. */
@@ -75,6 +79,11 @@ export function useReviewChanges(
     [items, focus, focused],
   );
 
+  const undoLastDiscard = useCallback(
+    () => controller.undoDiscard(surface),
+    [controller.undoDiscard, surface],
+  );
+
   const apply = useCallback(
     async (change: ReviewChange) => {
       if (!review) return;
@@ -89,11 +98,15 @@ export function useReviewChanges(
     [controller.apply, controller.applyOpenChange, data.wholeDocument, review, settleFocus, focus],
   );
   const discard = useCallback(
-    async (change: ReviewChange) => {
-      if (!review) return;
+    /** True when the change was reverted by a local edit this surface's history can undo (`undoLastDiscard`). */
+    async (change: ReviewChange): Promise<boolean> => {
+      if (!review) return false;
       settleFocus(change);
-      if (data.wholeDocument) await controller.discard(review.documentId, review.itemKey, surface);
-      else controller.discardOpenChange(change, surface);
+      if (data.wholeDocument) {
+        await controller.discard(review.documentId, review.itemKey, surface);
+        return false;
+      }
+      return controller.discardOpenChange(change, surface) === "discarded";
     },
     [
       controller.discard,
@@ -122,5 +135,6 @@ export function useReviewChanges(
     step,
     apply,
     discard,
+    undoLastDiscard,
   };
 }

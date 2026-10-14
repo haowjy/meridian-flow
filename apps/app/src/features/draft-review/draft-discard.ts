@@ -148,3 +148,10 @@ export function discardAll(handle: ReviewEditorHandle): DiscardResult {
   writeDiscard(target, fresh, "all");
   return "discarded";
 }
+
+/** Undo the last step of the editor's surface history: the Discard just made there. */
+export function undoDiscard(handle: ReviewEditorHandle): void {
+  const { editor } = handle;
+  if (editor.isDestroyed) return;
+  yUndoPluginKey.getState(editor.state)?.undoManager?.undo();
+}

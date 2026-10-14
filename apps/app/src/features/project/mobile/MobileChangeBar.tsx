@@ -6,10 +6,19 @@
  * keyboard when that is up (`--mobile-keyboard-height`, set by
  * `MobileKeyboardAware`). Tapping a change selects it; nothing here is hover.
  */
+
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
+import type { ReviewChange } from "@/features/draft-review/review-model";
 import type { ReviewChangesView } from "@/features/draft-review/useReviewChanges";
 
-export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
+export function MobileChangeBar({
+  view,
+  onDiscarded,
+}: {
+  view: ReviewChangesView;
+  /** The change was reverted by a local edit that Undo can take back. */
+  onDiscarded: (change: ReviewChange) => void;
+}) {
   const item = view.items.find((candidate) => candidate.change.id === view.focused?.id);
   if (!item) return null;
   const { change, failure, draftFailure } = item;
@@ -31,7 +40,9 @@ export function MobileChangeBar({ view }: { view: ReviewChangesView }) {
         failure={failure}
         draftFailure={draftFailure}
         onApply={() => void view.apply(change)}
-        onDiscard={() => void view.discard(change)}
+        onDiscard={() =>
+          void view.discard(change).then((undoable) => undoable && onDiscarded(change))
+        }
         className="rounded-xl"
       />
     </div>
