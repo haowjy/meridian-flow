@@ -181,7 +181,7 @@ function DirRow({
     siblings,
   });
   const isOpen = env.isExpanded(dir.entryId);
-  const folder: DropFolder = { entryId: dir.entryId, path: dir.path, uri: dir.uri, name: dir.name };
+  const folder: DropFolder = { entryId: dir.entryId, path: dir.path, name: dir.name };
   const drop = useTreeDropTarget(
     { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
     { onSpring: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },

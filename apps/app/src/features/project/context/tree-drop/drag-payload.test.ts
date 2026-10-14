@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { dragPayloadKind, MERIDIAN_ENTRIES_MIME } from "./drag-payload";
 
 describe("dragPayloadKind", () => {
-  it("sends desktop files to import and leaves internal payloads to drag-anywhere", () => {
+  it("tells a row drag from a desktop file drag", () => {
     expect(dragPayloadKind(["Files"])).toBe("files");
     expect(dragPayloadKind([MERIDIAN_ENTRIES_MIME])).toBe("entries");
     expect(dragPayloadKind(["text/plain", "text/uri-list"])).toBe("none");

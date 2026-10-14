@@ -22,7 +22,6 @@ import { EntrySelectionProvider, useEntrySelection } from "../context/entry-drag
 import { useEntryMoveRoute } from "../context/entry-drag/use-entry-move-route";
 import { DropRegion } from "../context/tree-drop/DropRegion";
 import {
-  type TreeDropRoutes,
   TreeDropScope,
   type TreeDropTarget,
   useTreeDropTarget,
@@ -62,7 +61,7 @@ export function useWorkFiles(projectId: string, work: AddressableWork) {
     retryNote: () => void intake.retryNote().then(named),
   };
 }
-export type WorkFiles = ReturnType<typeof useWorkFiles>;
+type WorkFiles = ReturnType<typeof useWorkFiles>;
 
 /** The Files tab's toolbar action: the jade New note. */
 export function WorkFilesActions({ files }: { files: WorkFiles }) {
@@ -150,7 +149,6 @@ export function WorkFilesView({
     surface: "work-files",
     onLanded,
   });
-  const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
 
@@ -207,7 +205,7 @@ export function WorkFilesView({
   return (
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
-      <TreeDropScope routes={routes}>
+      <TreeDropScope route={moveRoute}>
         <EntrySelectionProvider selection={selection}>
           <ScratchDropGroup catalogRootId={catalog?.root.entryId ?? null}>
             <WorkFileGroup label={t`Scratch`}>

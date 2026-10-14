@@ -28,12 +28,7 @@ import { useEntryMoveRoute } from "./entry-drag/use-entry-move-route";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
-import {
-  dragEdgeScroll,
-  type TreeDropRoutes,
-  TreeDropScope,
-  type TreeDropTarget,
-} from "./tree-drop/tree-drop";
+import { dragEdgeScroll, TreeDropScope, type TreeDropTarget } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
@@ -42,7 +37,7 @@ function rowPaddingLeft(depth: number): number {
   return 8 + depth * 16;
 }
 
-export type ContextTreePanelProps = {
+type ContextTreePanelProps = {
   projectId: string;
   /** Shell-resolved Editor Work; the tree never derives scope from Chat. */
   editorWorkId: string | null;
@@ -251,7 +246,6 @@ function SchemeSection({
     surface: "sidebar",
     onLanded,
   });
-  const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
@@ -331,7 +325,7 @@ function SchemeSection({
   );
 
   return (
-    <TreeDropScope routes={routes}>
+    <TreeDropScope route={moveRoute}>
       <section>
         <AreaDropRegion
           scheme={scheme}

@@ -34,7 +34,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
  */
-export type LeftSidebarProps = {
+type LeftSidebarProps = {
   projectId: string;
   projectTitle: string;
   titleEdit: ProjectTitleEdit;

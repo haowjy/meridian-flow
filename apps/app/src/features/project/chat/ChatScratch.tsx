@@ -33,11 +33,7 @@ import { EntrySelectionProvider, useEntrySelection } from "../context/entry-drag
 import { useEntryMoveRoute } from "../context/entry-drag/use-entry-move-route";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
-import {
-  type TreeDropRoutes,
-  TreeDropScope,
-  type TreeDropTarget,
-} from "../context/tree-drop/tree-drop";
+import { TreeDropScope, type TreeDropTarget } from "../context/tree-drop/tree-drop";
 import { treeFolderIds } from "../context/tree-expansion-state";
 import { type CatalogMenuSource, useCatalogMenuSource } from "../context/use-catalog-menu-source";
 import type { EntryCapabilities } from "../context/use-entry-interaction";
@@ -171,7 +167,6 @@ export function RailScratchSection({
     surface: "sidebar",
     onLanded,
   });
-  const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   if (!scratch) return null;
   const { tree } = scratch.source;
   const changeExpanded = (next: boolean) => {
@@ -219,7 +214,7 @@ export function RailScratchSection({
           }}
         />
       ) : null}
-      <TreeDropScope routes={routes}>
+      <TreeDropScope route={moveRoute}>
         <EntrySelectionProvider selection={selection}>
           <AreaDropRegion
             scheme="scratch"

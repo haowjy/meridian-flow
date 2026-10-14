@@ -17,8 +17,6 @@ import { cn } from "@/lib/utils";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { type LinkNoteSubject, renameOperationLifecycle } from "./rename-operation-lifecycle";
 
-export type { LinkNoteSubject } from "./rename-operation-lifecycle";
-
 const FADE_MS = 400;
 
 /** Selection and observation belong to the replica lifetime, not the row's lifetime. */
@@ -38,7 +36,7 @@ export function useRenameOperation(projectId: string, subject: LinkNoteSubject) 
 }
 
 /** Links that follow a settled move; refused moves, deletes and moves without links count none. */
-export function movedLinkCount(receipt: ContextOperationReceipt | null): number {
+function movedLinkCount(receipt: ContextOperationReceipt | null): number {
   if (receipt?.command.kind !== "move") return 0;
   const { result } = receipt as Extract<ContextOperationReceipt, { command: { kind: "move" } }>;
   return result.ok ? (result.value.linkUpdate?.links ?? 0) : 0;
