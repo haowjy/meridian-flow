@@ -156,6 +156,42 @@ files keep their name through `setLocation`, folders through `setFolderLocation`
 Catalog snapshots span areas, so menu lookups check source identity as well as
 entry identity; equal paths in different areas remain distinct destinations.
 
+Destination resolution, refusals and the replica call live in `move-entry.ts`,
+shared with dragging.
+
+## Selecting and dragging rows
+
+The Files tree, the chat's Scratch and a Work's Files each wrap their rows in one
+`EntrySelectionScope`. A plain click selects the row and opens or toggles it as
+before; Ctrl/Cmd-click adds or removes (starting from the open row when the
+selection is one row, which may be stale); Shift-click selects the on-screen
+range from the last clicked row, read from the DOM (`data-entry-key`) so it always
+matches what is visible. The fill appears only when two or more rows are
+selected, so a lone selection never competes with the open row's highlight.
+
+Dragging a selected row carries the selection in screen order, minus rows inside
+a selected folder; dragging an unselected row selects and carries only it.
+`drag-session.ts` holds the drag (a browser hides drag data until the drop) and
+writes the entries' URIs and names to the transfer for anything outside the app.
+
+Each list has a `TreeDropScope` whose `entries` route (`use-entry-move-route.ts`)
+answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
+itself", "Act 2 already has chapter-2"), or nothing (the row is already there,
+or the drag comes from another system, which Move or Copy will handle). A drop
+moves every carried row through `move-entry.ts` at once, reselects them, opens
+the destination folder and shows "Moved chapter-3 to Act 2." with Undo at the
+foot of the sidebar (`MoveNotice`). Undo moves each row back to its previous
+parent; a failure names what didn't move.
+
+Targets: a folder row is its folder; a file row hands its drop to its folder (or
+the area); an area header, and in Work Files the whole Scratch group, is the
+catalog's top level. Every target names its catalog root, so a list showing
+several catalogs (Scratch and its earlier notes) resolves the right one. The
+scope counts hovered elements per target and the innermost target claims each
+event; `DropRegion` lights the folder row and everything open under it as one
+block (Work Files, a flat list, lights each row of the folder). Hovering a
+closed folder or area for 600 ms opens it. The phone shell has no drag.
+
 The chat's Scratch renders actual entries through `ContextTreeEntry` and its
 `TreeEnvProvider`, retaining lineage or Work authority. Rename, Move… and Delete share the Files implementations through
 `useEntryInteraction`, the row boundary for management state, dispatch and
