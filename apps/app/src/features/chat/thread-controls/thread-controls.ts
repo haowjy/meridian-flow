@@ -25,11 +25,10 @@ import type {
 } from "@meridian/contracts/threads";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
-export type WriteModeControl = Extract<ControlBody, { kind: "write_mode" }>;
 
 export type LocalSend = {
   id: string;
-  control: ControlBody;
+  control: CompactControl;
   request: "sending" | "sent" | "failed" | "finished";
 };
 
@@ -55,7 +54,7 @@ export type QueuedControl = {
 };
 
 export type ControlAction =
-  | { type: "enqueue"; id: string; control: ControlBody }
+  | { type: "enqueue"; id: string; control: CompactControl }
   | { type: "retry"; id: string }
   | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
   | { type: "enqueue_failed"; id: string }

@@ -17,7 +17,7 @@
  * compaction rows.
  */
 import { t } from "@lingui/core/macro";
-import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
@@ -53,10 +53,10 @@ export type ThreadControls = {
 export function useThreadControls(input: {
   threadId: string;
   pending: ThreadPendingInbox;
-  answeredControlIds: ReadonlySet<string>;
+  answeredCompactionIds: ReadonlySet<string>;
   switches: SwitchLedgerView;
 }): ThreadControls {
-  const { threadId, pending, answeredControlIds, switches } = input;
+  const { threadId, pending, answeredCompactionIds, switches } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
   localRef.current = local;
@@ -74,7 +74,7 @@ export function useThreadControls(input: {
   }, [pending]);
 
   const send = useCallback(
-    (id: string, control: ControlBody) => {
+    (id: string, control: CompactControl) => {
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
           dispatch({
@@ -163,8 +163,8 @@ export function useThreadControls(input: {
   );
 
   const compactRows = useMemo(
-    () => mergeQueuedControls({ local, pending, executedControlIds: answeredControlIds }),
-    [answeredControlIds, local, pending],
+    () => mergeQueuedControls({ local, pending, executedControlIds: answeredCompactionIds }),
+    [answeredCompactionIds, local, pending],
   );
   const queued = useMemo(() => [...compactRows, ...switches.rows], [compactRows, switches.rows]);
 

@@ -51,6 +51,7 @@ import { ChatSurface } from "./ChatSurface";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { chatLineageId } from "./chat-scratch-owner";
+import { answeredCompactionIds } from "./compaction/compaction-model";
 import { useControlTurnAnnouncements } from "./compaction/useControlTurnAnnouncements";
 import { composerRun } from "./composer-run";
 import { DraftDock } from "./DraftDock";
@@ -77,7 +78,6 @@ import { TurnList } from "./TurnList";
 import { activeChildren } from "./thread-activity";
 import { useSwitchLedger } from "./thread-controls/useSwitchLedger";
 import { useThreadControls } from "./thread-controls/useThreadControls";
-import { answeredControlIds } from "./thread-controls/write-mode-model";
 import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
 import { useChatSubmissions } from "./useChatSubmissions";
@@ -255,7 +255,7 @@ export function ChatView({
       },
     },
   );
-  const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
+  const answeredCompactions = useMemo(() => answeredCompactionIds(turns), [turns]);
   const switches = useSwitchLedger({
     threadId,
     projectId,
@@ -269,7 +269,7 @@ export function ChatView({
   const controls = useThreadControls({
     threadId,
     pending: pendingInbox,
-    answeredControlIds: answeredControls,
+    answeredCompactionIds: answeredCompactions,
     switches,
   });
   useControlTurnAnnouncements(turns);
