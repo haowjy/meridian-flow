@@ -45,6 +45,7 @@ it("holds only the lineage catalog read while its chat is pending creation", asy
     creation: {
       title: "Words",
       workId: null,
+      workAiWriteMode: "direct",
       agentSelection: { catalogEntryId: "agent", definitionRevisionId: "revision" },
       agentName: "Agent",
       agentSlug: "agent",
