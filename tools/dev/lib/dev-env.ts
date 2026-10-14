@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
-import { resolveSessionIdentity } from "../session-identity";
+import { resolveSessionIdentity, type SessionIdentity } from "../session-identity";
 import { validateDbName } from "./dev-db";
 
 export interface DevDatabase {
@@ -110,16 +110,50 @@ export function applyWorktreeDatabaseRewrite(baseUrl: string, expectedDbName: st
   return url.toString();
 }
 
+/**
+ * The one place a checkout's session identity (and so its database slug) is
+ * derived. The dev stack, `dev:gc-dbs`, and every other consumer must call this
+ * so they cannot disagree about a checkout's database name.
+ */
+export function resolveCheckoutSessionIdentity(checkoutPath: string): SessionIdentity {
+  return resolveSessionIdentity({
+    branchName: runGit(checkoutPath, ["rev-parse", "--abbrev-ref", "HEAD"]),
+    detachedHeadRef: runGit(checkoutPath, ["rev-parse", "--short", "HEAD"]),
+    repoRootRealpath: realpathSync(checkoutPath),
+  });
+}
+
+/** Database names owned by every live linked worktree (main checkout excluded). */
+export function resolveLiveWorktreeDatabaseNames(
+  repoRoot: string,
+  baseDbNames: readonly string[],
+): Set<string> {
+  const mainRoot = realpathSync(resolveMainCheckoutRoot(repoRoot));
+  const live = new Set<string>();
+  for (const line of runGit(repoRoot, ["worktree", "list", "--porcelain"]).split("\n")) {
+    if (!line.startsWith("worktree ")) continue;
+    const worktreePath = line.slice("worktree ".length);
+    let worktreeRealpath: string;
+    try {
+      worktreeRealpath = realpathSync(worktreePath);
+    } catch {
+      continue;
+    }
+    if (worktreeRealpath === mainRoot) continue;
+    const { slug } = resolveCheckoutSessionIdentity(worktreeRealpath);
+    for (const baseDbName of baseDbNames) {
+      live.add(resolveWorktreeDatabaseName(baseDbName, slug));
+    }
+  }
+  return live;
+}
+
 function resolveWorktreeDatabaseUrl(repoRoot: string, baseUrl: string): string {
   const mainEnv = loadMainEnvFile(repoRoot);
   const mainBaseUrl = mainEnv.DATABASE_URL ?? baseUrl;
   const baseDbName = databaseNameFromUrl(mainBaseUrl);
 
-  const identity = resolveSessionIdentity({
-    branchName: runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    detachedHeadRef: runGit(repoRoot, ["rev-parse", "--short", "HEAD"]),
-    repoRootRealpath: realpathSync(repoRoot),
-  });
+  const identity = resolveCheckoutSessionIdentity(repoRoot);
 
   const expectedDbName = resolveWorktreeDatabaseName(baseDbName, identity.slug);
   return applyWorktreeDatabaseRewrite(baseUrl, expectedDbName);

@@ -10,7 +10,7 @@ import {
   type DevSessionMetadata,
   sharedServiceNamesForMode,
 } from "./dev-session-plan";
-import { applyDevEnvToProcess, runGit } from "./lib/dev-env";
+import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import { assertDevInfraReady } from "./lib/dev-infra";
 import { resolveSharedDevServicePorts, type SharedDevServicePorts } from "./lib/dev-share-ports";
 import { releaseFixedPorts } from "./lib/port-lifecycle";
@@ -24,7 +24,6 @@ import {
   resolveExpectedRouteUrls,
   validateExpectedRoutes,
 } from "./portless-routes";
-import { resolveSessionIdentity } from "./session-identity";
 import { TmuxSessionStore } from "./tmux-session-store";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -367,12 +366,7 @@ async function main(): Promise<void> {
   const cliOptions = parseDevCliOptions({ argv: process.argv.slice(2) });
 
   const branchName = runGit(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
-  const detachedHeadRef = runGit(repoRoot, ["rev-parse", "--short", "HEAD"]);
-  const identity = resolveSessionIdentity({
-    branchName,
-    detachedHeadRef,
-    repoRootRealpath,
-  });
+  const identity = resolveCheckoutSessionIdentity(repoRoot);
 
   const mode = resolveRequestedMode({
     explicitMode: cliOptions.explicitModeFlag,
