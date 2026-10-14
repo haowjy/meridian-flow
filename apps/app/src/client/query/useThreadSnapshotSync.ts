@@ -7,13 +7,9 @@
  * installs that owner synchronously after first-send admission succeeds.
  */
 import { EventType, EXECUTION_ENDED_EVENT, parseSeq } from "@meridian/contracts/protocol";
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
-import {
-  deserializeThreadSnapshot,
-  getThreadSnapshot,
-  toThreadSnapshotApplyOptions,
-} from "@/client/api/threads-api";
+import { toThreadSnapshotApplyOptions } from "@/client/api/threads-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
@@ -27,25 +23,11 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { threadQueryKeys } from "./thread-query-keys";
-
-/** The wire snapshot, with the reading of the request counter taken when its fetch started. */
-export type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot> & {
-  requestSeq?: number;
-};
-
-let snapshotRequestsStarted = 0;
-
-/**
- * How many snapshot fetches this tab has started. A snapshot proves something
- * absent only when its `requestSeq` is above the reading taken when that thing
- * was last seen, so a failed, skipped or joined-older fetch proves nothing.
- */
-export function snapshotRequestCount(): number {
-  return snapshotRequestsStarted;
-}
-
-class StaleThreadSnapshot extends Error {}
+import {
+  type DeserializedThreadSnapshot,
+  StaleThreadSnapshot,
+  threadSnapshotQueryOptions,
+} from "./thread-snapshot-query";
 
 export type ThreadSnapshotSyncStatus = {
   snapshot: DeserializedThreadSnapshot | null;
@@ -69,20 +51,6 @@ export type ThreadSnapshotSyncStatus = {
   activateProjection: (after?: string) => boolean;
 };
 
-/** Shared options for the live host and its passive observers
- * (`useMissingChatFallback`, `useDisplayedThread`). They stay `enabled: false`
- * and only read whatever the live host's own richer query already put in
- * the shared cache entry, so this queryFn's simpler shape never actually
- * runs; never replace it with skipToken, which would drop the shared key.
- */
-export function threadSnapshotQueryOptions(threadId: string) {
-  return queryOptions({
-    queryKey: threadQueryKeys.snapshot(threadId),
-    queryFn: async (): Promise<DeserializedThreadSnapshot> =>
-      deserializeThreadSnapshot(await getThreadSnapshot({ data: { threadId } })),
-  });
-}
-
 /** Pending creation gates HTTP and automatic subscription through first-send admission. */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
@@ -93,28 +61,20 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
   const accountId = useAccountId();
 
   const { data, isError, isFetching, refetch } = useQuery({
-    queryKey: threadQueryKeys.snapshot(threadId),
+    ...threadSnapshotQueryOptions(threadId, {
+      accountSignal,
+      accept(snapshot) {
+        if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
+          throw new Error("Thread snapshot identity mismatch");
+        }
+        if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
+          throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
+        }
+      },
+    }),
     // Always revalidate on activation: the thread may have advanced while the
     // writer was elsewhere (for example a background child's report waking the
     // parent). Cached turns still render first, so this stays navigate-first.
-    queryFn: async ({ signal }): Promise<DeserializedThreadSnapshot> => {
-      snapshotRequestsStarted += 1;
-      const requestSeq = snapshotRequestsStarted;
-      const requestSignal = AbortSignal.any([accountSignal, signal]);
-      // The source check runs before TanStack Query can publish this response.
-      // An obsolete HTTP success cannot become history or handoff authority.
-      const snapshot = deserializeThreadSnapshot(
-        await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
-      );
-      requestSignal.throwIfAborted();
-      if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
-        throw new Error("Thread snapshot identity mismatch");
-      }
-      if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
-        throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
-      }
-      return { ...snapshot, requestSeq };
-    },
     staleTime: 0,
     refetchOnMount: "always",
     enabled: !isPendingCreation && !accountSignal.aborted,

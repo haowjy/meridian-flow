@@ -12,9 +12,8 @@
  */
 import type { Thread } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
-
+import { threadSnapshotQueryOptions } from "./thread-snapshot-query";
 import { useProjectThreads } from "./useProjectThreads";
-import { threadSnapshotQueryOptions } from "./useThreadSnapshotSync";
 
 export function useDisplayedThread(projectId: string, threadId: string | null): Thread | null {
   const { threads } = useProjectThreads(projectId);
