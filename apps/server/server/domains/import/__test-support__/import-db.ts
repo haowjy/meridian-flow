@@ -98,45 +98,54 @@ export function loose(files: Record<string, string | Uint8Array>): {
     bytes,
   };
 }
-/** A folder selection read from a fixture vault, as the browser reader would send it. */
+/** A folder selection from in-memory files (path to bytes), as the browser reader would send it. */
+export function folder(name: string, files: Record<string, string | Uint8Array>, appJson?: string) {
+  const selection = loose({});
+  selection.manifest.roots = [{ rootId: 0, kind: "folder", name, ...(appJson ? { appJson } : {}) }];
+  const seen = new Set<string>();
+  for (const [path, value] of Object.entries(files)) {
+    const parts = path.split("/").slice(0, -1);
+    for (let depth = 1; depth <= parts.length; depth++) {
+      const directory = parts.slice(0, depth).join("/");
+      if (!seen.has(directory)) {
+        seen.add(directory);
+        selection.manifest.folders.push({ rootId: 0, path: directory });
+      }
+    }
+    const bytes = Buffer.from(value),
+      entryId = selection.bytes.length;
+    selection.bytes.push(bytes);
+    selection.manifest.entries.push({
+      entryId,
+      rootId: 0,
+      path,
+      size: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      sniff: bytes.subarray(0, IMPORT_ADMISSION.sniffBytes).toString("base64"),
+      frontmatter: splitFrontmatter(bytes.toString("utf8")).frontmatter?.text,
+    });
+  }
+  return selection;
+}
+/** A fixture vault on disk as a folder selection. */
 export function vault(name: string) {
   const source = new URL(`../__fixtures__/${name}/`, import.meta.url).pathname;
-  const selection = loose({});
-  selection.manifest.roots = [
-    {
-      rootId: 0,
-      kind: "folder",
-      name,
-      appJson: readFileSync(join(source, ".obsidian/app.json"), "utf8"),
-    },
-  ];
+  const files: Record<string, Uint8Array> = {};
   function walk(path: string) {
     for (const item of readdirSync(join(source, path), { withFileTypes: true }).sort((a, b) =>
       a.name < b.name ? -1 : 1,
     )) {
       if (item.name === ".obsidian") continue;
       const relative = [path, item.name].filter(Boolean).join("/");
-      if (item.isDirectory()) {
-        selection.manifest.folders.push({ rootId: 0, path: relative });
-        walk(relative);
-      } else {
-        const bytes = readFileSync(join(source, relative)),
-          entryId = selection.bytes.length;
-        selection.bytes.push(bytes);
-        selection.manifest.entries.push({
-          entryId,
-          rootId: 0,
-          path: relative,
-          size: bytes.length,
-          sha256: createHash("sha256").update(bytes).digest("hex"),
-          sniff: bytes.subarray(0, IMPORT_ADMISSION.sniffBytes).toString("base64"),
-          frontmatter: splitFrontmatter(bytes.toString("utf8")).frontmatter?.text,
-        });
-      }
+      if (item.isDirectory()) walk(relative);
+      else files[relative] = readFileSync(join(source, relative));
     }
   }
   walk("");
-  return { source, selection };
+  return {
+    source,
+    selection: folder(name, files, readFileSync(join(source, ".obsidian/app.json"), "utf8")),
+  };
 }
 /**
  * Register per-test project setup and teardown on the calling suite. Accessors read

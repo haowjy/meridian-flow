@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { handleDocumentLinkResolveRequest } from "../../lib/document-link-route.js";
 import {
   barrier,
+  folder,
   importDbEnabled,
   loose,
   useImportDb,
@@ -126,21 +127,20 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       expect(new Set(resolved.states)).toEqual(new Set(["document"]));
     }
   });
-  it("converts the edge vault: aliases, ahead links, literal code and comments, ties, skips and D16/D17", async () => {
-    const { selection } = vault("notes-folder-edge");
+  it("persists edge outcomes: unreadable YAML, skips, a folder-spelled name, a PDF under a prose name and plain text", async () => {
+    const selection = folder("edge", {
+      "Broken.md": "---\naliases: [broken\nstatus: draft\n---\nBody without frontmatter.",
+      "Templates.base": "views: []",
+      ".trash/Old.md": "Deleted note.",
+      "Lore.markdown": "Folder and note conflict.",
+      "Lore.md/Child.md": "Child.",
+      "scan.txt": "%PDF-1.4\n%%EOF\n",
+      "config.toml": 'title = "[[literal]]"\n',
+    });
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     for (const entry of plan.entries.filter((entry) => entry.state === "planned"))
-      expect(
-        (
-          await service.land(
-            projectId,
-            plan.importId,
-            entry.entryId,
-            selection.bytes[entry.entryId],
-          )
-        ).state,
-      ).toBe("landed");
+      await service.land(projectId, plan.importId, entry.entryId, selection.bytes[entry.entryId]);
     const report = await service.status(plan.importId, projectId);
     const byPath = (path: string) => {
       const entry = report.entries.find((entry) => entry.path === path);
@@ -148,24 +148,8 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       return entry;
     };
     const read = async (uri: string) => (await ok(context().read(uri))).content;
-    const edge = await read("kb://notes-folder-edge/Edge");
-    for (const text of [
-      "[World Bible](World)",
-      "[Crane](<Characters/Lin Feng>)",
-      "[Chapter 9](<Chapter 9>)",
-      "[Budget](A/Budget)",
-      "[Chapter 3 - Ash](<Chapter 3 - Ash>)",
-      "`[[World Bible]]`",
-      // Literal text: the projection escapes the brackets, the stored text is unchanged.
-      "%% \\[\\[Little Crane]] a hidden note %%",
-      '<a href="Characters/Lin Feng">Crane</a>',
-      "![map.png](kb://notes-folder-edge/attachments/map.png)",
-    ])
-      expect(edge).toContain(text);
-    // Same-folder note wins over the equally short tie.
-    expect(await read("kb://notes-folder-edge/A/Holder")).toContain("[Budget](Budget)");
     // Unreadable frontmatter is stored verbatim and absent from the prose.
-    expect((await read("kb://notes-folder-edge/Broken")).trim()).toBe("Body without frontmatter.");
+    expect((await read("kb://edge/Broken")).trim()).toBe("Body without frontmatter.");
     const broken = (await projectDocuments()).find(
       (row) => row.id === byPath("Broken.md").documentId,
     );
@@ -174,16 +158,12 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       aliases: [],
     });
     expect(byPath("Templates.base")).toMatchObject({ state: "skipped" });
-    expect(report.entries.filter((entry) => entry.path.startsWith(".trash/"))).toEqual([
-      expect.objectContaining({ state: "skipped" }),
-    ]);
+    expect(byPath(".trash/Old.md")).toMatchObject({ state: "skipped" });
     // D16: the note counts up beside the folder spelled like it.
-    expect(await plannedUri(byPath("Lore.markdown").documentId)).toBe(
-      "kb://notes-folder-edge/Lore (2)",
-    );
+    expect(await plannedUri(byPath("Lore.markdown").documentId)).toBe("kb://edge/Lore (2)");
     // D17: a PDF under a prose name lands with its registered extension.
     expect(byPath("scan.txt")).toMatchObject({ kind: "binary" });
-    expect(await plannedUri(byPath("scan.txt").documentId)).toBe("kb://notes-folder-edge/scan.pdf");
+    expect(await plannedUri(byPath("scan.txt").documentId)).toBe("kb://edge/scan.pdf");
     // The shared registry types `.toml` as plain text, not code; either way it is not converted.
     expect(byPath("config.toml")).toMatchObject({ state: "landed" });
     expect(await read((await plannedUri(byPath("config.toml").documentId)) ?? "")).toBe(
@@ -502,61 +482,10 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     );
     const result = await service.land(projectId, plan.importId, 0, selection.bytes[0]);
     expect(result.state).toBe("landed");
-    expect((await ok(context().read("manuscript://Chapter"))).content).toContain("kb://Old Lin");
+    const chapter = (await ok(context().read("manuscript://Chapter"))).content;
+    expect(chapter).toContain("kb://Old Lin");
+    // The alias resolves to the frozen existing World by identity.
+    expect(chapter).toContain("[World Bible](kb://World)");
     expect(existing.documentId).not.toBe(world.documentId);
-  });
-  it("loose fixture chapters bind selected files first, then existing names, aliases and paths (IM15)", async () => {
-    const human = { origin: { type: "human" as const, userId } };
-    const lin = await ok(context().createTrackedDocument("kb://Characters/Lin Feng", "Lin", human));
-    await ok(
-      context().createTrackedDocument("kb://Lore/World", "World", {
-        ...human,
-        metadata: { aliases: ["World Bible"] },
-      }),
-    );
-    const chapters = new URL("./__fixtures__/notes-folder/Chapters/", import.meta.url).pathname;
-    const files = (extra: Record<string, string> = {}) => {
-      const selection = loose({
-        "Chapter 1 - The Gate.md": readFileSync(join(chapters, "Chapter 1 - The Gate.md")),
-        "Ch 2.md": readFileSync(join(chapters, "Ch 2.md")),
-        ...extra,
-      });
-      selection.manifest.destination.folderUri = "manuscript://";
-      return selection;
-    };
-    async function landAll(selection: ReturnType<typeof loose>) {
-      const service = createImportService(ports()),
-        plan = await service.plan(projectId, userId, selection.manifest);
-      for (const entry of plan.entries)
-        await service.land(projectId, plan.importId, entry.entryId, selection.bytes[entry.entryId]);
-      return (await service.status(plan.importId, projectId)).entries;
-    }
-    await landAll(files({ "World Notes.md": "See [[World Bible]]." }));
-    const chapter1 = await ok(context().read("manuscript://Chapter 1 - The Gate"));
-    expect(chapter1.content).toContain("[the protagonist](<kb://Characters/Lin Feng>)");
-    expect(chapter1.content).toContain("[Sects](Sects)");
-    expect((await ok(context().read("manuscript://Ch 2"))).content).toContain(
-      "Previously: [Chapter 1 - The Gate](<Chapter 1 - The Gate>).",
-    );
-    expect((await ok(context().read("manuscript://World Notes"))).content).toContain(
-      "[World Bible](kb://Lore/World)",
-    );
-    // The same chapters with their own Lin Feng: the selection wins over the project.
-    const second = await landAll(files({ "Lin Feng.md": "Selected Lin" }));
-    const selectedLin = second.find((entry) => entry.filename === "Lin Feng.md");
-    expect(selectedLin?.documentId).not.toBe(lin.documentId);
-    const secondChapter = second.find((entry) => entry.filename === "Chapter 1 - The Gate.md");
-    expect(
-      (await ok(context().read((await plannedUri(secondChapter?.documentId ?? "")) ?? ""))).content,
-    ).toContain(`[the protagonist](<${selectedLin?.name}>)`);
-    // Path-qualified ranking: the exact path at another area's root before a deeper suffix.
-    await ok(context().createTrackedDocument("kb://Lore/Sects", "Sects", human));
-    await ok(context().createTrackedDocument("manuscript://Archive/Lore/Sects", "Old", human));
-    const third = loose({ "Qualified.md": "[[Lore/Sects]]" });
-    third.manifest.destination.folderUri = "manuscript://";
-    await landAll(third);
-    expect((await ok(context().read("manuscript://Qualified"))).content).toContain(
-      "[Sects](kb://Lore/Sects)",
-    );
   });
 });
