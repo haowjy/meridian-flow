@@ -1447,8 +1447,8 @@ msgid "Couldn’t open this document."
 msgstr "Couldn’t open this document."
 
 #: src/features/editor/EditorView.tsx
-msgid "Couldn't open this draft."
-msgstr "Couldn't open this draft."
+#~ msgid "Couldn't open this draft."
+#~ msgstr "Couldn't open this draft."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't open this draft. Try again."
