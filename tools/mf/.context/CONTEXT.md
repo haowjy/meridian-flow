@@ -30,7 +30,7 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     into `@meridian/thread-client`'s `InMemoryTurnStore` and applies each sequenced
     event through the same `createTurnReducer` the app uses. `thread view` runs the
     shared `viewTranscript` (`@meridian/thread-client`) over the hydrated turns and the
-    snapshot's pending inbox, then prints its rows: text as `you:`, `reply: 3 steps,
+    snapshot record's waiting writer messages (`liveState.runState.items`), then prints its rows: text as `you:`, `reply: 3 steps,
     read 2 docs`, `compaction:`, `queued: N`, or `--json` as the versioned
     `chatView: 2` envelope (row identity, kind, items, and `inputs`, which states what
     the view was computed from: no local records, stand-ins, opening seed or live
@@ -55,8 +55,10 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     `not_observed` means the follow had a replay gap, or a compared turn's events
     were not seen from its start. `liveView` compares this CLI follower's reduced
     status and final text with the stored turn. It is not a certificate of any
-    browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI
-    and the visible-turn policy, and the app reconciles to the server at turn end.
+    browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI,
+    the visible-turn policy, write-mode dividers, queued rows and row placement, and
+    the app reconciles to the server at turn end. `ReducedThread.compare` checks
+    exactly `status` and `finalText`; a missing divider can't make it `differs`.
     `differs` is a lead to investigate, `matches` does not prove the screen was
     right, and it never changes the claim or exit code. The planned rule
     ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
@@ -169,7 +171,15 @@ and `send`'s message proof waits for B too.
 Events reach the shared turn reducer with their stream seq (`ReducedThread.apply(event,
 seq)`), as in the app, so a removal (`meridian.messages.handed_back`) tombstones its
 turns at the frame's seq and an older snapshot cannot bring a handed-back message
-back.
+back. A `meridian.write_mode.switched` frame installs its divider after its anchor
+turn the same way. When the anchor is a user turn the stream never carried (`send`
+starts with an empty store; another client's message), the store holds the divider
+out and `ReducedThread.awaitsAnchor()` says so. `followThread` (`stream.ts`) then
+hydrates one snapshot within the remaining deadline, at most once per 250 ms, with
+`observed: false` so the comparison stays honest. It never inserts the divider at
+the tail. This is the app's recovery rule, shared through the store's
+`dividersAwaitingAnchor`; sharing the reducer without it left `./mf` holding the
+divider forever.
 
 `respond` uses the shared interrupt sender and confirms its exact interrupt's
 journaled resolution (deadline: 6 `unconfirmed`). A replay gap makes `events`

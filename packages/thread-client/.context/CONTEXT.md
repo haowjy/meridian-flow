@@ -30,8 +30,19 @@ and its rejected alternatives are in the
   seed card, placed first before stand-ins; today's stand-in producers never anchor to
   it, which is what keeps that order equal to placing stand-ins first), `inherited` (a fork's frozen
   prefix) or omitted, `activity.awaitingSubagents`, `standIns` to place after their
-  `prevTurnId`, `queued` writer turn ids, and an `onContractFailure` callback for
-  persisted records that miss a contract (the caller decides where it is reported).
+  `prevTurnId`, `queued` writer turn ids (the record's waiting writer messages),
+  `hidden` (`hiddenWriterTurns`: rows a hand-back in flight hides), `retried`
+  (failed replies a Retry replaces), `switchAwaitsRun`, and an `onContractFailure`
+  callback for persisted records that miss a contract (the caller decides where it
+  is reported).
+- **The transcript is not a log.** A failed reply a Retry names (`metadata.retryOf`
+  on a stand-in or stored turn, or the `retried` set) is not drawn: the Retry takes
+  its place, and a chain of failed retries draws only the newest failure.
+- **`controlSlot`:** the row index before which a queued switch's notice sits. When
+  the record says the switch waits for the next run (`awaiting_run`), it is the
+  stand-in for that run's reply (a stand-in no later assistant turn has passed);
+  otherwise, or with no such stand-in, the tail. A `waiting` switch, or one only
+  this device holds, stays at the tail.
 - **Rows:** `turn`, `compaction`, `handoff-seed` and `thread-reference` rows in causal
   order, plumbing and overflow shells dropped. Each carries `identity` (the server turn
   id, null for any row the server hasn't stated: a local writer turn, the opening seed, a
@@ -76,6 +87,17 @@ occurrence remains in the blocks. The canonical walk exposes each source referen
 through `onReference`; the app projects its owned uploads from those visits without
 walking the document again. Draft snapshots and upload lifecycle ownership stay in the app.
 
+**Hand-back is the inverse** (`message/hand-back.ts`). `composerDocFromHandedBack`
+turns handed-back `UserMessageBlock`s into one composer document (serializing it
+again gives the same blocks), and `prependMessageDoc` puts it above typed text with
+a blank line. Every prepend in the app uses it, failed-send Edit included. A chip is
+a `RestorableReference` (`MessageReference` plus `fileType` and owner authority);
+`chatReferenceResolver(scope)` builds one only when the URI proves the owner
+against this chat (its lineage handle for `scratch://`, `@/` uploads in a No Work
+chat, its own Work's `@slug`, or a project or user scheme). Anything else comes back
+as link text. An image block in the message makes the chip an image. The limit
+and its fix are in [FUTURE](FUTURE).
+
 ## Turn reduction (`src/turns/`)
 
 `createTurnReducer({ store, now })` turns accepted AG-UI events into `Turn` and
@@ -107,6 +129,51 @@ reduce chat the same way; neither keeps its own interpretation of events.
   policy is also the app's.
 - **A new server CUSTOM name** needs a decision in `reduce-turn-event.ts` (apply,
   leave to the snapshot, or ignore) and a reducer test.
+- **Removal and dividers are fenced by seq.** `removeTurnsIn` (a
+  `meridian.messages.handed_back` frame, or the same fact in an answer) removes
+  turns and keeps a tombstone at the frame's seq. `ensureSwitchTurnIn` installs a
+  `meridian.write_mode.switched` frame's divider right after its `prevTurnId`
+  and holds it (`HeldDividers`) at the frame's seq. `applySnapshotTo` applies both
+  fences with one rule, `seq < nextSeq` is covered: an older snapshot can neither
+  bring back a removed turn nor drop a held divider, and a covering snapshot lists
+  the stored turns itself. The app's store keeps tombstones a snapshot covers while
+  an optimistic writer row still waits for its answer, so a late admission answer
+  can't resurrect a handed-back message.
+- **A missing anchor is never guessed.** A divider whose `prevTurnId` isn't in
+  the store (another client's message: user turns aren't streamed) is held out of
+  the transcript. `dividersAwaitingAnchorIn` lists those, and both hosts ask it:
+  the app's subscriber refreshes the snapshot, and `./mf`'s `followThread`
+  hydrates one within its deadline. Sharing the reducer alone wasn't enough: `./mf`
+  held such a divider forever until the waiting list and the recovery were shared
+  too.
+
+## Run state (`src/run-state/`)
+
+The chat's `RunState` record and this device's intents, as a store-free value.
+`run-state-view.ts` owns the only newness and retirement rule: `receiveRecord`
+keeps the record with the greatest `version` (`compareSeq`), and an intent
+(message, switch, withdraw, hand-back request) retires once the held record is at
+or past its answer version. Answers are kept beside the intents for the view's
+lifetime (no cap), so an answer that beats its intent, or an intent a journal
+rebuild re-adds, still meets it. The bound is distinct answered intents per
+store lifetime, reset by a reload.
+
+Everything else is a pure selector over the view, so hosts hold the view and
+call selectors; nothing here holds state:
+
+- `fold-messages.ts`: `isBusy`, `isOwed`, `waitingWriterMessages`,
+  `usageBlockedMessages`, `isAwaitingExecution`, `hiddenWriterTurns`,
+  `unheldWriterMessages` (record messages the transcript lacks: the passive-tab
+  refresh signal), `stopRequest`, `stopStatus`, `cancelQueueScope`.
+- `fold-switches.ts`: `switchState`, the queued switch rows and their
+  `awaitsRun` placement fact. A switch never counts as a writer message.
+- `retry.ts`: `reconcileRetries`, Retry's one retirement rule (entries, stored
+  turns and the view in; remaining entries, stand-ins and hidden failed replies
+  out). A stand-in whose reservation ended without its reply retires once the
+  record at or past its answer shows another execution or none.
+
+The record arrives whole on every carrier (snapshot, `subscribed`,
+`meridian.run_state`, every command answer), so no host composes one from parts.
 
 ## Thread wire protocol and recovery
 

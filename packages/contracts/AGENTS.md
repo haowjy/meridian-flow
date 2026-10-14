@@ -82,16 +82,19 @@ runtime shapes, and observability records.
   database checks (inbox body and the `ai_write_mode` columns in
   `schema/agent-threads.ts` and `schema/content.ts`, then regenerate) and the
   projections that pick kinds by name (runtime `run-state.ts`, the app's
-  `features/chat/compaction/thread-controls.ts`). A missing kind fails its
-  enqueue or drops that queued item from the tray.
+  `features/chat/thread-controls/thread-controls.ts`). A missing kind fails its
+  enqueue or drops that queued item from the queued rows.
 - Run state (whether the chat works, which execution is open, which writer
-  messages are owed) is the `RunState` record: the snapshot's
-  `liveState.runState` and the `meridian.run_state` frames, replaced by version.
+  messages are owed, the applied write mode, the usage block) is one whole
+  `RunState` record on every carrier: the snapshot's `liveState.runState`, the
+  socket's `subscribed` state, the `meridian.run_state` frames and every command
+  answer (`runState`), replaced by version. Only admission carries a bare
+  `runStateVersion`.
   `protocol/run-boundary.ts` reads the frames and the run identity a turn
   carries (`Turn.executionId`/`reservedForUserTurnIds`/`position`, write-once).
   Consumers order an execution's turns by `position` and never infer run state
-  from arrival order or transcript ancestry. The old pending projection,
-  `inbox.changed`, `messages.delivered` and `execution.ended` no longer exist.
+  from arrival order or transcript ancestry. Never add a second event or answer
+  field for a fact the record carries.
 - Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
 - `protocol/document-filename.ts` is the input codec for document basenames. Prose
   stores empty extension and markdown filetype; registered non-prose suffixes

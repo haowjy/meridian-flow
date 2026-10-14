@@ -52,8 +52,8 @@ snapshot) replaces that.
   Nothing was written. The stand-in goes, the snapshot refreshes, and the
   failed reply carries the generic refused note. The cause never reaches the
   writer; `reportRetryRefused` (`error-telemetry.ts`) logs it for diagnostics.
-  Pressing Retry again clears the note, and so does the writer sending a message
-  (`clearRefused`). A row landing below the failed reply (the other tab's reply
+  Any Retry or send clears every note (`clearRefused`), so a note never
+  outlives the writer's next action. A row landing below the failed reply (the other tab's reply
   that caused the 409) does not: the note says what became of the press.
 - **Lost request.** The stand-in stays, failed, and reads "Couldn't start the
   retry. Try again." with its own Retry, which re-sends the same id for the same
@@ -64,23 +64,25 @@ snapshot) replaces that.
   `RETRY_PENDING_ATTEMPTS` automatic sends; past that the stand-in is lost again,
   unresolved and retryable, never refused.
 - **Its run ends without the reply.** The stand-in keeps the execution its
-  Retry answered. When the response was lost it reads that execution off the
-  turn whose `metadata.retryReplyId` is the stand-in's id (the request's first
-  reserved turn, often a compaction). Once the controller's run facts
-  (`useRunFacts`, which renders whenever the controller's facts change) show
-  that execution ended and none of its turns is the requested reply (a stopped
-  compaction), nothing will create it and the stand-in goes. An end on the
-  stream is enough; it does not wait for a snapshot refresh. Placement next to a compaction is never evidence: a
-  mode switch can sit between the failed reply and its compaction.
+  Retry answered and the version of the run-state record that answer carried.
+  Once the held record, at or past that version, shows no execution or another
+  one, nothing will create the reply (a stopped compaction) and the stand-in
+  goes. A lost response has no version, so its failed stand-in waits for the
+  writer's Retry, which replays the request. Placement next to a compaction is
+  never evidence: a mode switch can sit between the failed reply and its
+  compaction.
 
 Pressing Retry moves focus to the transcript (the button leaves with the error
 block) and follows the tail so the new reply is in view. A stand-in has no
 action row and reads no lineage; live announcements skip it, so a lost request
 is announced once and is not reported as a failed run.
 
-`useRetryStandIns.ts` owns this optimistic half for both this Retry and the
-handoff brief's: the stand-in list, placement after the turn it followed
-(`placeStandIns`, now run by `viewTranscript` from `@meridian/thread-client`), reconciliation by id, the refused
-set, and the lost-request re-send. Each caller supplies the POST, the
-stand-in's shape and, for a reply, when its reservation ended (`retired`). A
+One rule decides retirement: `reconcileRetries` in `@meridian/thread-client`
+(`src/run-state/retry.ts`) takes the entries, the stored turns and the
+run-state view, and returns the entries that remain, those drawn as stand-ins,
+and the failed replies hidden for them. `useRetryStandIns.ts` keeps transport
+and storage for both this Retry and the handoff brief's: the stand-in list,
+placement after the turn it followed (`placeStandIns`, run by `viewTranscript`),
+the refused set and the lost-request re-send. Each caller supplies the POST and
+the stand-in's shape. A
 handoff brief holds no execution; its seed's id is its only identity.
