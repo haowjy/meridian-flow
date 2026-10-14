@@ -443,6 +443,17 @@ function AreaHeader({
   const rootTarget = useMemo<TreeDropTarget>(() => ({ scheme, folder: null }), [scheme]);
   // Hovering a collapsed area during a drag opens it.
   const drop = useTreeDropTarget(rootTarget, { onSpring: () => !expanded && onOpenExpanded() });
+  // Actions show on a collapsed header too; running one opens the area so its result is visible.
+  const create = (kind: ContextCreateKind) => {
+    if (!expanded) onOpenExpanded();
+    onRequestCreate(kind, "");
+  };
+  const pick = onImport
+    ? (kind: PickKind) => {
+        if (!expanded) onOpenExpanded();
+        onImport(kind);
+      }
+    : undefined;
   return (
     <RailPaneHeader
       label={schemeLabel(scheme)}
@@ -458,20 +469,20 @@ function AreaHeader({
             <PaneHeaderActionButton
               icon={FilePlus}
               label={t`New file`}
-              onClick={() => onRequestCreate("file", "")}
+              onClick={() => create("file")}
             />
             <PaneHeaderActionButton
               icon={FolderPlus}
               label={t`New folder`}
-              onClick={() => onRequestCreate("folder", "")}
+              onClick={() => create("folder")}
             />
-            {onImport ? (
+            {pick ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <PaneHeaderActionButton icon={ImportIcon} label={t`Import…`} />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  <ImportMenuItems onPick={onImport} />
+                  <ImportMenuItems onPick={pick} />
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}

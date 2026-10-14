@@ -76,15 +76,16 @@ export function RailPaneHeader({
           {label}
         </span>
       </button>
-      {/* VS Code's expanded-only rule: no actions on a collapsed pane. The
-          shelf sits in normal flow at the row's end (VS Code: titles
-          ellipsize, actions hold the right edge) so it needs no background
-          mask over the translucent tint; invisible at rest, revealed on
-          header hover / focus-within. */}
+      {/* Actions show on hover whether or not the pane is open, so a writer
+          can create or import into a collapsed area; the caller opens the
+          pane when an action runs. The shelf sits in normal flow at the
+          row's end (titles ellipsize, actions hold the right edge) so it
+          needs no background mask over the translucent tint; invisible at
+          rest, revealed on header hover / focus-within. */}
       {dropState === "over" && dropLabel ? (
         <span className="mr-2 shrink-0 text-caption text-ink-muted">{dropLabel}</span>
       ) : null}
-      {expanded && actions && dropState !== "over" ? (
+      {actions && dropState !== "over" ? (
         <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 has-[[data-state=open]]:opacity-100">
           {actions}
         </span>
