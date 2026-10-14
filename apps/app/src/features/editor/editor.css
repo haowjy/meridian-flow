@@ -44,6 +44,11 @@
   margin-top: 0.9em;
 }
 
+/* The cursor's emptied paragraph in a review still shows the red removal of its text: no placeholder over it. */
+.meridian-editor .ProseMirror p.is-empty:has(.meridian-review-removal)::before {
+  content: none;
+}
+
 .meridian-editor .ProseMirror p.is-empty::before {
   float: left;
   height: 0;
