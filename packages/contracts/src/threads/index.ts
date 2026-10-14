@@ -292,6 +292,7 @@ export type JournalEventType =
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (direct-parent journal, direct children)
   | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
+  | "messages.handed_back" // PRODUCED NOW — waiting writer messages left the chat (Stop, the queue's x, Cancel queue)
   | "run_state.changed" // PRODUCED NOW — the chat's run-state record, before every commit that changed its inputs
   | "thread.status" // PRODUCED NOW — non-lease work status refresh
   | "context.assembled"
@@ -477,7 +478,15 @@ export { blockContentRecord } from "./block-content-record.js";
 export { blockPlainText } from "./block-plain-text.js";
 export { interruptIdForBlock } from "./interrupt-id-for-block.js";
 export { type ProviderErrorResponse, replyProviderError } from "./provider-error.js";
-export type { RunState } from "./run-state.js";
+export type {
+  HandBackRequest,
+  HandBackResponse,
+  HandBackResult,
+  HandBackScope,
+  RunState,
+  StopRequest,
+  StopResponse,
+} from "./run-state.js";
 export type { TurnStatus } from "./status.js";
 export { isTerminalTurnStatus } from "./status.js";
 export { formatThreadRef, parseThreadRef } from "./thread-ref.js";

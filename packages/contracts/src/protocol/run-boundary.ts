@@ -22,6 +22,8 @@ import { type AiWriteMode, aiWriteModeSchema } from "../works/ai-write-mode.js";
 
 export const MESSAGES_DELIVERED_EVENT = "meridian.messages.delivered" as const;
 export const EXECUTION_ENDED_EVENT = "meridian.execution.ended" as const;
+/** `meridian.messages.handed_back`: waiting writer messages that left the chat. */
+export const MESSAGES_HANDED_BACK_EVENT = "meridian.messages.handed_back" as const;
 export const WRITE_MODE_SWITCHED_EVENT = "meridian.write_mode.switched" as const;
 /** `meridian.run_state`: the chat's whole `RunState`, stamped with its stream version. */
 export const RUN_STATE_EVENT = "meridian.run_state" as const;
@@ -77,6 +79,8 @@ const messagesDeliveredSchema = z.object({
   userTurnIds: z.array(z.string()),
 });
 
+const messagesHandedBackSchema = z.object({ userTurnIds: z.array(z.string()) });
+
 const executionEndedSchema = z.object({ executionId: z.string().min(1) });
 
 /** Reads a `RUN_STARTED.rawEvent`; missing or malformed fields read as unknown/empty. */
@@ -108,5 +112,14 @@ export function readMessagesDelivered(value: unknown): MessagesDeliveredValue | 
 /** Reads a `meridian.execution.ended` CUSTOM value; null when malformed. */
 export function readExecutionEnded(value: unknown): ExecutionEndedValue | null {
   const parsed = executionEndedSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/** `meridian.messages.handed_back`: the user turns that left the conversation. */
+export type MessagesHandedBackValue = { userTurnIds: string[] };
+
+/** Reads a `meridian.messages.handed_back` CUSTOM value; null when malformed. */
+export function readMessagesHandedBack(value: unknown): MessagesHandedBackValue | null {
+  const parsed = messagesHandedBackSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
 }
