@@ -399,9 +399,7 @@ it.each([
       ...(hidden
         ? {
             draftOnly: true,
-            reviewWorkId: "work",
-            reviewItemKey: review.itemKey,
-            tabInstanceToken: "token",
+            reviews: { ["work"]: { itemKey: review.itemKey, tabInstanceToken: "token" } },
           }
         : {}),
     },

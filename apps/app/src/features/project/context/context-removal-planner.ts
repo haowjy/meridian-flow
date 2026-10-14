@@ -27,6 +27,8 @@ export type ContextRemovalIntent = {
   documentIds: readonly string[];
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
+  /** Draft discard is one Work's: the tab stays while another Work still reviews the document. */
+  reviewWorkId?: string;
 };
 
 export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
@@ -102,11 +104,6 @@ export type ContextRemovalPlannerInput = {
     current: RouteContinuityVerdict;
   };
   intent: ContextRemovalIntent;
-  /** Exact transient representation already consumed, with its authoritative survivors. */
-  consumed?: {
-    removed: readonly ContextTab[];
-    survivors: readonly ContextTab[];
-  };
 };
 
 export type ExactRouteCleanup = {
@@ -218,7 +215,11 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       workId: activeWorkId,
       rootThreadId: tab.rootThreadId,
     };
-  let workId = tab.draftOnly ? (tab.reviewWorkId ?? activeWorkId) : activeWorkId;
+  let workId = tab.draftOnly
+    ? tab.reviews?.[activeWorkId]
+      ? activeWorkId
+      : (Object.keys(tab.reviews ?? {})[0] ?? activeWorkId)
+    : activeWorkId;
   if (isWorkScopedProjectContextScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;
@@ -249,12 +250,9 @@ function adjacentSurvivor(
 /** Query/cache state is deliberately absent: exact commands are the only removal evidence. */
 export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRemovalPlan {
   const requested = new Set(input.intent.documentIds);
-  const removed =
-    input.consumed?.removed ??
-    input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
+  const removed = input.tabs.filter((tab) => contextTabEligibleForRemoval(tab, input.intent));
   const removedIds = new Set(removed.map((tab) => tab.documentId));
-  const remaining =
-    input.consumed?.survivors ?? input.tabs.filter((tab) => !removedIds.has(tab.documentId));
+  const remaining = input.tabs.filter((tab) => !removedIds.has(tab.documentId));
   if (input.activeWorkId === null) {
     // Before any route port registers there is no Editor locator to repair.
     return {
@@ -323,7 +321,6 @@ export function planContextRemoval(input: ContextRemovalPlannerInput): ContextRe
     .filter((route) => !survivingRoutes.some((survivor) => workingSetRouteEquals(survivor, route)));
   const admittedWasRemoved =
     input.admitted !== null &&
-    (input.consumed === undefined || admittedTab === null) &&
     ((provenRemoved !== null && sameTarget(provenRemoved.locator, input.admitted)) ||
       (input.route.cleanup !== null &&
         sameTarget(input.route.cleanup.locator, input.admitted) &&
