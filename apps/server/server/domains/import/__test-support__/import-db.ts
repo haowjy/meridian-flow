@@ -219,6 +219,9 @@ export function useImportDb() {
       rooms.map((room) => hocuspocus.debouncer.executeNow(`onStoreDocument-${room.name}`)),
     );
     await Promise.all(rooms.map((room) => room.saveMutex.waitForUnlock()));
+    // Landing leaves live appends and checkpoint writes in flight; the next test's table
+    // reset takes ACCESS EXCLUSIVE locks and deadlocks with any of them still reading.
+    await app.documentSync.drainHocuspocusPersistence();
     await Promise.all(rooms.map((room) => hocuspocus.unloadDocument(room)));
   }, 120_000);
   afterAll(async () => {

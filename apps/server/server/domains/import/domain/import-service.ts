@@ -16,7 +16,12 @@ import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-wr
 import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } from "./manifest.js";
 import { sweepImportObjects } from "./object-sweep.js";
 import { allocateName, planSelection } from "./plan.js";
-import { prepareImportedNote } from "./prepare-note.js";
+import {
+  convertImportedNote,
+  isMarkdownNote,
+  type SelectionLoader,
+  selectionLoader,
+} from "./prepared-selection.js";
 import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
 /** Where the writer knows a link target from: its selected path, or an existing document's address. */
@@ -366,6 +371,218 @@ export function createImportService(deps: {
     const limit = parts.length > 1 ? IMPORT_ADMISSION.requestBytes : IMPORT_ADMISSION.fileBytes;
     if (total > limit) throw new ImportError(413, "import_request_too_large", { limit });
   }
+  /** Claims and lands one file's bytes. `selectionFor` is shared by a receive's Markdown landings. */
+  async function landFile(
+    projectId: string,
+    id: string,
+    entryId: number,
+    bytes: Uint8Array,
+    selectionFor: SelectionLoader,
+  ) {
+    const claimed = await repo.transaction(async () => {
+      const record = await repo.fence(id, projectId);
+      if (!record) throw new ImportError(404, "import_not_found");
+      const candidate = await repo.fileEntry(id, entryId);
+      if (!candidate) throw new ImportError(404, "entry_not_found");
+      const entry = await repo.lockEntry(candidate.id);
+      if (["landed", "skipped", "deleted", "not_imported"].includes(entry.state)) return null;
+      if (record.state !== "ready") throw new ImportError(409, "import_not_ready");
+      if (!wantsBytes(entry, now())) return null;
+      const attemptId = randomUUID(),
+        leaseUntil = new Date(now().getTime() + IMPORT_LIMITS.leaseMs);
+      const prepend = entry.prependOnRetry;
+      await repo.updateEntry(entry.id, { state: "landing", attemptId, leaseUntil });
+      return { record, entry: { ...entry, attemptId, leaseUntil }, prepend };
+    });
+    if (!claimed) return await entryOutcome(id, projectId, entryId);
+    const { record, entry, prepend } = claimed;
+    const stopHeartbeat = heartbeat(id, entryId, () =>
+      renewLease(projectId, id, entryId, entry.attemptId as string),
+    );
+    try {
+      if (
+        bytes.length !== entry.size ||
+        createHash("sha256").update(bytes).digest("hex") !== entry.sha256
+      )
+        throw new LandingFailure(
+          "changed_since_chosen",
+          new Error("File bytes do not match its SHA-256 digest"),
+        );
+      const holderUri =
+        entry.kind === "note" || entry.kind === "docx"
+          ? await tree.currentUri(entry.id, "file")
+          : null;
+      if ((entry.kind === "note" || entry.kind === "docx") && !holderUri)
+        throw new DeletedBeforeArrivalError();
+      const source = record.manifest.entries.find((source) => source.entryId === entry.entryId);
+      if (
+        source?.sniff !== undefined &&
+        !Buffer.from(source.sniff, "base64").equals(
+          Buffer.from(bytes.subarray(0, IMPORT_ADMISSION.sniffBytes)),
+        )
+      )
+        throw new LandingFailure(
+          "changed_since_chosen",
+          new Error("File sniff bytes do not match the selection"),
+        );
+      const text =
+        entry.kind === "docx"
+          ? await convertDocx(bytes)
+          : entry.kind === "binary"
+            ? ""
+            : Buffer.from(bytes).toString("utf8");
+      // Only a Markdown note reads the selection; other kinds touch just their own entry.
+      const selection = isMarkdownNote(entry) ? await selectionFor(record) : null;
+      const prepared = selection
+        ? await convertImportedNote(tree, selection, entry, holderUri, text)
+        : null;
+      const targets = prepared?.converted.targets ?? new Map<number, string>();
+      // Binaries and code land later. Bound by planned id, an unlanded one gets an
+      // ahead ref settled to that id on arrival; its address is never resolved.
+      const pending = selection?.pending;
+      const bound =
+        entry.kind === "binary"
+          ? null
+          : await tree.bind(
+              entry,
+              prepared
+                ? {
+                    text: prepared.converted.template,
+                    targets,
+                    hrefs: prepared.hrefs,
+                    pending,
+                  }
+                : { text },
+            );
+      const ahead = (bound?.aheadRefs ?? []).flatMap(({ occurrence, ref }) => {
+        const targetId = targets.get(occurrence);
+        return targetId && pending?.has(targetId) ? [{ targetId, ref }] : [];
+      });
+      ahead.sort((a, b) => (a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0));
+      let storageUrl = entry.storageUrl;
+      if (entry.kind === "binary") {
+        const object = await deps.objects.put(
+          `imports/${id}/${entry.entryId}`,
+          bytes,
+          entry.mimeType,
+        );
+        if (!object.ok) throw new LandingFailure("upload_failed", object.error);
+        storageUrl = object.value.storageUrl;
+        await repo.transaction(async () => {
+          await repo.fence(id, projectId);
+          const current = await repo.lockEntry(entry.id);
+          if (current.attemptId === entry.attemptId)
+            await repo.updateEntry(entry.id, { storageUrl, objectSweptAt: null });
+        });
+      }
+      await retryMoved(async () => {
+        const fenced = await repo.fence(id, projectId);
+        if (fenced?.state !== "ready") return;
+        const parent = ["binary", "code"].includes(entry.kind)
+          ? await tree.parent(
+              entry.area && !entry.parentId
+                ? { ...record, ...(await tree.destination(`${entry.area}://`)) }
+                : record,
+              entry.parentId,
+            )
+          : null;
+        const liveNote =
+          entry.kind === "note" || entry.kind === "docx" ? await tree.lockDocument(entry.id) : true;
+        const current = await repo.lockEntry(entry.id);
+        if (!liveNote && current.attemptId === entry.attemptId) {
+          await tree.clearPending([entry.id]);
+          await repo.updateEntry(entry.id, {
+            state: "deleted",
+            reason: "deleted_before_arrival",
+          });
+          return;
+        }
+        if (current.state !== "landing" || current.attemptId !== entry.attemptId) return;
+        if (entry.kind === "note" || entry.kind === "docx") {
+          if (!bound) throw new Error("Missing bound note");
+          const filled = await tree.fill(current, bound, prepend);
+          if (filled !== "filled") {
+            await repo.updateEntry(entry.id, {
+              state: filled === "deleted" ? "deleted" : "failed",
+              prependOnRetry: filled === "edited",
+              reason: filled === "deleted" ? "deleted_before_arrival" : "edited_before_arrival",
+            });
+            return;
+          }
+          if (prepared)
+            await tree.setProperties(
+              entry.id,
+              prepared.converted.properties,
+              prepared.converted.aliases,
+            );
+          for (const ref of ahead) {
+            const target = await repo.lockEntry(ref.targetId);
+            if (target.state === "landed") await tree.settleAhead(ref.ref, target.id);
+            else
+              await repo.updateEntry(target.id, {
+                pendingRefs: [...target.pendingRefs, { holderId: entry.id, ref: ref.ref }],
+              });
+          }
+          await tree.clearPending([entry.id]);
+          await repo.updateEntry(entry.id, {
+            state: "landed",
+            reason: null,
+            uri: await tree.currentUri(entry.id, "file"),
+            exists: true,
+          });
+        } else if (!parent) {
+          await repo.updateEntry(entry.id, {
+            state: "deleted",
+            reason: "folder_deleted",
+          });
+        } else {
+          const allocated = allocate({ ...current, storageUrl }, parent);
+          await tree.land(parent, allocated, bound, bytes);
+          // Each ref awaits this id alone, so settling it cannot lose to another file.
+          for (const pending of current.pendingRefs) await tree.settleAhead(pending.ref, entry.id);
+          await repo.updateEntry(entry.id, {
+            ...allocated,
+            state: "landed",
+            created: true,
+            exists: true,
+            reason: null,
+          });
+        }
+      });
+    } catch (error) {
+      const code =
+        error instanceof DeletedBeforeArrivalError
+          ? "deleted_before_arrival"
+          : error instanceof LandingFailure
+            ? error.reason
+            : "server_error";
+      deps.diagnostics.failed({
+        importId: id,
+        entryId,
+        code,
+        cause: error instanceof LandingFailure ? error.cause : error,
+      });
+      await repo.transaction(async () => {
+        const fenced = await repo.fence(id, projectId);
+        if (fenced?.state !== "ready") return;
+        const current = await repo.lockEntry(entry.id);
+        if (current.attemptId === entry.attemptId && current.state === "landing")
+          await repo.updateEntry(entry.id, {
+            state: error instanceof DeletedBeforeArrivalError ? "deleted" : "failed",
+            reason:
+              error instanceof DeletedBeforeArrivalError
+                ? "deleted_before_arrival"
+                : error instanceof LandingFailure
+                  ? error.reason
+                  : "server_error",
+          });
+      });
+    } finally {
+      await stopHeartbeat();
+    }
+    await finish(id, projectId, true);
+    return await entryOutcome(id, projectId, entryId);
+  }
   const api = {
     report,
     renewLease,
@@ -395,9 +612,11 @@ export function createImportService(deps: {
         const known = new Set(record.manifest.entries.map((entry) => entry.entryId));
         if (parts.some((part) => !known.has(part.entryId)))
           throw new ImportError(404, "entry_not_found");
+        // Every Markdown landing of this request shares one prepared selection.
+        const selectionFor = selectionLoader(() => repo.entries(id));
         return {
           entries: await mapBounded(parts, IMPORT_LIMITS.landingConcurrency, (part) =>
-            api.land(projectId, id, part.entryId, part.bytes),
+            landFile(projectId, id, part.entryId, part.bytes, selectionFor),
           ),
         };
       } finally {
@@ -447,211 +666,14 @@ export function createImportService(deps: {
       await finish(record.id, projectId, true);
       return report(record.id, projectId);
     },
-    async land(projectId: string, id: string, entryId: number, bytes: Uint8Array) {
-      const claimed = await repo.transaction(async () => {
-        const record = await repo.fence(id, projectId);
-        if (!record) throw new ImportError(404, "import_not_found");
-        const candidate = await repo.fileEntry(id, entryId);
-        if (!candidate) throw new ImportError(404, "entry_not_found");
-        const entry = await repo.lockEntry(candidate.id);
-        if (["landed", "skipped", "deleted", "not_imported"].includes(entry.state)) return null;
-        if (record.state !== "ready") throw new ImportError(409, "import_not_ready");
-        if (!wantsBytes(entry, now())) return null;
-        const attemptId = randomUUID(),
-          leaseUntil = new Date(now().getTime() + IMPORT_LIMITS.leaseMs);
-        const prepend = entry.prependOnRetry;
-        await repo.updateEntry(entry.id, { state: "landing", attemptId, leaseUntil });
-        return { record, entry: { ...entry, attemptId, leaseUntil }, prepend };
-      });
-      if (!claimed) return await entryOutcome(id, projectId, entryId);
-      const { record, entry, prepend } = claimed;
-      const stopHeartbeat = heartbeat(id, entryId, () =>
-        renewLease(projectId, id, entryId, entry.attemptId as string),
-      );
-      try {
-        if (
-          bytes.length !== entry.size ||
-          createHash("sha256").update(bytes).digest("hex") !== entry.sha256
-        )
-          throw new LandingFailure(
-            "changed_since_chosen",
-            new Error("File bytes do not match its SHA-256 digest"),
-          );
-        if (
-          (entry.kind === "note" || entry.kind === "docx") &&
-          !(await tree.currentUri(entry.id, "file"))
-        )
-          throw new DeletedBeforeArrivalError();
-        const source = record.manifest.entries.find((source) => source.entryId === entry.entryId);
-        if (
-          source?.sniff !== undefined &&
-          !Buffer.from(source.sniff, "base64").equals(
-            Buffer.from(bytes.subarray(0, IMPORT_ADMISSION.sniffBytes)),
-          )
-        )
-          throw new LandingFailure(
-            "changed_since_chosen",
-            new Error("File sniff bytes do not match the selection"),
-          );
-        const text =
-          entry.kind === "docx" ? await convertDocx(bytes) : Buffer.from(bytes).toString("utf8");
-        const entries = await repo.entries(id);
-        const { converted, hrefs } = await prepareImportedNote(tree, record, entry, entries, text);
-        const targets = converted?.targets ?? new Map<number, string>();
-        // Binaries and code land later. Bound by planned id, an unlanded one gets an
-        // ahead ref settled to that id on arrival; its address is never resolved.
-        const pending = new Set(
-          entries
-            .filter((item) => item.kind === "binary" || item.kind === "code")
-            .map((item) => item.id),
-        );
-        const bound =
-          entry.kind === "binary"
-            ? null
-            : await tree.bind(
-                entry,
-                converted
-                  ? {
-                      text: converted.template,
-                      targets,
-                      hrefs,
-                      pending,
-                    }
-                  : { text },
-              );
-        const ahead = bound?.aheadRefs.length
-          ? tree
-              .aheadTargets(
-                bound,
-                (await tree.currentUri(entry.id, "file")) ?? entry.uri ?? "",
-                entries,
-                targets,
-              )
-              .sort((a, b) => (a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0))
-          : [];
-        let storageUrl = entry.storageUrl;
-        if (entry.kind === "binary") {
-          const object = await deps.objects.put(
-            `imports/${id}/${entry.entryId}`,
-            bytes,
-            entry.mimeType,
-          );
-          if (!object.ok) throw new LandingFailure("upload_failed", object.error);
-          storageUrl = object.value.storageUrl;
-          await repo.transaction(async () => {
-            await repo.fence(id, projectId);
-            const current = await repo.lockEntry(entry.id);
-            if (current.attemptId === entry.attemptId)
-              await repo.updateEntry(entry.id, { storageUrl, objectSweptAt: null });
-          });
-        }
-        await retryMoved(async () => {
-          const fenced = await repo.fence(id, projectId);
-          if (fenced?.state !== "ready") return;
-          const parent = ["binary", "code"].includes(entry.kind)
-            ? await tree.parent(
-                entry.area && !entry.parentId
-                  ? { ...record, ...(await tree.destination(`${entry.area}://`)) }
-                  : record,
-                entry.parentId,
-              )
-            : null;
-          const liveNote =
-            entry.kind === "note" || entry.kind === "docx"
-              ? await tree.lockDocument(entry.id)
-              : true;
-          const current = await repo.lockEntry(entry.id);
-          if (!liveNote && current.attemptId === entry.attemptId) {
-            await tree.clearPending([entry.id]);
-            await repo.updateEntry(entry.id, {
-              state: "deleted",
-              reason: "deleted_before_arrival",
-            });
-            return;
-          }
-          if (current.state !== "landing" || current.attemptId !== entry.attemptId) return;
-          if (entry.kind === "note" || entry.kind === "docx") {
-            if (!bound) throw new Error("Missing bound note");
-            const filled = await tree.fill(current, bound, prepend);
-            if (filled !== "filled") {
-              await repo.updateEntry(entry.id, {
-                state: filled === "deleted" ? "deleted" : "failed",
-                prependOnRetry: filled === "edited",
-                reason: filled === "deleted" ? "deleted_before_arrival" : "edited_before_arrival",
-              });
-              return;
-            }
-            if (converted)
-              await tree.setProperties(entry.id, converted.properties, converted.aliases);
-            for (const ref of ahead) {
-              const target = await repo.lockEntry(ref.targetId);
-              if (target.state === "landed") await tree.settleAhead(ref.ref, target.id);
-              else
-                await repo.updateEntry(target.id, {
-                  pendingRefs: [...target.pendingRefs, { holderId: entry.id, ref: ref.ref }],
-                });
-            }
-            await tree.clearPending([entry.id]);
-            await repo.updateEntry(entry.id, {
-              state: "landed",
-              reason: null,
-              uri: await tree.currentUri(entry.id, "file"),
-              exists: true,
-            });
-          } else if (!parent) {
-            await repo.updateEntry(entry.id, {
-              state: "deleted",
-              reason: "folder_deleted",
-            });
-          } else {
-            const allocated = allocate({ ...current, storageUrl }, parent);
-            await tree.land(parent, allocated, bound, bytes);
-            // Each ref awaits this id alone, so settling it cannot lose to another file.
-            for (const pending of current.pendingRefs)
-              await tree.settleAhead(pending.ref, entry.id);
-            await repo.updateEntry(entry.id, {
-              ...allocated,
-              state: "landed",
-              created: true,
-              exists: true,
-              reason: null,
-            });
-          }
-        });
-      } catch (error) {
-        const code =
-          error instanceof DeletedBeforeArrivalError
-            ? "deleted_before_arrival"
-            : error instanceof LandingFailure
-              ? error.reason
-              : "server_error";
-        deps.diagnostics.failed({
-          importId: id,
-          entryId,
-          code,
-          cause: error instanceof LandingFailure ? error.cause : error,
-        });
-        await repo.transaction(async () => {
-          const fenced = await repo.fence(id, projectId);
-          if (fenced?.state !== "ready") return;
-          const current = await repo.lockEntry(entry.id);
-          if (current.attemptId === entry.attemptId && current.state === "landing")
-            await repo.updateEntry(entry.id, {
-              state: error instanceof DeletedBeforeArrivalError ? "deleted" : "failed",
-              reason:
-                error instanceof DeletedBeforeArrivalError
-                  ? "deleted_before_arrival"
-                  : error instanceof LandingFailure
-                    ? error.reason
-                    : "server_error",
-            });
-        });
-      } finally {
-        await stopHeartbeat();
-      }
-      await finish(id, projectId, true);
-      return await entryOutcome(id, projectId, entryId);
-    },
+    land: (projectId: string, id: string, entryId: number, bytes: Uint8Array) =>
+      landFile(
+        projectId,
+        id,
+        entryId,
+        bytes,
+        selectionLoader(() => repo.entries(id)),
+      ),
   };
   return api;
 }

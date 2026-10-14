@@ -20,22 +20,47 @@ export interface ImportRecord {
   createdAt?: Date;
   dismissedAt?: Date | null;
 }
-export interface ImportEntry extends Omit<PlannedNode, "state"> {
-  state: ImportEntryState;
-  created: boolean;
+/**
+ * What `import_entries.spec` holds: the planned node and the payload state no query or
+ * lease logic filters on. Nothing a column owns is ever written here.
+ */
+export interface ImportEntryPayload extends Omit<PlannedNode, "id" | "state"> {
   prepared: boolean;
   prependOnRetry: boolean;
   /** Last observed presence of the created document or folder at `uri`. */
   exists: boolean;
   pendingRefs: { holderId: string; ref: string }[];
+}
+/** What import_entries columns own: identity, order, lifecycle, lease and sweep state. */
+export interface ImportEntryColumns {
+  id: string;
   order: number;
   version: string;
+  state: ImportEntryState;
+  created: boolean;
   attemptId: string | null;
   leaseUntil: Date | null;
   storageUrl: string | null;
   uri: string | null;
   objectSweptAt: Date | null;
 }
+export type ImportEntry = ImportEntryPayload & ImportEntryColumns;
+/** Mutable payload fields. */
+export type ImportEntryPayloadPatch = Partial<
+  Pick<
+    ImportEntryPayload,
+    "name" | "reason" | "reasonParams" | "prepared" | "prependOnRetry" | "exists" | "pendingRefs"
+  >
+>;
+/** Mutable column fields. */
+export type ImportEntryColumnPatch = Partial<
+  Pick<
+    ImportEntryColumns,
+    "state" | "created" | "attemptId" | "leaseUntil" | "storageUrl" | "uri" | "objectSweptAt"
+  >
+>;
+/** The only fields a caller may change; every other entry field is fixed at planning. */
+export type ImportEntryPatch = ImportEntryPayloadPatch & ImportEntryColumnPatch;
 export interface ImportRepository {
   transaction<T>(run: () => Promise<T>): Promise<T>;
   insert(record: ImportRecord, nodes: PlannedNode[]): Promise<void>;
@@ -76,8 +101,8 @@ export interface ImportRepository {
     reserved: ImportEntry[];
   } | null>;
   /** Patch rows the caller already holds locked (or fences out by Finish's exclusive lock). */
-  updateEntry(id: string, patch: Partial<ImportEntry>): Promise<void>;
-  updateEntries(patches: readonly { id: string; patch: Partial<ImportEntry> }[]): Promise<void>;
+  updateEntry(id: string, patch: ImportEntryPatch): Promise<void>;
+  updateEntries(patches: readonly { id: string; patch: ImportEntryPatch }[]): Promise<void>;
   setState(id: string, state: ImportState): Promise<void>;
   /** Terminal claimed binaries whose object may still exist, oldest lease first. */
   sweepCandidates(

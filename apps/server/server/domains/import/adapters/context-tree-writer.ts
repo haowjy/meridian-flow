@@ -139,15 +139,6 @@ export function createContextImportTreeWriter(deps: {
         pending: pending as never,
       });
     },
-    aheadTargets(bound, _holderUri, entries, targets) {
-      return bound.aheadRefs.flatMap(({ occurrence, ref }) => {
-        const targetId = targets?.get(occurrence);
-        const target = entries.find((entry) => entry.id === targetId);
-        return target && (target.kind === "binary" || target.kind === "code")
-          ? [{ targetId: target.id, ref }]
-          : [];
-      });
-    },
     async settleAhead(ref, documentId) {
       const parsed = parseLinkRef(ref);
       if (parsed?.kind === "ahead") await deps.ahead.settleRef(parsed.aheadId, documentId as never);

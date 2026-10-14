@@ -2,9 +2,14 @@
  * Import plan and landing cost on a generated vault, through the production
  * composition and a real database. Not a correctness gate; records timings.
  *
- *   pnpm probe:db apps/server/scripts/probe-import-performance.ts --out <file.ndjson> [--notes 2000]
+ *   pnpm probe:db apps/server/scripts/probe-import-performance.ts --out <file.ndjson> \
+ *     [--notes 2000] [--fixture plain|linked] [--batch 1]
  *
- * Writes one NDJSON line per phase (plan, landing progress, summary) to --out.
+ * `plain` notes are identical and link-free. `linked` notes each carry a frontmatter alias
+ * and wiki-links to alias, basename and path targets, so selection preparation and target
+ * lookups show up. `--batch 1` lands each file through `land`; a larger batch sends that many
+ * files per multipart receive, which is what the browser does. Writes one NDJSON line per phase (plan, landing progress, summary,
+ * counters) to --out; counters count port calls and rows during landing.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
@@ -27,11 +32,19 @@ import { composeAppServices, createProductionAppPorts } from "../server/lib/comp
 import { runAfterDrizzleCommit } from "../server/shared/drizzle-transaction.js";
 
 const { values } = parseArgs({
-  options: { out: { type: "string" }, notes: { type: "string", default: "2000" } },
+  options: {
+    out: { type: "string" },
+    notes: { type: "string", default: "2000" },
+    fixture: { type: "string", default: "plain" },
+    batch: { type: "string", default: "1" },
+  },
 });
 if (!values.out) throw new Error("--out <file.ndjson> is required");
 const out = values.out;
 const notes = Number(values.notes);
+const fixture = values.fixture;
+const batch = Number(values.batch);
+if (fixture !== "plain" && fixture !== "linked") throw new Error("--fixture is plain or linked");
 const databaseUrl = process.env.DATABASE_URL ?? "";
 assertThrowawayDatabaseForRunDbTests(databaseUrl);
 mkdirSync(dirname(out), { recursive: true });
@@ -106,6 +119,39 @@ const deps = createProductionImportPorts(
   projectId,
   userId,
 );
+const counters = {
+  entriesLoads: 0,
+  entriesRowsLoaded: 0,
+  currentUriCalls: 0,
+  currentUrisCalls: 0,
+  currentUrisIds: 0,
+  binds: 0,
+  bindMs: 0,
+};
+const { entries: loadEntries } = deps.repository;
+deps.repository.entries = async (id) => {
+  const rows = await loadEntries(id);
+  counters.entriesLoads++;
+  counters.entriesRowsLoaded += rows.length;
+  return rows;
+};
+const { currentUri, currentUris, bind } = deps.tree;
+deps.tree.currentUri = (...args) => {
+  counters.currentUriCalls++;
+  return currentUri(...args);
+};
+deps.tree.currentUris = (ids) => {
+  counters.currentUrisCalls++;
+  counters.currentUrisIds += ids.files.length + ids.folders.length;
+  return currentUris(ids);
+};
+deps.tree.bind = async (...args) => {
+  const start = performance.now();
+  const result = await bind(...args);
+  counters.binds++;
+  counters.bindMs += performance.now() - start;
+  return result;
+};
 const chunkCreateMs: number[] = [],
   chunkLockedMs: number[] = [];
 let planning = true;
@@ -123,25 +169,50 @@ deps.tree.create = async (...args) => {
   chunkCreateMs.push(performance.now() - start);
 };
 
-const bytes = Buffer.from("A generated note."),
-  sha256 = createHash("sha256").update(bytes).digest("hex");
+const linksPerNote = 8;
+const noteBytes = (index: number) =>
+  Buffer.from(
+    fixture === "plain"
+      ? "A generated note."
+      : [
+          "---",
+          `aliases: [Alias ${index}]`,
+          "---",
+          ...Array.from({ length: linksPerNote }, (_, link) => {
+            const target = (index * 7 + link * 13 + 1) % notes;
+            return [`[[Alias ${target}]]`, `[[Note ${target}]]`, `[[Notes/Note ${target}.md|n]]`][
+              link % 3
+            ];
+          }),
+        ].join("\n"),
+  );
+const frontmatterOf = (index: number) =>
+  fixture === "plain" ? undefined : `aliases: [Alias ${index}]\n`;
+const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const manifest: ImportManifest = {
   importId: randomUUID(),
   destination: { folderUri: "kb://" },
   roots: [{ rootId: 0, kind: "folder", name: "Benchmark" }],
   folders: [],
-  entries: Array.from({ length: notes }, (_, entryId) => ({
-    entryId,
-    rootId: 0,
-    path: `Note ${entryId}.md`,
-    size: bytes.length,
-    sha256,
-    sniff: bytes.toString("base64"),
-  })),
+  entries: Array.from({ length: notes }, (_, entryId) => {
+    const bytes = noteBytes(entryId);
+    const frontmatter = frontmatterOf(entryId);
+    return {
+      entryId,
+      rootId: 0,
+      path: fixture === "plain" ? `Note ${entryId}.md` : `Notes/Note ${entryId}.md`,
+      size: bytes.length,
+      sha256: sha(bytes),
+      sniff: bytes.toString("base64"),
+      ...(frontmatter ? { frontmatter } : {}),
+    };
+  }),
 };
 record({
   probe: "import-performance",
   notes,
+  fixture,
+  batch,
   environment: { cpu: cpus()[0]?.model, cores: cpus().length, memory: totalmem(), os: type() },
 });
 try {
@@ -151,21 +222,34 @@ try {
   planning = false;
   const planMs = performance.now() - planStart;
   record({ phase: "plan", planMs, state: plan.state, chunkCreateMs, chunkLockedMs });
+  for (const key of Object.keys(counters) as (keyof typeof counters)[]) counters[key] = 0;
   const landingStart = performance.now();
   let next = 0;
   await Promise.all(
     Array.from({ length: 4 }, async () => {
       while (next < notes) {
-        const entryId = next++;
-        const landed = await service.land(projectId, plan.importId, entryId, bytes);
-        if (landed.state !== "landed") throw new Error(`Entry ${entryId} ended ${landed.state}`);
-        if ((entryId + 1) % 500 === 0)
-          record({ phase: "landing", entries: entryId + 1, ms: performance.now() - landingStart });
+        const first = next;
+        next = Math.min(notes, next + batch);
+        const ids = Array.from({ length: next - first }, (_, offset) => first + offset);
+        const landed =
+          batch === 1
+            ? [await service.land(projectId, plan.importId, first, noteBytes(first))]
+            : (
+                await service.receive(plan.importId, projectId, async () =>
+                  ids.map((entryId) => ({ entryId, bytes: noteBytes(entryId) })),
+                )
+              ).entries;
+        for (const entry of landed)
+          if (entry.state !== "landed")
+            throw new Error(`Entry ${entry.entryId} ended ${entry.state}`);
+        if (Math.floor(first / 500) !== Math.floor(next / 500))
+          record({ phase: "landing", entries: next, ms: performance.now() - landingStart });
       }
     }),
   );
   const landMs = performance.now() - landingStart;
   const finished = await service.report(plan.importId, projectId);
+  record({ phase: "counters", ...counters, bindMs: Math.round(counters.bindMs) });
   record({ phase: "summary", planMs, landMs, perFileMs: landMs / notes, state: finished.state });
 } finally {
   await app.shutdown();

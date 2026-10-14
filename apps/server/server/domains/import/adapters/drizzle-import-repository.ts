@@ -17,30 +17,50 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { ImportArea } from "../domain/export-marker.js";
-import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
+import type {
+  ImportEntry,
+  ImportEntryColumnPatch,
+  ImportEntryPatch,
+  ImportEntryPayload,
+  ImportEntryPayloadPatch,
+  ImportRecord,
+  ImportRepository,
+} from "../ports/import-repository.js";
 
 function record(row: typeof imports.$inferSelect): ImportRecord {
   return { ...row, manifest: row.manifest as ImportManifest, state: row.state as ImportState };
 }
 function entry(row: typeof importEntries.$inferSelect): ImportEntry {
-  const spec = row.spec as ImportEntry;
   return {
-    ...spec,
+    ...(row.spec as ImportEntryPayload),
     id: row.id,
     order: row.ordinal,
     version: String(row.version),
     state: row.state as ImportEntryState,
     created: row.created,
-    prepared: !!spec.prepared,
-    prependOnRetry: !!spec.prependOnRetry,
-    exists: spec.exists ?? row.created,
-    pendingRefs: spec.pendingRefs ?? [],
     attemptId: row.attemptId,
     leaseUntil: row.leaseUntil,
     storageUrl: row.storageUrl,
     uri: row.uri,
     objectSweptAt: row.objectSweptAt,
   };
+}
+/** Column-owned patch fields with their column and SQL type; every other patch field is payload. */
+const COLUMNS: Record<keyof ImportEntryColumnPatch, readonly [column: string, type: string]> = {
+  state: ["state", "text"],
+  created: ["created", "boolean"],
+  attemptId: ["attempt_id", "uuid"],
+  leaseUntil: ["lease_until", "timestamptz"],
+  storageUrl: ["storage_url", "text"],
+  uri: ["uri", "text"],
+  objectSweptAt: ["object_swept_at", "timestamptz"],
+};
+function splitPatch(patch: ImportEntryPatch) {
+  const payload: ImportEntryPayloadPatch = {},
+    columns: ImportEntryColumnPatch = {};
+  for (const [key, value] of Object.entries(patch))
+    Object.assign(key in COLUMNS ? columns : payload, { [key]: value });
+  return { payload, columns };
 }
 export function createDrizzleImportRepository(db: Database): ImportRepository {
   const tx = () => currentDrizzleDb(db);
@@ -85,32 +105,31 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
     changes.set(importId, ids);
   }
   /**
-   * Merge patches into spec and their mirrored columns in one statement. Callers
-   * already hold the rows' locks, so nothing is reread.
+   * Apply patches in one statement: payload fields merge into `spec`, column fields
+   * set their columns, and a field is never in both. Callers already hold the rows'
+   * locks, so nothing is reread.
    */
   async function updateEntries(
-    patches: readonly { id: string; patch: Partial<ImportEntry> }[],
+    patches: readonly { id: string; patch: ImportEntryPatch }[],
   ): Promise<void> {
     if (!patches.length) return;
     const values = sql.join(
-      patches.map(({ id, patch }) => sql`(${id}::uuid, ${JSON.stringify(patch)}::jsonb)`),
+      patches.map(({ id, patch }) => {
+        const { payload, columns } = splitPatch(patch);
+        return sql`(${id}::uuid, ${JSON.stringify(payload)}::jsonb, ${JSON.stringify(columns)}::jsonb)`;
+      }),
       sql`, `,
     );
-    const column = (key: keyof ImportEntry, name: string, type: string) =>
+    const assignments = Object.entries(COLUMNS).map(([key, [column, type]]) =>
       sql.raw(
-        `${name} = CASE WHEN v.patch ? '${key}' THEN (v.patch->>'${key}')::${type} ELSE e.${name} END`,
-      );
+        `${column} = CASE WHEN v.columns ? '${key}' THEN (v.columns->>'${key}')::${type} ELSE e.${column} END`,
+      ),
+    );
     const updated = await tx().execute<{ id: string; import_id: string }>(sql`
       UPDATE import_entries AS e SET
-        spec = e.spec || v.patch,
-        ${column("state", "state", "text")},
-        ${column("created", "created", "boolean")},
-        ${column("attemptId", "attempt_id", "uuid")},
-        ${column("leaseUntil", "lease_until", "timestamptz")},
-        ${column("storageUrl", "storage_url", "text")},
-        ${column("uri", "uri", "text")},
-        ${column("objectSweptAt", "object_swept_at", "timestamptz")}
-      FROM (VALUES ${values}) AS v(id, patch)
+        spec = e.spec || v.payload,
+        ${sql.join(assignments, sql`, `)}
+      FROM (VALUES ${values}) AS v(id, payload, columns)
       WHERE e.id = v.id
       RETURNING e.id::text AS id, e.import_id::text AS import_id
     `);
@@ -185,12 +204,18 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         await tx()
           .insert(importEntries)
           .values(
-            nodes.slice(offset, offset + 200).map((node, index) => ({
-              id: node.id,
+            nodes.slice(offset, offset + 200).map(({ id, state, ...planned }, index) => ({
+              id,
               importId: input.id,
               ordinal: offset + index,
-              spec: node,
-              state: node.state,
+              spec: {
+                ...planned,
+                prepared: false,
+                prependOnRetry: false,
+                exists: false,
+                pendingRefs: [],
+              } satisfies ImportEntryPayload,
+              state,
             })),
           );
       for (const node of nodes) changed(input.id, node.id);
@@ -286,7 +311,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           and(
             eq(importEntries.importId, importId),
             eq(importEntries.state, "planned"),
-            sql`coalesce((${importEntries.spec}->>'prepared')::boolean, false) = false`,
+            sql`(${importEntries.spec}->>'prepared')::boolean = false`,
           ),
         )
         .limit(1);
@@ -303,7 +328,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       return rows.map(entry);
     },
     async nextPlanningGroup(importId) {
-      const unprepared = sql`coalesce((${importEntries.spec}->>'prepared')::boolean, false) = false`;
+      const unprepared = sql`(${importEntries.spec}->>'prepared')::boolean = false`;
       const [first] = await tx()
         .select({
           parentId: sql<string | null>`${importEntries.spec}->>'parentId'`,

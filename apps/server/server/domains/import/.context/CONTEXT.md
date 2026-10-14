@@ -83,10 +83,27 @@ splitter and uses ./mf api for every request.
 
 The performance probe is pnpm probe:db
 apps/server/scripts/probe-import-performance.ts --out FILE.ndjson
-[--notes 2000]. It runs the production composition on a throwaway migrated
-database and records plan, chunk and landing timings with the machine. Keep
+[--notes 2000] [--fixture plain|linked] [--batch 1]. It runs the production
+composition on a throwaway migrated database and records plan, chunk and landing
+timings plus port-call counters, with the machine. `linked` notes carry aliases
+and wiki-links; a batch above 1 lands through multipart receives. Keep
 its output in the work directory, not the repository. It is not part of the
 correctness gate.
+
+## Landing and storage
+
+A multipart receive prepares its selection once (`domain/prepared-selection.ts`):
+link candidates, the link index, root settings and pending ids, all immutable plan
+data shared by its Markdown landings. Direct `land` prepares the same context lazily.
+Binary, code and DOCX landings never load other entries. Current addresses are read
+per landing through batched `currentUris`, so hrefs follow moves; the context holds
+only the allocation seen at preparation.
+
+`import_entries` has one owner per field. Columns own identity, order, version,
+state, created, lease, storage, uri and sweep state; `spec` is the typed
+`ImportEntryPayload` (the planned node plus prepared, prependOnRetry, exists and
+pendingRefs). `ImportEntryPatch` is the only mutable surface, split into payload and
+column fields at the repository boundary; a column field is never written to `spec`.
 
 ## Reports and activity
 
