@@ -40,7 +40,7 @@ rebinds; the model's `work switch` never does
 
 The neutral `useWriteModeToolbarControl` shows a value and reports a choice:
 no dialog, no draft query. In an existing chat the value is the chat's mode
-(`thread.aiWriteMode`) with the ledger's switches laid over it
+(`thread.aiWriteMode`) with the switch view's intents laid over it
 (`useThreadControls().writeMode`), and a choice dispatches a `write_mode`
 control: a record in the chat's submission journal, posted in order with the
 messages around it. In the new-chat composer the value is the selected Work's
@@ -49,92 +49,51 @@ the writer picked one there. Switching never touches drafts: the dock keeps
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
-The **switch ledger** (`thread-controls/switch-ledger.ts`, pure; `useSwitchLedger` is its
-hook) is the one owner of a switch on screen. Each tab keeps one per chat, keyed by control
-id; each entry carries its mode, the order its journal first held it in (`held`) and a state
-that only moves forward. The journal's own `seq` orders only the records it holds together: it
-allocates above them, so a retired record's number is reused, and the ledger counts instead:
+The **switch view** is the one owner of a switch on screen (`client/run-state/`, pure, importing
+only `@meridian/contracts`; `thread-controls/useSwitchView.ts` is its hook). Every server fact
+about a switch carries one clock, the thread's event `seq`, and the view is a function of those
+facts plus this device's unanswered intents:
 
-| State | Entered on |
-| --- | --- |
-| `sending` | A journal record, not posted |
-| `posted` | A journal record marked posted, no answer yet |
-| `queued` | An answer with `pending`, the inbox listing the id, or a snapshot's pending inbox listing it |
-| `applied` | An answer with a turn id, or any divider naming the id |
-| `gone` | Terminal evidence (below) |
+- **Records.** `RunStateRecord = { version, mode, items }` is the server's state at `version`: the
+  applied write mode and the unacknowledged inbox, which holds the queued switch as a control row.
+  `receiveRecord` replaces the current record only if `compareSeq` says the new one is newer.
+  Nothing else compares versions.
+- **Where a record comes from** (`thread-controls/switch-record.ts`, which design A's server record
+  replaces): the accepted snapshot (`nextSeq - 1` as version, `thread.aiWriteMode`,
+  `liveState.pending.items`, read in one transaction); an `inbox.changed` frame at K
+  (`{ ...current, version: K, items }`); a `write_mode.switched` frame at K
+  (`{ ...current, version: K, mode }`); and a switch's answer, which carries `seq`, `mode` and
+  `pending` (the current items with every write-mode control row replaced by `pending`). A frame
+  before the first snapshot has no record to extend and is ignored; `subscribed` is never a source.
+- **Intents.** A `switch` intent is a journal record the writer chose; a `withdraw` intent is a
+  Withdraw in flight. An intent with an `answer` leaves once the record's version is at or after it;
+  an unanswered one leaves only by `dropIntent` (the journal record vanished unstamped, a refusal
+  withdrawn, a Withdraw the server never had). Another tab's stamp (below) answers a record this tab
+  chose, so a hidden driving tab cannot strand the choosing tab's row.
+- **The fold** (`fold-switches.ts`, a selector): starting from the record's applied mode and its
+  queued switch, the switch intents in `(order, id)` order apply the server's enqueue rule (a switch
+  to the mode the chat is heading to changes nothing; the other mode withdraws the queued one). The
+  toolbar shows the mode the chat is heading to. A row the server lists is `queued`; one only this
+  device holds is `sending` (Retry only if posted and not refused); a failed or refused one shows
+  Retry and is left out of the fold. An unanswered intent is laid over the record even if the record
+  already includes it: the effect is bounded by the answer, which brings the state at its `seq`.
+- **The bridge row** is the transcript layer's, not the view's: an applied switch whose divider
+  has not rendered keeps a queued-looking row, keyed by the `write_mode.switched` frame's turn,
+  until that turn renders.
 
-`failed` (the record was refused or lost) is a flag on `sending` or `posted`. A record
-leaving the journal, or the id leaving the inbox, is not terminal: the entry stays where it
-was and the hook asks for a snapshot. Terminal evidence:
+No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
+mode but never rewrites an existing row's, and a `switched` frame invalidates the Works query and
+the project thread lists instead.
 
-- `applied` retires once the transcript this tab renders holds the divider naming the id.
-- `gone` comes from a `null`/`null` answer for its own id (a cancel-out), a server Withdraw
-  answering `withdrawn`, a server 404 for an entry the journal no longer holds (the server never
-  had it), a local Withdraw the driver allowed (never posted, or refused), or a snapshot whose
-  request began after the entry's last observation and shows the id neither pending nor as a
-  divider.
-- A cancel-out is evidence about its own id only. The answer carries no ids, so the switch the
-  server cancelled is predicted: the latest entry ordered before the answered one by what the
-  writer had seen (an earlier journal record, or a server entry at or below the answered record's
-  frontier, so another device's switch counts), of the other mode, still `posted` or `queued`,
-  is marked **cancel-predicted**. It is hidden from
-  rows and the overlay and not terminal. Only a snapshot whose request began after the mark's
-  watermark settles it: one that lists the id clears the mark, one that doesn't makes it `gone`.
-  A socket inbox frame listing it, or an older snapshot, clears nothing: either can predate the
-  cancel. An answer never touches
-  an entry the journal doesn't hold, or one above the record's frontier, so another device's
-  newer switch survives a delayed answer.
-- **Watermark.** Every source that shows an entry raises its `observedAt` to the larger of the
-  old value and the new reading: the journal, inbox and answer by the request counter at
-  observation, a snapshot that lists it by its `request`. An absent snapshot proves absence
-  only with `request > observedAt`. The counter (`snapshotRequestCount`) is read when a
-  fetch starts, and `threadSnapshotQueryOptions` stamps every fetch of the snapshot key.
-- **One guarded observer.** `useThreadSnapshotSync` is the only observer of the snapshot key,
-  so its guarded options (identity, older than live changes) are the only ones Query keeps and a
-  rejected response never becomes cached data. The ledger reads only the snapshot the host
-  accepted (`ChatView`'s `snapshot` prop). Every other reader of the key (`useDisplayedThread`,
-  the missing-chat fallback, the ledger's fetch state) uses `useThreadSnapshotCache`, an
-  observer-free cache subscription.
-- **Proof loop.** While the ledger holds an entry only a snapshot can settle (`proofNeed`),
-  `useProofLoop`, the chat's one owner, asks for one fetch and waits for its outcome (an accepted
-  snapshot whose request began after the ask, or a new error), reading the host's accepted
-  snapshot and only the cache's `errorUpdatedAt`: a fetch settles in the cache before the host
-  delivers it, so a lagging delivery asks for nothing more. An accepted snapshot whose request
-  is not above the bar is followed by one fresh fetch, which qualifies. A terminal query error is
-  followed after 3 s, doubling to 30 s. The host's own unbounded 250 ms retry of a stale response
-  (on `main`; `isFetching` stays true) runs until the stream's floor is met and never reaches the
-  loop as an error. Offline and hidden pause the loop; reconnect or showing the page resumes it.
+One view host per chat per tab. The desktop shell keeps a single `ChatSurface` and moves it
+between the center and the dock, so a chat has one mounted `ChatView` and one view; mobile has its
+own lifetime. A dev-only registry in `useSwitchView` warns when a second view mounts for a chat that
+already has one.
 
-Display derives from the ledger alone. Rows are every entry that is not `gone`, not
-cancel-predicted, not withdrawing, not retired, and not folded by a predicted switch back (a
-switch back before its answer hides both rows, only against a predecessor still `sending`,
-`posted` or `queued`: an `applied` one stays a row and the later switch shows). `sending` and
-`posted` show as sending, `queued` and not-yet-rendered `applied` as queued (so no frame lacks
-both the row and the divider). A failed row shows Retry; Withdraw shows unless the server may
-hold it (posted and not refused). Entries are ordered causally, as a merge of two chains: the
-journal's (`(seq, id)`, the driver's drain order; `seq` is unique per chat and survives
-retirement) and the server's (transcript position, else inbox order). An entry on both anchors
-them together. A local switch records `after`, the server order its tab had seen when the writer
-chose it (highest divider position and inbox `seq`, `frontierOf`); the server entries at or below
-it come before it in every tab until the switch has its own server place. Lifecycle state never
-reorders either chain; only for a server entry above the frontier against a journal entry the
-server has not placed does an applied one go before what the server still holds queued (the
-server consumed it directly), and anything else the server holds goes first. The mode is the rendered snapshot's
-`thread.aiWriteMode` with each entry laid over it in that order, the last winning, until a
-snapshot holding the entry's divider has rendered. No client path writes a write mode into a
-cache: a snapshot may insert a project-list row with its mode but never rewrites an existing
-row's, and an applied entry or a newly rendered divider invalidates the Works query and the
-project thread lists instead.
-
-One ledger host per chat per tab. The desktop shell keeps a single `ChatSurface` and moves it
-between the center and the dock, so a chat has one mounted `ChatView` and one ledger; mobile
-has its own lifetime. A dev-only registry in `useSwitchLedger` warns when a second ledger
-mounts for a chat that already has one.
-
-One hook speaks it: "Switch to … queued" when an entry becomes queued, "Switched to …" when a
-divider renders. Entries and dividers present when the first successful history load lands
-(mount, reload; an error does not count) are silent, and a cancel-out is silent. A failure stays
-with the journal owner's keyed announcement, cleared on Retry and when the record is withdrawn.
+One hook speaks it: "Switch to … queued" when a switch the server lists is newly above the first
+record's version, "Switched to …" for a `switched` frame above it. The first record, a replay and a
+snapshot are never news. A failure stays with the journal owner's keyed announcement, cleared on
+Retry and when the record is withdrawn.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

@@ -21,7 +21,7 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
-import type { SwitchLedgerView } from "./useSwitchLedger";
+import type { SwitchView } from "./useSwitchView";
 import { type ThreadControls, useThreadControls } from "./useThreadControls";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -34,7 +34,7 @@ afterAll(() => {
 });
 
 const EMPTY: ThreadPendingInbox = { items: [] };
-const NO_SWITCHES: SwitchLedgerView = {
+const NO_SWITCHES: SwitchView = {
   rows: [],
   writeMode: "direct",
   switchWriteMode: () => undefined,

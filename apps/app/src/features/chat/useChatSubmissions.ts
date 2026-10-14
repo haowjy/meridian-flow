@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef } from "react";
 import {
   getChatSubmissionAccountId,
   getChatSubmissionEpoch,
@@ -12,13 +12,7 @@ import {
   cleanDeletedChat,
   registerDeletedChatSurface,
 } from "@/client/chat-submissions/deleted-chat";
-import {
-  ChatSubmissionOwner,
-  type JournalSwitch,
-  onSwitchAnswered,
-  type SwitchAnswer,
-} from "@/client/chat-submissions/owner";
-import type { SwitchFrontier } from "@/client/chat-submissions/store";
+import { ChatSubmissionOwner, type JournalSwitch } from "@/client/chat-submissions/owner";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
@@ -149,10 +143,6 @@ export function useChatSubmissions(
     };
   }, [threadId, projectId, accountId, controller, accountSignal, queryClient, transport]);
 
-  const onAnswered = useCallback(
-    (listener: (answer: SwitchAnswer) => void) => onSwitchAnswered(accountId, threadId, listener),
-    [accountId, threadId],
-  );
   return {
     presentation: driver.current?.presentation,
     submit: (envelope: ComposerSubmitEnvelope) =>
@@ -160,11 +150,9 @@ export function useChatSubmissions(
     /** Write-mode switches ride the same journal, so they are posted in order with the messages. */
     switches: {
       pending: driver.current?.switches ?? NO_SWITCHES,
-      submit: (id: string, mode: AiWriteMode, after?: SwitchFrontier) =>
-        driver.current?.submitSwitch(id, mode, after) ?? false,
+      submit: (id: string, mode: AiWriteMode) => driver.current?.submitSwitch(id, mode) ?? false,
       retry: (id: string) => driver.current?.retrySwitch(id),
       withdraw: (id: string) => driver.current?.withdrawSwitch(id) ?? Promise.resolve("admitted"),
-      onAnswered,
     },
   };
 }

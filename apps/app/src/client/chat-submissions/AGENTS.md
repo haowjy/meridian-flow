@@ -50,7 +50,7 @@ and orders across retirement: it is one above the larger of the chat's durable c
 (`meridian:chat-submission-seq:v1:<account>:<thread>` in `localStorage`) and the largest held
 `seq`, read and written with the counter in the same synchronous step as the first write
 (`localStorage` has no await between). A retired record's number is never reused. Drain order,
-the refusal barrier and the switch ledger sort by `seq`, then by record id; `createdAt` is
+the refusal barrier and the switch fold sort by `seq`, then by record id; `createdAt` is
 display only. Two tabs appending in one tick can still tie, and the id breaks that tie: the
 writer cannot have made an order between actions in the same millisecond. A rewrite keeps its
 `seq`. The counter goes with the chat's records (`forgetOrder`, called by deleted-chat cleanup). The schema is v3; older keys are not read.
@@ -65,14 +65,20 @@ the records after it until Withdraw or an admitted Retry. `withdrawControl` drop
 record under the lock only when the server can't have it (never posted, or refused);
 a posted unresolved one is kept (Retry only), and a record already gone is the
 server's to withdraw. It has no writer row: its queued row, Retry and Withdraw come
-from `useThreadControls`, and the server's answer reaches it through `onSwitchAnswered`
-before the record is retired. A switch record also stores `control.after`, the server order the choosing tab had seen
-(`SwitchFrontier`), so every tab orders it after what the writer had seen. The owner exposes
-the chat's journal switches (`switches`: id, mode, `seq`, `after`, posted, refused, failed) and the answers (`onSwitchAnswered`); the switch ledger
-(`features/chat/thread-controls/switch-ledger.ts`) decides what the writer sees, including
-when a record has left storage. The ledger orders the journal chain by `(seq, id)`, the driver's order. The owner keeps only the journal side: `seq`, `posted`, the
-posted-aware Withdraw, and the keyed "Couldn't switch" announcement (cleared on Retry and
-when the record leaves).
+from `useThreadControls`.
+
+The driver does not delete a switch the server answers: it stamps `answer: { seq, mode, pending, at }`
+on the record (and spends its `creation`). The stamp is the answer's journal-head `seq`, the chat's
+applied mode and its queued switch, all read by the server in one transaction. Every tab, driving or
+not, reads it as a server fact through `switches[].answer` (the owner exposes id, mode, `seq`, posted,
+refused, failed and the stamp), so the display needs no in-process answer channel and a hidden tab
+that drove the record cannot strand the tab that chose it. The drain skips a stamped record, Retry
+ignores it, and a Withdraw on it goes to the server (`admitted`). The journal prunes stamped records
+past 60 s at its next write; a record that vanishes unstamped was withdrawn or refused here, or its
+stamp was pruned while a tab was blind, and the tab drops it (frames bring the server state). The
+switch view (`features/chat/thread-controls/useSwitchView.ts`) decides what the writer sees. The owner
+keeps only the journal side: `seq`, `posted`, the posted-aware Withdraw, and the keyed "Couldn't
+switch" announcement (cleared on Retry and when the record leaves).
 
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
 Records under older storage keys are ignored.

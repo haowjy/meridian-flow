@@ -87,7 +87,6 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         seq: "1",
         mode: "direct",
       }),
-      controlAnswered: () => {},
       status: (entry, status) => {
         if (entry.control) return;
         let id = rows.get(entry.recordId);
@@ -613,7 +612,15 @@ describe("write-mode switches in the journal", () => {
       await owner.drive("thread_1");
       expect(order).toEqual(["switch after 1 message(s)"]);
       expect(r.scenario.appendRequests).toHaveLength(2);
-      expect(r.records.size).toBe(0);
+      // The answer is stamped on the record for every tab to read; it is not posted again.
+      expect([...r.records.keys()]).toEqual(["switch-1"]);
+      expect(r.records.get("switch-1")?.answer).toMatchObject({
+        seq: "1",
+        mode: "direct",
+        pending: null,
+      });
+      await owner.drive("thread_1");
+      expect(order).toHaveLength(1);
     } finally {
       r.dispose();
     }
@@ -640,7 +647,8 @@ describe("write-mode switches in the journal", () => {
       refuse = false;
       await owner.retry("switch-1");
       expect(r.scenario.appendRequests).toHaveLength(1);
-      expect(r.records.size).toBe(0);
+      expect(r.records.get("switch-1")?.answer).toBeDefined();
+      r.records.delete("switch-1");
       // Withdraw is the other way out: it never reached the server, so the journal drops it.
       refuse = true;
       r.records.set("switch-1", switchRecord(4));

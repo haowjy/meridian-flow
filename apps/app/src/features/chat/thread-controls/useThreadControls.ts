@@ -12,7 +12,7 @@
  * running compaction divider through the turn cancel route, and announces each
  * state change the writer caused.
  *
- * A write-mode switch is the switch ledger's (`useSwitchLedger`): its rows,
+ * A write-mode switch is the switch ledger's (`useSwitchView`): its rows,
  * Retry, Withdraw and the chat's mode come from there and are listed after the
  * compaction rows.
  */
@@ -34,7 +34,7 @@ import {
   NO_LOCAL_CONTROLS,
   type QueuedControl,
 } from "./thread-controls";
-import type { SwitchLedgerView } from "./useSwitchLedger";
+import type { SwitchView } from "./useSwitchView";
 
 export type ThreadControls = {
   queued: readonly QueuedControl[];
@@ -54,7 +54,7 @@ export function useThreadControls(input: {
   threadId: string;
   pending: ThreadPendingInbox;
   answeredCompactionIds: ReadonlySet<string>;
-  switches: SwitchLedgerView;
+  switches: SwitchView;
 }): ThreadControls {
   const { threadId, pending, answeredCompactionIds, switches } = input;
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);

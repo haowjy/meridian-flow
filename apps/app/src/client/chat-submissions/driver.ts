@@ -29,8 +29,6 @@ export type SubmissionDriverOptions = {
   created(thread: Thread): void;
   /** Post a control record (a write-mode switch) to the chat's controls route. */
   postControl(entry: ChatSubmission, signal: AbortSignal): Promise<EnqueueThreadControlResponse>;
-  /** The server answered a control. Called before the record is retired. */
-  controlAnswered(entry: ChatSubmission, response: EnqueueThreadControlResponse): void;
   row(entry: ChatSubmission): string;
   status(entry: ChatSubmission, status: "pending" | "error", localFailure?: boolean): void;
   /** Consumed immediately before dispatch, never after an awaited request. */
@@ -109,7 +107,7 @@ export class ChatSubmissionDriver {
     let blocked = false;
     const waiting = this.options.journal
       .entries()
-      .filter((entry) => entry.threadId === threadId && !entry.state)
+      .filter((entry) => entry.threadId === threadId && !entry.state && !entry.answer)
       .sort(compareSubmissions)[0];
     const driving = this.locked(
       threadId,
@@ -121,6 +119,7 @@ export class ChatSubmissionDriver {
             .filter(
               (record) =>
                 record.threadId === threadId &&
+                !record.answer &&
                 (!record.state ||
                   this.incompleteDeletions.has(threadId) ||
                   this.options.transferReceived(record)) &&
@@ -134,7 +133,7 @@ export class ChatSubmissionDriver {
           if (!this.current()) return;
           // An unresolved predecessor may still land. Do not let later messages overtake it.
           const unresolved = this.read(entry.recordId);
-          if (unresolved && !unresolved.state) {
+          if (unresolved && !unresolved.state && !unresolved.answer) {
             blocked = true;
             break;
           }
@@ -153,6 +152,7 @@ export class ChatSubmissionDriver {
           .some(
             (record) =>
               record.threadId === threadId &&
+              !record.answer &&
               (!record.state ||
                 this.incompleteDeletions.has(threadId) ||
                 this.options.transferReceived(record)) &&
@@ -170,7 +170,12 @@ export class ChatSubmissionDriver {
     const original = this.options.journal
       .entries()
       .find((entry) => entry.submissionId === submissionId);
-    if (!original || this.deletedThreads.has(original.threadId) || !this.current())
+    if (
+      !original ||
+      original.answer ||
+      this.deletedThreads.has(original.threadId) ||
+      !this.current()
+    )
       return Promise.resolve();
     if (!this.incompleteDeletions.has(original.threadId) && this.options.transferReceived(original))
       return this.edit(submissionId);
@@ -188,7 +193,7 @@ export class ChatSubmissionDriver {
       .then(() => {
         if (!this.current()) return;
         const remaining = this.read(original.recordId);
-        if (!remaining || remaining.state) return this.drive(original.threadId);
+        if (!remaining || remaining.state || remaining.answer) return this.drive(original.threadId);
       });
   }
 
@@ -394,8 +399,12 @@ export class ChatSubmissionDriver {
       return;
     }
     if (!this.current()) return;
-    this.options.controlAnswered(entry, response);
-    this.settle(entry, "accepted");
+    // The creation inputs are spent: the thread exists once the server answers a control.
+    const { seq, mode, pending } = response;
+    if (
+      !this.write({ ...entry, creation: undefined, answer: { seq, mode, pending, at: Date.now() } })
+    )
+      return;
   }
 
   /**
@@ -413,7 +422,8 @@ export class ChatSubmissionDriver {
     await this.locked(threadId, async () => {
       const entry = this.read(recordId);
       if (!entry?.control || !this.current()) return;
-      if (entry.posted && entry.state !== "rejected") result = "kept";
+      if (entry.answer) result = "admitted";
+      else if (entry.posted && entry.state !== "rejected") result = "kept";
       else if (this.options.journal.retire(recordId)) result = "removed";
       else {
         this.localFailure(entry);
@@ -452,7 +462,7 @@ export class ChatSubmissionDriver {
       this.deletedThreads.add(entry.threadId);
     } else {
       for (const record of this.options.journal.entries())
-        if (record.threadId === entry.threadId) this.settle(record, "rejected");
+        if (record.threadId === entry.threadId && !record.answer) this.settle(record, "rejected");
     }
     return true;
   }

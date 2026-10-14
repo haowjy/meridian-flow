@@ -135,7 +135,6 @@ function ChatScreenLoaded({
     snapshot,
     isError,
     settled: historySettled,
-    historyLoaded,
     refetch,
   } = useThreadSnapshotSync(threadId);
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
@@ -202,7 +201,6 @@ function ChatScreenLoaded({
             snapshotNextSeq={snapshotNextSeq}
             snapshotThreadUsage={snapshot?.threadUsage}
             historySettled={historySettled}
-            historyLoaded={historyLoaded}
             activateProjection={activateProjection}
             active={visible}
             composerStrip={
