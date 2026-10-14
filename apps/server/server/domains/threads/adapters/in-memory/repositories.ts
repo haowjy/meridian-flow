@@ -827,6 +827,10 @@ export function createInMemoryRepositories(
         )[0] ?? null
       );
     },
+    // The in-memory inbox lives in the runtime adapter, which does not hand messages back.
+    async listHandedBackIds() {
+      return new Set<string>();
+    },
     // The in-memory inbox lives in the runtime adapter; deliveries read as unknown.
     async listMessageDeliveries() {
       return new Map();

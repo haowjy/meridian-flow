@@ -22,6 +22,8 @@ export function createCompactionFixture(db: Database) {
       summarizer?: ReturnType<typeof scriptedSummarizer>;
       gateway?: ReturnType<typeof scriptedGateway>;
       workContext?: WorkContextReader;
+      /** Nothing starts the next run after a release: the test starts each one itself. */
+      holdWakes?: boolean;
     } = {},
   ) {
     const { repos, ids } = await executionScenario(db);
@@ -57,6 +59,7 @@ export function createCompactionFixture(db: Database) {
     const summarizer = options.summarizer ?? scriptedSummarizer();
     const { createDrizzleCreditLedger } = await import("../../../billing/index.js");
     const rig = createRuntimeHarness({
+      ...(options.holdWakes ? { wakeIfRunnable: async () => {} } : {}),
       backgroundTasks: processDetachedWork,
       creditLedger: createDrizzleCreditLedger(db),
       repos,

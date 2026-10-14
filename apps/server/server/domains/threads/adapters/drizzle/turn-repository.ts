@@ -25,6 +25,7 @@ import type {
   TurnRepository,
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
+import { notHandedBackSql } from "./handed-back.js";
 import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { createDrizzleTranscriptReader } from "./transcript-reader.js";
@@ -42,6 +43,7 @@ export function latestLocalRequesterTextSql(threadIds: readonly ThreadId[]) {
           FROM ${schema.turns} AS candidate
          WHERE candidate.thread_id = listed.id
            AND candidate.role = 'user'
+           AND ${notHandedBackSql("candidate")}
            AND CASE
                  WHEN listed.kind = 'subagent'
                    THEN candidate.origin = 'system'
@@ -279,6 +281,18 @@ export function createDrizzleTurnRepository(
         .limit(1);
       return row ? mapTurn(row) : null;
     },
+    async listHandedBackIds(threadId: ThreadId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ id: schema.threadInboxMessages.id })
+        .from(schema.threadInboxMessages)
+        .where(
+          and(
+            eq(schema.threadInboxMessages.threadId, threadId),
+            sql`${schema.threadInboxMessages.handedBackBy} IS NOT NULL`,
+          ),
+        );
+      return new Set(rows.map((row) => row.id as string));
+    },
     async listMessageDeliveries(threadId: ThreadId) {
       const rows = await currentDrizzleDb(db)
         .select({
@@ -291,6 +305,8 @@ export function createDrizzleTurnRepository(
             eq(schema.threadInboxMessages.threadId, threadId),
             eq(schema.threadInboxMessages.intent, "message"),
             sql`${schema.threadInboxMessages.deliveredAt} IS NOT NULL`,
+            // A handed-back message left the chat: it has no delivery to show.
+            sql`${schema.threadInboxMessages.handedBackBy} IS NULL`,
           ),
         );
       return new Map(rows.map((row) => [row.id, { byTurnId: row.byTurnId ?? null }]));

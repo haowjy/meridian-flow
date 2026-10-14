@@ -516,6 +516,12 @@ export interface TurnRepository {
   listByExecution(threadId: ThreadId, executionId: string): Promise<Turn[]>;
   /** The first turn the Retry request `replyTurnId` reserved (`metadata.retryReplyId`), or null. */
   findRetryReservation(threadId: ThreadId, replyTurnId: TurnId): Promise<Turn | null>;
+  /**
+   * User turns of writer messages a hand-back took out of the chat. The turns and their blocks stay
+   * for diagnostics; `listByThread` is the graph (positions, `prevTurnId`, the leaf) and still
+   * returns them. Every conversation read drops these ids.
+   */
+  listHandedBackIds(threadId: ThreadId): Promise<ReadonlySet<string>>;
   /** Each delivered inbox message of the thread with its deliverer (null when unknown). */
   listMessageDeliveries(threadId: ThreadId): Promise<Map<string, TurnDelivery>>;
   /** Complete epoch boundaries in the supplied transcript spans. */
