@@ -57,6 +57,7 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
  * other value under these keys is redacted.
  */
 const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
+  code: new Set(["corrupt_settlement_authority", "corrupt_state"]),
   effect: new Set(["warm_rooms", "publication_step"]),
   refusal: new Set(["integration"]),
   stage: new Set(["claim", "execute", "handoff"]),
