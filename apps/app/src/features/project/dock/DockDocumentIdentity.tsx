@@ -17,7 +17,11 @@ import {
 } from "@/features/draft-review/DraftReviewProvider";
 import { DocumentIdentityBar } from "../context/DocumentIdentityBar";
 import { useOpenDocumentInEditor } from "../routing/use-open-document-in-editor";
-import { DockDocumentCommands } from "./DockDocumentCommands";
+import {
+  DockDocumentCommands,
+  DockViewFailureNote,
+  useDockViewFailed,
+} from "./DockDocumentCommands";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
 import { ReviewLaunchContext, useDockReviewLauncher } from "./useAiDraftLauncher";
 
@@ -56,11 +60,13 @@ function DockIdentityBody({
   const closeDocument = useDockDocumentStore((state) => state.closeDocument);
   const openInEditor = useOpenDocumentInEditor();
   const archivedWork = useDockArchivedWork(projectId, tab);
+  const failed = useDockViewFailed();
   return (
     <DocumentIdentityBar
       key={tab.documentId}
       variant="header"
-      leading={<DockDocumentCommands document={dockDocument} />}
+      leading={<DockDocumentCommands document={dockDocument} failed={failed} />}
+      notice={failed ? <DockViewFailureNote /> : null}
       trailing={trailing}
       projectId={projectId}
       editorWorkId={tab.kind === "new" ? null : (tab.workId ?? null)}

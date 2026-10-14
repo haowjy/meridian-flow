@@ -20,7 +20,7 @@ import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
 } from "./DesktopProjectController";
-import { DockDocumentCommands } from "./dock/DockDocumentCommands";
+import { DockDocumentCommands, DockViewFailureNote } from "./dock/DockDocumentCommands";
 import { dockDocument, useDockDocumentStore } from "./dock/dock-document-store";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./routing/chat-navigation";
@@ -159,7 +159,13 @@ async function setup(source: ScreenKey = "context") {
         </button>
         {railSwitchFailed && <p role="alert">Rail failure</p>}
         {headerFailure(failures.failures, revision) && <p>Header failure</p>}
-        {switcher.dockDocument && <DockDocumentCommands document={switcher.dockDocument} />}
+        {switcher.dockDocument && (
+          <DockDocumentCommands
+            document={switcher.dockDocument}
+            failed={headerFailure(failures.failures, revision)}
+          />
+        )}
+        {headerFailure(failures.failures, revision) && <DockViewFailureNote />}
         <ProjectRouteBoundary
           issue={acceptedFailure ? "error" : issue}
           retainWhileLoading={switcher.editorPresentation.retainWhileLoading}
