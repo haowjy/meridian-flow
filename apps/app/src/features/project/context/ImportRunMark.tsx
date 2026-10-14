@@ -1,7 +1,7 @@
 /**
- * The mark an import's own run puts on a tree row: a spinner on the destination while
- * its selection is read, and after a refused or lost plan a warning on the root row
- * whose menu offers Try again and Discard.
+ * The mark an import's own run puts on a tree row, a phone listing row or an area
+ * header: a spinner on the destination while its selection is read, and after a
+ * refused or lost plan a warning whose menu offers Try again and Discard.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -24,7 +24,7 @@ export function ImportRunMark({ info }: { info: ImportRowInfo | undefined }) {
         role="img"
         aria-label={t`Reading your files`}
         title={t`Reading your files`}
-        className="flex size-7 shrink-0 items-center justify-center text-ink-muted"
+        className="flex size-7 shrink-0 items-center justify-center text-ink-muted [@media(pointer:coarse)]:size-11"
       >
         <Loader2 aria-hidden className="size-3.5 animate-spin" />
       </span>
@@ -39,7 +39,7 @@ export function ImportRunMark({ info }: { info: ImportRowInfo | undefined }) {
           aria-label={message}
           title={message}
           onClick={(event) => event.stopPropagation()}
-          className="focus-ring flex size-7 shrink-0 items-center justify-center rounded-md text-destructive"
+          className="focus-ring flex size-7 shrink-0 items-center justify-center rounded-md text-destructive [@media(pointer:coarse)]:size-11"
         >
           <TriangleAlert aria-hidden className="size-3.5" />
         </button>
