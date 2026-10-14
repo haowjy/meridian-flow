@@ -487,7 +487,6 @@ export function settleNamespaceOutcome(
             documentId: resource.identity.documentId,
             identityRevision: resource.identity.revision,
             exactDatabaseName: resource.content.databaseName,
-            generation: null,
           },
         },
       };

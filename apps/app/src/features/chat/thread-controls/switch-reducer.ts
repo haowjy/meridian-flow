@@ -36,6 +36,8 @@ export type QueuedNews = {
   n: number;
   id: string;
   control: Extract<ControlBody, { kind: "write_mode" }>;
+  /** The server lists it behind a reply it can't affect: the same fact the row's copy reads. */
+  waiting: boolean;
 };
 
 export type SwitchState = Received & {
@@ -74,7 +76,13 @@ export function reduceSwitch(state: SwitchState, action: SwitchAction): SwitchSt
     if (!isWriteModeControl(item) || item.control?.kind !== "write_mode") continue;
     if (heard.has(item.id)) continue;
     heard.add(item.id);
-    if (live) news.push({ n: news.length + 1, id: item.id, control: item.control });
+    if (live)
+      news.push({
+        n: news.length + 1,
+        id: item.id,
+        control: item.control,
+        waiting: item.deliveryState === "waiting",
+      });
   }
   return { ...received, heard, news };
 }

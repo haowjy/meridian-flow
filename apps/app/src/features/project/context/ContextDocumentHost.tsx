@@ -9,9 +9,12 @@
  * and whether the document is frozen (`readOnly`). The host fills its
  * `relative` parent.
  */
+
 import { Trans } from "@lingui/react/macro";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useWorksSnapshot } from "@/client/query/useWorks";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
@@ -34,6 +37,7 @@ import {
   useLiveDocumentSessionRegistry,
 } from "./account-feature-context";
 import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
+import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 
 export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
@@ -48,7 +52,9 @@ export type ContextDocumentHostProps = {
   shown?: boolean;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
+  /** The Work's scope freezes this document (an archived Work); the room's access must agree. */
   readOnly?: boolean;
+  presentation?: DocumentPresentation;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
   /** Overrides the editor shell's own styling, e.g. to take the dock's material. */
   editorClassName?: string;
@@ -63,6 +69,7 @@ export function ContextDocumentHost({
   shown = true,
   active,
   readOnly = false,
+  presentation = DESKTOP_DOCUMENT_PRESENTATION,
   onUntitledBecameNonEmpty,
   editorClassName,
   onCloseDraftOnly,
@@ -86,6 +93,9 @@ export function ContextDocumentHost({
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft branch alone.
   const branchOnly = isDraftOnly(tab);
+  // `readOnly` is the Work's scope (archived freezes it); the presentation decides whether
+  // this view ever types. Only the first is compared with the room's access.
+  const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
     failed = false,
@@ -149,6 +159,7 @@ export function ContextDocumentHost({
                   projectId={projectId}
                   session={session}
                   reviewRoomName={reviewRoomName}
+                  reviewWorkId={controller.workId}
                   readOnly={readOnly}
                 />
               ) : null}
@@ -156,7 +167,11 @@ export function ContextDocumentHost({
                 documentId={tab.documentId}
                 liveSession={session}
                 active={active && shown}
-                inReview={Boolean(reviewItemKey)}
+                inReview={Boolean(
+                  presentation.presenceSuspendsOn === "requested-review"
+                    ? selectedReviewItemKey
+                    : reviewItemKey,
+                )}
               />
               <EditorView
                 draftOnly={branchOnly}
@@ -176,11 +191,13 @@ export function ContextDocumentHost({
                 // A warm editor is hidden, not gone. Its chrome portals to
                 // the body, where `hidden` on an ancestor means nothing.
                 active={active && shown}
-                editable={!readOnly}
-                showToolbar={!readOnly}
+                editable={editable}
+                showToolbar={editable}
                 detached={tab.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
+                ariaLabel={presentation.ariaLabel?.()}
+                showCollaborationDecorations={presentation.collaborationDecorations}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
                 reviewItemKey={selectedReviewItemKey}
@@ -199,6 +216,7 @@ export function ContextDocumentHost({
       resourceHandle={tab.resourceHandle}
       availabilityRevision={availabilityRevision}
       liveRoom={!branchOnly}
+      bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
     </ContextTabSessionBoundary>
@@ -224,19 +242,29 @@ function RoomScopeCatalogCheck({
   projectId,
   session,
   reviewRoomName,
+  reviewWorkId,
   readOnly,
 }: {
   projectId: string;
   /** Null while a draft-only document is hosted by its branch room alone. */
   session: DocumentSession | null;
   reviewRoomName: string | null;
+  /** The Work a review room belongs to; its archive state is that room's expected scope. */
+  reviewWorkId: string | null;
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
+  const works = useWorksSnapshot(projectId).list.data?.works;
   const registry = useLiveDocumentSessionRegistry();
   const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
-  const readOnlyRef = useRef(readOnly);
-  readOnlyRef.current = readOnly;
+  // A review room follows the review's Work even when the reviewed file is
+  // project-owned; a live room follows the file's own scope (`readOnly`).
+  const reviewWork = reviewRoomName ? works?.find((work) => work.id === reviewWorkId) : undefined;
+  const expectedReadOnly = reviewRoomName
+    ? Boolean(reviewWork && isWorkArchived(reviewWork))
+    : readOnly;
+  const readOnlyRef = useRef(expectedReadOnly);
+  readOnlyRef.current = expectedReadOnly;
   useEffect(() => {
     const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
     return reviewRoomName

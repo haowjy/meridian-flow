@@ -4,6 +4,7 @@ import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints"
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type {
   LiveDocumentSessionRegistry,
+  LiveSessionIncarnationPort,
   LocalDocumentSessionFactory,
 } from "./document-session-registry";
 import {
@@ -22,6 +23,7 @@ export interface AccountDocumentSessionRuntime {
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
   readonly localConstruction: LocalDocumentSessionFactory;
+  readonly liveIncarnation: LiveSessionIncarnationPort;
   connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
@@ -34,6 +36,7 @@ export interface AccountDocumentSessionCore {
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
   readonly localConstruction: LocalDocumentSessionFactory;
+  readonly liveIncarnation: LiveSessionIncarnationPort;
   connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
@@ -67,6 +70,7 @@ function createCore(
     localReservation: registry.localTransfers,
     localAdoption: registry.localTransfers,
     localConstruction: registry,
+    liveIncarnation: registry,
     connectLocalResources: (port: LocalResourceLifetimePort) =>
       registry.connectLocalResources(port),
     beginClose: () => registry.beginCloseAccountRuntime(),
@@ -126,11 +130,10 @@ export function createAccountDocumentSessionRuntime(
       }
     },
     abort: (receipt) => core.localAdoption.abort(receipt),
-    inspect: (request) => core.localAdoption.inspect(request),
-    bindAndAdopt(request) {
+    adopt(request) {
       try {
         requireOpen();
-        return core.localAdoption.bindAndAdopt(request);
+        return core.localAdoption.adopt(request);
       } catch (error) {
         return Promise.reject(error);
       }
@@ -147,6 +150,9 @@ export function createAccountDocumentSessionRuntime(
       return core.localConstruction.createDetached(request);
     },
   };
+  const liveIncarnation: LiveSessionIncarnationPort = {
+    incarnationOf: (session) => core.liveIncarnation.incarnationOf(session),
+  };
   const beginClose = () => {
     if (state !== "open") return;
     state = "closing";
@@ -160,6 +166,7 @@ export function createAccountDocumentSessionRuntime(
     localReservation,
     localAdoption,
     localConstruction,
+    liveIncarnation,
     connectLocalResources: (port: LocalResourceLifetimePort) => {
       requireOpen();
       core.connectLocalResources({

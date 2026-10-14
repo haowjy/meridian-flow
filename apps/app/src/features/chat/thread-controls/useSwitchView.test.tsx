@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vite
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray) => strings[0],
 }));
+let onEvent: (frame: unknown) => void = () => undefined;
 const api = vi.hoisted(() => ({ withdrawThreadControl: vi.fn() }));
 vi.mock("@/client/api/threads-api", () => api);
 const announcements = vi.hoisted(() => ({
@@ -17,17 +18,27 @@ const announcements = vi.hoisted(() => ({
 }));
 vi.mock("@/client/stores", () => announcements);
 vi.mock("@/client/providers/TransportProvider", () => ({
-  useThreadTransport: () => ({ subscribe: () => () => undefined }),
+  useThreadTransport: () => ({
+    subscribe: (_id: string, handlers: { onEvent: (frame: unknown) => void }) => {
+      onEvent = handlers.onEvent;
+      return () => undefined;
+    },
+  }),
 }));
 vi.mock("@/client/query/project-invalidation", () => ({
   invalidateProjectThreadData: vi.fn(),
+  invalidateWriteModeReads: vi.fn(),
 }));
 
+import { EventType } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
+import { invalidateWriteModeReads } from "@/client/query/project-invalidation";
 import { type SwitchJournal, type SwitchView, useSwitchView } from "./useSwitchView";
+
+type SwitchViewInput = Parameters<typeof useSwitchView>[0];
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -55,6 +66,8 @@ let view: SwitchView;
 let records: ReturnType<typeof record>[] = [];
 let withdrawOutcome: "removed" | "admitted" | "kept" = "removed";
 let repaint: () => void = () => undefined;
+let heldSnapshot: SwitchViewInput["snapshot"] = null;
+let replyRunning = false;
 
 function Probe() {
   const [, render] = React.useReducer((n: number) => n + 1, 0);
@@ -70,9 +83,9 @@ function Probe() {
     projectId: "P",
     writeMode: "direct",
     turns: [],
-    snapshot: null,
+    snapshot: heldSnapshot,
     journal,
-    replyRunning: false,
+    replyRunning,
   });
   return null;
 }
@@ -88,6 +101,8 @@ const show = async (next: typeof records) => {
 beforeEach(() => {
   vi.clearAllMocks();
   records = [];
+  heldSnapshot = null;
+  replyRunning = false;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   root = createRoot(document.createElement("div"));
 });
@@ -140,4 +155,115 @@ it("announces a Stop only once its outcome is known", async () => {
     expect(heard, id).toEqual(expected);
     await show([]);
   }
+});
+
+it("calls a switch queued only when the server says a reply it can't affect holds the chat", async () => {
+  const heldBy = (deliveryState: "awaiting_run" | "waiting", nextSeq: string) =>
+    ({
+      nextSeq,
+      thread: { aiWriteMode: "direct" },
+      liveState: {
+        pending: {
+          items: [
+            {
+              id: "s1",
+              seq: 1,
+              intent: "control",
+              control: { kind: "write_mode", mode: "draft" },
+              provenance: { kind: "user" },
+              deliveryState,
+              summary: "",
+              enqueuedAt: "",
+            },
+          ],
+        },
+      },
+    }) as unknown as SwitchViewInput["snapshot"];
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+    ),
+  );
+  // Made in an idle chat, then a send starts a reply: the reply applies it, so no flip.
+  heldSnapshot = heldBy("awaiting_run", "6");
+  await show([]);
+  expect(view.rows.map((row) => row.waiting)).toEqual([false]);
+  replyRunning = true;
+  await show([]);
+  expect(view.rows.map((row) => row.waiting)).toEqual([false]);
+  // Made while a reply held the chat: it waits, in this tab and in any other.
+  heldSnapshot = heldBy("waiting", "9");
+  await show([]);
+  expect(view.rows.map((row) => row.waiting)).toEqual([true]);
+});
+
+it("announces a switch as queued from the server's delivery state, not the running reply", async () => {
+  const empty = {
+    nextSeq: "3",
+    thread: { aiWriteMode: "direct" },
+    liveState: { pending: { items: [] } },
+  } as unknown as SwitchViewInput["snapshot"];
+  const answered = (id: string, deliveryState: "awaiting_run" | "waiting", seq: string) =>
+    record(id, {
+      posted: true,
+      answer: {
+        outcome: "queued",
+        seq,
+        mode: "direct",
+        pending: {
+          id,
+          seq: Number(seq),
+          intent: "control",
+          control: { kind: "write_mode", mode: "draft" },
+          provenance: { kind: "user" },
+          deliveryState,
+          summary: "",
+          enqueuedAt: "",
+        },
+      },
+    });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+    ),
+  );
+  heldSnapshot = empty;
+  await show([]);
+  // A reply is running, but the server says this switch awaits the next run: not queued.
+  replyRunning = true;
+  await show([answered("a1", "awaiting_run", "4")]);
+  expect(announcements.announce).toHaveBeenLastCalledWith("Switched to draft mode");
+  // The reply is over, but the server says this one waits behind a run: queued.
+  replyRunning = false;
+  await show([answered("a1", "awaiting_run", "4"), answered("a2", "waiting", "5")]);
+  expect(announcements.announce).toHaveBeenLastCalledWith("Switch to draft mode queued");
+});
+
+it("invalidates thread and Works reads when a write-mode switch enters or leaves the pending inbox, not on other inbox changes", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+    ),
+  );
+  const inbox = (items: unknown[]) => ({
+    seq: "5",
+    event: { type: EventType.CUSTOM, name: "meridian.inbox.changed", value: { items } },
+  });
+  const control = { id: "c1", control: { kind: "write_mode", mode: "draft" } };
+  const message = { id: "m1", intent: "message" };
+  const frame = async (items: unknown[]) => act(async () => onEvent(inbox(items)));
+  await frame([message]);
+  expect(invalidateWriteModeReads).not.toHaveBeenCalled();
+  await frame([message, control]);
+  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(1);
+  await frame([control]);
+  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(1);
+  await frame([]);
+  expect(invalidateWriteModeReads).toHaveBeenCalledTimes(2);
 });

@@ -11,6 +11,7 @@ import {
   resourcePlacementForSnapshot,
 } from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
+import { DocumentSessionAuthorityError } from "@/core/editor/document-session-coordination-contract";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 /**
  * Opening a project document by id — the app's one answer to "take me there".
@@ -77,7 +78,14 @@ export type ProjectDocumentLiveOpenResult =
   | { kind: "not-editable"; document: CatalogFileEntry }
   | {
       kind: "unavailable";
-      reason: "deleted" | "authority-unavailable" | "not-visible" | "indeterminate" | "failed";
+      reason:
+        | "deleted"
+        | "authority-unavailable"
+        | "not-visible"
+        | "indeterminate"
+        | "failed"
+        // The registry's own refusal, kept so the cause is not folded into "failed".
+        | DocumentSessionAuthorityError["kind"];
     };
 
 export type ProjectDocumentLiveOpenRequest = {
@@ -140,10 +148,13 @@ export class ProjectDocumentLiveOpener {
         input.documentId,
         resolution.generation,
       );
-    } catch {
+    } catch (error) {
       if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
         return { kind: "cancelled" };
-      return { kind: "unavailable", reason: "failed" };
+      return {
+        kind: "unavailable",
+        reason: error instanceof DocumentSessionAuthorityError ? error.kind : "failed",
+      };
     }
     if (input.signal?.aborted || this.dependencies.epochSignal.aborted)
       return { kind: "cancelled" };

@@ -20,17 +20,14 @@ import { useLayoutEffect } from "react";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
 import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
-import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
-import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
-import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
+import { ContextDocumentHost, type EditableContextTab } from "../context/ContextDocumentHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
+import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
-import { useLiveDocumentBinding } from "../context/use-live-document-binding";
-import { useRefusedEditsReopen } from "../context/use-refused-edits-reopen";
-import { useRequestedReview } from "../dock/editor-review-handoff";
+import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
@@ -98,13 +95,7 @@ function MobileDraftOnlyDocumentHost({
         if (closing instanceof Promise) closing.catch((error: unknown) => reportError(error));
       }}
     >
-      <ContextEditorMountHost
-        projectId={projectId}
-        trackedTabs={[tab]}
-        activeTabId={tab.documentId}
-        active
-        readOnly
-      />
+      <PhoneDocument projectId={projectId} tab={tab} />
     </MobileDocumentReview>
   );
 }
@@ -155,14 +146,44 @@ function MobileLocalDocumentHost({
         });
     }
   }, [projectId, workId, tab, removal, state]);
+  // No review wraps a local pointer, so it brings the column `MobileDocumentReview` gives the
+  // other two: the frame below takes its height from a flex parent.
   return (
-    <ContextEditorMountHost
-      projectId={projectId}
-      trackedTabs={[tab]}
-      activeTabId={tab.documentId}
-      active
-      readOnly
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <PhoneDocument projectId={projectId} tab={tab} />
+    </div>
+  );
+}
+
+/**
+ * The phone's one editable document. It renders the shared session boundary directly: the
+ * phone has a single document, and a warm-set host would add a frame of its own. The host
+ * fills this `relative` frame, which is a direct child of a flex column: the review's, or the
+ * local pointer's own.
+ */
+function PhoneDocument({
+  projectId,
+  tab,
+  children,
+}: {
+  projectId: string;
+  tab: EditableContextTab;
+  children?: React.ReactNode;
+}) {
+  // The room's scope follows the Work; the presentation is what keeps the phone from typing.
+  const archived = useDockArchivedWork(projectId, tab);
+  return (
+    <div className="relative min-h-0 flex-1">
+      {children}
+      <ContextDocumentHost
+        container="editor"
+        projectId={projectId}
+        tab={tab}
+        active
+        readOnly={Boolean(archived)}
+        presentation={PHONE_DOCUMENT_PRESENTATION}
+      />
+    </div>
   );
 }
 
@@ -259,57 +280,18 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   const { catalogResolved, addressState, isError, isFetching } = route;
   useMobileRouteBinding({ projectId, workId, route, activate: true });
 
-  const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
-  const selectedReviewItemKey = useRequestedReview({
-    container: "editor",
-    editorWorkId,
-    activeScheme: activeContextScheme,
-    documentId: activeEditorDocumentId,
-  });
-  const live = useLiveDocumentBinding({
-    projectId,
-    documentId: activeTab?.editable ? activeTab.documentId : null,
-    owner: "mobile-project-document-host",
-  });
-  const liveState = live.state;
-  const bindableLiveSession = useRefusedEditsReopen(
-    liveState.kind === "opened" ? liveState.session : null,
-    live.retry,
-  );
-
-  const activeLive =
-    liveState.kind === "opened" && liveState.documentId === activeEditorDocumentId
-      ? liveState.session
-      : null;
-  useActiveReviewBinding({
-    documentId: activeLive ? activeEditorDocumentId : null,
-    liveSession: activeLive,
-    active: true,
-    inReview: Boolean(selectedReviewItemKey),
-  });
-
-  const failed = liveState.kind === "failed" && liveState.documentId === activeTab?.documentId;
   const opening = Boolean(
     activeContextScheme &&
       activeContextPath &&
-      (!activeTab
-        ? addressState === "pending" ||
-          (isFetching && !catalogResolved) ||
-          !(isError || catalogResolved)
-        : activeTab.editable && !failed && !bindableLiveSession),
+      !activeTab &&
+      (addressState === "pending" ||
+        (isFetching && !catalogResolved) ||
+        !(isError || catalogResolved)),
   );
   const capture = (
     <PaintCapture
-      state={opening ? "pending" : failed || isError ? "failed" : "painted"}
-      surface={
-        opening
-          ? "opening"
-          : failed || isError
-            ? "error"
-            : activeTab?.editable
-              ? "editor"
-              : "viewer"
-      }
+      state={opening ? "pending" : isError ? "failed" : "painted"}
+      surface={opening ? "opening" : isError ? "error" : "viewer"}
     />
   );
   if (!activeContextScheme || !activeContextPath) {
@@ -349,47 +331,14 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     );
   }
 
-  const liveSession =
-    liveState.kind === "opened" && liveState.documentId === activeTab.documentId
-      ? bindableLiveSession
-      : null;
-  if (liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
-    return (
-      <DocumentStatus capture={capture} tone="error">
-        <AlertCircle className="size-4" aria-hidden />
-        <Trans>Couldn't open this document.</Trans>
-      </DocumentStatus>
-    );
-  }
-  if (!liveSession) {
-    return (
-      <DocumentStatus capture={capture} tone="muted">
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-        <Trans>Opening document…</Trans>
-      </DocumentStatus>
-    );
-  }
-
+  // The editable document goes through the shared session boundary, so a stranded adoption
+  // resumes and a failed open can retry. The phone keeps its route and its review presentation.
   return (
     <MobileDocumentReview projectId={projectId} tab={activeTab}>
       {capture}
-      <div className="relative min-h-0 flex-1">
+      <PhoneDocument projectId={projectId} tab={activeTab}>
         <PassageNotice documentId={activeTab.documentId} />
-        <EditorView
-          projectId={projectId}
-          documentId={activeTab.documentId}
-          session={liveSession}
-          schemaType={activeTab.schemaType}
-          // Read-only under review as well: a tap must select a change, not raise the
-          // keyboard over its bar, and the phone has no editing chrome (the desktop's
-          // block grip would show). The desktop edits the draft while it reviews.
-          editable={false}
-          showToolbar={false}
-          ariaLabel={t`Read-only live document`}
-          showCollaborationDecorations={false}
-          reviewItemKey={selectedReviewItemKey}
-        />
-      </div>
+      </PhoneDocument>
     </MobileDocumentReview>
   );
 }

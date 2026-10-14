@@ -1,11 +1,18 @@
-/** Durable coordinator that transfers one proven local Y.Doc into authorized registry ownership. */
+/**
+ * Durable coordinator that transfers one proven local Y.Doc into authorized registry ownership.
+ *
+ * The state is the pair (obligation, room persistence), and every `reconcile` pass derives its next
+ * step from it: Owed (obligation) -> Reserved (room `adopting-local`, no generation) -> Committed
+ * (room `bindable{G}`, written by the one fenced commit that also installs the lease) -> Settled
+ * (acknowledgement writes G into the resource and drops the obligation). No generation is stored
+ * before the commit that admits it, so an interrupted pass leaves nothing a later pass must repeat.
+ */
 import {
   type AvailabilityGeneration,
   assertAvailabilityGeneration,
 } from "@meridian/contracts/protocol";
 import {
   acknowledgeSessionAdoption,
-  planSessionAdoptionGeneration,
   type ResourceKey,
   type ResourceMetadataStore,
   type ResourceNamespaceLock,
@@ -14,7 +21,6 @@ import {
 import type { DocumentSession } from "@/core/editor/document-session";
 import type {
   LocalDocumentSessionAdoptionPort,
-  LocalDocumentSessionHandoff,
   LocalDocumentSessionReservationPort,
 } from "@/core/editor/local-document-session-adoption";
 import type { ResourceContentAccess } from "./resource-content-access";
@@ -53,10 +59,6 @@ function exactAdoption(record: ResourceRecord | null): SessionAdoption | null {
 
 export class ResourceSessionAdoptionCoordinator {
   private readonly operations = new Map<string, Promise<ResourceSessionAdoptionResult>>();
-  private readonly activeTransfers = new Map<
-    string,
-    { key: ResourceKey; handoff: LocalDocumentSessionHandoff }
-  >();
   private readonly close = new AbortController();
   private closing = false;
 
@@ -91,15 +93,14 @@ export class ResourceSessionAdoptionCoordinator {
   }
 
   cancel(key: ResourceKey): void {
-    this.abortActiveTransfer(encodeURIComponent(key.handle));
+    this.content.abortTransfer(key);
   }
 
   private async reconcileTracked(key: ResourceKey): Promise<ResourceSessionAdoptionResult> {
     const initial = await this.metadata.readResource(key);
     const witness = exactAdoption(initial);
-    const transferId = encodeURIComponent(key.handle);
     if (!witness) {
-      this.abortActiveTransfer(transferId);
+      this.content.abortTransfer(key);
       return "idle";
     }
     const opened = await this.content.open(
@@ -136,150 +137,71 @@ export class ResourceSessionAdoptionCoordinator {
       },
       this.reservations,
     );
-    if (transfer.kind === "adopted") {
-      this.activeTransfers.delete(encodeURIComponent(key.handle));
-      return this.finishRecordedAdoption(key, witness, transfer.ownership.lease.generation);
-    }
+    // Committed in this context while an earlier acknowledgement failed: only the write remains.
+    if (transfer.kind === "adopted")
+      return this.acknowledge(key, witness, transfer.ownership.persistenceGeneration);
     if (transfer.kind === "waiting") return "waiting";
-    this.activeTransfers.set(encodeURIComponent(key.handle), { key, handoff: transfer.handoff });
 
-    const validated = await this.lock.run(key, async () => {
-      const current = exactAdoption(await this.metadata.readResource(key));
-      return current?.transitionId === witness.transitionId ? current : null;
-    });
-    if (validated.kind === "busy") {
-      this.abortActiveTransfer(encodeURIComponent(key.handle));
-      return "blocked";
-    }
-    if (!validated.value) {
-      this.abortActiveTransfer(encodeURIComponent(key.handle));
-      return "idle";
-    }
-    const authority = await this.availability.resolve(
-      witness.projectId,
-      witness.documentId,
-      this.close.signal,
-    );
-    if (authority.kind !== "available" || authority.documentId !== witness.documentId) {
-      session.reportAdoptionStalled(true);
-      return "waiting";
-    }
-    assertAvailabilityGeneration(authority.generation);
-    const authorityState = await this.adoption.inspect({
-      documentId: witness.documentId,
-      lineageHandle: key.handle,
-      exactDatabaseName: witness.exactDatabaseName,
-      generation: authority.generation,
-    });
-    if (authorityState === "terminal") {
-      this.abortActiveTransfer(encodeURIComponent(key.handle));
-      return "waiting";
-    }
-    if (authorityState === "mismatch") {
-      this.abortActiveTransfer(encodeURIComponent(key.handle));
-      throw new Error("Session adoption persistence authority belongs to another lineage");
-    }
-    const pending =
-      authorityState === "bindable"
-        ? null
-        : await this.adoption.begin({
-            documentId: witness.documentId,
-            lineageHandle: key.handle,
-            exactDatabaseName: witness.exactDatabaseName,
-            transitionId: witness.transitionId,
-          });
-    const pinned = await this.lock.run(key, async () => {
-      const current = exactAdoption(await this.metadata.readResource(key));
-      if (!current || current.transitionId !== witness.transitionId) return "idle" as const;
-      await this.pinGeneration(key, authority.generation);
-      return "pinned" as const;
-    });
-    if (pinned.kind === "busy") return "blocked";
-    if (pinned.value === "idle") {
-      if (pending) await this.adoption.abort(pending);
-      this.abortActiveTransfer(encodeURIComponent(key.handle));
-      return "idle";
-    }
-    const adoptionPending = pending ?? {
-      documentId: witness.documentId,
-      transitionId: witness.transitionId,
-      lineageHandle: key.handle,
-      exactDatabaseName: witness.exactDatabaseName,
-      targetGeneration: authority.generation,
-    };
+    let lease: { persistenceGeneration: string };
     try {
-      await this.adoption.bindAndAdopt({
-        projectId: witness.projectId,
+      const authority = await this.availability.resolve(
+        witness.projectId,
+        witness.documentId,
+        this.close.signal,
+      );
+      if (authority.kind !== "available" || authority.documentId !== witness.documentId) {
+        session.reportAdoptionStalled(true);
+        return "waiting";
+      }
+      assertAvailabilityGeneration(authority.generation);
+      const pending = {
         documentId: witness.documentId,
-        generation: authority.generation,
-        handoff: transfer.handoff,
-        pending: adoptionPending,
-      });
-    } catch (error) {
-      const state = await this.adoption.inspect({
-        documentId: witness.documentId,
+        transitionId: witness.transitionId,
         lineageHandle: key.handle,
         exactDatabaseName: witness.exactDatabaseName,
-        generation: authority.generation,
-      });
-      if (state === "terminal" || state === "clear" || state === "mismatch") {
-        this.abortActiveTransfer(encodeURIComponent(key.handle));
+      };
+      const state = await this.adoption.begin(pending);
+      if (state.kind === "terminal") return "waiting";
+      if (state.kind === "mismatch")
+        throw new Error("Session adoption persistence authority belongs to another lineage");
+      const current = await this.lock.run(key, async () =>
+        exactAdoption(await this.metadata.readResource(key)),
+      );
+      if (current.kind === "busy") return "blocked";
+      if (current.value?.transitionId !== witness.transitionId) {
+        // The resource moved on: a newer restore must not inherit this reservation.
+        if (state.kind === "reserved") await this.adoption.abort(state.receipt);
+        return "idle";
       }
-      throw error;
+      ({ lease } = await this.adoption.adopt({
+        projectId: witness.projectId,
+        documentId: witness.documentId,
+        admission: authority.generation,
+        handoff: transfer.handoff,
+        pending: state.kind === "reserved" ? state.receipt : pending,
+      }));
+    } finally {
+      this.content.abortTransfer(key);
     }
-    this.activeTransfers.delete(encodeURIComponent(key.handle));
-    const acknowledged = await this.lock.run(key, async () => {
-      const current = exactAdoption(await this.metadata.readResource(key));
-      if (!current || current.transitionId !== witness.transitionId) return "idle" as const;
-      await this.acknowledge(key, authority.generation);
-      return "adopted" as const;
-    });
-    return acknowledged.kind === "busy" ? "blocked" : acknowledged.value;
+    return this.acknowledge(key, witness, lease.persistenceGeneration);
   }
 
-  private abortActiveTransfer(id: string): void {
-    const active = this.activeTransfers.get(id);
-    if (!active) return;
-    this.activeTransfers.delete(id);
-    this.content.abortTransfer(active.key, active.handoff);
-  }
-
-  private async finishRecordedAdoption(
+  /** Writes the committed incarnation into the resource and drops the obligation, in one commit. */
+  private async acknowledge(
     key: ResourceKey,
     witness: SessionAdoption,
     generation: string,
   ): Promise<ResourceSessionAdoptionResult> {
-    const committed = await this.lock.run(key, async () => {
-      const current = exactAdoption(await this.metadata.readResource(key));
-      if (!current || current.transitionId !== witness.transitionId) return "idle" as const;
-      await this.pinGeneration(key, generation);
-      await this.acknowledge(key, generation);
-      return "adopted" as const;
+    const settled = await this.lock.run(key, async () => {
+      for (;;) {
+        const current = await this.metadata.readResource(key);
+        if (exactAdoption(current)?.transitionId !== witness.transitionId) return "idle" as const;
+        const write = current && acknowledgeSessionAdoption(current, generation);
+        if (!write || (await this.metadata.commitResource(write)) === "committed")
+          return "adopted" as const;
+      }
     });
-    return committed.kind === "busy" ? "blocked" : committed.value;
-  }
-
-  private async pinGeneration(key: ResourceKey, generation: string): Promise<void> {
-    for (;;) {
-      const current = await this.metadata.readResource(key);
-      const adoption = exactAdoption(current);
-      if (!current || !adoption) return;
-      if (adoption.generation === generation) return;
-      const write = planSessionAdoptionGeneration(current, generation);
-      if (!write || (await this.metadata.commitResource(write)) === "committed") return;
-    }
-  }
-
-  private async acknowledge(key: ResourceKey, generation: string): Promise<void> {
-    for (;;) {
-      const current = await this.metadata.readResource(key);
-      const adoption = exactAdoption(current);
-      if (!current || !adoption) return;
-      if (adoption.generation !== generation)
-        throw new Error("Session adoption generation changed before acknowledgement");
-      const write = acknowledgeSessionAdoption(current);
-      if (!write || (await this.metadata.commitResource(write)) === "committed") return;
-    }
+    return settled.kind === "busy" ? "blocked" : settled.value;
   }
 
   beginClose(): void {

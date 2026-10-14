@@ -3186,7 +3186,7 @@ msgstr ""
 msgid "Read report from {line}"
 msgstr "已读取来自 {line} 的报告"
 
-#: src/features/project/mobile/MobileDocumentHost.tsx
+#: src/features/project/context/document-presentation.ts
 msgid "Read-only live document"
 msgstr ""
 

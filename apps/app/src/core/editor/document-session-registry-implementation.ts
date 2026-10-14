@@ -34,6 +34,7 @@ export {
 
 import { BranchRoomPool } from "./branch-room-pool";
 import type {
+  LiveSessionIncarnationPort,
   LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
@@ -54,7 +55,11 @@ type LiveRoomState = {
 type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
 
 export class DocumentSessionRegistry
-  implements LiveDocumentSessionAuthority, LocalSessionAuthority, LocalDocumentSessionFactory
+  implements
+    LiveDocumentSessionAuthority,
+    LocalSessionAuthority,
+    LocalDocumentSessionFactory,
+    LiveSessionIncarnationPort
 {
   private accountId: AccountId | null = null;
   private coordination: DocumentSessionCrossContextCoordination | null = null;
@@ -143,7 +148,7 @@ export class DocumentSessionRegistry
       const originLineageHandle =
         (await this.localResources?.lineageHandleFor(projectId, documentId)) ?? undefined;
       const admitted = await this.translateCoordination(() =>
-        coordination.admit(projectId, documentId, generation, originLineageHandle),
+        coordination.admit(projectId, documentId, generation, { originLineageHandle }),
       );
       return {
         accountId: admitted.accountId,
@@ -594,6 +599,11 @@ export class DocumentSessionRegistry
   private attachSessionTransport(session: DocumentSession): void {
     if (session.getSnapshot().schemaFence) return;
     session.attachTransport(this.transportFactory);
+  }
+
+  incarnationOf(session: DocumentSession): AvailabilityGeneration | null {
+    const state = this.liveRooms.get(session.documentId as DocumentId);
+    return state?.session === session ? state.persistenceGeneration : null;
   }
 
   whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null {

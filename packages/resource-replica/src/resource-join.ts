@@ -179,7 +179,6 @@ export function joinReservation(input: {
             documentId: target.documentId,
             identityRevision,
             exactDatabaseName: resource.content.databaseName,
-            generation: null,
           },
         },
       },
