@@ -2,21 +2,22 @@
  * "Moved chapter-3 to Act 2." with Undo, at the foot of the surface the rows
  * were dropped in. A surface that can take drops (the sidebar, or Work Files,
  * which stays on screen when the sidebar is collapsed) wraps its lists in a
- * `MoveNoticeHost`; a list publishes to the host it sits in. A project keeps
- * its latest result only, as data: one notice at a time, shown by the host
- * that took the drop. It leaves after a few seconds unless the pointer or
- * focus is on it, and a host that has left the screen takes its notice with it.
+ * `MoveNoticeHost`; a list publishes to the host it sits in. The host holds its
+ * latest notice as state, so one notice shows per host and a host that has
+ * left the screen takes its notice with it. It leaves after a few seconds
+ * unless the pointer or focus is on it.
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { announce } from "@/client/stores";
 import { Button } from "@/components/ui/button";
@@ -28,34 +29,20 @@ import type { MoveEffect } from "./move-plan";
 const VISIBLE_MS = 6000;
 
 type Notice = {
-  id: number;
-  host: object;
   message: string;
   /** What Undo puts back; empty when nothing moved. */
   effects: readonly MoveEffect[];
 };
 
-const latest = new Map<string, Notice>();
-const hosts = new Set<object>();
-const listeners = new Set<() => void>();
-let nextId = 1;
-
-function set(projectId: string, notice: Notice | null) {
-  if (notice) latest.set(projectId, notice);
-  else latest.delete(projectId);
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
 type Publish = (message: string, effects: readonly MoveEffect[]) => void;
 
-const HostContext = createContext<{ host: object; projectId: string; publish: Publish } | null>(
-  null,
-);
+const HostContext = createContext<{
+  projectId: string;
+  notice: Notice | null;
+  publish: Publish;
+  /** Replace or clear `from`, unless a newer notice has taken its place. */
+  settle: (from: Notice, to: Notice | null) => void;
+} | null>(null);
 
 /** Where a list in this surface publishes its drops; inert outside a host. */
 export function useMoveNoticePublisher(): Publish | null {
@@ -70,66 +57,57 @@ export function MoveNoticeHost({
   projectId: string;
   children: ReactNode;
 }) {
-  const host = useMemo(() => ({}), []);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const mounted = useRef(true);
   useEffect(() => {
-    hosts.add(host);
+    mounted.current = true;
     return () => {
-      hosts.delete(host);
-      if (latest.get(projectId)?.host === host) set(projectId, null);
+      mounted.current = false;
     };
-  }, [host, projectId]);
+  }, []);
+  // A drop can finish after its surface has gone; there is nowhere to say so.
+  const publish = useCallback<Publish>((message, effects) => {
+    if (!mounted.current) return;
+    setNotice({ message, effects });
+    announce(message);
+  }, []);
+  const settle = useCallback((from: Notice, to: Notice | null) => {
+    if (mounted.current) setNotice((now) => (now === from ? to : now));
+  }, []);
   const value = useMemo(
-    () => ({
-      host,
-      projectId,
-      // A drop can finish after its surface has gone; there is nowhere to say so.
-      publish: (message: string, effects: readonly MoveEffect[]) => {
-        if (!hosts.has(host)) return;
-        set(projectId, { id: nextId++, host, message, effects });
-        announce(message);
-      },
-    }),
-    [host, projectId],
+    () => ({ projectId, notice, publish, settle }),
+    [projectId, notice, publish, settle],
   );
   return <HostContext.Provider value={value}>{children}</HostContext.Provider>;
 }
 
 export function MoveNotice({ className }: { className?: string }) {
-  const hostContext = useContext(HostContext);
-  if (!hostContext) throw new Error("MoveNotice requires a MoveNoticeHost");
-  const { host, projectId, publish } = hostContext;
+  const host = useContext(HostContext);
+  if (!host) throw new Error("MoveNotice requires a MoveNoticeHost");
+  const { projectId, notice: current, settle } = host;
   const resources = useAccountResourceReplica();
-  const current = useSyncExternalStore(
-    subscribe,
-    () => {
-      const notice = latest.get(projectId);
-      return notice?.host === host ? notice : null;
-    },
-    () => null,
-  );
   const [held, setHeld] = useState(false);
   const [undoing, setUndoing] = useState(false);
   useEffect(() => {
     if (!current || held || undoing) return;
-    const timer = setTimeout(() => {
-      if (latest.get(projectId)?.id === current.id) set(projectId, null);
-    }, VISIBLE_MS);
+    const timer = setTimeout(() => settle(current, null), VISIBLE_MS);
     return () => clearTimeout(timer);
-  }, [current, held, undoing, projectId]);
+  }, [current, held, undoing, settle]);
   if (!current) return null;
 
   const undo = async () => {
     setUndoing(true);
+    let next: Notice | null = null;
     try {
       const result = await undoMove(current.effects, { resources, projectId });
-      if (latest.get(projectId)?.id !== current.id) return;
-      if (result.failed.length > 0) publish(describeUndoFailure(result), []);
-      else set(projectId, null);
+      if (result.failed.length > 0) next = { message: describeUndoFailure(result), effects: [] };
     } catch {
-      if (latest.get(projectId)?.id === current.id) publish(t`Couldn't move it back.`, []);
+      next = { message: t`Couldn't move it back.`, effects: [] };
     } finally {
       setUndoing(false);
     }
+    settle(current, next);
+    if (next) announce(next.message);
   };
 
   return (
