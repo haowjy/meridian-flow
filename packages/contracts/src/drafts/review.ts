@@ -408,3 +408,133 @@ export type DraftCommandObservation =
   | { state: "pending" }
   | { state: "done"; result: DraftCommandResult }
   | { state: "blocked" };
+
+// --- The content-Apply contract (re-landing contract §1.2) -----------------------------------
+//
+// Beside the types above under names they don't use. The server's producers and routes switch to
+// these, then the client, and the lane that removes the last consumer of a type above deletes it.
+
+export type DraftOverride = { live: string; applied: string };
+
+/**
+ * Why an item's Apply failed. No Apply content and no tree effect committed for it. A catch-up rebase that
+ * succeeded before the failure stays committed (it is the branch's own durable catch-up), so the draft may read newer.
+ */
+export type DraftApplyFailure =
+  | "settlement_unfinished" // an earlier batch with a member on this document is pending or blocked
+  | "base_uninitialized" // the text branch has no base to compare with
+  | "merge_failed"; // the catch-up rebase or the content plan threw
+
+/** An outcome decided at staging, before anything reaches live. Stored in the draft_tree payload. */
+export type DraftDecidedOutcome =
+  | { itemKey: DraftItemKey; status: "already_live" }
+  | { itemKey: DraftItemKey; status: "not_found" } // the snapshot or a named change can't be rebuilt
+  | { itemKey: DraftItemKey; status: "failed"; reason: DraftApplyFailure };
+
+/** One item's outcome inside any Apply. */
+export type DraftItemOutcome =
+  | ({
+      itemKey: DraftItemKey;
+      status: "applied";
+      notes: DraftApplyNote[];
+      /** Live text the merge replaced; empty when nothing overlapped. */
+      overrode: DraftOverride[];
+      /** The text branch still differs from its base after this Apply. */
+      hasChanges: boolean;
+    } & DraftItemSettlement)
+  | { itemKey: DraftItemKey; status: "already_live"; hasChanges: boolean }
+  | { itemKey: DraftItemKey; status: "held"; reason: DraftHeldReason }
+  | Exclude<DraftDecidedOutcome, { status: "already_live" }>;
+
+/** Both item routes (`apply`, `apply-changes`): the body of the 200, the 409/404, and of observation. */
+export type DraftItemApplyResult =
+  | ({ draftId: DraftId } & Extract<DraftItemOutcome, { status: "applied" | "already_live" }>) // 200
+  | ({ draftId: DraftId } & Extract<DraftItemOutcome, { status: "held" | "not_found" | "failed" }>) // 409
+  | { status: "stale" | "whole_item"; draftId: DraftId; itemKey: DraftItemKey } // 409
+  | { status: "gone"; draftId: DraftId; itemKey: DraftItemKey }; // 404
+
+/** Apply all. Per-item `stale` and `gone` don't exist: an unaddressable item makes the command `stale`. */
+export type DraftApplyAllResult =
+  | { status: "completed"; draftId: DraftId; items: DraftItemOutcome[] }
+  | { status: "stale"; draftId: DraftId; staleItemKeys: DraftItemKey[] }
+  | { status: "gone"; draftId: DraftId };
+
+/** Item Discard always closes the item. */
+export type DraftItemDiscardResult =
+  | {
+      status: "discarded";
+      draftId: DraftId;
+      itemKey: DraftItemKey;
+      itemClosed: true;
+      itemDisposition: "discarded";
+    }
+  | { status: "gone"; draftId: DraftId; itemKey: DraftItemKey };
+
+/** What observation's `done.result` holds; the 2xx/4xx bodies are the same JSON. */
+export type DraftCommandOutcome =
+  | DraftItemApplyResult
+  | DraftApplyAllResult
+  | DraftItemDiscardResult
+  | DraftDiscardAllResponse;
+
+// Strict command bodies. Unknown fields answer 400, so an old tab's per-change Discard can never
+// be read as item Discard. Request types are the schemas' inference.
+
+/** Base64 `Y.snapshot` of the text branch's room at the review frame the writer acted on. */
+const SnapshotSchema = z.string().max(64 * 1024);
+const ItemBody = {
+  draftId: z.string().uuid(),
+  itemKey: z.string().max(80),
+  commandId: DraftCommandIdSchema,
+};
+
+export const DraftApplyChangesBodySchema = z
+  .object({
+    ...ItemBody,
+    changeIds: z.array(z.string().max(200)).min(1).max(500),
+    snapshot: SnapshotSchema,
+    locationToken: z.string().max(40).optional(),
+  })
+  .strict();
+export type DraftApplyChangesBody = z.infer<typeof DraftApplyChangesBodySchema>;
+
+export const DraftApplyItemBodySchema = z
+  .object({
+    ...ItemBody,
+    snapshot: SnapshotSchema.optional(),
+    locationToken: z.string().max(40).optional(),
+  })
+  .strict();
+export type DraftApplyItemBody = z.infer<typeof DraftApplyItemBodySchema>;
+
+export const DraftApplyAllBodySchema = z
+  .object({
+    draftId: z.string().uuid(),
+    commandId: DraftCommandIdSchema,
+    /** Each item once: a selection is a set. */
+    items: z
+      .array(
+        z
+          .object({
+            itemKey: z.string().max(80),
+            locationToken: z.string().max(40),
+            snapshot: SnapshotSchema.optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(500)
+      .refine((items) => new Set(items.map((item) => item.itemKey)).size === items.length, {
+        message: "Each item can be applied once per request",
+      }),
+  })
+  .strict();
+export type DraftApplyAllBody = z.infer<typeof DraftApplyAllBodySchema>;
+
+export const DraftItemDiscardBodySchema = z.object(ItemBody).strict();
+export type DraftItemDiscardBody = z.infer<typeof DraftItemDiscardBodySchema>;
+
+export const DraftDiscardAllBodySchema = z
+  .object({ draftId: z.string().uuid(), commandId: DraftCommandIdSchema })
+  .strict();
+export type DraftDiscardAllBody = z.infer<typeof DraftDiscardAllBodySchema>;

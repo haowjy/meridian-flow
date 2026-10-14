@@ -19,6 +19,7 @@
     "db:apply-functions": "tsx scripts/apply-functions.ts"
   },
   "dependencies": {
+    "@meridian/agent-edit": "workspace:*",
     "@meridian/contracts": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",

@@ -337,6 +337,20 @@
       "when": 1791915815119,
       "tag": "0047_d62_chat_write_mode_online",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791973621198,
+      "tag": "0048_dbr_review_base_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791973625570,
+      "tag": "0049_dbr_trail_owners_content_apply",
+      "breakpoints": true
     }
   ]
 }

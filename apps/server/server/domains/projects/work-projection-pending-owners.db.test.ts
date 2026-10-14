@@ -95,6 +95,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: DRAFT_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
+        hasEffect: true,
       });
       const availability = createDrizzleProjectContextAvailability(db);
       const catalog = createDrizzleContextCatalog(db, undefined, {

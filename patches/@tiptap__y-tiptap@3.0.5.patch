@@ -1,0 +1,48 @@
+diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..f2e8cf865a1da005dadad765bbd0441116234df0 100644
+--- a/dist/y-tiptap.cjs
++++ b/dist/y-tiptap.cjs
+@@ -467,6 +467,8 @@ class ProsemirrorBinding {
+      */
+     this.prosemirrorView = null;
+     this.mux = mutex.createMutex();
++    // meridian patch: transaction-meta key the host sets to claim this binding's local writes
++    this.ownershipMeta = null;
+     this.mapping = mapping;
+     /**
+      * Is overlapping mark - i.e. mark does not exclude itself.
+@@ -798,7 +800,9 @@ class ProsemirrorBinding {
+    * @param {import('prosemirror-model').Node} doc
+    */
+   _prosemirrorChanged (doc) {
+-    this.doc.transact(() => {
++    this.doc.transact((transaction) => {
++      // meridian patch: stamp the editor's ownership inside this transaction
++      if (this.ownershipMeta != null) transaction.meta.set(this.ownershipMeta, true);
+       updateYFragment(this.doc, this.type, doc, this);
+       this.beforeTransactionSelection = getRelativeSelection(
+         this,
+diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..b4092f31ff3aa30e8fec552deaf988ab3a19d206 100644
+--- a/dist/y-tiptap.js
++++ b/dist/y-tiptap.js
+@@ -433,6 +433,8 @@ class ProsemirrorBinding {
+      */
+     this.prosemirrorView = null;
+     this.mux = createMutex();
++    // meridian patch: transaction-meta key the host sets to claim this binding's local writes
++    this.ownershipMeta = null;
+     this.mapping = mapping;
+     /**
+      * Is overlapping mark - i.e. mark does not exclude itself.
+@@ -764,7 +766,9 @@ class ProsemirrorBinding {
+    * @param {import('prosemirror-model').Node} doc
+    */
+   _prosemirrorChanged (doc) {
+-    this.doc.transact(() => {
++    this.doc.transact((transaction) => {
++      // meridian patch: stamp the editor's ownership inside this transaction
++      if (this.ownershipMeta != null) transaction.meta.set(this.ownershipMeta, true);
+       updateYFragment(this.doc, this.type, doc, this);
+       this.beforeTransactionSelection = getRelativeSelection(
+         this,
