@@ -9,7 +9,7 @@ import {
   matchesTabInstance,
   useContextTabsStore,
 } from "@/client/stores";
-import { armEditorFocus, retireEditorFocus } from "@/features/editor/focus-on-open";
+import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { contextTabMatchesRoute } from "../context/context-tab-identity";
 import { resolveLaunchLocator } from "./launch-locator";
@@ -47,7 +47,6 @@ export function createEditorDocumentCommand({
   admitDraftReview: (tab: Extract<ContextTab, { kind: "tracked" }>) => void;
 }): OpenContextRoute {
   return async (request, options) => {
-    retireEditorFocus();
     const current = read();
     if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
     const navigation = current.navigation;
@@ -104,10 +103,6 @@ export function createEditorDocumentCommand({
       if (!navigation.isCurrent(ticket)) return { kind: "superseded" };
       const commit = () => {
         let selected = tab;
-        const focusId = options?.focus
-          ? (preparedTab?.documentId ?? request.documentId)
-          : undefined;
-        if (focusId) armEditorFocus(focusId);
         if (preparedTab) {
           const installed = useContextTabsStore
             .getState()
@@ -115,6 +110,8 @@ export function createEditorDocumentCommand({
           if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
           if (installed.tab.kind === "tracked") admitDraftReview(installed.tab);
           selected = installed.tab;
+          if (options?.focus && installed.tab.tabInstanceId)
+            armEditorFocus(installed.tab.tabInstanceId);
         }
         if (selected && resolvedWorkId)
           void useContextTabsStore
