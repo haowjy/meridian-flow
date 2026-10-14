@@ -548,9 +548,21 @@ export class ThreadRunController {
    */
   private attachAcceptedRun(
     threadId: string,
-    result: { userTurnId: string; steersTurnId: string | null; resumeAfterSeq: string },
+    result: {
+      userTurnId: string;
+      steersTurnId: string | null;
+      runStateVersion: string | null;
+      resumeAfterSeq: string;
+    },
   ): void {
     if (this.disposed || this.accountSignal.aborted) return;
+    // The chat owes this message until the record shows it answered; an admission with no
+    // version has its record after it, which already covers it.
+    if (result.runStateVersion !== null)
+      this.actions.dispatchRunState(threadId, {
+        type: "intent",
+        intent: { kind: "message", id: result.userTurnId, answer: result.runStateVersion },
+      });
     const follow = this.followFor(threadId);
     // Only a fresh send onto an idle follow proves an earlier non-terminal
     // assistant row is abandoned; a live subscription still owns its rows.

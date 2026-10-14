@@ -17,14 +17,14 @@
  * compaction rows.
  */
 import { t } from "@lingui/core/macro";
-import type { ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { PendingInboxItem } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, announceError } from "@/client/stores";
+import { announce, announceError, useThreadActions } from "@/client/stores";
 import { useTurnStop } from "../useTurnStop";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import {
@@ -52,11 +52,13 @@ export type ThreadControls = {
 
 export function useThreadControls(input: {
   threadId: string;
-  pending: ThreadPendingInbox;
+  /** The run-state record's items. */
+  items: readonly PendingInboxItem[];
   answeredCompactionIds: ReadonlySet<string>;
   switches: SwitchView;
 }): ThreadControls {
-  const { threadId, pending, answeredCompactionIds, switches } = input;
+  const { threadId, items, answeredCompactionIds, switches } = input;
+  const { dispatchRunState } = useThreadActions();
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
   localRef.current = local;
@@ -70,18 +72,19 @@ export function useThreadControls(input: {
   }, [queryClient, threadId]);
 
   useEffect(() => {
-    dispatch({ type: "listed", pendingIds: new Set(pending.items.map((item) => item.id)) });
-  }, [pending]);
+    dispatch({ type: "listed", pendingIds: new Set(items.map((item) => item.id)) });
+  }, [items]);
 
   const send = useCallback(
     (id: string, control: CompactControl) => {
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
+          // The answer's record is a fact like any other; the command is sent if it lists it.
+          dispatchRunState(threadId, { type: "snapshot", runState: response.runState });
           dispatch({
             type: "enqueued",
             id,
-            pending: response.pending,
-            turnId: response.turnId,
+            sent: response.runState.items.some((item) => item.id === id),
           });
           revalidate();
         },
@@ -97,7 +100,7 @@ export function useThreadControls(input: {
         if (inflight.current.get(id) === request) inflight.current.delete(id);
       });
     },
-    [revalidate, threadId],
+    [dispatchRunState, revalidate, threadId],
   );
 
   const enqueue = useCallback(
@@ -132,7 +135,8 @@ export function useThreadControls(input: {
       announce(controlWithdrawnCopy(queued.control));
       const withdrawOnServer = async () => {
         try {
-          const { outcome } = await withdrawThreadControl(threadId, queued.id);
+          const { outcome, runState } = await withdrawThreadControl(threadId, queued.id);
+          dispatchRunState(threadId, { type: "snapshot", runState });
           dispatch({ type: "withdrawn", id: queued.id });
           // The row goes either way; the divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(queued.control));
@@ -149,7 +153,7 @@ export function useThreadControls(input: {
       };
       void (inflight.current.get(queued.id) ?? Promise.resolve()).then(withdrawOnServer);
     },
-    [revalidate, threadId, withdrawSwitch],
+    [dispatchRunState, revalidate, threadId, withdrawSwitch],
   );
 
   const { stop: stopTurn } = turnStop;
@@ -163,8 +167,8 @@ export function useThreadControls(input: {
   );
 
   const compactRows = useMemo(
-    () => mergeQueuedControls({ local, pending, executedControlIds: answeredCompactionIds }),
-    [answeredCompactionIds, local, pending],
+    () => mergeQueuedControls({ local, items, executedControlIds: answeredCompactionIds }),
+    [answeredCompactionIds, local, items],
   );
   const queued = useMemo(() => [...compactRows, ...switches.rows], [compactRows, switches.rows]);
 

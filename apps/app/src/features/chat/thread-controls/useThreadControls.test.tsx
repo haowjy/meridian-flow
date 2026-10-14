@@ -15,9 +15,10 @@ vi.mock("@/client/providers/TransportProvider", () => ({ useThreadTransport: () 
 const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
-vi.mock("@/client/stores", () => announcements);
+const store = vi.hoisted(() => ({ dispatchRunState: vi.fn() }));
+vi.mock("@/client/stores", () => ({ ...announcements, useThreadActions: () => store }));
 
-import type { ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { PendingInboxItem, RunState } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -33,7 +34,15 @@ afterAll(() => {
   actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
 });
 
-const EMPTY: ThreadPendingInbox = { items: [] };
+const EMPTY: readonly PendingInboxItem[] = [];
+const recordOf = (items: PendingInboxItem[] = []): RunState => ({
+  version: "1",
+  items,
+  sentThrough: 0,
+  execution: null,
+  mode: "direct",
+  blocked: null,
+});
 const NO_SWITCHES: SwitchView = {
   rows: [],
   writeMode: "direct",
@@ -45,10 +54,10 @@ const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
 let latest: ThreadControls;
-function Probe(props: { pending?: ThreadPendingInbox }) {
+function Probe(props: { items?: readonly PendingInboxItem[] }) {
   latest = useThreadControls({
     threadId: "thread-1",
-    pending: props.pending ?? EMPTY,
+    items: props.items ?? EMPTY,
     answeredCompactionIds: NONE,
     switches: NO_SWITCHES,
   });
@@ -89,7 +98,7 @@ describe("useThreadControls", () => {
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
     expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
-    await act(async () => response.resolve({ id, pending: null, turnId: "c" }));
+    await act(async () => response.resolve({ id, turnId: "c", runState: recordOf() }));
     expect(latest.queued).toEqual([]);
     expect(invalidateQueries).toHaveBeenCalled();
   });
@@ -97,7 +106,7 @@ describe("useThreadControls", () => {
   it("removes the row at once, and withdraws once the in-flight enqueue lands", async () => {
     const enqueued = deferred<unknown>();
     api.enqueueThreadControl.mockReturnValue(enqueued.promise);
-    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn" });
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn", runState: recordOf() });
     let id = "";
     await act(async () => {
       id = latest.enqueue({ kind: "compact" });
@@ -111,17 +120,19 @@ describe("useThreadControls", () => {
     await act(async () =>
       enqueued.resolve({
         id,
-        pending: {
-          id,
-          seq: 1,
-          intent: "control",
-          control: { kind: "compact" },
-          provenance: { kind: "writer", actorId: "w" },
-          deliveryState: "awaiting_run",
-          summary: "Compact conversation",
-          enqueuedAt: "2026-09-28T00:00:00.000Z",
-        },
         turnId: null,
+        runState: recordOf([
+          {
+            id,
+            seq: 1,
+            intent: "control",
+            control: { kind: "compact" },
+            provenance: { kind: "writer", actorId: "w" },
+            deliveryState: "awaiting_run",
+            summary: "Compact conversation",
+            enqueuedAt: "2026-09-28T00:00:00.000Z",
+          },
+        ]),
       }),
     );
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
@@ -131,33 +142,31 @@ describe("useThreadControls", () => {
   it("withdraws on the server when the enqueue response was lost but the server has the row", async () => {
     // The request reached the server; only its response was lost.
     api.enqueueThreadControl.mockRejectedValue(new TypeError("Failed to fetch"));
-    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn" });
+    api.withdrawThreadControl.mockResolvedValue({ outcome: "withdrawn", runState: recordOf() });
     let id = "";
     await act(async () => {
       id = latest.enqueue({ kind: "compact" });
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "failed" }]);
-    const serverRow: ThreadPendingInbox = {
-      items: [
-        {
-          id,
-          seq: 1,
-          intent: "control",
-          control: { kind: "compact" },
-          provenance: { kind: "writer", actorId: "w" },
-          deliveryState: "awaiting_run",
-          summary: "Compact conversation",
-          enqueuedAt: "2026-09-28T00:00:00.000Z",
-        },
-      ],
-    };
+    const serverRow: PendingInboxItem[] = [
+      {
+        id,
+        seq: 1,
+        intent: "control",
+        control: { kind: "compact" },
+        provenance: { kind: "writer", actorId: "w" },
+        deliveryState: "awaiting_run",
+        summary: "Compact conversation",
+        enqueuedAt: "2026-09-28T00:00:00.000Z",
+      },
+    ];
     const [failed] = latest.queued;
     if (!failed) throw new Error("expected a failed control");
     await act(async () => latest.withdraw(failed));
     expect(api.withdrawThreadControl).toHaveBeenCalledWith("thread-1", id);
     expect(latest.queued).toEqual([]);
     // A lagging inbox frame still lists it, then the server drops it.
-    await act(async () => root.render(<Probe pending={serverRow} />));
+    await act(async () => root.render(<Probe items={serverRow} />));
     expect(latest.queued).toEqual([]);
     await act(async () => root.render(<Probe />));
     expect(latest.queued).toEqual([]);
@@ -198,21 +207,19 @@ describe("useThreadControls", () => {
     if (!failed) throw new Error("expected a failed control");
     await act(async () => latest.withdraw(failed));
     expect(latest.queued).toEqual([]);
-    const committed: ThreadPendingInbox = {
-      items: [
-        {
-          id,
-          seq: 1,
-          intent: "control",
-          control: { kind: "compact" },
-          provenance: { kind: "writer", actorId: "w" },
-          deliveryState: "awaiting_run",
-          summary: "Compact conversation",
-          enqueuedAt: "2026-09-28T00:00:00.000Z",
-        },
-      ],
-    };
-    await act(async () => root.render(<Probe pending={committed} />));
+    const committed: PendingInboxItem[] = [
+      {
+        id,
+        seq: 1,
+        intent: "control",
+        control: { kind: "compact" },
+        provenance: { kind: "writer", actorId: "w" },
+        deliveryState: "awaiting_run",
+        summary: "Compact conversation",
+        enqueuedAt: "2026-09-28T00:00:00.000Z",
+      },
+    ];
+    await act(async () => root.render(<Probe items={committed} />));
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
   });
 
@@ -225,7 +232,10 @@ describe("useThreadControls", () => {
   });
 
   it("drops the row and says so when Withdraw comes after the compaction started", async () => {
-    api.withdrawThreadControl.mockResolvedValue({ outcome: "already_started" });
+    api.withdrawThreadControl.mockResolvedValue({
+      outcome: "already_started",
+      runState: recordOf(),
+    });
     await act(async () =>
       latest.withdraw({
         id: "k",

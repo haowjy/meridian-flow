@@ -15,21 +15,23 @@
  *
  * A stand-in whose request's reservation ended without creating its turn (a
  * Retry whose compaction was stopped) is retired: the caller's `retired` reads
- * that from run identity, by execution or by the request id the reservation
- * records.
+ * that from the run-state record at or after the answer's version
+ * (`retryRetired`). A request whose answer never arrived has no version to
+ * read, so its failed stand-in waits for the writer's Retry, which replays it.
  *
  * The handoff brief's Retry (`useHandoffBrief`) and a failed reply's Retry
  * (`useReplyRetry`) supply what to post and how the stand-in looks.
  */
 import { t } from "@lingui/core/macro";
 import { REPLY_RETRY_PENDING_CODE, type Turn } from "@meridian/contracts/protocol";
+import type { RunState } from "@meridian/contracts/threads";
 import { placeStandIns } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HttpResponseError, httpErrorStatus, retryAfterMs } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
-import { announce, announceError } from "@/client/stores";
+import { announce, announceError, useThreadActions } from "@/client/stores";
 import { reportRetryRefused } from "./error-telemetry";
 
 export type StandInRequest = "sending" | "sent" | "failed";
@@ -42,13 +44,26 @@ type StandIn = {
   from: string;
   /** The execution the server answered the request with; null until it does (or for no execution). */
   executionId: string | null;
+  /** The version of the record the answer carried; null until it answers (or for a request with none). */
+  answerVersion: string | null;
 };
 
-/** What a stand-in's request is known by: its id and the execution answering it. */
-export type StandInIdentity = { id: string; executionId: string | null };
+/** What a stand-in's request is known by: its id, the execution answering it and the record version of the answer. */
+export type StandInIdentity = {
+  id: string;
+  executionId: string | null;
+  answerVersion: string | null;
+};
 
-/** What the server answered: the new turn when it has one, and the execution answering it. */
-export type StandInAnswer = { turn: Turn | null; executionId: string | null };
+/**
+ * What the server answered: the new turn when it has one, the execution answering it, and the
+ * record after the request (none for a request that holds no execution).
+ */
+export type StandInAnswer = {
+  turn: Turn | null;
+  executionId: string | null;
+  runState?: RunState;
+};
 
 export type RetryStandIns = {
   /** Stand-ins the store does not have yet, in the order they were asked for. */
@@ -122,6 +137,7 @@ export function useRetryStandIns(input: {
   const optionsRef = useRef(input);
   optionsRef.current = input;
   const queryClient = useQueryClient();
+  const { dispatchRunState } = useThreadActions();
   const mounted = useRef(false);
   useEffect(() => {
     mounted.current = true;
@@ -147,7 +163,12 @@ export function useRetryStandIns(input: {
   const settles = useCallback(
     (entry: StandIn) =>
       (storedIds.has(entry.turn.id) && (!supersedes || evidenced.has(entry.from))) ||
-      (retired?.({ id: entry.turn.id, executionId: entry.executionId }) ?? false),
+      (retired?.({
+        id: entry.turn.id,
+        executionId: entry.executionId,
+        answerVersion: entry.answerVersion,
+      }) ??
+        false),
     [evidenced, retired, storedIds, supersedes],
   );
   useEffect(() => {
@@ -169,10 +190,14 @@ export function useRetryStandIns(input: {
     (id: string, from: string, attempt = 1) => {
       optionsRef.current.post(id, from).then(
         (answer) => {
+          // The answer's record is a fact like any other.
+          if (answer.runState)
+            dispatchRunState(threadId, { type: "snapshot", runState: answer.runState });
           patch(id, (entry) => ({
             ...entry,
             turn: answer.turn ?? entry.turn,
             executionId: answer.executionId ?? entry.executionId,
+            answerVersion: answer.runState?.version ?? entry.answerVersion,
             request: "sent",
           }));
           refresh();
@@ -209,7 +234,7 @@ export function useRetryStandIns(input: {
         },
       );
     },
-    [patch, refresh, threadId],
+    [dispatchRunState, patch, refresh, threadId],
   );
   const sendRef = useRef(send);
   sendRef.current = send;
@@ -245,7 +270,13 @@ export function useRetryStandIns(input: {
       if (!standIn) return;
       setLocal((current) => [
         ...current,
-        { turn: standIn, request: "sending", from: from.id, executionId: null },
+        {
+          turn: standIn,
+          request: "sending",
+          from: from.id,
+          executionId: null,
+          answerVersion: null,
+        },
       ]);
       send(id, from.id);
     },
