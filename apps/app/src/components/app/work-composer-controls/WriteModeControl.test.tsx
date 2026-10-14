@@ -36,17 +36,32 @@ describe("write-mode control draft count", () => {
       seen[workId] = String(control.item.value);
       return null;
     }
+    // In Auto-apply the trigger stays "Auto-apply", but the menu's Draft option still counts.
+    function DirectMenu() {
+      const control = useWriteModeToolbarControl({
+        projectId: "p",
+        workId: "work-a",
+        value: "direct",
+        onChoose: () => {},
+      });
+      if (control.kind !== "panel") return null;
+      return <>{control.panel.render({ terminalClose: () => {} } as never)}</>;
+    }
     await withReactRoot(
       <QueryClientProvider client={queryClient}>
         <ThreadStoreProvider now={0}>
           <Probe workId="work-a" />
           <Probe workId="work-b" />
+          <DirectMenu />
         </ThreadStoreProvider>
       </QueryClientProvider>,
       () =>
         settleReact(() => {
           expect(seen["work-a"]).toBe("Draft (2)");
           expect(seen["work-b"]).toBe("Draft");
+          const draftOption = document.querySelector('[role="radio"]');
+          expect(draftOption?.textContent).toBe("Draft (2)");
+          expect(draftOption?.getAttribute("aria-label")).toBe("Draft, 2 documents waiting");
         }),
     );
   });

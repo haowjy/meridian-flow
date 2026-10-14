@@ -214,4 +214,5 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
     gone and stays gone without a reload, and the Work's default (new-chat composer) follows it.
 16. Draft count: in a draft-mode chat whose AI wrote two documents, the composer control and its
     menu read "Draft (2)" (accessible name "AI write mode: Draft, 2 documents waiting"); with none
-    waiting, "Draft". Apply or discard a document and the count follows.
+    waiting, "Draft". In an Auto-apply chat the trigger reads "Auto-apply" but the menu's Draft option
+    still reads "Draft (2)". Apply or discard a document and the count follows.
