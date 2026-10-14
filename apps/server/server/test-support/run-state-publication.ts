@@ -1,6 +1,7 @@
 /**
- * DB-suite hooks that pin run-state publication. `installPublicationAudit` adds a test-only trigger
- * audit to the throwaway test database (never a migration); after each scenario `assertPublicationHooks`
+ * DB-suite hooks that pin run-state publication. `openAuditedDatabase` clones a disposable database
+ * from the run's migrated template and installs a test-only trigger audit in it (never a migration,
+ * never in the worker's shared database); `close` drops it. After each scenario `assertPublicationHooks`
  * checks that
  *
  * - every transaction that changed an input of a chat's record also appended a `run_state.changed`
@@ -8,13 +9,65 @@
  * - the chat's last journaled record equals a fresh `readRunState` (a record that disagrees with its
  *   rows, or a chat with input rows and no record, fails).
  */
+
+import { randomInt } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { Database } from "@meridian/database";
+import { createDb, type Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { sql } from "drizzle-orm";
+import postgres from "postgres";
 import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
 
-export async function installPublicationAudit(db: Database) {
+export type AuditedDatabase = { db: Database; close: () => Promise<void> };
+
+/**
+ * A disposable database owned by one suite: cloned from the managed run's template (which no session
+ * connects to, so the clone cannot be blocked), audited, and dropped by `close`. The name keeps the
+ * managed `<template>_test-run-<pid>-<ts>-worker-<n>` shape, so a crashed run's leftovers are
+ * collected with the run's own databases.
+ */
+export async function openAuditedDatabase(
+  workerUrl: string,
+  options: { max: number },
+): Promise<AuditedDatabase> {
+  const workerName = decodeURIComponent(new URL(workerUrl).pathname.slice(1));
+  const managed = workerName.match(/^(.+_test-run-\d+)-\d+-worker-\d+$/);
+  const templateName = managed ? workerName.replace(/-worker-\d+$/, "") : workerName;
+  const cloneName = managed
+    ? `${managed[1]}-${Date.now()}-worker-${randomInt(1000, 1_000_000)}`
+    : `${workerName}_audit_${process.pid}_${Date.now()}`;
+  if (Buffer.byteLength(cloneName) > 63)
+    throw new Error(`Audit database name is longer than 63 bytes: ${cloneName}`);
+  const urlFor = (name: string) => {
+    const url = new URL(workerUrl);
+    url.pathname = `/${name}`;
+    return url.toString();
+  };
+  const admin = postgres(urlFor("postgres"), { max: 1 });
+  let db: Database | undefined;
+  const close = async () => {
+    try {
+      await db?.close();
+    } finally {
+      try {
+        await admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`);
+      } finally {
+        await admin.end();
+      }
+    }
+  };
+  try {
+    await admin.unsafe(`CREATE DATABASE "${cloneName}" WITH TEMPLATE "${templateName}"`);
+    db = createDb(urlFor(cloneName), { max: options.max });
+    await installPublicationAudit(db);
+    return { db, close };
+  } catch (error) {
+    await close().catch(() => {});
+    throw error;
+  }
+}
+
+async function installPublicationAudit(db: Database) {
   await db.execute(sql`CREATE UNLOGGED TABLE IF NOT EXISTS run_state_audit (
     txid bigint NOT NULL, thread_id uuid NOT NULL, kind text NOT NULL)`);
   await db.execute(sql`CREATE OR REPLACE FUNCTION run_state_audit_input() RETURNS trigger AS $$
@@ -59,20 +112,6 @@ export async function installPublicationAudit(db: Database) {
         ON ${table} FOR EACH ROW EXECUTE FUNCTION ${fn}()`),
     );
   }
-}
-
-/** Removes the audit, so catalog-inspecting suites sharing the worker database never see it. */
-export async function removePublicationAudit(db: Database) {
-  for (const [name, table] of [
-    ["run_state_audit_inbox", "thread_inbox_messages"],
-    ["run_state_audit_lease", "thread_run_leases"],
-    ["run_state_audit_threads", "threads"],
-    ["run_state_audit_journal", "event_journal"],
-  ])
-    await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${name} ON ${table}`));
-  await db.execute(sql`DROP FUNCTION IF EXISTS run_state_audit_input()`);
-  await db.execute(sql`DROP FUNCTION IF EXISTS run_state_audit_record()`);
-  await db.execute(sql`DROP TABLE IF EXISTS run_state_audit`);
 }
 
 export async function assertPublicationHooks(db: Database) {

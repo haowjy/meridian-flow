@@ -2,7 +2,7 @@
 
 import type { Turn } from "@meridian/contracts/threads";
 import { eq, sql } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import {
@@ -31,7 +31,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
   describe.skip("control protocol", () => {});
 else
   describe("control protocol", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -39,16 +38,15 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { processDetachedWork } = await import("../detached-work.js");
     assertThrowawayDatabaseForRunDbTests(url);
-    const db = createDb(url, { max: 8 });
+    const { assertPublicationHooks, openAuditedDatabase } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    // Publication pins run in a database this suite owns and drops.
+    const audited = await openAuditedDatabase(url, { max: 8 });
+    const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
-    afterAll(async () => {
-      await removePublicationAudit(db);
-      await db.close();
-    });
+    afterAll(() => audited.close());
     // Publication pins: no input write without a record, and the last record equals the rows.
-    const { assertPublicationHooks, installPublicationAudit, removePublicationAudit } =
-      await import("../../../test-support/run-state-publication.js");
-    beforeAll(() => installPublicationAudit(db));
     afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);

@@ -109,7 +109,7 @@ transaction). Adoption and `bindTurn` validate under the same lock and refuse a 
   transaction (fingerprint of the body, `handed_back` / `answered` / `gone`, `cancelled_execution_id`).
   **A replay returns that stored decision**, the handed-back messages' content read from their turns, and
   a fresh `runState`; it flags nothing. The same id with another body is `HandBackConflictError` (409).
-  `gone` for a `seen` scope covers handed-back rows above the last message a reply answered.
+  `gone` for a `seen` scope covers every row at or below `seenThrough` that another request handed back, however old.
 - **Applying a decision.** The hand-back row first (inbox rows reference it), then `inbox.ack` with
   `{ handedBackBy }` (delivered, no deliverer), the cancelled compaction's receipt strip, one journal
   event `messages.handed_back { userTurnIds, requestId }`, the usage-block clear, and `cancel_requested`
