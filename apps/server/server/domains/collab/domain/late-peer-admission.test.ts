@@ -1,11 +1,13 @@
 /**
- * Writer admission of stale peers (D33), as one seeded property: a peer forks, goes offline (browser
+ * Writer admission of stale peers (D33, D35), as one seeded property: a peer forks, goes offline (browser
  * default GC, a real Undo manager), edits (whole words, or a browser's one character per keystroke), and
  * reconnects with `encodeStateAsUpdate(peer, serverSV)`, sometimes after resending its queued edits one
- * frame each, while rebases (including a paragraph replaced by an unrelated one) and another writer change
- * the draft. The real coordinator admits every frame against an instance-owned in-memory store.
+ * frame each, and usually receives the server's state back (sync both ways), sometimes reconnecting again
+ * with nothing new. Rebases (including a paragraph replaced by an unrelated one) and another writer (who
+ * also formats) change the draft. The real coordinator admits every frame against an instance-owned
+ * in-memory store.
  */
-import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
+import { DRAFT_SERVER_CLIENT_ID, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
@@ -22,6 +24,25 @@ const para = (text: string) =>
   schema.nodes.paragraph.create(null, text ? schema.text(text) : undefined);
 const textsOf = (doc: Y.Doc) =>
   readBlocks(doc.getXmlFragment(FRAG), schema).map((b) => b.textContent);
+/** The bold words of `doc` the server peer wrote (recovery and rebases), read character by character. */
+function serverBoldOf(doc: Y.Doc): Set<string> {
+  let masked = "";
+  for (const text of xmlTexts(doc)) {
+    let strong = false;
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted) continue;
+      if (item.content instanceof Y.ContentFormat) {
+        if (item.content.key === "strong") strong = item.content.value !== null;
+        continue;
+      }
+      if (!(item.content instanceof Y.ContentString)) continue;
+      const keep = strong && item.id.client === DRAFT_SERVER_CLIENT_ID;
+      masked += keep ? item.content.str : " ".repeat(item.length);
+    }
+    masked += "\n";
+  }
+  return new Set(tokensOf([masked]));
+}
 /**
  * The words of `texts`. Concurrent character edits in text the rebase kept may fuse two generated words
  * (`l023b005`), and a keystroke Undo leaves a word's prefix (`p00b003`); generated tokens split back
@@ -34,6 +55,11 @@ const tokensOf = (texts: readonly string[]) =>
     .filter(Boolean)
     .flatMap((w) => (/^(?:[a-z]\d{1,3})+$/u.test(w) ? (w.match(/[a-z]\d{1,3}/gu) ?? []) : [w]));
 const countIn = (text: string, token: string) => text.split(token).length - 1;
+const isSubsequence = (needle: string, hay: string) => {
+  let at = 0;
+  for (const ch of hay) if (ch === needle[at]) at++;
+  return at === needle.length;
+};
 
 /** mulberry32: a fixed seed replays the same history. */
 function rng(seed: number) {
@@ -48,13 +74,20 @@ function rng(seed: number) {
   return { next, int: (n: number) => Math.floor(next() * n), chance: (p: number) => next() < p };
 }
 
+/** A paragraph's text without markup (`toString` wraps formatted runs in tags). */
+const plain = (text: Y.XmlText) =>
+  text
+    .toDelta()
+    .map((d: { insert: unknown }) => (typeof d.insert === "string" ? d.insert : ""))
+    .join("");
+
 /** The word spans of a text: [start, end) per word. */
 const spans = (text: string) =>
   [...text.matchAll(/\S+/gu)].map((m) => [m.index, m.index + m[0].length]);
 
 /** Inserts `token` as its own word before word `at` (or after the last), keeping a space between words. */
 function insertWord(text: Y.XmlText, at: number, token: string) {
-  const s = spans(text.toString());
+  const s = spans(plain(text));
   if (!s.length) text.insert(0, token);
   else if (at < s.length) text.insert(s[at][0], `${token} `);
   else text.insert(s[s.length - 1][1], ` ${token}`);
@@ -70,7 +103,7 @@ function wordSlot(text: string, at: number, phrase: string): [number, string] {
 
 /** Deletes word `at` with one adjoining space; a paragraph keeps its last word. */
 function deleteWord(text: Y.XmlText, at: number): boolean {
-  const s = spans(text.toString());
+  const s = spans(plain(text));
   if (s.length < 2) return false;
   const [from, to] = s[at % s.length];
   if (at % s.length === 0) text.delete(from, s[1][0] - from);
@@ -124,12 +157,13 @@ function world(base: readonly string[]) {
     return doc;
   };
   const room = docOf();
-  const draft = () => {
+  const read = <T>(of: (doc: Y.Doc) => T) => {
     const doc = docOf();
-    const texts = textsOf(doc);
+    const out = of(doc);
     doc.destroy();
-    return texts;
+    return out;
   };
+  const draft = () => read(textsOf);
   const admit = (updateData: Uint8Array) =>
     coordinator.commitWriterUpdate({ branchId: BRANCH, updateData, roomDocument: room });
 
@@ -139,8 +173,11 @@ function world(base: readonly string[]) {
   let typedClocks: Array<[number, number]> = []; // the peer's typing since its last reconnect, not Undo's
   const peerSaw = new Set<string>();
   let typedSinceSync = new Set<string>();
-  const restored = new Set<string>();
+  let editedSinceSync = false;
+  let restored = new Set<string>();
   let writerClient = 2000;
+  const typedEver = new Set<string>(); // every word the peer typed, for the writer to format
+  const undoRestored = new Map<string, number>(); // words the peer's Undo brought back since it reconnected
   const frames: Uint8Array[] = [];
   const failures: string[] = [];
 
@@ -150,7 +187,9 @@ function world(base: readonly string[]) {
       peer = new Y.Doc(); // the browser default: GC on, the Undo manager keeps what it needs
       Y.applyUpdate(peer, state);
       peer.clientID = 1000;
-      peer.on("update", (update: Uint8Array) => queued.push(update));
+      peer.on("update", (update: Uint8Array, origin: unknown) => {
+        if (origin !== "server") queued.push(update);
+      });
       undo = new Y.UndoManager(peer.getXmlFragment(FRAG), { captureTimeout: 0 });
       const manager = undo;
       peer.on("afterTransaction", (tr: Y.Transaction) => {
@@ -167,6 +206,7 @@ function world(base: readonly string[]) {
       if (!peer) throw new Error("no peer");
       const texts = xmlTexts(peer);
       peer.transact(() => edit(texts));
+      editedSinceSync = true;
       for (const t of typed) {
         peerSaw.add(t);
         typedSinceSync.add(t);
@@ -175,9 +215,10 @@ function world(base: readonly string[]) {
     /** The peer types `phrase` into paragraph `pick` before word `at`, one transaction per character. */
     peerType(pick: number, at: number, phrase: string, typed: readonly string[]) {
       if (!peer) throw new Error("no peer");
-      const [offset, text] = wordSlot(xmlTexts(peer)[pick].toString(), at, phrase);
+      const [offset, text] = wordSlot(plain(xmlTexts(peer)[pick]), at, phrase);
       for (let i = 0; i < text.length; i++)
         peer.transact(() => xmlTexts(peer as Y.Doc)[pick].insert(offset + i, text[i]));
+      editedSinceSync = true;
       for (const t of typed) {
         // A keystroke Undo leaves a prefix of the word, which the peer saw too.
         for (let n = 1; n <= t.length; n++) peerSaw.add(t.slice(0, n));
@@ -185,7 +226,16 @@ function world(base: readonly string[]) {
       }
     },
     peerUndo() {
-      undo?.undo();
+      const counts = (texts: readonly string[]) => {
+        const out = new Map<string, number>();
+        for (const t of tokensOf(texts)) out.set(t, (out.get(t) ?? 0) + 1);
+        return out;
+      };
+      const before = counts(self.peerTexts().map(plain));
+      if (!undo?.undo()) return;
+      editedSinceSync = true;
+      for (const [t, n] of counts(self.peerTexts().map(plain)))
+        if (n > (before.get(t) ?? 0)) undoRestored.set(t, (undoRestored.get(t) ?? 0) + 1);
     },
     async rebase(change: (texts: string[]) => string[]) {
       await coordinator.withLeases([BRANCH], (lease) =>
@@ -212,15 +262,25 @@ function world(base: readonly string[]) {
       for (const t of typed) if (peerSaw.has(t)) restored.add(t);
       if (update) await admit(update);
     },
+    /** Another writer bolds paragraph `pick` (one the peer's typing was recovered into, when there is one). */
+    async writerFormat(pick: number) {
+      await self.writerEdit((ts) => {
+        const recovered = ts.filter((t) => tokensOf([plain(t)]).some((w) => typedEver.has(w)));
+        const text = recovered.length ? recovered[pick % recovered.length] : ts[pick % ts.length];
+        text?.format(0, text.length, { strong: {} });
+      });
+    },
     /**
      * The peer reconnects: its whole state past the server's vector, after its queued edits one frame
-     * each when `queued` (a browser resending keystrokes), judged against the invariants.
+     * each when `resend` (a browser resending keystrokes), judged against the invariants. With `sync` the
+     * peer then receives the server's state, as a reconnect's sync step does.
      */
-    async reconnect(label: string, resend = false) {
+    async reconnect(label: string, { resend = false, sync = false } = {}) {
       if (!peer) throw new Error("no peer");
       const frame = Y.encodeStateAsUpdate(peer, Y.encodeStateVectorFromUpdate(state));
       frames.push(frame);
       const before = draft();
+      const boldBefore = read(serverBoldOf);
       const visible = textsOf(peer);
       const typedSpans = peerTypedSpans(peer, typedClocks);
       if (resend) for (const update of queued) await admit(update);
@@ -238,20 +298,53 @@ function world(base: readonly string[]) {
       // By presence, not count: the peer may Undo its deletion of the same base word and delete it again.
       for (const t of restored)
         if (beforeText.includes(t) && !afterText.includes(t)) fail(`(a) erased restored ${t}`);
-      // (b) Nothing absent from both the peer's text and the draft appears.
+      // (b) Nothing absent from both the peer's text and the draft appears. One cost (D35): a word the
+      // peer typed (or brought back by Undo) and deleted again across resent frames was recovered by the
+      // first frame, and stays.
       const allowed = new Set([...tokensOf(before), ...tokensOf(visible)]);
+      if (resend) for (const t of [...typedSinceSync, ...undoRestored.keys()]) allowed.add(t);
       for (const t of tokensOf(after)) if (!allowed.has(t)) fail(`(b) invented ${t}`);
       // (c) Every word the peer typed that its text still shows reaches the draft, once.
       const shown = new Set(tokensOf(visible));
       for (const t of typedSinceSync)
         if (shown.has(t) && !afterText.includes(t)) fail(`(c) lost ${t}`);
+      // D35's cost again: a word deleted and restored by Undo across resent frames keeps both copies.
       for (const t of typedSinceSync)
-        if (countIn(afterText, t) > Math.max(1, countIn(beforeText, t)))
+        if (
+          countIn(afterText, t) >
+          Math.max(1, countIn(beforeText, t)) + (resend ? (undoRestored.get(t) ?? 0) : 0)
+        )
           fail(`(c) duplicated ${t}`);
-      // (d) What the peer typed side by side stays side by side, inner spaces included.
-      for (const span of typedSpans)
-        if (!afterText.includes(span)) fail(`(d) broke ${JSON.stringify(span)}`);
+      // (d) What the peer typed side by side stays side by side, inner spaces included. After resent
+      // frames, characters a later frame deleted stay between them (D35): in order, in one paragraph.
+      const together = (span: string) =>
+        resend ? after.some((text) => isSubsequence(span, text)) : afterText.includes(span);
+      for (const span of typedSpans) if (!together(span)) fail(`(d) broke ${JSON.stringify(span)}`);
+      // (e) A stale frame never strips formatting: server-written words the writer bolded stay bold.
+      const boldAfter = read(serverBoldOf);
+      // A word the peer deleted and brought back by Undo is the peer's own plain copy.
+      for (const t of boldBefore)
+        if (tokensOf(after).includes(t) && !boldAfter.has(t) && !undoRestored.has(t))
+          fail(`(e) unbolded ${t}`);
+      for (const t of typedSinceSync) typedEver.add(t);
       typedSinceSync = new Set();
+      undoRestored.clear();
+      if (sync) {
+        Y.applyUpdate(peer, state, "server");
+        for (const t of tokensOf(textsOf(peer))) peerSaw.add(t);
+        restored = new Set(); // the peer sees them now: deleting one is its intent
+        editedSinceSync = false;
+      }
+    },
+    /** After a sync, the peer reconnects with nothing new: its frame echoes the server's own state. */
+    async echo(label: string) {
+      if (!peer || editedSinceSync) return;
+      const before = draft();
+      await admit(Y.encodeStateAsUpdate(peer, Y.encodeStateVectorFromUpdate(state)));
+      const afterText = draft().join("\n");
+      for (const t of tokensOf(before))
+        if (!afterText.includes(t))
+          failures.push(`${label}: a sync echo removed ${t} ${JSON.stringify(before)}`);
     },
     /** A frame already admitted, again: never an instruction, so nothing changes. */
     async replay(label: string, frame = frames.at(-1)) {
@@ -304,7 +397,7 @@ function peerTypedSpans(peer: Y.Doc, clocks: ReadonlyArray<readonly [number, num
 
 type World = ReturnType<typeof world>;
 
-/** The reviewed reproductions, as fixed histories (r5 S1, S2; K1-1; R5d replace). */
+/** The reviewed reproductions, as fixed histories (r5 S1, S2; K1-1; R5d replace; final-delta echo, format). */
 const FIXED: Record<string, (w: World) => Promise<void>> = {
   // S1: a frame with new typing plus the peer's old delete set erased words written since.
   async s1(w) {
@@ -319,7 +412,7 @@ const FIXED: Record<string, (w: World) => Promise<void>> = {
     await w.rebase(() => ["tail", "ALPHA beta gamma"]);
     await w.reconnect("s1 first");
     await w.writerEdit(
-      (ts) => insertWord(ts.find((t) => t.toString().startsWith("ALPHA")) ?? ts[0], 0, "alpha"),
+      (ts) => insertWord(ts.find((t) => plain(t).startsWith("ALPHA")) ?? ts[0], 0, "alpha"),
       ["alpha"],
     );
     await w.replay("s1 exact replay");
@@ -351,15 +444,36 @@ const FIXED: Record<string, (w: World) => Promise<void>> = {
   async r5d(w) {
     w.fork();
     w.peerType(0, 99, "My offline crane stays.", ["My", "offline", "crane", "stays."]);
-    w.peerEdit(([t]) => t.delete(t.toString().indexOf("old "), 4));
+    w.peerEdit(([t]) => t.delete(plain(t).indexOf("old "), 4));
     await w.rebase(([, ...rest]) => [
       "Unrelated violet mountains shelter a sleeping dragon.",
       ...rest,
     ]);
-    await w.reconnect("r5d", true);
+    await w.reconnect("r5d", { resend: true });
     await w.replay("r5d replay");
   },
+  // Final deltas P1: after the peer received the recovered state, an ordinary reconnect's delete set
+  // (the server's own tombstones) was read as a backspace and erased the recovered paragraph.
+  async echo(w) {
+    w.fork();
+    await w.rebase(([, ...rest]) => ["Replacement", ...rest]);
+    w.peerEdit(([t]) => t.insert(t.length, " offline crane"), ["offline", "crane"]);
+    await w.reconnect("echo first", { sync: true });
+    await w.echo("echo reconnect");
+  },
+  // Final deltas P2: the writer bolded a recovered paragraph, and the next stale frame rewrote it plain.
+  async format(w) {
+    w.fork();
+    await w.rebase(([, ...rest]) => ["Replacement", ...rest]);
+    w.peerEdit(([t]) => t.insert(t.length, " offline crane"), ["offline", "crane"]);
+    await w.reconnect("format first");
+    await w.writerFormat(0);
+    w.peerEdit(([t]) => t.insert(t.length, " stays"), ["stays"]);
+    await w.reconnect("format next");
+  },
 };
+
+const FINAL_DELTAS_BASE = ["Old words", "Tail"];
 
 const R5D_BASE = [
   "Alpha river keeps old words for the rewrite.",
@@ -425,8 +539,9 @@ async function randomHistory(w: World, seed: number, fresh: (prefix: string) => 
   const writerEdits = async (count: number) => {
     for (let n = count; n > 0; n--) {
       const at = r.int(8);
-      const op = r.int(3);
-      if (op === 0) {
+      const op = r.int(4);
+      if (op === 3) await w.writerFormat(r.int(8));
+      else if (op === 0) {
         const token = fresh("w");
         await w.writerEdit(
           (ts) => ts.length && insertWord(ts[r.int(ts.length)], at, token),
@@ -453,13 +568,18 @@ async function randomHistory(w: World, seed: number, fresh: (prefix: string) => 
   w.fork();
   await peerEdits(1 + r.int(4));
   for (let n = 1 + r.int(2); n > 0; n--) await w.rebase(liveChange);
-  if (r.chance(0.5)) await w.reconnect(`seed ${seed} early`, r.chance(0.5));
+  const reconnect = async (label: string) => {
+    const sync = r.chance(0.6);
+    await w.reconnect(label, { resend: r.chance(0.5), sync });
+    if (sync && r.chance(0.5)) await w.echo(`${label} echo`);
+  };
+  if (r.chance(0.5)) await reconnect(`seed ${seed} early`);
   for (let round = 1 + r.int(3); round > 0; round--) {
     await writerEdits(r.int(3));
     if (r.chance(0.3)) await w.replay(`seed ${seed} replay`);
     if (r.chance(0.3)) await w.rebase(liveChange);
     await peerEdits(r.int(4));
-    await w.reconnect(`seed ${seed} round ${round}`, r.chance(0.5));
+    await reconnect(`seed ${seed} round ${round}`);
     if (r.chance(0.4)) await w.replay(`seed ${seed} twice`, undefined);
   }
 }
@@ -471,12 +591,21 @@ const RANDOM_SEEDS = 120;
 // (a) words the peer never saw survive; (b) nothing absent from both the peer's text and the draft
 // appears; (c) every word the peer typed that its text still shows reaches the draft, once. A replayed
 // or repeated frame changes nothing, and no frame is refused. (d, R5d) typing the peer did side by side,
-// sent whole or one keystroke per frame, reaches the draft side by side with its inner spaces.
+// sent whole or one keystroke per frame, reaches the draft side by side with its inner spaces. (e, D35)
+// a stale frame never strips a writer's formatting, and a sync echo never removes a word.
 it("admits stale peers without erasing, reviving or losing words, across fixed and seeded histories", async () => {
   const failures: string[] = [];
   const runs: Array<[string, readonly string[], (w: World) => Promise<void>]> = Object.entries(
     FIXED,
-  ).map(([name, run]) => [name, name === "r5d" ? R5D_BASE : ["alpha beta gamma", "tail"], run]);
+  ).map(([name, run]) => [
+    name,
+    name === "r5d"
+      ? R5D_BASE
+      : name === "echo" || name === "format"
+        ? FINAL_DELTAS_BASE
+        : ["alpha beta gamma", "tail"],
+    run,
+  ]);
   for (let seed = 1; seed <= RANDOM_SEEDS; seed++) {
     let next = 0;
     const fresh = (prefix: string) => `${prefix}${String(next++).padStart(3, "0")}`;

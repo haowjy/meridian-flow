@@ -269,9 +269,13 @@ metadata read or a 404 never does.
    an unrelated paragraph in its place). Type with native per-key typing: the browser resends each
    keystroke as its own frame. Reconnect.
    PASS: the surviving offline sentence appears once, green, as ONE paragraph with its spaces
-   (never a column of letters) beside the paragraph's last neighbour; the deleted offline sentence never appears; the rewritten
-   paragraph keeps every word including the one deleted offline (delete it again); a second
-   reconnect changes nothing. No refusal. Automated: `late-peer-admission.test.ts`.
+   (never a column of letters) beside the paragraph's last neighbour. The deleted offline sentence
+   does not appear when the reconnect arrives as one frame; resent per keystroke, its typing lands
+   before its deletion and stays, green (D35: a stale frame never deletes; delete it again). The
+   rewritten paragraph keeps every word including the one deleted offline (delete it again). A
+   second reconnect changes nothing, and neither does one after the browser has caught up: the
+   recovered sentence stays. No refusal. Automated: `late-peer-admission.test.ts` (also a writer
+   formatting a recovered paragraph between stale frames, which a browser can't stage).
 4. Open the live room's WebSocket frames while idle. Known issue
    ([#838](https://github.com/haowjy/meridian-flow/issues/838)): the `yjs:live:<documentId>`
    socket closes cleanly with 1005 about every 32 seconds and reconnects after about a second,
