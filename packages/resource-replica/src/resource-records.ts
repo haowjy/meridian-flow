@@ -144,7 +144,6 @@ export type ResourceDescriptor = ResourceKey & {
       documentId: string;
       identityRevision: number;
       exactDatabaseName: string;
-      generation: string | null;
     };
     cleanup?: { obligationId: string; exactDatabaseName: string };
   };

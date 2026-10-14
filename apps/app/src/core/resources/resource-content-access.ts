@@ -420,12 +420,15 @@ export class ResourceContentAccess {
     return { kind: "reserved", handoff };
   }
 
-  abortTransfer(key: ResourceKey, handoff: LocalDocumentSessionHandoff): void {
+  /**
+   * Settles a reservation that did not reach adoption: the registry's and this entry's, together.
+   * A no-op once the commit moved ownership to the registry, so callers settle unconditionally.
+   */
+  abortTransfer(key: ResourceKey): void {
     const id = resourceKey(key);
     const entry = this.entries.get(id);
-    if (entry?.ownership.kind !== "transferring" || entry.ownership.handoff !== handoff)
-      throw new Error("Resource content handoff is not reserved");
-    entry.ownership.reservations.abort(handoff);
+    if (entry?.ownership.kind !== "transferring") return;
+    entry.ownership.reservations.abort(entry.ownership.handoff);
     entry.ownership = { kind: "local" };
     if (entry.leases.size === 0) {
       this.entries.delete(id);

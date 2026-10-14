@@ -27,6 +27,24 @@ reads before destroying persistence. Local convergence never means server ack.
 The readonly replay adapter knows y-indexeddb's `updates` store but does not touch
 its private compaction cursor or write a second content journal.
 
+### Adoption protocol
+
+`ResourceSessionAdoptionCoordinator` is the only driver of local-to-registry
+adoption. The durable state is the pair (resource obligation, room
+`persistence`): Owed (obligation only), Reserved (room `adopting-local`, which
+carries no generation), Committed (room `bindable{G}`), Settled (obligation
+dropped and `lifecycle.availabilityGeneration = G`), with `terminal-local` off to
+the side. No generation is stored before the one fenced commit that admits it.
+That commit is `Coordination.admit(..., { adoption })`: one operation-lock
+section in which `store.admit` decides the fences and writes
+`adopting-local -> bindable`, then the lease installs and content ownership
+converts. Its `prepareCommit`/`completeCommit` hooks return `void` because Web
+Locks are not reentrant. Every pass re-derives its step from durable state with a
+fresh admission, so reload, a busy lock, a fence refusal or a failed
+acknowledgement all resume the same way. `ResourceContentAccess.abortTransfer`
+settles both reservation owners (the content entry and the registry facet) and
+is a no-op after the commit.
+
 Browser-local document reservations, stable resource handles, exact persistence,
 and namespace intentions belong to the account-global `AccountResourceReplica`,
 composed by `AccountFeatureLifetime`. The document-session runtime supplies its

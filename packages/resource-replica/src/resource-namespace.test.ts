@@ -192,7 +192,6 @@ describe("namespace record transitions", () => {
           documentId: "document",
           identityRevision: 1,
           exactDatabaseName: "content",
-          generation: null,
         },
       },
     });

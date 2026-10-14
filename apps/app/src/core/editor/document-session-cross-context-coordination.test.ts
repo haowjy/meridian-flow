@@ -111,15 +111,17 @@ it("still rejects a genuinely different lineage", async () => {
     reconcileIntervalMs: 60_000,
   });
   try {
-    const lease = await coordination.admit(projectId, documentId, generation, lineageHandle);
+    const lease = await coordination.admit(projectId, documentId, generation, {
+      originLineageHandle: lineageHandle,
+    });
     await expect(
-      coordination.inspectLocalLineage({
+      coordination.beginLocalAdoption({
         documentId,
+        transitionId: "foreign",
         lineageHandle: "catalog:someone-else",
         exactDatabaseName: lease.exactDatabaseName,
-        generation,
       }),
-    ).resolves.toBe("mismatch");
+    ).resolves.toEqual({ kind: "mismatch" });
   } finally {
     await coordination.close();
   }
@@ -145,31 +147,19 @@ it("adopts a cached incarnation at a later admission generation and keeps its pe
     // at 118 is looked up at 125 on the next load. Its incarnation is still the one a
     // live `admit` would reuse, so adoption must not strand the cached session detached.
     const later = "125";
-    const lease = await coordination.admit(projectId, documentId, generation, lineageHandle);
-    await expect(
-      coordination.inspectLocalLineage({
-        documentId,
-        lineageHandle,
-        exactDatabaseName: lease.exactDatabaseName,
-        generation: later,
-      }),
-    ).resolves.toBe("bindable");
-    const transfer = {
-      prepareCommit: vi.fn(),
-      completeCommit: vi.fn(async () => undefined),
-    };
-    const admitted = await coordination.commitLocalAdoption(
-      projectId,
-      later,
-      {
+    const lease = await coordination.admit(projectId, documentId, generation, {
+      originLineageHandle: lineageHandle,
+    });
+    const transfer = { prepareCommit: vi.fn(), completeCommit: vi.fn() };
+    const admitted = await coordination.admit(projectId, documentId, later, {
+      adoption: {
         documentId,
         transitionId: "cached-later-generation",
         lineageHandle,
         exactDatabaseName: lease.exactDatabaseName,
-        targetGeneration: later,
+        transfer,
       },
-      transfer,
-    );
+    });
     expect(admitted).toMatchObject({ generation: later, persistenceGeneration: generation });
     expect(transfer.completeCommit).toHaveBeenCalledWith(
       expect.objectContaining({ generation: later, persistenceGeneration: generation }),
