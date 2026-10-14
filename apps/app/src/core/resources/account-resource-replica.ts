@@ -2,17 +2,12 @@
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import {
-  acknowledgeLocalResourceCleanup,
   acknowledgeResourceTerminalCleanup,
-  type FolderNamespaceRecord,
   type FolderNamespaceWrite,
-  folderNeedsBackgroundReconciliation,
   installedFolderObservation,
-  joinReservation,
   markResourceCreateEligible,
   ownerOf,
   type ParentRef,
-  pendingJoinTarget,
   planCachedSessionAdoption,
   planFolderDeletion,
   planFolderLocation,
@@ -25,16 +20,11 @@ import {
   type ResourceLocation,
   type ResourceProjectionSnapshot,
   type ResourceRecord,
-  reconcileFolderNamespace,
-  reconcileResourceNamespace,
   recordAcquiredResourceContent,
-  remintCreateConflict,
   reserveResourceDocument,
-  resourceNeedsBackgroundReconciliation,
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
   sameOwner,
-  settleNamespaceOutcome,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { nativeLocks } from "@/core/cross-context-locks";
