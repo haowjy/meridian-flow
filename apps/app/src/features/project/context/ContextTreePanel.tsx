@@ -23,13 +23,12 @@ import { EntrySelectionScope } from "./entry-drag/selection";
 import { useEntryMoveRoute } from "./entry-drag/use-entry-move-route";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
-import { DropRegion } from "./tree-drop/DropRegion";
+import { AreaDropRegion } from "./tree-drop/AreaDropRegion";
 import {
   dragEdgeScroll,
   type TreeDropRoutes,
   TreeDropScope,
   type TreeDropTarget,
-  useTreeDropTarget,
 } from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
@@ -230,7 +229,11 @@ function SchemeSection({
     },
     [setExpanded, setExpandedEntryIds],
   );
-  const moveRoute = useEntryMoveRoute({ projectId, scheme, owner, catalog, onLanded });
+  const areas = useMemo(
+    () => (catalog ? [{ scheme, owner, catalog }] : []),
+    [scheme, owner, catalog],
+  );
+  const moveRoute = useEntryMoveRoute({ projectId, areas, onLanded });
   const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
@@ -315,6 +318,7 @@ function SchemeSection({
       <section>
         <AreaDropRegion
           scheme={scheme}
+          catalogRootId={catalog?.root.entryId ?? null}
           onSpring={() => !expanded && setExpanded(true)}
           header={header}
         >
@@ -346,32 +350,6 @@ function SchemeSection({
         />
       </section>
     </TreeDropScope>
-  );
-}
-
-/**
- * An area as one drop target: its header and its whole list light together, and
- * a drop anywhere on them files at the area's top level. Hovering a collapsed
- * area's header opens it.
- */
-function AreaDropRegion({
-  scheme,
-  onSpring,
-  header,
-  children,
-}: {
-  scheme: ProjectContextTreeScheme;
-  onSpring: () => void;
-  header: (dropProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const target = useMemo<TreeDropTarget>(() => ({ scheme, folder: null }), [scheme]);
-  const drop = useTreeDropTarget(target, { onSpring });
-  return (
-    <DropRegion state={drop.dropState}>
-      {header(drop.dropProps)}
-      {children}
-    </DropRegion>
   );
 }
 

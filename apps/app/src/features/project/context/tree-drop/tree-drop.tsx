@@ -23,7 +23,9 @@ import { dragPayloadKind } from "./drag-payload";
 
 export type TreeDropTarget = {
   scheme: ProjectContextTreeScheme;
-  /** The folder row, or null for the area root (the header). */
+  /** The catalog the target belongs to; one list can show several (a chat's Scratch and its earlier notes). */
+  catalogRootId: string;
+  /** The folder row, or null for the catalog's top level (the area header). */
   folder: { entryId: string; path: string; uri: string; name: string } | null;
 };
 
@@ -62,7 +64,7 @@ type ScopeValue = {
 const ScopeContext = createContext<ScopeValue | null>(null);
 
 export function targetKey(target: TreeDropTarget): string {
-  return `${target.scheme}:${target.folder?.entryId ?? "root"}`;
+  return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}`;
 }
 
 /** Holds the routes and the one lit target for an area's header and rows. */
@@ -109,6 +111,13 @@ type DropProps = Pick<
 
 const NO_PROPS: DropProps = {};
 
+/**
+ * Targets nest (a row inside its group): the innermost one with a route for the
+ * payload claims the event, even when its answer is "nothing", so an outer
+ * target never takes over a drag its rows chose to ignore.
+ */
+const claimed = new WeakSet<Event>();
+
 type Engagement = { kind: "files"; label: null } | { kind: "entries"; verdict: EntriesVerdict };
 
 /**
@@ -135,8 +144,13 @@ export function useTreeDropTarget(
 
   const engage = useCallback((event: DragEvent): Engagement | null => {
     const { target: current, scope: currentScope } = latest.current;
-    if (!currentScope) return null;
+    if (!currentScope || claimed.has(event.nativeEvent)) return null;
     const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
+    if (
+      (kind === "files" && currentScope.routes.files) ||
+      (kind === "entries" && currentScope.routes.entries)
+    )
+      claimed.add(event.nativeEvent);
     if (kind === "files" && currentScope.routes.files?.accepts(current))
       return { kind: "files", label: null };
     if (kind === "entries") {
