@@ -257,7 +257,12 @@ export class ChatSubmissionOwner {
             control: { kind: entry.control.kind, mode: entry.control.mode },
           },
           { signal: requestSignal },
-        );
+        ).then((response) => {
+          // The list rows carry the pending mode (`effectiveAiWriteMode`); a queued or cancelled
+          // switch changes it, and the toolbar reads it before the snapshot lands.
+          void invalidateProjectThreadData(queryClient, projectId);
+          return response;
+        });
       },
       created: (thread) => {
         this.destination = "created";

@@ -33,6 +33,7 @@ function threadDto(): Thread {
     projectId: PROJECT_ID,
     workId: null,
     aiWriteMode: "direct",
+    effectiveAiWriteMode: "direct",
     userId: "u1",
     kind: "primary",
     status: "idle",

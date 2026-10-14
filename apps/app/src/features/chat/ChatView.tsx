@@ -264,7 +264,10 @@ export function ChatView({
     threadId,
     projectId,
     writeMode:
-      snapshotWriteMode ?? activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
+      snapshotWriteMode ??
+      activeThread?.effectiveAiWriteMode ??
+      activeWork?.defaultAiWriteMode ??
+      "direct",
     turns,
     snapshot,
     journal: submissions.switches,

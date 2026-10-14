@@ -1187,6 +1187,22 @@ else
       const threadMode = async (rig: Rig) =>
         (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode;
 
+      it("serves the pending mode on the thread and the project list until Stop", async () => {
+        const rig = await manualFixture();
+        const served = async () => {
+          const listed = (await rig.repos.threads.listByProject(rig.ids.project as never)).find(
+            (item) => item.id === rig.threadId,
+          );
+          const got = await rig.repos.threads.findById(rig.threadId);
+          return [listed?.aiWriteMode, listed?.effectiveAiWriteMode, got?.effectiveAiWriteMode];
+        };
+        expect(await served()).toEqual(["direct", "direct", "direct"]);
+        await switchMode(rig, "draft");
+        expect(await served()).toEqual(["direct", "draft", "draft"]);
+        await switchMode(rig, "direct");
+        expect(await served()).toEqual(["direct", "direct", "direct"]);
+      });
+
       it("does not apply a queued switch after the chat is deleted", async () => {
         const rig = await manualFixture();
         const lease = await rig.runClaim.startExecution(
