@@ -123,6 +123,12 @@ describe("draft tab settlement", () => {
     coordinator.discardDraft("project-a", "work-a", "draft-a");
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
+    // A writer's close in A drops A's entry the same way.
+    store.openTab("project-a", draftTab());
+    coordinator.changeWorkSelection("project-a", "work-a", null);
+    coordinator.writerClose("project-a", getContextTabs("project-a").tabs[0] as never);
+    expect(inWork("work-a")).toEqual([]);
+    expect(inWork("work-b")).toEqual(["document-a"]);
     // The last entry's Discard closes the tab.
     coordinator.discardDraft("project-a", "work-b", "draft-b");
     expect(getContextTabs("project-a").tabs).toEqual([]);
