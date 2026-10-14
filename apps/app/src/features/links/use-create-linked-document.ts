@@ -8,7 +8,7 @@
  * made from a Work's Files tab or by the AI, and Uploads are files a writer
  * brings, so neither is creatable here.
  *
- * Built on the reservation and `setLocation` primitive, which commits locally
+ * Built on the reservation, which carries the link's address as its destination and commits locally
  * and syncs in the background. Missing folders are a suffix beneath the deepest
  * existing identity anchor, created atomically by the server move.
  * A later sync failure lands on the document itself. Nothing about the link
@@ -71,7 +71,6 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
       setFailed(false);
       setCreating(true);
       let documentId: string | null = null;
-      let reserved: { key: Parameters<typeof resources.deleteDocument>[1] } | null = null;
       try {
         const folders = target.folderPath.split("/").filter(Boolean);
         const createFolders: string[] = [];
@@ -95,15 +94,10 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
         });
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
-        reserved = { key: reservation.key };
         documentId = reservation.content.handle.documentId;
         reservation.content.handle.release();
       } catch {
         documentId = null;
-        // A reservation that never reached its address is discarded, not left
-        // in the tree as "Untitled N". It was never submitted, so the delete
-        // settles locally.
-        if (reserved) await resources.deleteDocument(projectId, reserved.key).catch(() => {});
       } finally {
         inFlight.current = false;
         setCreating(false);
