@@ -705,7 +705,7 @@ function discardedWrite(command: WriteCommand, reason: DiscardedWriteReason): Wr
     result: modelResult({
       command: command.command,
       status: "invalid_write",
-      payload: { path, message },
+      payload: { path, message, rejected: reason },
     }),
   };
 }

@@ -1,33 +1,54 @@
 /** The snapshot/replay boundary: freshness (`nextSeq`) and replay coverage (`resumeAfterSeq`) are separate facts. */
 import type { AGUIEvent, ThreadSnapshotResponse } from "@meridian/contracts/protocol";
-import { EventType } from "@meridian/contracts/protocol";
+import { EventType, WRITE_MODE_SWITCHED_EVENT } from "@meridian/contracts/protocol";
+import {
+  GOLDEN_ASSISTANT_TURN_ID,
+  GOLDEN_THREAD_ID,
+  SIMPLE_TEXT_TURN_AGUI,
+} from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
+import { viewSnapshot } from "./chat-view";
 import { ReducedThread } from "./reduced-thread";
 import { replyText } from "./reply-text";
 
-const THREAD = "thread-1";
+const THREAD = GOLDEN_THREAD_ID;
 const event = (value: Record<string, unknown>) => value as unknown as AGUIEvent;
 
 it("applies journal-only deltas between the replay cursor and nextSeq, and rejects only stale snapshots", () => {
   const reduced = new ReducedThread(THREAD);
   // The projection stopped at seq 97 while the journal head is 103: deltas 98..103 exist only as events.
   expect(reduced.hydrate({ turns: [], nextSeq: "104" })).toBe(true);
-  const replay = [
-    event({ type: EventType.RUN_STARTED, runId: "turn-1" }),
-    event({ type: EventType.TEXT_MESSAGE_START, messageId: "m1" }),
-    event({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: "m1", delta: "Hel" }),
-    event({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: "m1", delta: "lo" }),
-    event({ type: EventType.TEXT_MESSAGE_END, messageId: "m1" }),
-    event({ type: EventType.RUN_FINISHED, runId: "turn-1" }),
-  ];
+  // The golden stream carries `messages.delivered` mid-text and `execution.ended` last; a
+  // write-mode switch frame lands mid-reply. None of them is transcript content.
+  const replay = [...SIMPLE_TEXT_TURN_AGUI];
+  replay.splice(
+    3,
+    0,
+    event({
+      type: EventType.CUSTOM,
+      name: WRITE_MODE_SWITCHED_EVENT,
+      value: { threadId: THREAD, mode: "direct", controlId: "c1", turnId: "sys-1" },
+    }),
+  );
   replay.forEach((item) => {
     reduced.apply(item);
   });
+  const turnId = GOLDEN_ASSISTANT_TURN_ID;
 
   const stored = { turns: reduced.turns(), nextSeq: "104" } as unknown as ThreadSnapshotResponse;
-  expect(reduced.turn("turn-1")?.status).toBe("complete");
-  expect(reduced.compare(stored, ["turn-1"], false)).toEqual({ liveView: "matches" });
-  expect(replyText(reduced.turns(), "turn-1")).toBe("Hello");
+  expect(reduced.turn(turnId)?.status).toBe("complete");
+  expect(reduced.compare(stored, [turnId], false)).toEqual({ liveView: "matches" });
+  expect(replyText(reduced.turns(), turnId)).toBe("Hello world");
+  // Same shape the app's view model gives: one text block, one text item, no custom artifact.
+  expect(reduced.turn(turnId)?.blocks.map((block) => [block.blockType, block.sequence])).toEqual([
+    ["text", 0],
+  ]);
+  const view = viewSnapshot(
+    { liveState: { pending: { items: [] } } } as unknown as ThreadSnapshotResponse,
+    reduced.turns(),
+  );
+  const items = view.items.get(turnId)?.items.map((item) => item.kind);
+  expect(items).toEqual(["text"]);
 
   expect(reduced.hydrate({ turns: [], nextSeq: "103" })).toBe(false);
 });

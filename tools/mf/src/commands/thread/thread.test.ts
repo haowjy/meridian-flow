@@ -309,20 +309,18 @@ describe("thread", () => {
         "thread",
         "send",
         THREAD_ID,
-        "steer behind completed run",
+        "steer behind yielded switch",
         "--json",
-        "--timeout",
-        "500ms",
       ]);
-      // The send follows the steer to its successor, which stays open here, so the
-      // honest result is a bounded wait that still names the owed message.
-      expect(result.code).toBe(EXIT.timeout);
+      // A finishes and its execution ends at a queued switch; the confirming snapshot still
+      // lists M as pending, so the reply cannot be called complete.
+      expect(result.code).toBe(EXIT.unproven);
       expect(JSON.parse(result.stdout.trim().split("\n").at(-1) ?? "")).toMatchObject({
         type: "result",
         command: "thread.send",
-        outcome: "timeout",
-        reason: "running",
-        stillRunning: { turnId: "reply-second", status: "streaming" },
+        outcome: "unproven",
+        reason: "owed",
+        finalText: null,
         owed: [expect.objectContaining({ id: "turn-u1" })],
         next: expect.arrayContaining([`./mf thread tail ${THREAD_ID} --until-idle`]),
       });

@@ -155,11 +155,10 @@ export async function readEndUseScope(db: Database, request: EndUseRequest): Pro
   const sourceIds = new Set<ContextSourceId>();
   for (const { draftId, documentIds: named } of request.drafts ?? []) {
     const only = named ? new Set(named) : null;
-    for (const { row, draft } of await loadDraftCreatedDocuments(tx, draftId)) {
+    for (const row of await loadDraftCreatedDocuments(tx, draftId)) {
       if (only && !only.has(row.id)) continue;
       documentIds.add(row.id);
       sourceIds.add(row.contextSourceId);
-      if (draft.contextSourceId) sourceIds.add(draft.contextSourceId);
     }
   }
   for (const row of await loadDocumentIdentityRows(tx, [...new Set(request.documentIds ?? [])])) {

@@ -7,9 +7,12 @@ import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/con
 import {
   blockContentRecord,
   EventType,
+  EXECUTION_ENDED_EVENT,
   interruptIdForBlock,
+  MESSAGES_DELIVERED_EVENT,
   RUN_STATE_EVENT,
   readRunStartedMeta,
+  WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
@@ -1086,6 +1089,12 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           event.name === "meridian.turn_change_trail.settled" ||
           event.name === WORK_CONTEXT_PROJECTION_EVENT ||
           event.name === "meridian.inbox.changed" ||
+          // Run-state facts (delivery, execution end, write-mode switch, the run-state record)
+          // are read by their owners: the run controller and the switch view. The divider
+          // row comes from the durable system turn, never from this frame.
+          event.name === MESSAGES_DELIVERED_EVENT ||
+          event.name === EXECUTION_ENDED_EVENT ||
+          event.name === WRITE_MODE_SWITCHED_EVENT ||
           event.name === RUN_STATE_EVENT
         ) {
           return;

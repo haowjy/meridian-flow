@@ -1,6 +1,6 @@
 /** Drizzle adapter for authoritative catalog snapshots, replay, and mutation reconciliation. */
 import { randomUUID } from "node:crypto";
-import type { ContextSourceId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId } from "@meridian/contracts";
 import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
 import type {
   CatalogChange,
@@ -42,6 +42,7 @@ import type {
 } from "../ports/context-catalog.js";
 import { normalizeCatalogChangesLimit } from "../ports/context-catalog.js";
 import type { ProjectContextAvailabilityMutationPort } from "../ports/project-context-availability.js";
+import { loadJoinedFrom } from "../tree/forwards.js";
 import { LIVE_TREE, visibleDocuments, visibleFolders } from "../tree/tree-view.js";
 import { catalogSourceAuthority, mapAuthoritativeFile } from "./catalog-file-mapper.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
@@ -255,6 +256,10 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
           })
           .from(vd)
           .where(inArray(vd.contextSourceId, sourceIds));
+  const joinedFrom = await loadJoinedFrom(
+    db as Database,
+    documentRows.map((document) => document.id as DocumentId),
+  );
   const foldersById = new Map(folderRows.map((folder) => [folder.id, folder]));
   const childCounts = new Map<string, number>();
   for (const folder of folderRows) {
@@ -317,7 +322,7 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       if (!parentPath) continue;
       entries.push(
         mapAuthoritativeFile({
-          document,
+          document: { ...document, joinedFrom: joinedFrom.get(document.id as DocumentId) },
           scope,
           observationVersion,
           scheme,

@@ -199,6 +199,7 @@ export function validateNamespaceJournal(input: {
         if (
           attempt.request.kind !== "create" ||
           (attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.status !== "joined" &&
             attempt.outcome.result.documentId !== attempt.request.body.documentId)
         )
           throw new Error("Create outcome does not match submitted identity");

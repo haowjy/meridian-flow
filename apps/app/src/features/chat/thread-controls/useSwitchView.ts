@@ -44,15 +44,6 @@ import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
-import { switchState } from "@/client/run-state/fold-switches";
-import {
-  addIntent,
-  answerIntent,
-  dropIntent,
-  EMPTY_VIEW,
-  type RunStateView,
-  receiveRecord,
-} from "@/client/run-state/run-state-view";
 import { announce, announceError, useIsThreadPendingCreation } from "@/client/stores";
 import { pendingInboxFromEvent } from "../pending-inbox";
 import {
@@ -61,13 +52,8 @@ import {
   controlWithdrawnCopy,
   writeModeSwitchedCopy,
 } from "./control-copy";
-import {
-  isWriteModeControl,
-  recordFromAnswer,
-  recordFromFrame,
-  recordFromSnapshot,
-  type SwitchFrame,
-} from "./switch-record";
+import { switchDisplay } from "./switch-record";
+import { INITIAL_SWITCH_STATE, reduceSwitch } from "./switch-reducer";
 import type { QueuedControl } from "./thread-controls";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
@@ -81,75 +67,6 @@ export type SwitchJournal = {
    */
   withdraw(id: string): Promise<"removed" | "admitted" | "kept">;
 };
-
-type Action =
-  | { type: "snapshot"; snapshot: DeserializedThreadSnapshot }
-  | { type: "frame"; frame: SwitchFrame }
-  | { type: "journal"; switches: readonly JournalSwitch[] }
-  | { type: "withdraw"; id: string; failed?: boolean }
-  | { type: "withdrawn"; id: string; seq: string }
-  | { type: "dropWithdraw"; id: string };
-
-function reduce(view: RunStateView, action: Action): RunStateView {
-  switch (action.type) {
-    case "snapshot":
-      return receiveRecord(view, recordFromSnapshot(action.snapshot));
-    case "frame": {
-      const record = recordFromFrame(view.record, action.frame);
-      return record ? receiveRecord(view, record) : view;
-    }
-    case "journal": {
-      let next = view;
-      const held = new Set(action.switches.map((entry) => entry.id));
-      for (const entry of action.switches) {
-        // A stamp is the server's answer, read as a fact by every tab.
-        if (entry.answer) {
-          next = receiveRecord(next, recordFromAnswer(next.record, entry.answer));
-          next = answerIntent(
-            addIntent(next, {
-              kind: "switch",
-              id: entry.id,
-              order: entry.seq,
-              mode: entry.mode,
-              answer: null,
-            }),
-            "switch",
-            entry.id,
-            entry.answer.seq,
-          );
-        } else {
-          next = addIntent(next, {
-            kind: "switch",
-            id: entry.id,
-            order: entry.seq,
-            mode: entry.mode,
-            answer: null,
-            failed: entry.failed,
-            awaitingServer: entry.posted && !entry.refused,
-          });
-        }
-      }
-      // A record that vanished unstamped was withdrawn or refused here, or its stamp was
-      // pruned while this tab was blind: either way frames bring the server state.
-      for (const intent of next.intents)
-        if (intent.kind === "switch" && intent.answer === null && !held.has(intent.id))
-          next = dropIntent(next, "switch", intent.id);
-      return next;
-    }
-    case "withdraw":
-      return addIntent(view, {
-        kind: "withdraw",
-        id: action.id,
-        order: 0,
-        answer: null,
-        failed: action.failed,
-      });
-    case "withdrawn":
-      return answerIntent(view, "withdraw", action.id, action.seq);
-    case "dropWithdraw":
-      return dropIntent(view, "withdraw", action.id);
-  }
-}
 
 /** Dev-only: the chats whose view is mounted in this tab, to catch a second host. */
 const mountedViews = new Map<string, number>();
@@ -211,14 +128,15 @@ export function useSwitchView(input: {
   const transport = useThreadTransport();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   useSingleHostWarning(threadId);
-  const [view, dispatch] = useReducer(reduce, EMPTY_VIEW);
+  const [{ view, news }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
   const [applied, setApplied] = useState<readonly Applied[]>([]);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
   /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
   const seed = useRef<string | null>(null);
-  const heard = useRef(new Set<string>());
-  const order = useRef(0);
+  /** Applied switches already announced: a replayed frame is not news twice. */
+  const switchedTurns = useRef(new Set<string>());
+  const announcedQueued = useRef(0);
 
   useLayoutEffect(() => {
     if (snapshot) dispatch({ type: "snapshot", snapshot });
@@ -241,30 +159,32 @@ export function useSwitchView(input: {
           return dispatch({ type: "frame", frame: { kind: "inbox", seq, pending: inbox } });
         const switched = switchedFrom(event);
         if (!switched) return;
-        dispatch({ type: "frame", frame: { kind: "switched", seq, mode: switched.mode } });
+        dispatch({
+          type: "frame",
+          frame: { kind: "switched", seq, mode: switched.mode, controlId: switched.controlId },
+        });
         if (seed.current === null || compareSeq(seq, seed.current) <= 0) return;
-        setApplied((known) =>
-          known.some((entry) => entry.turnId === switched.turnId) ? known : [...known, switched],
-        );
+        if (switchedTurns.current.has(switched.turnId)) return;
+        switchedTurns.current.add(switched.turnId);
+        setApplied((known) => [...known, switched]);
         announce(writeModeSwitchedCopy(switched.mode));
         void invalidateProjectThreadData(queryClient, latest.current.projectId);
       },
     });
   }, [transport, threadId, isPendingCreation, queryClient]);
 
-  // A queued switch the server newly lists is news; the first record's, and a replay, are not.
   useEffect(() => {
-    const { record } = view;
-    if (!record) return;
-    const first = seed.current === null;
-    if (first) seed.current = record.version;
-    for (const item of record.items) {
-      if (!isWriteModeControl(item) || item.control?.kind !== "write_mode") continue;
-      if (heard.current.has(item.id)) continue;
-      heard.current.add(item.id);
-      if (!first) announce(controlStatusCopy(item.control, "queued"));
-    }
+    if (view.record && seed.current === null) seed.current = view.record.version;
   }, [view.record]);
+
+  // The reducer decides what is news; this speaks each queued switch once.
+  useEffect(() => {
+    for (const entry of news) {
+      if (entry.n <= announcedQueued.current) continue;
+      announcedQueued.current = entry.n;
+      announce(controlStatusCopy(entry.control, "queued"));
+    }
+  }, [news]);
 
   const revalidate = useCallback(
     () => void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) }),
@@ -285,8 +205,9 @@ export function useSwitchView(input: {
       dispatch({ type: "withdraw", id });
       const onServer = async () => {
         try {
-          const { outcome, seq } = await withdrawThreadControl(threadId, id);
-          dispatch({ type: "withdrawn", id, seq });
+          const answer = await withdrawThreadControl(threadId, id);
+          const { outcome } = answer;
+          dispatch({ type: "withdrawn", id, answer });
           if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
@@ -314,7 +235,15 @@ export function useSwitchView(input: {
     () => new Set(turns.flatMap((turn) => (readWriteModeSwitch(turn) ? [turn.id] : []))),
     [turns],
   );
-  const folded = useMemo(() => switchState(view, input.writeMode), [view, input.writeMode]);
+  // Only a switch whose divider has not rendered yet needs the bridge.
+  useEffect(() => {
+    setApplied((known) =>
+      known.some((entry) => dividerIds.has(entry.turnId))
+        ? known.filter((entry) => !dividerIds.has(entry.turnId))
+        : known,
+    );
+  }, [dividerIds, applied]);
+  const folded = useMemo(() => switchDisplay(view, input.writeMode), [view, input.writeMode]);
   const rows = useMemo<QueuedControl[]>(() => {
     const own = folded.rows.map((row) => ({
       id: row.id,

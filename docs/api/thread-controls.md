@@ -44,8 +44,11 @@ message, another control kind, or a row in another thread returns 409
 `POST /api/threads/:threadId/controls/:controlId/withdraw`, no body.
 
 ```ts
-{ outcome: "withdrawn" | "already_started" }
+{ outcome: "withdrawn" | "already_started", pending: PendingInboxItem | null, mode: "draft" | "direct", seq: string }
 ```
+
+`pending`, `mode` and `seq` are the chat's queued write-mode switch, applied mode and journal head, read under the
+thread lock after the acknowledgment (`seq` last), like the enqueue answer's.
 
 Withdrawal acknowledges a command that has not started. If its C already records the command id, withdrawal returns `already_started` and does not stop
 the run. Replaying withdrawal of a withdrawn row still returns `withdrawn`.

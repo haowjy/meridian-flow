@@ -205,14 +205,20 @@ at its final snapshot; it does not attribute replies to messages.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
   The staged result alone does not prove a committed write.
-- `send` follows a steer or a compaction split to the successor whose start
-  names the reply it continues, and a queued message waits for the start that
-  names it, so the result is the reply that answers the sent message.
-- `thread view` prints a failed compaction's typed outcome as
-  `compaction failure: <reason> during <phase>`. With `--json`, compaction
-  turns carry `compactionMetadata` (trigger, control IDs, failure reason and
-  phase, fit tokens, `tokensBefore`/`tokensAfter`);
-  `error` remains writer-facing copy.
+- `send` currently follows a steer or a compaction split with an interim rule:
+  reservation hints on a reply's start (the user turns it was reserved for) and
+  successor following within one execution, plus ancestry in recovery. It does
+  not bind to `Turn.delivery` or `messages.delivered`, so the result is the
+  reply the follower selected, not proof that this reply answered your message.
+  The binding is #768's second phase.
+- `thread view` (`chatView: 2`) prints a compaction row as its trigger, control
+  ID, summary and model, and token counts before and after; `--json` carries the
+  same facts under `compaction`. It does not print a failed compaction's reason
+  or phase, or fit tokens (`error` remains writer-facing copy). Those live on the
+  compaction turn's durable `metadata` (`reason`, `phase`, `estimatedTokens`,
+  `fitLimitTokens`), in the thread snapshot's turns. Neither `thread events` nor
+  `./mf log` carries them today. The view model should carry them if a CLI
+  reader needs them; that is not built yet.
 - `<thread>` accepts a `cN`/`pN` ref, a full id, an app URL containing one, or
   a unique id prefix. Refs are per project: they resolve through
   `GET /api/projects/:projectId/threads/by-ref/:ref` in the default project,

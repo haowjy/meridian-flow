@@ -1,4 +1,5 @@
 /** Project document tree. Chat resources have no ordinary Editor tabs or sidebar sections. */
+
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { requestEditorFocus } from "@/features/editor/focus-on-open";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -201,6 +203,7 @@ function SchemeSection({
     const entry = catalog.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
     const file = entry;
+    requestEditorFocus(file.documentId);
     onSelectFile(scheme, file);
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);

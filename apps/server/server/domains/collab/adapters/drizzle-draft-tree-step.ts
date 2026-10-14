@@ -8,11 +8,11 @@
  * fingerprint, the branch generation) are compared only at the check: staging is the consent
  * boundary and a staged batch is never withdrawn as stale. 5a holds per item, first the draft's own view, then the
  * final live tree to a fixed point (an item waits for what only a held item would free).
- * The check refines the payload to the eligible items. `beforeAdmission` then vacates and installs: relocations
- * through the batch move primitive, reveals of still-hidden creates and restores of
- * documents deleted live (F9) through placement, and reports each item's receipt notes.
+ * The check refines the payload to the eligible items. `beforeAdmission` then installs: reveals
+ * of still-hidden creates and restores of documents deleted live (F9) through placement,
+ * each at its row's location, and reports each item's receipt notes.
  * `afterAdmission` settles arrivals once against the final tree (an ahead ref binds there,
- * once, for every holder), records the moves, reconciles the catalog for every source it
+ * once, for every holder), reconciles the catalog for every source it
  * touched (F23), drops the draft's applied rows, resets every admitted item whose branch
  * has nothing left to review (`settleDrainedItems`, in the completion transaction and keyed
  * to the staged generation) and records the writer's command with its terminal result.
@@ -28,18 +28,9 @@ import type { Database } from "@meridian/database";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { Ok } from "../../../shared/result.js";
 import type { ContextCatalogMutationPort } from "../../context/ports/context-catalog.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import { dropDocumentRows } from "../../context/tree/draft-tree-store.js";
-import {
-  installMoves,
-  movedDocumentIds,
-  type PreparedMoves,
-  prepareMoves,
-  recordMoves,
-  vacateMoves,
-} from "../../context/tree/node-moves.js";
 import { type PlaceTarget, place } from "../../context/tree/placement.js";
 import { createTreeReader, LIVE_TREE, type TreeStateNode } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -155,11 +146,9 @@ export function createDrizzleDraftTreeStep(
       }
 
       /**
-       * 5a against the final live tree (E-R2): an item publishes only where the live tree
-       * will be free once the other publishing items have moved. A live occupant stays
-       * unless it is a publishing item moving away, so holding a mover keeps its slot
-       * taken; holds propagate until nothing else is blocked. Clashes among the draft's own
-       * items are already holds in its view, so only staying live nodes block here.
+       * 5a against the live tree: an item publishes only where the live tree is free at its
+       * row's location. Clashes among the draft's own items are already holds in its view,
+       * so only live nodes block here; a blocked item is held.
        */
       async function holdUntilPlaceable(decided: {
         holds: PublicationItemHold[];
@@ -174,17 +163,10 @@ export function createDrizzleDraftTreeStep(
         let apply = decided.apply;
         const holds = [...decided.holds];
         for (;;) {
-          const movers = new Set(
-            apply
-              .filter(({ node }) => node.conflict.kind === "relocated")
-              .map(({ node }) => node.nodeId),
-          );
           const blocked = apply.flatMap((eligible) => {
             const at = (needs.get(eligible) ?? []).find((slot) => {
               const there = occupied.get(slot.key);
-              const staying = there?.documents.some(
-                (id) => id !== eligible.node.nodeId && !movers.has(id),
-              );
+              const staying = there?.documents.some((id) => id !== eligible.node.nodeId);
               return staying || (slot.target && (there?.folders.length ?? 0) > 0);
             });
             return at ? [{ eligible, at }] : [];
@@ -345,9 +327,8 @@ export function createDrizzleDraftTreeStep(
       // What `beforeAdmission` placed, for `afterAdmission`.
       let installed: {
         apply: Eligible[];
-        moves: PreparedMoves | null;
         arrived: DocumentId[];
-        /** Every source a node left or reached, and the nodes placed or moved. */
+        /** Every source a node reached, and the nodes placed. */
         catalog: { sourceIds: ReadonlySet<string>; roots: readonly string[] };
       } | null = null;
 
@@ -382,29 +363,8 @@ export function createDrizzleDraftTreeStep(
         async beforeAdmission() {
           const decided = await decide();
           if (decided.kind === "refuse") return decided;
-          const relocating = decided.apply.filter(({ node }) => node.conflict.kind === "relocated");
-          let moves: PreparedMoves | null = null;
-          if (relocating.length > 0) {
-            const prepared = await prepareMoves(db, {
-              moves: relocating.map(({ node }) => ({
-                node: { kind: "document" as const, id: node.nodeId },
-                to: {
-                  contextSourceId: node.target.contextSourceId,
-                  dir: node.target.dir,
-                  name: node.target.name,
-                  extension: node.target.extension,
-                },
-              })),
-              filetypeFor: () => Ok(null),
-            });
-            if (!prepared.ok) return staleRefusal(relocating);
-            moves = prepared.value;
-            await vacateMoves(db, moves);
-            const done = await installMoves(db, moves);
-            if (!done.ok) return staleRefusal(relocating);
-          }
           // Reveal every still-hidden create, restore every document deleted live (F9),
-          // each at the draft's location with its ancestors (decisions 7, 9).
+          // each at its row's location with its ancestors (decisions 7, 9).
           const placing = decided.apply.flatMap(({ node }) => {
             const mode =
               node.origin === "created" && node.hidden
@@ -427,23 +387,10 @@ export function createDrizzleDraftTreeStep(
           const placedRefs = placed?.ok ? placed.value.placed : [];
           installed = {
             apply: decided.apply,
-            moves,
-            arrived: [
-              ...placing.map(({ node }) => node.nodeId),
-              ...(moves ? movedDocumentIds(moves) : []),
-            ],
+            arrived: placing.map(({ node }) => node.nodeId),
             catalog: {
-              sourceIds: new Set([
-                ...(placed?.ok ? placed.value.sourceIds : []),
-                ...relocating.flatMap(({ node }) => [
-                  node.live.contextSourceId,
-                  node.target.contextSourceId,
-                ]),
-              ]),
-              roots: [
-                ...placedRefs.map((ref) => ref.id),
-                ...relocating.map(({ node }) => node.nodeId),
-              ],
+              sourceIds: new Set(placed?.ok ? placed.value.sourceIds : []),
+              roots: placedRefs.map((ref) => ref.id),
             },
           };
           completionHolds = decided.holds;
@@ -466,12 +413,11 @@ export function createDrizzleDraftTreeStep(
 
         async afterAdmission(admitted) {
           if (!installed) throw new Error("draft_tree afterAdmission ran without beforeAdmission");
-          const { apply, moves, arrived } = installed;
+          const { apply, arrived } = installed;
           // A restore or a reveal is an arrival; settled once against the final tree.
           if (arrived.length > 0) await deps.arrivals?.settle([...new Set(arrived)]);
-          if (moves) await recordMoves(db, moves);
           // In this transaction, warm or recovered: a replica replaying from a cursor taken
-          // before the Apply learns of every node it revealed, restored or named back.
+          // before the Apply learns of every node it revealed or restored.
           if (installed.catalog.sourceIds.size > 0) {
             await deps.catalog.refreshSources(
               [...installed.catalog.sourceIds],
@@ -525,13 +471,10 @@ function uriIn(node: TreeStateNode, path: string): string {
   return uri?.endsWith(targetPath) ? uri.slice(0, uri.length - targetPath.length) + path : path;
 }
 
-/** What placing or moving this node does, as the writer's receipt says it. */
+/** What placing this node does, as the writer's receipt says it. */
 function notesOf(node: TreeStateNode): ApplyNote[] {
   const path = node.target.uri ?? node.target.path;
   if (node.conflict.kind === "deleted_live") return [{ code: "restored", path }];
-  if (node.conflict.kind === "relocated") {
-    return [{ code: "rename_replaced", replacedPath: node.live.uri ?? node.live.path, path }];
-  }
   return [];
 }
 

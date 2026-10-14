@@ -11,21 +11,13 @@ CREATE TABLE "draft_tree_changes" (
 	"node_kind" text NOT NULL,
 	"node_id" uuid NOT NULL,
 	"created" boolean DEFAULT false NOT NULL,
-	"context_source_id" uuid,
-	"parent_folder_id" uuid,
-	"name" text,
-	"extension" text,
 	"created_thread_id" uuid,
 	"created_turn_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "draft_tree_changes_draft_id_node_kind_node_id_pk" PRIMARY KEY("draft_id","node_kind","node_id"),
 	CONSTRAINT "draft_tree_changes_node_kind_valid" CHECK ("draft_tree_changes"."node_kind" IN ('document', 'folder')),
-	CONSTRAINT "draft_tree_changes_location_shape" CHECK (("draft_tree_changes"."context_source_id" IS NULL AND "draft_tree_changes"."parent_folder_id" IS NULL AND "draft_tree_changes"."name" IS NULL
-        AND "draft_tree_changes"."extension" IS NULL)
-      OR ("draft_tree_changes"."context_source_id" IS NOT NULL AND "draft_tree_changes"."name" IS NOT NULL
-        AND ("draft_tree_changes"."node_kind" = 'document') = ("draft_tree_changes"."extension" IS NOT NULL))),
-	CONSTRAINT "draft_tree_changes_says_something" CHECK ("draft_tree_changes"."created" OR "draft_tree_changes"."context_source_id" IS NOT NULL)
+	CONSTRAINT "draft_tree_changes_says_something" CHECK ("draft_tree_changes"."created")
 );
 --> statement-breakpoint
 CREATE TABLE "drafts" (
@@ -214,12 +206,11 @@ WHERE d."kind" = 'content' AND EXISTS (
     AND j."update_meta"->>'documentId' = d."id"::text
 );
 --> statement-breakpoint
--- Each draft still using a hidden document records its create at the document's location: one
+-- Each draft still using a hidden document records its create (identity only; the document row is its location): one
 -- whose latest active membership row keeps the document, or one with pending text on it (two
 -- Works drafting one path share the identity). A draft whose membership `main` discarded does not.
--- The location is already the canonical name 0037_old_adam_destine gave the row.
-INSERT INTO "draft_tree_changes" ("draft_id", "node_kind", "node_id", "created", "context_source_id", "parent_folder_id", "name", "extension")
-SELECT u."draft_id", 'document', d."id", true, d."context_source_id", d."folder_id", d."name", d."extension"
+INSERT INTO "draft_tree_changes" ("draft_id", "node_kind", "node_id", "created")
+SELECT u."draft_id", 'document', d."id", true
 FROM "documents" d
 JOIN (
   SELECT m."draft_id", m."document_id" FROM (
@@ -332,10 +323,6 @@ FOR EACH ROW EXECUTE FUNCTION capture_change_trail_signal();
 ALTER TABLE "document_markdown_projections" ADD CONSTRAINT "document_markdown_projections_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
 --> statement-breakpoint
 ALTER TABLE "draft_tree_changes" ADD CONSTRAINT "draft_tree_changes_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
---> statement-breakpoint
-ALTER TABLE "draft_tree_changes" ADD CONSTRAINT "draft_tree_changes_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
---> statement-breakpoint
-ALTER TABLE "draft_tree_changes" ADD CONSTRAINT "draft_tree_changes_parent_folder_id_folders_id_fk" FOREIGN KEY ("parent_folder_id") REFERENCES "public"."folders"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
 --> statement-breakpoint
 ALTER TABLE "draft_tree_changes" ADD CONSTRAINT "draft_tree_changes_created_thread_id_threads_id_fk" FOREIGN KEY ("created_thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action NOT VALID;
 --> statement-breakpoint

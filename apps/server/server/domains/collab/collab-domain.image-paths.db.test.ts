@@ -19,7 +19,6 @@ import { testFileGrant } from "../../test-support/file-grants.js";
 import { ContextFS } from "../context/adapters/context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "../context/adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "../context/adapters/context-fs/drizzle-tree-mutation-store.js";
-import type { LinkScopeKey } from "./domain/ports/document-link-scope.js";
 import { applyDraftDocument } from "./test-support/apply-draft-document.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
@@ -59,8 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       },
     });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
-      createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {
@@ -274,10 +272,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         nodeKind: "document",
         nodeId: CREATED_ID,
         created: true,
-        contextSourceId: SOURCE_ID as never,
-        parentFolderId: null,
-        name: "created",
-        extension: "",
       });
       await db.insert(modelResponses).values({
         id: RESPONSE_ID as never,

@@ -9,13 +9,7 @@
 import { randomUUID } from "node:crypto";
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
-import {
-  documentPreviousLocations,
-  documents,
-  draftTreeChanges,
-  folders,
-  users,
-} from "@meridian/database/schema";
+import { documentPreviousLocations, documents, folders, users } from "@meridian/database/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
@@ -81,17 +75,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(folders.id, id ?? randomUUID()));
       if (!row) throw new Error(`no folder ${id}`);
       return row;
-    }
-
-    async function changeRow(draftId: string, documentId: string) {
-      const [row] = await committed
-        .select({
-          contextSourceId: draftTreeChanges.contextSourceId,
-          parentFolderId: draftTreeChanges.parentFolderId,
-        })
-        .from(draftTreeChanges)
-        .where(and(eq(draftTreeChanges.draftId, draftId), eq(draftTreeChanges.nodeId, documentId)));
-      return row ?? null;
     }
 
     async function idAt(
@@ -166,7 +149,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const world = await scenario.seedLiveFolder("world");
       const places = await scenario.seedLiveFolder("world/places");
       const harbor = await scenario.model(ascension).create("world/places/harbor", "Harbor.");
-      const draft = await scenario.draftOf(ascension);
       const before = await document(harbor);
 
       const deleted = await scenario.writer.delete("world");
@@ -200,10 +182,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         deleted: false,
         parentId: null,
         locationVersion: 0n,
-      });
-      expect.soft(await changeRow(draft.id, harbor), "change row repointed").toEqual({
-        contextSourceId: scenario.project.sources.manuscript,
-        parentFolderId: now.folderId,
       });
       expect
         .soft(
@@ -240,16 +218,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [ascension, idea, "notes/idea", ideaBefore],
         [rival, plan, "notes/deep/plan", planBefore],
       ] as const) {
-        const draft = await scenario.draftOf(work);
         expect.soft(await document(id), `${path}: moved along, hidden`).toMatchObject({
           hidden: true,
           deleted: false,
           contextSourceId: kb,
           locationVersion: before.locationVersion + 1n,
         });
-        expect
-          .soft((await changeRow(draft.id, id))?.contextSourceId, `${path}: row takes the source`)
-          .toBe(kb);
         expect.soft(await idAt(scenario, work, `kb://${path}`), `${path}: in its draft`).toBe(id);
         expect.soft(await idAt(scenario, work, path), `${path}: not left behind`).toBeNull();
         expect.soft(await idAt(scenario, "live", `kb://${path}`), `${path}: not live`).toBeNull();
@@ -327,7 +301,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const map = await scenario.seedLive(`${origin}/places/map`);
         const places = await scenario.seedLiveFolder(`${origin}/places`);
         const harbor = await scenario.model(ascension).create(`${origin}/places/harbor`, "Harbor.");
-        const draft = await scenario.draftOf(ascension);
 
         expect
           .soft(await scenario.writer.move(origin, destination), `${destination}: the live move`)
@@ -354,10 +327,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect
           .soft((await folder(places)).contextSourceId, `${destination}: the live folder left`)
           .not.toBe(stays);
-        expect.soft(await changeRow(draft.id, harbor), `${destination}: row repointed`).toEqual({
-          contextSourceId: stays,
-          parentFolderId: now.folderId,
-        });
         expect
           .soft(
             await idAt(scenario, ascension, `${origin}/places/harbor`),
@@ -376,7 +345,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { manuscript: m, kb } = scenario.project.sources;
       const sources = [m, kb, elsewhere];
       const ascension = await scenario.work("Ascension overlap", "draft");
-      const draft = await scenario.draftOf(ascension);
       // The parent leaves the project; the child stays in it, so its hidden contents follow it.
       await scenario.seedLive("p/r/visible");
       const [p, r] = [await scenario.seedLiveFolder("p"), await scenario.seedLiveFolder("p/r")];
@@ -390,10 +358,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextSourceId: kb,
         folderId: r,
         locationVersion: followedBefore.locationVersion + 1n,
-      });
-      expect.soft(await changeRow(draft.id, followed), "its row follows").toEqual({
-        contextSourceId: kb,
-        parentFolderId: r,
       });
       expect.soft(await idAt(scenario, ascension, "kb://r/hidden")).toBe(followed);
       // The parent stays in the project; the child leaves, so its hidden contents split off
@@ -421,7 +385,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         parentId: null,
       });
       expect.soft(tTwin.parentId, "not the moved q").not.toBe(q);
-      expect.soft((await changeRow(draft.id, stayed))?.parentFolderId).toBe(kept.folderId);
       expect.soft(await idAt(scenario, ascension, "q/t/hidden")).toBe(stayed);
       expect.soft(await parkedNames(sources), "no parked name persists").toEqual([]);
     });
@@ -569,7 +532,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(by.rename.ok && by.rename.value, "renamed").toMatchObject({ ok: true });
       if (!by.create.ok) throw by.create.error;
       const second = by.create.value as string;
-      const draft = await scenario.draftOf(ascension);
       expect.soft((await folder(hiddenIdeas)).deleted, "absorbed").toBe(true);
       for (const id of [existing, second]) {
         expect.soft(await document(id), "under the live folder").toMatchObject({
@@ -577,7 +539,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           deleted: false,
           folderId: notes,
         });
-        expect.soft((await changeRow(draft.id, id))?.parentFolderId, "its row too").toBe(notes);
       }
       expect.soft(await idAt(scenario, ascension, "ideas/second")).toBe(second);
     });
@@ -607,7 +568,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect.soft(by.remove.ok && by.remove.value, "deleted").toMatchObject({ ok: true });
       if (!by.create.ok) throw by.create.error;
       const second = by.create.value as string;
-      const draft = await scenario.draftOf(ascension);
       const twin = (await document(existing)).folderId;
       expect.soft(twin, "split off").not.toBe(places);
       for (const id of [existing, second]) {
@@ -616,7 +576,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           deleted: false,
           folderId: twin,
         });
-        expect.soft((await changeRow(draft.id, id))?.parentFolderId, "its row too").toBe(twin);
       }
       expect.soft(await idAt(scenario, ascension, "world/places/second")).toBe(second);
     });
