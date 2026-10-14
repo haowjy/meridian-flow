@@ -263,7 +263,14 @@ metadata read or a 404 never does.
    typing and Ctrl+Z still work. No refusal and no 1008 close appear in the client trace or
    server diagnostics. Offline network errors and 1006 reconnect attempts are induced transport
    failures, not product refusals.
-3. Open the live room's WebSocket frames while idle. Known issue
+3. Stale typing on rewritten text (D33). Offline again, in one paragraph type a new sentence,
+   type a second one and delete it, and delete one existing word. From the direct-mode peer,
+   rewrite that paragraph so the rebase replaces its words (retype it, or move it). Reconnect.
+   PASS: the surviving offline sentence appears once, green, as its own paragraph beside the
+   paragraph's last neighbour; the deleted offline sentence never appears; the rewritten
+   paragraph keeps every word including the one deleted offline (delete it again); a second
+   reconnect changes nothing. No refusal. Automated: `late-peer-admission.test.ts`.
+4. Open the live room's WebSocket frames while idle. Known issue
    ([#838](https://github.com/haowjy/meridian-flow/issues/838)): the `yjs:live:<documentId>`
    socket closes cleanly with 1005 about every 32 seconds and reconnects after about a second,
    with no text loss. Record the interval; it is not caused by this surface.
