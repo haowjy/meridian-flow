@@ -4,7 +4,8 @@ import { ImportRequestError } from "@/client/api/imports-api";
 import type { ClientRow } from "./client-rows";
 import type { ImportDestination } from "./destination";
 import { fakeImportServer } from "./fake-import-server";
-import { type CatalogReader, type Clock, ImportCoordinator } from "./import-coordinator";
+import { ImportCoordinator } from "./import-coordinator";
+import type { CatalogReader, Clock } from "./import-handoff";
 import { displayOf } from "./import-store";
 import { buildManifest } from "./manifest";
 import type { Selection } from "./selection";
@@ -437,19 +438,24 @@ describe("ImportCoordinator.retry", () => {
       coordinator.retry(importId, [0]),
     ]);
 
+    // The retries really ran: requests are open, none beyond the shared limit, and entry
+    // zero (retried twice) is on the wire exactly once while its request is pending.
+    await until(() => sends.length > 0);
+    const sent = sends.flatMap((send) => send.entryIds);
+    expect(most).toBeGreaterThan(0);
     expect(most).toBeLessThanOrEqual(3);
-    expect(
-      sends.flatMap((send) => send.entryIds).filter((id) => id === 0).length,
-    ).toBeLessThanOrEqual(1);
+    expect(open).toBe(most);
+    expect(sent.filter((id) => id === 0)).toHaveLength(1);
+    expect(sent.every((id) => id >= 0 && id < 6)).toBe(true);
 
     void coordinator.stop(importId);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sends.every((send) => send.signal.aborted)).toBe(true);
-    const sent = sends.length;
+    const total = sends.length;
     // Aborted sends reject synchronously and back off only for 429, so whatever
     // Stop sets off is promise continuations, all run before the next macrotask.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sends.length).toBe(sent);
+    expect(sends.length).toBe(total);
     coordinator.dispose();
   });
 });
@@ -535,7 +541,7 @@ describe("ImportCoordinator.continueImport", () => {
   });
 });
 
-function fakeClock(): Clock & { advance(ms: number): void } {
+function fakeClock(): Clock & { advance(ms: number): void; pending(): number } {
   let current = 0;
   let next = 0;
   const timers = new Map<number, { at: number; run: () => void }>();
@@ -546,6 +552,7 @@ function fakeClock(): Clock & { advance(ms: number): void } {
       return next;
     },
     clearTimeout: (handle) => void timers.delete(handle as number),
+    pending: () => timers.size,
     advance(ms) {
       const target = current + ms;
       for (;;) {
@@ -657,6 +664,7 @@ function scripted() {
   const catalog = fakeCatalog();
   const clock = fakeClock();
   const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
+  coordinator.start();
   /** Make the server say `status` and let this tab take it in. */
   const publish = async (status: ImportStatus) => {
     world.statuses.set(status.importId, status);
@@ -778,6 +786,7 @@ describe("ImportCoordinator seen ids and bridges", () => {
     const catalog = fakeCatalog();
     const clock = fakeClock();
     const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
+    coordinator.start();
     const importId = start(coordinator, vault());
     const store = coordinator.store(importId);
     await until(() => (store.getSnapshot().local?.manifest ?? null) !== null);
@@ -818,6 +827,7 @@ describe("ImportCoordinator seen ids and bridges", () => {
     const catalog = fakeCatalog();
     const clock = fakeClock();
     const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
+    coordinator.start();
     const importId = start(coordinator, vault());
     const store = await settled(coordinator, importId);
     const rows = store.getSnapshot().local?.rows ?? [];
@@ -830,6 +840,166 @@ describe("ImportCoordinator seen ids and bridges", () => {
     const bridged = [...(view()?.bridges ?? [])];
     catalog.hold(...bridged);
     expect(coordinator.view(importId)).toBeNull();
+    coordinator.dispose();
+  });
+});
+
+/** A catalog view with nothing in it, or one folder at the root. */
+function emptyCatalog(folder?: string) {
+  const dir = {
+    kind: "dir",
+    entryId: folder ?? "-",
+    parentId: "root",
+    name: "Moved",
+    path: "/Moved",
+  };
+  return {
+    normalized: { entries: new Map(folder ? [[folder, { kind: "folder" }]] : []) },
+    root: { kind: "dir", entryId: "root", parentId: null, name: "KB", path: "/", uri: "kb://" },
+    children: (id: string) => (id === "root" && folder ? [dir] : []),
+    findDocument: () => null,
+  } as never;
+}
+
+describe("ImportCoordinator lifetime", () => {
+  it("1: opens a plan's bridges as one batch and publishes once when they expire", async () => {
+    const server = fakeImportServer();
+    const catalog = fakeCatalog();
+    const base = fakeClock();
+    let timers = 0;
+    const clock: typeof base = {
+      ...base,
+      setTimeout: (run, ms) => {
+        timers += 1;
+        return base.setTimeout(run, ms);
+      },
+    };
+    const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
+    coordinator.start();
+    const importId = start(coordinator, vault());
+    await settled(coordinator, importId);
+    const bridges = coordinator.view(importId)?.bridges.size ?? 0;
+    expect(bridges).toBeGreaterThan(3);
+    // One deadline timer for the whole batch, not one per bridged row.
+    expect(timers).toBeLessThanOrEqual(2);
+
+    let publications = 0;
+    coordinator.subscribe(() => {
+      publications += 1;
+    });
+    base.advance(31_000);
+    expect(coordinator.view(importId)).toBeNull();
+    expect(publications).toBe(1);
+    expect(base.pending()).toBe(0);
+    coordinator.dispose();
+  });
+
+  it("2: a status the open-list poll installs first still bridges the rows already drawn", async () => {
+    const server = fakeImportServer();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let planned = false;
+    const plan = server.api.plan;
+    server.api.plan = async (...args) => {
+      const answer = await plan(...args);
+      planned = true;
+      await gate;
+      return answer;
+    };
+    server.api.listOpen = async () => [await server.api.status("p", importIdOf())];
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = start(coordinator, vault());
+    const importIdOf = () => importId;
+    try {
+      await until(() => planned);
+      const names = () =>
+        withImportRows(emptyCatalog(), "kb", coordinator.getSnapshot().imports)
+          .children("root")
+          .map((node) => node.name);
+      expect(names()).toContain("vault");
+      await coordinator.refreshOpen();
+      await coordinator.read(importId);
+      expect(names()).toContain("vault");
+    } finally {
+      release();
+      coordinator.dispose();
+    }
+  });
+
+  it("3: a failed fresh read sends nothing and clears no recovery state", async () => {
+    const server = fakeImportServer({ failSend: (entryId) => entryId === 1 });
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = start(coordinator, vault());
+    const store = await settled(coordinator, importId);
+    const sends = server.calls.send.length;
+    server.api.status = async () => {
+      throw new ImportRequestError(503, null, undefined, "unavailable");
+    };
+
+    await coordinator.retry(importId, [1]);
+    expect(server.calls.send).toHaveLength(sends);
+    // The row keeps its failure, now saying the retry could not start.
+    expect(store.getSnapshot().local?.failures.get(1)).toBe("server_error");
+    expect(store.getSnapshot().local?.retrying.size).toBe(0);
+
+    // Continue is refused the same way and leaves the import as it was.
+    const before = store.getSnapshot().local;
+    const held = new Map(before?.held ?? []);
+    expect(await coordinator.continueImport(importId, held)).toBe(false);
+    expect(server.calls.send).toHaveLength(sends);
+    expect(store.getSnapshot().local).toBe(before);
+    coordinator.dispose();
+  });
+
+  it("6: a status answer that arrives after dispose touches nothing", async () => {
+    const { coordinator, publish, server, clock } = scripted();
+    await publish(elsewhere("imp", 1, [binary(0, "planned")]));
+    let release!: (status: ImportStatus) => void;
+    server.api.status = () => new Promise((resolve) => (release = resolve));
+    const reading = coordinator.read("imp", true);
+    await until(() => release !== undefined);
+    coordinator.dispose();
+    release(elsewhere("imp", 2, [binary(0, "landed")], "finished"));
+    expect(await reading).toBe(false);
+    expect(coordinator.view("imp")).toBeNull();
+    // No bridge was opened for the landed image.
+    expect(clock.pending()).toBe(0);
+  });
+
+  it("11: constructing attaches nothing; starting and disposing are symmetric and repeatable", () => {
+    let subscribers = 0;
+    const catalog: CatalogReader = {
+      holds: () => false,
+      subscribe: () => {
+        subscribers += 1;
+        return () => {
+          subscribers -= 1;
+        };
+      },
+    };
+    const server = fakeImportServer();
+    const coordinator = new ImportCoordinator("p", server.api, catalog);
+    expect(subscribers).toBe(0);
+    const stop = coordinator.start();
+    expect(subscribers).toBe(1);
+    stop();
+    expect(subscribers).toBe(0);
+    coordinator.start();
+    coordinator.start();
+    expect(subscribers).toBe(1);
+    coordinator.dispose();
+    expect(subscribers).toBe(0);
+  });
+
+  it("1: lets go of a file once its entry has its final answer", async () => {
+    const server = fakeImportServer({ failSend: (entryId) => entryId === 1 });
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = start(coordinator, vault());
+    const store = await settled(coordinator, importId);
+    // Entries 0 and 2 landed; the failed one is still held for Retry.
+    expect([...(store.getSnapshot().local?.held?.keys() ?? [])]).toEqual([1]);
     coordinator.dispose();
   });
 });

@@ -97,7 +97,7 @@ export function ContinueImportDialog({
     (async () => {
       try {
         // Fresh, whole: what the server wants now decides what Continue sends.
-        await coordinator.read(importId, true);
+        if (!(await coordinator.read(importId, true))) throw new Error("report");
         const report = store.getSnapshot().report;
         if (!fullyRead(report)) throw new Error("report");
         const stored = { roots: report.roots, entries: [...report.entries.values()] };
@@ -124,11 +124,17 @@ export function ContinueImportDialog({
     return () => control.abort();
   }, [reader.state, store, coordinator, importId, attempt]);
 
+  // The dialog stays until the server has been read fresh: without that read nothing is
+  // sent, and the error belongs here, where the writer pressed Send.
+  const [sending, setSending] = useState(false);
   const send = () => {
-    if (step.kind !== "match") return;
-    const { held } = step;
-    onClose();
-    void coordinator.continueImport(importId, held);
+    if (step.kind !== "match" || sending) return;
+    setSending(true);
+    void coordinator.continueImport(importId, step.held).then((started) => {
+      if (started) return onClose();
+      setSending(false);
+      setStep({ kind: "failed" });
+    });
   };
 
   return (
@@ -200,7 +206,7 @@ export function ContinueImportDialog({
           <Button
             type="button"
             data-primary
-            aria-disabled={step.kind !== "match"}
+            aria-disabled={step.kind !== "match" || sending}
             className="aria-disabled:pointer-events-none aria-disabled:opacity-50 [@media(pointer:coarse)]:min-h-11"
             onClick={send}
           >

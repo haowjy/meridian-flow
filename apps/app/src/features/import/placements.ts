@@ -1,12 +1,18 @@
 /**
- * Where an import shows in the tree: the areas it fills, the folder it was started
- * on and the new top-level folders (the row the progress ring sits on).
+ * Where an import shows in the tree, and where its own status marks go: the areas
+ * it fills, the folder it was started on, the new top-level folders (the row the
+ * progress ring sits on) and the destination or area headers that carry a mark
+ * when no predicted root row can. One contract for the tree, the phone listing and
+ * the progress panel.
  */
 import { t } from "@lingui/core/macro";
 import type { ImportScheme, ImportSummary } from "@meridian/contracts";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ImportDestination } from "./destination";
 import { fullyRead, type ImportState } from "./import-state";
+
+/** An area, or a folder in it (null: the area's own root header). */
+export type MarkAnchor = { scheme: ImportScheme; folderId: string | null };
 
 export type ImportTarget = {
   /** The areas the import fills; several for a routed Meridian export. */
@@ -15,7 +21,21 @@ export type ImportTarget = {
   destination: { scheme: ImportScheme; path: string; folderId: string | null } | null;
   /** Ids of the new top-level folders, known from the pick. */
   rootIds: readonly string[];
+  /**
+   * Where the run's mark sits when a root row cannot carry it (none was predicted, or
+   * the picked root is a file): the destination folder, or each routed area's header.
+   */
+  anchors: readonly MarkAnchor[];
 };
+
+function anchorsOf(
+  destination: ImportTarget["destination"],
+  schemes: readonly ImportScheme[],
+): MarkAnchor[] {
+  return destination
+    ? [{ scheme: destination.scheme, folderId: destination.folderId }]
+    : schemes.map((scheme) => ({ scheme, folderId: null }));
+}
 
 /** The catalog path ("/Lore/Sects") of a context URI, or null when it is not one. */
 export function catalogPathOfUri(uri: string | null): string | null {
@@ -56,8 +76,13 @@ export function targetOf(state: ImportState): ImportTarget | null {
       .map((row) => row.id);
     // A Meridian export's rows go to several areas at once; each opens.
     if (schemes.length > 1 || (schemes.length === 1 && schemes[0] !== local.destination.scheme))
-      return { schemes, destination: null, rootIds };
-    return { schemes: [local.destination.scheme], destination: local.destination, rootIds };
+      return { schemes, destination: null, rootIds, anchors: anchorsOf(null, schemes) };
+    return {
+      schemes: [local.destination.scheme],
+      destination: local.destination,
+      rootIds,
+      anchors: anchorsOf(local.destination, [local.destination.scheme]),
+    };
   }
   const report = state.report;
   if (!report) return null;
@@ -69,7 +94,18 @@ export function targetOf(state: ImportState): ImportTarget | null {
     const schemes = new Set<ImportScheme>();
     for (const folder of report.folders.values()) schemes.add(folder.scheme);
     for (const entry of report.entries.values()) schemes.add(entry.scheme);
-    if (schemes.size > 0) return { schemes: [...schemes], destination: null, rootIds };
+    if (schemes.size > 0)
+      return {
+        schemes: [...schemes],
+        destination: null,
+        rootIds,
+        anchors: anchorsOf(null, [...schemes]),
+      };
   }
-  return { schemes: [destination.scheme], destination, rootIds };
+  return {
+    schemes: [destination.scheme],
+    destination,
+    rootIds,
+    anchors: anchorsOf(destination, [destination.scheme]),
+  };
 }
