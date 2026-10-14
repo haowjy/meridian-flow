@@ -189,3 +189,47 @@ it("calls a switch queued only when the server says a reply it can't affect hold
   await show([]);
   expect(view.rows.map((row) => row.waiting)).toEqual([true]);
 });
+
+it("announces a switch as queued from the server's delivery state, not the running reply", async () => {
+  const empty = {
+    nextSeq: "3",
+    thread: { aiWriteMode: "direct" },
+    liveState: { pending: { items: [] } },
+  } as unknown as SwitchViewInput["snapshot"];
+  const answered = (id: string, deliveryState: "awaiting_run" | "waiting", seq: string) =>
+    record(id, {
+      posted: true,
+      answer: {
+        outcome: "queued",
+        seq,
+        mode: "direct",
+        pending: {
+          id,
+          seq: Number(seq),
+          intent: "control",
+          control: { kind: "write_mode", mode: "draft" },
+          provenance: { kind: "user" },
+          deliveryState,
+          summary: "",
+          enqueuedAt: "",
+        },
+      },
+    });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+    ),
+  );
+  heldSnapshot = empty;
+  await show([]);
+  // A reply is running, but the server says this switch awaits the next run: not queued.
+  replyRunning = true;
+  await show([answered("a1", "awaiting_run", "4")]);
+  expect(announcements.announce).toHaveBeenLastCalledWith("Switched to draft mode");
+  // The reply is over, but the server says this one waits behind a run: queued.
+  replyRunning = false;
+  await show([answered("a1", "awaiting_run", "4"), answered("a2", "waiting", "5")]);
+  expect(announcements.announce).toHaveBeenLastCalledWith("Switch to draft mode queued");
+});
