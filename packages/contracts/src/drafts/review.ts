@@ -77,16 +77,16 @@ export type ReviewFormattingChange =
   | { kind: "attributes" }
   | { kind: "structure" };
 
-// --- Commands and outcomes (contract §4.5, §4.6) ---------------------------------------------
+// --- Commands and outcomes (re-landing contract §1) -------------------------------------------
 //
-// Every Apply and Discard carries a client `commandId`. One outcome matrix serves them all:
-//   applied / discarded -> 200 (per-change and item results say whether the item closed)
-//   held (5a)           -> per-item `held` inside an item or Apply-all result, or 409 on item Apply
-//   stale / gone        -> 409 on Apply, 200 body on per-change commands; the review refreshes
-//   pending             -> 202 `{ status: "pending", draftId, commandId }`; observe the command
-//   blocked             -> observed `{ state: "blocked" }`, never a 200; terminal for the client
-//   unknown (transport) -> resend the same `commandId` and body; the server deduplicates
-// The client never infers a command's settlement from the list.
+// Every Apply and Discard carries a client `commandId`; the server stores the first answer and a resend
+// returns it. The wire meaning of that answer:
+//   item Apply and per-change Apply: `applied` / `already_live` -> 200; `held`, `not_found`, `failed`,
+//                           `stale`, `whole_item` -> 409 with the item unchanged; `gone` -> 404
+//   Apply all, item Discard, Discard all -> 200 (`completed` / `stale` / `gone` / `discarded` are bodies)
+//   pending (staged, recovery finishing it) or blocked -> 202 `{ status: "pending", draftId, commandId }`
+//   an id used for a different command -> 409 `command_conflict`
+// The client never infers a command's settlement from the list; it observes the command by its id.
 
 /** Which writer command a `commandId` was recorded for. */
 export const DRAFT_COMMAND_KINDS = [
