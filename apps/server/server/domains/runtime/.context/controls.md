@@ -110,7 +110,11 @@ is set when the writer switches, switches back or stops the pending switch (last
 action wins), so a chat created in between starts in the mode the writer just
 chose. A fork or handoff starts in the mode the writer sees
 (`effectiveWriteMode`: the pending switch's, else the applied one); a subagent
-keeps its parent's applied mode, which is the running reply's.
+keeps its parent's applied mode, which is the running reply's. The thread read serves the same
+rule as `effectiveAiWriteMode` (a `pendingWriteMode` subquery in the thread repository's
+`threadColumns`: the oldest undelivered `write_mode` control, else the applied mode). "Undelivered"
+is exactly what the run-state record lists as pending, because a withdrawn or handed-back row is
+delivered, so the toolbar can show a pending switch from the thread row before the record arrives.
 
 **Undo seam.** The switch turn owns no document edits: no change-trail rows,
 no receipt, nothing undoable. Because the yield ends the execution, writes before
