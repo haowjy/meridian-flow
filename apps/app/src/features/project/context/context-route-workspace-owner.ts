@@ -1,6 +1,6 @@
 /** Exact, heuristic-free resolution of the Editor workspace owner for one committed route. */
 
-import { type ContextTab, editorTabsForWork } from "@/client/stores";
+import { type ContextTab, editorTabsForWork, isDraftOnly, reviewEntryOf } from "@/client/stores";
 import { type ContextRouteTarget, targetInEditorOf } from "../routing/project-route";
 import { type ContextRouteIdentity, routeTargetForTab } from "./context-removal-planner";
 import { contextTabMatchesRoute } from "./context-tab-identity";
@@ -39,7 +39,7 @@ export function resolveWorkspaceRoute({
         (tab) =>
           tab.kind !== "new" &&
           tab.documentId === boundDocumentId &&
-          (!tab.draftOnly || (locator.workId && tab.reviews?.[locator.workId])),
+          (!isDraftOnly(tab) || (locator.workId && reviewEntryOf(tab, locator.workId))),
       )
     : tabs.find((tab) => tab.kind !== "new" && contextTabMatchesRoute(tab, locator));
   if (server) {

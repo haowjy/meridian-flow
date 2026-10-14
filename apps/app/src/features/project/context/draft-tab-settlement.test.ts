@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type ContextTab,
   editorTabsForWork,
   getContextTabs,
+  isDraftOnly,
   rehydrateEditorWorkspace,
   useContextTabsStore,
 } from "@/client/stores";
@@ -19,7 +21,6 @@ function draftTab(token = "tab-a", workId = "work-a", itemKey = "draft-a") {
     editable: true as const,
     filetype: "markdown" as const,
     schemaType: "document" as const,
-    draftOnly: true,
     reviews: { [workId]: { itemKey, tabInstanceToken: token } },
   };
 }
@@ -98,12 +99,26 @@ describe("draft tab settlement", () => {
     const slice = getContextTabs(project);
     expect(slice.tabs).toHaveLength(1);
     expect(slice.tabs[0]).toMatchObject({ documentId: "document-a", resourceHandle: "handle-h" });
-    expect(slice.tabs[0]?.draftOnly).toBeUndefined();
+    expect(slice.tabs[0] && isDraftOnly(slice.tabs[0])).toBe(false);
     expect(slice.selectedTabIdByWork).toEqual({ "work-a": "document-a" });
   });
 
   it("keeps one tab per document with an entry per Work, so Works neither take nor close each other's", async () => {
-    const coordinator = new ContextRemovalCoordinator("account-a");
+    // Work B's editor is routed to the shared document: A's Discard must not move it.
+    const updateSearch = vi.fn();
+    const search: ProjectSearch = {
+      screen: "context",
+      scheme: "manuscript",
+      path: "/chapter.md",
+      work: "work-b",
+    };
+    const route = {
+      readSearch: () => search,
+      updateSearch,
+      transition: async () => ({ kind: "applied" as const }),
+    };
+    const coordinator = new ContextRemovalCoordinator("account-a", { route });
+    coordinator.registerRoutePort("project-a", route, "work-b");
     const store = useContextTabsStore.getState();
     const inWork = (workId: string) =>
       editorTabsForWork(getContextTabs("project-a").tabs, workId).map((tab) => tab.documentId);
@@ -119,10 +134,24 @@ describe("draft tab settlement", () => {
       },
     });
 
-    // Discard in A leaves B's entry and tab; A no longer shows it.
+    await store.selectTab("project-a", "work-b", "document-a");
+    const revision = coordinator.beginRouteSelection("project-a", {
+      scheme: "manuscript",
+      path: "/chapter.md",
+      workId: "work-b",
+    });
+    coordinator.bindRouteSelection("project-a", revision, {
+      kind: "server",
+      documentId: "document-a",
+    });
+
+    // Discard in A leaves B's entry, tab and routed screen; A no longer shows it.
     coordinator.discardDraft("project-a", "work-a", "draft-a");
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
+    expect(updateSearch).not.toHaveBeenCalled();
+    expect(coordinator.getProjectSnapshot("project-a").selection.status).toBe("bound");
+    expect(getContextTabs("project-a").selectedTabIdByWork).toEqual({ "work-b": "document-a" });
     // A writer's close in A drops A's entry the same way.
     store.openTab("project-a", draftTab());
     coordinator.changeWorkSelection("project-a", "work-a", null);
@@ -143,7 +172,7 @@ describe("draft tab settlement", () => {
       reviews: { "work-a": shared.reviews!["work-a"]! },
     });
     expect(getContextTabs("project-a").tabs).toHaveLength(1);
-    expect(getContextTabs("project-a").tabs[0]?.draftOnly).toBeUndefined();
+    expect(isDraftOnly(getContextTabs("project-a").tabs[0] as ContextTab)).toBe(false);
     expect(inWork("work-a")).toEqual(["document-a"]);
     expect(inWork("work-b")).toEqual(["document-a"]);
   });
@@ -197,7 +226,7 @@ describe("draft tab settlement", () => {
     // The removal guard no longer repairs the address away from the draft.
     expect(updateSearch).not.toHaveBeenCalled();
     expect(getContextTabs("project-a").tabs).toMatchObject([
-      { documentId: "document-a", draftOnly: true },
+      { documentId: "document-a", reviews: expect.any(Object) },
     ]);
   });
 });

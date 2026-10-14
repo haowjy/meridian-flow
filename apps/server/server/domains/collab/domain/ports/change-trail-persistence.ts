@@ -26,8 +26,21 @@ export class DurableTrailSeedError extends Error {
   readonly name = "DurableTrailSeedError";
 }
 
-/** Total parser for the frozen settlement trail input stored in jsonb. */
+/**
+ * Total parser for the frozen settlement trail input stored in jsonb. Every
+ * validation failure, including the shared nested parsers' plain errors, leaves
+ * as `DurableTrailSeedError` so corruption is never retried as transient.
+ */
 export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
+  try {
+    return decodeDurableTrailSeedV1(value);
+  } catch (cause) {
+    if (cause instanceof DurableTrailSeedError) throw cause;
+    throw new DurableTrailSeedError("Invalid durable trail seed v1", { cause });
+  }
+}
+
+function decodeDurableTrailSeedV1(value: unknown): DurableTrailRecord {
   if (!isRecord(value)) throw new DurableTrailSeedError("Durable trail seed must be an object");
   const {
     documentId,
