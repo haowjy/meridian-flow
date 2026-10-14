@@ -144,9 +144,8 @@ else
       ).length;
     }
 
-    /** Starts a reply the way the run starter does: due switches apply first. */
+    /** Starts a reply; a due switch applies at its run-start boundary. */
     async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
-      await rig.delivery.applyDueSwitches(rig.threadId);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       return run.execute();
     }
@@ -1201,7 +1200,7 @@ else
         await rig.repos.threads.setTrashState(rig.threadId, "deleted");
         await rig.runClaim.release(lease);
         await processDetachedWork.drain();
-        expect(await rig.delivery.applyDueSwitches(rig.threadId)).toBe(true);
+        await expect(rig.orchestrator.startDrain(rig.threadId)).rejects.toThrow("Thread not found");
         expect(await switchTurns(rig)).toEqual([]);
         expect((await rig.repos.threads.lockByIdIncludingDeleted(rig.threadId))?.aiWriteMode).toBe(
           "direct",
@@ -1237,7 +1236,6 @@ else
           created: true,
           response: { pending: { id: queued.response.id }, turnId: null, mode: "direct" },
         });
-        expect(await rig.delivery.applyDueSwitches(rig.threadId)).toBe(true);
         expect(await switchTurns(rig)).toEqual([]);
         expect(await threadMode(rig)).toBe("direct");
 
@@ -1665,10 +1663,7 @@ else
         const wake = createWakeIfRunnable({
           delivery,
           runStarter: createRunStarter(
-            {
-              applyDueSwitches: delivery.applyDueSwitches,
-              startDrain: (id) => recovery.startDrain(id),
-            },
+            { startDrain: (id) => recovery.startDrain(id) },
             rig.deps.eventSink,
           ),
         });
@@ -1748,7 +1743,7 @@ else
           body: { kind: "text", text: "Go." },
           idempotencyKey: "after-newer-switch",
         });
-        await rig.delivery.applyDueSwitches(rig.threadId);
+        await drainControls(rig);
         const turns = await switchTurns(rig);
         expect(
           turns.map((turn) => (turn.metadata as { controlMessageId: string }).controlMessageId),
@@ -1944,7 +1939,9 @@ else
         expect(await done).toMatchObject({ status: "cancelled" });
         await processDetachedWork.drain();
         if ((await rig.delivery.selectPending(rig.threadId)).length > 0) {
-          await rig.orchestrator.startDrain(rig.threadId);
+          await expect(rig.orchestrator.startDrain(rig.threadId)).rejects.toThrow(
+            "Thread not found",
+          );
           await processDetachedWork.drain();
         }
 

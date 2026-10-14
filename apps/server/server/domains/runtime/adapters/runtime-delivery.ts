@@ -9,7 +9,7 @@ import type { DetachedWorkTracker } from "../detached-work.js";
 import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { drainInbox, planMessageTurns } from "../loop/inbox-context.js";
 import { currentTurnKind, reservationTurn } from "../loop/local-turn.js";
-import { type InboxWorkSelection, next, queuedWriteModeSwitch } from "../loop/next-inbox-work.js";
+import { type InboxWorkSelection, next } from "../loop/next-inbox-work.js";
 import { finalizeOrphanedTurns } from "../loop/orphaned-placeholder.js";
 import { readPendingInbox } from "../loop/pending-inbox.js";
 import {
@@ -313,6 +313,7 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start",
+    retry?: boolean,
   ): Promise<SelectedDelivery<DeliverySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
@@ -321,12 +322,13 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start" | "boundary" | "prefix",
+    retry = false,
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
     const { pendingBatch, boundIds, eligible } = await eligiblePending(threadId);
     // Materialization puts every waiting non-command row into the graph in seq
     // order; it is not a request boundary, so a queued switch never yields it.
     const nextWork: InboxWorkSelection =
-      at === "prefix" ? prefixRows(eligible) : next(eligible, at);
+      at === "prefix" ? prefixRows(eligible) : next(eligible, at, retry);
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
     const rows = nextWork.kind === "batch" || nextWork.kind === "control" ? nextWork.rows : [];
     const selectedIds = new Set([...rows.map((row) => row.id), ...(control ? [control.id] : [])]);
@@ -382,7 +384,8 @@ export function createDeliveryAdapter(
     TResult,
   >(input: {
     threadId: ThreadId;
-    select: () => Promise<SelectedDelivery<TSelection>>;
+    /** `lockHeld`: the thread lock is already taken (the last, locked attempt). */
+    select: (lockHeld: boolean) => Promise<SelectedDelivery<TSelection>>;
     signal?: AbortSignal;
     validate?: () => Promise<void>;
     prepare: (
@@ -403,7 +406,7 @@ export function createDeliveryAdapter(
         const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
         if (lockedPreparation) {
           return threadLock.withThreadLock(input.threadId, async () => {
-            const selected = await input.select();
+            const selected = await input.select(true);
             input.signal?.throwIfAborted();
             const prepared = await input.prepare(selected.selection, selected.work);
             input.signal?.throwIfAborted();
@@ -412,7 +415,7 @@ export function createDeliveryAdapter(
           });
         }
 
-        const selected = await input.select();
+        const selected = await input.select(false);
         input.signal?.throwIfAborted();
         const prepared = await input.prepare(selected.selection, selected.work);
         input.signal?.throwIfAborted();
@@ -502,30 +505,26 @@ export function createDeliveryAdapter(
       : ("delivered" as const);
   }
   /**
-   * Applies the chat's pending write-mode switch right before a run starts
-   * (`next` says when, or a Retry, which always starts one), while no reply
-   * holds the chat. One transaction: the chat's mode, the switch turn at the
-   * active leaf, and the control's ack. No model call and no lease: a reply
-   * never sees its mode change.
+   * The admitted run-start boundary's switch rule. Under the run's claim and
+   * after the start refusals, the queued write-mode switch applies in one
+   * transaction (the chat's mode, the switch turn at the active leaf, the
+   * control's ack) when `next` says a run follows it, or a Retry runs. A
+   * switch queued while setup was in flight is found by the retry loop in
+   * `prepareAndCommit`, whose commit validates this very selection.
    */
-  async function applyDueSwitches(threadId: ThreadId, retrying = false) {
-    const ran = await deps.runClaim.withExclusiveThread(threadId, async () => {
-      await settleStaleExecution(threadId);
-      while (await threadLock.withThreadLock(threadId, () => applyDueSwitch(threadId, retrying))) {}
-      return true;
-    });
-    return ran === true;
+  async function selectRunStart(threadId: ThreadId, retry: boolean, lockHeld: boolean) {
+    for (;;) {
+      const apply = () => applyDueSwitch(threadId, retry);
+      if (lockHeld) await apply();
+      else await threadLock.withThreadLock(threadId, apply);
+      const selected = await selectForPreparation(threadId, "run_start", retry);
+      if (selected.selection.next.kind !== "switch") return selected;
+    }
   }
-  async function applyDueSwitch(threadId: ThreadId, retrying: boolean): Promise<boolean> {
-    const pending = await inbox.selectPending(threadId);
-    const selected = next(pending, "run_start");
-    const control =
-      selected.kind === "switch"
-        ? selected.control
-        : retrying
-          ? queuedWriteModeSwitch(pending)
-          : null;
-    if (!control) return false;
+  async function applyDueSwitch(threadId: ThreadId, retry: boolean): Promise<boolean> {
+    const selected = next(await inbox.selectPending(threadId), "run_start", retry);
+    if (selected.kind !== "switch") return false;
+    const control = selected.control;
     const thread = await deps.repos.threads.findById(threadId);
     if (!thread) return false;
     const mode = control.body.mode;
@@ -1022,7 +1021,6 @@ export function createDeliveryAdapter(
       }
     },
     materializeIdle,
-    applyDueSwitches,
     async yieldsAtBoundary(threadId) {
       return next((await eligiblePending(threadId)).eligible, "boundary").kind === "yield";
     },
@@ -1085,7 +1083,7 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
-        select: () => selectForPreparation(lease.threadId, "run_start"),
+        select: (lockHeld) => selectRunStart(lease.threadId, !!options?.retry, lockHeld),
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)

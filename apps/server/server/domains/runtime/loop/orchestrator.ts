@@ -526,9 +526,6 @@ async function runDrainTurn(
       if (!setupThread) throw new Error(`Thread not found: ${input.threadId}`);
       const batch = selection.batch;
       const control = selection.next.kind === "control" ? selection.next.control : null;
-      // A due switch applies outside any run: return no work, and the release
-      // wake's reread reaches applyDueSwitches before the next run starts.
-      if (selection.next.kind === "switch") return null;
       if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
@@ -740,6 +737,7 @@ async function runDrainTurn(
     },
     {
       signal: input.signal,
+      retry: !!input.replyTurnId,
     },
   );
 
