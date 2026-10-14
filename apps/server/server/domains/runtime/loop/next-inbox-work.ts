@@ -5,7 +5,8 @@
  * The queued write-mode switch S is the one exception to "messages first": a
  * message behind S (higher seq) must be answered in S's mode, so a request
  * boundary ends the reply (`yield`) and run start applies S (`switch`) before
- * any message runs. With nothing behind it, S runs as the oldest control.
+ * any message runs. A switch is pending until a run is about to start: with
+ * nothing else to run, S stays queued and applies before the next run.
  */
 
 import type { ControlBody } from "@meridian/contracts/threads";
@@ -24,11 +25,14 @@ export type InboxWorkSelection =
   | { kind: "yield" }
   | { kind: "none" };
 
+/** `retry`: a Retry starts a reply by itself, so a lone queued switch is due at run start. */
 export function next(
   pending: readonly InboxMessage[],
   at: "run_start" | "boundary",
+  retry = false,
 ): InboxWorkSelection {
   const queuedSwitch = pending.find(isWriteModeSwitch);
+  if (queuedSwitch && at === "run_start" && retry) return { kind: "switch", control: queuedSwitch };
   if (queuedSwitch && pending.some((row) => row.intent === "message" && row.seq > queuedSwitch.seq))
     return at === "boundary" ? { kind: "yield" } : { kind: "switch", control: queuedSwitch };
 
@@ -36,8 +40,10 @@ export function next(
   if (at === "boundary") return rows.length > 0 ? { kind: "batch", rows } : { kind: "none" };
 
   if (pending.some((row) => row.intent === "message")) return { kind: "batch", rows };
+  // Only a compaction runs by itself; a lone switch waits for the next run.
   const control = pending.find(isControl);
-  if (!control) return { kind: "none" };
+  if (!control || !pending.some((row) => isControl(row) && !isWriteModeSwitch(row)))
+    return { kind: "none" };
   return isWriteModeSwitch(control)
     ? { kind: "switch", control }
     : { kind: "control", control, rows: [] };

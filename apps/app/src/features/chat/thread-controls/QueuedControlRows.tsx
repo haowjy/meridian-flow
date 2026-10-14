@@ -1,15 +1,17 @@
 /**
- * Writer commands waiting in the queue.
+ * Writer commands that have not run yet.
  *
- * A queued `/compact` or write-mode switch sits at the transcript tail, after
- * every queued message, as a dashed rule: the divider it will become, not yet
- * drawn. The writer's instructions show under
- * it verbatim, at once. Withdraw is right after the
- * words on every row, a failed enqueue's too (beside its Retry), and removes
- * the row at once. There is no Stop on a queued row. The rows
- * carry no live region: `useThreadControls` announces each change through the
- * global polite announcer, which also reaches a row scrolled out of the
- * virtualized list.
+ * A pending write-mode switch is the write-mode notice at the transcript tail:
+ * "Switched to auto-apply" while no reply holds the chat (the switch applies
+ * right before the next reply starts), "Switch to auto-apply queued" while one
+ * does. A queued `/compact` sits there as a dashed rule, the divider it will
+ * become, with the writer's instructions under it verbatim. Stop is right after
+ * the words on every pending row, a failed enqueue's too (beside its Retry), and
+ * removes the row at once; it cancels the command the way a switch back does. An
+ * applied switch whose turn has not rendered yet shows the notice with no Stop.
+ * The rows carry no live region: `useThreadControls` and `useSwitchView` announce
+ * each change through the global polite announcer, which also reaches a row
+ * scrolled out of the virtualized list.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -19,16 +21,24 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CompactionInstructions } from "../compaction/CompactionInstructions";
 import { useFocusWithinRow } from "../compaction/useFocusWithinRow";
-import { controlRetryLabel, controlStatusCopy, controlWithdrawLabel } from "./control-copy";
+import { controlRetryLabel, controlStatusCopy, controlStopLabel } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
+import { WriteModeNotice } from "./WriteModeNotice";
 
 export type QueuedControlRowsProps = {
   controls: readonly QueuedControl[];
-  onWithdraw?: (control: QueuedControl) => void;
+  /** A reply or compaction holds the chat, so a pending switch waits for it. */
+  replyRunning?: boolean;
+  onStop?: (control: QueuedControl) => void;
   onRetry?: (controlId: string) => void;
 };
 
-export function QueuedControlRows({ controls, onWithdraw, onRetry }: QueuedControlRowsProps) {
+export function QueuedControlRows({
+  controls,
+  replyRunning = false,
+  onStop,
+  onRetry,
+}: QueuedControlRowsProps) {
   const listRef = useRef<HTMLUListElement>(null);
   const focusWithin = useFocusWithinRow(listRef);
   if (controls.length === 0) return null;
@@ -45,7 +55,8 @@ export function QueuedControlRows({ controls, onWithdraw, onRetry }: QueuedContr
         <QueuedControlRow
           key={control.id}
           control={control}
-          onWithdraw={onWithdraw}
+          replyRunning={replyRunning}
+          onStop={onStop}
           onRetry={onRetry}
         />
       ))}
@@ -55,15 +66,56 @@ export function QueuedControlRows({ controls, onWithdraw, onRetry }: QueuedContr
 
 function QueuedControlRow({
   control,
-  onWithdraw,
+  replyRunning,
+  onStop,
   onRetry,
 }: {
   control: QueuedControl;
-  onWithdraw?: (control: QueuedControl) => void;
+  replyRunning: boolean;
+  onStop?: (control: QueuedControl) => void;
   onRetry?: (controlId: string) => void;
 }) {
   const { status } = control;
   const failed = status === "failed";
+  const label = controlStatusCopy(control.control, status, replyRunning);
+  const actions = (
+    <>
+      {failed && onRetry ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="meta"
+          onClick={() => onRetry(control.id)}
+          aria-label={controlRetryLabel(control.control)}
+        >
+          <Trans>Retry</Trans>
+        </Button>
+      ) : null}
+      {onStop && status !== "applied" && !control.awaitingServer ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="meta"
+          aria-label={controlStopLabel(control.control)}
+          onClick={() => onStop(control)}
+        >
+          <Trans>Stop</Trans>
+        </Button>
+      ) : null}
+      {status === "withdraw_failed" ? (
+        <span className="text-meta text-destructive">{t`Couldn't stop. Try again.`}</span>
+      ) : null}
+    </>
+  );
+  if (control.control.kind === "write_mode" && !failed) {
+    return (
+      <li data-queued-control="write_mode" data-queued-control-status={status} className="min-w-0">
+        <WriteModeNotice mode={control.control.mode} label={label}>
+          {actions}
+        </WriteModeNotice>
+      </li>
+    );
+  }
   const instructions =
     control.control.kind === "compact" && control.control.instructions?.trim()
       ? control.control.instructions
@@ -82,35 +134,13 @@ function QueuedControlRow({
             <FoldVertical aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />
           )}
           <span className={cn("text-meta", failed ? "text-destructive" : "text-ink-muted")}>
-            {controlStatusCopy(control.control, status)}
+            {label}
           </span>
         </span>
-        {failed && onRetry ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            onClick={() => onRetry(control.id)}
-            aria-label={controlRetryLabel(control.control)}
-          >
-            <Trans>Retry</Trans>
-          </Button>
+        {actions}
+        {control.control.kind === "compact" ? (
+          <span aria-hidden className="min-w-6 flex-1 border-t border-dashed border-border" />
         ) : null}
-        {onWithdraw && !control.awaitingServer ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            aria-label={controlWithdrawLabel(control.control)}
-            onClick={() => onWithdraw(control)}
-          >
-            <Trans>Withdraw</Trans>
-          </Button>
-        ) : null}
-        {status === "withdraw_failed" ? (
-          <span className="text-meta text-destructive">{t`Couldn't withdraw. Try again.`}</span>
-        ) : null}
-        <span aria-hidden className="min-w-6 flex-1 border-t border-dashed border-border" />
       </div>
       {instructions ? <CompactionInstructions instructions={instructions} /> : null}
     </li>

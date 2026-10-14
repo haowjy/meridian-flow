@@ -134,7 +134,14 @@ async function review(
     {
       surface: (
         <>
-          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={vi.fn()} />
+          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={vi.fn()}>
+            {({ version, controls }) => (
+              <>
+                {version}
+                {controls}
+              </>
+            )}
+          </DraftReviewBand>
           <Runtime editor={editor} doc={doc} />
         </>
       ),

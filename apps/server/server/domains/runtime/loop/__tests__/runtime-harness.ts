@@ -230,10 +230,7 @@ export function createRuntimeHarness(
   wakeIfRunnable = createWakeIfRunnable({
     delivery: deps.delivery,
     runStarter: createRunStarter(
-      {
-        startDrain: (id) => orchestrator().startDrain(id),
-        applyDueSwitches: (id) => deps.delivery.applyDueSwitches(id),
-      },
+      { startDrain: (id) => orchestrator().startDrain(id) },
       deps.eventSink,
     ),
     shutdown,

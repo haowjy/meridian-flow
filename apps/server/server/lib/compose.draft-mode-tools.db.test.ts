@@ -251,7 +251,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .where(eq(schema.threads.id, THREAD.threadId));
       });
 
-      it("keeps a reply's mode past a mid-reply switch, then applies it once at release", async () => {
+      it("keeps a reply's mode past a mid-reply switch, which stays pending after the reply", async () => {
         const script = await startWithChapter("Writer live content.");
         const { runtime } = script;
         const lease = await runtime.ports.runClaim.startExecution(
@@ -276,24 +276,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await reply.save();
         expect(await switchTurns()).toEqual([]);
 
-        // The release wake applies the switch once.
+        // The release wake has nothing to run, so the switch stays pending and the chat keeps its mode.
         await runtime.ports.runClaim.release(lease);
         await runtime.app.runStarter.start(THREAD.threadId as never);
         await processDetachedWork.drain();
-        const turns = await switchTurns();
-        expect(turns).toHaveLength(1);
-        expect(turns[0]).toMatchObject({
-          role: "system",
-          status: "complete",
-          metadata: { mode: "direct", controlMessageId: queued.response.id },
-        });
-        expect(await modeOf(THREAD.threadId)).toBe("direct");
+        expect(await switchTurns()).toEqual([]);
+        expect(await modeOf(THREAD.threadId)).toBe("draft");
 
         const next = await script.begin();
-        expect((await create(next.call, "next")).result).toMatchObject({ destination: "live" });
+        expect((await create(next.call, "next")).result).toMatchObject({ destination: "draft" });
       });
 
-      it("applies an idle switch past a short claim, moves the Work default and leaves a sibling chat", async () => {
+      it("moves the Work default when the writer switches, leaving the chat and a sibling chat in their mode", async () => {
         await db
           .update(schema.works)
           .set({ defaultAiWriteMode: "draft" })
@@ -327,51 +321,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await bindEditAgent(runtime, THREAD.threadId);
         const [before] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
 
-        // A short claim (idle materialization, say) is busy when the switch arrives.
-        let answer: ReturnType<typeof switchTo> | undefined;
-        await runtime.app.runClaim.withExclusiveThread(THREAD.threadId as never, async () => {
-          answer = switchTo(runtime, "direct");
-          await new Promise((resolve) => setTimeout(resolve, 80));
-          expect(await modeOf(THREAD.threadId), "not applied under the claim").toBe("draft");
+        const switched = await switchTo(runtime, "direct");
+        expect(switched.response).toMatchObject({
+          pending: { control: { kind: "write_mode", mode: "direct" } },
+          turnId: null,
+          mode: "draft",
         });
-        const switched = await answer;
-        const [turn] = await switchTurns();
-        expect(switched?.response).toMatchObject({
-          id: switched?.response.id,
-          pending: null,
-          turnId: turn?.id,
-          mode: "direct",
-        });
-        expect(await modeOf(THREAD.threadId)).toBe("direct");
+        expect(await switchTurns()).toEqual([]);
+        expect(await modeOf(THREAD.threadId)).toBe("draft");
+        // The Work's default follows the writer's choice at once, so a new chat starts in it.
         const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
         expect(after?.defaultAiWriteMode).toBe("direct");
         expect(after?.entityRevision).toBe((before?.entityRevision ?? 0n) + 1n);
+        // Stopping the pending switch is the writer's latest choice too.
+        await runtime.app.delivery.withdrawControl(THREAD.threadId as never, switched.response.id);
+        const [stopped] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+        expect(stopped?.defaultAiWriteMode).toBe("draft");
 
         expect(await modeOf(SIBLING.threadId)).toBe("draft");
         const sibling = await runtimes.script(runtime, SIBLING).begin();
         expect((await create(sibling.call, "sibling")).result).toMatchObject({
           destination: "draft",
         });
-      });
-
-      it("applies a switch blocked past the route's retries once the claim releases, without the sweep", async () => {
-        const { runtime } = await startWithChapter("Writer live content.");
-        await bindEditAgent(runtime, THREAD.threadId);
-
-        // The claim outlasts the route: its answer returns while the claim is held.
-        const switched = await runtime.app.runClaim.withExclusiveThread(
-          THREAD.threadId as never,
-          () => switchTo(runtime, "direct"),
-        );
-        expect(switched?.response).toMatchObject({
-          pending: { control: { kind: "write_mode", mode: "direct" } },
-          turnId: null,
-        });
-        expect(await modeOf(THREAD.threadId)).toBe("draft");
-
-        await processDetachedWork.drain();
-        expect(await modeOf(THREAD.threadId)).toBe("direct");
-        expect(await switchTurns()).toHaveLength(1);
       });
     });
 
