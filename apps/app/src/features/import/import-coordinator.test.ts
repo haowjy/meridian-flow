@@ -171,7 +171,6 @@ function serverReport(): ImportReport {
     importId: "elsewhere",
     state: "ready",
     destination: { folderUri: "kb://", folderId: null },
-    sort: false,
     counts: {
       total: 1,
       landed: 0,
@@ -180,7 +179,6 @@ function serverReport(): ImportReport {
       deleted: 0,
       notImported: 0,
       skipped: 0,
-      findings: 0,
     },
     lastActivityAt: "2000-01-01T00:00:00.000Z",
     version: "1",

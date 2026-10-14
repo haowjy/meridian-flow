@@ -46,24 +46,7 @@ describe("fixture vault", () => {
         embed: false,
       },
     ]);
-    for (const kind of [
-      "comment",
-      "callout",
-      "highlight",
-      "tag",
-      "footnoteReference",
-      "footnoteDefinition",
-    ])
-      expect(
-        findings.filter((finding) => finding.kind === kind),
-        kind,
-      ).toHaveLength(1);
-    expect(findings.find((finding) => finding.kind === "callout")).toMatchObject({
-      calloutType: "warning",
-    });
-    expect(findings.find((finding) => finding.kind === "tag")).toMatchObject({
-      tag: "foreshadowing",
-    });
+    expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(1);
     for (const link of links) expect(source.slice(link.from, link.to)).toMatch(/^!?\[\[.*\]\]$/);
   });
 
@@ -78,7 +61,7 @@ describe("fixture vault", () => {
     expect(
       findings.filter((finding) => finding.kind === "markdownLink").map((finding) => finding.url),
     ).toEqual(["../Lore/Sects.md", "Sects%20and%20Clans.md"]);
-    for (const kind of ["frontmatter", "comment", "callout", "highlight"])
+    for (const kind of ["frontmatter", "comment"])
       expect(
         findings.filter((finding) => finding.kind === kind),
         kind,
@@ -100,20 +83,6 @@ describe("syntax boundaries", () => {
     ]);
   });
 
-  it.each([
-    "[[A]]",
-    "[[A#Heading|#label]]",
-  ])("reports a highlight containing a wikilink without counting link target syntax: %s", (link) => {
-    const { findings } = scanWikilinks(`==text ${link} text==`);
-    expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
-      { linkpath: "A" },
-    ]);
-    expect(findings.filter((finding) => finding.kind === "highlight")).toMatchObject([
-      { text: `text ${link} text` },
-    ]);
-    expect(findings.filter((finding) => finding.kind === "tag")).toEqual([]);
-  });
-
   it("preserves literal table continuations in comments while normalizing real tables", () => {
     const comment = "%%\n| a |\n| - |\n| first\\\nsecond |\n%%";
     const real = "| a |\n| - |\n| first\\\nsecond |";
@@ -129,13 +98,9 @@ describe("syntax boundaries", () => {
     "%% secret %%",
     "<!-- secret -->",
   ])("keeps prose following inline comment %s", (comment) => {
-    const { findings } = scanWikilinks(`${comment} [[Visible]] #tag ==highlight==`);
+    const { findings } = scanWikilinks(`${comment} [[Visible]]`);
     expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
       { linkpath: "Visible" },
-    ]);
-    expect(findings.filter((finding) => finding.kind === "tag")).toMatchObject([{ tag: "tag" }]);
-    expect(findings.filter((finding) => finding.kind === "highlight")).toMatchObject([
-      { text: "highlight" },
     ]);
   });
 
@@ -147,17 +112,14 @@ describe("syntax boundaries", () => {
     ]);
   });
 
-  it("never links or counts special syntax inside code and comments", () => {
+  it("never links special syntax inside code and comments", () => {
     const input =
-      "`[[span]] #tag ==no== %% code %%`\n\n~~~md\n[[fence]]\n<!-- code -->\n~~~\n\n%% [[inline]] %%\n\n%%\n[[block]]\n%%\n\n<!-- [[html]] -->\n\n[[real]]";
+      "`[[span]] %% code %%`\n\n~~~md\n[[fence]]\n<!-- code -->\n~~~\n\n%% [[inline]] %%\n\n%%\n[[block]]\n%%\n\n<!-- [[html]] -->\n\n[[real]]";
     const { findings } = scanWikilinks(input);
     expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
       { linkpath: "real" },
     ]);
     expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(3);
-    expect(
-      findings.filter((finding) => finding.kind === "tag" || finding.kind === "highlight"),
-    ).toEqual([]);
   });
 
   it("keeps escaped aliases in table cells and the mdast table intact", () => {
@@ -197,14 +159,6 @@ describe("syntax boundaries", () => {
     ]);
   });
 
-  it("does not find tags in headings, URLs, destinations, code, or wikilinks", () => {
-    expect(
-      scanWikilinks(
-        "# Heading\nhttps://example.com/#url [x](https://x/#dest) `#code` [[A#Heading]] #real #nested/tag #123",
-      ).findings.filter((finding) => finding.kind === "tag"),
-    ).toMatchObject([{ tag: "real" }, { tag: "nested/tag" }]);
-  });
-
   it("uses preprocessed-source offsets after continued table rows", () => {
     const input = "| A |\n| --- |\n| first\\\nsecond |\n\n[[After]]";
     const { source, findings } = scanWikilinks(input);
@@ -228,19 +182,6 @@ describe("syntax boundaries", () => {
       { kind: "comment", syntax: "percent", from: 0, to: 13 },
     ]);
     expect(scanWikilinks("<!-- [[hidden]]").findings).toHaveLength(1);
-  });
-
-  it("reports callout folding and footnote definitions with continuation text", () => {
-    const { source, findings } = scanWikilinks(
-      "> [!tip]- Title\n> Body\n\nText[^x].\n\n[^x]: First\n    second\n",
-    );
-    expect(findings.find((finding) => finding.kind === "callout")).toMatchObject({
-      calloutType: "tip",
-      fold: "-",
-    });
-    const definition = findings.find((finding) => finding.kind === "footnoteDefinition");
-    expect(source.slice(definition?.from, definition?.to)).toContain("second");
-    expect(findings.filter((finding) => finding.kind === "footnoteReference")).toHaveLength(1);
   });
 });
 

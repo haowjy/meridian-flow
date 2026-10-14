@@ -52,7 +52,12 @@ that template, so each source link is its own occurrence, and receives the
 target id and written href per occurrence. Refs are assigned before real
 addresses could merge adjacent links into one run: two targets sharing a
 current address, a hand-written link to it, or a link after them never swap
-identity or destination. The readable Markdown is never reparsed for binding.
+identity or destination. `convertNote` returns that one immutable template with its
+occurrence targets; `respell` computes the hrefs once, after the batch location
+lookup. No readable Markdown copy exists, and link resolution returns only the
+chosen target (ranking and tie-breaks decide it; nothing explains the choice).
+The scanner recognizes links, embeds, escapes and comments only; callouts,
+highlights, tags and footnotes are plain text.
 
 Binaries and code have no row until they land. The binder receives them as
 pending ids: one already live binds to itself, otherwise it mints an ahead ref
@@ -65,12 +70,12 @@ refs and settle at once to a document already at their address.
 
 A single selected folder with a valid meridian-export.json routes Manuscript/,
 Knowledge Base/ and Unfiled/ to their area roots; planning chunks group by
-area as well as parent, and Works/ is skipped as export_works. The sort is
-the manifest's choice; the dialog defaults it off for an export.
+area as well as parent, and Works/ is skipped as export_works.
 
 Finish clears pending flags on unfinished placeholders, leaves ordinary empty
 documents, and marks unfinished entries not imported. There is no Remove,
-Restore, staging tree, ZIP extraction or automatic model sort in this domain.
+Restore, staging tree, ZIP extraction or automatic model sort in this domain
+(the future sort is its own command, see FUTURE.md; the manifest carries no flag for it).
 
 The API probe is pnpm exec tsx apps/server/scripts/probe-import.mjs PROJECT URI
 PATH... [--files]. It builds a manifest with the shared frontmatter
@@ -85,7 +90,8 @@ correctness gate.
 
 ## Reports and activity
 
-Reasons and findings are the typed codes/params in contracts/imports. Raw
+Failure and skip reasons are the typed codes/params in contracts/imports; there
+are no per-entry findings or finding counts. Raw
 failures go to server observability only. Unreadable selections are skipped,
 with the reader's code in reasonParams. They never acquire a document row, so
 their paths keep the source names (a name Meridian refuses, like `Who?.md`, is

@@ -42,7 +42,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     );
     return { links, states: response.answers.map((answer) => answer.state) };
   }
-  it("converts the main fixture by identity: properties, aliases, links, findings, reverse order and an area move", async () => {
+  it("converts the main fixture by identity: properties, aliases, links, reverse order and an area move", async () => {
     const { source, selection } = vault("notes-folder");
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
@@ -108,19 +108,6 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       properties: { format: "yaml", text: /^---\n([\s\S]*?)---\n/.exec(sourceText)?.[1] },
       aliases: ["Gate Opening", "First Chapter"],
     });
-    const findings = byPath("Chapters/Chapter 1 - The Gate.md").findings;
-    // The spoiler risk leads the document's findings.
-    expect(findings[0]).toEqual({ code: "hidden_notes", params: { count: 1 } });
-    expect(findings).toContainEqual({
-      code: "kept_as_text",
-      params: { callouts: 1, highlights: 1, tags: 1, footnotes: 2 },
-    });
-    expect(findings.map((finding) => finding.code)).toEqual(
-      expect.arrayContaining(["heading_not_followed", "block_ref_dropped"]),
-    );
-    expect(byPath("Chapters/Ch 2.md").findings.map((finding) => finding.code)).toEqual(
-      expect.arrayContaining(["hidden_notes", "note_embed_to_link"]),
-    );
     // Moving the chapters across areas keeps every link; refs, not addresses, decide.
     await ok(context().move("kb://notes-folder/Chapters/", "manuscript://Chapters/"));
     expect(await read("manuscript://Chapters/Ch 2")).toContain(
@@ -175,42 +162,10 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "![map.png](kb://notes-folder-edge/attachments/map.png)",
     ])
       expect(edge).toContain(text);
-    const edgeFindings = byPath("Edge.md").findings;
-    expect(edgeFindings).toEqual(
-      expect.arrayContaining([
-        { code: "hidden_notes", params: { count: 1 } },
-        {
-          code: "link_via_alias",
-          params: { text: "World Bible", path: "kb://notes-folder-edge/World" },
-        },
-        {
-          code: "link_via_alias",
-          params: { text: "Little Crane", path: "kb://notes-folder-edge/Characters/Lin Feng" },
-        },
-        {
-          code: "link_unresolved",
-          params: { text: "Chapter 9", folder: "kb://notes-folder-edge/" },
-        },
-        {
-          code: "link_ambiguous",
-          params: {
-            text: "Budget",
-            count: 2,
-            path: "kb://notes-folder-edge/A/Budget",
-            candidates: ["kb://notes-folder-edge/A/Budget", "kb://notes-folder-edge/B/Budget"],
-          },
-        },
-        { code: "image_size_dropped", params: { name: "map.png", size: "300" } },
-      ]),
-    );
     // Same-folder note wins over the equally short tie.
     expect(await read("kb://notes-folder-edge/A/Holder")).toContain("[Budget](Budget)");
-    // Unreadable frontmatter is stored verbatim, reported and absent from the prose.
+    // Unreadable frontmatter is stored verbatim and absent from the prose.
     expect((await read("kb://notes-folder-edge/Broken")).trim()).toBe("Body without frontmatter.");
-    expect(byPath("Broken.md").findings).toContainEqual({
-      code: "properties_unreadable",
-      params: {},
-    });
     const broken = (await projectDocuments()).find(
       (row) => row.id === byPath("Broken.md").documentId,
     );
@@ -229,11 +184,8 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       kind: "binary",
       uri: "kb://notes-folder-edge/scan.pdf",
     });
-    expect(byPath("scan.txt").findings.map((finding) => finding.code)).toContain(
-      "binary_extension",
-    );
     // The shared registry types `.toml` as plain text, not code; either way it is not converted.
-    expect(byPath("config.toml")).toMatchObject({ state: "landed", findings: [] });
+    expect(byPath("config.toml")).toMatchObject({ state: "landed" });
     expect(await read(byPath("config.toml").uri ?? "")).toBe('title = "\\[\\[literal]]"\n');
   });
   it("stores verbatim properties and binds a selected note by id after move and address capture", async () => {
@@ -416,20 +368,28 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "kb://vault/attachments/map (2).png",
     );
   });
+  it("binds a sibling [[Gate]] to an extensionless note by its frontmatter alias", async () => {
+    const selection = loose({
+      Holder: "See [[Gate]].",
+      Chapter: "---\naliases: [Gate]\n---\nBody",
+    });
+    const service = createImportService(ports()),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    expect((await service.land(projectId, plan.importId, 0, selection.bytes[0])).state).toBe(
+      "landed",
+    );
+    expect((await ok(context().read("kb://Holder"))).content).toContain("[Gate](Chapter)");
+  });
   async function landHolder(text: string) {
     const selection = loose({ "Holder.md": text, "A.md": "target" });
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     return service.land(projectId, plan.importId, 0, selection.bytes[0]);
   }
-  it("adjacent links to one selected note are separate occurrences and the holder lands", async () => {
-    expect((await landHolder("[[A]][[A]]")).state).toBe("landed");
-    expect((await ok(context().read("kb://Holder"))).content).toContain("(A)");
-  });
-  it("a link after adjacent selected links keeps its own destination", async () => {
+  it("adjacent links to one selected note land and a link after them keeps its own destination", async () => {
     expect((await landHolder("[[A]][[A]] [web](https://example.com)")).state).toBe("landed");
     expect((await ok(context().read("kb://Holder"))).content).toContain(
-      "[web](https://example.com)",
+      "](A) [web](https://example.com)",
     );
   });
   it("adjacent links naming distinct identities at one address stay separate", async () => {
@@ -448,25 +408,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     expect(content).toContain("map (2).png");
     expect(content).toMatch(/\[file\]\([^)]*attachments\/map\.png\)/);
   });
-  it("a link whose selected target was deleted names its text and the selected file", async () => {
-    const selection = loose({ "Holder.md": "See [[Target|the target]].", "Target.md": "Gone" }),
-      service = createImportService(ports());
-    const plan = await service.plan(projectId, userId, selection.manifest);
-    await ok(
-      context().delete("kb://Target", {
-        expected: {
-          kind: "file",
-          documentId: plan.entries.find((entry) => entry.name === "Target")?.documentId ?? "",
-        },
-      }),
-    );
-    const holder = await service.land(projectId, plan.importId, 0, selection.bytes[0]);
-    expect(holder.findings).toContainEqual({
-      code: "link_target_unavailable",
-      params: { text: "the target", path: "Target.md" },
-    });
-  });
-  it("routes a marked export to area roots, ignores invocation folder, skips Works and keeps the chosen sort", async () => {
+  it("routes a marked export to area roots, ignores invocation folder and skips Works", async () => {
     const selection = loose({
       "Manuscript/Chapter.md":
         "---\naliases: [Opening]\n---\n[Sects](../Knowledge%20Base/Lore/Sects.md)",
@@ -474,7 +416,6 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "Unfiled/Notes.md": "Notes",
       "Works/No Work/Uploads/file.md": "Excluded",
     });
-    selection.manifest.sort = true;
     selection.manifest.roots = [
       {
         rootId: 0,
@@ -500,8 +441,6 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     }));
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
-    // The sort only defaults off for an export; an explicit choice is the writer's.
-    expect(plan.sort).toBe(true);
     expect(plan.entries.find((entry) => entry.entryId === 3)).toMatchObject({
       state: "skipped",
       reason: "export_works",
@@ -552,14 +491,6 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     const result = await service.land(projectId, plan.importId, 0, selection.bytes[0]);
     expect(result.state).toBe("landed");
     expect((await ok(context().read("manuscript://Chapter"))).content).toContain("kb://Old Lin");
-    expect(result.findings).toContainEqual({
-      code: "link_via_alias",
-      params: { text: "World Bible", path: "kb://World" },
-    });
-    expect(result.findings).toContainEqual({
-      code: "link_unresolved",
-      params: { text: "Sects", folder: "manuscript://" },
-    });
     expect(existing.documentId).not.toBe(world.documentId);
   });
   it("loose fixture chapters bind selected files first, then existing names, aliases and paths (IM15)", async () => {
@@ -588,29 +519,16 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
         await service.land(projectId, plan.importId, entry.entryId, selection.bytes[entry.entryId]);
       return (await service.report(plan.importId, projectId)).entries;
     }
-    const first = await landAll(files({ "World Notes.md": "See [[World Bible]]." }));
+    await landAll(files({ "World Notes.md": "See [[World Bible]]." }));
     const chapter1 = await ok(context().read("manuscript://Chapter 1 - The Gate"));
     expect(chapter1.content).toContain("[the protagonist](<kb://Characters/Lin Feng>)");
     expect(chapter1.content).toContain("[Sects](Sects)");
     expect((await ok(context().read("manuscript://Ch 2"))).content).toContain(
       "Previously: [Chapter 1 - The Gate](<Chapter 1 - The Gate>).",
     );
-    const findings = first.find((entry) => entry.filename === "Chapter 1 - The Gate.md")?.findings;
-    expect(findings).toContainEqual({
-      code: "link_to_existing",
-      params: { text: "Lin Feng", path: "kb://Characters/Lin Feng" },
-    });
-    expect(findings).toContainEqual({
-      code: "link_unresolved",
-      params: { text: "Sects", folder: "manuscript://" },
-    });
     expect((await ok(context().read("manuscript://World Notes"))).content).toContain(
       "[World Bible](kb://Lore/World)",
     );
-    expect(first.find((entry) => entry.filename === "World Notes.md")?.findings).toContainEqual({
-      code: "link_via_alias",
-      params: { text: "World Bible", path: "kb://Lore/World" },
-    });
     // The same chapters with their own Lin Feng: the selection wins over the project.
     const second = await landAll(files({ "Lin Feng.md": "Selected Lin" }));
     const selectedLin = second.find((entry) => entry.filename === "Lin Feng.md");
@@ -618,9 +536,6 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     const secondChapter = second.find((entry) => entry.filename === "Chapter 1 - The Gate.md");
     expect((await ok(context().read(secondChapter?.uri ?? ""))).content).toContain(
       `[the protagonist](<${selectedLin?.name}>)`,
-    );
-    expect(secondChapter?.findings.map((finding) => finding.code)).not.toContain(
-      "link_to_existing",
     );
     // Path-qualified ranking: the exact path at another area's root before a deeper suffix.
     await ok(context().createTrackedDocument("kb://Lore/Sects", "Sects", human));

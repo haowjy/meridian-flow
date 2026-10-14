@@ -1,12 +1,11 @@
 /** Pure selection-first wikilink resolution and the shared project fallback ranking. */
-import type { ImportManifest, ImportSettingsProblem } from "@meridian/contracts";
+import type { ImportManifest } from "@meridian/contracts";
 import {
   type Located,
   locate,
   rankWikilinkMatches,
   storedName,
   wantedPath,
-  wikilinkMatches,
 } from "@meridian/markup/wikilinks";
 import { codePointOrder } from "./plan.js";
 
@@ -42,26 +41,21 @@ export function normalizedPath(value: string): string {
   if (parts.length) parts[parts.length - 1] = storedName(parts.at(-1) ?? "");
   return parts.join("/");
 }
-/**
- * A folder root's Obsidian settings folder (`.obsidian/app.json`), or the defaults with why: the browser sent
- * none it could read (`appJsonUnread`), or what it sent is not a JSON object.
- */
+/** A folder root's `.obsidian/app.json` settings, or the defaults when absent or not a JSON object. */
 export function obsidianSettings(root: ImportManifest["roots"][number] | undefined): {
   attachmentFolderPath: string;
   newFileLocation: string;
   newFileFolderPath: string;
-  problem: ImportSettingsProblem | null;
 } {
   const defaults = { attachmentFolderPath: "", newFileLocation: "root", newFileFolderPath: "" };
-  if (root?.appJson === undefined) return { ...defaults, problem: root?.appJsonUnread ?? null };
+  if (root?.appJson === undefined) return defaults;
   let value: unknown;
   try {
     value = JSON.parse(root.appJson);
   } catch {
-    return { ...defaults, problem: "malformed" };
+    return defaults;
   }
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    return { ...defaults, problem: "malformed" };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
   const read = (key: string, fallback: string) => {
     const field = (value as Record<string, unknown>)[key];
     return typeof field === "string" ? field : fallback;
@@ -70,15 +64,7 @@ export function obsidianSettings(root: ImportManifest["roots"][number] | undefin
     attachmentFolderPath: read("attachmentFolderPath", ""),
     newFileLocation: read("newFileLocation", "root"),
     newFileFolderPath: read("newFileFolderPath", ""),
-    problem: null,
   };
-}
-export interface ImportLinkMatch {
-  target: ImportLinkCandidate;
-  /** Every candidate the ranking chose among; more than one is reported ambiguous. */
-  candidates: ImportLinkCandidate[];
-  alias: boolean;
-  existing: boolean;
 }
 interface Indexed {
   candidate: ImportLinkCandidate;
@@ -128,7 +114,7 @@ export function createLinkIndex(
     for (const alias of new Set(candidate.aliases.map((alias) => alias.toLowerCase())))
       push(existingAliases, alias, candidate);
   }
-  const memo = new Map<string, ImportLinkMatch | null>();
+  const memo = new Map<string, ImportLinkCandidate | null>();
   const inPool = (source: ImportLinkCandidate, candidate: ImportLinkCandidate) =>
     source.rootId === null || candidate.rootId === null || candidate.rootId === source.rootId;
 
@@ -137,7 +123,7 @@ export function createLinkIndex(
     source: ImportLinkCandidate,
     attachmentFolder = "",
     embed = false,
-  ): ImportLinkMatch | null {
+  ): ImportLinkCandidate | null {
     const key = JSON.stringify([linkpath, source.id, attachmentFolder, embed]);
     if (memo.has(key)) return memo.get(key) ?? null;
     const result = resolveUncached(linkpath, source, attachmentFolder, embed);
@@ -149,7 +135,7 @@ export function createLinkIndex(
     source: ImportLinkCandidate,
     attachmentFolder: string,
     embed: boolean,
-  ): ImportLinkMatch | null {
+  ): ImportLinkCandidate | null {
     const wanted = normalizedPath(linkpath);
     const wantedLower = wanted.toLowerCase();
     const exactHits = (exact.get(wanted) ?? []).filter((item) => inPool(source, item.candidate));
@@ -172,19 +158,12 @@ export function createLinkIndex(
         codePointOrder(a.candidate.path, b.candidate.path) ||
         codePointOrder(a.candidate.id, b.candidate.id),
     );
-    if (byName.length)
-      return {
-        target: byName[0].candidate,
-        candidates: byName.map((item) => item.candidate),
-        alias: false,
-        existing: false,
-      };
+    if (byName.length) return byName[0].candidate;
     const spelled = linkpath.toLowerCase();
     const aliases = (byAlias.get(spelled) ?? [])
       .filter((candidate) => inPool(source, candidate))
       .sort((a, b) => codePointOrder(a.path, b.path));
-    if (aliases.length)
-      return { target: aliases[0], candidates: aliases, alias: true, existing: false };
+    if (aliases.length) return aliases[0];
     const segments = wanted.split("/");
     const name = segments.pop() ?? "";
     const target = { name, folders: segments };
@@ -193,16 +172,7 @@ export function createLinkIndex(
     const bucket = located.get(wantedPath(target).at(-1) ?? "") ?? [];
     const hit = rankWikilinkMatches(bucket, target, holder);
     const projectTarget = hit?.documentId ? existingById.get(hit.documentId) : undefined;
-    if (projectTarget)
-      return {
-        target: projectTarget,
-        candidates: wikilinkMatches(bucket, target).flatMap((item) => {
-          const candidate = item.documentId ? existingById.get(item.documentId) : undefined;
-          return candidate ? [candidate] : [];
-        }),
-        alias: false,
-        existing: true,
-      };
+    if (projectTarget) return projectTarget;
     const projectAliases = existingAliases.get(spelled) ?? [];
     // Rank alias matches at their own locations, with the alias replacing only the filename.
     const aliasHit = rankWikilinkMatches(
@@ -216,9 +186,7 @@ export function createLinkIndex(
       holder,
     );
     const aliasTarget = projectAliases.find((candidate) => candidate.id === aliasHit?.documentId);
-    return aliasTarget
-      ? { target: aliasTarget, candidates: projectAliases, alias: true, existing: true }
-      : null;
+    return aliasTarget ?? null;
   }
   /** `path` is an already decoded Markdown destination. */
   function resolveMarkdown(path: string, source: ImportLinkCandidate) {

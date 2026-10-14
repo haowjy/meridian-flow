@@ -129,7 +129,6 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       .select({
         state: importEntries.state,
         count: sql<number>`count(*)::int`,
-        findings: sql<number>`coalesce(sum(jsonb_array_length(${importEntries.spec}->'findings')),0)::int`,
       })
       .from(importEntries)
       .where(
@@ -144,10 +143,8 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       deleted: 0,
       notImported: 0,
       skipped: 0,
-      findings: 0,
     };
     for (const row of rows) {
-      result.findings += row.findings;
       if (row.state !== "skipped") result.total += row.count;
       if (row.state === "planned" || row.state === "landing") result.arriving += row.count;
       else if (row.state === "not_imported") result.notImported += row.count;

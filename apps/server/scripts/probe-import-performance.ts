@@ -128,7 +128,6 @@ const bytes = Buffer.from("A generated note."),
 const manifest: ImportManifest = {
   importId: randomUUID(),
   destination: { folderUri: "kb://" },
-  sort: false,
   roots: [{ rootId: 0, kind: "folder", name: "Benchmark" }],
   folders: [],
   entries: Array.from({ length: notes }, (_, entryId) => ({

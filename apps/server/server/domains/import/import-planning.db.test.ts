@@ -1,7 +1,6 @@
 /** Import planning: identity graphs, chunk recovery, ready admission and Stop between chunks. Barriers sit at public port boundaries. */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { folders, importEntries, imports } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -10,72 +9,47 @@ import {
   importDbEnabled,
   loose,
   useImportDb,
-  vault,
 } from "./__test-support__/import-db.js";
 import { createImportService } from "./domain/import-service.js";
 
 describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
   const fx = useImportDb();
-  const { db, objects, ports, context, projectDocuments, ok } = fx;
+  const { db, ports, context, projectDocuments, ok } = fx;
   let projectId: string, userId: string;
   beforeEach(() => {
     ({ projectId, userId } = fx.current());
   });
-  it("plans and lands the real fixture, preserves case, moves folder notes, keeps DOCX undecorated and replays receipts", async () => {
-    const { source, selection } = vault("notes-folder");
+  it("plans placeholders for notes and DOCX, lands them undecorated, and replays one receipt", async () => {
+    const selection = loose({
+      "Chapter.md": "See [[Sects]].",
+      "Sects.md": "Imported",
+      "Foundation.docx": readFileSync(
+        new URL(
+          "./__fixtures__/notes-folder/Chapters/Chapter 5 - Foundation.docx",
+          import.meta.url,
+        ),
+      ),
+    });
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     expect(plan.state).toBe("ready");
-    expect(plan.entries).toHaveLength(15);
-    expect(plan.entries.filter((entry) => entry.state === "planned")).toHaveLength(14);
-    expect(await projectDocuments()).toHaveLength(13);
+    expect(plan.entries.filter((entry) => entry.state === "planned")).toHaveLength(3);
+    expect(await projectDocuments()).toHaveLength(3);
     expect(
       (await projectDocuments()).every(
         (row) => (row.metadata as { importPending: boolean }).importPending,
       ),
     ).toBe(true);
-    for (const entry of plan.entries.filter((entry) => entry.state === "planned"))
-      expect(
-        (
-          await service.land(
-            projectId,
-            plan.importId,
-            entry.entryId,
-            selection.bytes[entry.entryId],
-          )
-        ).state,
-      ).toBe("landed");
-    const report = await service.report(plan.importId, projectId);
-    expect(report.state).toBe("finished");
-    expect(await projectDocuments()).toHaveLength(14);
-    expect(
-      (await ok(context().read("kb://notes-folder/Chapters/Chapter 5 - Foundation"))).content,
-    ).not.toMatch(/^#/);
-    expect(report.entries.find((entry) => entry.filename === "Lore.md")?.uri).toBe(
-      "kb://notes-folder/Lore/Lore",
-    );
-    expect(
-      report.entries
-        .filter((entry) => /magic system/i.test(entry.filename))
-        .map((entry) => entry.name)
-        .sort(),
-    ).toEqual(["Magic System", "magic system"]);
-    const map = report.entries.find((entry) => entry.filename === "map.png");
-    expect(objects.get(`imports/${plan.importId}/${map?.entryId}`)).toEqual(
-      readFileSync(join(source, "attachments/map.png")),
-    );
-    for (const entry of plan.entries.filter((entry) => entry.state === "planned"))
-      expect(
-        (
-          await service.land(
-            projectId,
-            plan.importId,
-            entry.entryId,
-            selection.bytes[entry.entryId],
-          )
-        ).state,
-      ).toBe("landed");
-    expect(await projectDocuments()).toHaveLength(14);
+    const landOne = (entryId: number) =>
+      service.land(projectId, plan.importId, entryId, selection.bytes[entryId]);
+    for (const entry of plan.entries) expect((await landOne(entry.entryId)).state).toBe("landed");
+    expect((await service.report(plan.importId, projectId)).state).toBe("finished");
+    expect(await projectDocuments()).toHaveLength(3);
+    expect((await ok(context().read("kb://Foundation"))).content).not.toMatch(/^#/);
+    expect((await ok(context().read("kb://Chapter"))).content).toContain("[Sects](Sects)");
+    // A replayed receipt answers from the stored result and changes nothing.
+    expect((await landOne(0)).state).toBe("landed");
+    expect(await projectDocuments()).toHaveLength(3);
   });
   it("a sibling created after the plan persists counts up at the chunk, without overwrite", async () => {
     const selection = loose({ "Sects.md": "Imported" }),
@@ -97,10 +71,7 @@ describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
     await ok(context().createTrackedDocument("kb://Sects", "Writer"));
     gate.release();
     const plan = await planning;
-    expect(plan.entries[0]).toMatchObject({
-      name: "Sects (2)",
-      findings: [{ code: "name_clash", params: { original: "Sects" } }],
-    });
+    expect(plan.entries[0]).toMatchObject({ name: "Sects (2)" });
     expect((await service.land(projectId, plan.importId, 0, selection.bytes[0])).state).toBe(
       "landed",
     );

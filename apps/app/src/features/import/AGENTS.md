@@ -31,13 +31,10 @@ can do about it.
 - **`wanted` is the send authority.** The report's `entry.wanted` decides what
   this tab sends or counts as left; never re-derive it from entry states (a
   planned/failed filter stranded crashed landings).
-- **No Sort with AI yet.** Nothing offers it; the manifest's `sort`
-  is always false until P7 (see
-  [the server FUTURE.md](../../../../server/server/domains/import/.context/FUTURE.md)).
 - **Words are the app's.** The server sends codes (`reason-copy.ts`); every
   sentence is Lingui, none separates facts with `·`, `•`, `—` or `|`, none says
   manifest, entry, plan, sniff, digest or the name of another app. The app shows
-  only failed and skipped files and ignores the server's other findings.
+  only failed and skipped files.
 - **No ZIP reader, no `fflate`.** A ZIP is a file. Names the server would refuse
   (`:`, `?`, `*`) are left out and reported as unreadable instead of failing the
   whole import: the manifest's `unreadable` paths keep their source names, which

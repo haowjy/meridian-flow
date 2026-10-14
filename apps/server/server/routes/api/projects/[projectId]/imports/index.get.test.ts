@@ -10,7 +10,6 @@ const summary: ImportSummary = {
   importId: "33333333-3333-4333-8333-333333333333",
   state: "ready",
   destination: { folderUri: "kb://Book/", folderId: "44444444-4444-4444-8444-444444444444" },
-  sort: false,
   counts: {
     total: 1,
     landed: 0,
@@ -19,7 +18,6 @@ const summary: ImportSummary = {
     deleted: 0,
     notImported: 0,
     skipped: 0,
-    findings: 0,
   },
   lastActivityAt: "2026-10-12T00:00:00.000Z",
   version: "7",

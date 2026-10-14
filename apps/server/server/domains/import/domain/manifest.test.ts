@@ -8,7 +8,6 @@ function vault(entries: ImportManifest["entries"]): ImportManifest {
   return {
     importId: randomUUID(),
     destination: { folderUri: "kb://" },
-    sort: false,
     roots: [{ rootId: 0, kind: "folder", name: "Vault" }],
     folders: [],
     entries,

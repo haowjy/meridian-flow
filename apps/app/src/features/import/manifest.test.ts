@@ -46,6 +46,30 @@ describe("buildManifest", () => {
     expect([...held.keys()]).toEqual([0, 1]);
   });
 
+  it("reads frontmatter from extensionless and unknown-extension text, as the server classifies it", async () => {
+    const text = "---\naliases: [Gate]\n---\nBody";
+    const { manifest } = await buildManifest(
+      selectionOf({
+        rootId: 0,
+        kind: "folder",
+        name: "vault",
+        files: [
+          { path: "Chapter", file: new File([text], "Chapter") },
+          { path: "notes.draft", file: new File([text], "notes.draft") },
+          { path: "code.ts", file: new File([text], "code.ts") },
+        ],
+        folders: [],
+        unreadable: [],
+      }),
+      { importId: "00000000-0000-4000-8000-000000000000", destinationUri: "kb://" },
+    );
+    expect(manifest.entries.map((entry) => entry.frontmatter)).toEqual([
+      "aliases: [Gate]\n",
+      "aliases: [Gate]\n",
+      undefined,
+    ]);
+  });
+
   it("does not read a file over the limit and gives the same stand-in digest for the same size", async () => {
     const big = new File([new Uint8Array(IMPORT_FILE_LIMITS.fileBytes + 1)], "film.mp4");
     const read = { arrayBuffer: 0 };

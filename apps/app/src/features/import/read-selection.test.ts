@@ -33,47 +33,16 @@ describe("a picked folder", () => {
   });
 });
 
-describe("a folder's Obsidian settings", () => {
-  const unreadableFile = (relativePath: string) => {
-    const file = pickedFile(relativePath, "{}");
-    file.text = () => Promise.reject(new DOMException("gone", "NotReadableError"));
-    return file;
-  };
-
-  it("says why they are missing: hidden by the browser, unreadable or too large", async () => {
-    const notes = pickedFile("vault/Ch 1.md", "# One");
-    const hidden = await readPicked([notes], { hidesDotEntries: true });
-    expect(hidden.roots[0].appJsonUnread).toBe("unavailable");
-
-    const unreadable = await readPicked([notes, unreadableFile("vault/.obsidian/app.json")]);
-    expect(unreadable.roots[0]).toMatchObject({ appJsonUnread: "unreadable" });
-    expect(unreadable.roots[0].appJson).toBeUndefined();
-
+describe("a folder's app settings", () => {
+  it("sends none when the file is unreadable or too large, and still reads the notes", async () => {
+    const unreadable = pickedFile("vault/.obsidian/app.json", "{}");
+    unreadable.text = () => Promise.reject(new DOMException("gone", "NotReadableError"));
     const huge = pickedFile("vault/.obsidian/app.json", " ".repeat(SIDE_FILE_MAX_CHARS + 1));
-    expect((await readPicked([notes, huge])).roots[0].appJsonUnread).toBe("too_large");
-  });
-
-  it("claims nothing for a folder a browser that shares hidden folders shows without them", async () => {
-    const selection = await readPicked([pickedFile("vault/Ch 1.md", "# One")], {
-      hidesDotEntries: false,
-    });
-    expect(selection.roots[0].appJsonUnread).toBeUndefined();
-  });
-
-  it("claims nothing for a hidden-folder browser when the folder has no notes", async () => {
-    const selection = await readPicked([pickedFile("photos/map.png", "x")], {
-      hidesDotEntries: true,
-    });
-    expect(selection.roots[0].appJsonUnread).toBeUndefined();
-  });
-
-  it("reads the same from a drop", async () => {
-    const vault = { name: "vault", children: [{ name: "Ch 1.md", content: "a" }] };
-    const selection = await readDropped(
-      { entries: [fakeDirectory(vault)], files: [] },
-      { hidesDotEntries: true },
-    );
-    expect(selection.roots[0].appJsonUnread).toBe("unavailable");
+    for (const settings of [unreadable, huge]) {
+      const selection = await readPicked([pickedFile("vault/Ch 1.md", "# One"), settings]);
+      expect(selection.roots[0].appJson).toBeUndefined();
+      expect(selection.roots[0].files.map((file) => file.path)).toEqual(["Ch 1.md"]);
+    }
   });
 });
 

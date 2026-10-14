@@ -3,6 +3,7 @@
  * bytes and frontmatter. Hashing happens here, after Import, never in the dialog.
  */
 import type { ImportManifest, ImportUnreadableReason } from "@meridian/contracts";
+import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { splitFrontmatter } from "@meridian/markup/frontmatter";
 import { IMPORT_FILE_LIMITS } from "./limits";
 import { type Selection, unreadableReason } from "./selection";
@@ -17,8 +18,6 @@ export type BuiltManifest = {
   /** Entries by id, for the uploader and for matching a later selection. */
   held: Map<number, HeldFile>;
 };
-
-const PROSE_EXTENSIONS = /\.(md|markdown|mdx|txt)$/i;
 
 function hex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -58,7 +57,9 @@ async function describeFile(
     sha256: await sha256Hex(bytes),
     sniff: base64(bytes.subarray(0, IMPORT_FILE_LIMITS.sniffBytes)),
   };
-  if (PROSE_EXTENSIONS.test(path || file.name)) {
+  // The server's text-inspection criterion: Markdown or an unknown filetype.
+  const filetype = filetypeForKnownPath(path || file.name);
+  if (filetype === null || filetype === "markdown") {
     const frontmatter = splitFrontmatter(new TextDecoder().decode(bytes)).frontmatter;
     if (frontmatter) entry.frontmatter = frontmatter.text;
   }
@@ -96,7 +97,6 @@ export async function buildManifest(
   const manifest: ImportManifest = {
     importId: options.importId,
     destination: { folderUri: options.destinationUri },
-    sort: false,
     roots: [],
     folders: [],
     entries: [],
@@ -110,7 +110,6 @@ export async function buildManifest(
       kind: root.kind,
       name: root.name,
       ...(root.appJson === undefined ? {} : { appJson: root.appJson }),
-      ...(root.appJsonUnread === undefined ? {} : { appJsonUnread: root.appJsonUnread }),
       ...(root.meridianExport === undefined ? {} : { meridianExport: root.meridianExport }),
     });
     for (const folder of root.folders) manifest.folders.push({ rootId: root.rootId, path: folder });

@@ -1,7 +1,6 @@
 /** Pure identity graph, folder-note relocation and exact-case name allocation. */
 import type {
   ImportEntryReason,
-  ImportFinding,
   ImportManifest,
   ImportUnreadableReason,
 } from "@meridian/contracts";
@@ -29,7 +28,6 @@ export interface PlannedNode {
   state: "planned" | "skipped";
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
-  findings: ImportFinding[];
 }
 export function codePointOrder(a: string, b: string): number {
   const left = Array.from(a, (character) => character.codePointAt(0) ?? 0);
@@ -100,7 +98,6 @@ export function planSelection(
         mimeType: "",
         state: "planned",
         reason: null,
-        findings: [],
       };
       folders.set(path, node);
       nodes.push(node);
@@ -134,7 +131,6 @@ export function planSelection(
       let parentPath = entry.path.includes("/")
         ? entry.path.slice(0, entry.path.lastIndexOf("/"))
         : "";
-      const findings: ImportFinding[] = [];
       const folderNote = [parentPath, typed.name].filter(Boolean).join("/");
       if (
         root.kind === "folder" &&
@@ -142,18 +138,7 @@ export function planSelection(
         folders.has(folderNote)
       ) {
         parentPath = folderNote;
-        findings.push({ code: "folder_note", params: {} });
       }
-      if (/\.zip$/i.test(filename))
-        findings.push({
-          code: "zip",
-          params: { name: filename },
-        });
-      if (renderFilename(typed.name, typed.extension) !== filename && typed.kind === "binary")
-        findings.push({
-          code: "binary_extension",
-          params: { original: filename, type: typed.filetype },
-        });
       nodes.push({
         id: mintId(),
         ...(marker?.areas.get(entry.path.split("/")[0])
@@ -169,7 +154,6 @@ export function planSelection(
         sha256: entry.sha256,
         state: skip ? "skipped" : "planned",
         reason: skip,
-        findings,
       });
     }
   }
@@ -193,7 +177,6 @@ export function planSelection(
       state: "skipped",
       reason: "unreadable",
       reasonParams: { readReason: unreadable.reason ?? "unreadable" },
-      findings: [],
     });
   }
   // Parents precede children; the already-spelled canonical name wins among siblings.

@@ -2,14 +2,11 @@
 export interface ImportManifest {
   importId: string;
   destination: { folderUri: string };
-  sort: boolean;
   roots: {
     rootId: number;
     kind: "folder" | "file";
     name: string;
     appJson?: string;
-    /** Why a folder root carries no `appJson` although it may have settings. */
-    appJsonUnread?: ImportSettingsUnread;
     meridianExport?: string;
   }[];
   folders: { rootId: number; path: string }[];
@@ -24,13 +21,6 @@ export interface ImportManifest {
     frontmatter?: string;
   }[];
 }
-/**
- * Why the browser sent no Obsidian settings: it hides dot-folders (Safari), the
- * read failed, or the file is over the side-file limit.
- */
-export type ImportSettingsUnread = "unavailable" | "unreadable" | "too_large";
-/** Why an import used default Obsidian settings: unread, or sent but not valid JSON. */
-export type ImportSettingsProblem = ImportSettingsUnread | "malformed";
 export type ImportState = "planning" | "ready" | "finished";
 export type ImportEntryState =
   | "planned"
@@ -63,29 +53,6 @@ export type ImportUnreadableReason =
   | "not_found"
   | "symlink"
   | "folder_unreadable";
-export interface ImportFindingParams {
-  properties_unreadable: Record<string, never>;
-  link_target_unavailable: { text: string; path: string };
-  hidden_notes: { count: number };
-  link_to_existing: { text: string; path: string };
-  link_via_alias: { text: string; path: string };
-  link_ambiguous: { text: string; count: number; path: string; candidates: string[] };
-  link_unresolved: { text: string; folder: string };
-  heading_not_followed: { text: string; name: string; heading: string };
-  block_ref_dropped: { text: string; name: string };
-  note_embed_to_link: { name: string };
-  embed_to_link: { name: string };
-  image_size_dropped: { name: string; size: string };
-  kept_as_text: { callouts: number; highlights: number; tags: number; footnotes: number };
-  settings_unreadable: { name: string; reason: ImportSettingsProblem };
-  name_clash: { original: string };
-  folder_note: Record<string, never>;
-  binary_extension: { original: string; type: string };
-  zip: { name: string };
-}
-export type ImportFinding = {
-  [Code in keyof ImportFindingParams]: { code: Code; params: ImportFindingParams[Code] };
-}[keyof ImportFindingParams];
 export interface ImportCounts {
   total: number;
   landed: number;
@@ -94,7 +61,6 @@ export interface ImportCounts {
   deleted: number;
   notImported: number;
   skipped: number;
-  findings: number;
 }
 export interface ImportSummary {
   importId: string;
@@ -104,7 +70,6 @@ export interface ImportSummary {
    * at an area root), which keeps naming the folder after a move renames its URI.
    */
   destination: { folderUri: string; folderId: string | null };
-  sort: boolean;
   counts: ImportCounts;
   lastActivityAt: string;
   /** Decimal commit-ordered sequence; never coerced through a JS number. */
@@ -131,7 +96,6 @@ export interface ImportEntryReport {
    * claim lapsed (its process died). Read at report time; senders trust it alone.
    */
   wanted: boolean;
-  findings: ImportFinding[];
 }
 export interface ImportRootReport {
   rootId: number;

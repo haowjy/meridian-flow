@@ -69,7 +69,6 @@ function entry(entryId: number, state: ImportEntryReport["state"]): ImportEntryR
     reason: null,
     exists: true,
     wanted: false,
-    findings: [],
   };
 }
 
@@ -80,7 +79,6 @@ function report(overrides: Partial<ImportReport> = {}): ImportReport {
     importId: "import-1",
     state: "ready",
     destination: { folderUri: "kb://", folderId: null },
-    sort: false,
     counts: {
       total: entries.length,
       landed,
@@ -89,7 +87,6 @@ function report(overrides: Partial<ImportReport> = {}): ImportReport {
       deleted: 0,
       notImported: 0,
       skipped: 0,
-      findings: 0,
     },
     lastActivityAt: new Date().toISOString(),
     version: "1",

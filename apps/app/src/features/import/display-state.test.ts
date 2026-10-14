@@ -11,7 +11,6 @@ const counts = (patch: Partial<ImportCounts>): ImportCounts => ({
   deleted: 0,
   notImported: 0,
   skipped: 0,
-  findings: 0,
   ...patch,
 });
 const summary = (state: ImportSummary["state"]) => ({ state }) as ImportSummary;

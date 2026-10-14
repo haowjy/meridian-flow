@@ -10,7 +10,6 @@ function manifest(): ImportManifest {
   return {
     importId: randomUUID(),
     destination: { folderUri: "kb://" },
-    sort: false,
     roots: [{ rootId: 1, kind: "folder", name: "Book" }],
     folders: [{ rootId: 1, path: "Lore" }],
     entries: [
@@ -30,7 +29,6 @@ describe("import planning", () => {
       parentId: lore?.id,
       name: "Lore",
       kind: "note",
-      findings: [{ code: "folder_note", params: {} }],
     });
     expect(planned.filter((node) => node.entryId !== null)).toHaveLength(4);
     expect(planned.find((node) => node.filename === "Plot.canvas")?.state).toBe("skipped");

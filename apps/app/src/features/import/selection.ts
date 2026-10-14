@@ -1,5 +1,5 @@
 /** What the writer chose, as the browser could read it: roots, files, folders and what was left out. */
-import type { ImportSettingsUnread, ImportUnreadableReason } from "@meridian/contracts";
+import type { ImportUnreadableReason } from "@meridian/contracts";
 
 export type SelectedFile = { path: string; file: File };
 
@@ -18,8 +18,6 @@ export type SelectedRoot = {
   unreadable: UnreadableItem[];
   /** Text of `.obsidian/app.json`, when the browser shared it. */
   appJson?: string;
-  /** Why there is no `appJson` although the folder may have Obsidian settings. */
-  appJsonUnread?: ImportSettingsUnread;
   /** Text of `meridian-export.json` at the folder's top. */
   meridianExport?: string;
 };
@@ -42,51 +40,16 @@ export function unreadableReason(error: unknown): ImportUnreadableReason {
   return "unreadable";
 }
 
-export type SideFile = { text: string } | { unread: "unreadable" | "too_large" };
-
-/** Read a small JSON side file, or say why it could not be. */
-export async function readSideFile(file: File): Promise<SideFile> {
-  if (file.size > SIDE_FILE_MAX_CHARS) return { unread: "too_large" };
+/** A small JSON side file's text, or nothing when it is too large or could not be read. */
+export async function readSideFile(file: File): Promise<string | undefined> {
+  if (file.size > SIDE_FILE_MAX_CHARS) return undefined;
   try {
     const text = await file.text();
-    return text.length > SIDE_FILE_MAX_CHARS ? { unread: "too_large" } : { text };
+    return text.length > SIDE_FILE_MAX_CHARS ? undefined : text;
   } catch {
-    return { unread: "unreadable" };
+    return undefined;
   }
 }
-
-/** A side file's text, or nothing when it could not be read. */
-export const textOf = (read: SideFile) => ("text" in read ? read.text : undefined);
-
-/** Put a read `.obsidian/app.json` on its root, or why it is not there. */
-export function holdSettings(root: SelectedRoot, read: SideFile) {
-  if ("text" in read) root.appJson = read.text;
-  else root.appJsonUnread = read.unread;
-}
-
-/**
- * Safari (and every iOS browser, all WebKit) hides dot-entries from folder
- * picks and drops, so `.obsidian` never arrives there.
- */
-export function browserHidesDotEntries(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const agent = navigator.userAgent;
-  return /AppleWebKit/.test(agent) && !/(Chrome|Chromium|Edg|OPR|Firefox)\//.test(agent);
-}
-
-const NOTE = /\.(md|markdown)$/i;
-
-/**
- * A folder of notes read by a browser that hides dot-folders may have had
- * settings it never saw; say so rather than claim there were none.
- */
-export function noteHiddenSettings(root: SelectedRoot, hidesDotEntries: boolean) {
-  if (!hidesDotEntries || root.kind !== "folder") return;
-  if (root.appJson !== undefined || root.appJsonUnread !== undefined) return;
-  if (root.files.some(({ path }) => NOTE.test(path))) root.appJsonUnread = "unavailable";
-}
-
-export type ReaderOptions = { hidesDotEntries?: boolean };
 
 export type SelectionTotals = {
   files: number;

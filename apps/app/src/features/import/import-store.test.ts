@@ -20,7 +20,6 @@ const planned: ImportEntryReport = {
   reason: null,
   exists: true,
   wanted: false,
-  findings: [],
 };
 const landed: ImportEntryReport = { ...planned, state: "landed" };
 
@@ -30,7 +29,6 @@ function summary(version: string, state: ImportSummary["state"] = "ready"): Impo
     importId: "import-1",
     state,
     destination: { folderUri: "kb://", folderId: null },
-    sort: false,
     counts: {
       total: 1,
       landed: done ? 1 : 0,
@@ -39,7 +37,6 @@ function summary(version: string, state: ImportSummary["state"] = "ready"): Impo
       deleted: 0,
       notImported: 0,
       skipped: 0,
-      findings: 0,
     },
     lastActivityAt: "2026-10-12T00:00:00.000Z",
     version,

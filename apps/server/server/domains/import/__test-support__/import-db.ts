@@ -82,7 +82,6 @@ export function loose(files: Record<string, string | Uint8Array>): {
     manifest: {
       importId: randomUUID(),
       destination: { folderUri: "kb://" },
-      sort: false,
       roots: Object.keys(files).map((name, rootId) => ({ rootId, kind: "file", name })),
       folders: [],
       entries: bytes.map((value, entryId) => ({

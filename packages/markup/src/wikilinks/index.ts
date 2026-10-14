@@ -26,10 +26,6 @@ export type WikilinkSyntaxFinding =
   | WikilinkFinding
   | (SourceRange & { kind: "escape"; literal: "[[" })
   | (SourceRange & { kind: "comment"; syntax: "percent" | "html" })
-  | (SourceRange & { kind: "callout"; calloutType: string; fold: "+" | "-" | null })
-  | (SourceRange & { kind: "highlight"; text: string })
-  | (SourceRange & { kind: "tag"; tag: string })
-  | (SourceRange & { kind: "footnoteReference" | "footnoteDefinition"; identifier: string })
   | (SourceRange & {
       kind: "markdownLink";
       url: string;
@@ -55,7 +51,6 @@ type SyntaxNode = {
   type: string;
   position?: { start: { offset?: number }; end: { offset?: number } };
   children?: SyntaxNode[];
-  identifier?: string;
   url?: string;
   data?: { destination?: SourceRange };
 };
@@ -186,14 +181,12 @@ export function scanWikilinks(sourceText: string, options: WikilinkScanOptions =
 
   // Comments may contain Markdown fences themselves. Mask them before the authoritative parse.
   const blocked = [...hidden];
-  const quotes: SourceRange[] = [];
   if (!prose)
     walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
       const span = range(node);
       if (!span) return;
       if (["code", "inlineCode", "html", "link", "image", "definition"].includes(node.type))
         blocked.push(span);
-      if (node.type === "blockquote") quotes.push(span);
       if (node.type === "link" || node.type === "image")
         findings.push({
           ...span,
@@ -202,12 +195,8 @@ export function scanWikilinks(sourceText: string, options: WikilinkScanOptions =
           image: node.type === "image",
           destination: node.data?.destination ?? null,
         });
-      if (node.type === "footnoteDefinition") {
-        findings.push({ ...span, kind: "footnoteDefinition", identifier: node.identifier ?? "" });
-      }
     });
 
-  const opaque = [...blocked];
   const accept = (from: number, to: number) =>
     !escaped(source, from) && !overlaps({ from, to }, blocked);
   for (const match of source.matchAll(/\\\[\\?\[/g)) {
@@ -252,37 +241,6 @@ export function scanWikilinks(sourceText: string, options: WikilinkScanOptions =
         : null,
     });
     blocked.push({ from, to });
-  }
-  for (const match of source.matchAll(/^[ \t]*(?:>[ \t]*)+\[!([\w-]+)\]([+-])?/gm)) {
-    const from = match.index + match[0].indexOf("[!");
-    const to = match.index + match[0].length;
-    if (accept(from, to) && quotes.some((quote) => from >= quote.from && to <= quote.to))
-      findings.push({
-        kind: "callout",
-        from,
-        to,
-        calloutType: match[1] ?? "",
-        fold: (match[2] as "+" | "-" | undefined) ?? null,
-      });
-  }
-  for (const match of source.matchAll(/==([^=\r\n]+)==/g)) {
-    const from = match.index;
-    const to = from + match[0].length;
-    const insideTarget = blocked.some((span) => from >= span.from && to <= span.to);
-    if (!escaped(source, from) && !overlaps({ from, to }, opaque) && !insideTarget)
-      findings.push({ kind: "highlight", from, to, text: match[1] ?? "" });
-  }
-  for (const match of source.matchAll(/(^|[\s(])#([\p{L}\p{N}_/-]+)/gu)) {
-    const from = match.index + (match[1]?.length ?? 0);
-    const to = match.index + match[0].length;
-    const tag = match[2] ?? "";
-    if (accept(from, to) && /[\p{L}_/-]/u.test(tag)) findings.push({ kind: "tag", from, to, tag });
-  }
-  for (const match of source.matchAll(/\[\^([^\]\r\n]+)\]/g)) {
-    const from = match.index;
-    const to = from + match[0].length;
-    if (source[to] !== ":" && accept(from, to))
-      findings.push({ kind: "footnoteReference", from, to, identifier: match[1] ?? "" });
   }
   return { source, findings: findings.sort((a, b) => a.from - b.from || b.to - a.to) };
 }

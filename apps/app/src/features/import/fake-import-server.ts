@@ -26,14 +26,12 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
       deleted: count("deleted"),
       notImported: count("not_imported"),
       skipped: count("skipped"),
-      findings: 0,
     };
   };
   const report = (): ImportReport => ({
     importId: manifest?.importId ?? "",
     state: finished ? "finished" : "ready",
     destination: { folderUri: manifest?.destination.folderUri ?? "kb://", folderId: null },
-    sort: false,
     counts: counts(),
     lastActivityAt: new Date().toISOString(),
     version: String(version),
@@ -65,7 +63,6 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
           reason: null,
           exists: true,
           wanted: true,
-          findings: [],
         });
       }
       return report();

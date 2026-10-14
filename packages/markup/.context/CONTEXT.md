@@ -6,7 +6,7 @@ The root `@meridian/markup` exports:
 
 - Presets: `markdownCodec({ schema })` and `mdxCodec({ schema, components })`.
   The separate `mdxCodec({ schema, export: true })` instance preserves literal
-  Obsidian-shaped text spans: `[[…]]`/`![[…]]`, a `[!type]` callout marker
+  wiki-style text spans: `[[…]]`/`![[…]]`, a `[!type]` callout marker
   opening a blockquote's first line, and footnote `[^id]` (so `[^id]:`
   definitions too) unless a neighbouring `(`, `[`, `]` or `!` could still form
   a link. Other bracket constructs stay escaped. Ordinary and model output keep
@@ -41,9 +41,11 @@ loads neither Yjs nor the schema builder):
   fragment name from `@meridian/prosemirror-schema/protocol`, never the schema
   builder.
 
-Obsidian syntax ships at `@meridian/markup/obsidian`: `scanObsidian(text)`
+Wiki-style link syntax ships at `@meridian/markup/wikilinks`: `scanWikilinks(text)`
 returns `{ source, findings }`. Findings are a discriminated
-`ObsidianFinding` union with half-open UTF-16 `from`/`to` ranges into the
+`WikilinkSyntaxFinding` union (frontmatter, links, embeds, escapes, comments and
+Markdown links; callouts, highlights, tags and footnotes stay plain text and are
+not recognized) with half-open UTF-16 `from`/`to` ranges into the
 returned source. Table ingress leaves frontmatter and comment contents verbatim.
 It uses the codec's positioned Markdown parser, masking frontmatter and comments without changing offsets; code,
 comments and Markdown destinations never yield wikilinks. It reports only,
@@ -54,8 +56,8 @@ frontmatter or Markdown AST interpretation; the host supplies code/link semantic
 Comments still span formatting and paragraph boundaries. `{ preprocessed: true }`
 remains available for Markdown source whose ingress has already run.
 
-`splitObsidianFrontmatter(text)` also ships alone at
-`@meridian/markup/obsidian/frontmatter`, without parser or codec imports.
+`splitFrontmatter(text)` also ships alone at
+`@meridian/markup/frontmatter`, without parser or codec imports.
 It returns `{ frontmatter, body }`; the frontmatter range includes both
 delimiters and the closing line ending, while `text` contains only the YAML
 between them, verbatim. It accepts a leading BOM and CRLF; an unclosed or

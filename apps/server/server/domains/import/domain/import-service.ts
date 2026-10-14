@@ -7,7 +7,6 @@ import type {
   ImportSummary,
 } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
-import { walkLinkOccurrences } from "@meridian/markup/links";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { DocumentConverterPort } from "../ports/document-converter.js";
 import type { ImportDiagnostics } from "../ports/import-diagnostics.js";
@@ -29,14 +28,6 @@ function wantsBytes(entry: ImportEntry, at: Date): boolean {
   return entry.state === "landing" && !(entry.leaseUntil && entry.leaseUntil > at);
 }
 
-function targetPath(record: ImportRecord, entries: readonly ImportEntry[], id: string): string {
-  const selected = entries.find((entry) => entry.id === id);
-  if (selected) {
-    const root = record.manifest.roots.find((root) => root.rootId === selected.rootId);
-    return root?.kind === "file" ? root.name : selected.path;
-  }
-  return record.manifest.existingLinks?.find((candidate) => candidate.id === id)?.uri ?? "";
-}
 export function createImportService(deps: {
   repository: ImportRepository;
   tree: ImportTreeWriter;
@@ -67,16 +58,9 @@ export function createImportService(deps: {
     parent: NonNullable<Awaited<ReturnType<ImportTreeWriter["parent"]>>>,
   ) {
     const name = allocateName(entry, parent.children);
-    const findings = [...entry.findings];
-    if (name !== entry.name)
-      findings.push({
-        code: "name_clash",
-        params: { original: entry.name + (entry.extension ? `.${entry.extension}` : "") },
-      });
     return {
       ...entry,
       name,
-      findings,
       uri: `${parent.uri}${name}${entry.extension ? `.${entry.extension}` : ""}${entry.kind === "folder" ? "/" : ""}`,
     };
   }
@@ -91,7 +75,6 @@ export function createImportService(deps: {
       importId: record.id,
       state: record.state,
       destination: { folderUri: record.manifest.destination.folderUri, folderId: record.folderId },
-      sort: record.manifest.sort,
       counts: cut.counts,
       lastActivityAt: cut.lastActivityAt,
       version: cut.version,
@@ -191,7 +174,6 @@ export function createImportService(deps: {
       wanted: wantsBytes(entry, now()),
       reason: entry.reason,
       ...(entry.reasonParams ? { reasonParams: entry.reasonParams } : {}),
-      findings: entry.findings,
     };
   }
   async function entryOutcome(id: string, projectId: string, entryId: number) {
@@ -261,7 +243,6 @@ export function createImportService(deps: {
               id: entry.id,
               patch: {
                 name: entry.name,
-                findings: entry.findings,
                 uri: entry.uri,
                 prepared: true,
                 created: creates(entry),
@@ -512,13 +493,7 @@ export function createImportService(deps: {
         const text =
           entry.kind === "docx" ? await convertDocx(bytes) : Buffer.from(bytes).toString("utf8");
         const entries = await repo.entries(id);
-        const { converted, settings, root } = await prepareImportedNote(
-          tree,
-          record,
-          entry,
-          entries,
-          text,
-        );
+        const { converted, hrefs } = await prepareImportedNote(tree, record, entry, entries, text);
         const targets = converted?.targets ?? new Map<number, string>();
         // Binaries and code land later. Bound by planned id, an unlanded one gets an
         // ahead ref settled to that id on arrival; its address is never resolved.
@@ -536,7 +511,7 @@ export function createImportService(deps: {
                   ? {
                       text: converted.template,
                       targets,
-                      hrefs: converted.hrefs,
+                      hrefs,
                       pending,
                     }
                   : { text },
@@ -605,23 +580,6 @@ export function createImportService(deps: {
             }
             if (converted)
               await tree.setProperties(entry.id, converted.properties, converted.aliases);
-            const findings = [...current.findings, ...(converted?.findings ?? [])];
-            if (settings.problem)
-              findings.push({
-                code: "settings_unreadable",
-                params: { name: root?.name ?? "", reason: settings.problem },
-              });
-            const occurrences = bound.invalidTargets.length
-              ? walkLinkOccurrences(bound.blocks)
-              : [];
-            for (const invalid of bound.invalidTargets)
-              findings.push({
-                code: "link_target_unavailable",
-                params: {
-                  text: occurrences[invalid.occurrence]?.label ?? "",
-                  path: targetPath(record, entries, invalid.documentId),
-                },
-              });
             for (const ref of ahead) {
               const target = await repo.lockEntry(ref.targetId);
               if (target.state === "landed") await tree.settleAhead(ref.ref, target.id);
@@ -633,7 +591,6 @@ export function createImportService(deps: {
             await tree.clearPending([entry.id]);
             await repo.updateEntry(entry.id, {
               state: "landed",
-              findings,
               reason: null,
               uri: await tree.currentUri(entry.id, "file"),
               exists: true,

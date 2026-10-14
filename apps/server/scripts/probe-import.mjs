@@ -21,7 +21,6 @@ if (!projectId || !folderUri || !paths.length)
 const manifest = {
   importId: process.env.MF_IMPORT_ID ?? randomUUID(),
   destination: { folderUri },
-  sort: false,
   roots: [],
   folders: [],
   entries: [],

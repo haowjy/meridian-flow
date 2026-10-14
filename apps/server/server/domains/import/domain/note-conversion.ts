@@ -1,5 +1,5 @@
 /** Pure wiki-style note conversion; identity assignments travel separately from written addresses. */
-import type { ImportFinding, StoredDocumentProperties } from "@meridian/contracts";
+import type { StoredDocumentProperties } from "@meridian/contracts";
 import { formatMarkdownLink, mdxCodec } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { scanWikilinks, storedName } from "@meridian/markup/wikilinks";
@@ -13,12 +13,18 @@ import {
 } from "./link-index.js";
 
 const codec = mdxCodec({ schema: buildDocumentSchema() });
+/** One converted destination: its target identity and how its address is spelled. */
+interface Destination {
+  targetId: string | null;
+  /** Address used when the target has no override: its candidate URI or the ahead location. */
+  href: string;
+  /** `#heading` kept after the target's address. */
+  fragment: string;
+}
+/** The immutable result of converting one note; `respell` turns it into written hrefs. */
 export interface ConvertedNote {
-  /** The note as written, with converted destinations at their addresses; for reading only. */
-  markdown: string;
   properties: StoredDocumentProperties | null;
   aliases: string[];
-  findings: ImportFinding[];
   /**
    * What binding parses: every converted destination is a unique placeholder,
    * so each source link is its own occurrence even where real addresses would
@@ -27,18 +33,8 @@ export interface ConvertedNote {
   template: string;
   /** Planned identity per occurrence of `template`'s parse, including images. */
   targets: Map<number, string>;
-  /** Written href per converted occurrence of `template`'s parse. */
-  hrefs: Map<number, string>;
-  /** Spell these target ids at other addresses; occurrences are unchanged. */
-  readdress(uris: ReadonlyMap<string, string>): void;
-}
-/** One converted destination: its target identity and how its address is spelled. */
-interface Written {
-  targetId: string | null;
-  /** Address used when the target has no override: its candidate URI or the ahead location. */
-  href: string;
-  /** `#heading` kept after the target's address. */
-  fragment: string;
+  /** Every converted occurrence of `template`'s parse and its destination. */
+  destinations: Map<number, Destination>;
 }
 export function convertNote(
   text: string,
@@ -55,19 +51,6 @@ export function convertNote(
     ? { format: "yaml", text: frontmatter.text }
     : null;
   const parsed = frontmatter ? readFrontmatter(frontmatter.text) : null;
-  const findings: ImportFinding[] = [];
-  const comments = scan.findings.filter((finding) => finding.kind === "comment");
-  if (comments.length) findings.push({ code: "hidden_notes", params: { count: comments.length } });
-  if (parsed && !parsed.readable) findings.push({ code: "properties_unreadable", params: {} });
-  const counts = {
-    callouts: scan.findings.filter((finding) => finding.kind === "callout").length,
-    highlights: scan.findings.filter((finding) => finding.kind === "highlight").length,
-    tags: scan.findings.filter((finding) => finding.kind === "tag").length,
-    footnotes: scan.findings.filter(
-      (finding) => finding.kind === "footnoteReference" || finding.kind === "footnoteDefinition",
-    ).length,
-  };
-  if (Object.values(counts).some(Boolean)) findings.push({ code: "kept_as_text", params: counts });
   const edits: { from: number; to: number; text: string }[] = frontmatter
     ? [{ from: 0, to: frontmatter.to, text: "" }]
     : [];
@@ -75,8 +58,8 @@ export function convertNote(
   // walk finds every occurrence by position, never by a (possibly shared) address.
   let nonce = "mfimport";
   while (scan.source.includes(nonce)) nonce += "x";
-  const written: Written[] = [];
-  const placeholder = (entry: Written) => `${nonce}-${written.push(entry) - 1}-z`;
+  const written: Destination[] = [];
+  const placeholder = (entry: Destination) => `${nonce}-${written.push(entry) - 1}-z`;
   for (const finding of scan.findings) {
     if (finding.kind !== "wikilink" && finding.kind !== "markdownLink") continue;
     const wiki = finding.kind === "wikilink";
@@ -87,7 +70,7 @@ export function convertNote(
     const spelledPath = hash < 0 ? spelled : spelled.slice(0, hash);
     // The literal name it points at: a URL destination decodes once, a wikilink never.
     const path = wiki ? spelledPath : decodedDestination(spelledPath);
-    const match = wiki
+    const target = wiki
       ? path
         ? options.index.resolveLinkpath(
             path,
@@ -95,9 +78,8 @@ export function convertNote(
             options.attachmentFolder,
             finding.embed,
           )
-        : { target: options.source, candidates: [options.source], alias: false, existing: false }
-      : null;
-    const target = wiki ? match?.target : options.index.resolveMarkdown(path, options.source);
+        : options.source
+      : options.index.resolveMarkdown(path, options.source);
     if (!wiki && !target) continue;
     const name = storedName(
       path.split("/").at(-1) || storedName(options.source.path.split("/").at(-1) ?? ""),
@@ -108,44 +90,7 @@ export function convertNote(
       : hash < 0
         ? null
         : decodedDestination(spelled.slice(hash + 1));
-    const block = wiki ? finding.block : null;
     const fragment = heading ? `#${encodeURIComponent(heading)}` : "";
-    if (heading) {
-      findings.push({
-        code: "heading_not_followed",
-        params: { text: scan.source.slice(finding.from, finding.to), name, heading },
-      });
-    }
-    if (block)
-      findings.push({
-        code: "block_ref_dropped",
-        params: { text: scan.source.slice(finding.from, finding.to), name },
-      });
-    if (!target)
-      findings.push({
-        code: "link_unresolved",
-        params: { text: spelledPath, folder: options.aheadFolder },
-      });
-    if (match?.existing)
-      findings.push({
-        code: "link_to_existing",
-        params: { text: spelledPath, path: match.target.uri },
-      });
-    if (match?.alias)
-      findings.push({
-        code: "link_via_alias",
-        params: { text: spelledPath, path: match.target.uri },
-      });
-    if (match && match.candidates.length > 1)
-      findings.push({
-        code: "link_ambiguous",
-        params: {
-          text: spelledPath,
-          count: match.candidates.length,
-          path: match.target.uri,
-          candidates: match.candidates.map((candidate) => candidate.uri),
-        },
-      });
     const embed = wiki ? finding.embed : finding.image;
     const image =
       embed &&
@@ -163,24 +108,7 @@ export function convertNote(
     }
     const label = finding.label || `${name}${heading ? ` > ${heading}` : ""}`;
     let replacement = `${image ? "!" : ""}${formatMarkdownLink(label, destination)}`;
-    if (embed && !image) {
-      findings.push({
-        code:
-          target?.kind === "note" || target?.kind === "docx" || !target
-            ? "note_embed_to_link"
-            : "embed_to_link",
-        params: { name },
-      });
-      replacement = `\n\n${replacement}\n\n`;
-    }
-    if (finding.size)
-      findings.push({
-        code: "image_size_dropped",
-        params: {
-          name,
-          size: `${finding.size.width}${finding.size.height ? `x${finding.size.height}` : ""}`,
-        },
-      });
+    if (embed && !image) replacement = `\n\n${replacement}\n\n`;
     edits.push({ from: finding.from, to: finding.to, text: replacement });
   }
   let template = scan.source;
@@ -188,42 +116,39 @@ export function convertNote(
     template = template.slice(0, edit.from) + edit.text + template.slice(edit.to);
   const exact = new RegExp(`^${nonce}-(\\d+)-z$`);
   const targets = new Map<number, string>();
-  /** Occurrence of the template's parse → its entry in `written`. */
-  const converted = new Map<number, number>();
+  const destinations = new Map<number, Destination>();
   walkLinkOccurrences(codec.parse(template).blocks).forEach((occurrence, index) => {
     const href = occurrence.attrs.href;
     const match = typeof href === "string" ? exact.exec(href) : null;
     const entry = match ? written[Number(match[1])] : undefined;
     if (!entry) return;
-    converted.set(index, Number(match?.[1]));
+    destinations.set(index, entry);
     if (entry.targetId) targets.set(index, entry.targetId);
   });
-  // The bare destination as formatMarkdownLink spells it, angle brackets included.
-  const spell = (href: string) => formatMarkdownLink("", href).slice(3, -1);
-  const note: ConvertedNote = {
-    markdown: "",
+  return {
     properties,
     aliases: parsed?.readable ? parsed.aliases : [],
-    findings,
     template,
     targets,
-    hrefs: new Map(),
-    readdress(uris) {
-      const spelled = written.map((entry) =>
-        spell(`${(entry.targetId && uris.get(entry.targetId)) || entry.href}${entry.fragment}`),
-      );
-      note.markdown = template.replace(
-        new RegExp(`${nonce}-(\\d+)-z`, "g"),
-        (_, index: string) => spelled[Number(index)] ?? "",
-      );
-      // Each destination parsed alone, so its href is exactly what the written link parses to.
-      const alone = [...converted.values()].map((entry) => `[x](${spelled[entry]})`);
-      const hrefs = walkLinkOccurrences(codec.parse(alone.join("\n\n")).blocks);
-      note.hrefs = new Map(
-        [...converted.keys()].map((index, position) => [index, hrefs[position]?.attrs.href ?? ""]),
-      );
-    },
+    destinations,
   };
-  note.readdress(new Map());
-  return note;
+}
+/**
+ * The href each converted occurrence is written with, once target ids are spelled at
+ * `uris` (their live addresses). Each destination is parsed alone, so the href is
+ * exactly what the written link parses to.
+ */
+export function respell(
+  note: ConvertedNote,
+  uris: ReadonlyMap<string, string>,
+): Map<number, string> {
+  // The bare destination as formatMarkdownLink spells it, angle brackets included.
+  const spell = (href: string) => formatMarkdownLink("", href).slice(3, -1);
+  const converted = [...note.destinations];
+  const alone = converted.map(
+    ([, entry]) =>
+      `[x](${spell(`${(entry.targetId && uris.get(entry.targetId)) || entry.href}${entry.fragment}`)})`,
+  );
+  const parsed = walkLinkOccurrences(codec.parse(alone.join("\n\n")).blocks);
+  return new Map(converted.map(([index], position) => [index, parsed[position]?.attrs.href ?? ""]));
 }

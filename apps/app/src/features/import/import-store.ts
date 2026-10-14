@@ -245,9 +245,8 @@ export class ImportStore {
 }
 
 function summaryOf(report: ImportSummary): ImportSummary {
-  const { importId, state, destination, sort, counts, lastActivityAt, version, dismissedAt } =
-    report;
-  return { importId, state, destination, sort, counts, lastActivityAt, version, dismissedAt };
+  const { importId, state, destination, counts, lastActivityAt, version, dismissedAt } = report;
+  return { importId, state, destination, counts, lastActivityAt, version, dismissedAt };
 }
 
 /** Versions are decimal strings; compare by length then text. */

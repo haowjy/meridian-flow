@@ -141,7 +141,6 @@ const entry = (
   reason: null,
   exists: true,
   wanted: false,
-  findings: [],
 });
 
 describe("withImportRows", () => {
