@@ -9,7 +9,7 @@ import { conformanceUserValues } from "@meridian/database/__test-support__/db-fi
 import { contextSources, documents, projects, users } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
@@ -97,15 +97,18 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("document landing (postgr
     subject = setup();
     await subject.engine.seedFromMarkdown(documentId, await subject.bind(""), { type: "system" });
   });
-  afterAll(async () => {
-    for (const hp of rooms) {
+  // Each case owns its rooms and domains: drain and dispose before the next destructive reset.
+  afterEach(async () => {
+    for (const hp of rooms.splice(0)) {
       hp.closeConnections();
       for (const doc of [...hp.documents.values()]) await hp.unloadDocument(doc);
     }
-    for (const domain of domains) {
+    for (const domain of domains.splice(0)) {
       await domain.drainHocuspocusPersistence();
       domain.dispose();
     }
+  });
+  afterAll(async () => {
     await deleteDrizzleRows(db, [users]);
     await db.close();
   });

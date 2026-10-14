@@ -1,23 +1,23 @@
-/** Identity-resolved import parents, locked and reread in their current project area. */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+/** Identity-resolved parents in the given project areas, locked and reread in their current area. */
 import type { Database } from "@meridian/database";
 import { contextSources, documents, folders } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { provisionProjectContextSource } from "../context-source-provisioning.js";
 import {
-  ContextImportDestinationError,
-  type ContextImportLocations,
-  ContextImportParentMovedError,
-} from "../ports/context-import-locations.js";
+  type ContextParentLocations,
+  ContextParentMovedError,
+} from "../ports/context-parent-locations.js";
+import type { ProjectContextFsScheme } from "../ports/context-port.js";
 import { lockContextNamespaces } from "./context-fs/document-locations.js";
 import { loadDocumentAddresses, loadFolderAddresses } from "./document-address.js";
 
-export function createDrizzleContextImportLocations(
+export function createDrizzleContextParentLocations(
   db: Database,
-  projectId: string,
-  userId: string,
-): ContextImportLocations {
+  owner: { projectId: string; userId: string },
+  areas: readonly ProjectContextFsScheme[],
+): ContextParentLocations {
+  const { projectId, userId } = owner;
   const tx = () => currentDrizzleDb(db);
   async function source(id: string) {
     const [row] = await tx()
@@ -30,7 +30,7 @@ export function createDrizzleContextImportLocations(
           isNull(contextSources.deletedAt),
         ),
       );
-    return row && ["kb", "manuscript", "unfiled"].includes(row.slug) ? row : null;
+    return row && (areas as readonly string[]).includes(row.slug) ? row : null;
   }
   async function folder(id: string) {
     const [row] = await tx()
@@ -39,7 +39,6 @@ export function createDrizzleContextImportLocations(
       .where(and(eq(folders.id, id), isNull(folders.deletedAt)));
     return row ?? null;
   }
-  const areas = new Set(["kb", "manuscript", "unfiled"]);
   async function currentUris(ids: { files: readonly string[]; folders: readonly string[] }) {
     const [files, dirs] = await Promise.all([
       loadDocumentAddresses(db, { ids: ids.files }),
@@ -50,63 +49,29 @@ export function createDrizzleContextImportLocations(
       ...files.map((file) => ({ ...file, id: file.documentId as string })),
       ...dirs.map((dir) => ({ ...dir, id: dir.folderId })),
     ])
-      if (!address.deleted && address.projectId === projectId && areas.has(address.scheme))
+      if (
+        !address.deleted &&
+        address.projectId === projectId &&
+        (areas as readonly string[]).includes(address.scheme)
+      )
         uris.set(address.id, address.uri);
     return uris;
   }
-  const locations: ContextImportLocations = {
-    async destination(uri) {
-      const result = parseContextUri(uri);
-      if (!result.ok) throw new ContextImportDestinationError("destination_invalid");
-      const parsed = result.value;
-      if (!parsed || !["kb", "manuscript", "unfiled"].includes(parsed.scheme))
-        throw new ContextImportDestinationError("destination_invalid");
-      let [owner] = await tx()
+  const locations: ContextParentLocations = {
+    async findFolder(scheme, segments) {
+      const [owner] = await tx()
         .select()
         .from(contextSources)
         .where(
           and(
             eq(contextSources.projectId, projectId as never),
-            eq(contextSources.slug, parsed.scheme),
+            eq(contextSources.slug, scheme),
             isNull(contextSources.deletedAt),
           ),
         );
-      if (!owner && !parsed.path) {
-        await runInDrizzleTransaction(db, async () => {
-          await lockSeamWorks(db, []);
-          await lockContextNamespaces(db, { projectId, userId }, [
-            { scheme: parsed.scheme as "kb", workId: null },
-          ]);
-          await tx()
-            .insert(contextSources)
-            .values({
-              projectId: projectId as never,
-              name:
-                parsed.scheme === "kb"
-                  ? "Knowledge Base"
-                  : parsed.scheme === "manuscript"
-                    ? "Manuscript"
-                    : "Unfiled",
-              slug: parsed.scheme,
-              scope: "project",
-              isPrimary: parsed.scheme === "manuscript",
-            })
-            .onConflictDoNothing();
-        });
-        [owner] = await tx()
-          .select()
-          .from(contextSources)
-          .where(
-            and(
-              eq(contextSources.projectId, projectId as never),
-              eq(contextSources.slug, parsed.scheme),
-              isNull(contextSources.deletedAt),
-            ),
-          );
-      }
-      if (!owner) throw new ContextImportDestinationError("destination_not_found");
+      if (!owner) return null;
       let folderId: string | null = null;
-      for (const segment of parsed.path.split("/").filter(Boolean)) {
+      for (const segment of segments) {
         const [child] = await tx()
           .select()
           .from(folders)
@@ -118,11 +83,12 @@ export function createDrizzleContextImportLocations(
               isNull(folders.deletedAt),
             ),
           );
-        if (!child) throw new ContextImportDestinationError("destination_not_found");
+        if (!child) return null;
         folderId = child.id;
       }
       return { sourceId: owner.id, folderId };
     },
+    ensureSource: (scheme) => provisionProjectContextSource(db, { projectId, userId }, scheme),
     async lockParent(sourceId, folderId) {
       const before = folderId ? await folder(folderId) : null;
       if (folderId && !before) return null;
@@ -134,8 +100,7 @@ export function createDrizzleContextImportLocations(
       ]);
       const after = folderId ? await folder(folderId) : null;
       if (folderId && !after) return null;
-      if (after && after.contextSourceId !== currentSource)
-        throw new ContextImportParentMovedError();
+      if (after && after.contextSourceId !== currentSource) throw new ContextParentMovedError();
       const uri = folderId
         ? (await currentUris({ files: [], folders: [folderId] })).get(folderId)
         : `${owner.slug}://`;
@@ -188,7 +153,7 @@ export function createDrizzleContextImportLocations(
         .where(and(eq(documents.id, id), isNull(documents.deletedAt)));
       if (!after) return false;
       if (after.contextSourceId !== before.contextSourceId || after.folderId !== before.folderId)
-        throw new ContextImportParentMovedError();
+        throw new ContextParentMovedError();
       return true;
     },
     async currentUri(id, kind) {

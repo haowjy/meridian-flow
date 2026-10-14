@@ -167,5 +167,9 @@ the URI does not. A finished import simply leaves the open list. Version values 
 
 Catalog pending-flag clearing uses Context's exact-file reconciliation. It
 reserves publication ordering without changing namespace observations for
-unrelated siblings. Bulk planning reconciles live manifest membership once
+unrelated siblings. Sibling-batch creation reconciles live manifest membership once
 per chunk, not once per placeholder.
+
+Import owns its area policy in `adapters/context-tree-writer.ts`: `IMPORT_AREAS` (manuscript, kb,
+unfiled), destination URI parsing, provisioning an absent area root through Context, and the
+`ImportError` mapping. Context owns identity, locking, address construction and `createChildren`.

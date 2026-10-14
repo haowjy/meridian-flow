@@ -17,9 +17,12 @@ import {
   runInDrizzleTransaction,
   setDrizzleTransactionLocal,
 } from "../../shared/drizzle-transaction.js";
-import { requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
+import { lockSeamWorks, requireLockedActiveWorks } from "../../shared/work-lifecycle-lock.js";
 import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
-import { lockContextSources } from "./adapters/context-fs/document-locations.js";
+import {
+  lockContextNamespaces,
+  lockContextSources,
+} from "./adapters/context-fs/document-locations.js";
 import {
   type ContextDocumentMembershipObserver,
   DrizzleContextDocumentStore,
@@ -159,6 +162,19 @@ async function ensureProjectContextSource(
   const raced = await findProjectContextSource(db, projectId, scheme, userId);
   if (!raced) throw new Error(`Failed to provision ${scheme} context source for ${projectId}`);
   return raced;
+}
+
+/** Provision a project area's source under the Work and namespace locks every Context command takes. */
+export async function provisionProjectContextSource(
+  db: Database,
+  owner: { projectId: string; userId: string },
+  scheme: ProjectContextFsScheme,
+): Promise<string> {
+  return runInDrizzleTransaction(db, async () => {
+    await lockSeamWorks(db, []);
+    await lockContextNamespaces(db, owner, [{ scheme, workId: null }]);
+    return ensureProjectContextSource(db, owner.projectId, scheme, owner.userId);
+  });
 }
 
 async function findWorkContextSource(

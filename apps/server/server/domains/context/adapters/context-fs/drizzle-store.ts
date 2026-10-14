@@ -27,6 +27,7 @@ import {
   hasOppositeContextEntry,
   lockContextSources,
 } from "./document-locations.js";
+import { createDocumentRow, createFolderRow } from "./entry-rows.js";
 import type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
 
 export type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
@@ -132,15 +133,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      if (await hasOppositeContextEntry(this.db, this.sourceId, parentId, name, "folder"))
-        throw new ContextEntryConflictError("file");
-      const [row] = await this.db
-        .insert(folders)
-        .values({ contextSourceId: this.sourceId, parentId, name })
-        .onConflictDoNothing()
-        .returning();
+      const row = await createFolderRow(
+        this.deps.db,
+        { sourceId: this.sourceId, parentId, name },
+        { ifAbsent: true },
+      );
       if (row) {
-        await claimDocumentLocation(this.deps.db, this.sourceId, parentId, name);
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);
         return mapFolder(row);
       }
@@ -175,41 +173,17 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          this.sourceId,
-          input.folderId,
-          renderFilename(input.name, input.extension),
-          "file",
-        )
-      )
-        throw new ContextEntryConflictError("folder");
       const existing = await this.findDocument(input.folderId, input.name, input.extension);
       if (existing && existing.fileType !== null) {
         throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
       }
       if (existing) throw new ContextEntryConflictError("file");
-      const [row] = await this.db
-        .insert(documents)
-        .values({
-          id: input.id,
-          contextSourceId: this.sourceId,
-          folderId: input.folderId,
-          name: input.name,
-          extension: input.extension,
-          fileType: input.filetype,
-          markdownProjection: input.markdown,
-          sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
-        })
-        .returning();
-      if (!row) throw new Error("Failed to insert document");
-      await claimDocumentLocation(
+      const row = await createDocumentRow(
         this.deps.db,
-        this.sourceId,
-        input.folderId,
-        renderFilename(input.name, input.extension),
+        { ...input, sourceId: this.sourceId },
+        { ifAbsent: false },
       );
+      if (!row) throw new Error("Failed to insert document");
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
       return mapDocument(row);
@@ -219,39 +193,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
   async createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
       await lockContextSources(this.deps.db, [this.sourceId]);
-      if (
-        await hasOppositeContextEntry(
-          this.db,
-          this.sourceId,
-          input.folderId,
-          renderFilename(input.name, input.extension),
-          "file",
-        )
-      )
-        throw new ContextEntryConflictError("folder");
-      const [row] = await this.db
-        .insert(documents)
-        .values({
-          id: input.id,
-          contextSourceId: this.sourceId,
-          folderId: input.folderId,
-          name: input.name,
-          extension: input.extension,
-          fileType: input.filetype,
-          markdownProjection: input.markdown,
-          sizeBytes: Buffer.byteLength(input.markdown, "utf8"),
-          provisionalName: input.provisionalName ?? false,
-          ...(input.metadata ? { metadata: input.metadata } : {}),
-        })
-        .onConflictDoNothing()
-        .returning();
-      if (!row) return null;
-      await claimDocumentLocation(
+      const row = await createDocumentRow(
         this.deps.db,
-        this.sourceId,
-        input.folderId,
-        renderFilename(input.name, input.extension),
+        { ...input, sourceId: this.sourceId },
+        { ifAbsent: true },
       );
+      if (!row) return null;
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       return mapDocument(row);
     });

@@ -2,8 +2,8 @@
 
 Delete an entry when it ships.
 
-- **Planning 2,000 notes takes about 65 s, mostly bulk tree creation.**
-  `adapters/drizzle-context-bulk-creation.ts` creates an import's folders and
+- **Planning 2,000 notes takes about 65 s, mostly sibling-batch creation.**
+  `adapters/drizzle-context-children.ts` creates an import's folders and
   seeded placeholders in 200-row chunks, one catalog refresh each. Follow-up:
   profile one chunk with
   `pnpm probe:db apps/server/scripts/probe-import-performance.ts --out <file>`

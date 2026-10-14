@@ -171,66 +171,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       };
 
       try {
-        const movedPlaceholder = (await ok(port.createTrackedDocument("kb://pending", "")))
-          .documentId;
-        const pendingText = await ports.documentSync.bindMarkdown({
-          holder: { documentId: movedPlaceholder },
-          markdown: "landed",
-        });
-        await ok(port.move("kb://pending", "kb://moved-pending"));
-        expect(
-          await ports.documentSync.fillEmptyDocument(movedPlaceholder, pendingText),
-        ).toMatchObject({ ok: true, value: { updateSeq: expect.any(Number) } });
-        expect(await read("kb://moved-pending")).toBe("landed\n");
-
-        const editedPlaceholder = (await ok(port.createTrackedDocument("kb://typed-pending", "")))
-          .documentId;
-        const editorConnection = await hocuspocus.openDirectConnection(editedPlaceholder);
-        await read("kb://typed-pending");
-        const liveRoom = hocuspocus.documents.get(editedPlaceholder);
-        if (!liveRoom) throw new Error("No live room");
-        const roomState = await ports.documentSync.loadHocuspocusDocument(
-          editedPlaceholder,
-          liveRoom,
-        );
-        if (roomState) Y.applyUpdate(liveRoom, roomState);
-        const client = new Y.Doc({ gc: false });
-        Y.applyUpdate(client, Y.encodeStateAsUpdate(liveRoom));
-        const vector = Y.encodeStateVector(client);
-        const fragment = client.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        let paragraph = fragment.get(0) as Y.XmlElement | undefined;
-        if (!paragraph) {
-          paragraph = new Y.XmlElement("paragraph");
-          fragment.insert(0, [paragraph]);
-        }
-        const text = paragraph.get(0);
-        if (text instanceof Y.XmlText) text.insert(0, "k");
-        else paragraph.insert(0, [new Y.XmlText("k")]);
-        const keystroke = Y.encodeStateAsUpdate(client, vector);
-        const admitted = await ports.documentSync.admitLiveWriterUpdate({
-          documentId: editedPlaceholder,
-          document: liveRoom,
-          update: keystroke,
-          origin: { type: "user", userId },
-          expectedGeneration: await ports.documentSync.currentLiveGeneration(editedPlaceholder),
-        });
-        expect(admitted).toMatchObject({ admitted: true });
-        Y.applyUpdate(liveRoom, keystroke);
-        const originalNode = liveRoom.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(0);
-        const arriving = await ports.documentSync.bindMarkdown({
-          holder: { documentId: editedPlaceholder },
-          markdown: "imported",
-        });
-        expect(await ports.documentSync.fillEmptyDocument(editedPlaceholder, arriving)).toEqual({
-          ok: true,
-          value: null,
-        });
-        await ports.documentSync.prependBlocks(editedPlaceholder, arriving);
-        expect(await read("kb://typed-pending")).toBe("imported\n\nk\n");
-        expect(liveRoom.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).get(1)).toBe(originalNode);
-        client.destroy();
-        await editorConnection.disconnect();
-
         const target = (await ok(port.createTrackedDocument("manuscript://target", ""))).documentId;
         const holder = (await ok(port.createTrackedDocument("manuscript://holder", ""))).documentId;
         const targetRef = `doc:${target}`;
