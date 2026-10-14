@@ -27,14 +27,14 @@ function review(
   shared?: { doc: Y.Doc; projector: ReviewRuntime },
   surface: ReviewSurface = "editor",
 ) {
-  const { editor, doc } = createReviewEditor(draft, shared?.doc);
+  const { editor, doc, history } = createReviewEditor(draft, shared?.doc);
   if (!shared) seedReviewBase(doc, base);
   const projector = shared?.projector ?? createRoomRuntime(doc);
   const detach = projector.attachEditor(editor, surface);
   const handle = projector.editorHandle(editor) as NonNullable<
     ReturnType<ReviewRuntime["editorHandle"]>
   >;
-  return { editor, doc, projector, handle, detach };
+  return { editor, doc, history, projector, handle, detach };
 }
 
 const paragraphs = (editor: Editor) => {
@@ -61,20 +61,28 @@ function peerOf(doc: Y.Doc) {
   };
 }
 
-it("a Discard is one Ctrl+Z step, apart from the typing before and after it", () => {
-  const { editor, projector, handle } = review(
-    ["The door was green.", "Keep me."],
-    ["The door was red.", "Keep me."],
-  );
+it("a Discard is one Ctrl+Z step, apart from the typing before and after it, even after the editor is rebuilt", () => {
+  const {
+    editor: first,
+    doc,
+    history,
+    projector,
+    handle,
+  } = review(["The door was green.", "Keep me."], ["The door was red.", "Keep me."]);
   const shown = projector.projectNow();
   const id = shown?.groups[0]?.id as string;
 
   expect(discardChange(handle, shown as NonNullable<typeof shown>, id)).toBe("discarded");
-  expect(paragraphs(editor)).toEqual(["The door was red.", "Keep me."]);
+  expect(paragraphs(first)).toEqual(["The door was red.", "Keep me."]);
 
   // Typing right after the Discard (inside the debounce window) is its own step.
-  editor.view.dispatch(editor.state.tr.insertText("!", posOf(editor, "Keep me.") + 8));
-  expect(paragraphs(editor)[1]).toBe("Keep me.!");
+  first.view.dispatch(first.state.tr.insertText("!", posOf(first, "Keep me.") + 8));
+  expect(paragraphs(first)[1]).toBe("Keep me.!");
+
+  // The document moves to the dock and back: the editor is rebuilt, the surface's history is not.
+  first.destroy();
+  const { editor } = createReviewEditor([], doc, history);
+  expect(paragraphs(editor)).toEqual(["The door was red.", "Keep me.!"]);
 
   undo(editor);
   expect(paragraphs(editor)).toEqual(["The door was red.", "Keep me."]);

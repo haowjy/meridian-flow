@@ -79,6 +79,7 @@ export function EditorView(props: EditorViewProps) {
     ariaLabel: props.ariaLabel,
     localContentReady: props.localContentReady,
   };
+  const historySurface = props.reviewSurface ?? "editor";
   const liveSession = props.session ?? null;
   const [marksWaitOverFor, setMarksWaitOverFor] = useState<string | null>(null);
   const reviewSession = identity ? roomOwner.session : null;
@@ -174,6 +175,7 @@ export function EditorView(props: EditorViewProps) {
               }}
               session={liveSession}
               focusKey={props.focusKey}
+              historySurface={historySurface}
             />
           </div>
         </PaintScope>
@@ -188,6 +190,7 @@ export function EditorView(props: EditorViewProps) {
             <SessionEditor
               identity={identity}
               session={reviewSession}
+              historySurface={historySurface}
               surfaceOptions={{
                 ...surfaceOptions,
                 editable: roomOwner.inputEligible && reviewPainted ? props.editable : false,

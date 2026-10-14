@@ -75,6 +75,7 @@ import {
 
 export type { SchemaFence } from "./schema-fence";
 
+import { createSurfaceHistory, type SurfaceHistory } from "./extensions/UndoOwnershipExtension";
 import { SessionMarkerStore } from "./session-marker-store";
 
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
@@ -202,6 +203,7 @@ export class DocumentSession {
   readonly awareness: Awareness;
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
   readonly markerStore: SessionMarkerStore;
+  private readonly histories = new Map<string, SurfaceHistory>();
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
@@ -435,6 +437,19 @@ export class DocumentSession {
     if (this.adoptionFailed === next) return;
     this.adoptionFailed = next;
     this.emit();
+  }
+
+  /**
+   * The undo history of one surface (the Editor, the dock) over this room. A handoff rebuilds the editor,
+   * so the history lives here, as long as the room does, and each editor the surface mounts adopts it.
+   */
+  historyFor(surface: string): SurfaceHistory {
+    let history = this.histories.get(surface);
+    if (!history) {
+      history = createSurfaceHistory(this.document.getXmlFragment(this.fragmentName));
+      this.histories.set(surface, history);
+    }
+    return history;
   }
 
   /**

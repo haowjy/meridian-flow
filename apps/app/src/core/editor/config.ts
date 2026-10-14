@@ -53,7 +53,11 @@ import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
-import { createUndoOwnership } from "./extensions/UndoOwnershipExtension";
+import {
+  createSurfaceHistory,
+  createUndoOwnership,
+  type SurfaceHistory,
+} from "./extensions/UndoOwnershipExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
 import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
@@ -98,6 +102,11 @@ export type CreateEditorExtensionsOptions = {
    * room. Live editors omit this flag so they never pay the extra plugin cost.
    */
   enableDraftInlineReview?: boolean;
+  /**
+   * The undo history this editor adopts, kept by the room's session so it outlives the editor. Omitted,
+   * the editor makes its own history, which ends with it.
+   */
+  history?: SurfaceHistory;
   /** Live-session sidecar; omitted for branch/draft rooms. */
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
@@ -224,25 +233,23 @@ function createCollaborationExtensions({
   presence,
   user,
   showCollaborationDecorations = true,
+  history,
 }: Pick<
   CreateEditorExtensionsOptions,
-  "document" | "presence" | "user" | "showCollaborationDecorations"
+  "document" | "presence" | "user" | "showCollaborationDecorations" | "history"
 >): Extensions {
   const resolvedUser: EditorUser = {
     name: (user ?? DEFAULT_USER).name,
     color: pickCursorColor(presence.peers),
   };
 
-  const ownership = createUndoOwnership();
+  // Passing the concrete Y.XmlFragment keeps the shared type name at the
+  // server contract value (`prosemirror`).
+  const fragment = document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  const ownership = createUndoOwnership(history ?? createSurfaceHistory(fragment));
   const collaboration = [
     ownership.extension,
-    Collaboration.configure({
-      document,
-      yUndoOptions: { trackedOrigins: [ownership.origin] },
-      // Passing the concrete Y.XmlFragment keeps the shared type name at the
-      // server contract value (`prosemirror`).
-      fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    }),
+    Collaboration.configure({ document, yUndoOptions: ownership.yUndoOptions, fragment }),
   ];
 
   if (!showCollaborationDecorations) return collaboration;
@@ -285,6 +292,7 @@ export function createEditorExtensions({
   user = DEFAULT_USER,
   assetRenderContext,
   showCollaborationDecorations,
+  history,
   enableDraftInlineReview = false,
   markerStore,
   agentNames,
@@ -297,6 +305,7 @@ export function createEditorExtensions({
     presence,
     user,
     showCollaborationDecorations,
+    history,
   });
 
   return [
@@ -415,6 +424,7 @@ export function createEditorConfig({
   user,
   assetRenderContext,
   showCollaborationDecorations,
+  history,
   enableDraftInlineReview,
   markerStore,
   agentNames,
@@ -445,6 +455,7 @@ export function createEditorConfig({
         user,
         assetRenderContext,
         showCollaborationDecorations,
+        history,
         enableDraftInlineReview,
         markerStore,
         agentNames,
