@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import { getContextTabs, reviewEntryOf, useContextTabsStore } from "@/client/stores";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useDraftReviewScopeValue } from "@/features/draft-review/DraftReviewProvider";
 import { createReviewScopeFixture, listed, work } from "@/test-support/draft-review-scope";
@@ -326,11 +326,7 @@ describe("ReviewAddressOwner", () => {
           documentId,
           itemKey,
           draftOnly: getContextTabs("project-a").tabs.some(
-            (tab) =>
-              tab.kind === "tracked" &&
-              tab.draftOnly &&
-              tab.documentId === documentId &&
-              tab.reviews?.["work-a"],
+            (tab) => tab.documentId === documentId && reviewEntryOf(tab, "work-a"),
           ),
         },
       });
@@ -361,7 +357,7 @@ describe("ReviewAddressOwner", () => {
           expect(address).toBe("draft-a");
           expect(
             getContextTabs("project-a").tabs.find((tab) => tab.documentId === "document-a"),
-          ).toHaveProperty("draftOnly", true);
+          ).toHaveProperty("reviews");
         },
       );
     } finally {

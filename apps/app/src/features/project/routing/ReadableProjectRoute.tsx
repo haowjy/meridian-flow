@@ -18,6 +18,7 @@ import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
   type ContextTab,
   getContextTabs,
+  isDraftOnly,
   isEditorScheme,
   matchesReviewItem,
   useContextTabs,
@@ -418,7 +419,7 @@ function ReadableProjectDestination({
       isError: addressCatalogError,
     },
     editorDrafts,
-    (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
+    (documentId) => workspaceTabs.some((tab) => !isDraftOnly(tab) && tab.documentId === documentId),
     reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
@@ -495,7 +496,7 @@ function ReadableProjectDestination({
               address.itemKey === reviewItemKey &&
               workspaceTabs.some(
                 (tab) =>
-                  (address.itemKey && !tab.draftOnly && tab.documentId === addressDocumentId) ||
+                  (address.itemKey && !isDraftOnly(tab) && tab.documentId === addressDocumentId) ||
                   matchesReviewItem(tab, {
                     reviewWorkId: workId ?? "",
                     reviewItemKey,

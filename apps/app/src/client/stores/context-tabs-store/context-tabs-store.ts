@@ -5,10 +5,12 @@ import { useShallow } from "zustand/react/shallow";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ContextTab,
+  isDraftOnly,
   isEditorContextTab,
   isEditorTab,
   matchesTabInstance,
   type ProjectTabsSlice,
+  reviewEntryOf,
   type TabOwner,
 } from "./editor-workspace-model";
 import {
@@ -20,16 +22,14 @@ import {
 
 /** A tracked tab's changed metadata; an owner in it replaces the old one whole. */
 export type TrackedTabPatch = Partial<
-  Omit<
-    Extract<ContextTab, { kind: "tracked" }>,
-    keyof TabOwner | "tabInstanceId" | "draftOnly" | "reviews"
-  >
+  Omit<Extract<ContextTab, { kind: "tracked" }>, keyof TabOwner | "tabInstanceId" | "reviews">
 > &
   TabOwner;
 
 export {
   type ContextTab,
   editorTabsForWork,
+  isDraftOnly,
   isEditorContextTab,
   isEditorScheme,
   isEditorTab,
@@ -38,11 +38,12 @@ export {
   type ProjectTabsSlice,
   type ReviewItemTabIdentity,
   replaceOwner,
+  reviewEntriesOf,
   reviewEntryOf,
   type ServerContextTab,
-  soleReview,
   type TabOwner,
   tabContextOwner,
+  withoutReviewEntry,
 } from "./editor-workspace-model";
 
 type ContextTabsState = {
@@ -117,7 +118,7 @@ function normalizeSelections(
 }
 
 function durableSlice(slice: ProjectTabsSlice): ProjectTabsSlice {
-  const tabs = slice.tabs.filter((tab) => !tab.draftOnly && isEditorContextTab(tab));
+  const tabs = slice.tabs.filter((tab) => !isDraftOnly(tab) && isEditorContextTab(tab));
   return { tabs, selectedTabIdByWork: normalizeSelections(tabs, slice.selectedTabIdByWork) };
 }
 
@@ -175,9 +176,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           // Another Work's draft-only tab is not this Editor's document.
           return installed &&
             (editorWorkId === undefined ||
-              installed.kind === "new" ||
-              !installed.draftOnly ||
-              installed.reviews?.[editorWorkId] !== undefined)
+              !isDraftOnly(installed) ||
+              reviewEntryOf(installed, editorWorkId) !== undefined)
             ? { kind: "opened", tab: installed }
             : { kind: "not-opened" };
         },
@@ -240,7 +240,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           await dispatch(() => ({
             kind: "reconcile-bootstrap",
             projectId,
-            changes: changes.filter(({ prior }) => !prior.draftOnly),
+            changes: changes.filter(({ prior }) => !isDraftOnly(prior)),
           }));
         },
 

@@ -12,10 +12,12 @@ import {
   commitPlannedContextRemoval,
   type DraftWorkspaceSettlementReceipt,
   getContextTabs,
+  isDraftOnly,
   isEditorTab,
   matchesReviewItem,
   matchesTabInstance,
   type ProjectTabsSlice,
+  reviewEntryOf,
   type ServerContextTab,
 } from "@/client/stores";
 import {
@@ -289,7 +291,8 @@ export class ContextRemovalCoordinator {
         ? tabs.find((candidate) => matchesTabInstance(candidate, owner.tab))
         : null;
     if (owner.kind === "workspace") {
-      if (!tab || tab.documentId !== activation.identity.documentId || tab.draftOnly) return false;
+      if (!tab || tab.documentId !== activation.identity.documentId || isDraftOnly(tab))
+        return false;
       if (!sameLocator(routeTargetForTab(tab, activation.locator.workId), activation.locator)) {
         return false;
       }
@@ -352,7 +355,7 @@ export class ContextRemovalCoordinator {
     const workId = state.activeWorkId;
     const tab = this.workspace
       .read(projectId)
-      .tabs.find((candidate) => candidate.documentId === documentId && !candidate.draftOnly);
+      .tabs.find((candidate) => candidate.documentId === documentId && !isDraftOnly(candidate));
     if (
       !workId ||
       !state.live ||
@@ -739,7 +742,7 @@ export class ContextRemovalCoordinator {
     state: { activeWorkId: string | null },
     tab: ContextTab,
   ): { reviewWorkId?: string } {
-    return tab.draftOnly && state.activeWorkId ? { reviewWorkId: state.activeWorkId } : {};
+    return isDraftOnly(tab) && state.activeWorkId ? { reviewWorkId: state.activeWorkId } : {};
   }
 
   private commitWriterClose(
@@ -898,7 +901,7 @@ export class ContextRemovalCoordinator {
     workId: string,
   ): void {
     const state = this.projects.get(projectId);
-    if (!state || !tab.draftOnly || !tab.reviews?.[workId]) return;
+    if (!state || !reviewEntryOf(tab, workId)) return;
     state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, workId)));
   }
 
@@ -907,13 +910,7 @@ export class ContextRemovalCoordinator {
     projectId: string,
     tab: Extract<ContextTab, { kind: "tracked" }>,
   ): Promise<boolean> {
-    if (
-      this.unavailable() ||
-      !tab.draftOnly ||
-      !tab.tabInstanceId ||
-      Object.keys(tab.reviews ?? {}).length === 0
-    )
-      return false;
+    if (this.unavailable() || !isDraftOnly(tab) || !tab.tabInstanceId) return false;
     const settled = await this.workspace.settleDraft(projectId, tab);
     if (settled.kind !== "settled") return false;
     const state = this.projects.get(projectId);

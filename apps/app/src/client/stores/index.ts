@@ -13,6 +13,7 @@ export {
   durableContextTab,
   editorTabsForWork,
   getContextTabs,
+  isDraftOnly,
   isEditorContextTab,
   isEditorScheme,
   isEditorTab,
@@ -25,16 +26,17 @@ export {
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
   replaceOwner,
+  reviewEntriesOf,
   reviewEntryOf,
   type ServerContextTab,
   sameServerContextTabLocator,
   serverContextTabLocatorKey,
-  soleReview,
   type TabOwner,
   tabContextOwner,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
+  withoutReviewEntry,
 } from "./context-tabs-store";
 export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {
