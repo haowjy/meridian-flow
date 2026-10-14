@@ -12,10 +12,10 @@ const base = {
 
 describe("importNodeId", () => {
   it("is a fixed UUIDv8 the request-id grammar accepts, over the NFC path", async () => {
-    const id = await importNodeId(base);
+    const id = importNodeId(base);
     expect(id).toBe("ffed76e1-f1c3-89d8-ba5f-19f0a4ed5651");
     expect(parseRequestId(id)).toBe(id);
-    expect(await importNodeId({ ...base, path: "Café/Lore.md" })).toBe(id);
+    expect(importNodeId({ ...base, path: "Café/Lore.md" })).toBe(id);
   });
   it("separates every input field", async () => {
     const ids = await Promise.all([

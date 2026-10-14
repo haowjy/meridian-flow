@@ -1,32 +1,76 @@
 /**
- * Runs imports for one project in this tab: prepare, plan, upload, retry, stop,
- * dismiss. Owns one store per import and the list of open imports. Navigate
+ * Runs imports for one project in this tab and owns what surfaces only read:
+ * which statuses are read and when (the open-list poll, one full read, `?since=`
+ * cuts, a by-id read when an import leaves the list), the per-import set of node
+ * ids the catalog has held, the short bridges that cover a row until the catalog
+ * shows it, the `documentId` index, and the retirement of every store. Navigate
  * first: `start` returns the import id at once and does the rest in the background.
  */
-import type { ImportFailureReason, ImportSummary } from "@meridian/contracts";
+import type {
+  ImportEntryStatus,
+  ImportFailureReason,
+  ImportFolderStatus,
+  ImportStatus,
+} from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
-import { clientRowsFor } from "./client-rows";
+import {
+  clientRowsFor,
+  nodeIdsFor,
+  type RowSource,
+  sourceOfManifest,
+  sourceOfSelection,
+} from "./client-rows";
 import type { ImportDestination } from "./destination";
 import { type ImportApi, importApi } from "./import-api-port";
-import type { ImportState } from "./import-state";
-import { ImportStore } from "./import-store";
+import { fullyRead, type ImportState } from "./import-state";
+import { compareVersions, ImportStore } from "./import-store";
 import { type BuiltManifest, buildManifest, type HeldFile } from "./manifest";
 import { announceMilestones } from "./milestones";
-import { destinationFromSummary } from "./placements";
+import { destinationFromSummary, type ImportTarget, targetOf } from "./placements";
 import type { Selection } from "./selection";
+import type { ProjectedImport } from "./tree-projection";
 import { type UploadOutcome, UploadQueue } from "./uploader";
 
 /** Imports over this many files redraw the tree no more often than every few seconds. */
 const BIG_IMPORT = 500;
 const BIG_IMPORT_TREE_MS = 3000;
+/** How long a materialized row stays drawn while waiting for the catalog to show it. */
+const BRIDGE_MS = 30_000;
+const POLL_ACTIVE_MS = 5000;
+const POLL_IDLE_MS = 30_000;
 
-export type ImportsSnapshot = { ids: readonly string[]; states: readonly ImportState[] };
-
-export type OpenImports = {
-  summaries: readonly ImportSummary[];
-  loaded: boolean;
-  failed: boolean;
+/** The catalog, as the coordinator needs it: whether it holds a node id now, and when it changes. */
+export type CatalogReader = {
+  holds(id: string): boolean;
+  subscribe(listener: () => void): () => void;
 };
+
+const NO_CATALOG: CatalogReader = { holds: () => false, subscribe: () => () => {} };
+
+export type Clock = {
+  now(): number;
+  setTimeout(run: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+};
+
+const REAL_CLOCK: Clock = {
+  now: () => performance.now(),
+  setTimeout: (run, ms) => setTimeout(run, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+export type TrackedImport = ProjectedImport & { target: ImportTarget | null };
+
+export type DocumentEntry = { importId: string; entryId: number };
+
+export type ImportsSnapshot = {
+  /** Imports this tab shows: its runs first, then the server's open ones. */
+  imports: readonly TrackedImport[];
+  /** Which import and entry each imported document belongs to. */
+  documents: ReadonlyMap<string, DocumentEntry>;
+};
+
+const EMPTY_SNAPSHOT: ImportsSnapshot = { imports: [], documents: new Map() };
 
 /**
  * What this tab is doing for one import: reading its files, the plan and the
@@ -35,34 +79,64 @@ export type OpenImports = {
  */
 type Run = { readonly controller: AbortController; readonly queue: UploadQueue };
 
+/** The evidence the projection needs that only this tab can know. */
+type Tracker = {
+  seen: ReadonlySet<string>;
+  /** Tracked ids the catalog has not held yet. */
+  unseen: Set<string>;
+  bridges: ReadonlySet<string>;
+  timers: Map<string, unknown>;
+};
+
 export class ImportCoordinator {
   private readonly stores = new Map<string, ImportStore>();
+  private readonly trackers = new Map<string, Tracker>();
   private readonly runs = new Map<string, Run>();
   private readonly plans = new Map<string, Promise<unknown>>();
+  private readonly reads = new Map<string, Promise<void>>();
   private readonly startedAt = new Map<string, number>();
-  private open: OpenImports = { summaries: [], loaded: false, failed: false };
+  /** Imports ended for good here: late answers about them are ignored. */
+  private readonly retiredIds = new Set<string>();
+  /** Imports the server no longer knows. */
+  private readonly missing = new Set<string>();
   private readonly listeners = new Set<() => void>();
-  private openTimer: ReturnType<typeof setTimeout> | undefined;
+  private unsubscribeCatalog: (() => void) | undefined;
+  private openTimer: unknown;
   private disposed = false;
+  /** Which `watchOpen` call owns the poll loop. */
+  private watching = 0;
 
   constructor(
     readonly projectId: string,
     private readonly api: ImportApi = importApi,
-  ) {}
+    private readonly catalog: CatalogReader = NO_CATALOG,
+    private readonly clock: Clock = REAL_CLOCK,
+  ) {
+    this.attach();
+  }
 
-  // The imports this tab shows, for the tree's arriving rows.
+  private attach() {
+    this.unsubscribeCatalog ??= this.catalog.subscribe(() => this.catalogChanged());
+  }
+
+  // ---- The snapshot surfaces read
+
   readonly subscribe = (listener: () => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
-  private snapshot: ImportsSnapshot = { ids: [], states: [] };
+  private snapshot: ImportsSnapshot = EMPTY_SNAPSHOT;
   readonly getSnapshot = () => this.snapshot;
-  private lastTreeUpdate = 0;
-  private treeTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly tracked = new Map<string, TrackedImport>();
+  private readonly targets = new Map<string, { state: ImportState; target: ImportTarget | null }>();
+  private indexed = new Map<string, unknown>();
+  private lastTreeUpdate = Number.NEGATIVE_INFINITY;
+  private treeTimer: unknown;
+
   /** `structural` changes (a row appearing or going) skip the big-import throttle. */
   private changed(structural = false) {
     // A big import re-renders a big tree; let it catch up at most every few seconds.
-    const now = performance.now();
+    const now = this.clock.now();
     const big = [...this.stores.values()].some((store) => {
       const state = store.getSnapshot();
       return (
@@ -71,7 +145,7 @@ export class ImportCoordinator {
       );
     });
     if (!structural && big && now - this.lastTreeUpdate < BIG_IMPORT_TREE_MS) {
-      this.treeTimer ??= setTimeout(
+      this.treeTimer ??= this.clock.setTimeout(
         () => {
           this.treeTimer = undefined;
           this.changed();
@@ -80,82 +154,215 @@ export class ImportCoordinator {
       );
       return;
     }
-    if (this.treeTimer) clearTimeout(this.treeTimer);
+    if (this.treeTimer) this.clock.clearTimeout(this.treeTimer);
     this.treeTimer = undefined;
     this.lastTreeUpdate = now;
-    const ids = this.computeKnown();
-    const states = ids
-      .map((id) => this.stores.get(id)?.getSnapshot())
-      .filter((s) => s !== undefined);
+    const imports = this.computeImports();
+    const documents = this.documentIndex(imports);
     const same =
-      ids.length === this.snapshot.ids.length &&
-      ids.every((id, index) => id === this.snapshot.ids[index]) &&
-      states.every((state, index) => state === this.snapshot.states[index]);
-    if (!same) this.snapshot = { ids, states };
-    this.settle(states);
+      imports.length === this.snapshot.imports.length &&
+      imports.every((item, index) => item === this.snapshot.imports[index]) &&
+      documents === this.snapshot.documents;
+    if (!same) this.snapshot = { imports, documents };
     for (const listener of [...this.listeners]) listener();
   }
 
-  /**
-   * A clean finish leaves nothing on screen, so its report is dismissed for the
-   * writer once the catalog draws every row this tab was holding for it. A failed
-   * dismiss is left alone: it only keeps an invisible report in the open list.
-   */
-  private settle(states: readonly ImportState[]) {
-    for (const state of states) {
-      if (state.report?.summary.state !== "finished" || state.dismissing || state.dismissFailed)
-        continue;
-      const local = state.local;
-      if (local && local.rows.length > local.handedOff.size) continue;
-      void this.dismiss(state.importId);
+  /** This tab's runs, then the server's open imports; each reused while nothing about it moved. */
+  private computeImports(): TrackedImport[] {
+    const live: ImportStore[] = [];
+    for (const store of this.stores.values()) {
+      const state = store.getSnapshot();
+      // Stopped before the server heard of it: nothing is left to show a row for.
+      const endedHere = state.stop === "stopped" && !state.report;
+      if ((state.local || state.report) && !endedHere) live.push(store);
     }
+    live.sort(
+      (a, b) =>
+        Number(!b.getSnapshot().local) - Number(!a.getSnapshot().local) ||
+        (this.startedAt.get(b.importId) ?? 0) - (this.startedAt.get(a.importId) ?? 0),
+    );
+    const next = new Map<string, TrackedImport>();
+    const result = live.map((store) => {
+      const state = store.getSnapshot();
+      const tracker = this.trackerOf(store.importId);
+      let target = this.targets.get(store.importId);
+      if (target?.state !== state) {
+        target = { state, target: targetOf(state) };
+        this.targets.set(store.importId, target);
+      }
+      const previous = this.tracked.get(store.importId);
+      const item =
+        previous &&
+        previous.state === state &&
+        previous.seen === tracker.seen &&
+        previous.bridges === tracker.bridges &&
+        previous.target === target.target
+          ? previous
+          : {
+              importId: store.importId,
+              state,
+              seen: tracker.seen,
+              bridges: tracker.bridges,
+              target: target.target,
+            };
+      next.set(store.importId, item);
+      return item;
+    });
+    this.tracked.clear();
+    for (const [id, item] of next) this.tracked.set(id, item);
+    return result;
   }
 
-  getOpen(): OpenImports {
-    return this.open;
+  /** Rebuilt only when some import's entries or the set of imports moved. */
+  private documentIndex(imports: readonly TrackedImport[]): ReadonlyMap<string, DocumentEntry> {
+    const seen = new Map<string, unknown>();
+    for (const item of imports) seen.set(item.importId, item.state.report?.entries);
+    const same =
+      seen.size === this.indexed.size &&
+      [...seen].every(([id, entries]) => this.indexed.get(id) === entries);
+    if (same) return this.snapshot.documents;
+    this.indexed = seen;
+    const documents = new Map<string, DocumentEntry>();
+    for (const item of imports)
+      for (const entry of item.state.report?.entries.values() ?? [])
+        documents.set(entry.documentId, { importId: item.importId, entryId: entry.entryId });
+    return documents;
+  }
+
+  /** One import as the surfaces see it; null once it is retired. */
+  view(importId: string): TrackedImport | null {
+    return this.snapshot.imports.find((item) => item.importId === importId) ?? null;
   }
 
   store(importId: string): ImportStore {
     let store = this.stores.get(importId);
     if (!store) {
-      store = new ImportStore(this.projectId, importId, this.api);
+      store = new ImportStore(this.projectId, importId);
       this.stores.set(importId, store);
-      store.subscribe(() => this.changed());
       announceMilestones(store);
+      store.subscribe(() => {
+        this.changed();
+        this.maybeRetire(importId);
+      });
     }
     return store;
   }
 
-  /** Imports to show: this tab's runs, then the server's open ones, newest first. */
-  private computeKnown(): string[] {
-    const ids = new Set<string>();
-    const local = [...this.stores.values()].filter((store) => store.getSnapshot().local);
-    local.sort(
-      (a, b) => (this.startedAt.get(b.importId) ?? 0) - (this.startedAt.get(a.importId) ?? 0),
+  private trackerOf(importId: string): Tracker {
+    let tracker = this.trackers.get(importId);
+    if (!tracker) {
+      tracker = { seen: new Set(), unseen: new Set(), bridges: new Set(), timers: new Map() };
+      this.trackers.set(importId, tracker);
+    }
+    return tracker;
+  }
+
+  // ---- Seen ids and bridges
+
+  /** Remember node ids to watch the catalog for; the catalog may already hold them. */
+  private track(importId: string, ids: Iterable<string>) {
+    const tracker = this.trackerOf(importId);
+    for (const id of ids) if (!tracker.seen.has(id)) tracker.unseen.add(id);
+    if (this.scan(importId)) this.changed();
+  }
+
+  /** Move every tracked id the catalog now holds into the seen set; true when any moved. */
+  private scan(importId: string): boolean {
+    const tracker = this.trackers.get(importId);
+    if (!tracker || tracker.unseen.size === 0) return false;
+    const added: string[] = [];
+    for (const id of tracker.unseen) if (this.catalog.holds(id)) added.push(id);
+    if (added.length === 0) return false;
+    for (const id of added) tracker.unseen.delete(id);
+    tracker.seen = new Set([...tracker.seen, ...added]);
+    let closed = false;
+    for (const id of added) {
+      const timer = tracker.timers.get(id);
+      if (timer === undefined) continue;
+      this.clock.clearTimeout(timer);
+      tracker.timers.delete(id);
+      closed = true;
+    }
+    if (closed) tracker.bridges = new Set(tracker.timers.keys());
+    return true;
+  }
+
+  private catalogChanged() {
+    let moved = false;
+    for (const importId of [...this.trackers.keys()]) {
+      if (!this.scan(importId)) continue;
+      moved = true;
+      this.maybeRetire(importId);
+    }
+    if (moved) this.changed();
+  }
+
+  /** The tab drew this node and has just learned it exists: cover it until the catalog shows it. */
+  private openBridge(importId: string, id: string) {
+    const tracker = this.trackerOf(importId);
+    if (tracker.seen.has(id) || tracker.timers.has(id)) return;
+    tracker.timers.set(
+      id,
+      this.clock.setTimeout(() => {
+        tracker.timers.delete(id);
+        tracker.bridges = new Set(tracker.timers.keys());
+        this.changed(true);
+        this.maybeRetire(importId);
+      }, BRIDGE_MS),
     );
-    for (const store of local) ids.add(store.importId);
-    for (const summary of this.open.summaries) ids.add(summary.importId);
-    return [...ids].filter((id) => {
-      const state = this.stores.get(id)?.getSnapshot();
-      // Stopped before the server heard of it: nothing is left to show a row for.
-      const endedHere = state?.stop === "stopped" && !state.report;
-      return !(endedHere || state?.dismissing || state?.report?.summary.dismissedAt);
-    });
+    tracker.bridges = new Set(tracker.timers.keys());
+  }
+
+  /**
+   * Take in what a status read or an upload answer said: watch its node ids, and
+   * bridge a drawn code or binary file that has just landed.
+   */
+  private absorb(
+    importId: string,
+    delta: { folders: readonly ImportFolderStatus[]; entries: readonly ImportEntryStatus[] },
+    before: ReadonlyMap<number, ImportEntryStatus> | undefined,
+  ) {
+    this.track(importId, [
+      ...delta.folders.map((folder) => folder.id),
+      ...delta.entries.map((entry) => entry.documentId),
+    ]);
+    for (const entry of delta.entries) {
+      const prior = before?.get(entry.entryId);
+      if (
+        prior &&
+        entry.state === "landed" &&
+        (prior.state === "planned" || prior.state === "landing" || prior.state === "failed") &&
+        (entry.kind === "code" || entry.kind === "binary")
+      )
+        this.openBridge(importId, entry.documentId);
+    }
+  }
+
+  /** The plan answered: the status replaces the prediction, and drawn plan-time rows are bridged. */
+  private accept(store: ImportStore, answer: ImportStatus) {
+    const importId = store.importId;
+    const before = store.getSnapshot().report?.entries;
+    const rows = store.getSnapshot().local?.rows ?? [];
+    // Bridges open before the store changes: a store retires as soon as it is over.
+    this.absorb(importId, answer, before);
+    const materialized = new Set<string>();
+    for (const folder of answer.folders)
+      if (folder.state !== "deleted") materialized.add(folder.id);
+    for (const entry of answer.entries)
+      if (entry.kind === "note" || entry.kind === "docx" || entry.state === "landed")
+        if (entry.state !== "skipped" && entry.state !== "deleted")
+          materialized.add(entry.documentId);
+    for (const row of rows) if (materialized.has(row.id)) this.openBridge(importId, row.id);
+    store.installReport(answer);
+    store.setLocal((local) => ({ ...local, rows: [] }));
   }
 
   // ---- Starting
 
-  /** Draw the rows, answer with the id and carry on in the background. */
+  /** Answer with the id at once; the rows, the plan and the sends follow in the background. */
   start(selection: Selection, destination: ImportDestination): string {
     const importId = crypto.randomUUID();
     this.startedAt.set(importId, Date.now());
-    const entryIds = new Map<string, number>();
-    let next = 0;
-    for (const root of selection.roots)
-      for (const file of root.files) entryIds.set(`${root.rootId}\u0000${file.path}`, next++);
-    const rows = clientRowsFor(selection, destination, (rootId, path) =>
-      entryIds.get(`${rootId}\u0000${path}`),
-    );
     const store = this.store(importId);
     store.update((state) => ({
       ...state,
@@ -163,9 +370,7 @@ export class ImportCoordinator {
         phase: { kind: "preparing" },
         destination,
         roots: selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })),
-        rows,
-        handedOff: new Set(),
-        total: rows.filter((row) => row.kind === "file").length,
+        rows: [],
         held: null,
         manifest: null,
         failures: new Map(),
@@ -176,30 +381,49 @@ export class ImportCoordinator {
     return importId;
   }
 
+  /** Draw the predicted rows for `source`. */
+  private drawRows(
+    store: ImportStore,
+    run: Run,
+    source: RowSource,
+    destination: ImportDestination,
+    ids: ReturnType<typeof nodeIdsFor>,
+  ) {
+    const rows = clientRowsFor(source, destination, ids);
+    if (retired(run)) return;
+    store.setLocal((local) => ({ ...local, rows }));
+    this.track(
+      store.importId,
+      rows.map((row) => row.id),
+    );
+  }
+
   private async prepareAndPlan(
     store: ImportStore,
     selection: Selection,
     destination: ImportDestination,
   ) {
     const run = this.runFor(store);
+    const ids = nodeIdsFor(this.projectId, store.importId);
+    const building = buildManifest(selection, {
+      importId: store.importId,
+      destinationUri: destination.uri,
+      signal: run.controller.signal,
+    });
+    building.catch(() => {});
+    this.drawRows(store, run, sourceOfSelection(selection), destination, ids);
     let built: BuiltManifest;
     try {
-      built = await buildManifest(selection, {
-        importId: store.importId,
-        destinationUri: destination.uri,
-        signal: run.controller.signal,
-      });
+      built = await building;
     } catch {
       return; // Stopped while preparing; `stop` already ended the run.
     }
     // The last files read may finish after Stop: their result is not this import's anymore.
     if (retired(run)) return;
-    store.setLocal((local) => ({
-      ...local,
-      manifest: built.manifest,
-      held: built.held,
-      total: built.manifest.entries.length,
-    }));
+    // Files that could not be read, and folders only they implied, are not rows.
+    this.drawRows(store, run, sourceOfManifest(built.manifest), destination, ids);
+    if (retired(run)) return;
+    store.setLocal((local) => ({ ...local, manifest: built.manifest, held: built.held }));
     await this.plan(store, built, run);
   }
 
@@ -215,7 +439,7 @@ export class ImportCoordinator {
       const answer = await planning;
       // Stop waits for this answer and installs its own finished one.
       if (retired(run)) return;
-      store.installReport(answer);
+      this.accept(store, answer);
     } catch (error) {
       if (retired(run)) return;
       store.setLocal((local) => ({
@@ -250,8 +474,6 @@ export class ImportCoordinator {
         destination: state.local?.destination ?? destinationFromSummary(summary),
         roots: state.report?.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })) ?? [],
         rows: [],
-        handedOff: new Set(),
-        total: held.size,
         held,
         manifest: null,
         failures: new Map(),
@@ -268,7 +490,7 @@ export class ImportCoordinator {
     try {
       const answer = await this.api.resume(this.projectId, store.importId, run.controller.signal);
       if (retired(run)) return false;
-      store.installReport(answer);
+      this.merge(store, answer, (into) => into.installReport(answer));
       return true;
     } catch {
       if (!retired(run)) store.setLocal((local) => ({ ...local, phase: { kind: "idle" } }));
@@ -278,7 +500,8 @@ export class ImportCoordinator {
 
   /** One fresh full read, then send what it marks wanted (or just `only`). */
   private async sendWanted(store: ImportStore, run: Run, only?: ReadonlySet<number>) {
-    await store.refresh(true);
+    await this.read(store.importId, true);
+    if (retired(run)) return;
     this.send(store, run, only);
   }
 
@@ -292,17 +515,6 @@ export class ImportCoordinator {
       { manifest: local.manifest, held: new Map(local.held) },
       this.runFor(store),
     );
-  }
-
-  /** The tree now draws these rows from the catalog: they are not this tab's to draw again. */
-  handOff(importId: string, keys: readonly string[]) {
-    const store = this.stores.get(importId);
-    const local = store?.getSnapshot().local;
-    if (!store || !local || keys.every((key) => local.handedOff.has(key))) return;
-    store.setLocal((current) => ({
-      ...current,
-      handedOff: new Set([...current.handedOff, ...keys]),
-    }));
   }
 
   // ---- Uploading
@@ -342,7 +554,7 @@ export class ImportCoordinator {
   /** Every queued file has its answer: read what the server made of them. */
   private sent(store: ImportStore) {
     store.setLocal((current) => ({ ...current, phase: { kind: "idle" }, retrying: new Set() }));
-    void store.refresh();
+    void this.read(store.importId);
   }
 
   /** The import's live run, or a new one once Stop or a refusal retired the last. */
@@ -373,7 +585,7 @@ export class ImportCoordinator {
   }
 
   /** No more reading, planning or sending for this import from this tab. */
-  private retire(importId: string) {
+  private endRun(importId: string) {
     const run = this.runs.get(importId);
     if (!run) return;
     run.controller.abort();
@@ -385,7 +597,14 @@ export class ImportCoordinator {
     const answered = outcomes.flatMap((outcome) =>
       outcome.kind === "answered" ? [outcome.entry] : [],
     );
-    if (answered.length) store.mergeEntries(answered);
+    if (answered.length) {
+      this.absorb(
+        store.importId,
+        { folders: [], entries: answered },
+        store.getSnapshot().report?.entries,
+      );
+      store.mergeEntries(answered);
+    }
     store.setLocal((local) => {
       const failures = new Map(local.failures);
       const retrying = new Set(local.retrying);
@@ -435,7 +654,7 @@ export class ImportCoordinator {
   /** Stop here: no more sends from this tab, then finish with what arrived. */
   async stop(importId: string) {
     const store = this.store(importId);
-    this.retire(importId);
+    this.endRun(importId);
     const planning = this.plans.get(importId);
     const { report } = store.getSnapshot();
     if (!report && !planning) {
@@ -443,16 +662,15 @@ export class ImportCoordinator {
       store.update((state) => ({
         ...state,
         stop: "stopped",
-        load: "idle",
         local: state.local && { ...state.local, phase: { kind: "idle" }, rows: [], held: null },
       }));
-      this.changed(true);
+      this.retire(importId);
       return "nothing-sent" as const;
     }
     store.update((state) => ({ ...state, stop: "stopping" }));
     try {
       await planning?.catch(() => {});
-      store.installReport(await this.api.finish(this.projectId, importId));
+      this.accept(store, await this.api.finish(this.projectId, importId));
       store.update((state) => ({
         ...state,
         stop: "stopped",
@@ -465,53 +683,147 @@ export class ImportCoordinator {
     }
   }
 
-  // ---- Dismissing
+  // ---- Reading statuses
 
-  async dismiss(importId: string) {
-    const store = this.store(importId);
-    store.update((state) => ({ ...state, dismissing: true, dismissFailed: false }));
-    this.changed(true);
+  /**
+   * Read an import's status: in full the first time or when forced (roots and lapsed
+   * claims change without moving the version), else only what changed since the cursor.
+   */
+  read(importId: string, full = false): Promise<void> {
+    const prior = this.reads.get(importId);
+    if (prior && !full) return prior;
+    const next = (async () => {
+      await prior?.catch(() => {});
+      await this.readNow(importId, full);
+    })();
+    this.reads.set(importId, next);
+    void next.then(
+      () => this.reads.get(importId) === next && this.reads.delete(importId),
+      () => this.reads.get(importId) === next && this.reads.delete(importId),
+    );
+    return next;
+  }
+
+  private async readNow(importId: string, full: boolean) {
+    const store = this.stores.get(importId);
+    if (!store || this.retiredIds.has(importId) || this.disposed) return;
+    const report = store.getSnapshot().report;
     try {
-      store.installReport(await this.api.dismiss(this.projectId, importId));
-      this.open = {
-        ...this.open,
-        summaries: this.open.summaries.filter((s) => s.importId !== importId),
-      };
-      this.changed(true);
-    } catch {
-      store.update((state) => ({ ...state, dismissing: false, dismissFailed: true }));
-      this.changed(true);
+      if (fullyRead(report) && !full) {
+        const changes = await this.api.changes(this.projectId, importId, report.cursor);
+        if (this.retiredIds.has(importId)) return;
+        this.merge(store, changes, (into) => into.applyChanges(changes));
+      } else {
+        const status = await this.api.status(this.projectId, importId);
+        if (this.retiredIds.has(importId)) return;
+        this.merge(store, status, (into) => into.installReport(status));
+      }
+    } catch (error) {
+      // A failed read leaves the last good one on screen; the next poll tries again.
+      if (error instanceof ImportRequestError && error.status === 404) this.gone(importId);
     }
   }
 
-  // ---- The server's list of open imports
+  private merge(
+    store: ImportStore,
+    delta: { folders: ImportFolderStatus[]; entries: ImportEntryStatus[] },
+    apply: (store: ImportStore) => void,
+  ) {
+    this.absorb(store.importId, delta, store.getSnapshot().report?.entries);
+    apply(store);
+  }
 
+  /** The server has no such import: nothing more to show or read. */
+  private gone(importId: string) {
+    this.missing.add(importId);
+    this.maybeRetire(importId);
+  }
+
+  /** Read every open import (once in full, then by cut) and the ones that left the list. */
   async refreshOpen() {
+    let summaries: Awaited<ReturnType<ImportApi["listOpen"]>>;
     try {
-      const summaries = await this.api.listOpen(this.projectId);
-      for (const summary of summaries) this.store(summary.importId).seedSummary(summary);
-      this.open = { summaries, loaded: true, failed: false };
+      summaries = await this.api.listOpen(this.projectId);
     } catch {
-      this.open = { ...this.open, failed: true };
+      return;
+    }
+    if (this.disposed) return;
+    const listed = new Set<string>();
+    for (const summary of summaries) {
+      if (this.retiredIds.has(summary.importId)) continue;
+      listed.add(summary.importId);
+      const store = this.store(summary.importId);
+      store.seedSummary(summary);
+      const report = store.getSnapshot().report;
+      if (!fullyRead(report)) void this.read(summary.importId, true);
+      else if (compareVersions(summary.version, report.cursor) > 0)
+        void this.read(summary.importId);
+    }
+    // Another tab finished or stopped it: the list stops saying so, only the import can.
+    for (const [importId, store] of this.stores) {
+      const report = store.getSnapshot().report;
+      if (listed.has(importId) || !report || report.summary.state === "finished") continue;
+      if (this.missing.has(importId)) continue;
+      void this.read(importId, true);
     }
     this.changed();
   }
 
-  /** Keep the list fresh while the project is open: 30 s, or 5 s while anything is importing. */
+  /**
+   * Keep the list fresh while the project is open: 30 s, or 5 s while anything is
+   * importing. The returned function disposes the coordinator; watching again
+   * (React re-runs effects in development) brings a fresh one back to life.
+   */
   watchOpen(): () => void {
+    this.disposed = false;
+    this.attach();
+    const generation = ++this.watching;
     const tick = async () => {
-      if (this.disposed) return;
+      if (this.disposed || generation !== this.watching) return;
       await this.refreshOpen();
-      const active = this.open.summaries.some(
-        (summary) => summary.state !== "finished" && summary.counts.arriving > 0,
-      );
-      this.openTimer = setTimeout(tick, active ? 5000 : 30_000);
+      if (this.disposed || generation !== this.watching) return;
+      const active = [...this.stores.values()].some((store) => {
+        const summary = store.getSnapshot().report?.summary;
+        return summary !== undefined && summary.state !== "finished" && summary.counts.arriving > 0;
+      });
+      this.openTimer = this.clock.setTimeout(tick, active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     };
     void tick();
-    return () => {
-      if (this.openTimer) clearTimeout(this.openTimer);
-      this.openTimer = undefined;
-    };
+    return () => this.dispose();
+  }
+
+  // ---- Retirement
+
+  /**
+   * A store retires when its import is over (finished, or gone from the server), no
+   * command is in flight and no bridge is open. The catalog never has to move first:
+   * in an idle project the final landing's own publication may be the last commit.
+   */
+  private maybeRetire(importId: string) {
+    const store = this.stores.get(importId);
+    if (!store) return;
+    const state = store.getSnapshot();
+    const over = state.report?.summary.state === "finished" || this.missing.has(importId);
+    if (!over || this.plans.has(importId) || state.stop === "stopping") return;
+    const phase = state.local?.phase.kind;
+    if (phase === "preparing" || phase === "uploading") return;
+    if (this.trackers.get(importId)?.timers.size) return;
+    this.retire(importId);
+  }
+
+  /** End the import here for good: abort its run, release its files and forget it. */
+  private retire(importId: string) {
+    this.endRun(importId);
+    this.retiredIds.add(importId);
+    const tracker = this.trackers.get(importId);
+    for (const timer of tracker?.timers.values() ?? []) this.clock.clearTimeout(timer);
+    this.trackers.delete(importId);
+    this.tracked.delete(importId);
+    this.targets.delete(importId);
+    this.reads.delete(importId);
+    this.stores.get(importId)?.dispose();
+    this.stores.delete(importId);
+    this.changed(true);
   }
 
   isPreparingOrUploading(): boolean {
@@ -524,9 +836,13 @@ export class ImportCoordinator {
 
   dispose() {
     this.disposed = true;
-    if (this.openTimer) clearTimeout(this.openTimer);
-    if (this.treeTimer) clearTimeout(this.treeTimer);
-    for (const importId of [...this.runs.keys()]) this.retire(importId);
+    this.unsubscribeCatalog?.();
+    this.unsubscribeCatalog = undefined;
+    if (this.openTimer) this.clock.clearTimeout(this.openTimer);
+    if (this.treeTimer) this.clock.clearTimeout(this.treeTimer);
+    for (const tracker of this.trackers.values())
+      for (const timer of tracker.timers.values()) this.clock.clearTimeout(timer);
+    for (const importId of [...this.runs.keys()]) this.endRun(importId);
     for (const store of this.stores.values()) store.dispose();
   }
 }

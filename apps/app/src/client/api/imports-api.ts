@@ -90,13 +90,6 @@ export function resumeImport(projectId: string, importId: string, signal?: Abort
   });
 }
 
-export function dismissImport(projectId: string, importId: string, signal?: AbortSignal) {
-  return request<ImportStatus>(`${importsPath(projectId, importId)}/dismiss`, {
-    method: "POST",
-    signal,
-  });
-}
-
 export function getImportStatus(projectId: string, importId: string, signal?: AbortSignal) {
   return request<ImportStatus>(importsPath(projectId, importId), { method: "GET", signal });
 }

@@ -142,7 +142,7 @@ summary and entries; since returns only changed file entries, not the roots.
 
 Both long multipart receives and owned landing attempts pulse every 30 seconds.
 An expired attempt cannot renew a replacement's lease. Open summaries list
-unfinished imports and undismissed finished reports; each names its
+unfinished imports only (a finished one is read by id); each names its
 destination folder by id (null at an area root), which survives a rename where
 the URI does not. Dismissal is finished-only and never deletes documents. Version values are decimal strings.
 

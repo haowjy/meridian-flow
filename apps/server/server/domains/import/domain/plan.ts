@@ -207,40 +207,16 @@ export function planSelection(
   );
 }
 
-/**
- * Plans with every node id derived by `importNodeId`. Planning decides which nodes exist
- * (implied folders, folder-note relocation, routing), so a first pass collects their keys
- * and the second mints from the digested map.
- */
-export async function planWithDerivedIds(
+/** Plans with every node id derived by `importNodeId`. */
+export function planWithDerivedIds(
   manifest: ImportManifest,
   scope: { projectId: string },
   destinationId: string | null,
-): Promise<PlannedNode[]> {
-  const keys = new Map<string, Parameters<MintId>>();
-  const keyOf = (...key: Parameters<MintId>) => key.join("\0");
-  planSelection(
+): PlannedNode[] {
+  return planSelection(
     manifest,
-    (...key) => {
-      keys.set(keyOf(...key), key);
-      return keyOf(...key);
-    },
+    (kind, rootId, path) =>
+      importNodeId({ projectId: scope.projectId, importId: manifest.importId, rootId, kind, path }),
     destinationId,
   );
-  const ids = new Map<string, string>();
-  await Promise.all(
-    [...keys].map(async ([name, [kind, rootId, path]]) => {
-      ids.set(
-        name,
-        await importNodeId({
-          projectId: scope.projectId,
-          importId: manifest.importId,
-          rootId,
-          kind,
-          path,
-        }),
-      );
-    }),
-  );
-  return planSelection(manifest, (...key) => ids.get(keyOf(...key)) as string, destinationId);
 }

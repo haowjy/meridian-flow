@@ -2,12 +2,12 @@
  * The notice above a document that is an import's file: still arriving, stopped
  * partway, didn't import, or written in before its text arrived. The arriving state needs
  * only the catalog's flag, so it shows after a reload and through a link; the
- * rest need the import's own entry for this document.
+ * rest need the import's own entry for this document, which the coordinator's
+ * document index finds.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { ImportIcon, Loader2, TriangleAlert } from "lucide-react";
-import { useEffect, useMemo } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
 import { DocumentNotice } from "@/components/app/DocumentNotice";
@@ -50,31 +50,11 @@ function Notice({
 }) {
   const pending = useImportPending(projectId, tab);
   const { coordinator } = useImports();
-  const snapshot = useImportsSnapshot(coordinator);
-
-  // The project's imports only say which one holds this document; that import's own
-  // store then drives the notice, so it keeps up even with the tree's rows throttled.
-  const importId = useMemo(() => {
-    for (const state of snapshot.states) {
-      for (const entry of state.report?.entries.values() ?? [])
-        if (entry.documentId === tab.documentId) return state.importId;
-    }
-    return null;
-  }, [snapshot, tab.documentId]);
-
-  // Until an import has it, keep the open imports loading so the notice can say more.
-  useEffect(() => {
-    if (importId || !pending) return;
-    const stops = snapshot.states
-      .filter((state) => state.report?.summary.state !== "finished")
-      .map((state) => coordinator.store(state.importId).watch("notice"));
-    return () => {
-      for (const stop of stops) stop();
-    };
-  }, [importId, pending, snapshot, coordinator]);
-
-  if (importId && tab.kind !== "new")
-    return <EntryNotice importId={importId} documentId={tab.documentId} className={className} />;
+  // The coordinator indexes every open import's documents, so no scan and no watching here.
+  const entry = useImportsSnapshot(coordinator).documents.get(
+    tab.kind === "new" ? "" : tab.documentId,
+  );
+  if (entry) return <EntryNotice {...entry} className={className} />;
   return pending ? <ArrivingNotice className={className} /> : null;
 }
 
@@ -89,24 +69,21 @@ function ArrivingNotice({ className }: { className?: string }) {
   );
 }
 
-/** The notice for a document whose import is known: watched for as long as the pane shows it. */
+/** The notice for a document whose import is known. */
 function EntryNotice({
   importId,
-  documentId,
+  entryId,
   className,
 }: {
   importId: string;
-  documentId: string;
+  entryId: number;
   className?: string;
 }) {
   const { coordinator, openContinue } = useImports();
-  const { state, display } = useImport(importId, "notice");
-  const raw = useMemo(() => {
-    for (const entry of state.report?.entries.values() ?? [])
-      if (entry.documentId === documentId) return entry;
-    return null;
-  }, [state.report?.entries, documentId]);
-  if (!raw) return null;
+  const view = useImport(importId);
+  const raw = view?.state.report?.entries.get(entryId);
+  if (!view || !raw) return null;
+  const { state, display } = view;
   const entry = effectiveEntry(state, raw);
   const holds = state.local?.held != null;
 

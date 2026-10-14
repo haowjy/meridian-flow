@@ -1,8 +1,6 @@
-/** One import's store: the entry cursor only moves past changes it has read. */
+/** One import's passive store: the entry cursor only moves past changes it has applied. */
 import type { ImportEntryStatus, ImportStatus, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
-import { fakeImportServer } from "./fake-import-server";
-import type { ImportApi } from "./import-api-port";
 import { ImportStore } from "./import-store";
 
 const planned: ImportEntryStatus = {
@@ -56,99 +54,28 @@ function report(version: string, entries: ImportEntryStatus[]): ImportStatus {
   };
 }
 
-/** A server whose `since` cut holds the landing at version 2. */
-function server(): { api: ImportApi; since: string[] } {
-  const since: string[] = [];
-  const api: ImportApi = {
-    ...fakeImportServer().api,
-    changes: async (_projectId, _importId, version) => {
-      since.push(version);
-      return {
-        ...summary("2", "finished"),
-        roots: [],
-        folders: [],
-        entries: version === "1" ? [landed] : [],
-      };
-    },
-  };
-  return { api, since };
-}
-
 describe("ImportStore", () => {
-  it("reads the changes behind a newer open-list summary instead of skipping them", async () => {
-    const { api, since } = server();
-    const store = new ImportStore("p", "import-1", api);
+  it("applies a cut on top of a full read and follows a moved root", () => {
+    const store = new ImportStore("p", "import-1");
     store.installReport(report("1", [planned]));
     store.seedSummary(summary("2", "finished"));
+    // A newer summary alone does not move the cursor past changes not yet read.
+    expect(store.getSnapshot().report?.cursor).toBe("1");
 
-    await store.refresh();
+    store.applyChanges({
+      ...summary("2", "finished"),
+      roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0", uri: "kb://Moved/Ch 1" }],
+      folders: [],
+      entries: [landed],
+    });
 
-    expect(since).toEqual(["1"]);
+    expect(store.getSnapshot().report?.cursor).toBe("2");
     expect(store.getSnapshot().report?.entries.get(0)?.state).toBe("landed");
-  });
-
-  it("a forced refresh reads the whole report even after a full read", async () => {
-    const reads: string[] = [];
-    const api: ImportApi = {
-      ...fakeImportServer().api,
-      status: async () => {
-        reads.push("full");
-        // Neither a moved root nor a lapsed claim moves the import's version.
-        const now = report("1", [{ ...planned, state: "landing", wanted: true }]);
-        return { ...now, roots: [{ ...now.roots[0], id: "doc-0", uri: "kb://Moved/Ch 1" }] };
-      },
-      changes: async () => {
-        reads.push("changes");
-        return { ...summary("1"), roots: [], folders: [], entries: [] };
-      },
-    };
-    const store = new ImportStore("p", "import-1", api);
-    store.installReport(report("1", [{ ...planned, state: "landing", wanted: false }]));
-
-    await store.refresh(true);
-
-    expect(reads).toEqual(["full"]);
-    expect(store.getSnapshot().report?.entries.get(0)?.wanted).toBe(true);
     expect(store.getSnapshot().report?.roots[0]?.uri).toBe("kb://Moved/Ch 1");
   });
 
-  it("follows a moved root from what changed, so the report's Open goes to it", async () => {
-    const api: ImportApi = {
-      ...fakeImportServer().api,
-      changes: async () => ({
-        ...summary("2"),
-        roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0", uri: "kb://Moved/Ch 1" }],
-        folders: [],
-        entries: [],
-      }),
-    };
-    const store = new ImportStore("p", "import-1", api);
-    store.installReport(report("1", [planned]));
-
-    await store.refresh();
-
-    expect(store.getSnapshot().report?.roots).toEqual([
-      { rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0", uri: "kb://Moved/Ch 1" },
-    ]);
-  });
-
-  it("keeps polling until it has read up to a finished summary", async () => {
-    const { api, since } = server();
-    const store = new ImportStore("p", "import-1", api);
-    store.installReport(report("1", [planned]));
-    store.seedSummary(summary("2", "finished"));
-
-    const stop = store.watch("notice");
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    stop();
-
-    expect(since).toEqual(["1"]);
-    expect(store.getSnapshot().report?.entries.get(0)?.state).toBe("landed");
-  });
-
-  it("never lets an older answer replace a newer one", async () => {
-    const { api } = server();
-    const store = new ImportStore("p", "import-1", api);
+  it("never lets an older answer replace a newer one", () => {
+    const store = new ImportStore("p", "import-1");
     store.installReport({ ...report("3", [landed]), state: "finished" });
     store.installReport(report("1", [planned]));
 

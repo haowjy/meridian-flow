@@ -1,15 +1,28 @@
 /**
- * Where an import shows in the tree: the areas and folders it opens when it
- * starts.
+ * Where an import shows in the tree: the areas it fills, the folder it was started
+ * on and the new top-level folders (the row the progress ring sits on).
  */
 import { t } from "@lingui/core/macro";
 import type { ImportScheme, ImportSummary } from "@meridian/contracts";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ImportDestination, isImportScheme } from "./destination";
+import { parseContextUri } from "@meridian/contracts/context-uri";
+import type { ImportDestination } from "./destination";
 import { fullyRead, type ImportState } from "./import-state";
-import { catalogPathOfUri } from "./tree-projection";
 
-export type Placement = { scheme: ImportScheme; path: string; folderId: string | null };
+export type ImportTarget = {
+  /** The areas the import fills; several for a routed Meridian export. */
+  schemes: readonly ImportScheme[];
+  /** The folder it was started on; null for a routed export, which fills its own areas. */
+  destination: { scheme: ImportScheme; path: string; folderId: string | null } | null;
+  /** Ids of the new top-level folders, known from the pick. */
+  rootIds: readonly string[];
+};
+
+/** The catalog path ("/Lore/Sects") of a context URI, or null when it is not one. */
+export function catalogPathOfUri(uri: string | null): string | null {
+  if (!uri) return null;
+  const parsed = parseContextUri(uri);
+  return parsed.ok ? `/${parsed.value.path}` : null;
+}
 
 /** The folder an import was started on, from the server's summary alone. */
 export function destinationFromSummary(summary: ImportSummary): ImportDestination {
@@ -33,35 +46,30 @@ function areaLabel(scheme: ImportDestination["scheme"]): string {
       : t`Knowledge Base`;
 }
 
-export function placementsOf(state: ImportState): Placement[] {
+/** The target of one import: from the run's predicted rows, else from its status. */
+export function targetOf(state: ImportState): ImportTarget | null {
   const local = state.local;
   if (local) {
-    const areas = new Set(local.rows.map((row) => row.scheme));
+    const schemes = [...new Set(local.rows.map((row) => row.scheme))];
+    const rootIds = local.rows
+      .filter((row) => row.kind === "dir" && row.relPath === "")
+      .map((row) => row.id);
     // A Meridian export's rows go to several areas at once; each opens.
-    if (areas.size > 1 || (areas.size === 1 && !areas.has(local.destination.scheme)))
-      return [...areas].map((scheme) => ({ scheme, path: "/", folderId: null }));
-    return [
-      {
-        scheme: local.destination.scheme,
-        path: local.destination.path,
-        folderId: local.destination.folderId,
-      },
-    ];
+    if (schemes.length > 1 || (schemes.length === 1 && schemes[0] !== local.destination.scheme))
+      return { schemes, destination: null, rootIds };
+    return { schemes: [local.destination.scheme], destination: local.destination, rootIds };
   }
-  // A Meridian export fills its own areas wherever it was started; once the report is
-  // loaded, its entries say which ones.
   const report = state.report;
+  if (!report) return null;
+  const destination = destinationFromSummary(report.summary);
+  const rootIds = fullyRead(report)
+    ? report.roots.flatMap((root) => (root.kind === "folder" && root.id ? [root.id] : []))
+    : [];
   if (fullyRead(report) && report.roots.length === 1 && report.roots[0].id === null) {
-    const areas = new Set<ImportScheme>();
-    for (const entry of report.entries.values()) {
-      const scheme = entry.uri?.match(/^([a-z]+):\/\//)?.[1];
-      if (scheme && isImportScheme(scheme as ProjectContextTreeScheme))
-        areas.add(scheme as ImportScheme);
-    }
-    if (areas.size > 0) return [...areas].map((scheme) => ({ scheme, path: "/", folderId: null }));
+    const schemes = new Set<ImportScheme>();
+    for (const folder of report.folders.values()) schemes.add(folder.scheme);
+    for (const entry of report.entries.values()) schemes.add(entry.scheme);
+    if (schemes.size > 0) return { schemes: [...schemes], destination: null, rootIds };
   }
-  if (!state.report) return [];
-  const destination = destinationFromSummary(state.report.summary);
-  if (!isImportScheme(destination.scheme)) return [];
-  return [{ scheme: destination.scheme, path: destination.path, folderId: destination.folderId }];
+  return { schemes: [destination.scheme], destination, rootIds };
 }

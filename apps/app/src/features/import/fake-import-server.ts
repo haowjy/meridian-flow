@@ -1,20 +1,25 @@
 /** A stand-in import server for tests: plans every file as planned, lands what it is sent. */
-import type {
-  ImportCounts,
-  ImportEntryStatus,
-  ImportManifest,
-  ImportStatus,
+import {
+  type ImportCounts,
+  type ImportEntryStatus,
+  type ImportFolderStatus,
+  type ImportManifest,
+  type ImportStatus,
+  importNodeId,
 } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportApi } from "./import-api-port";
 
+const rootFolderId = (rootId: number) => `${rootId}:`;
+
 export function fakeImportServer(options: { failSend?: (entryId: number) => boolean } = {}) {
   const entries = new Map<number, ImportEntryStatus>();
+  const folders = new Map<string, ImportFolderStatus>();
   let manifest: ImportManifest | null = null;
   let finished = false;
   let planning = false;
   let version = 1;
-  const calls = { plan: 0, send: [] as number[][], finish: 0, resume: 0, dismiss: 0 };
+  const calls = { plan: 0, send: [] as number[][], finish: 0, resume: 0 };
   const counts = (): ImportCounts => {
     const all = [...entries.values()];
     const count = (state: ImportEntryStatus["state"]) =>
@@ -37,34 +42,67 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
     lastActivityAt: new Date().toISOString(),
     version: String(version),
     dismissedAt: null,
-    folders: [],
+    folders: [...folders.values()],
     roots: (manifest?.roots ?? []).map((root) => ({
       ...root,
-      id: `root-${root.rootId}`,
+      id: folders.get(rootFolderId(root.rootId))?.id ?? null,
       uri: null,
     })),
     entries: [...entries.values()],
   });
   const api: ImportApi = {
-    async plan(_projectId, planned) {
+    async plan(projectId, planned) {
       calls.plan += 1;
       manifest = planned;
+      const idOf = (kind: "folder" | "entry", rootId: number, path: string) =>
+        importNodeId({ projectId, importId: planned.importId, rootId, kind, path });
+      for (const root of planned.roots) {
+        if (root.kind !== "folder") continue;
+        const id = await idOf("folder", root.rootId, "");
+        folders.set(rootFolderId(root.rootId), {
+          id,
+          parentId: null,
+          scheme: "kb",
+          name: root.name,
+          state: "planned",
+        });
+      }
       for (const entry of planned.entries) {
+        const slash = entry.path.lastIndexOf("/");
+        const filename =
+          entry.path === ""
+            ? (planned.roots.find((root) => root.rootId === entry.rootId)?.name ?? "")
+            : entry.path.slice(slash + 1);
+        let parentId: string | null = folders.get(rootFolderId(entry.rootId))?.id ?? null;
+        if (slash > 0) {
+          const dir = entry.path.slice(0, slash);
+          parentId = await idOf("folder", entry.rootId, dir);
+          if (!folders.has(`${entry.rootId}:${dir}`))
+            folders.set(`${entry.rootId}:${dir}`, {
+              id: parentId,
+              parentId: folders.get(rootFolderId(entry.rootId))?.id ?? null,
+              scheme: "kb",
+              name: dir.slice(dir.lastIndexOf("/") + 1),
+              state: "planned",
+            });
+        }
+        const dot = filename.lastIndexOf(".");
+        const extension = dot > 0 ? filename.slice(dot + 1) : "";
         entries.set(entry.entryId, {
           entryId: entry.entryId,
           rootId: entry.rootId,
           path: entry.path,
-          filename: entry.path.split("/").at(-1) ?? "",
+          filename,
           size: entry.size,
           sha256: entry.sha256,
-          documentId: `doc-${entry.entryId}`,
-          kind: "note",
+          documentId: await idOf("entry", entry.rootId, entry.path),
+          kind: extension === "md" ? "note" : "binary",
           state: "planned",
           uri: null,
-          parentId: null,
+          parentId,
           scheme: "kb",
-          name: entry.path,
-          extension: "",
+          name: dot > 0 ? filename.slice(0, dot) : filename,
+          extension,
           reason: null,
           exists: true,
           wanted: true,
@@ -92,10 +130,6 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
       finished = true;
       version += 1;
       return status();
-    },
-    async dismiss() {
-      calls.dismiss += 1;
-      return { ...status(), dismissedAt: new Date().toISOString() };
     },
     async resume() {
       calls.resume += 1;
