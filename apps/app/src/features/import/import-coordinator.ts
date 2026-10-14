@@ -101,9 +101,11 @@ export class ImportCoordinator {
   /** Imports the server no longer knows. */
   private readonly missing = new Set<string>();
   private readonly listeners = new Set<() => void>();
-  private readonly unsubscribeCatalog: () => void;
+  private unsubscribeCatalog: (() => void) | undefined;
   private openTimer: unknown;
   private disposed = false;
+  /** Which `watchOpen` call owns the poll loop. */
+  private watching = 0;
 
   constructor(
     readonly projectId: string,
@@ -111,7 +113,11 @@ export class ImportCoordinator {
     private readonly catalog: CatalogReader = NO_CATALOG,
     private readonly clock: Clock = REAL_CLOCK,
   ) {
-    this.unsubscribeCatalog = catalog.subscribe(() => this.catalogChanged());
+    this.attach();
+  }
+
+  private attach() {
+    this.unsubscribeCatalog ??= this.catalog.subscribe(() => this.catalogChanged());
   }
 
   // ---- The snapshot surfaces read
@@ -376,15 +382,15 @@ export class ImportCoordinator {
     return importId;
   }
 
-  /** Draw the rows for `source`, unless the run ended while their ids were derived. */
-  private async drawRows(
+  /** Draw the predicted rows for `source`. */
+  private drawRows(
     store: ImportStore,
     run: Run,
     source: RowSource,
     destination: ImportDestination,
     ids: ReturnType<typeof nodeIdsFor>,
   ) {
-    const rows = await clientRowsFor(source, destination, ids);
+    const rows = clientRowsFor(source, destination, ids);
     if (retired(run)) return;
     store.setLocal((local) => ({ ...local, rows }));
     this.track(
@@ -400,14 +406,13 @@ export class ImportCoordinator {
   ) {
     const run = this.runFor(store);
     const ids = nodeIdsFor(this.projectId, store.importId);
-    // Hashing and deriving the rows' ids run together.
     const building = buildManifest(selection, {
       importId: store.importId,
       destinationUri: destination.uri,
       signal: run.controller.signal,
     });
     building.catch(() => {});
-    await this.drawRows(store, run, sourceOfSelection(selection), destination, ids);
+    this.drawRows(store, run, sourceOfSelection(selection), destination, ids);
     let built: BuiltManifest;
     try {
       built = await building;
@@ -417,7 +422,7 @@ export class ImportCoordinator {
     // The last files read may finish after Stop: their result is not this import's anymore.
     if (retired(run)) return;
     // Files that could not be read, and folders only they implied, are not rows.
-    await this.drawRows(store, run, sourceOfManifest(built.manifest), destination, ids);
+    this.drawRows(store, run, sourceOfManifest(built.manifest), destination, ids);
     if (retired(run)) return;
     store.setLocal((local) => ({ ...local, manifest: built.manifest, held: built.held }));
     await this.plan(store, built, run);
@@ -737,11 +742,19 @@ export class ImportCoordinator {
     this.changed();
   }
 
-  /** Keep the list fresh while the project is open: 30 s, or 5 s while anything is importing. */
+  /**
+   * Keep the list fresh while the project is open: 30 s, or 5 s while anything is
+   * importing. The returned function disposes the coordinator; watching again
+   * (React re-runs effects in development) brings a fresh one back to life.
+   */
   watchOpen(): () => void {
+    this.disposed = false;
+    this.attach();
+    const generation = ++this.watching;
     const tick = async () => {
-      if (this.disposed) return;
+      if (this.disposed || generation !== this.watching) return;
       await this.refreshOpen();
+      if (this.disposed || generation !== this.watching) return;
       const active = [...this.stores.values()].some((store) => {
         const summary = store.getSnapshot().report?.summary;
         return summary !== undefined && summary.state !== "finished" && summary.counts.arriving > 0;
@@ -749,10 +762,7 @@ export class ImportCoordinator {
       this.openTimer = this.clock.setTimeout(tick, active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     };
     void tick();
-    return () => {
-      if (this.openTimer) this.clock.clearTimeout(this.openTimer);
-      this.openTimer = undefined;
-    };
+    return () => this.dispose();
   }
 
   // ---- Retirement
@@ -799,7 +809,8 @@ export class ImportCoordinator {
 
   dispose() {
     this.disposed = true;
-    this.unsubscribeCatalog();
+    this.unsubscribeCatalog?.();
+    this.unsubscribeCatalog = undefined;
     if (this.openTimer) this.clock.clearTimeout(this.openTimer);
     if (this.treeTimer) this.clock.clearTimeout(this.treeTimer);
     for (const tracker of this.trackers.values())

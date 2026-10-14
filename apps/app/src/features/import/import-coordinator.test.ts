@@ -67,12 +67,8 @@ describe("ImportCoordinator.start", () => {
     const store = coordinator.store(importId);
     expect(server.calls.plan).toBe(0);
     expect(displayOf(store.getSnapshot())).toBe("preparing");
-    // The rows are replaced by the plan's answer, so catch them as they are drawn.
-    let rows: NonNullable<ReturnType<typeof store.getSnapshot>["local"]>["rows"] = [];
-    store.subscribe(() => {
-      const drawn = store.getSnapshot().local?.rows ?? [];
-      if (drawn.length) rows = drawn;
-    });
+    // The rows are drawn before `start` returns, and the plan's answer replaces them.
+    const rows = store.getSnapshot().local?.rows ?? [];
     await settled(coordinator, importId);
     expect(rows.length).toBeGreaterThan(0);
     const root = rows.find((row) => row.name === "vault");

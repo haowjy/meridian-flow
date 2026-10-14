@@ -29,11 +29,7 @@ describe("clientRowsFor", () => {
         },
       ],
     };
-    const rows = await clientRowsFor(
-      sourceOfSelection(selection),
-      destination,
-      nodeIdsFor("p", "imp"),
-    );
+    const rows = clientRowsFor(sourceOfSelection(selection), destination, nodeIdsFor("p", "imp"));
     const id = (kind: "folder" | "entry", path: string) =>
       importNodeId({ projectId: "p", importId: "imp", rootId: 3, kind, path });
     const byName = new Map(rows.map((row) => [row.name, row]));
@@ -65,11 +61,11 @@ describe("clientRowsFor", () => {
       ],
     };
     const ids = nodeIdsFor("p", "imp");
-    const predicted = await clientRowsFor(sourceOfSelection(selection), destination, ids);
+    const predicted = clientRowsFor(sourceOfSelection(selection), destination, ids);
     expect(predicted.map((row) => row.name)).toContain("Sub");
 
     const built = await buildManifest(selection, { importId: "imp", destinationUri: "kb://Lore/" });
-    const rebuilt = await clientRowsFor(sourceOfManifest(built.manifest), destination, ids);
+    const rebuilt = clientRowsFor(sourceOfManifest(built.manifest), destination, ids);
     expect(rebuilt.map((row) => row.name).sort()).toEqual(["Ch 1", "vault"]);
   });
 });

@@ -88,11 +88,7 @@ export function ImportProvider({
   const picking = useRef<{ destination: ImportDestination; kind: PickKind } | null>(null);
 
   useEffect(() => {
-    const stop = coordinator.watchOpen();
-    return () => {
-      stop();
-      coordinator.dispose();
-    };
+    return coordinator.watchOpen();
   }, [coordinator]);
 
   // Closing the page stops uploads; the browser's own wording warns first.

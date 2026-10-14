@@ -81,7 +81,7 @@ describe("import planning", () => {
     selection.entries.push({ ...selection.entries[0], rootId: 2, entryId: 30 });
     selection.unreadable = [{ rootId: 1, path: "Lore/Gone.md" }];
     const validated = validateManifest(selection);
-    const planned = await planWithDerivedIds(validated, { projectId }, null);
+    const planned = planWithDerivedIds(validated, { projectId }, null);
     const kinds = { folder: "folder", entry: "entry" } as const;
     for (const node of planned) {
       const kind =
@@ -91,7 +91,7 @@ describe("import planning", () => {
             ? "unreadable"
             : kinds.entry;
       expect(node.id).toBe(
-        await importNodeId({
+        importNodeId({
           projectId,
           importId: validated.importId,
           rootId: node.rootId,
@@ -153,9 +153,9 @@ describe("import planning", () => {
       "Works/No Work/Scratch/Note.md",
     ].map((path, entryId) => ({ path, entryId, rootId: 1, size: 0, sha256: "a".repeat(64) }));
     const projectId = randomUUID();
-    const planned = await planWithDerivedIds(value, { projectId }, null);
+    const planned = planWithDerivedIds(value, { projectId }, null);
     expect(planned.find((node) => node.path === "Manuscript/Chapter.md")).toMatchObject({
-      id: await importNodeId({
+      id: importNodeId({
         projectId,
         importId: value.importId,
         rootId: 1,

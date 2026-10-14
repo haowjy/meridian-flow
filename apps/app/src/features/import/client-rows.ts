@@ -61,8 +61,8 @@ export function sourceOfManifest(manifest: ImportManifest): RowSource {
 
 /** Node ids for one import, derived once and remembered across the rebuild. */
 export function nodeIdsFor(projectId: string, importId: string) {
-  const cache = new Map<string, Promise<string>>();
-  return (kind: "folder" | "entry", rootId: number, path: string): Promise<string> => {
+  const cache = new Map<string, string>();
+  return (kind: "folder" | "entry", rootId: number, path: string): string => {
     const key = `${kind}\u0000${rootId}\u0000${path}`;
     let id = cache.get(key);
     if (!id) {
@@ -85,11 +85,11 @@ type Draft = Omit<ClientRow, "id" | "parentId"> & {
   parent: NodeKey | "destination" | null;
 };
 
-export async function clientRowsFor(
+export function clientRowsFor(
   source: RowSource,
   destination: ImportDestination,
   ids: NodeIds,
-): Promise<ClientRow[]> {
+): ClientRow[] {
   const marker =
     source.length === 1 && source[0].kind === "folder"
       ? parseExportMarker(source[0].meridianExport)
@@ -177,7 +177,7 @@ export async function clientRowsFor(
     if (parent && parent !== "destination") keys.set(nameOf(parent), parent);
   }
   const resolved = new Map<string, string>();
-  await Promise.all([...keys].map(async ([name, key]) => resolved.set(name, await ids(...key))));
+  for (const [name, key] of keys) resolved.set(name, ids(...key));
   return drafts.map(({ key, parent, ...row }) => ({
     ...row,
     id: resolved.get(nameOf(key)) as string,
