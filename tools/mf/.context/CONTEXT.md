@@ -149,18 +149,28 @@ the tail envelope adds `snapshotUnavailable: true`. Absent `stillRunning` and
 in `result.ts`, in precedence order: `running` for a running turn,
 `owed` for pending writer messages, `lease_awake` for an awake lease with
 neither, then `unconfirmed` (including no snapshot or an idle-looking snapshot
-without confirmed completion). `lease_awake` is what a timeout reports when
-the server still holds a run lease after its turn ended, for example after a
-restart orphans a reply: orphan repair on this checkout leaves the lease row
-and publishes no change to asleep
-([#799](https://github.com/haowjy/meridian-flow/issues/799)). Expiry clears it
-only at read time; the next command is an until-idle tail to check again, not
-a writer action that clears the lease. Don't poll until expiry to hide this. The pending projection is
-mandatory. Before reporting complete, send checks that the admitted user turn id
-is absent from `liveState.pending.items` (writer admission uses that same id for
-the inbox row). If it remains, send returns 6 `unproven` / `owed` with
-`stillRunning` and a next until-idle tail, not the earlier run's answer.
-This guard does not prove which reply answered; phase 2 still owns that binding.
+without confirmed completion). `lease_awake` is a timeout whose snapshot shows neither a running turn nor an owed
+message but still reports `status.kind: "awake"`: the record and the status disagree,
+so idle is unconfirmed. It is not a claim about the record, and the next command is an
+until-idle tail to check again. Don't poll to hide it.
+
+The run-state record (`liveState.runState`, one whole record per snapshot, `subscribed`
+state or `meridian.run_state` frame) is what `./mf` reads for busy, owed and
+usage-blocked. The rules are the package's selectors over the view (`isBusy`,
+`isOwed`, `usageBlockedMessages`, `isBlockedForUsage`, `writerMessages`), the same the
+app uses; `run-state.ts` only holds the view. Before reporting complete, send checks
+that its admitted user turn id is no longer owed: the record doesn't list it, and the
+record read is at or past its admission (`runStateVersion`; none when the admission has
+none, because its record is from after it). If it is still owed, send returns 6
+`unproven` / `owed` with `stillRunning` and a next until-idle tail, not the earlier
+run's answer. This guard does not prove which reply answered; that binding waits for B,
+and `send`'s message proof waits for B too.
+
+Events reach the shared turn reducer with their stream seq (`ReducedThread.apply(event,
+seq)`), as in the app, so a removal (`meridian.messages.handed_back`) tombstones its
+turns at the frame's seq and an older snapshot cannot bring a handed-back message
+back.
+
 `respond` uses the shared interrupt sender and confirms its exact interrupt's
 journaled resolution (deadline: 6 `unconfirmed`). A replay gap makes `events`
 6 `replay_truncated` after printing the replay. Send recovers a lost HTTP
