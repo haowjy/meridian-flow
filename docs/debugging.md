@@ -10,7 +10,7 @@ Start from your symptom in [Strategies](#strategies), or scan the
 | --- | --- | --- |
 | Temporary console probes | You need a one-off signal from a live bug, now | [Temporary Probes](#temporary-probes) |
 | `EventSink` / `emitEvent` | The signal would help another agent tomorrow | [Durable Logs](#durable-logs) |
-| `./mf` | An agent needs setup, durable reads, server outcomes, or mock-model scripts; check which reply answered with the transcript | [Drive the App from the CLI](#drive-the-app-from-the-cli) |
+| `./mf` | An agent needs setup, durable reads, mock-model scripts, or evidence for the code `./mf` shares with the app. What the writer sees is checked in the browser | [Set Up and Verify with the CLI](#set-up-and-verify-with-the-cli) |
 | `./mf log` | An agent needs bounded JSON for one known event/trace/domain id | [Consume Server Events](#consume-server-events) |
 | `./mf thread context` | An agent needs the model's canonical request, digest, or tool-loop prefix | [Inspect Model Context](#inspect-model-context) |
 | `GET /api/debug/events` | Query recent server events by correlation/source/level | [Consume Server Events](#consume-server-events) |
@@ -34,9 +34,12 @@ Start from your symptom in [Strategies](#strategies), or scan the
   token counts per call). For per-chunk granularity, opt into
   `OBS_VERBOSE=gateway.chunks` (dev/test only) and re-run.
 - **An LLM is debugging.** Reproduce with `./mf thread send` (pair
-  `MODEL_PROVIDER=mock` with `--mock` for deterministic tool paths), read the
-  durable transcript with `./mf thread view` to check which reply answered
-  your message (a send's exit 0 does not prove that until [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands),
+  `MODEL_PROVIDER=mock` with `./mf mock script` for deterministic tool paths).
+  A `./mf` run is evidence for the code it shares with the app, and for the
+  server. Confirm what the writer sees in the browser (`agent-browser`), at least
+  once at the end. Read the durable transcript with `./mf thread view` to check
+  which reply answered your message (a send's exit 0 does not prove that until
+  [#768](https://github.com/haowjy/meridian-flow/issues/768)'s second phase lands),
   then `./mf log --thread <id>` or
   `./mf log --trace <id>`. Add `--full` only when compact metadata is
   insufficient. Use `./mf thread context` when the question is what the model
@@ -46,20 +49,29 @@ Start from your symptom in [Strategies](#strategies), or scan the
 - **Polling from a script or agent.** Use `sinceEventId` cursors — event IDs
   are stable at emit time, so incremental polls never re-read history.
 
-## Drive the App from the CLI
+## Set Up and Verify with the CLI
 
-Repeatable verification recipes live in the [runtime probe catalog](qa/README.md).
+While working, `./mf` is the verification tool for the code it shares with the
+app. It also sets up state (Works, threads, seeded documents, mock-model scripts,
+queued controls) and reads durable state. The browser is judged by what the
+screen shows, with the durable transcript as truth. Repeatable verification
+recipes live in the [runtime probe catalog](qa/README.md).
 
 `./mf` (repo root) drives this worktree's own API: every command maps to an
 existing HTTP route or thread-socket message, authenticated exactly like the
 browser through dev login. Run `./mf` for the command tree with the route each
-command wraps, and `./mf <noun> <verb> --help` for flags and examples. Its
-thread socket, message body and chat event processing come from
-`@meridian/thread-client`, the same code the app runs, so a `./mf` run is
-evidence of that shared code against the real server. A command with no shared
-client code behind it is evidence of the server only. It never covers what the
-writer sees: rendering, the app's thread store, the TipTap composer, the
-submission journal, optimistic UI, and navigation are the browser's to verify.
+command wraps, and `./mf <noun> <verb> --help` for flags and examples.
+
+What a `./mf` run proves depends on the code behind the command. Its thread
+socket, message body, chat event processing and transcript view model come from
+`@meridian/thread-client`, the same code the app runs, so a run is evidence of
+that shared code against the real server (`thread view` prints the rows the app
+draws). A command with no shared client code
+behind it is evidence of the server only. What the writer sees is checked in the
+browser (`agent-browser`): rendering, card wording, the app's thread store, the TipTap
+composer, the submission journal, optimistic UI, and navigation. A PR that
+changes app behavior confirms it in the browser at least once, at the end.
+`liveView` is not a certificate of any browser screen.
 
 A send that cannot start for lack of usage returns `status: "blocked"`,
 `outcome: "failed"`, `reason: "credits_exhausted"` and exit code 1, not a
