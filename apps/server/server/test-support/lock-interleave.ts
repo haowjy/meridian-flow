@@ -33,17 +33,18 @@ async function blockedBy(db: Database, holder: number): Promise<Set<number>> {
 /**
  * `b` runs to completion or to its first wait on `a` (at most `waitMs`, five seconds by
  * default) before `a` is released. `bWaited` is true when a session that wasn't already
- * waiting on `a` started waiting on a lock `a`'s transaction holds. At a hook outside any
- * transaction `a` holds no row lock, so nothing waits on it there; `bBlocked` is true when
- * `b` had not settled at release, which is how a wait on an in-process lease shows.
+ * waiting on `a` started waiting on a lock `a`'s transaction holds, the database's view
+ * of a real lock. A wait on an in-process lease is not visible there: `beforeRelease` runs
+ * once `b` has settled or waited out, just before `a` is released, for a test to read its
+ * lease observer (`lease-observer.ts`).
  */
 export async function interleave<A, B>(
   db: Database,
   a: () => Promise<A>,
   at: TreeHookPoint | CollabHookPoint,
   b: () => Promise<B>,
-  options: { waitMs?: number } = {},
-): Promise<{ a: Settled<A>; b: Settled<B>; bWaited: boolean; bBlocked: boolean }> {
+  options: { waitMs?: number; beforeRelease?: () => void } = {},
+): Promise<{ a: Settled<A>; b: Settled<B>; bWaited: boolean }> {
   let reached!: (holder: number | null) => void;
   const atHook = new Promise<number | null>((resolve) => {
     reached = resolve;
@@ -83,9 +84,9 @@ export async function interleave<A, B>(
       }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    const bBlocked = !bDone;
+    options.beforeRelease?.();
     release();
-    return { a: await aRun, b: await bRun, bWaited, bBlocked };
+    return { a: await aRun, b: await bRun, bWaited };
   } finally {
     remove();
     release();
