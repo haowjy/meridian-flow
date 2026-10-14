@@ -10,6 +10,11 @@
  * switch; a failure stays with the journal owner's keyed announcement), marks
  * the Works and project thread lists stale when a switch applies, and asks for
  * a snapshot while the ledger waits for proof.
+ *
+ * One ledger host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it
+ * between the center and the dock, so a chat has one mounted `ChatView` and so one ledger.
+ * Two would each announce, each hold their own witness, and each ask for proof. A dev-only
+ * registry warns when a second mounts for a chat that already has one.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
@@ -64,6 +69,26 @@ const dividersOf = (turns: readonly Turn[]) =>
     return facts ? [{ turnId: turn.id, controlId: facts.controlId, mode: facts.mode }] : [];
   });
 
+/** Dev-only: the chats whose ledger is mounted in this tab, to catch a second host. */
+const mountedLedgers = new Map<string, number>();
+
+function useSingleHostWarning(threadId: string) {
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const hosts = (mountedLedgers.get(threadId) ?? 0) + 1;
+    mountedLedgers.set(threadId, hosts);
+    if (hosts > 1)
+      console.warn(
+        `Two switch ledgers are mounted for chat ${threadId}: a chat has one ledger host per tab.`,
+      );
+    return () => {
+      const left = (mountedLedgers.get(threadId) ?? 1) - 1;
+      if (left > 0) mountedLedgers.set(threadId, left);
+      else mountedLedgers.delete(threadId);
+    };
+  }, [threadId]);
+}
+
 export type SwitchLedgerView = {
   rows: readonly QueuedControl[];
   /** The chat's mode as the writer should see it. */
@@ -87,6 +112,7 @@ export function useSwitchLedger(input: {
 }): SwitchLedgerView {
   const { threadId, projectId, pending, turns, historyLoaded, journal } = input;
   const queryClient = useQueryClient();
+  useSingleHostWarning(threadId);
   const [ledger, dispatch] = useReducer(ledgerReducer, EMPTY_LEDGER);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
