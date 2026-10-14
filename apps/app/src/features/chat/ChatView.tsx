@@ -17,21 +17,30 @@
  */
 import { t } from "@lingui/core/macro";
 import type { SnapshotLiveState, Thread, Turn, Work } from "@meridian/contracts/protocol";
-import { answeredControlIds, isHandoffSeed } from "@meridian/contracts/threads";
+import {
+  answeredControlIds,
+  isHandoffSeed,
+  type PendingInboxItem,
+} from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
-  queuedWriterTurnIds as selectQueuedWriterTurnIds,
+  hiddenWriterTurns,
+  isAwaitingExecution,
+  isBusy,
+  isUsageBlocked,
   viewTranscript,
+  waitingWriterMessages,
 } from "@meridian/thread-client";
 import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import {
-  useMeridianAgent,
-  useRunFacts,
-  useRunFollowStatus,
-} from "@/client/copilot/MeridianCopilotProvider";
+import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
-import { useIsThreadPendingCreation, useThreadActions, useThreadStore } from "@/client/stores";
+import {
+  useIsThreadPendingCreation,
+  useRunState,
+  useThreadActions,
+  useThreadStore,
+} from "@/client/stores";
 import {
   Composer,
   type ComposerChatCommand,
@@ -83,13 +92,13 @@ import { useSwitchView } from "./thread-controls/useSwitchView";
 import { useThreadControls } from "./thread-controls/useThreadControls";
 import { UsageBlockedNotice } from "./UsageBlockedNotice";
 import { useChatLinkFollowing } from "./useChatLinkFollowing";
+import { useChatStop } from "./useChatStop";
 import { useChatSubmissions } from "./useChatSubmissions";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useDraftDock } from "./useDraftDock";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useOwedMessagesBlocked } from "./useOwedMessagesBlocked";
-import { usePendingInbox } from "./usePendingInbox";
 import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
@@ -97,6 +106,7 @@ import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
 import { useThreadRunResume } from "./useThreadRunResume";
 
 const EMPTY_TURNS: Turn[] = [];
+const NO_ITEMS: PendingInboxItem[] = [];
 
 export type ChatViewProps = {
   threadId: string;
@@ -160,8 +170,8 @@ export function ChatView({
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
   const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const brief = useHandoffBrief({ threadId, storedTurns });
-  const runFacts = useRunFacts(threadId);
-  const replyRetry = useReplyRetry({ threadId, storedTurns, runFacts });
+  const runState = useRunState(threadId);
+  const replyRetry = useReplyRetry({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
   // yet). A Retry's new card, or a failed reply's new reply, stands after the
@@ -177,11 +187,12 @@ export function ChatView({
   const runningBackgroundSubagents = runningSubagents.filter(
     (node) => node.deliveryMode === "background_notification",
   );
-  const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
   const queuedWriterTurnIds = useMemo(
-    () => selectQueuedWriterTurnIds(pendingInbox),
-    [pendingInbox],
+    () => new Set(waitingWriterMessages(runState).map((item) => item.id)),
+    [runState],
   );
+  const hiddenTurnIds = useMemo(() => hiddenWriterTurns(runState), [runState]);
+  const usageBlocked = isUsageBlocked(runState);
   const inheritedTranscript = inherited.view?.transcript ?? null;
   const opening = useMemo(
     () =>
@@ -210,6 +221,7 @@ export function ChatView({
         activity: { awaitingSubagents },
         standIns,
         queued: queuedWriterTurnIds,
+        hidden: hiddenTurnIds,
         retried: retriedReplies,
         onContractFailure: reportPersistedContractFailure,
       }),
@@ -219,6 +231,7 @@ export function ChatView({
       storedTurns,
       opening,
       queuedWriterTurnIds,
+      hiddenTurnIds,
       retriedReplies,
       standIns,
     ],
@@ -233,17 +246,15 @@ export function ChatView({
   const isStreaming = latestAssistantTurn?.status === "streaming";
   // Only what the server has can be stopped: a stand-in brief is not a run yet.
   const { canStop: canStopSeed } = brief;
-  const followStatus = useRunFollowStatus(threadId);
-  const owedMessagesBlocked = useOwedMessagesBlocked(followStatus.waiting);
-  const following = followStatus.following && !owedMessagesBlocked;
+  // The record says the chat works or owes a reply; a message owed with no run, while the
+  // account can't start a turn, leaves the composer idle.
+  const owedMessagesBlocked = useOwedMessagesBlocked(isAwaitingExecution(runState));
+  const working = isBusy(runState) && !owedMessagesBlocked;
   const run = useMemo(
-    () =>
-      composerRun(
-        turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn)),
-        following,
-      ),
-    [canStopSeed, following, turns],
+    () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
+    [canStopSeed, turns],
   );
+  const running = run !== null || working;
   const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
@@ -290,7 +301,7 @@ export function ChatView({
   });
   const controls = useThreadControls({
     threadId,
-    pending: pendingInbox,
+    items: runState.record?.items ?? NO_ITEMS,
     answeredCompactionIds: answeredCompactions,
     switches,
   });
@@ -410,16 +421,13 @@ export function ChatView({
     return recorded;
   }
 
+  const stopChat = useChatStop({ threadId, accountId });
   function handleStop() {
-    // A compaction or brief has no reply stream for the run controller to
-    // stop: cancel its turn, as the divider's and the card's own Stop do.
-    // A streaming reply, or followed work between replies, is the controller's.
-    if (run?.kind === "placeholder") {
-      if (run.turn.role === "compaction") controls.stop(run.turn.id);
-      else brief.stop(run.turn.id);
-      return;
-    }
-    controller.cancel(threadId);
+    // A brief being written holds the chat with no run: its own Stop. Everything else, a reply,
+    // a compaction, the gap between replies, is the chat's Stop, decided on the server, and
+    // the waiting messages it hands back arrive in the composer.
+    if (run?.kind === "placeholder") brief.stop(run.turn.id);
+    else stopChat();
   }
 
   const handleRespondToInterrupt = useCallback(
@@ -438,11 +446,7 @@ export function ChatView({
           footer={
             <div data-debug-composer={threadId}>
               <Composer
-                notices={
-                  pendingInbox.blocked?.reason === "credits_exhausted" ? (
-                    <UsageBlockedNotice />
-                  ) : undefined
-                }
+                notices={usageBlocked ? <UsageBlockedNotice /> : undefined}
                 key={draft.key}
                 initialDraft={draft.initialDraft}
                 onDraftChange={draft.updateDraft}
@@ -470,7 +474,7 @@ export function ChatView({
                     <DraftDock dock={dock} />
                   </>
                 }
-                running={run !== null}
+                running={running}
                 referenceCatalog={referenceCatalog}
                 availableSkills={availableSkills.skills}
                 commands={chatCommands}
@@ -510,11 +514,11 @@ export function ChatView({
                     onRespondToInterrupt={handleRespondToInterrupt}
                     changeTrails={changeTrails.byId}
                     submissionRecoveryByTurnId={submissions.presentation}
-                    waitingForUsage={pendingInbox.blocked?.reason === "credits_exhausted"}
+                    waitingForUsage={usageBlocked}
                     controls={controls}
                     brief={brief}
                     replyRetry={replyRetry}
-                    busy={liveStatus.kind === "awake" || run !== null}
+                    busy={liveStatus.kind === "awake" || running}
                     inherited={inheritedView}
                     onRetryInherited={inherited.failed ? inherited.retry : null}
                     threadUsage={snapshotThreadUsage}

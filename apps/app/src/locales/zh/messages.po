@@ -1543,6 +1543,10 @@ msgstr ""
 msgid "Couldn't stop the compaction. Try again."
 msgstr ""
 
+#: src/features/chat/useChatStop.ts
+msgid "Couldn't stop. Try again."
+msgstr ""
+
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't switch to auto-apply."
 msgstr ""
@@ -3813,6 +3817,7 @@ msgid "Stopped"
 msgstr "已取消"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
+#: src/features/chat/useChatStop.ts
 msgid "Stopping"
 msgstr ""
 

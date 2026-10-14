@@ -128,10 +128,10 @@ function ChatScreenLoaded({
   visible: boolean;
 }) {
   const {
-    activateProjection,
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    activateProjection,
     snapshot,
     isError,
     settled: historySettled,

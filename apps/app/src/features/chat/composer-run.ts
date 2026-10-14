@@ -1,37 +1,27 @@
 /**
- * What the chat composer's Stop acts on: the thread's active work, read from
- * the turns it owns.
+ * What the chat composer's Stop acts on, read from the turns the chat holds.
  *
- * Work is active while a reply streams, and also while a placeholder with no
- * stream of its own is pending: a compaction divider, or a handoff brief being
- * written (a pending seed, which holds the chat without a run lease or
- * phase). The composer offers Stop for all of them, and a send meanwhile
- * queues like any send during a run. The placeholder is read from turns rather
- * than the lease because the turn settles with the row the writer sees; the
- * snapshot's status can trail it.
- *
- * Between replies the run controller may still be following work for the
- * chat: a writer message is owed and no reply streams yet (the gap after a
- * yield, before the next execution takes it on). Stop stays, and the
- * controller owns it.
+ * A reply is in progress while the latest assistant turn streams; the chat Stop handles it,
+ * and handles everything else the run-state record says is busy (a compaction, the gap between
+ * replies, a usage-blocked wait). Only a handoff brief being written is read here: a pending
+ * seed holds the chat with no lease or run, so the record has nothing to say about it, and its
+ * Stop is the brief's own.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 import { isHandoffSeed } from "@meridian/contracts/threads";
 
 export type ComposerRun =
-  /** The latest assistant reply is streaming; the run controller stops it. */
+  /** The latest assistant reply is streaming. */
   | { kind: "reply" }
-  /** A compaction or a handoff brief is in progress; cancel targets its turn. */
+  /** A handoff brief is being written; cancel targets its turn. */
   | { kind: "placeholder"; turn: Turn }
-  /** No reply streams, but the run controller follows work for the chat; it stops it. */
-  | { kind: "following" }
   | null;
 
 function inProgress(turn: Turn): boolean {
   return turn.status === "pending" || turn.status === "streaming";
 }
 
-export function composerRun(turns: readonly Turn[], following = false): ComposerRun {
+export function composerRun(turns: readonly Turn[]): ComposerRun {
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turn = turns[index];
     if (!turn) continue;
@@ -40,8 +30,7 @@ export function composerRun(turns: readonly Turn[], following = false): Composer
       // A settled reply is the head of the run's output; older turns are history.
       if (!inProgress(turn)) break;
     }
-    if ((turn.role === "compaction" || isHandoffSeed(turn)) && inProgress(turn))
-      return { kind: "placeholder", turn };
+    if (isHandoffSeed(turn) && inProgress(turn)) return { kind: "placeholder", turn };
   }
-  return following ? { kind: "following" } : null;
+  return null;
 }

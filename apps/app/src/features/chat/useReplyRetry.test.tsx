@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Failed-reply Retry: the new reply first, the server's replaces it by id, a
- * refusal notes the failed reply, and a request whose execution ended without
- * its reply (matched by execution or by `metadata.retryReplyId`) retires.
+ * refusal notes the failed reply, and a request whose execution closed without
+ * its reply retires, read from the run-state record at or after its answer.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,13 +14,19 @@ vi.mock("@/client/api/threads-api", () => api);
 const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries }) }));
 const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
-vi.mock("@/client/stores", () => announcements);
+const view = vi.hoisted(() => ({ current: undefined as unknown, dispatchRunState: vi.fn() }));
+vi.mock("@/client/stores", () => ({
+  ...announcements,
+  useThreadActions: () => view,
+  useRunState: () => view.current,
+}));
 
 import type { Turn } from "@meridian/contracts/protocol";
+import type { RunState } from "@meridian/contracts/threads";
+import { INITIAL_RUN_STATE_VIEW, receiveRecord } from "@meridian/thread-client";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
-import { EMPTY_RUN_FACTS, type RunFacts } from "@/client/copilot/run-follow";
 import { type ReplyRetry, useReplyRetry } from "./useReplyRetry";
 import { RETRY_PENDING_ATTEMPTS } from "./useRetryStandIns";
 
@@ -57,29 +63,25 @@ function deferred<T>() {
 
 const message = turn("u", "user", "complete", 1);
 const failed = turn("f", "assistant", "error", 2);
-/** An applied mode switch after the failed reply: Retry still answers past it. */
-const modeSwitch = turn("s", "system", "complete", 3);
-
-/** A compaction in execution `e`, reserved first by the Retry request `requestId`. */
-function compaction(status: Turn["status"], requestId: string | null, executionId = "e-r") {
+/** The record the server held at `version`, with the open execution `executionId` (none when null). */
+function record(version: string, executionId: string | null): RunState {
   return {
-    ...turn("c", "compaction", status, 4),
-    prevTurnId: "s",
-    executionId,
-    metadata: requestId ? { retryOf: "f", retryReplyId: requestId } : null,
-  } as Turn;
+    version,
+    items: [],
+    sentThrough: 0,
+    execution: executionId ? { executionId, currentTurnId: null } : null,
+    mode: "direct",
+    blocked: null,
+  };
 }
-
-/** The thread's run facts as the controller would have merged them. */
-let facts: RunFacts = EMPTY_RUN_FACTS;
-function endExecution(executionId: string) {
-  facts = { ...facts, ended: new Set(facts.ended).add(executionId) };
+function hold(next: RunState | null) {
+  view.current = next ? receiveRecord(INITIAL_RUN_STATE_VIEW, next) : INITIAL_RUN_STATE_VIEW;
 }
 
 let root: Root;
 let latest: ReplyRetry;
 function Probe({ turns }: { turns: readonly Turn[] }) {
-  latest = useReplyRetry({ threadId: "t", storedTurns: turns, runFacts: facts });
+  latest = useReplyRetry({ threadId: "t", storedTurns: turns });
   return null;
 }
 
@@ -96,7 +98,7 @@ function retryPending(retryAfterSeconds?: number) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  facts = EMPTY_RUN_FACTS;
+  hold(null);
   root = createRoot(document.createElement("div"));
   await act(async () => root.render(<Probe turns={[message, failed]} />));
 });
@@ -123,110 +125,46 @@ describe("useReplyRetry", () => {
     expect(latest.requestOf(id)).toBeNull();
   });
 
-  it("retires a reply whose answered execution ends on a stopped compaction", async () => {
-    api.retryReply.mockResolvedValueOnce({ executionId: "e-r", turn: null });
+  it("retires a stand-in whose execution closed with no reply, and keeps it until the record says so", async () => {
+    api.retryReply.mockResolvedValueOnce({
+      executionId: "e-r",
+      turn: null,
+      runState: record("2000", "e-r"),
+    });
     await act(async () => latest.retry(failed));
-    const id = latest.standIns[0]?.id ?? "";
-    await act(async () =>
-      root.render(<Probe turns={[message, failed, modeSwitch, compaction("streaming", null)]} />),
-    );
     expect(latest.standIns).toHaveLength(1);
 
-    endExecution("e-r");
-    await act(async () =>
-      root.render(<Probe turns={[message, failed, modeSwitch, compaction("cancelled", null)]} />),
-    );
-    expect(latest.standIns).toEqual([]);
-    expect(latest.requestOf(id)).toBeNull();
-  });
-
-  it("retires a stand-in when only an end is learned, before any snapshot refresh", async () => {
-    api.retryReply.mockResolvedValueOnce({ executionId: "e-r", turn: null });
-    await act(async () => latest.retry(failed));
-    const id = latest.standIns[0]?.id ?? "";
-    const turns = [message, failed, modeSwitch, compaction("streaming", id)];
-    await act(async () => root.render(<Probe turns={turns} />));
+    // An older record, and the Retry's own execution still open: the reply may yet start.
+    hold(record("1000", null));
+    await act(async () => root.render(<Probe turns={[message, failed]} />));
+    expect(latest.standIns).toHaveLength(1);
+    hold(record("2001", "e-r"));
+    await act(async () => root.render(<Probe turns={[message, failed]} />));
     expect(latest.standIns).toHaveLength(1);
 
-    // The controller records the end; the stored turns are the same array.
-    endExecution("e-r");
-    await act(async () => root.render(<Probe turns={turns} />));
+    // At or past the answer, the execution is gone and the store has no reply: nothing will come.
+    hold(record("2002", null));
+    await act(async () => root.render(<Probe turns={[message, failed]} />));
     expect(latest.standIns).toEqual([]);
-    expect(latest.requestOf(id)).toBeNull();
   });
 
-  it("F, a switch S, then a cancelled compaction C: a lost Retry retires by the request id C records", async () => {
-    api.retryReply.mockRejectedValueOnce(new TypeError("Failed to fetch"));
-    await act(async () => latest.retry(failed));
-    const lost = latest.standIns[0] as Turn;
-    expect(latest.requestOf(lost.id)).toBe("failed");
-
-    // C's predecessor is S, not F: only the request id ties C to this Retry.
-    await act(async () =>
-      root.render(
-        <Probe turns={[message, failed, modeSwitch, compaction("streaming", lost.id)]} />,
-      ),
-    );
-    expect(latest.standIns).toHaveLength(1);
-    endExecution("e-r");
-    await act(async () =>
-      root.render(
-        <Probe turns={[message, failed, modeSwitch, compaction("cancelled", lost.id)]} />,
-      ),
-    );
-    expect(latest.standIns).toEqual([]);
-    expect(latest.requestOf(lost.id)).toBeNull();
-  });
-
-  it("F, S, C after a null replay: the replay's execution retires the stand-in", async () => {
+  it("keeps a replayed Retry's stand-in until the replay answers, then retires it by that answer", async () => {
     vi.useFakeTimers();
     try {
       api.retryReply
         .mockRejectedValueOnce(new TypeError("Failed to fetch"))
-        .mockResolvedValueOnce({ executionId: "e-r", turn: null });
+        .mockResolvedValueOnce({ executionId: "e-r", turn: null, runState: record("3000", "e-r") });
       await act(async () => latest.retry(failed));
       const lost = latest.standIns[0] as Turn;
+      // The lost request has no answer version, so even an idle record cannot retire it.
+      hold(record("3500", null));
+      await act(async () => root.render(<Probe turns={[message, failed]} />));
+      expect(latest.requestOf(lost.id)).toBe("failed");
       await act(async () => latest.retry(lost));
-      expect(latest.requestOf(lost.id)).toBe("sent");
-      endExecution("e-r");
-      await act(async () =>
-        root.render(<Probe turns={[message, failed, modeSwitch, compaction("cancelled", null)]} />),
-      );
       expect(latest.standIns).toEqual([]);
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("keeps a stand-in when an unrelated compaction ends next to its failed reply", async () => {
-    api.retryReply.mockResolvedValueOnce({ executionId: "e-r", turn: null });
-    await act(async () => latest.retry(failed));
-    endExecution("e-other");
-    await act(async () =>
-      root.render(
-        <Probe
-          turns={[
-            message,
-            failed,
-            { ...compaction("cancelled", null, "e-other"), prevTurnId: failed.id },
-          ]}
-        />,
-      ),
-    );
-    expect(latest.standIns).toHaveLength(1);
-  });
-
-  it("keeps a stand-in whose execution ended after starting it, until the store has the reply", async () => {
-    api.retryReply.mockResolvedValueOnce({ executionId: "e-r", turn: null });
-    await act(async () => latest.retry(failed));
-    const id = latest.standIns[0]?.id ?? "";
-    facts = {
-      ...facts,
-      turns: new Map([[id, { executionId: "e-r", reservedForUserTurnIds: [], position: 3 }]]),
-    };
-    endExecution("e-r");
-    await act(async () => root.render(<Probe turns={[message, failed, modeSwitch]} />));
-    expect(latest.standIns).toHaveLength(1);
   });
 
   it("drops the new reply on a refusal (409), notes the failed reply, and refreshes", async () => {

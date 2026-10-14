@@ -23,6 +23,7 @@ import {
   apiThreadRecentDocumentsPath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
+  apiThreadStopPath,
   apiThreadTitlePath,
   apiThreadTranscriptPath,
   apiThreadTurnContextPreviewDebugPath,
@@ -56,6 +57,8 @@ import {
 import type {
   EnqueueThreadControlRequest,
   EnqueueThreadControlResponse,
+  StopRequest,
+  StopResponse,
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
@@ -184,6 +187,14 @@ export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelT
   return postJson(apiThreadCancelPath(data.threadId, data.turnId), {
     reason: data.reason,
   });
+}
+
+/**
+ * Chat Stop. The server decides it once under the thread lock and stores the decision by request
+ * id, so a repeat of the same request answers the same result.
+ */
+export function stopThread(threadId: string, request: StopRequest): Promise<StopResponse> {
+  return postJson(apiThreadStopPath(threadId), request);
 }
 
 /**

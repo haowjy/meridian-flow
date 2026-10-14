@@ -9,17 +9,18 @@
  * stand-in's `metadata.retryOf` and the explicit `retried` set). `useRetryStandIns` owns the stand-in,
  * the refusal note, and the re-send of a lost request.
  *
- * The request is known by its execution (from the response) or, when the
- * response was lost, by the reservation that records its id
- * (`metadata.retryReplyId`). Once that execution has ended without the new
- * reply, nothing will create it and the stand-in goes.
+ * The request is known by its execution and the record version of its answer.
+ * Once the run-state record, at or after that version, shows another execution
+ * or none and the store still has no new reply, nothing will create it and the
+ * stand-in goes (`retryRetired`). A lost response has no version: its stand-in
+ * stays failed until the writer's Retry replays the request.
  */
 import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
-import { useCallback } from "react";
+import { retryRetired } from "@meridian/thread-client";
+import { useCallback, useMemo } from "react";
 import { retryReply } from "@/client/api/threads-api";
-import type { RunFacts } from "@/client/copilot/run-follow";
-import { announce } from "@/client/stores";
+import { announce, useRunState } from "@/client/stores";
 import { type RetryStandIns, type StandInIdentity, useRetryStandIns } from "./useRetryStandIns";
 
 export type ReplyRetry = Pick<RetryStandIns, "standIns" | "requestOf" | "refused" | "retried"> & {
@@ -60,41 +61,25 @@ export function optimisticRetryReply(input: { id: string; failed: Turn; createdA
   };
 }
 
-function retryReplyIdOf(turn: Turn): string | null {
-  const { metadata } = turn;
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
-  const id = (metadata as { retryReplyId?: unknown }).retryReplyId;
-  return typeof id === "string" ? id : null;
-}
-
-/**
- * Whether a Retry request's reservation ended without creating its reply: its
- * execution (answered, or read off the turn that records the request id) has
- * ended, and no turn of it is the requested reply.
- */
-export function retryReservationEnded(
-  standIn: StandInIdentity,
-  storedTurns: readonly Turn[],
-  facts: RunFacts,
-): boolean {
-  const executionId =
-    standIn.executionId ??
-    storedTurns.find((turn) => retryReplyIdOf(turn) === standIn.id)?.executionId ??
-    null;
-  if (executionId === null || !facts.ended.has(executionId)) return false;
-  return facts.turns.get(standIn.id)?.executionId !== executionId;
-}
-
 export function useReplyRetry(input: {
   threadId: string;
   storedTurns: readonly Turn[];
-  /** The thread's merged run identity facts; a new value retires stand-ins whose execution ended. */
-  runFacts: RunFacts;
 }): ReplyRetry {
-  const { threadId, storedTurns, runFacts } = input;
+  const { threadId, storedTurns } = input;
+  const runState = useRunState(threadId);
+  const storedIds = useMemo(() => new Set(storedTurns.map((turn) => turn.id)), [storedTurns]);
+  // A reply the store has is the stand-in's to hand over to (it leaves by id); only a request
+  // whose execution closed with no reply is retired here.
   const retired = useCallback(
-    (standIn: StandInIdentity) => retryReservationEnded(standIn, storedTurns, runFacts),
-    [runFacts, storedTurns],
+    (standIn: StandInIdentity) =>
+      standIn.answerVersion !== null &&
+      !storedIds.has(standIn.id) &&
+      retryRetired(runState, {
+        executionId: standIn.executionId,
+        answerVersion: standIn.answerVersion,
+        replyTurnExists: false,
+      }),
+    [runState, storedIds],
   );
   const standIns = useRetryStandIns({
     threadId,
