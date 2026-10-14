@@ -522,6 +522,7 @@ export function createBranchPushService(input: BranchPushServiceInput): BranchPu
           await input.settlementStore.recordFailure({
             batchId: cause.handoff.staged.batchId,
             claim: cause.handoff.staged.claim,
+            stage: "handoff",
             error: "publication branch leases kept changing",
           });
           throw cause.handoff;
