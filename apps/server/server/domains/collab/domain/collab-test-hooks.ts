@@ -10,6 +10,7 @@ const COLLAB_HOOK_POINTS = [
   "discard.beforeRetirement",
   "access.afterLeases",
   "applyItems.beforeStaging",
+  "applyItems.afterCatchUp",
   "applyItems.afterStaging",
   "applyItems.beforeContinue",
   "applyItems.planning",

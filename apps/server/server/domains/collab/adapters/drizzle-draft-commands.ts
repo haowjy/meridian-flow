@@ -127,3 +127,12 @@ export async function settleCommandForBatchWithinTx(
     .set({ state: "done", result, completedAt: sql`clock_timestamp()` })
     .where(and(eq(draftCommands.settlementBatchId, batchId), eq(draftCommands.state, "pending")));
 }
+
+/** Replaces a claimed command's stored result in the transaction that claimed it. */
+export async function restateCommandWithinTx(
+  db: DrizzleDb,
+  commandId: string,
+  result: DraftCommandOutcome,
+): Promise<void> {
+  await db.update(draftCommands).set({ result }).where(eq(draftCommands.id, commandId));
+}

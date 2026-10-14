@@ -154,6 +154,9 @@ describe("model revert", () => {
       await harness.commit(responseId);
       const branchId = await draftBranchId(db, ALPHA_ID);
       await review.applyItem(ALPHA_ID);
+      // D13: its words still sit in the draft and in no review change, so the edit reads applied.
+      const edits = await core.read({ ...address, format: "edits" }, context);
+      expect(edits.result.message).toMatch(/w1 {2}this turn {2}applied {2}"Beta" → "Gamma"/);
       expect(
         await core.write(
           { ...address, command: "revert", edit: "w1", tool_use_id: "revert" },
@@ -264,7 +267,7 @@ describe("model revert", () => {
       expect(page.result.message).toContain("more: before w6");
       const second = await core.read({ ...address, format: "edits", before: "w6" }, context);
       expect(lines(second.result.message)).toHaveLength(5);
-      expect(second.result.message).toMatch(/w1 {2}this turn {2}\w+ {2}"Beta" → "Text1"/);
+      expect(second.result.message).toMatch(/w1 {2}this turn {2}discarded {2}"Beta" → "Text1"/);
       expect(
         await core.write({ ...address, command: "revert", edit: "w25" }, context),
       ).toMatchObject({ status: "success", writeId: "w26" });

@@ -85,13 +85,27 @@ export function createWorkDraftReviewService(input: {
     return (await known(envelope)) ?? { kind: "result", result: computed };
   }
 
+  /** Records an authorized refusal (the claim is conflict-safe) and answers the stored winner. */
+  async function refuse(
+    envelope: DraftCommandEnvelope,
+    result: DraftCommandOutcome,
+  ): Promise<CommandOutcome> {
+    await input.commands.record(envelope, result);
+    return answer(envelope, result);
+  }
+
   /** Runs an effect that may hand its batch to recovery or lose the id to another request. */
   async function effect(
     envelope: DraftCommandEnvelope,
     run: () => Promise<DraftCommandOutcome>,
   ): Promise<CommandOutcome> {
     try {
-      return await answer(envelope, await run());
+      const result = await run();
+      // A gone outcome decided with no claim written (the draft was already inactive) is
+      // recorded now; one decided under the kernel's locks stored its own claim.
+      return result.status === "gone"
+        ? await refuse(envelope, result)
+        : await answer(envelope, result);
     } catch (cause) {
       if (cause instanceof DraftApplyPendingError || cause instanceof DraftCommandExistsError) {
         return (await known(envelope)) ?? { kind: "pending" };
@@ -183,6 +197,7 @@ export function createWorkDraftReviewService(input: {
         return resolved ? input.attribution.forItem(resolved.item) : null;
       },
       lookupCommand: (envelope) => input.commands.lookup(envelope),
+      refuse: ({ envelope, result }) => refuse(envelope, result),
       applyItem(command) {
         const { envelope, item } = command;
         return apply(envelope, () =>
@@ -250,6 +265,11 @@ export function createWorkDraftReviewService(input: {
         const { envelope, item } = command;
         const first = await known(envelope);
         if (first) return first;
+        const gone: DraftCommandOutcome = {
+          status: "gone",
+          draftId: item.draftId,
+          itemKey: item.itemKey,
+        };
         const settled: DraftCommandOutcome = {
           status: "discarded",
           draftId: item.draftId,
@@ -272,17 +292,16 @@ export function createWorkDraftReviewService(input: {
               ],
             },
             userId: command.userId,
-            command: { envelope, result: settled },
+            command: { envelope, result: settled, gone },
           });
-          return result.status === "gone"
-            ? { status: "gone", draftId: item.draftId, itemKey: item.itemKey }
-            : settled;
+          return result.status === "gone" ? gone : settled;
         });
       },
       async discardAll(command) {
         const { envelope, draftId } = command;
         const first = await known(envelope);
         if (first) return first;
+        const gone: DraftCommandOutcome = { status: "gone", draftId };
         const settled: DraftCommandOutcome = { status: "discarded", draftId };
         return effect(envelope, async () => {
           const result = await input.discard.discardItems({
@@ -290,9 +309,9 @@ export function createWorkDraftReviewService(input: {
             draftId,
             selection: { kind: "whole" },
             userId: command.userId,
-            command: { envelope, result: settled },
+            command: { envelope, result: settled, gone },
           });
-          return result.status === "gone" ? { status: "gone", draftId } : settled;
+          return result.status === "gone" ? gone : settled;
         });
       },
     },

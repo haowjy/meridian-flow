@@ -151,7 +151,7 @@ function envelopeOf(
 }
 
 export type CommandRouteResult =
-  | { httpStatus: 200 | 409; body: DraftCommandOutcome }
+  | { httpStatus: 200 | 404 | 409; body: DraftCommandOutcome }
   | { httpStatus: 202; body: DraftApplyPendingResponse };
 
 /** The item Apply results that answer 409: nothing reached live and the item is unchanged. */
@@ -198,9 +198,8 @@ function respond(
       if (options.itemApply && ITEM_APPLY_REFUSALS.has(status)) {
         return { httpStatus: 409, body: outcome.result };
       }
-      if (options.itemApply && status === "gone") {
-        throw createError({ statusCode: 404, message: "Draft not found" });
-      }
+      // The same outcome JSON observation returns (§1.2), under the 404 an old client expects.
+      if (options.itemApply && status === "gone") return { httpStatus: 404, body: outcome.result };
       return { httpStatus: 200, body: outcome.result };
     }
   }
@@ -479,7 +478,7 @@ async function commandItem(
 
 /** What a command's pre-effect phase decided: refuse it, or run its effect under these grants. */
 type PreparedCommand =
-  | { refusal: () => CommandRouteResult }
+  | { refusal: DraftCommandOutcome }
   | { grants: FileGrant<"edit">[]; effect: () => Promise<CommandOutcome> };
 
 /**
@@ -514,7 +513,18 @@ async function commandIngress(
   } catch (cause) {
     return replayOr(cause);
   }
-  if ("refusal" in prepared) return (await recorded(deps, envelope, options)) ?? prepared.refusal();
+  if ("refusal" in prepared) {
+    // Authorized and terminal: recorded, so a resend answers this and never meets fresh state (§1.4).
+    const stored = await deps.documentSync.draftReview.refuse({
+      envelope,
+      result: prepared.refusal,
+    });
+    return respond(
+      stored,
+      { draftId: envelope.draftId ?? "", commandId: envelope.commandId },
+      options,
+    );
+  }
   let outcome: Awaited<ReturnType<typeof prepared.effect>>;
   try {
     outcome = await withEditGrants(deps.fileAccess, prepared.grants, () =>
@@ -556,8 +566,10 @@ export async function handleApplyWorkDraftRequest(
     const item = await commandItem(deps, input);
     if (!item) {
       return {
-        refusal: () => {
-          throw createError({ statusCode: 404, message: "Draft not found" });
+        refusal: {
+          status: "gone",
+          draftId: request.draftId as DraftId,
+          itemKey: request.itemKey,
         },
       };
     }
@@ -578,16 +590,14 @@ export async function handleApplyWorkDraftRequest(
 }
 
 /** An item the draft no longer holds, as a 200 body status. */
-const goneItem = (request: { draftId: string; itemKey: string }) => (): CommandRouteResult => ({
-  httpStatus: 200,
-  body: { status: "gone", draftId: request.draftId as DraftId, itemKey: request.itemKey },
+const goneItem = (request: { draftId: string; itemKey: string }): DraftCommandOutcome => ({
+  status: "gone",
+  draftId: request.draftId as DraftId,
+  itemKey: request.itemKey,
 });
 
 /** A draft that is not the Work's active one, as a 200 body status. */
-const goneDraft = (draftId: DraftId) => (): CommandRouteResult => ({
-  httpStatus: 200,
-  body: { status: "gone", draftId },
-});
+const goneDraft = (draftId: DraftId): DraftCommandOutcome => ({ status: "gone", draftId });
 
 /** Apply the named changes of one item, as projected in the snapshot's frame. */
 export async function handleApplyWorkDraftChangesRequest(
@@ -611,8 +621,10 @@ export async function handleApplyWorkDraftChangesRequest(
     const item = await commandItem(deps, input);
     if (!item) {
       return {
-        refusal: () => {
-          throw createError({ statusCode: 404, message: "Draft not found" });
+        refusal: {
+          status: "gone",
+          draftId: request.draftId as DraftId,
+          itemKey: request.itemKey,
         },
       };
     }
