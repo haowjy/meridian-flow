@@ -355,7 +355,6 @@ export function TurnList({
         return (
           <QueuedControlRows
             controls={row.controls}
-            replyRunning={busy}
             onStop={
               withdraw
                 ? (control) => {
@@ -380,7 +379,7 @@ export function TurnList({
         content
       );
     },
-    [busy, controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
+    [controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
   );
 
   return (

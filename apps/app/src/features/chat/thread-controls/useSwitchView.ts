@@ -242,12 +242,18 @@ export function useSwitchView(input: {
   }, [dividerIds, applied]);
   const folded = useMemo(() => switchDisplay(view, input.writeMode), [view, input.writeMode]);
   const rows = useMemo<QueuedControl[]>(() => {
-    const own = folded.rows.map((row) => ({
-      id: row.id,
-      control: { kind: "write_mode" as const, mode: row.mode },
-      status: row.status,
-      ...(row.awaitingServer ? { awaitingServer: true } : {}),
-    }));
+    // The server says whether a run it already started leaves a switch behind. Before it
+    // has listed the switch, a running reply is the only thing that could.
+    const own = folded.rows.map((row) => {
+      const item = view.record?.items.find((known) => known.id === row.id);
+      return {
+        id: row.id,
+        control: { kind: "write_mode" as const, mode: row.mode },
+        status: row.status,
+        waiting: item ? item.deliveryState === "waiting" : replyRunning,
+        ...(row.awaitingServer ? { awaitingServer: true } : {}),
+      };
+    });
     const bridge = applied
       .filter(
         (entry) => !dividerIds.has(entry.turnId) && !own.some((row) => row.id === entry.controlId),
@@ -258,7 +264,7 @@ export function useSwitchView(input: {
         status: "applied" as const,
       }));
     return [...own, ...bridge];
-  }, [folded.rows, applied, dividerIds]);
+  }, [folded.rows, applied, dividerIds, view.record, replyRunning]);
 
   return { rows, writeMode: folded.mode, switchWriteMode, retry, withdraw };
 }
