@@ -125,8 +125,8 @@ policy-free.
 - `work` returns typed Works (`ModelWork`, `WorkShowResult` in
   `tools/work-result.ts`; `historySummary` reads them). `renderWorkResult`
   gives one line per Work: `@slug`, name with its status, the goal clipped
-  at a word, `draft mode` only when not auto-apply, pending changes only
-  above zero, `(archived)`. `show` adds the goal in full, recent chats and
+  at a word, pending changes only above zero, `(archived)`. A Work has no
+  write mode of its own: the chat's mode is in its work context (D62). `show` adds the goal in full, recent chats and
   drafts; create, update, archive, unarchive and delete say what happened,
   then the Work line. `verbose` adds created, updated and last-activity dates.
 - `search` returns typed hits (`uri`, `version`, `matches` of `{ excerpt,

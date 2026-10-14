@@ -303,7 +303,8 @@ export function createThreadPeerCorePool(input: {
       : undefined;
     const pinned = documentId ? record?.documents.get(documentId) : undefined;
     // A document keeps its first destination for the rest of the reply, so a
-    // mid-reply mode switch never splits it across two saves.
+    // mid-reply rebind or draft regeneration never splits it across two saves.
+    // The chat's mode can't change mid-reply: it changes only between replies (D62).
     const destination = pinned?.grant.destination ?? grant.destination;
     if (documentId && context.threadId) {
       const seen = lastSeen.get(seenKey(context.threadId, documentId));

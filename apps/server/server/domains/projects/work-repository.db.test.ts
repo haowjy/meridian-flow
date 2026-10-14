@@ -970,7 +970,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const sourceWork = await works.create({ projectId: PROJECT_ID, name: "Source" });
       const destinationWork = await works.create({ projectId: PROJECT_ID, name: "Destination" });
       const unrelatedWork = await works.create({ projectId: PROJECT_ID, name: "Unrelated" });
-      const source = await threadRepos.threads.create({ projectId: PROJECT_ID, userId: USER_ID });
+      const source = await threadRepos.threads.create({
+        aiWriteMode: "direct",
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+      });
       const turn = await threadRepos.turns.create({
         threadId: source.id,
         role: "assistant",

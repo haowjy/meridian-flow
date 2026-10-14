@@ -62,8 +62,8 @@
 - **Trail evidence is read-only**: durable Before/After excerpts support
   disclosure and navigation but cannot mutate the manuscript. Receipt Undo/Redo
   is the sole reversal authority for AI changes.
-- **Document Apply settles the whole current branch**: whole-document Apply and
-  Auto-apply switch push integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
+- **Document Apply settles the whole current branch**: whole-document Apply
+  integrates through Yjs. `draftBaseUpdateSeq` is not Apply freshness
   authority; sweep policy uses each AI row's value only as that candidate's
   observation watermark. Each candidate is classified against the pre-push
   document plus earlier selected branch rows, and recipient/change elevations

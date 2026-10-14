@@ -73,13 +73,24 @@ runtime shapes, and observability records.
 - `PENDING_PLACEHOLDER_ROLES` in `threads/` defines pending transcript
   placeholders (`compaction` and handoff seed `system`); the database partial
   index and orphan-repair queries derive from it.
-- `ControlBody` in `threads/` is the one list of thread control kinds
-  (`compact`). Four restatements do not
-  fail to compile when a kind is missing, so change them with it: the
-  websocket pending schema (`protocol/ws-protocol.ts`), the controls route's
-  request schema, runtime `pending-inbox.ts`, and the database inbox body
-  check (`schema/agent-threads.ts`, then regenerate). A missing kind drops that
-  queued item from the tray or fails its enqueue.
+- `threads/control-body.ts` owns the thread control kinds (`compact`,
+  `write_mode`): `controlBodySchema`, with `ControlBody` inferred from it.
+  `works/ai-write-mode.ts` owns the write-mode values (`direct`, `draft`).
+  The websocket pending schema, the controls route's request schema and turn
+  metadata parse through these, so they follow a change. Two kinds of consumer do not
+  fail to compile when a kind or mode is missing; change them with it: the
+  database checks (inbox body and the `ai_write_mode` columns in
+  `schema/agent-threads.ts` and `schema/content.ts`, then regenerate) and the
+  projections that pick kinds by name (runtime `pending-inbox.ts`, the app's
+  `features/chat/thread-controls/thread-controls.ts`). A missing kind fails its
+  enqueue or drops that queued item from the tray.
+- Run identity (which execution reserved a turn, which turn delivered a
+  message, when an execution ended) has one reader, `protocol/run-boundary.ts`,
+  over `Turn.executionId`/`reservedForUserTurnIds`/`delivery`/`position`, the
+  snapshot's `liveState.openExecutionId` and the `meridian.messages.delivered`
+  and `meridian.execution.ended` customs. Every fact is write-once: consumers
+  merge stream and snapshot by union, order an execution's turns by `position`,
+  and never infer them from arrival order or transcript ancestry.
 - Work retention timing is canonical in `src/works/work-retention.ts`; server jobs and UI countdowns consume its exported constants and helpers.
 - `protocol/document-filename.ts` is the input codec for document basenames. Prose
   stores empty extension and markdown filetype; registered non-prose suffixes

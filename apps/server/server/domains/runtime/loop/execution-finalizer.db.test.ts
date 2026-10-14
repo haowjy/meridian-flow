@@ -179,7 +179,6 @@ else
                     return 0n;
                   },
                 },
-                inbox,
                 delivery: producer,
                 threadId: ids.child,
                 userTurnId: writerId,
@@ -282,8 +281,8 @@ else
             runStarter: {
               async start(threadId) {
                 const successor = await harness.orchestrator.prepare({ threadId, drain: true });
-                expect(successor.runId).not.toBe(run.runId);
-                expect(await authority.holder(threadId)).toBe(successor.runId);
+                expect(successor.executionId).not.toBe(run.executionId);
+                expect(await authority.holder(threadId)).toBe(successor.executionId);
                 expect((await successor.execute()).status).toBe("complete");
               },
             },
@@ -323,7 +322,7 @@ else
         expect(events.filter((event) => event.type === "turn.completed").length).toBe(2);
         {
           expect(splitState).toMatchObject({
-            run: run.runId,
+            run: run.executionId,
             report: { outcome: null, terminalTurnId: null },
             lookup: { status: "unavailable" },
             pending: {

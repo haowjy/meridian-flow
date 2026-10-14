@@ -57,7 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Runtime settlement",
         slug: "runtime-settlement",
-        aiWriteMode: "direct",
+        defaultAiWriteMode: "direct",
       });
       // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
       await db
@@ -148,8 +148,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "No Work",
         slug: null,
         isNoWork: true,
-        aiWriteMode: "draft",
       });
+      await db
+        .update(schema.threads)
+        .set({ aiWriteMode: "draft" })
+        .where(eq(schema.threads.id, THREAD_ID));
       await db.delete(schema.threadWorks).where(eq(schema.threadWorks.threadId, THREAD_ID));
       await db.insert(schema.threadWorks).values({
         threadId: THREAD_ID,
@@ -330,7 +333,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           turnId: TURN_ID,
         },
       );
-      // The Work is in auto-apply, but this reply wrote its draft: the writes
+      // The chat is in auto-apply, but this reply wrote its draft: the writes
       // wait there (D59) until the writer applies them.
       const unapplied = await ports.documentSync.readAsMarkdown(DOC_ID);
       expect(unapplied.ok && unapplied.value.trim()).toBe(

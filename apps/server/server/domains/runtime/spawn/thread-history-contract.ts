@@ -37,6 +37,7 @@ export function defineThreadHistoryContract(
   async function fixture() {
     const { repos, projectId, userId } = await createHarness();
     const root = await repos.threads.create({
+      aiWriteMode: "direct",
       projectId,
       userId,
       title: "history",
@@ -97,6 +98,7 @@ export function defineThreadHistoryContract(
     async function child() {
       const seed = await turn("user", null, "complete", "writer");
       return repos.threads.createSubagent({
+        aiWriteMode: "direct",
         projectId,
         userId,
         parentThreadId: thread.id,
@@ -199,6 +201,7 @@ export function defineThreadHistoryContract(
 
       // A handoff starts its own lineage but may still read its direct source.
       const { thread: handoff } = await f.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: randomUUID() as ThreadId,
         userId: f.thread.userId,
         projectId: f.thread.projectId,

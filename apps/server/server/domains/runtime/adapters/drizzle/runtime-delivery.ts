@@ -20,7 +20,7 @@ export function createDrizzleRuntimeDelivery(
   const ownedLease = (lease: Lease) =>
     and(
       eq(schema.threadRunLeases.threadId, lease.threadId),
-      eq(schema.threadRunLeases.runId, lease.runId),
+      eq(schema.threadRunLeases.executionId, lease.executionId),
       eq(schema.threadRunLeases.holderId, lease.holderId),
     );
   const leaseStore: DeliveryLeaseStore = {
@@ -96,13 +96,39 @@ export function createDrizzleRuntimeDelivery(
         .select({
           ids: schema.threadRunLeases.adoptedMessageIds,
           turnId: schema.threadRunLeases.turnId,
-          runId: schema.threadRunLeases.runId,
+          executionId: schema.threadRunLeases.executionId,
           holderId: schema.threadRunLeases.holderId,
         })
         .from(schema.threadRunLeases)
         .where(and(eq(schema.threadRunLeases.threadId, threadId)))
         .for("update");
-      return row ? { ...row, lease: { threadId, runId: row.runId, holderId: row.holderId } } : null;
+      return row
+        ? {
+            ids: row.ids,
+            turnId: row.turnId,
+            lease: { threadId, executionId: row.executionId, holderId: row.holderId },
+          }
+        : null;
+    },
+    async lockStaleExecution(threadId) {
+      const [row] = await db_()
+        .select({ executionId: schema.threadRunLeases.executionId })
+        .from(schema.threadRunLeases)
+        .where(eq(schema.threadRunLeases.threadId, threadId))
+        .for("update");
+      return row ?? null;
+    },
+    async deleteStaleExecution(threadId, executionId) {
+      const rows = await db_()
+        .delete(schema.threadRunLeases)
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, threadId),
+            eq(schema.threadRunLeases.executionId, executionId),
+          ),
+        )
+        .returning({ threadId: schema.threadRunLeases.threadId });
+      return rows.length > 0;
     },
     async lockReceipt(lease) {
       const [row] = await db_()

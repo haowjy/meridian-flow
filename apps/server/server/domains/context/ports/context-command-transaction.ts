@@ -4,7 +4,7 @@ import type { ContextScheme } from "./context-port.js";
 export type ContextCommandScope = { scheme: ContextScheme; workId: string | null };
 
 /**
- * A command that writes a draft-mode Work's draft (contract §2.3): the transaction locks
+ * A command that writes a Work's draft for a draft-mode chat (contract §2.3): the transaction locks
  * that Work with its other Works, then the Work's active draft (made at this write
  * boundary for `ensure`, only locked for `existing`), before any namespace lock.
  */

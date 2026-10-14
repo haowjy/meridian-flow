@@ -6,7 +6,12 @@
  * and rendered "Unknown component: missing kind" while the turn streamed.
  */
 import type { AGUIEvent } from "@meridian/contracts/protocol";
-import { EventType } from "@meridian/contracts/protocol";
+import {
+  EventType,
+  EXECUTION_ENDED_EVENT,
+  MESSAGES_DELIVERED_EVENT,
+  WRITE_MODE_SWITCHED_EVENT,
+} from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 import { applyAguiEventToStore } from "./reduce-turn-event";
@@ -52,5 +57,24 @@ describe("tool result reduction", () => {
       output: "status: success; path: ch1.md",
       result,
     });
+  });
+});
+
+describe("run-boundary frames", () => {
+  it("add no block to an active assistant turn", () => {
+    const api = store();
+    api.getState().ensureAssistantTurn("thread-1", "turn-1");
+    for (const name of [
+      WRITE_MODE_SWITCHED_EVENT,
+      MESSAGES_DELIVERED_EVENT,
+      EXECUTION_ENDED_EVENT,
+    ]) {
+      applyAguiEventToStore(api.getState(), "thread-1", {
+        type: EventType.CUSTOM,
+        name,
+        value: {},
+      } as AGUIEvent);
+    }
+    expect(api.getState().turns("thread-1")?.[0]?.blocks).toEqual([]);
   });
 });

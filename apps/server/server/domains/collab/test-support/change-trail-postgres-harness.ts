@@ -215,7 +215,6 @@ export async function seedDatabase(
     createdByUserId: USER_ID,
     name: "Atomicity work",
     slug: "atomicity-work",
-    aiWriteMode: "draft",
   });
   // The Work already has its draft, as if an earlier write ensured it (contract §2.5):
   // a drafted read pulls its thread peers instead of reading live.
@@ -263,6 +262,7 @@ export async function seedDatabase(
     title: "Thread",
     kind: "primary",
     status: "idle",
+    aiWriteMode: "draft",
   });
   await db.insert(schema.turns).values({
     id: TURN_ID,

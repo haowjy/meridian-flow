@@ -169,8 +169,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const chats = createDrizzleThreadRepository(db, {
         lineageScratch: createDrizzleLineageScratchLifecycle(db),
       });
-      const first = await chats.create({ projectId: project.id, userId });
-      const second = await chats.create({ projectId: project.id, userId });
+      const first = await chats.create({ aiWriteMode: "direct", projectId: project.id, userId });
+      const second = await chats.create({ aiWriteMode: "direct", projectId: project.id, userId });
       expect(first.ref).toBe("c1");
       expect(second.ref).toBe("c2");
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toMatchObject({
@@ -179,7 +179,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await chats.findLiveByProjectRef(another.id, "c1")).toBeNull();
       await chats.setTrashState(first.id, "deleted");
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toBeNull();
-      expect((await chats.create({ projectId: project.id, userId })).ref).toBe("c3");
+      expect(
+        (await chats.create({ aiWriteMode: "direct", projectId: project.id, userId })).ref,
+      ).toBe("c3");
       await chats.setTrashState(first.id, "visible");
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toMatchObject({
         id: first.id,
@@ -195,6 +197,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         })
         .returning({ id: schema.turns.id });
       const child = await chats.createSubagent({
+        aiWriteMode: "direct",
         userId,
         projectId: project.id,
         parentThreadId: first.id,

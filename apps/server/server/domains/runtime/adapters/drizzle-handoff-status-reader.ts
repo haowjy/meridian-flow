@@ -36,6 +36,8 @@ export function createDrizzleHandoffStatusReader(
       return (await pendingSeeds([threadId])).has(threadId) ? working : status;
     },
     readRunningTurnId: (threadId) => leaseReader.readRunningTurnId(threadId),
+    // A lease-less handoff seed is no execution.
+    readOpenExecutionId: (threadId) => leaseReader.readOpenExecutionId(threadId),
     async readMany(threadIds): Promise<Map<ThreadId, ThreadLeaseState>> {
       const states = await leaseReader.readMany(threadIds);
       const missing = threadIds.filter((threadId) => !states.has(threadId));
