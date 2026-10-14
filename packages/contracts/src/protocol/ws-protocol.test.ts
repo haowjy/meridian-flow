@@ -3,6 +3,18 @@ import type { ControlBody } from "../threads/index.js";
 import { encodeWsServerMessage, parseWsServerMessage } from "./ws-protocol.js";
 
 function subscribedFrameWithQueuedControl(control: ControlBody): string {
+  const queued = [
+    {
+      id: "control-1",
+      seq: 7,
+      intent: "control",
+      control,
+      provenance: { kind: "writer", actorId: "user-1" },
+      deliveryState: "waiting",
+      summary: "",
+      enqueuedAt: "2026-10-11T00:00:00.000Z",
+    },
+  ];
   return JSON.stringify({
     type: "subscribed",
     threadId: "thread-1",
@@ -12,19 +24,14 @@ function subscribedFrameWithQueuedControl(control: ControlBody): string {
       status: { kind: "awake", phase: "generating", cancelRequested: false },
       runningTurnId: "turn-1",
       activity: { children: [] },
-      pending: {
-        items: [
-          {
-            id: "control-1",
-            seq: 7,
-            intent: "control",
-            control,
-            provenance: { kind: "writer", actorId: "user-1" },
-            deliveryState: "waiting",
-            summary: "",
-            enqueuedAt: "2026-10-11T00:00:00.000Z",
-          },
-        ],
+      pending: { items: queued },
+      runState: {
+        version: "6999",
+        items: queued,
+        sentThrough: 0,
+        execution: null,
+        mode: "direct",
+        blocked: null,
       },
       resumeAfterSeq: "6",
     },
@@ -42,6 +49,7 @@ describe("thread socket frames", () => {
     expect(parsed?.type).toBe("subscribed");
     if (parsed?.type !== "subscribed") return;
     expect(parsed.state.pending.items[0]?.control).toEqual(control);
+    expect(parsed.state.runState.items[0]?.control).toEqual(control);
     expect(parseWsServerMessage(encodeWsServerMessage(parsed))).toEqual(parsed);
   });
 
