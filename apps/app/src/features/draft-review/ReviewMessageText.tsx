@@ -17,8 +17,6 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This draft is no longer here. It may have been applied or discarded elsewhere.`;
     case "path_taken":
       return msg`Another document is already at this name. Rename or remove it, then apply again.`;
-    case "rename_replaced":
-      return msg`This document was renamed to a name that is now in use. Check it, then apply again.`;
     case "deleted_live":
       return msg`This document was deleted from your project after the draft started. Check it, then apply again.`;
     case "stale":
