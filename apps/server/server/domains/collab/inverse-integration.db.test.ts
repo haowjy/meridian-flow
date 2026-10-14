@@ -1,6 +1,6 @@
 /**
  * Contract §2.6 cases 18 and 22 and §6.5: a failed reply's rollback order, an inverse landing
- * on a draft while another reply is staged, and what a Work or discard change does to undo.
+ * on a draft while another reply is staged, and what a Work change does to revert.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -120,9 +120,12 @@ describe("inverse integration (postgres)", () => {
     const reply = await createResponse(db, 2);
     const core = fixture.collab.agentEdit();
     const context = responseContext(reply);
-    // An accepted draft part: the reply's Undo lands at once, ahead of the save.
+    // An accepted draft part: the reply's revert lands at once, ahead of the save.
     expect(
-      await core.write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, context),
+      await core.write(
+        { command: "revert", edit: "w1", file: "alpha.md", documentId: ALPHA_ID },
+        context,
+      ),
     ).toMatchObject({ status: "success" });
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\ngreen\n");
     // The create is still staged, and another thread's peer sits on its draft branch.
@@ -150,7 +153,7 @@ describe("inverse integration (postgres)", () => {
         { threadId: THREAD_ID, turnId: TURN_ID },
       );
       expect(rolledBack.stagedCreates.discarded).toEqual([NEW_ID]);
-      // The inverse ran: the reply's accepted Undo part is out of the draft.
+      // The inverse ran: the reply's accepted revert part is out of the draft.
       expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\ngreen\n");
       expect(
         await fixture.branchStore.retractCreatedDraftBranch({
@@ -165,10 +168,7 @@ describe("inverse integration (postgres)", () => {
     expect(await peersOfCreate()).toEqual([]);
   });
 
-  it.each([
-    "model write undo",
-    "card Undo",
-  ] as const)("22: a %s lands an inverse while another reply is staged: a write on its removals fails with its dependents, an independent one lands", async (how) => {
+  it("22: a model revert lands an inverse while another reply is staged: a write on its removals fails with its dependents, an independent one lands", async () => {
     const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
       ["blue", "azure"],
@@ -191,21 +191,13 @@ describe("inverse integration (postgres)", () => {
     expect(await write("cyan", "teal", "w-dependent")).toMatchObject({ phase: "staged" });
     expect(await write("green", "lime", "w-independent")).toMatchObject({ phase: "staged" });
 
-    if (how === "model write undo") {
-      const undoContext = responseContext(await createResponse(db, 3));
-      expect(
-        await core.write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, undoContext),
-      ).toMatchObject({ status: "success" });
-    } else {
-      expect(
-        await fixture.collab.reverseTurn({
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          direction: "undo",
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).toMatchObject({ status: "reversed" });
-    }
+    const revertContext = responseContext(await createResponse(db, 3));
+    expect(
+      await core.write(
+        { command: "revert", edit: "w2", file: "alpha.md", documentId: ALPHA_ID },
+        revertContext,
+      ),
+    ).toMatchObject({ status: "success" });
 
     const saved = await harness.commit(staged);
     expect(receipts(saved)).toEqual({
@@ -246,7 +238,7 @@ describe("inverse integration (postgres)", () => {
     expect(receipts(saved)).toEqual({ "w-lime": "success" });
   });
 
-  it("6.4: model undo after the chat's Work moved refuses elsewhere and touches nothing", async () => {
+  it("6.4: model revert after the chat's Work moved refuses and touches nothing", async () => {
     const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
@@ -270,66 +262,8 @@ describe("inverse integration (postgres)", () => {
     expect(
       await fixture.collab
         .agentEdit()
-        .write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, moved),
-    ).toMatchObject({ status: "cant_undo_elsewhere" });
+        .write({ command: "revert", edit: "w1", file: "alpha.md", documentId: ALPHA_ID }, moved),
+    ).toMatchObject({ status: "nothing_to_revert" });
     expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nblue\n\ngreen\n");
-  });
-
-  it("6.2: card Undo of a turn whose draft was discarded skips every part by name", async () => {
-    const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
-      ["red", "gold"],
-      ["blue", "azure"],
-    ]);
-    expect(await reviewDriver(fixture.collab.draftReview).discardAll()).toMatchObject({
-      status: "discarded",
-    });
-    const outcome = await fixture.collab.reverseTurn({
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      direction: "undo",
-      actor: { type: "user", userId: USER_ID },
-    });
-    expect(outcome).toMatchObject({ status: "expired", acceptedParts: 0 });
-    expect(
-      (outcome.skips ?? []).map((skip) => [skip.before, skip.after, skip.reason]).sort(),
-    ).toEqual([
-      ["blue", "azure", "discarded"],
-      ["red", "gold", "discarded"],
-    ]);
-  });
-
-  it("F8: card Undo of a drafted create inverts its text and leaves the item as an empty whole-item change", async () => {
-    const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
-      ["red", "gold"],
-    ]);
-    const draftId = (await fixture.collab.draftReview.items({ workId: WORK_ID })).draftId;
-    if (!draftId) throw new Error("No active draft");
-    await claimCreate(draftId, NEW_ID);
-    const reply = await createResponse(db, 2);
-    expect(
-      await fixture.collab
-        .agentEdit()
-        .write(
-          { command: "create", file: "created", documentId: NEW_ID as never, content: "New." },
-          { ...responseContext(reply), grant: grantFor(NEW_ID), createdDocument: true },
-        ),
-    ).toMatchObject({ phase: "staged" });
-    expect(await harness.commit(reply)).toMatchObject({ status: "committed" });
-    const item = () =>
-      fixture.collab.draftReview.resolveItemByDocument({
-        workId: WORK_ID,
-        documentId: NEW_ID as never,
-      });
-    expect(await item()).toMatchObject({ item: { origin: "created" } });
-    const turnUndo = await fixture.collab.reverseTurn({
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      direction: "undo",
-      actor: { type: "user", userId: USER_ID },
-    });
-    expect(turnUndo).toMatchObject({ status: "reversed", skips: [] });
-    const kept = await item();
-    expect(kept).toMatchObject({ listed: true, item: { origin: "created", wholeItem: true } });
-    expect((await fixture.draftMarkdown(kept?.draftBranchId as string)).trim()).toBe("");
   });
 });

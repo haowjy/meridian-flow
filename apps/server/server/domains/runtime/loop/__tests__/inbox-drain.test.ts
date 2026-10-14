@@ -247,34 +247,6 @@ describe("inbox drain", () => {
     expect(await rig.delivery.readPendingProjection(threadId)).toEqual({ messages: [], run: null });
   });
 
-  it("consumes canceled reversal notices without splitting the running reply", async () => {
-    const notices = createTestNoticePort();
-    const rig = await setup({
-      notices,
-      results: [toolCallResult("unknown", "probe"), textResult("done")],
-      onStream: async (call) => {
-        if (call !== 1) return;
-        for (const direction of ["undo", "redo"]) {
-          await notices.record({
-            kind: "undo",
-            scope: { kind: "thread", threadId: rig.thread.id },
-            message: "",
-            data: { uri: "manuscript://Scene", turnId: "turn-1", direction },
-          });
-        }
-      },
-    });
-    const run = await rig.orchestrator.prepare({ threadId: rig.thread.id, userText: "begin" });
-    await execute(run);
-    expect(rig.requests).toHaveLength(2);
-    expect(messageTexts(required(rig.requests[1]).messages).join("\n")).not.toContain(
-      "<system_update>",
-    );
-    expect(await notices.peek(rig.thread.id)).toEqual([]);
-    const turns = await rig.repos.turns.listByThread(rig.thread.id);
-    expect(turns.filter((turn) => turn.role === "assistant")).toHaveLength(1);
-  });
-
   it("keeps return_result capture run-scoped without ending the steered turn's tool loop", async () => {
     const { thread, inbox, requests, orchestrator, repos } = await setup({
       onStream: async (call) => {

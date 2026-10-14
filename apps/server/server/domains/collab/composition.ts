@@ -42,11 +42,7 @@ import {
   createReversalNoticeDiagnostics,
   createSweepProjectionDiagnostics,
 } from "./adapters/agent-edit-observability.js";
-import {
-  SILENT_POST_DURABILITY_NOTICES,
-  SILENT_TURN_INVERSE_NOTICES,
-  UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
-} from "./adapters/declared-stubs.js";
+import { SILENT_POST_DURABILITY_NOTICES } from "./adapters/declared-stubs.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import {
   createDrizzleBranchJournalReadStore,
@@ -71,6 +67,7 @@ import {
   createDrizzleWorkDraftDisposal,
 } from "./adapters/drizzle-draft-discard.js";
 import { createDrizzleDraftTreeStep } from "./adapters/drizzle-draft-tree-step.js";
+import { createDrizzleDraftWriteVisibilityStore } from "./adapters/drizzle-draft-write-visibility.js";
 import {
   createDrizzleDraftStore,
   createDrizzleDraftWriteBoundary,
@@ -124,6 +121,7 @@ import { createDraftPublication } from "./domain/draft-publication.js";
 import { createDraftRebase } from "./domain/draft-rebase.js";
 import { createDraftReviewIdentity } from "./domain/draft-review-identity.js";
 import { createDraftReviewItems } from "./domain/draft-review-items.js";
+import { createDraftWriteVisibility } from "./domain/draft-write-visibility.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
@@ -138,13 +136,8 @@ import { createResponseWriteFinalizer } from "./domain/response-write-finalizer.
 import {
   createDocumentPresentationResolver,
   createPostDurabilityNoticeService,
-  createReversalNoticePort,
 } from "./domain/reversal-notices.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
-import {
-  createTurnReversalService,
-  type ThreadContextReversalResolver,
-} from "./domain/turn-reversal-service.js";
 import { createWorkDraftReviewService } from "./domain/work-draft-review-service.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { createBranchThreadPeerAgentEditCore } from "./thread-peer-composition.js";
@@ -160,7 +153,6 @@ type CollabDomainDeps = {
   links: DocumentLinkScopes;
   /** Durable registration of ahead refs the model's writes mint. */
   aheadRefs: AheadRefRegistrar;
-  threadContext?: ThreadContextReversalResolver;
   eventSink?: EventSink;
   notices?: NoticePort;
   workProjectionMutation: WorkProjectionMutation;
@@ -505,13 +497,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,
-    notices: deps.notices
-      ? createReversalNoticePort({
-          notices: deps.notices,
-          documentUriResolver,
-          diagnostics: noticeDiagnostics,
-        })
-      : SILENT_TURN_INVERSE_NOTICES,
     workProjection: deps.workProjectionMutation,
   });
   const responseFinalizer = scopeResponseFinalizer(
@@ -520,6 +505,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       rollback: turnInverse,
       projections: projectionRefresher,
       notices: postDurabilityNotices,
+      visibility: deps.notices
+        ? createDraftWriteVisibility({
+            store: createDrizzleDraftWriteVisibilityStore({ db: deps.db, branches }),
+            notices: deps.notices,
+            resolveDocumentName: async (documentId) =>
+              (await documentPresentation.resolveTitle(documentId)) ?? documentId,
+            diagnostics: noticeDiagnostics,
+          })
+        : { async report() {} },
     }),
     deps.links,
   );
@@ -625,16 +619,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const lineage = createTurnLiveLineageReadModel({
     store: createDrizzleTurnLiveLineageStore(deps.db),
-    receiptStore: turnInverse,
     resolveDocumentUri: documentUriResolver,
-  });
-  const turnReversal = createTurnReversalService({
-    turnInverse,
-    resolveDocumentUri: documentUriResolver,
-    listEditedDocumentsForTurn: lineage.listEditedDocumentsForTurn,
-    fileAccess: deps.fileAccess,
-    threadContext:
-      deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
   return createCollabFacade({
     lifecycle: {
@@ -669,7 +654,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     agentEdit: {
       agentEdit: () => agentEdit,
     },
-    reversal: turnReversal,
     documents: {
       ensureDocument: persistence.lifecycle.ensureDocument,
       readAsMarkdown: runtime.markdownDocuments.readAsMarkdown,

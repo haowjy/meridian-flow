@@ -312,7 +312,6 @@ describe("BranchCoordinator", () => {
       commitSegmentRows(coordinator, {
         branchId: "work",
         sourceDoc: sourceDoc,
-        expectedGeneration: beforeWork.generation,
         rows: [
           {
             branchId: "work",
@@ -459,7 +458,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   await expect(
     commitSegmentRows(coordinator, {
       branchId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: rows.slice(0, -1),
     }),
@@ -467,7 +465,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   expect(store.journal).toHaveLength(0);
   await commitSegmentRows(coordinator, {
     branchId: "work",
-    expectedGeneration: 1,
     sourceDoc,
     rows,
   });
@@ -477,7 +474,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   await expect(
     commitSegmentRows(coordinator, {
       branchId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: [rows[0]],
     }),
@@ -524,7 +520,6 @@ describe("a save's owned session (U1)", () => {
       await session.withStagedRows("work", async () => ({ result: 1, rows: [] }), false);
       await session.commitSegmentRows({
         branchId: "work",
-        expectedGeneration: 1,
         sourceDoc: materialize(storedBranch(store, "work")),
         rows: [],
       });

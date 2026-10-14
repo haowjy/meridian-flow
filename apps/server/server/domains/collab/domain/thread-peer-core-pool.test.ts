@@ -95,11 +95,14 @@ describe("thread-peer pool", () => {
   });
 
   // History cannot silently move an inverse command to a different destination.
-  it("routes model undo to the current destination, even after a peer pull", async () => {
+  it("routes model revert to the current destination, even after a peer pull", async () => {
     const { pool, liveCore, threadCore, pullThreadPeer } = createPool();
     await pullThreadPeer({ documentId: "ch12" as DocumentId, threadId: THREAD_ID });
 
-    await pool.write({ command: "undo", file: "ch12.md", documentId: "ch12" }, context(draftA));
+    await pool.write(
+      { command: "revert", file: "ch12.md", documentId: "ch12", edit: "w1" },
+      context(draftA),
+    );
 
     expect(threadCore.write).toHaveBeenCalledOnce();
     expect(liveCore.write).not.toHaveBeenCalled();
@@ -155,7 +158,6 @@ describe("thread-peer pool", () => {
             : {
                 peerBranchId: "peer-1",
                 upstreamBranchId: "upstream-1",
-                branchGeneration: 1,
                 attributionBaseline: new Uint8Array(),
               },
         commitThreadResponseAtomically: (operation) => operation(),

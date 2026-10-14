@@ -30,16 +30,15 @@ export function commitJournaledUpdate(
 ): Promise<boolean> {
   return coordinator.withLeases([input.branchId], async (lease) => {
     const owned = coordinator.ownedSession(lease);
-    const staged = await owned.read(input.branchId, async (doc, snapshot) => {
+    const staged = await owned.read(input.branchId, async (doc) => {
       const sourceDoc = createCollabYDoc({ gc: false });
       Y.applyUpdate(sourceDoc, Y.encodeStateAsUpdate(doc));
       Y.applyUpdate(sourceDoc, input.updateData);
-      return { sourceDoc, generation: snapshot.generation };
+      return { sourceDoc };
     });
     try {
       return await owned.commitSegmentRows({
         branchId: input.branchId,
-        expectedGeneration: staged.generation,
         sourceDoc: staged.sourceDoc,
         rows: [input],
       });

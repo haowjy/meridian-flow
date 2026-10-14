@@ -202,7 +202,6 @@ type CachedBranchDoc = {
 
 export type SegmentRowsInput = {
   branchId: string;
-  expectedGeneration: number;
   sourceDoc: Y.Doc;
   rows: readonly Omit<AppendBranchJournalInput, "generation">[];
 };
@@ -813,8 +812,6 @@ export function createBranchCoordinator(input: {
   async function segmentRowsUnder(batch: SegmentRowsInput): Promise<boolean> {
     const snapshot = await loadSnapshot(batch.branchId);
     assertWritableBranch(snapshot);
-    if (snapshot.generation !== batch.expectedGeneration)
-      throw new BranchStaleUpdateError(batch.branchId);
     const doc = cloneDoc((await materialize(snapshot)).doc);
     const journals = batch.rows.map((row) => ({ ...row, generation: snapshot.generation }));
     await applySegmentRows(doc, snapshot, journals);

@@ -126,7 +126,6 @@ describe("document edit receipts (Postgres)", () => {
             await commitSegmentRows(fixture.branchCoordinator, {
               branchId,
               sourceDoc: doc,
-              expectedGeneration: snapshot.generation,
               rows: [
                 {
                   branchId,

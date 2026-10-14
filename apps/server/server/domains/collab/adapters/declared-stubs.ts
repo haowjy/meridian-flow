@@ -1,38 +1,13 @@
 /** Explicit behavior-preserving stubs for compositions without optional integrations. */
 
-import type { TurnReversalAccess } from "../contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
 import type {
   PostDurabilityNoticeService,
   ReversalNoticeDiagnostics,
-  TurnInverseNoticePort,
 } from "../domain/reversal-notices.js";
-import type { TurnReversalServiceDeps } from "../domain/turn-reversal-service.js";
-
-function threadContextReversalUnsupported(): never {
-  throw new Error("Thread context reversal is not configured");
-}
-
-export const UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS = {
-  async listEditedDocumentsForTurn() {
-    return threadContextReversalUnsupported();
-  },
-  threadContext: {
-    async requireThreadOwner() {
-      return threadContextReversalUnsupported();
-    },
-  },
-} satisfies Pick<TurnReversalServiceDeps, "listEditedDocumentsForTurn" | "threadContext">;
-
-export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThreadContext"] =
-  async () => threadContextReversalUnsupported();
 
 export const SILENT_POST_DURABILITY_NOTICES: PostDurabilityNoticeService = {
   async recordAwarenessDegraded() {},
-};
-
-export const SILENT_TURN_INVERSE_NOTICES: TurnInverseNoticePort = {
-  async record() {},
 };
 
 export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnostics = {

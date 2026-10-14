@@ -9,9 +9,8 @@ const DOCUMENT_ID = "55555555-5555-4555-8555-555555555555";
 const URI = "manuscript://chapter.md";
 
 describe("reply save boundaries", () => {
-  // undo and redo share one boundary check; undo stands for both.
-  it("saves the reply's writes before an undo, which then runs in a fresh reply", async () => {
-    const reversal = "undo";
+  it("saves the reply's writes before a revert, which then runs in a fresh reply", async () => {
+    const reversal = "revert";
     const events: string[] = [];
     const gateway = scriptedGateway({
       usage: { inputTokens: 10, outputTokens: 1 },
@@ -28,7 +27,7 @@ describe("reply save boundaries", () => {
               type: "tool_use",
               toolCallId: "write-2",
               toolName: "write",
-              input: { command: reversal, path: URI },
+              input: { command: reversal, path: URI, edit: "w1" },
             },
           ],
           toolCalls: [],
@@ -43,7 +42,7 @@ describe("reply save boundaries", () => {
       gateway,
       toolExecutor: {
         async executeTool(call, ctx) {
-          const command = (call.arguments as { command: "insert" | "undo" | "redo" }).command;
+          const command = (call.arguments as { command: "insert" | "revert" }).command;
           events.push(`${command}@${ctx.responseIdentity?.editScopeId}`);
           if (command !== "insert") {
             const reversed = modelResult({ command, status: "success", phase: "committed" });

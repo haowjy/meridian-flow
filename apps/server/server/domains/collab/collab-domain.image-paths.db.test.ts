@@ -1,7 +1,7 @@
 /**
  * Document-link scopes across doors: images in search, draft review, Apply and
  * live reversal, and a reply's own create spelled alike by every reader and by
- * a cold undo in the draft it changed.
+ * a cold revert in the draft it changed.
  */
 import { createDb } from "@meridian/database";
 import {
@@ -240,7 +240,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(trail).not.toContain("asset:");
     });
 
-    it("spells a reply's own create alike at every door, and in its draft after a cold undo", async () => {
+    it("spells a reply's own create alike at every door, and in its draft after a cold revert", async () => {
       // All effective rendering doors share the real tree-backed scope.
       const links = createTestDocumentLinkScopes(db);
       const start = () => {
@@ -382,12 +382,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
       });
-      await expect(
-        core.write(
-          { command: "insert", file: "chapter", documentId: DOC_ID, content: "Suffix." },
-          { ...ctx, turnId: TURN_2_ID },
-        ),
-      ).resolves.toMatchObject({ status: "success", phase: "committed" });
+      const suffix = await core.write(
+        { command: "insert", file: "chapter", documentId: DOC_ID, content: "Suffix." },
+        { ...ctx, turnId: TURN_2_ID },
+      );
+      expect(suffix).toMatchObject({ status: "success", phase: "committed" });
       const draftRead = {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
@@ -403,15 +402,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const undone = await collab
         .agentEdit()
         .write(
-          { command: "undo", file: "chapter", documentId: DOC_ID },
+          { command: "revert", edit: suffix.writeId ?? "", file: "chapter", documentId: DOC_ID },
           { ...ctx, turnId: TURN_2_ID },
         );
       const after = await collab.readEffectiveHashlines(draftRead);
       if (!after.ok) throw new Error(JSON.stringify(after));
       expect(undone.status).toBe("success");
-      expect.soft(JSON.stringify(undone.result), "cold undo echo").toContain(spelled);
+      expect.soft(JSON.stringify(undone.result), "cold revert echo").toContain(spelled);
       expect.soft(after.value.content.join("\n")).toContain(spelled);
-      expect.soft(undone.revision, "cold undo token").toBe(after.value.revision);
+      expect.soft(undone.revision, "cold revert token").toBe(after.value.revision);
 
       // The same comparison in live. A create is a row, not a reply's in-memory set: a live
       // create is visible in every view at once, and the draft's hidden create is "in a
@@ -487,25 +486,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       );
       await collab.agentEdit().rollbackResponse(LIVE_RESPONSE_ID);
-    });
-
-    it("undoes and redoes a live turn on a chapter with an image", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await seedChapterWithMap(collab);
-      await applyDraft(collab, DOC_ID);
-
-      for (const direction of ["undo", "redo"] as const) {
-        const outcome = await collab.reverseTurn({
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-          direction,
-          actor: { type: "user", userId: USER_ID },
-        });
-        expect(outcome.status, JSON.stringify(outcome)).toBe("reversed");
-        expect(JSON.stringify(outcome)).not.toContain("asset:");
-      }
-      await expectMarkdown(collab, DOC_ID, "![Pass](assets/map.png) The pass.");
     });
   });
 }

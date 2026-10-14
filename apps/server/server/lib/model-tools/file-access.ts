@@ -7,7 +7,6 @@ import type { DocumentCommandName } from "@meridian/agent-edit/integration";
 import { documentNotFoundMessage, modelResult } from "@meridian/agent-edit/integration";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext } from "@meridian/contracts/works";
-import type { RoutedWriteOutcome } from "../../domains/collab/index.js";
 import {
   type FileAccessDenied,
   type FileEditRefusedError,
@@ -19,11 +18,7 @@ import {
   runWithEditGrants,
   type WorkRef,
 } from "../../domains/file-policy/index.js";
-import {
-  deletedFileMessage,
-  isPermissionDenial,
-  permissionDeniedMessage,
-} from "../file-access-denial-copy.js";
+import { isPermissionDenial, permissionDeniedMessage } from "../file-access-denial-copy.js";
 import { threadContainerTarget } from "../file-targets.js";
 import type {
   ResolvedDocumentAddress,
@@ -161,27 +156,4 @@ export async function containerReadonly(
   const target = await threadContainerTarget(deps.works, context.resolution, path);
   if (!target) return undefined;
   return isFileAccessDenied(await deps.fileAccess.authorize(principal, target, "edit"));
-}
-
-/** A partial undo or redo says which writes stayed, and why, after what it reversed. */
-export function withRefusedWrites(outcome: RoutedWriteOutcome) {
-  const { refusedWrites, ...written } = outcome;
-  if (!refusedWrites?.length) return written;
-  const verb = written.command === "redo" ? "redone" : "undone";
-  const notes = refusedWrites.map(({ writeIds, denial }) => {
-    const why = isPermissionDenial(denial)
-      ? permissionDeniedMessage(denial)
-      : deletedFileMessage("reversal");
-    if (writeIds.length === 0) return why;
-    return `${writeIds.join(", ")} ${writeIds.length === 1 ? "wasn't" : "weren't"} ${verb}. ${why}`;
-  });
-  const [first] = refusedWrites;
-  return {
-    ...written,
-    result: {
-      ...written.result,
-      ...(first && isPermissionDenial(first.denial) ? { reason: first.denial.reason } : {}),
-      message: [written.result.message, ...notes].filter(Boolean).join("\n\n"),
-    },
-  };
 }

@@ -367,8 +367,7 @@ export function messageTurnFor(
 
 /**
  * Builds the durable system turn and text block carrying every request-only
- * notice for one delivery boundary: peeked `NoticePort` notices (`undo`,
- * `awareness_degraded`, writer `work_switched`) and non-message inbox entries,
+ * notice for one delivery boundary: peeked `NoticePort` notices (`awareness_degraded`, writer `work_switched`) and non-message inbox entries,
  * formatted exactly like the request-only rendering they replace. Persisting
  * this once makes the notice reproduce identically on every later request
  * instead of vanishing once the drain that carried it ends.

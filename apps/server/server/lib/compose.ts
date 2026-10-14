@@ -572,16 +572,6 @@ export async function createProductionAppPorts(input: {
     notices,
     workProjectionMutation,
     objects: objectRelease,
-    threadContext: {
-      async requireThreadOwner(input) {
-        const thread = await requireThreadOwner(
-          { threads: threadRepos.threads },
-          input.threadId,
-          input.userId as never,
-        );
-        return { projectId: thread.projectId };
-      },
-    },
   });
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({

@@ -54,7 +54,7 @@ function refusedAtSave(denial: FileAccessDenied): {
   message: string;
   reason?: PermissionDeniedReason;
 } {
-  if (!isPermissionDenial(denial)) return { message: deletedFileMessage("save") };
+  if (!isPermissionDenial(denial)) return { message: deletedFileMessage() };
   return { message: permissionDeniedMessage(denial), reason: denial.reason };
 }
 

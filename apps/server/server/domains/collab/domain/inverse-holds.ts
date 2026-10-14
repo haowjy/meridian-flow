@@ -13,7 +13,7 @@ export function prepareHolds(documents: InverseDocument[]) {
         if (part.kind === "write" || part.placement.kind !== "pending") continue;
         const id = part.placement.branchId,
           draft = document.drafts.get(id);
-        if (!draft || draft.branch.generation !== part.placement.generation) continue;
+        if (!draft) continue;
         const roots = heldRoots.get(id) ?? new Set<string>();
         for (const root of liveIndex.roots(part.effect)) roots.add(root);
         heldRoots.set(id, roots);
