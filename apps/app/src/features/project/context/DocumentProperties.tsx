@@ -79,7 +79,7 @@ function PropertiesRow({ projectId, documentId }: { projectId: string; documentI
               // Scrollable regions take the keyboard so a long block can be read without a mouse.
               // biome-ignore lint/a11y/noNoninteractiveTabindex: the keyboard scrolls a capped block
               tabIndex={0}
-              className="focus-ring max-h-60 overflow-y-auto rounded-md pb-2 pl-5"
+              className="focus-ring max-h-60 overflow-y-auto rounded-md pb-3 pl-4"
             >
               <PropertiesBody
                 properties={properties}
@@ -155,7 +155,7 @@ function PropertiesBody({
   return (
     <dl
       className={cn(
-        "grid grid-cols-[fit-content(10rem)_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1 pt-1",
+        "grid grid-cols-[fit-content(10rem)_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1.5 pt-1",
         // In the narrow dock each key sits above its value.
         "@max-md:grid-cols-1 @max-md:gap-y-0",
       )}
@@ -170,7 +170,7 @@ function PropertiesBody({
 function PropertyPair({ entry }: { entry: DocumentPropertiesDto["entries"][number] }) {
   return (
     <>
-      <dt title={entry.key} className="truncate text-caption text-ink-muted @max-md:pt-1">
+      <dt title={entry.key} className="truncate text-caption text-ink-subtle @max-md:pt-1">
         {entry.key}
       </dt>
       <dd className="min-w-0 text-foreground text-sm">
