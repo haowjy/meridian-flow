@@ -347,6 +347,23 @@ export function createDrizzleWorkPushPolicyStore(
   };
 }
 
+/**
+ * The one SQL membership rule for a branch to count as a pending document, twin of
+ * `draft-review-items.ts` (`hasRows && (hasEffect || blocking)`). The Work count and the
+ * document hint both filter by it; the Work projection reads its before and after through
+ * that count.
+ */
+const reviewableWorkDraftBranch = and(
+  eq(documentBranches.kind, "work_draft"),
+  eq(documentBranches.status, "active"),
+  sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
+  sql`exists (
+    select 1 from ${branchWriteJournal}
+    where ${branchWriteJournal.branchId} = ${documentBranches.id}
+      and ${branchWriteJournal.generation} = ${documentBranches.generation}
+      and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
+);
+
 export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendingStore {
   return {
     async countPendingByWorkIds(workIds) {
@@ -360,14 +377,7 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           and(
             inArray(branchDraftWork.workId, workIds),
             eq(drafts.status, "active"),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-            sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
-            sql`exists (
-              select 1 from ${branchWriteJournal}
-              where ${branchWriteJournal.branchId} = ${documentBranches.id}
-                and ${branchWriteJournal.generation} = ${documentBranches.generation}
-                and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
+            reviewableWorkDraftBranch,
           ),
         );
       // A created document is pending with no text yet (a branchless image, an empty create).
@@ -393,23 +403,11 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
     },
     async listDraftsChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
-      // The same two membership arms as the Work counts, narrowed to one document.
+      // The same membership arms as the Work counts, narrowed to one document.
       const branched = tx
         .select({ draftId: documentBranches.draftId })
         .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.documentId, documentId),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-            sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
-            sql`exists (
-              select 1 from ${branchWriteJournal}
-              where ${branchWriteJournal.branchId} = ${documentBranches.id}
-                and ${branchWriteJournal.generation} = ${documentBranches.generation}
-                and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
-          ),
-        );
+        .where(and(eq(documentBranches.documentId, documentId), reviewableWorkDraftBranch));
       const changed = tx
         .select({ draftId: draftTreeChanges.draftId })
         .from(draftTreeChanges)
