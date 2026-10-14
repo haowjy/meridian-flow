@@ -385,10 +385,8 @@ creates a new one at the same URI, and the new identity inherits no drafts.
 
 ### Draft agent writes
 
-Draft agent writes preserve unchanged words and journal each paragraph of a logical
-write under a fresh client. Recognized adjacent split/merge boundaries and
-contiguous inserted or removed block runs form one structural segment. Each segment
-is one transaction and one row; all rows of a reply publish atomically. Sharing a
+Draft agent writes preserve unchanged words and journal each logical write
+separately; all rows of a reply publish atomically. Sharing a
 paragraph never joins independent writes. Edits inside pending inserted text join
 that insertion.
 

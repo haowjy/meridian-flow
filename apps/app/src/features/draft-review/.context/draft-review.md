@@ -48,8 +48,8 @@ re-projects and matches by pin position plus content hash (ignoring `~n`).
 No match is a no-op. A group adjacent to an AI deletion is one group, so its
 Discard reverts the deletion with it.
 
-A surface with no editor (strip, Work rows) does the same edit through `room-discard.ts`:
-`useHeadlessDiscards` writes the discard with an `Y.UndoManager` that tracks
+A surface with no editor (strip, Work rows, the phone's bar, sheet and header) does the same edit through `room-discard.ts`:
+`useHeadlessDiscards` (the phone's one open review scopes it by `documentId:itemKey`, so its rows end with that review; the header's Discard draft is `discardAll`) writes the discard with an `Y.UndoManager` that tracks
 only it and keeps a lease on the room until Undo, and the row reads "Discarded" with Undo until
 the writer leaves. Item Discard (a created, binary or live-deleted item; `discardDraftItem`
 sends `{draftId, itemKey}`) and the Work page's Discard all (`discard_draft`) are the only

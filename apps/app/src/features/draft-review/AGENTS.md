@@ -18,7 +18,7 @@ changing state, Discard or Apply. This file maps ownership.
 | Visible changes and their failures, derived once per room from the frame and command records | `review-visible.ts`, `review-runtime.ts` |
 | Room-scoped review runtime: one frame stream per draft, editor or headless, record reconciliation | `review-runtime.ts`, `useReviewRuntime.ts` |
 | Local Discard (one change, Discard draft) as one undo step | `draft-discard.ts` |
-| Discard from a surface with no editor (strip, Work rows), Undo on the row | `room-discard.ts`, `useHeadlessDiscards.ts`, `DiscardedRow.tsx` |
+| Discard from a surface with no editor (strip, Work rows, the phone's bar, sheet and header), Undo on the row | `room-discard.ts`, `useHeadlessDiscards.ts`, `DiscardedRow.tsx` |
 | Chat attribution hint (which chats' edits overlap a change): fetched and matched once per room by the runtime | `review-runtime.ts`, `chat-changes.ts` |
 | Apply snapshot, acknowledgement wait, unopened-draft read | `useDraftApply.ts` |
 | Apply records (applied changes, failures, overrode, whole-item claim) | `client/query/draft-command-record.ts` |
@@ -71,9 +71,9 @@ Paths outside this directory are relative to `apps/app/src`.
 - Room ownership is not editor paint ownership; the room survives leaving review. One room
   computes one frame, but each editor attachment (tab, dock) owns its painter and command
   handle (`editorHandle(editor | surface)`): a Discard is authored into the history of the editor the
-  writer clicked in. A control outside the editor but belonging to its surface (the review band, the
-  phone header) names that surface ("editor" or "dock"); only a row that sits in no editor (Work
-  page, strip) takes the longest-attached one.
+  writer clicked in. A control outside the editor but belonging to its surface (the review band) names that
+  surface ("editor" or "dock"); a row that sits in no editor (Work page, strip) and the phone's
+  bar, sheet and header Discard through `useHeadlessDiscards` (`discardAll` for the header).
 - A whole-item Apply from an open editor flushes that editor's projection at the click
   (`handle.projectNow()`) and sends that frame, so words typed inside the debounce apply. Per-change
   Apply and a headless file Apply keep the frame their row was drawn from.

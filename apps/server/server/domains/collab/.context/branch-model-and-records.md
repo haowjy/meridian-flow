@@ -85,16 +85,25 @@ can type into blocks the rebase removed or retyped. A stale frame is not current
 intent: on text a rebase changed it contributes only its net surviving typing.
 Writer admission (`commitWriterUpdate` under the branch's critical section) finds
 that typing before applying the update (`findLostEdits`: inserted text minus what the
-same frame deletes, so words typed and deleted again offline never come back) and
+same frame deletes) and
 writes one ordinary `writer` journal row holding the update merged with the recovery
 (`recoverLatePeerEdits`): the typing goes in as its own paragraph beside its last
 known neighbour, green in review for the writer to keep or drop. The frame's
-deletions of rebased text never apply (`late_peer.edit_lost`, log-only): a reconnect
+deletions of rebased text never apply (`late_peer.stale_frame`, log-only): a reconnect
 resends the client's whole delete set, and a replay is indistinguishable from the
 first arrival, so acting on it would erase newer writing. Words the writer deleted
-offline on rewritten text reappear, and they delete them again. Containment is
-checked first, so a clean reconnect is a no-op that reports nothing. Nothing is
-retained beside the document for this; the full CRDT update still persists.
+offline on rewritten text reappear, and they delete them again (D35): a browser reconnect resends offline
+typing one keystroke per frame, so text typed and deleted again inside a rewritten
+paragraph returns green, an accepted cost. Containment is checked first, so a clean
+reconnect is a no-op that reports nothing.
+
+Per-keystroke frames extend one recovered paragraph instead of starting another. The
+coordinator keeps that memory in process (`LateTyping`, least recently used 64 drafts
+in `branch-coordinator.ts`); a restart or eviction mid-reconnect starts a fresh
+paragraph. Recovered typing is never deleted by a later frame. Any change to the
+recovered block (text, marks or attributes) ends recovery's ownership of it: it is never
+touched again and new typing beside it starts its own paragraph. A recovered paragraph
+never shrinks.
 
 Draft HTTP routes share `requireDraftWorkAccess`: a deleted Work is 404
 `Draft not found` before any draft read or mutation. Archived Works still permit

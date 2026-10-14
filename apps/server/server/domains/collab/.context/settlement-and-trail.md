@@ -287,9 +287,10 @@ Only `DurableTrailSeedError` (a corrupt trail seed) blocks a batch at claim; any
 other claim failure is recorded as an ordinary failed attempt.
 
 The rebase reports through its own emitter (`collab.draft_rebase`):
-`base.uninitialized`, `merge.failed` and `late_peer.edit_lost` (counts of the typing
-written back as its own paragraph and of the deletions dropped), one event per
-transition, never per inspection. A
+`base.uninitialized`, `merge.failed` and `late_peer.stale_frame` (counts of what the frame touched, the typing
+written back as its own paragraph and the deletions dropped), one event per
+transition, never per inspection, except `late_peer.stale_frame`: a per-keystroke
+reconnect logs once per stale frame, `dropped: 0` when recovery was clean. A
 batch fence on rebases is reported by the settlement owner, not by each fenced pull.
 Writer admission reports `branch_writer.refused` with a `reason`.
 

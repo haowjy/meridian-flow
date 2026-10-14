@@ -750,6 +750,15 @@ draft mode. Desktop 1440x900, check 1 also at 390x844.
 4. **A document no draft touches** shows no hint.
 5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.
 
+## Rename and cut while a review is open (browser)
+
+1. **Rename a reviewed document** (#845). With a document's review routed, rename it from the
+   sidebar. PASS: no "Maximum update depth" in the console, the sidebar stays open, and the review
+   (its changes and the change bar) is intact under the new name.
+2. **Cut a whole paragraph in a draft.** Select a paragraph's text and cut it. PASS: the red removal
+   stays readable with no "Start writing..." placeholder over it, with the cursor in it and after a
+   reload. A paragraph that is genuinely empty still shows the placeholder.
+
 ## History
 
 - 2026-07-07: #151 combined quality-fixes probe (disposition lock, journey smoke) and

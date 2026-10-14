@@ -31,8 +31,7 @@ editor UI or transport-shell policy.
 - A writer or AI edit that leaves the draft equal to its base leaves the item
   unlisted but addressable; its room, history and next proposal stay.
 - Independent deleting edits from separate chats stay separate: draft agent
-  writes use one fresh client and one journal row per paragraph per logical
-  write, atomically published per reply.
+  writes stay separate per logical write, atomically published per reply.
 - Each live document has a durable authority head whose identity, generation,
   and admission sequence fence every connection and mutation.
 - `@meridian/agent-edit` owns schema-safe mutation, the pure `diff` core (review

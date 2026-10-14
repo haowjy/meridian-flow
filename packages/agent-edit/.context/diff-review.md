@@ -66,6 +66,17 @@ are never revived around it. Deletions of rebased text are never written
 (log-only): a reconnect resends the whole delete set, and a replay looks like a
 first arrival (D33).
 
+A typed span is the characters the peer typed with nothing it still shows between them,
+whatever Yjs items or frames they came in; spans with surviving text between them stay
+apart. A browser reconnect can send one keystroke per frame, so `LateTyping` (opaque
+memory the host keeps per draft, in process) carries the spans already written and the
+next keystroke extends its paragraph (D35). Recovered typing is never deleted by a later
+frame: the peer's delete set echoes it once the peer has the server's state, and nothing
+tells that from a backspace, so text typed and deleted again inside a rewritten
+paragraph returns green. Ownership ends when the draft no longer shows the paragraph
+exactly as written (text, marks or attributes): it is then never touched, and new typing
+beside it starts its own. A recovered paragraph never shrinks.
+
 ## Migration seam
 
 `convertLegacyDraft` (`draft-base.ts`) is the pure conversion a data step uses to
