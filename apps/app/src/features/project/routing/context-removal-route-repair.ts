@@ -5,6 +5,7 @@ import { type ProjectSearch, projectSearchEquals } from "./project-route";
 export function applyContextRemovalSearchUpdate({
   search,
   update,
+  itemKey,
   relocated,
   openContext,
   goWorks,
@@ -12,7 +13,9 @@ export function applyContextRemovalSearchUpdate({
 }: {
   search: ProjectSearch;
   update: (latest: ProjectSearch) => ProjectSearch;
-  /** The document a relocation moves; absent for a replacement or fallback. */
+  /** The review item the current address carries. */
+  itemKey: string | undefined;
+  /** Set when the planner moved the route's own bound document; absent for a fallback to another. */
   relocated: { documentId: string } | undefined;
   openContext: OpenContextRoute;
   goWorks: () => void;
@@ -28,10 +31,10 @@ export function applyContextRemovalSearchUpdate({
         workId: next.work,
         rootThreadId: next.chat,
       },
-      // The review selector is not passed: the command keeps it only when the address names
-      // the same document, which a relocation's identity proves across a rename. A fallback
-      // document opens without one, however the draft list reads.
-      { replace: true, documentId: relocated?.documentId },
+      // A relocation keeps the review the address carries, until ReviewAddressOwner (which knows
+      // the document's identity) decides it no longer applies. A fallback opens another document,
+      // so the item names nothing there, whatever the draft list reads.
+      { replace: true, itemKey: relocated ? itemKey : undefined },
     );
   else if (next.screen === "work") goWorks();
   else if (next.screen === "context") goEditor();

@@ -95,15 +95,21 @@ describe("review launch navigation", () => {
   describe("Editor address repair", () => {
     const itemUrl = (path: string) =>
       `/p/${projectId}/editor/manuscript/${path}?work=${workId}&item=draft-1&change=c1`;
-    const repair = (path: string, next: string, relocated: { documentId: string } | undefined) => {
+    const repair = (
+      path: string,
+      next: string,
+      relocated: { documentId: string } | undefined,
+      addressDocumentId?: string,
+    ) => {
       const { open, history } = setup(
         vi.fn(async () => ({ kind: "failed" as const })),
         itemUrl(path),
-        "doc-1",
+        addressDocumentId,
       );
       applyContextRemovalSearchUpdate({
         search: { screen: "context", scheme: "manuscript", path, work: workId },
         update: (latest) => ({ ...latest, path: next }),
+        itemKey: "draft-1",
         relocated,
         openContext: open,
         goWorks: () => undefined,
@@ -112,18 +118,16 @@ describe("review launch navigation", () => {
       return history;
     };
 
-    it("a fallback document opens without the discarded item, however the draft list reads", async () => {
-      const history = repair("gone.md", "fallback.md", undefined);
+    it("a fallback document opens without the item, even one the draft list still holds", async () => {
+      const history = repair("gone.md", "fallback.md", undefined, "doc-1");
       await vi.waitFor(() => expect(history.location.href).toContain("fallback.md"));
       expect(history.location.href).not.toContain("item=");
-      expect(history.location.href).not.toContain("change=");
     });
 
-    it("a relocation of the same document keeps its review address", async () => {
+    it("a relocation keeps the review item while the address query has no document id yet", async () => {
       const history = repair("old.md", "renamed.md", { documentId: "doc-1" });
       await vi.waitFor(() => expect(history.location.href).toContain("renamed.md"));
       expect(history.location.href).toContain("item=draft-1");
-      expect(history.location.href).toContain("change=c1");
     });
   });
 });

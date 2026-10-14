@@ -21,8 +21,6 @@ export type OpenContextOptions = {
   /** Persist an inline review in this Editor history entry. Omission opens live. */
   itemKey?: string;
   changeId?: string;
-  /** The document a relocation moves: its identity, not its path, decides whether the address names it. */
-  documentId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;
 };
