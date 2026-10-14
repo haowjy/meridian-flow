@@ -246,9 +246,9 @@ inbox metadata. See the [reply Retry API](../../../../../../docs/api/thread-repl
   receipt whose selector names a terminal turn
   ([recovery](recovery.md#settling-a-stale-lease)). The joined projection exposes `waiting` for an
   unadopted row behind a live bound run and `awaiting_run` for adopted rows or
-  no bound live run. Generic `ThreadPendingInbox` projects every provenance;
-  the app's `queuedWriterTurnIds` keeps writer rows in `waiting` so only those
-  bubbles show Queued.
+  no bound live run. The run-state record lists every provenance;
+  the package's `waitingWriterMessages` keeps writer rows in `waiting` so only
+  those bubbles show Queued.
 
 ## Materializing a batch
 
@@ -400,8 +400,8 @@ remains (notices alone cannot sustain a block). Empty-inbox refused wakes never
 install one. A failed publication rolls back the acknowledgement and clear.
 Repeated refused wakes do not republish an unchanged block.
 
-`readPendingInbox` includes `blocked: { reason: "credits_exhausted" }` only
+The run-state record's `blocked` is `{ reason: "credits_exhausted" }` only
 while message/control work remains pending. Snapshots, socket subscription
-state and `meridian.inbox.changed` carry the same projection. The ordinary
+state and `meridian.run_state` carry the same record. The ordinary
 server wake sweep retries after balance restoration; clients add no polling.
 The accepted writer turn remains saved, with no failed assistant placeholder.

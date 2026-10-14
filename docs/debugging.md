@@ -197,10 +197,10 @@ at its final snapshot; it does not attribute replies to messages.
   or not seen exits 1; a failed lookup or still-pending admission exits 6
   `admission_unknown`. `send --no-wait` proves admission only and reports `outcome: "accepted"`, never `complete`.
 - Before reporting complete, `send` reads a snapshot. If its admitted user turn
-  id is still in `liveState.pending.items`, it exits 6 `unproven` with reason
+  id is still in `liveState.runState.items`, it exits 6 `unproven` with reason
   `owed`, `stillRunning`, the pending writer messages, and
   `./mf thread tail <thread> --until-idle` as the next command. It prints no
-  answer for this unproven result. Absence from pending does not yet prove
+  answer for this unproven result. Absence from the record's items does not yet prove
   which reply answered the message; that binding remains phase 2.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
@@ -208,9 +208,12 @@ at its final snapshot; it does not attribute replies to messages.
 - `send` currently follows a steer or a compaction split with an interim rule:
   reservation hints on a reply's start (the user turns it was reserved for) and
   successor following within one execution, plus ancestry in recovery. It does
-  not bind to `Turn.delivery` or `messages.delivered`, so the result is the
+  not bind to `Turn.delivery`, so the result is the
   reply the follower selected, not proof that this reply answered your message.
-  The binding is #768's second phase.
+  The binding is #768's second phase. A `send` that joined a running reply and
+  sees the record show no open execution while its message is still waiting
+  follows for a short grace for the reply that takes it, then exits 6 `unproven`
+  with reason `owed`; it never reports that message answered.
 - `thread view` (`chatView: 2`) prints a compaction row as its trigger, control
   ID, summary and model, and token counts before and after; `--json` carries the
   same facts under `compaction`. It does not print a failed compaction's reason
