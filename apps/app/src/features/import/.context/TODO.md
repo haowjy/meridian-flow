@@ -26,3 +26,15 @@ Delete an entry when it ships.
   (D1 re-check run 4b). This may be pre-existing catalog wake latency rather
   than import code; reproduce on `main` before fixing. Evidence:
   `evidence/d1-fix/run4-delete-timeline.txt`.
+
+- **The phone's area chooser has no run mark.** `MobileContextBrowser.tsx`
+  shows the import marks in a folder listing and its header, but the
+  top-level Manuscript/Knowledge Base/Unfiled list shows none, so a refused
+  routed export is only visible after opening an area. Follow-up: render the
+  operation target's mark on the chooser's area rows, reading `targetOf`.
+
+- **Drop acceptance should say what a drop will do.** `tree-drop/` accepts
+  external files with a hard-coded copy effect and "Import here" label.
+  Internal row drags (the drag-anywhere lane) need the accepting route to
+  return its effect and label so targets render either without knowing which
+  route accepted. See `reviews/simplify-app.md` finding 7 in the work item.
