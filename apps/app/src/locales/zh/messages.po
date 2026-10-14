@@ -2445,6 +2445,7 @@ msgstr ""
 
 #. placeholder {0}: refusalSentence(info.notStarted.code)
 #: src/features/project/context/ImportRunMark.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Import didn't start. {0}"
 msgstr ""
 
@@ -3460,6 +3461,7 @@ msgid "Reading text size"
 msgstr ""
 
 #: src/features/project/context/ImportRunMark.tsx
+#: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Reading your files"
 msgstr ""
 

@@ -10,6 +10,7 @@ import type {
 import type { ClientRow } from "./client-rows";
 import type { LocalPhase } from "./display-state";
 import type { ImportState } from "./import-state";
+import { targetOf } from "./placements";
 import { type ProjectedImport, withImportRows } from "./tree-projection";
 
 type Tree =
@@ -87,7 +88,11 @@ function drawn(view: CatalogContextView, parentId = "root", depth = 0): string[]
   });
 }
 
-const summary = { importId: "i", state: "ready" } as ImportSummary;
+const summary = {
+  importId: "i",
+  state: "ready",
+  destination: { folderUri: "kb://", folderId: null },
+} as ImportSummary;
 const row = (
   id: string,
   parentId: string | null,
@@ -181,6 +186,7 @@ function importOf(parts: {
     state,
     seen: new Set(parts.seen),
     bridges: new Set(parts.bridges),
+    target: targetOf(state),
   };
 }
 
@@ -329,6 +335,45 @@ describe("withImportRows", () => {
       "Lore!",
       "Ch 1",
     ]);
+  });
+
+  it("16: a refusal with no root row to carry it marks the destination, or each routed area's header", () => {
+    const phase: LocalPhase = { kind: "not-started", code: "export_marker_invalid" };
+    // An unreadable marker predicts no rows at all.
+    const unreadable = importOf({
+      rows: [],
+      phase,
+      held: true,
+      roots: [{ rootId: 0, kind: "folder", name: "Export" }],
+    });
+    expect(withImportRows(catalogOf(), "kb", [unreadable]).root.import?.notStarted).toMatchObject({
+      code: "export_marker_invalid",
+    });
+    // A valid export goes straight to its areas, so it has no root folder row either.
+    const routed = importOf({
+      rows: [{ ...row("arc", null, "dir", "Arc"), scheme: "manuscript", relPath: "Notes/Arc" }],
+      phase: { kind: "not-started", code: null },
+      roots: [{ rootId: 0, kind: "folder", name: "Export" }],
+    });
+    const manuscript = withImportRows(catalogOf(), "manuscript", [routed]);
+    expect(manuscript.root.import?.notStarted).toMatchObject({ importId: "i" });
+    // Another area is not its business: that view is the catalog's own.
+    const kb = catalogOf();
+    expect(withImportRows(kb, "kb", [routed])).toBe(kb);
+  });
+
+  it("5: an unlanded file stays under its folder after the writer moves it to another area", () => {
+    const accepted = { folders: [folder("art", null, "Art")], entries: [entry(0, "m0", "art")] };
+    const manuscript = catalogOf(dir("art", "Art"));
+    const view = withImportRows(manuscript, "manuscript", [importOf({ accepted, seen: ["art"] })]);
+    expect(drawn(view, "art")).toEqual(["map0.png*~"]);
+    // An area the import cannot land in keeps its own view.
+    const away = catalogOf();
+    expect(
+      withImportRows(away, "unfiled", [
+        importOf({ accepted: { entries: [entry(0, "m0", "art")] }, seen: ["art"] }),
+      ]),
+    ).toBe(away);
   });
 
   it("shows the destination as reading while the selection is read", () => {

@@ -25,25 +25,44 @@ can do about it.
   aborts the read; a disposed coordinator refuses `begin`. Row ids, hashing, the
   plan and the uploads run in the background; a failure is shown on the import,
   never by going back.
-- **A refused or lost plan is `not-started` with its code.** The root row (the
-  destination for loose files) carries the warning, and its menu (`ImportRunMark`)
-  offers Try again (same id, same manifest) and Discard (local after a definite
-  refusal; `finish` after a lost answer, since the server may hold the import).
+- **A refused or lost plan is `not-started` with its code.** `targetOf`
+  (`placements.ts`) is the one contract for where an import and its marks show: the
+  predicted root folder rows, else the destination folder, else each routed area's
+  header (`anchors`). The tree and the phone listing render `ImportRunMark` from
+  it, and its menu offers Try again (same id, same manifest) and Discard (local
+  after a definite refusal; `finish` after a lost answer, since the server may hold
+  the import). Reading shows the same mark on the destination.
 - **One coordinator owns import state; surfaces only read.** It owns acquisition
   (the open-list poll, one full read, `?since=` cuts, a by-id read when an import
-  leaves the list), the per-import set of node ids the catalog has held (`seen`,
-  filled from its own subscription to the narrow `CatalogReader` the provider
-  injects), the 30-second bridges that cover a row the tab drew until the catalog
-  shows it, the `documentId` index, and the retirement of every store (finished or
-  gone, no command in flight, no bridge open). No surface has to be mounted for a
-  failure to show or a run to end.
+  leaves the list), the `documentId` index and retirement. Each import is one
+  `ImportRecord` (`import-record.ts`: store, run, plan, read and catalog
+  `Handoff`), and retiring it disposes all of that. The `Handoff`
+  (`import-handoff.ts`) keeps the node ids the catalog has held (`seen`, filled
+  from the narrow `CatalogReader` the provider injects) and the 30-second bridges
+  that cover a row the tab drew until the catalog shows it: bridges open as a
+  batch, one timer waits for the next deadline, and a batch that expires publishes
+  once. A first full status, from the plan or from the poll, hands drawn rows to
+  bridges in one place (`installFull`). Construction attaches nothing: `start()`
+  (inside `watchOpen`) subscribes to the catalog and its disposer undoes it, so
+  a render React throws away leaves no subscriber. Every answer after an await is
+  fenced by the coordinator's `epoch` (advanced by `dispose`, since `watchOpen`
+  revives the same object) and by the import's current record.
+- **Commands need a fresh read.** Retry, Continue and resume send only after a
+  successful full read (`read` answers true or false; background polls ignore
+  it). On failure nothing is sent and recovery state is kept: Retry's rows keep a
+  failure that says to try again, Continue's dialog shows the error, resume goes
+  back to Couldn't stop. A file leaves `held` as soon as its entry's answer is
+  final (landed, deleted, not imported, skipped); failed files stay for Retry.
 - **Node ids are shared.** `importNodeId` (contracts) gives predicted rows
   (`client-rows.ts`) the ids the server's plan gives the same nodes, so rows,
   seen ids and expansion join by id from pick to landing.
 - **Pending rows are a projection**, not resource-replica intents.
   `tree-projection.ts` is a pure function of a catalog view and the coordinator
   snapshot, following six rules (catalog row, seen, predicted, unlanded overlay,
-  bridge, nothing). It never writes back.
+  bridge, nothing). An overlay sits in the area of its nearest catalog ancestor by
+  id (the planned area only for nodes at an area root), and an import none of
+  whose nodes can land in a scheme is skipped, so an unrelated scheme keeps its
+  own view. It never writes back.
 - **One store per import** (`ImportStore`) is a passive cache: the full read,
   `?since=` cuts and this tab's own upload answers merge into one report. It never
   reads or polls.

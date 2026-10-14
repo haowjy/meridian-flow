@@ -22,11 +22,14 @@ export type LocalRun = {
   roots: readonly ImportRootMeta[];
   /** Predicted rows, drawn until the plan answers. */
   rows: readonly ClientRow[];
-  /** Null once this tab no longer holds the files (stopped, finished or gone). */
-  held: ReadonlyMap<number, HeldFile> | null;
+  /**
+   * Null once this tab no longer holds the files (stopped, finished or gone). The run
+   * owns the map: a file leaves it as soon as its entry has its final answer.
+   */
+  held: Map<number, HeldFile> | null;
   /** The manifest this tab sent, for matching a later selection. */
   manifest: ImportManifest | null;
-  /** Files whose send failed here. The server still thinks they are planned. */
+  /** Files whose send failed here, or whose Retry could not reach the server. */
   failures: ReadonlyMap<number, ImportFailureReason>;
   /** Files being sent again after Retry. */
   retrying: ReadonlySet<number>;
@@ -105,7 +108,10 @@ export function effectiveEntry(state: ImportState, entry: ImportEntryStatus): Im
     return entry.state === "failed" ? { ...entry, state: "planned", reason: null } : entry;
   }
   const reason = local?.failures.get(entry.entryId);
-  if (reason && (entry.state === "planned" || entry.state === "landing"))
+  if (
+    reason &&
+    (entry.state === "planned" || entry.state === "landing" || entry.state === "failed")
+  )
     return { ...entry, state: "failed", reason };
   return entry;
 }

@@ -34,12 +34,8 @@ import type { DroppedItems } from "@/lib/dropped-items";
 import { ContinueImportDialog } from "./ContinueImportDialog";
 import type { ImportDestination } from "./destination";
 import { importApi } from "./import-api-port";
-import {
-  type CatalogReader,
-  ImportCoordinator,
-  type ImportsSnapshot,
-  type SelectionRead,
-} from "./import-coordinator";
+import { ImportCoordinator, type ImportsSnapshot, type SelectionRead } from "./import-coordinator";
+import type { CatalogReader } from "./import-handoff";
 import { readDropped } from "./read-dropped";
 import { readPicked } from "./read-picked";
 import { PickInputs } from "./SelectionPicker";

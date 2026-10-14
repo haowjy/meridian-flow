@@ -1,11 +1,14 @@
 /**
  * Runs imports for one project in this tab and owns what surfaces only read:
  * which statuses are read and when (the open-list poll, one full read, `?since=`
- * cuts, a by-id read when an import leaves the list), the per-import set of node
- * ids the catalog has held, the short bridges that cover a row until the catalog
- * shows it, the `documentId` index, and the retirement of every store. Navigate
+ * cuts, a by-id read when an import leaves the list), the `documentId` index and
+ * the retirement of every import. Each import lives in one `ImportRecord`. Navigate
  * first: `begin` returns the import id before the selection is read and does the
  * rest in the background.
+ *
+ * Every answer that arrives after an await is fenced twice before it touches
+ * anything: by the coordinator's lifetime (`epoch`, which `dispose` advances, since
+ * `watchOpen` revives the same object) and by the import's current record.
  */
 import type {
   ImportEntryStatus,
@@ -23,11 +26,13 @@ import {
 } from "./client-rows";
 import type { ImportDestination } from "./destination";
 import { type ImportApi, importApi } from "./import-api-port";
-import { fullyRead, type ImportState } from "./import-state";
-import { compareVersions, ImportStore } from "./import-store";
+import type { CatalogReader, Clock } from "./import-handoff";
+import { ImportRecord, type Run, retired } from "./import-record";
+import { fullyRead } from "./import-state";
+import { compareVersions, type ImportStore } from "./import-store";
 import { type BuiltManifest, buildManifest, type HeldFile } from "./manifest";
 import { announceMilestones } from "./milestones";
-import { destinationFromSummary, type ImportTarget, targetOf } from "./placements";
+import { destinationFromSummary } from "./placements";
 import type { Selection } from "./selection";
 import type { ProjectedImport } from "./tree-projection";
 import { type UploadOutcome, UploadQueue } from "./uploader";
@@ -35,24 +40,10 @@ import { type UploadOutcome, UploadQueue } from "./uploader";
 /** Imports over this many files redraw the tree no more often than every few seconds. */
 const BIG_IMPORT = 500;
 const BIG_IMPORT_TREE_MS = 3000;
-/** How long a materialized row stays drawn while waiting for the catalog to show it. */
-const BRIDGE_MS = 30_000;
 const POLL_ACTIVE_MS = 5000;
 const POLL_IDLE_MS = 30_000;
 
-/** The catalog, as the coordinator needs it: whether it holds a node id now, and when it changes. */
-export type CatalogReader = {
-  holds(id: string): boolean;
-  subscribe(listener: () => void): () => void;
-};
-
 const NO_CATALOG: CatalogReader = { holds: () => false, subscribe: () => () => {} };
-
-export type Clock = {
-  now(): number;
-  setTimeout(run: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-};
 
 const REAL_CLOCK: Clock = {
   now: () => performance.now(),
@@ -60,13 +51,11 @@ const REAL_CLOCK: Clock = {
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
-export type TrackedImport = ProjectedImport & { target: ImportTarget | null };
-
 export type DocumentEntry = { importId: string; entryId: number };
 
 export type ImportsSnapshot = {
   /** Imports this tab shows: its runs first, then the server's open ones. */
-  imports: readonly TrackedImport[];
+  imports: readonly ProjectedImport[];
   /** Which import and entry each imported document belongs to. */
   documents: ReadonlyMap<string, DocumentEntry>;
 };
@@ -85,37 +74,24 @@ export type SelectionRead = (options: {
 /** Reading progress repaints the tree no more often than this. */
 const READ_PAINT_MS = 250;
 
-/**
- * What this tab is doing for one import: reading its files, the plan and the
- * sends. `retire` ends it for good; every step after an await checks `retired`
- * before it changes anything or calls the server.
- */
-type Run = { readonly controller: AbortController; readonly queue: UploadQueue };
-
-/** The evidence the projection needs that only this tab can know. */
-type Tracker = {
-  seen: ReadonlySet<string>;
-  /** Tracked ids the catalog has not held yet. */
-  unseen: Set<string>;
-  bridges: ReadonlySet<string>;
-  timers: Map<string, unknown>;
-};
+/** An entry in one of these states has its answer for good: the tab no longer needs its file. */
+const FINAL_STATES: ReadonlySet<ImportEntryStatus["state"]> = new Set([
+  "landed",
+  "deleted",
+  "not_imported",
+  "skipped",
+]);
 
 export class ImportCoordinator {
-  private readonly stores = new Map<string, ImportStore>();
-  private readonly trackers = new Map<string, Tracker>();
-  private readonly runs = new Map<string, Run>();
-  private readonly plans = new Map<string, Promise<unknown>>();
-  private readonly reads = new Map<string, Promise<void>>();
-  private readonly startedAt = new Map<string, number>();
+  private readonly records = new Map<string, ImportRecord>();
   /** Imports ended for good here: late answers about them are ignored. */
   private readonly retiredIds = new Set<string>();
-  /** Imports the server no longer knows. */
-  private readonly missing = new Set<string>();
   private readonly listeners = new Set<() => void>();
   private unsubscribeCatalog: (() => void) | undefined;
   private openTimer: unknown;
   private disposed = false;
+  /** Advances on `dispose`: an answer begun in an earlier lifetime is dropped. */
+  private epoch = 0;
   /** Which `watchOpen` call owns the poll loop. */
   private watching = 0;
 
@@ -124,13 +100,7 @@ export class ImportCoordinator {
     private readonly api: ImportApi = importApi,
     private readonly catalog: CatalogReader = NO_CATALOG,
     private readonly clock: Clock = REAL_CLOCK,
-  ) {
-    this.attach();
-  }
-
-  private attach() {
-    this.unsubscribeCatalog ??= this.catalog.subscribe(() => this.catalogChanged());
-  }
+  ) {}
 
   // ---- The snapshot surfaces read
 
@@ -140,8 +110,6 @@ export class ImportCoordinator {
   };
   private snapshot: ImportsSnapshot = EMPTY_SNAPSHOT;
   readonly getSnapshot = () => this.snapshot;
-  private readonly tracked = new Map<string, TrackedImport>();
-  private readonly targets = new Map<string, { state: ImportState; target: ImportTarget | null }>();
   private indexed = new Map<string, unknown>();
   private lastTreeUpdate = Number.NEGATIVE_INFINITY;
   private treeTimer: unknown;
@@ -150,8 +118,8 @@ export class ImportCoordinator {
   private changed(structural = false) {
     // A big import re-renders a big tree; let it catch up at most every few seconds.
     const now = this.clock.now();
-    const big = [...this.stores.values()].some((store) => {
-      const state = store.getSnapshot();
+    const big = [...this.records.values()].some((record) => {
+      const state = record.store.getSnapshot();
       return (
         (state.report?.entries.size ?? 0) > BIG_IMPORT ||
         (state.local?.rows.length ?? 0) > BIG_IMPORT
@@ -181,53 +149,24 @@ export class ImportCoordinator {
   }
 
   /** This tab's runs, then the server's open imports; each reused while nothing about it moved. */
-  private computeImports(): TrackedImport[] {
-    const live: ImportStore[] = [];
-    for (const store of this.stores.values()) {
-      const state = store.getSnapshot();
+  private computeImports(): ProjectedImport[] {
+    const live: ImportRecord[] = [];
+    for (const record of this.records.values()) {
+      const state = record.store.getSnapshot();
       // Stopped before the server heard of it: nothing is left to show a row for.
       const endedHere = state.stop === "stopped" && !state.report;
-      if ((state.local || state.report) && !endedHere) live.push(store);
+      if ((state.local || state.report) && !endedHere) live.push(record);
     }
     live.sort(
       (a, b) =>
-        Number(!b.getSnapshot().local) - Number(!a.getSnapshot().local) ||
-        (this.startedAt.get(b.importId) ?? 0) - (this.startedAt.get(a.importId) ?? 0),
+        Number(!b.store.getSnapshot().local) - Number(!a.store.getSnapshot().local) ||
+        b.startedAt - a.startedAt,
     );
-    const next = new Map<string, TrackedImport>();
-    const result = live.map((store) => {
-      const state = store.getSnapshot();
-      const tracker = this.trackerOf(store.importId);
-      let target = this.targets.get(store.importId);
-      if (target?.state !== state) {
-        target = { state, target: targetOf(state) };
-        this.targets.set(store.importId, target);
-      }
-      const previous = this.tracked.get(store.importId);
-      const item =
-        previous &&
-        previous.state === state &&
-        previous.seen === tracker.seen &&
-        previous.bridges === tracker.bridges &&
-        previous.target === target.target
-          ? previous
-          : {
-              importId: store.importId,
-              state,
-              seen: tracker.seen,
-              bridges: tracker.bridges,
-              target: target.target,
-            };
-      next.set(store.importId, item);
-      return item;
-    });
-    this.tracked.clear();
-    for (const [id, item] of next) this.tracked.set(id, item);
-    return result;
+    return live.map((record) => record.project());
   }
 
   /** Rebuilt only when some import's entries or the set of imports moved. */
-  private documentIndex(imports: readonly TrackedImport[]): ReadonlyMap<string, DocumentEntry> {
+  private documentIndex(imports: readonly ProjectedImport[]): ReadonlyMap<string, DocumentEntry> {
     const seen = new Map<string, unknown>();
     for (const item of imports) seen.set(item.importId, item.state.report?.entries);
     const same =
@@ -243,102 +182,75 @@ export class ImportCoordinator {
   }
 
   /** One import as the surfaces see it; null once it is retired. */
-  view(importId: string): TrackedImport | null {
+  view(importId: string): ProjectedImport | null {
     return this.snapshot.imports.find((item) => item.importId === importId) ?? null;
   }
 
   store(importId: string): ImportStore {
-    let store = this.stores.get(importId);
-    if (!store) {
-      store = new ImportStore(this.projectId, importId);
-      this.stores.set(importId, store);
-      announceMilestones(store);
-      store.subscribe(() => {
-        this.changed();
-        this.maybeRetire(importId);
-      });
-    }
-    return store;
+    return this.recordOf(importId).store;
   }
 
-  private trackerOf(importId: string): Tracker {
-    let tracker = this.trackers.get(importId);
-    if (!tracker) {
-      tracker = { seen: new Set(), unseen: new Set(), bridges: new Set(), timers: new Map() };
-      this.trackers.set(importId, tracker);
+  private recordOf(importId: string): ImportRecord {
+    let record = this.records.get(importId);
+    if (!record) {
+      const created: ImportRecord = new ImportRecord(
+        this.projectId,
+        importId,
+        this.catalog,
+        this.clock,
+        () => this.expired(created),
+      );
+      record = created;
+      this.records.set(importId, created);
+      announceMilestones(created.store);
+      created.store.subscribe(() => {
+        this.changed();
+        this.maybeRetire(created);
+      });
     }
-    return tracker;
+    return record;
+  }
+
+  /** Whether `record` is still this import's record in the lifetime the caller began in. */
+  private live(record: ImportRecord, epoch: number): boolean {
+    return !this.disposed && epoch === this.epoch && this.records.get(record.importId) === record;
   }
 
   // ---- Seen ids and bridges
 
-  /** Remember node ids to watch the catalog for; the catalog may already hold them. */
-  private track(importId: string, ids: Iterable<string>) {
-    const tracker = this.trackerOf(importId);
-    for (const id of ids) if (!tracker.seen.has(id)) tracker.unseen.add(id);
-    if (this.scan(importId)) this.changed();
-  }
-
-  /** Move every tracked id the catalog now holds into the seen set; true when any moved. */
-  private scan(importId: string): boolean {
-    const tracker = this.trackers.get(importId);
-    if (!tracker || tracker.unseen.size === 0) return false;
-    const added: string[] = [];
-    for (const id of tracker.unseen) if (this.catalog.holds(id)) added.push(id);
-    if (added.length === 0) return false;
-    for (const id of added) tracker.unseen.delete(id);
-    tracker.seen = new Set([...tracker.seen, ...added]);
-    let closed = false;
-    for (const id of added) {
-      const timer = tracker.timers.get(id);
-      if (timer === undefined) continue;
-      this.clock.clearTimeout(timer);
-      tracker.timers.delete(id);
-      closed = true;
-    }
-    if (closed) tracker.bridges = new Set(tracker.timers.keys());
-    return true;
+  private track(record: ImportRecord, ids: Iterable<string>) {
+    if (record.handoff.track(ids)) this.changed();
   }
 
   private catalogChanged() {
     let moved = false;
-    for (const importId of [...this.trackers.keys()]) {
-      if (!this.scan(importId)) continue;
+    let retiredAny = false;
+    for (const record of [...this.records.values()]) {
+      if (!record.handoff.scan()) continue;
       moved = true;
-      this.maybeRetire(importId);
+      retiredAny = this.maybeRetire(record, false) || retiredAny;
     }
-    if (moved) this.changed();
+    if (moved) this.changed(retiredAny);
   }
 
-  /** The tab drew this node and has just learned it exists: cover it until the catalog shows it. */
-  private openBridge(importId: string, id: string) {
-    const tracker = this.trackerOf(importId);
-    if (tracker.seen.has(id) || tracker.timers.has(id)) return;
-    tracker.timers.set(
-      id,
-      this.clock.setTimeout(() => {
-        tracker.timers.delete(id);
-        tracker.bridges = new Set(tracker.timers.keys());
-        this.changed(true);
-        this.maybeRetire(importId);
-      }, BRIDGE_MS),
-    );
-    tracker.bridges = new Set(tracker.timers.keys());
+  /** A batch of bridges ran out: one publication, and the import may be over. */
+  private expired(record: ImportRecord) {
+    if (this.records.get(record.importId) !== record) return;
+    if (!this.maybeRetire(record)) this.changed(true);
   }
 
   /**
-   * Take in what a status read or an upload answer said: watch its node ids, and
-   * bridge a drawn code or binary file that has just landed.
+   * Take in what a status read or an upload answer said: watch its node ids, bridge
+   * the drawn code and binary files that have just landed, and let go of the file of
+   * every entry that has its final answer.
    */
   private absorb(
-    importId: string,
+    record: ImportRecord,
     delta: { folders: readonly ImportFolderStatus[]; entries: readonly ImportEntryStatus[] },
     before: ReadonlyMap<number, ImportEntryStatus> | undefined,
   ) {
-    this.track(importId, [
-      ...delta.folders.map((folder) => folder.id),
-      ...delta.entries.map((entry) => entry.documentId),
-    ]);
+    const landed: string[] = [];
+    const held = record.store.getSnapshot().local?.held;
     for (const entry of delta.entries) {
       const prior = before?.get(entry.entryId);
       if (
@@ -347,27 +259,44 @@ export class ImportCoordinator {
         (prior.state === "planned" || prior.state === "landing" || prior.state === "failed") &&
         (entry.kind === "code" || entry.kind === "binary")
       )
-        this.openBridge(importId, entry.documentId);
+        landed.push(entry.documentId);
+      if (FINAL_STATES.has(entry.state)) held?.delete(entry.entryId);
     }
+    this.track(record, [
+      ...delta.folders.map((folder) => folder.id),
+      ...delta.entries.map((entry) => entry.documentId),
+    ]);
+    record.handoff.open(landed);
   }
 
-  /** The plan answered: the status replaces the prediction, and drawn plan-time rows are bridged. */
-  private accept(store: ImportStore, answer: ImportStatus) {
-    const importId = store.importId;
-    const before = store.getSnapshot().report?.entries;
-    const rows = store.getSnapshot().local?.rows ?? [];
-    // Bridges open before the store changes: a store retires as soon as it is over.
-    this.absorb(importId, answer, before);
-    const materialized = new Set<string>();
-    for (const folder of answer.folders)
-      if (folder.state !== "deleted") materialized.add(folder.id);
-    for (const entry of answer.entries)
-      if (entry.kind === "note" || entry.kind === "docx" || entry.state === "landed")
-        if (entry.state !== "skipped" && entry.state !== "deleted")
-          materialized.add(entry.documentId);
-    for (const row of rows) if (materialized.has(row.id)) this.openBridge(importId, row.id);
-    store.installReport(answer);
-    store.setLocal((local) => ({ ...local, rows: [] }));
+  /**
+   * A full status replaces whatever was predicted: the single place a first
+   * acceptance happens, whether the plan answered or a poll found the import first.
+   * Rows this tab drew that the status materialized are bridged before the store
+   * changes, since a store retires as soon as it is over.
+   */
+  private installFull(record: ImportRecord, status: ImportStatus) {
+    const { report, local } = record.store.getSnapshot();
+    this.absorb(record, status, report?.entries);
+    if (!fullyRead(report) && local?.rows.length) {
+      const materialized = new Set<string>();
+      for (const folder of status.folders)
+        if (folder.state !== "deleted") materialized.add(folder.id);
+      for (const entry of status.entries)
+        if (entry.kind === "note" || entry.kind === "docx" || entry.state === "landed")
+          if (entry.state !== "skipped" && entry.state !== "deleted")
+            materialized.add(entry.documentId);
+      record.handoff.open(
+        local.rows.filter((row) => materialized.has(row.id)).map((row) => row.id),
+      );
+    }
+    record.store.installReport(status);
+  }
+
+  /** The plan answered: the status replaces the prediction. */
+  private accept(record: ImportRecord, answer: ImportStatus) {
+    this.installFull(record, answer);
+    record.store.setLocal((local) => ({ ...local, rows: [] }));
   }
 
   // ---- Beginning
@@ -379,10 +308,8 @@ export class ImportCoordinator {
    */
   begin(destination: ImportDestination, read: SelectionRead): string | null {
     if (this.disposed) return null;
-    const importId = crypto.randomUUID();
-    this.startedAt.set(importId, Date.now());
-    const store = this.store(importId);
-    store.update((state) => ({
+    const record = this.recordOf(crypto.randomUUID());
+    record.store.update((state) => ({
       ...state,
       local: {
         phase: { kind: "reading", count: 0 },
@@ -395,12 +322,12 @@ export class ImportCoordinator {
         retrying: new Set(),
       },
     }));
-    void this.readAndPlan(store, this.runFor(store), destination, read);
-    return importId;
+    void this.readAndPlan(record, this.runFor(record), destination, read);
+    return record.importId;
   }
 
   private async readAndPlan(
-    store: ImportStore,
+    record: ImportRecord,
     run: Run,
     destination: ImportDestination,
     read: SelectionRead,
@@ -414,7 +341,7 @@ export class ImportCoordinator {
           const now = this.clock.now();
           if (retired(run) || now - lastPaint < READ_PAINT_MS) return;
           lastPaint = now;
-          store.setLocal((local) => ({ ...local, phase: { kind: "reading", count } }));
+          record.store.setLocal((local) => ({ ...local, phase: { kind: "reading", count } }));
         },
       });
     } catch {
@@ -422,17 +349,17 @@ export class ImportCoordinator {
     }
     if (retired(run)) return;
     if (!selection) {
-      this.endLocally(store.importId);
+      this.endLocally(record);
       return;
     }
     const roots = selection.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name }));
-    store.setLocal((local) => ({ ...local, roots, phase: { kind: "preparing" } }));
-    await this.prepareAndPlan(store, run, selection, destination);
+    record.store.setLocal((local) => ({ ...local, roots, phase: { kind: "preparing" } }));
+    await this.prepareAndPlan(record, run, selection, destination);
   }
 
   /** Draw the predicted rows for `source`. */
   private drawRows(
-    store: ImportStore,
+    record: ImportRecord,
     run: Run,
     source: RowSource,
     destination: ImportDestination,
@@ -440,27 +367,27 @@ export class ImportCoordinator {
   ) {
     const rows = clientRowsFor(source, destination, ids);
     if (retired(run)) return;
-    store.setLocal((local) => ({ ...local, rows }));
+    record.store.setLocal((local) => ({ ...local, rows }));
     this.track(
-      store.importId,
+      record,
       rows.map((row) => row.id),
     );
   }
 
   private async prepareAndPlan(
-    store: ImportStore,
+    record: ImportRecord,
     run: Run,
     selection: Selection,
     destination: ImportDestination,
   ) {
-    const ids = nodeIdsFor(this.projectId, store.importId);
+    const ids = nodeIdsFor(this.projectId, record.importId);
     const building = buildManifest(selection, {
-      importId: store.importId,
+      importId: record.importId,
       destinationUri: destination.uri,
       signal: run.controller.signal,
     });
     building.catch(() => {});
-    this.drawRows(store, run, sourceOfSelection(selection), destination, ids);
+    this.drawRows(record, run, sourceOfSelection(selection), destination, ids);
     let built: BuiltManifest;
     try {
       built = await building;
@@ -470,28 +397,25 @@ export class ImportCoordinator {
     // The last files read may finish after Stop: their result is not this import's anymore.
     if (retired(run)) return;
     // Files that could not be read, and folders only they implied, are not rows.
-    this.drawRows(store, run, sourceOfManifest(built.manifest), destination, ids);
+    this.drawRows(record, run, sourceOfManifest(built.manifest), destination, ids);
     if (retired(run)) return;
-    store.setLocal((local) => ({ ...local, manifest: built.manifest, held: built.held }));
-    await this.plan(store, built, run);
+    record.store.setLocal((local) => ({ ...local, manifest: built.manifest, held: built.held }));
+    await this.plan(record, built, run);
   }
 
   /** Send the plan, then the files. Also the retry for an import that did not start. */
-  private async plan(store: ImportStore, built: BuiltManifest, run: Run) {
-    store.setLocal((local) => ({
-      ...local,
-      phase: { kind: "preparing" },
-    }));
+  private async plan(record: ImportRecord, built: BuiltManifest, run: Run) {
+    record.store.setLocal((local) => ({ ...local, phase: { kind: "preparing" } }));
     const planning = this.api.plan(this.projectId, built.manifest);
-    this.plans.set(store.importId, planning);
+    record.plan = planning;
     try {
       const answer = await planning;
       // Stop waits for this answer and installs its own finished one.
       if (retired(run)) return;
-      this.accept(store, answer);
+      this.accept(record, answer);
     } catch (error) {
       if (retired(run)) return;
-      store.setLocal((local) => ({
+      record.store.setLocal((local) => ({
         ...local,
         phase: {
           kind: "not-started",
@@ -500,21 +424,24 @@ export class ImportCoordinator {
       }));
       return;
     } finally {
-      this.plans.delete(store.importId);
+      if (record.plan === planning) record.plan = null;
     }
-    this.send(store, run);
+    this.send(record, run);
   }
 
   /**
    * Continue import: adopt files already checked against the stored import, keyed
    * by its entry ids. Resumes the plan if the server is still planning, then reads
-   * the import fresh and sends what it marks wanted.
+   * the import fresh and sends what it marks wanted. False, with the import as it
+   * was, when the fresh read or the resume did not succeed.
    */
-  async continueImport(importId: string, held: ReadonlyMap<number, HeldFile>) {
-    const store = this.store(importId);
-    const summary = store.getSnapshot().report?.summary;
-    if (!summary) return;
-    const run = this.runFor(store);
+  async continueImport(importId: string, held: ReadonlyMap<number, HeldFile>): Promise<boolean> {
+    const record = this.recordOf(importId);
+    const { store } = record;
+    const before = store.getSnapshot();
+    const summary = before.report?.summary;
+    if (!summary) return false;
+    const run = this.runFor(record);
     store.update((state) => ({
       ...state,
       stop: "none",
@@ -523,46 +450,57 @@ export class ImportCoordinator {
         destination: state.local?.destination ?? destinationFromSummary(summary),
         roots: state.report?.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })) ?? [],
         rows: [],
-        held,
+        held: new Map(held),
         manifest: null,
         failures: new Map(),
         retrying: new Set(),
       },
     }));
-    if (summary.state === "planning" && !(await this.resumePlan(store, run))) return;
-    await this.sendWanted(store, run);
+    const ok =
+      (summary.state !== "planning" || (await this.resumePlan(record, run))) &&
+      (await this.sendWanted(record, run));
+    if (!ok && this.records.get(importId) === record)
+      store.update((state) => ({ ...state, stop: before.stop, local: before.local }));
+    return ok;
   }
 
   /** Ask the server to finish planning from what it stored. False when it could not. */
-  private async resumePlan(store: ImportStore, run: Run): Promise<boolean> {
-    store.setLocal((local) => ({ ...local, phase: { kind: "preparing" } }));
+  private async resumePlan(record: ImportRecord, run: Run): Promise<boolean> {
+    const epoch = this.epoch;
+    record.store.setLocal((local) => ({ ...local, phase: { kind: "preparing" } }));
     try {
-      const answer = await this.api.resume(this.projectId, store.importId, run.controller.signal);
-      if (retired(run)) return false;
-      this.merge(store, answer, (into) => into.installReport(answer));
+      const answer = await this.api.resume(this.projectId, record.importId, run.controller.signal);
+      if (retired(run) || !this.live(record, epoch)) return false;
+      this.installFull(record, answer);
       return true;
     } catch {
-      if (!retired(run)) store.setLocal((local) => ({ ...local, phase: { kind: "idle" } }));
       return false;
     }
   }
 
-  /** One fresh full read, then send what it marks wanted (or just `only`). */
-  private async sendWanted(store: ImportStore, run: Run, only?: ReadonlySet<number>) {
-    await this.read(store.importId, true);
-    if (retired(run)) return;
-    this.send(store, run, only);
+  /**
+   * One fresh full read, then send what it marks wanted (or just `only`). False
+   * when there is no fresh read to send from: nothing is sent.
+   */
+  private async sendWanted(
+    record: ImportRecord,
+    run: Run,
+    only?: ReadonlySet<number>,
+  ): Promise<boolean> {
+    if (!(await this.readFull(record))) return false;
+    this.send(record, run, only);
+    return true;
   }
 
   /** Try again after "Import didn't start". Same id, same manifest, same files. */
   tryAgain(importId: string) {
-    const store = this.store(importId);
-    const local = store.getSnapshot().local;
+    const record = this.recordOf(importId);
+    const local = record.store.getSnapshot().local;
     if (local?.phase.kind !== "not-started" || !local.manifest || !local.held) return;
     void this.plan(
-      store,
+      record,
       { manifest: local.manifest, held: new Map(local.held) },
-      this.runFor(store),
+      this.runFor(record),
     );
   }
 
@@ -573,11 +511,13 @@ export class ImportCoordinator {
    * (the create may not have committed yet), so the id stays open to the list poll.
    */
   async discard(importId: string) {
-    const phase = this.stores.get(importId)?.getSnapshot().local?.phase;
-    if (phase?.kind !== "not-started") return;
-    this.endRun(importId);
+    const record = this.records.get(importId);
+    const phase = record?.store.getSnapshot().local?.phase;
+    if (!record || phase?.kind !== "not-started") return;
+    const epoch = this.epoch;
+    record.endRun();
     if (phase.code !== null) {
-      this.endLocally(importId);
+      this.endLocally(record);
       return;
     }
     let closed = true;
@@ -586,8 +526,8 @@ export class ImportCoordinator {
     } catch {
       closed = false;
     }
-    if (this.disposed) return;
-    this.endLocally(importId);
+    if (!this.live(record, epoch)) return;
+    this.endLocally(record);
     if (!closed) this.retiredIds.delete(importId);
   }
 
@@ -597,8 +537,9 @@ export class ImportCoordinator {
    * Queue every file the server wants (or just `only`), looked up by entry id. A
    * wanted entry this tab holds no file for fails locally, never as an empty queue.
    */
-  private send(store: ImportStore, run: Run, only?: ReadonlySet<number>) {
+  private send(record: ImportRecord, run: Run, only?: ReadonlySet<number>) {
     if (retired(run)) return;
+    const { store } = record;
     const { local, report } = store.getSnapshot();
     if (!local?.held || !report) return;
     const files: HeldFile[] = [];
@@ -621,28 +562,31 @@ export class ImportCoordinator {
         return { ...current, failures, retrying };
       });
     run.queue.add(files);
-    if (run.queue.idle) this.sent(store);
+    if (run.queue.idle) this.sent(record);
     else store.setLocal((current) => ({ ...current, phase: { kind: "uploading" } }));
   }
 
   /** Every queued file has its answer: read what the server made of them. */
-  private sent(store: ImportStore) {
-    store.setLocal((current) => ({ ...current, phase: { kind: "idle" }, retrying: new Set() }));
-    void this.read(store.importId);
+  private sent(record: ImportRecord) {
+    record.store.setLocal((current) => ({
+      ...current,
+      phase: { kind: "idle" },
+      retrying: new Set(),
+    }));
+    void this.readOf(record, false);
   }
 
   /** The import's live run, or a new one once Stop or a refusal retired the last. */
-  private runFor(store: ImportStore): Run {
-    const current = this.runs.get(store.importId);
+  private runFor(record: ImportRecord): Run {
+    const current = record.run;
     if (current && !retired(current)) return current;
-    const controller = new AbortController();
     const run: Run = {
-      controller,
+      controller: new AbortController(),
       queue: new UploadQueue({
         send: (parts, signal) =>
           this.api.send(
             this.projectId,
-            store.importId,
+            record.importId,
             parts.map((part) => ({
               entryId: part.entryId,
               file: part.file,
@@ -650,33 +594,21 @@ export class ImportCoordinator {
             })),
             signal,
           ),
-        onOutcome: (outcomes) => this.record(store, outcomes),
-        onIdle: () => this.sent(store),
+        onOutcome: (outcomes) => this.answered(record, outcomes),
+        onIdle: () => this.sent(record),
       }),
     };
-    this.runs.set(store.importId, run);
+    record.run = run;
     return run;
   }
 
-  /** No more reading, planning or sending for this import from this tab. */
-  private endRun(importId: string) {
-    const run = this.runs.get(importId);
-    if (!run) return;
-    run.controller.abort();
-    run.queue.cancel();
-    this.runs.delete(importId);
-  }
-
-  private record(store: ImportStore, outcomes: readonly UploadOutcome[]) {
+  private answered(record: ImportRecord, outcomes: readonly UploadOutcome[]) {
+    const { store } = record;
     const answered = outcomes.flatMap((outcome) =>
       outcome.kind === "answered" ? [outcome.entry] : [],
     );
     if (answered.length) {
-      this.absorb(
-        store.importId,
-        { folders: [], entries: answered },
-        store.getSnapshot().report?.entries,
-      );
+      this.absorb(record, { folders: [], entries: answered }, store.getSnapshot().report?.entries);
       store.mergeEntries(answered);
     }
     store.setLocal((local) => {
@@ -695,9 +627,14 @@ export class ImportCoordinator {
     });
   }
 
-  /** Send these failed files again (or every failed file when `entryIds` is empty). */
+  /**
+   * Send these failed files again (or every failed file when `entryIds` is empty).
+   * The files go only after a successful fresh read; when it fails the rows keep
+   * their failure, with an error saying the retry could not start.
+   */
   async retry(importId: string, entryIds?: readonly number[]) {
-    const store = this.store(importId);
+    const record = this.recordOf(importId);
+    const { store } = record;
     const { local, report } = store.getSnapshot();
     if (!local?.held || !report) return;
     const wanted = new Set(
@@ -712,34 +649,56 @@ export class ImportCoordinator {
       for (const id of wanted) failures.delete(id);
       return { ...current, failures, retrying: new Set([...current.retrying, ...wanted]) };
     });
-    await this.sendWanted(store, this.runFor(store), wanted);
+    if (await this.sendWanted(record, this.runFor(record), wanted)) return;
+    if (this.records.get(importId) !== record) return;
+    store.setLocal((current) => {
+      const failures = new Map(current.failures);
+      const retrying = new Set(current.retrying);
+      for (const id of wanted) {
+        failures.set(id, "server_error");
+        retrying.delete(id);
+      }
+      return { ...current, failures, retrying };
+    });
   }
 
   /** Keep importing after "Couldn't stop": this tab sends what is left. */
   async resume(importId: string) {
-    const store = this.store(importId);
+    const record = this.recordOf(importId);
+    const { store } = record;
+    const before = store.getSnapshot();
     store.update((state) => ({ ...state, stop: "none" }));
     store.setLocal((local) => ({ ...local, phase: { kind: "idle" } }));
-    await this.sendWanted(store, this.runFor(store));
+    if (await this.sendWanted(record, this.runFor(record))) return;
+    if (this.records.get(importId) === record)
+      store.update((state) => ({
+        ...state,
+        stop: before.stop,
+        local: state.local && { ...state.local, phase: before.local?.phase ?? state.local.phase },
+      }));
   }
 
   // ---- Stopping
 
   /** Stop here: no more sends from this tab, then finish with what arrived. */
   async stop(importId: string) {
-    const store = this.store(importId);
-    this.endRun(importId);
-    const planning = this.plans.get(importId);
+    const record = this.recordOf(importId);
+    const { store } = record;
+    const epoch = this.epoch;
+    record.endRun();
+    const planning = record.plan;
     const { report } = store.getSnapshot();
     if (!report && !planning) {
       // Nothing was ever sent: the import ends here, its rows and its status row go.
-      this.endLocally(importId);
+      this.endLocally(record);
       return "nothing-sent" as const;
     }
     store.update((state) => ({ ...state, stop: "stopping" }));
     try {
       await planning?.catch(() => {});
-      this.accept(store, await this.api.finish(this.projectId, importId));
+      const answer = await this.api.finish(this.projectId, importId);
+      if (!this.live(record, epoch)) return "failed" as const;
+      this.accept(record, answer);
       store.update((state) => ({
         ...state,
         stop: "stopped",
@@ -753,13 +712,13 @@ export class ImportCoordinator {
   }
 
   /** The import ended before the server heard of it: its rows and its status row go. */
-  private endLocally(importId: string) {
-    this.stores.get(importId)?.update((state) => ({
+  private endLocally(record: ImportRecord) {
+    record.store.update((state) => ({
       ...state,
       stop: "stopped",
       local: state.local && { ...state.local, phase: { kind: "idle" }, rows: [], held: null },
     }));
-    this.retire(importId);
+    this.retire(record);
   }
 
   // ---- Reading statuses
@@ -767,85 +726,100 @@ export class ImportCoordinator {
   /**
    * Read an import's status: in full the first time or when forced (roots and lapsed
    * claims change without moving the version), else only what changed since the cursor.
+   * True when the read was applied.
    */
-  read(importId: string, full = false): Promise<void> {
-    const prior = this.reads.get(importId);
+  read(importId: string, full = false): Promise<boolean> {
+    const record = this.records.get(importId);
+    return record ? this.readOf(record, full) : Promise.resolve(false);
+  }
+
+  /** A command's read: whole and fresh, queued behind any read already running. */
+  private readFull(record: ImportRecord): Promise<boolean> {
+    return this.readOf(record, true);
+  }
+
+  private readOf(record: ImportRecord, full: boolean): Promise<boolean> {
+    const prior = record.read;
     if (prior && !full) return prior;
+    const epoch = this.epoch;
     const next = (async () => {
       await prior?.catch(() => {});
-      await this.readNow(importId, full);
+      return this.readNow(record, full, epoch);
     })();
-    this.reads.set(importId, next);
-    void next.then(
-      () => this.reads.get(importId) === next && this.reads.delete(importId),
-      () => this.reads.get(importId) === next && this.reads.delete(importId),
-    );
+    record.read = next;
+    void next.finally(() => {
+      if (record.read === next) record.read = null;
+    });
     return next;
   }
 
-  private async readNow(importId: string, full: boolean) {
-    const store = this.stores.get(importId);
-    if (!store || this.retiredIds.has(importId) || this.disposed) return;
+  private async readNow(record: ImportRecord, full: boolean, epoch: number): Promise<boolean> {
+    if (!this.live(record, epoch)) return false;
+    const { store } = record;
     const report = store.getSnapshot().report;
     try {
       if (fullyRead(report) && !full) {
-        const changes = await this.api.changes(this.projectId, importId, report.cursor);
-        if (this.retiredIds.has(importId)) return;
-        this.merge(store, changes, (into) => into.applyChanges(changes));
+        const changes = await this.api.changes(this.projectId, record.importId, report.cursor);
+        if (!this.live(record, epoch)) return false;
+        this.absorb(record, changes, store.getSnapshot().report?.entries);
+        store.applyChanges(changes);
       } else {
-        const status = await this.api.status(this.projectId, importId);
-        if (this.retiredIds.has(importId)) return;
-        this.merge(store, status, (into) => into.installReport(status));
+        const status = await this.api.status(this.projectId, record.importId);
+        if (!this.live(record, epoch)) return false;
+        this.installFull(record, status);
       }
+      return true;
     } catch (error) {
-      // A failed read leaves the last good one on screen; the next poll tries again.
-      if (error instanceof ImportRequestError && error.status === 404) this.gone(importId);
+      // A failed read leaves the last good one on screen; a background poll tries again
+      // and a command reports it.
+      if (!this.live(record, epoch)) return false;
+      if (error instanceof ImportRequestError && error.status === 404) {
+        record.missing = true;
+        this.maybeRetire(record);
+      }
+      return false;
     }
-  }
-
-  private merge(
-    store: ImportStore,
-    delta: { folders: ImportFolderStatus[]; entries: ImportEntryStatus[] },
-    apply: (store: ImportStore) => void,
-  ) {
-    this.absorb(store.importId, delta, store.getSnapshot().report?.entries);
-    apply(store);
-  }
-
-  /** The server has no such import: nothing more to show or read. */
-  private gone(importId: string) {
-    this.missing.add(importId);
-    this.maybeRetire(importId);
   }
 
   /** Read every open import (once in full, then by cut) and the ones that left the list. */
   async refreshOpen() {
+    const epoch = this.epoch;
     let summaries: Awaited<ReturnType<ImportApi["listOpen"]>>;
     try {
       summaries = await this.api.listOpen(this.projectId);
     } catch {
       return;
     }
-    if (this.disposed) return;
+    if (this.disposed || epoch !== this.epoch) return;
     const listed = new Set<string>();
     for (const summary of summaries) {
       if (this.retiredIds.has(summary.importId)) continue;
       listed.add(summary.importId);
-      const store = this.store(summary.importId);
-      store.seedSummary(summary);
-      const report = store.getSnapshot().report;
-      if (!fullyRead(report)) void this.read(summary.importId, true);
-      else if (compareVersions(summary.version, report.cursor) > 0)
-        void this.read(summary.importId);
+      const record = this.recordOf(summary.importId);
+      record.store.seedSummary(summary);
+      const report = record.store.getSnapshot().report;
+      if (!fullyRead(report)) void this.readOf(record, true);
+      else if (compareVersions(summary.version, report.cursor) > 0) void this.readOf(record, false);
     }
     // Another tab finished or stopped it: the list stops saying so, only the import can.
-    for (const [importId, store] of this.stores) {
-      const report = store.getSnapshot().report;
+    for (const [importId, record] of this.records) {
+      const report = record.store.getSnapshot().report;
       if (listed.has(importId) || !report || report.summary.state === "finished") continue;
-      if (this.missing.has(importId)) continue;
-      void this.read(importId, true);
+      if (record.missing) continue;
+      void this.readOf(record, true);
     }
     this.changed();
+  }
+
+  /**
+   * Begin this coordinator's life: follow the catalog for the handoff. Construction
+   * attaches nothing, so a render React discards leaves nothing behind. The returned
+   * function ends the life; starting again after it begins a fresh one.
+   */
+  start(): () => void {
+    this.disposed = false;
+    this.unsubscribeCatalog ??= this.catalog.subscribe(() => this.catalogChanged());
+    return () => this.dispose();
   }
 
   /**
@@ -854,86 +828,77 @@ export class ImportCoordinator {
    * (React re-runs effects in development) brings a fresh one back to life.
    */
   watchOpen(): () => void {
-    this.disposed = false;
-    this.attach();
+    const stop = this.start();
     const generation = ++this.watching;
     const tick = async () => {
       if (this.disposed || generation !== this.watching) return;
       await this.refreshOpen();
       if (this.disposed || generation !== this.watching) return;
-      const active = [...this.stores.values()].some((store) => {
-        const summary = store.getSnapshot().report?.summary;
+      const active = [...this.records.values()].some((record) => {
+        const summary = record.store.getSnapshot().report?.summary;
         return summary !== undefined && summary.state !== "finished" && summary.counts.arriving > 0;
       });
       this.openTimer = this.clock.setTimeout(tick, active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     };
     void tick();
-    return () => this.dispose();
+    return stop;
   }
 
   // ---- Retirement
 
   /**
-   * A store retires when its import is over (finished, or gone from the server), no
+   * An import retires when it is over (finished, or gone from the server), no
    * command is in flight and no bridge is open. The catalog never has to move first:
    * in an idle project the final landing's own publication may be the last commit.
+   * True when it retired.
    */
-  private maybeRetire(importId: string) {
-    const store = this.stores.get(importId);
-    if (!store) return;
-    const state = store.getSnapshot();
-    const over = state.report?.summary.state === "finished" || this.missing.has(importId);
-    if (!over || this.plans.has(importId) || state.stop === "stopping") return;
+  private maybeRetire(record: ImportRecord, publish = true): boolean {
+    if (this.records.get(record.importId) !== record) return false;
+    const state = record.store.getSnapshot();
+    const over = state.report?.summary.state === "finished" || record.missing;
+    if (!over || record.plan || state.stop === "stopping") return false;
     const phase = state.local?.phase.kind;
-    if (phase === "reading" || phase === "preparing" || phase === "uploading") return;
-    if (this.trackers.get(importId)?.timers.size) return;
-    this.retire(importId);
+    if (phase === "reading" || phase === "preparing" || phase === "uploading") return false;
+    if (record.handoff.bridging) return false;
+    this.retire(record, publish);
+    return true;
   }
 
-  /** End the import here for good: abort its run, release its files and forget it. */
-  private retire(importId: string) {
-    this.endRun(importId);
-    this.retiredIds.add(importId);
-    const tracker = this.trackers.get(importId);
-    for (const timer of tracker?.timers.values() ?? []) this.clock.clearTimeout(timer);
-    this.trackers.delete(importId);
-    this.tracked.delete(importId);
-    this.targets.delete(importId);
-    this.reads.delete(importId);
-    this.stores.get(importId)?.dispose();
-    this.stores.delete(importId);
-    this.changed(true);
+  /** End the import here for good: its record releases everything it owns. */
+  private retire(record: ImportRecord, publish = true) {
+    if (this.records.get(record.importId) === record) this.records.delete(record.importId);
+    this.retiredIds.add(record.importId);
+    record.dispose();
+    if (publish) this.changed(true);
   }
 
   /** Whether closing the page would lose work: a run is reading, hashing, planning or sending. */
   isWorking(): boolean {
-    for (const store of this.stores.values()) {
-      const kind = store.getSnapshot().local?.phase.kind;
+    for (const record of this.records.values()) {
+      const kind = record.store.getSnapshot().local?.phase.kind;
       if (kind === "reading" || kind === "preparing" || kind === "uploading") return true;
     }
     return false;
   }
 
+  /** End this lifetime: every answer still on its way is dropped, and every owned cache and timer reset. */
   dispose() {
     this.disposed = true;
+    this.epoch += 1;
+    this.watching += 1;
     this.unsubscribeCatalog?.();
     this.unsubscribeCatalog = undefined;
     if (this.openTimer) this.clock.clearTimeout(this.openTimer);
+    this.openTimer = undefined;
     if (this.treeTimer) this.clock.clearTimeout(this.treeTimer);
-    for (const tracker of this.trackers.values())
-      for (const timer of tracker.timers.values()) this.clock.clearTimeout(timer);
-    for (const importId of [...this.runs.keys()]) this.endRun(importId);
-    for (const store of this.stores.values()) store.dispose();
-    // A read still running answers into nothing: no store, no run, no request.
-    this.stores.clear();
-    this.trackers.clear();
-    this.tracked.clear();
+    this.treeTimer = undefined;
+    for (const record of this.records.values()) record.dispose();
+    this.records.clear();
+    this.retiredIds.clear();
+    this.indexed = new Map();
+    this.lastTreeUpdate = Number.NEGATIVE_INFINITY;
     this.snapshot = EMPTY_SNAPSHOT;
   }
-}
-
-function retired(run: Run): boolean {
-  return run.controller.signal.aborted;
 }
 
 function failureReason(cause: unknown): ImportFailureReason {

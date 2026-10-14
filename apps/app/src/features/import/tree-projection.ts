@@ -12,7 +12,12 @@
  *     planned parent, with the allocated name;
  *  5. accepted and materialized: an overlay only while a bridge is open;
  *  6. otherwise nothing.
- * An overlay whose parent is drawn nowhere is not drawn.
+ * An overlay whose parent is drawn nowhere is not drawn. An overlay sits in the area
+ * of its nearest catalog ancestor, found by id through overlay parents, so a folder
+ * the writer moved to another area takes its unlanded files along; only a node
+ * parented at an area root uses the planned scheme. An import none of whose nodes
+ * can land in the scheme's catalog is skipped, and a scheme nothing touches keeps
+ * its own view.
  */
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -26,6 +31,7 @@ import type {
 } from "@/client/query/context-catalog-projection";
 import { filenameForDisplay } from "./display-name";
 import { effectiveEntry, fullyRead, type ImportState } from "./import-state";
+import type { ImportTarget } from "./placements";
 
 /** What the projection reads of one import: its state and the coordinator's evidence. */
 export type ProjectedImport = {
@@ -35,6 +41,8 @@ export type ProjectedImport = {
   seen: ReadonlySet<string>;
   /** Node ids materialized on the server that this tab drew and the catalog may not show yet. */
   bridges: ReadonlySet<string>;
+  /** Where the import shows and where its own marks go; null before it knows. */
+  target: ImportTarget | null;
 };
 
 type Failure = NonNullable<NonNullable<CatalogFile["import"]>["failure"]>;
@@ -59,7 +67,33 @@ type Node = {
   bridged: boolean;
 };
 
-function nodesOf(item: ProjectedImport): Node[] {
+/** An import's nodes and what decides which catalogs they can land in; built once per projected item. */
+type Nodes = {
+  list: readonly Node[];
+  /** Every distinct parent id the nodes name. */
+  parentIds: ReadonlySet<string>;
+  /** The planned areas of the nodes parented at an area root. */
+  rootSchemes: ReadonlySet<ProjectContextTreeScheme>;
+};
+
+const nodeCache = new WeakMap<ProjectedImport, Nodes>();
+
+function nodesOf(item: ProjectedImport): Nodes {
+  let cached = nodeCache.get(item);
+  if (!cached) {
+    const list = buildNodes(item);
+    const parentIds = new Set<string>();
+    const rootSchemes = new Set<ProjectContextTreeScheme>();
+    for (const node of list)
+      if (node.parentId === null) rootSchemes.add(node.scheme);
+      else parentIds.add(node.parentId);
+    cached = { list, parentIds, rootSchemes };
+    nodeCache.set(item, cached);
+  }
+  return cached;
+}
+
+function buildNodes(item: ProjectedImport): Node[] {
   const { state, seen, bridges } = item;
   const report = fullyRead(state.report) ? state.report : null;
   if (!report) {
@@ -127,9 +161,11 @@ function nodesOf(item: ProjectedImport): Node[] {
 }
 
 /**
- * The rows that carry a run's own status instead of a file's: the destination while
- * the selection is read, and after a refusal the root row of each picked folder (the
- * destination for loose files), where Try again and Discard live.
+ * The rows that carry a run's own status instead of a file's, from each import's
+ * target: the destination while the selection is read, and after a refusal the root
+ * row of each picked folder, where Try again and Discard live. A run with no root
+ * row to carry it (loose files, an unreadable marker, a routed export) marks its
+ * destination or each affected area header.
  */
 function runMarks(
   imports: readonly ProjectedImport[],
@@ -138,19 +174,18 @@ function runMarks(
 ): Map<string, ImportRowInfo> {
   const marks = new Map<string, ImportRowInfo>();
   const add = (id: string, info: ImportRowInfo) => marks.set(id, { ...marks.get(id), ...info });
-  for (const { importId, state } of imports) {
+  for (const { importId, state, target } of imports) {
     const local = state.local;
-    if (!local) continue;
-    const here = local.destination.scheme === scheme;
-    const destinationId = local.destination.folderId ?? rootId;
-    if (local.phase.kind === "reading" && here) add(destinationId, { reading: true });
+    if (!local || !target) continue;
+    const anchors = target.anchors.filter((anchor) => anchor.scheme === scheme);
+    const anchorId = (folderId: string | null) => folderId ?? rootId;
+    if (local.phase.kind === "reading")
+      for (const anchor of anchors) add(anchorId(anchor.folderId), { reading: true });
     if (local.phase.kind !== "not-started") continue;
     const notStarted = { importId, code: local.phase.code };
-    for (const row of local.rows)
-      if (row.scheme === scheme && row.kind === "dir" && row.relPath === "")
-        add(row.id, { notStarted });
-    if (here && local.roots.some((root) => root.kind === "file"))
-      add(destinationId, { notStarted });
+    for (const id of target.rootIds) add(id, { notStarted });
+    if (target.rootIds.length === 0 || local.roots.some((root) => root.kind === "file"))
+      for (const anchor of anchors) add(anchorId(anchor.folderId), { notStarted });
   }
   return marks;
 }
@@ -164,8 +199,13 @@ export function withImportRows(
   const held = (id: string) =>
     catalog.findDocument(id) !== null || catalog.normalized.entries.get(id)?.kind === "folder";
   const nodes = new Map<string, Node & { importId: string }>();
-  for (const item of imports)
-    for (const node of nodesOf(item)) nodes.set(node.id, { ...node, importId: item.importId });
+  for (const item of imports) {
+    const known = nodesOf(item);
+    // Skip an import none of whose nodes can land here, without touching its nodes.
+    if (!known.rootSchemes.has(scheme) && ![...known.parentIds].some((parentId) => held(parentId)))
+      continue;
+    for (const node of known.list) nodes.set(node.id, { ...node, importId: item.importId });
+  }
 
   const drawn = new Map<string, boolean>();
   const parentPresent = (parentId: string | null): boolean =>
@@ -177,7 +217,7 @@ export function withImportRows(
     const node = nodes.get(id);
     const wanted =
       node !== undefined &&
-      node.scheme === scheme &&
+      (node.parentId !== null || node.scheme === scheme) &&
       !held(id) &&
       !node.seen &&
       (node.accepted ? (node.materialized ? node.bridged : true) : true) &&
