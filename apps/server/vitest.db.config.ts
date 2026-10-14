@@ -113,6 +113,7 @@ const expectedSuites = [
   "apps/server/server/domains/runtime/shown-links.db.test.ts",
   "apps/server/server/domains/runtime/handoff/brief-service.db.test.ts",
   "apps/server/server/domains/runtime/loop/control-protocol.db.test.ts",
+  "apps/server/server/domains/runtime/loop/stop-protocol.db.test.ts",
   "apps/server/server/domains/runtime/loop/work-context-notices.db.test.ts",
   "apps/server/server/domains/runtime/spawn/report-publication.db.test.ts",
   "apps/server/server/domains/runtime/adapters/drizzle-loop-ports.db.test.ts",

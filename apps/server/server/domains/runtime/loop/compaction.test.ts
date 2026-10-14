@@ -464,18 +464,22 @@ describe("projectActiveHistoryWithBakes", () => {
     ).rejects.toThrow();
   });
 
-  it("throws when a complete compaction's pinned request is missing", async () => {
-    const request = turn("request", 1, "user");
+  it("projects a compaction whose pin and cut were handed back", async () => {
+    // The compaction cut at, and pinned, a writer message that a hand-back took out of the chat.
+    const earlier = turn("earlier", 1, "user");
     const answer = turn("answer", 2, "assistant");
-    const compaction = compactionTurn("c", 3, request.id, "deleted-request");
-    await expect(
-      projectActiveHistoryWithBakes(
-        [request, answer, compaction],
-        [compactionBlock("summary", compaction.id)],
-        "c12",
-        noPromptBakes,
-      ),
-    ).rejects.toThrow(/missing pinned request deleted-request/);
+    const compaction = compactionTurn("c", 4, "gone", "gone", "complete", { prevTurnId: "gone" });
+    const after = turn("after", 5, "user");
+    const projected = await projectActiveHistoryWithBakes(
+      [earlier, answer, compaction, after],
+      [compactionBlock("summary", compaction.id)],
+      "c12",
+      noPromptBakes,
+    );
+    expect(projected.turns.map((projectedTurn) => projectedTurn.id)).toEqual([
+      "c:summary",
+      "after",
+    ]);
   });
 });
 

@@ -90,12 +90,17 @@ export async function buildThreadSnapshot(
     const runningTurnId = await statusReader.readRunningTurnId(threadId);
     const headSeq = await hub.headSeq(threadId);
 
-    const turns = orderTurnsByPosition(await repos.turns.listByThread(threadId));
+    // The graph keeps every turn (the leaf, `prevTurnId`); the snapshot shows the conversation.
+    const graph = orderTurnsByPosition(await repos.turns.listByThread(threadId));
+    const handedBack = await repos.turns.listHandedBackIds(threadId);
+    const turns = graph.filter((turn) => !handedBack.has(turn.id));
     const deliveries = await repos.turns.listMessageDeliveries(threadId);
     // Same transaction as the turns, so an execution here that is not open has ended.
     const openExecutionId = await statusReader.readOpenExecutionId(threadId);
     const blocksByTurn = groupBy(
-      (await repos.blocks.listByThread(threadId)).map(toClientSafeBlock),
+      (await repos.blocks.listByThread(threadId))
+        .filter((block) => !handedBack.has(block.turnId))
+        .map(toClientSafeBlock),
       (block) => block.turnId,
     );
     const responsesByTurn = groupBy(
@@ -145,19 +150,24 @@ export async function buildThreadSnapshot(
         resumeAfterSeq,
         openExecutionId,
       },
-      actionRequired: snapshotActionRequired(thread.activeLeafTurnId, threadTurns),
+      actionRequired: snapshotActionRequired(thread.activeLeafTurnId, graph, handedBack),
       nextSeq,
     };
   });
 }
 
-function snapshotActionRequired(activeLeafTurnId: TurnId | null, turns: Turn[]): boolean {
+/** Walks the graph from the leaf, which may be a handed-back message, and counts only conversation turns. */
+function snapshotActionRequired(
+  activeLeafTurnId: TurnId | null,
+  turns: Turn[],
+  handedBack: ReadonlySet<string>,
+): boolean {
   let turn = turns.find((candidate) => candidate.id === activeLeafTurnId);
   const visited = new Set<string>();
   const activeLineage: Array<Pick<Turn, "role" | "status">> = [];
   while (turn && !visited.has(turn.id)) {
     visited.add(turn.id);
-    activeLineage.push({ role: turn.role, status: turn.status });
+    if (!handedBack.has(turn.id)) activeLineage.push({ role: turn.role, status: turn.status });
     turn = turns.find((candidate) => candidate.id === turn?.prevTurnId);
   }
   return isThreadActionRequired({ activeLineage });

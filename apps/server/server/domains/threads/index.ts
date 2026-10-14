@@ -59,6 +59,8 @@ export {
 } from "./domain/thread-activity.js";
 export { threadAvailabilityCode } from "./domain/thread-availability.js";
 export {
+  listConversationBlocks,
+  listConversationTurns,
   loadThreadConversationContext,
   type ThreadConversationContext,
   type ThreadConversationContextDeps,
