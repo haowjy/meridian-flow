@@ -50,6 +50,7 @@ import {
   projectCatalogView,
 } from "@/client/query/useContextCatalog";
 import { isEditorScheme, type ServerContextTab, useContextTabsActions } from "@/client/stores";
+import { armEditorFocus, retireEditorFocus } from "@/features/editor/focus-on-open";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { contextOwnerOf, contextTabFromFile, serverTabFromFile } from "./context-tab-from-file";
@@ -205,6 +206,8 @@ export type OpenProjectDocumentRequest = {
    * the open finishes without leaving. `cancelled` means a newer intent won.
    */
   beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+  /** A document the writer just made: its editor takes the caret once live. */
+  focus?: true;
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
@@ -285,7 +288,14 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId, disposition = "current", beside, signal }: OpenProjectDocumentRequest,
+    {
+      documentId,
+      workId,
+      disposition = "current",
+      beside,
+      focus,
+      signal,
+    }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -330,6 +340,7 @@ export class ProjectDocumentNavigationAdapter {
             rootThreadId: resolved.rootThreadId,
             disposition,
             beside,
+            focus,
             isCurrent,
             canCommit,
           });
@@ -405,6 +416,7 @@ export class ProjectDocumentNavigationAdapter {
         rootThreadId,
         disposition,
         beside,
+        focus,
         isCurrent,
         canCommit,
       });
@@ -426,6 +438,7 @@ export class ProjectDocumentNavigationAdapter {
     rootThreadId?: string;
     disposition: "current" | "background";
     beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+    focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
@@ -454,7 +467,9 @@ export class ProjectDocumentNavigationAdapter {
         besideTab = null;
       }
       if (besideTab) {
+        if (input.focus) armEditorFocus(input.file.documentId);
         const placed = input.beside(besideTab);
+        if (placed !== "opened") retireEditorFocus();
         this.current = null;
         return placed === "opened" ? "applied" : "cancelled";
       }
@@ -471,7 +486,12 @@ export class ProjectDocumentNavigationAdapter {
           ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
           documentId: input.file.documentId,
         },
-        { tab, isCurrent: input.isCurrent, canCommit: input.canCommit },
+        {
+          tab,
+          ...(input.focus ? { focus: true as const } : {}),
+          isCurrent: input.isCurrent,
+          canCommit: input.canCommit,
+        },
       );
       return settlement.kind === "failed"
         ? "failed"
