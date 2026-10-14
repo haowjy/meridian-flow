@@ -1,12 +1,11 @@
 /** Strict selection validation and content-based resume identity. */
 import { createHash } from "node:crypto";
-import type { ImportManifest, ImportRefusalCode } from "@meridian/contracts";
+import { IMPORT_ADMISSION, type ImportManifest, type ImportRefusalCode } from "@meridian/contracts";
 import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import { filetypeForKnownPath } from "@meridian/contracts/protocol";
 import { z } from "zod";
 
 export const IMPORT_LIMITS = {
-  entries: 10_000,
   /** Entries plus every folder the plan synthesizes for their ancestors. */
   plannedNodes: 20_000,
   pathDepth: 64,
@@ -14,12 +13,8 @@ export const IMPORT_LIMITS = {
   manifestBytes: 32 * 1024 * 1024,
   /** Multipart framing allowance on top of the file bytes a request may carry. */
   multipartOverheadBytes: 1024 * 1024,
-  partsPerRequest: 200,
   landingConcurrency: 4,
   receivesPerImport: 4,
-  fileBytes: 50 * 1024 * 1024,
-  totalBytes: 2 * 1024 ** 3,
-  requestBytes: 8 * 1024 * 1024,
   chunkSize: 200,
   leaseMs: 120_000,
   /** How long after a lease a hung put may still land its object before cleanup retires. */
@@ -75,15 +70,9 @@ const root = z
     rootId: z.number().int().nonnegative(),
     kind: z.enum(["folder", "file"]),
     name,
-    appJson: z
-      .string()
-      .max(1024 * 1024)
-      .optional(),
+    appJson: z.string().max(IMPORT_ADMISSION.sideFileBytes).optional(),
     appJsonUnread: z.enum(["unavailable", "unreadable", "too_large"]).optional(),
-    meridianExport: z
-      .string()
-      .max(1024 * 1024)
-      .optional(),
+    meridianExport: z.string().max(IMPORT_ADMISSION.sideFileBytes).optional(),
   })
   .strict();
 const schema = z
@@ -93,10 +82,10 @@ const schema = z
       .object({ folderUri: z.string().regex(/^(kb|manuscript|unfiled):\/\//) })
       .strict(),
     sort: z.boolean(),
-    roots: z.array(root).min(1).max(IMPORT_LIMITS.entries),
+    roots: z.array(root).min(1).max(IMPORT_ADMISSION.files),
     folders: z
       .array(z.object({ rootId: z.number().int().nonnegative(), path }).strict())
-      .max(IMPORT_LIMITS.entries),
+      .max(IMPORT_ADMISSION.files),
     unreadable: z
       .array(
         z
@@ -115,7 +104,7 @@ const schema = z
           })
           .strict(),
       )
-      .max(IMPORT_LIMITS.entries)
+      .max(IMPORT_ADMISSION.files)
       .optional(),
     entries: z
       .array(
@@ -124,18 +113,18 @@ const schema = z
             entryId: z.number().int().nonnegative(),
             rootId: z.number().int().nonnegative(),
             path,
-            size: z.number().int().nonnegative().max(IMPORT_LIMITS.totalBytes),
+            size: z.number().int().nonnegative().max(IMPORT_ADMISSION.totalBytes),
             sha256: z.string().regex(/^[a-f0-9]{64}$/),
             sniff: z
               .string()
               .max(684)
               .regex(/^[A-Za-z0-9+/]*={0,2}$/)
               .optional(),
-            frontmatter: z.string().max(IMPORT_LIMITS.fileBytes).optional(),
+            frontmatter: z.string().max(IMPORT_ADMISSION.fileBytes).optional(),
           })
           .strict(),
       )
-      .max(IMPORT_LIMITS.entries),
+      .max(IMPORT_ADMISSION.files),
   })
   .strict();
 export function validateManifest(raw: unknown): ImportManifest {
@@ -149,8 +138,8 @@ export function validateManifest(raw: unknown): ImportManifest {
     refuse("manifest_invalid");
   }
   const value = parsed.data;
-  if (value.entries.length + (value.unreadable?.length ?? 0) > IMPORT_LIMITS.entries)
-    refuse("too_many_files", { limit: IMPORT_LIMITS.entries });
+  if (value.entries.length + (value.unreadable?.length ?? 0) > IMPORT_ADMISSION.files)
+    refuse("too_many_files", { limit: IMPORT_ADMISSION.files });
   const roots = new Map(value.roots.map((root) => [root.rootId, root]));
   if (roots.size !== value.roots.length) refuse("duplicate_root_id");
   if (new Set(value.entries.map((entry) => entry.entryId)).size !== value.entries.length)
@@ -188,7 +177,8 @@ export function validateManifest(raw: unknown): ImportManifest {
       refuse("sniff_required");
     if (
       entry.sniff !== undefined &&
-      Buffer.from(entry.sniff, "base64").length !== Math.min(512, entry.size)
+      Buffer.from(entry.sniff, "base64").length !==
+        Math.min(IMPORT_ADMISSION.sniffBytes, entry.size)
     )
       refuse("sniff_length");
   }
@@ -207,8 +197,8 @@ export function validateManifest(raw: unknown): ImportManifest {
     )
       refuse("invalid_file_root");
   }
-  if (value.entries.reduce((sum, entry) => sum + entry.size, 0) > IMPORT_LIMITS.totalBytes)
-    refuse("import_too_large", { limit: IMPORT_LIMITS.totalBytes });
+  if (value.entries.reduce((sum, entry) => sum + entry.size, 0) > IMPORT_ADMISSION.totalBytes)
+    refuse("import_too_large", { limit: IMPORT_ADMISSION.totalBytes });
   return value;
 }
 /** Roots, entries, unreadable paths and every distinct folder their paths imply. */

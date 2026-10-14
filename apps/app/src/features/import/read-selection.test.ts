@@ -1,7 +1,7 @@
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { readDropped } from "./read-dropped";
 import { readPicked } from "./read-picked";
-import { SIDE_FILE_MAX_CHARS } from "./selection";
 import { fakeDirectory, fakeEntry, pickedFile } from "./test-files";
 
 describe("a picked folder", () => {
@@ -49,7 +49,10 @@ describe("a folder's Obsidian settings", () => {
     expect(unreadable.roots[0]).toMatchObject({ appJsonUnread: "unreadable" });
     expect(unreadable.roots[0].appJson).toBeUndefined();
 
-    const huge = pickedFile("vault/.obsidian/app.json", " ".repeat(SIDE_FILE_MAX_CHARS + 1));
+    const huge = pickedFile(
+      "vault/.obsidian/app.json",
+      " ".repeat(IMPORT_ADMISSION.sideFileBytes + 1),
+    );
     expect((await readPicked([notes, huge])).roots[0].appJsonUnread).toBe("too_large");
   });
 

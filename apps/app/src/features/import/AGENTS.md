@@ -5,7 +5,9 @@ the tree. Picking is the confirmation: "Import…" menus (area header, folder ro
 phone `+`) offer Folder… and Files…, each opens the OS picker, and the import
 starts with no dialog; an external drop starts at once on the highlighted
 target. A selection that cannot start (empty, over a limit) is the only thing
-that stops to say why (`selection-limits.ts`). There is no report page, route or
+that stops to say why (`selection-limits.ts`). What an import admits (limits, omitted vs skipped paths)
+and the export marker parser come from `@meridian/contracts`; `limits.ts` holds
+only browser scheduling. There is no report page, route or
 status row; a clean finish leaves nothing and is dismissed for the writer once
 the catalog draws every row the tab held. A failed file keeps its row warning and
 its in-document notice (`ImportDocumentNotice.tsx`) with Retry. No surface yet

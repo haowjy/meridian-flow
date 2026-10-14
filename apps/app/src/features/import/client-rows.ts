@@ -4,10 +4,9 @@
  * file row for every file, each under its source name and where it will land.
  */
 
+import { importPathDisposition, parseExportMarker } from "@meridian/contracts";
 import { type ImportDestination, type ImportScheme, joinCatalogPath } from "./destination";
 import { filenameForDisplay } from "./display-name";
-import { type ExportMarker, readExportMarker } from "./export-marker";
-import { isSkippedPath } from "./path-rules";
 import type { Selection } from "./selection";
 
 export type ClientRow = {
@@ -36,14 +35,17 @@ export function clientRowsFor(
   entryIdOf: (rootId: number, path: string) => number | undefined,
 ): ClientRow[] {
   const rows: ClientRow[] = [];
-  const marker: ExportMarker | null =
+  const parsed =
     selection.roots.length === 1 && selection.roots[0].kind === "folder"
-      ? readExportMarker(selection.roots[0].meridianExport)
-      : null;
+      ? parseExportMarker(selection.roots[0].meridianExport)
+      : ({ status: "absent" } as const);
+  // The server refuses an invalid marker; draw nothing rather than an ordinary folder.
+  if (parsed.status === "invalid") return [];
+  const marker = parsed.status === "valid" ? parsed : null;
   for (const root of selection.roots) {
     if (root.kind === "file") {
       const file = root.files[0];
-      if (!file || isSkippedPath(file.path || root.name)) continue;
+      if (!file || importPathDisposition(file.path || root.name) !== null) continue;
       rows.push({
         key: `${root.rootId}:`,
         kind: "file",
@@ -85,8 +87,10 @@ export function clientRowsFor(
         rootId: root.rootId,
         relPath: "",
       });
-    const folders = new Set(root.folders.filter((folder) => !isSkippedPath(folder)));
-    const drawn = root.files.filter((file) => !isSkippedPath(file.path));
+    const folders = new Set(
+      root.folders.filter((folder) => importPathDisposition(folder) === null),
+    );
+    const drawn = root.files.filter((file) => importPathDisposition(file.path) === null);
     for (const file of drawn) {
       const parts = file.path.split("/");
       for (let depth = 1; depth < parts.length; depth += 1)

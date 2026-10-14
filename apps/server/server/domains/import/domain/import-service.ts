@@ -6,6 +6,7 @@ import type {
   ImportReportChanges,
   ImportSummary,
 } from "@meridian/contracts";
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import type { ObjectStorePort } from "../../storage/index.js";
@@ -375,13 +376,13 @@ export function createImportService(deps: {
   }
   function checkParts(parts: readonly { entryId: number; bytes: Uint8Array }[]) {
     if (!parts.length) throw new ImportError(400, "invalid_import_file_parts");
-    if (parts.length > IMPORT_LIMITS.partsPerRequest)
-      throw new ImportError(413, "too_many_parts", { limit: IMPORT_LIMITS.partsPerRequest });
+    if (parts.length > IMPORT_ADMISSION.partsPerRequest)
+      throw new ImportError(413, "too_many_parts", { limit: IMPORT_ADMISSION.partsPerRequest });
     if (new Set(parts.map((part) => part.entryId)).size !== parts.length)
       throw new ImportError(400, "duplicate_import_entry_id");
     const total = parts.reduce((sum, part) => sum + part.bytes.length, 0);
     // A file larger than a batch travels alone, up to the per-file limit.
-    const limit = parts.length > 1 ? IMPORT_LIMITS.requestBytes : IMPORT_LIMITS.fileBytes;
+    const limit = parts.length > 1 ? IMPORT_ADMISSION.requestBytes : IMPORT_ADMISSION.fileBytes;
     if (total > limit) throw new ImportError(413, "import_request_too_large", { limit });
   }
   const api = {
@@ -503,7 +504,9 @@ export function createImportService(deps: {
         const source = record.manifest.entries.find((source) => source.entryId === entry.entryId);
         if (
           source?.sniff !== undefined &&
-          !Buffer.from(source.sniff, "base64").equals(Buffer.from(bytes.subarray(0, 512)))
+          !Buffer.from(source.sniff, "base64").equals(
+            Buffer.from(bytes.subarray(0, IMPORT_ADMISSION.sniffBytes)),
+          )
         )
           throw new LandingFailure(
             "changed_since_chosen",

@@ -1,5 +1,6 @@
 /** Selection from a file input: a folder pick (`webkitdirectory`) or loose files (`multiple`). */
-import { isImportableName, isImportablePath, isOmittedPath, normalizeName } from "./path-rules";
+import { EXPORT_MARKER_FILENAME, importPathDisposition } from "@meridian/contracts";
+import { isImportableName, isImportablePath, normalizeName, normalizeNamePath } from "./path-rules";
 import {
   browserHidesDotEntries,
   holdSettings,
@@ -12,7 +13,6 @@ import {
 } from "./selection";
 
 const APP_JSON = ".obsidian/app.json";
-const EXPORT_MARKER = "meridian-export.json";
 
 /** A picked folder's files all start with its name; loose files carry no folder. */
 export async function readPicked(
@@ -41,8 +41,9 @@ async function readFolderPick(
   for (const file of files) {
     const path = file.webkitRelativePath.slice(name.length + 1);
     if (path === APP_JSON) holdSettings(root, await readSideFile(file));
-    else if (path === EXPORT_MARKER) root.meridianExport = textOf(await readSideFile(file));
-    if (isOmittedPath(path)) continue;
+    else if (path === EXPORT_MARKER_FILENAME)
+      root.meridianExport = textOf(await readSideFile(file));
+    if (importPathDisposition(path) === "omit") continue;
     if (!isImportablePath(path))
       root.unreadable.push({ path: normalizeNamePath(path), reason: "unreadable" });
     else root.files.push({ path: normalizeNamePath(path), file });
@@ -54,7 +55,7 @@ async function readFolderPick(
 async function readLooseFiles(files: readonly File[]): Promise<Selection> {
   const selection: Selection = { roots: [], leftOut: [] };
   for (const file of files) {
-    if (isOmittedPath(file.name)) continue;
+    if (importPathDisposition(file.name) === "omit") continue;
     if (!isImportableName(file.name)) {
       selection.leftOut.push({ name: file.name, kind: "file" });
       continue;
@@ -69,8 +70,4 @@ async function readLooseFiles(files: readonly File[]): Promise<Selection> {
     });
   }
   return selection;
-}
-
-export function normalizeNamePath(path: string): string {
-  return path.split("/").map(normalizeName).join("/");
 }

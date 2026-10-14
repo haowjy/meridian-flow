@@ -1,4 +1,6 @@
 /** Import landing: receives, leases, Finish fencing, object cleanup and per-file failures. Barriers sit at public port boundaries. */
+
+import { IMPORT_ADMISSION } from "@meridian/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ObjectStorePort } from "../storage/index.js";
 import { barrier, importDbEnabled, loose, useImportDb } from "./__test-support__/import-db.js";
@@ -40,7 +42,7 @@ describe.skipIf(!importDbEnabled)("import landing (postgres)", () => {
     expect((await service.report(plan.importId, projectId)).counts.landed).toBe(0);
     await expect(
       service.receive(plan.importId, projectId, async () =>
-        Array.from({ length: IMPORT_LIMITS.partsPerRequest + 1 }, (_, entryId) => ({
+        Array.from({ length: IMPORT_ADMISSION.partsPerRequest + 1 }, (_, entryId) => ({
           entryId,
           bytes: new Uint8Array(),
         })),

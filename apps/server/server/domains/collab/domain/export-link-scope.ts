@@ -1,6 +1,7 @@
 /** Export-only spelling: identities, settlements and addresses use the frozen inventory. */
 import { posix } from "node:path";
 import {
+  DEFAULT_EXPORT_AREA_NAMES,
   parseContextUri,
   parseLinkRef,
   resolveDocumentHref,
@@ -119,9 +120,7 @@ export class ExportLinkScope implements DocumentLinkScope {
       matched = common;
     }
     if (!prefix) {
-      const area = { manuscript: "Manuscript", kb: "Knowledge Base", unfiled: "Unfiled" }[
-        parsed.value.scheme as "kb"
-      ];
+      const area = DEFAULT_EXPORT_AREA_NAMES[parsed.value.scheme as "kb"];
       if (!area) return undefined;
       prefix = [area];
       matched = 0;

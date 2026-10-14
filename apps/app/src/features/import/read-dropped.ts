@@ -1,6 +1,7 @@
 /** Selection from a drop: walks what `captureDrop` took inside the drop event. */
+import { EXPORT_MARKER_FILENAME, importPathDisposition } from "@meridian/contracts";
 import type { DroppedItems } from "@/lib/dropped-items";
-import { isImportableName, isOmittedPath, normalizeName } from "./path-rules";
+import { isImportableName, normalizeName, normalizeNamePath } from "./path-rules";
 import {
   browserHidesDotEntries,
   holdSettings,
@@ -40,7 +41,10 @@ export async function readDropped(
     if (options.signal?.aborted) break;
     const name = source.name;
     const kind = source instanceof File || source.isFile ? "file" : "folder";
-    if (isOmittedPath(name) || (kind === "folder" && (name === ".git" || name === ".obsidian")))
+    if (
+      importPathDisposition(name) === "omit" ||
+      (kind === "folder" && (name === ".git" || name === ".obsidian"))
+    )
       continue;
     if (!isImportableName(name)) {
       selection.leftOut.push({ name, kind });
@@ -87,7 +91,7 @@ export async function readDropped(
 }
 
 async function readSettings(directory: FileSystemDirectoryEntry, root: SelectedRoot) {
-  const marker = await childFile(directory, "meridian-export.json");
+  const marker = await childFile(directory, EXPORT_MARKER_FILENAME);
   if (marker) root.meridianExport = textOf(await readSideFile(marker));
   const settings = await childDirectory(directory, ".obsidian");
   const appJson = settings ? await childFile(settings, "app.json") : null;
@@ -100,10 +104,10 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
   const files: FileSystemFileEntry[] = [];
   for (const child of children) {
     const childPath = path ? `${path}/${child.name}` : child.name;
-    if (isOmittedPath(childPath) || child.name === ".git") continue;
+    if (importPathDisposition(childPath) === "omit" || child.name === ".git") continue;
     if (!isImportableName(child.name)) {
       walk.root.unreadable.push({
-        path: normalizePath(childPath),
+        path: normalizeNamePath(childPath),
         reason: child.isDirectory ? "folder_unreadable" : "unreadable",
       });
       continue;
@@ -116,7 +120,9 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
     const batch = files.slice(start, start + FILE_BATCH);
     const opened = await Promise.allSettled(batch.map(entryFile));
     opened.forEach((result, index) => {
-      const entryPath = normalizePath(path ? `${path}/${batch[index].name}` : batch[index].name);
+      const entryPath = normalizeNamePath(
+        path ? `${path}/${batch[index].name}` : batch[index].name,
+      );
       if (result.status === "fulfilled") {
         walk.root.files.push({ path: entryPath, file: result.value });
         walk.seen.count += 1;
@@ -128,7 +134,7 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
   }
   for (const child of subdirectories) {
     if (walk.signal?.aborted) return;
-    const childPath = normalizePath(path ? `${path}/${child.name}` : child.name);
+    const childPath = normalizeNamePath(path ? `${path}/${child.name}` : child.name);
     try {
       walk.root.folders.push(childPath);
       await walkDirectory(child, path ? `${path}/${child.name}` : child.name, walk);
@@ -142,10 +148,6 @@ async function walkDirectory(directory: FileSystemDirectoryEntry, path: string, 
       walk.root.unreadable.push({ path: childPath, reason: "folder_unreadable" });
     }
   }
-}
-
-function normalizePath(path: string): string {
-  return path.split("/").map(normalizeName).join("/");
 }
 
 /** `readEntries` hands out about 100 at a time; call it again until it returns an empty batch. */

@@ -1,8 +1,8 @@
 /** Pure selection contracts: identity, naming, validation and classification without storage. */
 import { randomUUID } from "node:crypto";
-import type { ImportManifest } from "@meridian/contracts";
+import { IMPORT_ADMISSION, type ImportManifest, importPathDisposition } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
-import { classify, skipPath } from "./classify.js";
+import { classify } from "./classify.js";
 import { manifestFingerprint, validateManifest } from "./manifest.js";
 import { allocateName, codePointOrder, planSelection } from "./plan.js";
 
@@ -157,7 +157,7 @@ describe("import planning", () => {
       name: "Book.zip",
       extension: "",
     });
-    expect(skipPath(".trash/Old.md")).toBe("trash");
+    expect(importPathDisposition(".trash/Old.md")).toBe("trash");
   });
   it.each([
     "../x.md",
@@ -175,7 +175,7 @@ describe("import planning", () => {
     value.entries[1].entryId = value.entries[0].entryId;
     expect(() => validateManifest(value)).toThrow("duplicate_entry_id");
     const tooLarge = manifest();
-    tooLarge.entries[0].size = 50 * 1024 * 1024 + 1;
+    tooLarge.entries[0].size = IMPORT_ADMISSION.fileBytes + 1;
     expect(() => validateManifest(tooLarge)).toThrow();
     const loose = manifest();
     loose.roots[0].kind = "file";

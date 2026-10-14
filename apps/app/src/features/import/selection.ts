@@ -1,5 +1,9 @@
 /** What the writer chose, as the browser could read it: roots, files, folders and what was left out. */
-import type { ImportSettingsUnread, ImportUnreadableReason } from "@meridian/contracts";
+import {
+  IMPORT_ADMISSION,
+  type ImportSettingsUnread,
+  type ImportUnreadableReason,
+} from "@meridian/contracts";
 
 export type SelectedFile = { path: string; file: File };
 
@@ -32,9 +36,6 @@ export type Selection = {
 
 export const EMPTY_SELECTION: Selection = { roots: [], leftOut: [] };
 
-/** Upper bound on a JSON side file the manifest carries. */
-export const SIDE_FILE_MAX_CHARS = 1024 * 1024;
-
 export function unreadableReason(error: unknown): ImportUnreadableReason {
   const name = error instanceof DOMException || error instanceof Error ? error.name : "";
   if (name === "NotFoundError") return "not_found";
@@ -46,10 +47,10 @@ export type SideFile = { text: string } | { unread: "unreadable" | "too_large" }
 
 /** Read a small JSON side file, or say why it could not be. */
 export async function readSideFile(file: File): Promise<SideFile> {
-  if (file.size > SIDE_FILE_MAX_CHARS) return { unread: "too_large" };
+  if (file.size > IMPORT_ADMISSION.sideFileBytes) return { unread: "too_large" };
   try {
     const text = await file.text();
-    return text.length > SIDE_FILE_MAX_CHARS ? { unread: "too_large" } : { text };
+    return text.length > IMPORT_ADMISSION.sideFileBytes ? { unread: "too_large" } : { text };
   } catch {
     return { unread: "unreadable" };
   }

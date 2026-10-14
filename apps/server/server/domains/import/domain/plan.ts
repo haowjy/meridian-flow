@@ -1,15 +1,17 @@
 /** Pure identity graph, folder-note relocation and exact-case name allocation. */
-import type {
-  ImportEntryReason,
-  ImportFinding,
-  ImportManifest,
-  ImportUnreadableReason,
+import {
+  EXPORT_WORKS_FOLDER,
+  IMPORT_ADMISSION,
+  type ImportEntryReason,
+  type ImportFinding,
+  type ImportManifest,
+  type ImportUnreadableReason,
+  importPathDisposition,
 } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
-import { classify, skipPath } from "./classify.js";
+import { classify } from "./classify.js";
 import { type ImportArea, readExportMarker } from "./export-marker.js";
-import { IMPORT_LIMITS } from "./manifest.js";
 
 export interface PlannedNode {
   id: string;
@@ -111,7 +113,11 @@ export function planSelection(
       for (const entry of [...manifest.folders, ...manifest.entries].filter(
         (item) => item.rootId === root.rootId,
       )) {
-        if (skipPath(entry.path) || (marker && entry.path.split("/")[0] === "Works")) continue;
+        if (
+          importPathDisposition(entry.path) ||
+          (marker && entry.path.split("/")[0] === EXPORT_WORKS_FOLDER)
+        )
+          continue;
         const isFolder = !("entryId" in entry);
         const folder = isFolder
           ? entry.path
@@ -124,11 +130,11 @@ export function planSelection(
       .sort((a, b) => codePointOrder(a.path, b.path))) {
       const filename = root.kind === "file" ? root.name : (entry.path.split("/").at(-1) ?? "");
       const skip =
-        entry.size > IMPORT_LIMITS.fileBytes
+        entry.size > IMPORT_ADMISSION.fileBytes
           ? "too_large"
-          : marker && entry.path.split("/")[0] === "Works"
+          : marker && entry.path.split("/")[0] === EXPORT_WORKS_FOLDER
             ? "export_works"
-            : skipPath(entry.path || filename);
+            : importPathDisposition(entry.path || filename);
       if (skip === "omit") continue;
       const typed = classify(filename, Buffer.from(entry.sniff ?? "", "base64"));
       let parentPath = entry.path.includes("/")

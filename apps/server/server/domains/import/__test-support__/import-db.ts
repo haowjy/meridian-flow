@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hocuspocus } from "@hocuspocus/server";
-import type { ImportManifest } from "@meridian/contracts";
+import { IMPORT_ADMISSION, type ImportManifest } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -91,7 +91,7 @@ export function loose(files: Record<string, string | Uint8Array>): {
         path: "",
         size: value.length,
         sha256: createHash("sha256").update(value).digest("hex"),
-        sniff: Buffer.from(value.subarray(0, 512)).toString("base64"),
+        sniff: Buffer.from(value.subarray(0, IMPORT_ADMISSION.sniffBytes)).toString("base64"),
         frontmatter: splitFrontmatter(Buffer.from(value).toString("utf8")).frontmatter?.text,
       })),
     },
@@ -129,7 +129,7 @@ export function vault(name: string) {
           path: relative,
           size: bytes.length,
           sha256: createHash("sha256").update(bytes).digest("hex"),
-          sniff: bytes.subarray(0, 512).toString("base64"),
+          sniff: bytes.subarray(0, IMPORT_ADMISSION.sniffBytes).toString("base64"),
           frontmatter: splitFrontmatter(bytes.toString("utf8")).frontmatter?.text,
         });
       }
