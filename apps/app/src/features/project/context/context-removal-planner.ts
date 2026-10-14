@@ -27,7 +27,7 @@ export type ContextRemovalIntent = {
   documentIds: readonly string[];
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
-  /** Draft discard is one Work's: the tab stays while another Work still reviews the document. */
+  /** Discard and a writer's close of a draft-only tab are one Work's: the tab stays while another Work still reviews the document. */
   reviewWorkId?: string;
 };
 
