@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./integration": "./src/integration.ts",
+    "./diff": "./src/diff/index.ts",
     "./yjs-mutation": "./src/yjs-mutation.ts",
     "./test-support": "./src/test-support/index.ts"
   },

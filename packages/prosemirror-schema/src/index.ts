@@ -265,8 +265,16 @@ export const documentMarks = {
   ...customMarks,
 } satisfies Record<string, MarkSpec>;
 
+let documentSchema: Schema | undefined;
+
+/**
+ * The one document schema. ProseMirror compares nodes by their type object, so two instances make equal
+ * text unequal: the rebase read a live block from one module's schema as different from the same block
+ * in another's and invented an empty paragraph between them.
+ */
 export function buildDocumentSchema(): Schema {
-  return new Schema({ nodes: documentNodes, marks: documentMarks });
+  documentSchema ??= new Schema({ nodes: documentNodes, marks: documentMarks });
+  return documentSchema;
 }
 
 export {
