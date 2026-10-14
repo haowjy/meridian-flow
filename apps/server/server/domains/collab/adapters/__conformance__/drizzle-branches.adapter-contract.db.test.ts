@@ -8,6 +8,7 @@ import {
   commitSegmentRows,
   resetBranchFromDoc,
 } from "../../test-support/branch-update-writes.js";
+import { createDrizzleWorkDraftPendingStore } from "../drizzle-branch-push.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -296,7 +297,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const catalog = createDrizzleContextCatalog(db, undefined, {
         availabilityMutations: availability,
       });
-      const projection = createWorkProjectionMutation({ db, availability, catalog });
+      const projection = createWorkProjectionMutation({
+        db,
+        availability,
+        catalog,
+        pending: createDrizzleWorkDraftPendingStore(db),
+      });
       const measuredStore = createDrizzleBranchStore(db, {
         live: { journal: livePersistence.journal, lifecycle: livePersistence.lifecycle },
         workProjection: projection,
@@ -666,6 +672,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await runInDrizzleTransaction(db, async () => {
         await draftStore.lockActive(DRAFT_ID as never);
+        // The Discard kernel closes the branches first; the store closes only the row.
+        await db
+          .update(documentBranches)
+          .set({ status: "closed" })
+          .where(eq(documentBranches.draftId, DRAFT_ID as never));
         await draftStore.close(DRAFT_ID as never, new Date());
       });
       const before = await db
