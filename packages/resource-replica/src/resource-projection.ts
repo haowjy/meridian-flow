@@ -1,6 +1,6 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
 import { namespaceRepairDestination } from "./namespace-journal-policy";
-import { intentOwnsDeletionAt, owningLocationIntent } from "./resource-intent-policy";
+import { intentOwnsDeletionAt, placementDestination } from "./resource-intent-policy";
 import {
   type DestinationParentLookup,
   destinationLocation,
@@ -66,13 +66,9 @@ export function projectResourceLocation(
     )
   )
     return null;
-  const placement = owningLocationIntent(
-    projectId,
-    record.intents,
-    Boolean(record.resource.obligations.canonicalRefresh),
-  )?.desired;
-  if (placement?.kind === "set-location") {
-    const location = destinationLocation(placement.destination, lookup);
+  const placement = placementDestination(projectId, record);
+  if (placement) {
+    const location = destinationLocation(placement, lookup);
     if (location) return { ...location, provisional: false };
   }
 
@@ -93,9 +89,6 @@ export function projectResourceLocation(
   if (record.resource.canonical)
     return { ...record.resource.canonical, provisional: create?.kind === "create" && !filed };
   if (create?.kind !== "create") return null;
-  // A create that carries its destination shows there at once, not as a provisional reservation.
-  const named = create.destination && destinationLocation(create.destination, lookup);
-  if (named) return { ...named, provisional: false };
   const folder = create.folderPath.split("/").filter(Boolean).join("/");
   const name = create.provisionalName ?? "Untitled";
   return {
