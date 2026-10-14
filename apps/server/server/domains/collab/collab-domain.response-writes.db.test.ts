@@ -27,17 +27,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain response writes (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const {
-      branchWriteJournal,
-      documentBranches,
-      documentMarkdownProjections,
-      documentYjsUpdates,
-      documents,
-      modelResponses,
-    } = await import("@meridian/database/schema");
-    const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
+    const { branchWriteJournal, documentMarkdownProjections, documents, modelResponses } =
+      await import("@meridian/database/schema");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     afterEach(dispose);
 
     beforeEach(reset);

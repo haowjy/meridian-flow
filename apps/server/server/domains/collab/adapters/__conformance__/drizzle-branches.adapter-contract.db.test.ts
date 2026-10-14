@@ -39,25 +39,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleBranchStore } = await import("../drizzle-branches.js");
     const { createDrizzleDraftStore } = await import("../drizzle-drafts.js");
     const { createHocuspocusPersistenceService } = await import("../../hocuspocus-persistence.js");
-    const {
-      createDrizzleBranchJournalReadStore,
-      createDrizzlePushCommitStore,
-      createDrizzleWorkDraftPendingStore,
-    } = await import("../drizzle-branch-push.js");
-    const { createDrizzlePendingSettlementStore, stageSettlementBatchWithinTx } = await import(
-      "../drizzle-pending-settlement.js"
+    const { createDrizzlePushCommitStore, createDrizzleWorkDraftPendingStore } = await import(
+      "../drizzle-branch-push.js"
     );
+    const { stageSettlementBatchWithinTx } = await import("../drizzle-pending-settlement.js");
     const { createDrizzleChangeTrailAggregateWriter } = await import(
       "../drizzle-change-trail-aggregate.js"
-    );
-    const { createDrizzleDocumentProjectionEffects } = await import(
-      "../drizzle-document-activity.js"
     );
     const { createDrizzleCollabPersistence } = await import("../drizzle-journal.js");
     const { createBranchCoordinator } = await import("../../domain/branch-coordinator.js");
     const { mdxCodec, UNSCOPED_DOCUMENT_LINKS } = await import("@meridian/markup");
     const { toDocHandle, yProsemirrorModel } = await import("@meridian/agent-edit/integration");
-    const { createDocumentLastAddress } = await import("../../../context/document-uri-resolver.js");
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
     );
@@ -370,7 +362,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         stageSettlementBatchWithinTx,
         createDrizzleChangeTrailAggregateWriter(db),
       );
-      const journalReadStore = createDrizzleBranchJournalReadStore(db);
       const branch = await store.ensureDraftBranch({
         documentId: DOC_ID as never,
         draftId: DRAFT_ID as never,

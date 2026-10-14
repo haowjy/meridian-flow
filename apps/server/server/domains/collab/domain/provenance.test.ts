@@ -427,13 +427,6 @@ function proseDoc(value: string): Y.Doc {
   return doc;
 }
 
-function updateForProse(value: string): Uint8Array {
-  const doc = proseDoc(value);
-  const update = Y.encodeStateAsUpdate(doc);
-  doc.destroy();
-  return update;
-}
-
 function proseText(doc: Y.Doc): Y.XmlText {
   return proseBlock(doc).get(0) as Y.XmlText;
 }

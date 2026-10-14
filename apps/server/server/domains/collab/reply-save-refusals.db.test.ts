@@ -40,11 +40,7 @@ import {
   responseContext,
   stageDraft,
 } from "./test-support/document-edit-receipt-fixture.js";
-import {
-  commitBranchEdit,
-  discardChangeLocally,
-  reviewDriver,
-} from "./test-support/draft-review-requests.js";
+import { commitBranchEdit, reviewDriver } from "./test-support/draft-review-requests.js";
 
 const DRAFT = "Write did not land: the user discarded this draft. Re-read and retry.";
 const EDIT = "Write did not land: the user discarded the text it edited. Re-read and retry.";
@@ -253,7 +249,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("15: Discard of a revealed create refuses discarded_edit, not discarded_document", async () => {
-    const { second, review, fixture } = await createdThenStaged();
+    const { second, review } = await createdThenStaged();
     await db
       .update(schema.documents)
       .set({ hidden: false })
@@ -264,7 +260,6 @@ describe("reply save refusals (postgres)", () => {
     expect(await review.discardItem(NEW_ID)).toMatchObject({ status: "discarded" });
     const saved = await harness.commit(second);
     expect(refused(saved)).toEqual([[NEW_ID, EDIT]]);
-    void fixture;
   });
 
   it("15b: another Work revealing the create while Discard waits for its leases closes the branch and refuses discarded_edit", async () => {
@@ -602,7 +597,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("19: a new reply writes through a fresh peer while the old retirement is held", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     let next: string | undefined;
     let nextSaved: Saved | undefined;
@@ -633,7 +628,7 @@ describe("reply save refusals (postgres)", () => {
   });
 
   it("21: a same-reply write after the old peer's delayed retirement commits; the old write is receipted separately", async () => {
-    const { fixture, branchId, responseId, review, write } = await setup();
+    const { fixture, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-old")).toMatchObject({ phase: "staged" });
     const remove = setCollabHook("discard.beforeRetirement", async () => {
       remove();

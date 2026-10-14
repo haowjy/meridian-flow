@@ -1,5 +1,3 @@
-/** Pure document materialization and integration primitives for branch pushes. */
-import { createHash } from "node:crypto";
 import {
   type BlockRef,
   decodeUpdateForDependencies,

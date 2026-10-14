@@ -14,8 +14,6 @@ import {
   documentEdits,
   documentYjsUpdates,
   type EditOrigin,
-  type EditPlacement,
-  documentBranches as importedDocumentBranches,
   threads,
 } from "@meridian/database";
 import { and, desc, eq, sql } from "drizzle-orm";
