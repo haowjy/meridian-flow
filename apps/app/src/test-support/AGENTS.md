@@ -8,13 +8,17 @@ uses belongs in that suite, where the claim can be read next to it.
 
 - **`standalone-editor.ts`** — one editor, in the page, plus node-position
   queries. The default. Reach for it for anything one writer does alone.
-- **`react-editor.tsx`** — a React root over that editor, for chrome,
-  surfaces, and node views. Owns the act environment, mount order, and
-  teardown order. It can borrow an editor a test already has.
 - **`collab-editors.ts`** — two editors over one document. Only when the claim
   names a peer: y-prosemirror rebuilds the whole ProseMirror document on a
   remote write, which no hand-built transaction reproduces, and paying for that
   binding elsewhere makes local behavior depend on its mount sequence.
+
+There is no React-root tier. The chrome suites that used one were among the
+slowest files in the suite (250 to 1100 ms against a 41 ms median), and their
+claims moved to the manual recipe in
+[`docs/qa/project-chrome-manual.md`](../../../docs/qa/project-chrome-manual.md).
+A claim that needs a React root is usually a claim about what the writer sees,
+which a browser judges and jsdom cannot.
 
 Undo is the exception that looks like a peer: on a shared document it is the
 Yjs UndoManager, so a suite asserting undo mounts the pair for the document
