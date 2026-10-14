@@ -4,6 +4,7 @@
  */
 import type { AGUIEvent, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
+import { readWriteModeSwitch } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
   TURN_FIXTURE_EVENTS,
@@ -105,5 +106,21 @@ describe("turn reducer", () => {
       store.hydrate(THREAD, [user("m1"), user("m2")], "7500");
       expect(ids(store)).toEqual(["m1"]);
     });
+  });
+  it("draws an idle switch's divider from its frame, and the stored turn replaces it by id", () => {
+    // Risk: an idle switch has no turn event, so a follower with no snapshot refresh never
+    // got the divider (and the app kept the answered switch queued).
+    const { store, reducer } = instance();
+    store.hydrate(THREAD, [{ id: "r1", role: "assistant", blocks: [] } as unknown as Turn], "5000");
+    const frame = {
+      type: EventType.CUSTOM,
+      name: "meridian.write_mode.switched",
+      value: { threadId: THREAD, mode: "draft", controlId: "c1", turnId: "d1" },
+    } as unknown as AGUIEvent;
+    reducer.applyEvent(THREAD, frame, "7000");
+    reducer.applyEvent(THREAD, frame, "7000");
+    const turns = store.turns(THREAD) ?? [];
+    expect(turns.map((turn) => turn.id)).toEqual(["r1", "d1"]);
+    expect(readWriteModeSwitch(turns[1] as Turn)).toEqual({ mode: "draft", controlId: "c1" });
   });
 });

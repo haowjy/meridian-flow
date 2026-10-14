@@ -12,8 +12,10 @@ import {
   applySnapshotTo,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
+  ensureSwitchTurnIn,
   patchTurnStatusIn,
   removeTurnsIn,
+  type SwitchTurnFacts,
   type Tombstones,
   type TurnStatusPatch,
   upsertBlockIn,
@@ -66,6 +68,12 @@ export class InMemoryTurnStore implements TurnStore {
     const existing = this.turnsByThread.get(threadId) ?? [];
     const result = ensureAssistantTurnIn(existing, threadId, turnId, this.now(), opts);
     if (result.kind !== "rejected") this.turnsByThread.set(threadId, result.turns);
+  }
+
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts): void {
+    const existing = this.turnsByThread.get(threadId) ?? [];
+    const next = ensureSwitchTurnIn(existing, threadId, facts, this.now());
+    if (next !== existing) this.turnsByThread.set(threadId, next);
   }
 
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void {

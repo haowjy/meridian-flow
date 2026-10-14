@@ -5,6 +5,7 @@
  */
 import type { Block, Turn } from "@meridian/contracts/protocol";
 import { compareSeq } from "@meridian/contracts/protocol";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { baseTurnFields } from "./state-helpers";
 
 export type EnsureAssistantTurnOptions = {
@@ -92,6 +93,52 @@ export function ensureAssistantTurnIn(
   }
   const turn = createAssistantTurn(threadId, turnId, createdAt, existing, opts);
   return { kind: "created", turns: [...existing, turn], turn };
+}
+
+/** The facts a `meridian.write_mode.switched` frame carries about its divider turn. */
+export type SwitchTurnFacts = { turnId: string; controlId: string; mode: AiWriteMode };
+
+/**
+ * Adds the write-mode divider a `meridian.write_mode.switched` frame names, at the end of the
+ * thread, as a complete `system` turn carrying the metadata the divider reads. The frame is the
+ * only live announcement of that turn, so this is how a stream follower gets the divider with no
+ * snapshot; the stored turn replaces it by id. The same array comes back when it is already there.
+ */
+export function ensureSwitchTurnIn(
+  existing: Turn[],
+  threadId: string,
+  facts: SwitchTurnFacts,
+  createdAt: string,
+): Turn[] {
+  if (existing.some((turn) => turn.id === facts.turnId)) return existing;
+  const turn: Turn = {
+    id: facts.turnId,
+    threadId,
+    position: 0,
+    prevTurnId: existing.at(-1)?.id ?? null,
+    role: "system",
+    origin: "system",
+    writeMode: facts.mode,
+    status: "complete",
+    promptBakeId: null,
+    finishReason: null,
+    ...baseTurnFields(),
+    error: null,
+    createdAt,
+    completedAt: createdAt,
+    blocks: [],
+    metadata: {
+      kind: "write_mode_switch",
+      mode: facts.mode,
+      controlMessageId: facts.controlId,
+    },
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
+    siblingIds: [],
+    responses: [],
+  };
+  return [...existing, turn];
 }
 
 /**

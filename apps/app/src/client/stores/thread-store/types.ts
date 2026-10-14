@@ -12,6 +12,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import type {
   EnsureAssistantTurnOptions,
   RunStateView,
+  SwitchTurnFacts,
   TurnStatusPatch,
 } from "@meridian/thread-client";
 import type { RunStateAction } from "@/client/run-state/run-state-slice";
@@ -63,6 +64,8 @@ export type ThreadStoreActions = {
   ): void;
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
+  /** Add the write-mode divider a `switched` frame names (see `ensureSwitchTurnIn`). */
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(

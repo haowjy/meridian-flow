@@ -15,6 +15,7 @@ import {
   applySnapshotTo,
   createTurnReducer,
   ensureAssistantTurnIn,
+  ensureSwitchTurnIn,
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
   patchTurnStatusIn,
@@ -195,6 +196,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     acknowledgeUserTurn: state.acknowledgeUserTurn,
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
     ensureAssistantTurn: state.ensureAssistantTurn,
+    ensureSwitchTurn: state.ensureSwitchTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
     invalidateThreadSnapshot: state.invalidateThreadSnapshot,
     patchTurnStatus: state.patchTurnStatus,
@@ -230,6 +232,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           store: {
             turns: (threadId) => get().turns(threadId),
             ensureAssistantTurn: (...args) => get().ensureAssistantTurn(...args),
+            ensureSwitchTurn: (...args) => get().ensureSwitchTurn(...args),
             upsertAssistantBlock: (...args) => get().upsertAssistantBlock(...args),
             invalidateThreadSnapshot: (threadId) => get().invalidateThreadSnapshot(threadId),
             patchTurnStatus: (...args) => get().patchTurnStatus(...args),
@@ -507,6 +510,21 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
           applyTurnEvent(threadId, event, seq) {
             reducer.applyEvent(threadId, event, seq);
+          },
+
+          ensureSwitchTurn(threadId, facts) {
+            set((state) => {
+              const existing = state.turnsByThread[threadId] ?? [];
+              const next = ensureSwitchTurnIn(
+                existing,
+                threadId,
+                facts,
+                new Date(state.now).toISOString(),
+              );
+              return next === existing
+                ? state
+                : { turnsByThread: { ...state.turnsByThread, [threadId]: next } };
+            });
           },
 
           removeTurns(threadId, ids, seq) {

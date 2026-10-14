@@ -12,6 +12,7 @@ import {
   RUN_STATE_EVENT,
   readMessagesHandedBack,
   readRunStartedMeta,
+  readWriteModeSwitched,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
@@ -23,6 +24,7 @@ import {
   readString,
   toBlockContent,
 } from "./state-helpers";
+import type { SwitchTurnFacts } from "./turn-ops";
 
 type InterruptLifecyclePayload = {
   turnId: string;
@@ -59,6 +61,8 @@ export type TurnStore = {
     turnId: string,
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
+  /** Adds the write-mode divider a `meridian.write_mode.switched` frame names (see `ensureSwitchTurnIn`). */
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   /** Adapter hook: ask the host to refetch. Reduction never depends on it. */
   invalidateThreadSnapshot?(threadId: string): void;
@@ -1092,6 +1096,13 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           if (handedBack) store.removeTurns(threadId, handedBack.userTurnIds, seq ?? "0");
           return;
         }
+        // The switch turn is not announced by a turn event, so its frame is how a follower gets
+        // the divider; the run-state slice answers the writer's control from the same frame.
+        if (event.name === WRITE_MODE_SWITCHED_EVENT) {
+          const switched = readWriteModeSwitched(event.value);
+          if (switched) store.ensureSwitchTurn(threadId, switched);
+          return;
+        }
         // Durable custom projections are consumed by live listeners — the
         // useThreadDurableProjections trail/Work-binding listener — so they are not transcript
         // content. Falling through here rendered each one as an "Unknown
@@ -1100,10 +1111,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           event.name === "meridian.turn_change_trail.updated" ||
           event.name === "meridian.turn_change_trail.settled" ||
           event.name === WORK_CONTEXT_PROJECTION_EVENT ||
-          // Run-state facts (the write-mode switch, the run-state record) are the chat's
-          // run-state slice's. The divider row comes from the durable system turn, never
-          // from this frame.
-          event.name === WRITE_MODE_SWITCHED_EVENT ||
+          // The run-state record is the chat's run-state slice's.
           event.name === RUN_STATE_EVENT
         ) {
           return;
