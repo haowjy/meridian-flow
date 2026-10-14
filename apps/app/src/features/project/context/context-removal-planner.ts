@@ -27,6 +27,8 @@ export type ContextRemovalIntent = {
   documentIds: readonly string[];
   /** Writer close and draft settlement address a mounted tab, not every document representation. */
   tabInstanceId?: string;
+  /** Draft discard is one Work's: the tab stays while another Work still reviews the document. */
+  reviewWorkId?: string;
 };
 
 export type ContextRouteIdentity = { kind: "server" | "local"; documentId: string };
@@ -213,7 +215,11 @@ export function routeTargetForTab(tab: ContextTab, activeWorkId: string): Contex
       workId: activeWorkId,
       rootThreadId: tab.rootThreadId,
     };
-  let workId = tab.draftOnly ? (tab.reviewWorkId ?? activeWorkId) : activeWorkId;
+  let workId = tab.draftOnly
+    ? tab.reviews?.[activeWorkId]
+      ? activeWorkId
+      : (Object.keys(tab.reviews ?? {})[0] ?? activeWorkId)
+    : activeWorkId;
   if (isWorkScopedProjectContextScheme(tab.scheme)) {
     if (!tab.workId) throw new Error("Work-scoped tab has no Work owner");
     workId = tab.workId;

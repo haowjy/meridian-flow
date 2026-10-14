@@ -303,7 +303,12 @@ it.each([
         "chat",
         {
           ...draftTab!,
-          tabInstanceToken: "new-account-instance",
+          reviews: Object.fromEntries(
+            Object.entries(draftTab!.reviews ?? {}).map(([workId, entry]) => [
+              workId,
+              { ...entry, tabInstanceToken: "new-account-instance" },
+            ]),
+          ),
         },
         null,
       );

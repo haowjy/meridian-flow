@@ -39,7 +39,7 @@ export function resolveWorkspaceRoute({
         (tab) =>
           tab.kind !== "new" &&
           tab.documentId === boundDocumentId &&
-          (!tab.draftOnly || tab.reviewWorkId === locator.workId),
+          (!tab.draftOnly || (locator.workId && tab.reviews?.[locator.workId])),
       )
     : tabs.find((tab) => tab.kind !== "new" && contextTabMatchesRoute(tab, locator));
   if (server) {

@@ -8,7 +8,7 @@ import {
   useRef,
 } from "react";
 import type { ContextTab } from "@/client/stores";
-import { useContextTabs } from "@/client/stores";
+import { soleReview, useContextTabs } from "@/client/stores";
 import { useAccountResourceProjection } from "./context/account-feature-context";
 import { projectResourceTab } from "./context/context-tab-from-file";
 import { resolveEditorPresentation } from "./context/editor-presentation";
@@ -78,9 +78,7 @@ export function useDesktopProjectController<
           ? presented.review
           : dockDocument?.tab.documentId === tab?.documentId
             ? (dockDocument?.review ?? null)
-            : tab?.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewItemKey
-              ? { workId: tab.reviewWorkId, itemKey: tab.reviewItemKey }
-              : null,
+            : ((tab?.kind === "tracked" ? soleReview(tab) : undefined) ?? null),
       claim: store.claim,
       isCurrent: store.isCurrent,
       transfer: (to, document, claim, review) => {

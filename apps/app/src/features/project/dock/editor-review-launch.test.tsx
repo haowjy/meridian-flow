@@ -68,8 +68,9 @@ it.each([
           if (isNew)
             expect(tabs[0]).toMatchObject({
               draftOnly: true,
-              reviewWorkId: "work-a",
-              reviewItemKey: "branch-a",
+              reviews: {
+                ["work-a"]: { itemKey: "branch-a", tabInstanceToken: expect.any(String) },
+              },
             });
         }
       },

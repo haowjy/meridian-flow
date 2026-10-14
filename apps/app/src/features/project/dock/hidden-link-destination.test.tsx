@@ -70,10 +70,10 @@ it("a hidden link with no existing tab becomes a draft-only review, not a live t
   expect(tabs[0]).toMatchObject({
     documentId: "document-h",
     draftOnly: true,
-    reviewWorkId: "work-a",
-    reviewItemKey: "draft-1:document-h",
+    reviews: {
+      ["work-a"]: { itemKey: "draft-1:document-h", tabInstanceToken: expect.any(String) },
+    },
   });
-  expect(tabs[0]).toHaveProperty("tabInstanceToken");
   expect(recentOpening("project-a", tabs[0], "now")).toBeNull();
   expect(route).toHaveBeenCalledOnce();
   expect(liveOpen).not.toHaveBeenCalled();
