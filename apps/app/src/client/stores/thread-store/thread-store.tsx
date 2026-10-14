@@ -12,11 +12,18 @@ import {
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
+  applySnapshotTo,
   createTurnReducer,
+  dividersAwaitingAnchorIn,
   ensureAssistantTurnIn,
+  ensureSwitchTurnIn,
+  type HeldDividers,
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
   patchTurnStatusIn,
+  type RunStateView,
+  removeTurnsIn,
+  type Tombstones,
   upsertBlockIn,
 } from "@meridian/thread-client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -39,6 +46,11 @@ import {
   subscribeChatSubmissions,
 } from "@/client/chat-submissions";
 import {
+  INITIAL_RUN_STATE_SLICE,
+  type RunStateSlice,
+  reduceRunState,
+} from "@/client/run-state/run-state-slice";
+import {
   type InterruptResponseEntry,
   interruptResponseKey,
 } from "@/core/session/interrupt-response";
@@ -54,8 +66,14 @@ type PendingCreationState = {
 
 type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
+  /** Each chat's run state: the newest record, this device's unanswered intents, and what is news. */
+  runStateByThread: Record<string, RunStateSlice>;
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
+  /** Turns removed from the conversation, until a snapshot covering the removal arrives. */
+  tombstonesByThread: Record<string, Tombstones>;
+  /** Dividers a `switched` frame added that no accepted snapshot covers yet. */
+  dividersByThread: Record<string, HeldDividers>;
   durableBlockCursorByThread: Record<string, string>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
@@ -175,18 +193,23 @@ function reconcileInterruptResponsesForThread(
 function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
   return {
     turns: state.turns,
+    dividersAwaitingAnchor: state.dividersAwaitingAnchor,
+    runState: state.runState,
     setStreamingThreadId: state.setStreamingThreadId,
     ensureThread: state.ensureThread,
     appendUserTurn: state.appendUserTurn,
     acknowledgeUserTurn: state.acknowledgeUserTurn,
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
     ensureAssistantTurn: state.ensureAssistantTurn,
+    ensureSwitchTurn: state.ensureSwitchTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
     invalidateThreadSnapshot: state.invalidateThreadSnapshot,
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     bumpEventsApplied: state.bumpEventsApplied,
     applyTurnEvent: state.applyTurnEvent,
+    removeTurns: state.removeTurns,
+    dispatchRunState: state.dispatchRunState,
     applyDurableBlockEvent: state.applyDurableBlockEvent,
     acceptDurableBlockSeq: state.acceptDurableBlockSeq,
     acceptsThreadSnapshot: state.acceptsThreadSnapshot,
@@ -214,9 +237,11 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           store: {
             turns: (threadId) => get().turns(threadId),
             ensureAssistantTurn: (...args) => get().ensureAssistantTurn(...args),
+            ensureSwitchTurn: (...args) => get().ensureSwitchTurn(...args),
             upsertAssistantBlock: (...args) => get().upsertAssistantBlock(...args),
             invalidateThreadSnapshot: (threadId) => get().invalidateThreadSnapshot(threadId),
             patchTurnStatus: (...args) => get().patchTurnStatus(...args),
+            removeTurns: (...args) => get().removeTurns(...args),
             bumpEventsApplied: (threadId) => get().bumpEventsApplied(threadId),
             settleInterruptResponse: (identity) => get().settleInterruptResponse(identity),
           },
@@ -224,7 +249,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         return {
           now,
           turnsByThread: {},
+          runStateByThread: {},
           snapshotNextSeqFloorByThread: {},
+          tombstonesByThread: {},
+          dividersByThread: {},
           durableBlockCursorByThread: {},
           liveMeta: {},
           pendingCreation: { threadIds: {} },
@@ -236,6 +264,17 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
           turns(id: string) {
             return get().turnsByThread[id];
+          },
+
+          dividersAwaitingAnchor(id: string) {
+            return dividersAwaitingAnchorIn({
+              turns: get().turnsByThread[id] ?? [],
+              dividers: get().dividersByThread[id] ?? new Map(),
+            });
+          },
+
+          runState(id: string) {
+            return (get().runStateByThread[id] ?? INITIAL_RUN_STATE_SLICE).view;
           },
 
           setStreamingThreadId(id, projectId = null) {
@@ -279,7 +318,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               const optimisticTurn = turns.find((turn) => turn.id === optimisticTurnId);
               if (optimisticTurn?.role !== "user") return state;
 
-              const hasServerTurn = turns.some((turn) => turn.id === serverTurnId);
+              // Another tab handed this message back before the answer arrived: the row goes
+              // instead of becoming the turn that left the conversation.
+              const handedBack = state.tombstonesByThread[threadId]?.has(serverTurnId) === true;
+              const hasServerTurn = handedBack || turns.some((turn) => turn.id === serverTurnId);
 
               /** The POST /messages response is the explicit identity bridge from the local `turn_local_*` row to the persisted user turn. */
               const nextTurns = turns
@@ -434,6 +476,16 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             threadCache.invalidateThread(threadId, terminalProjectId);
           },
 
+          dispatchRunState(threadId, action) {
+            set((state) => {
+              const slice = state.runStateByThread[threadId] ?? INITIAL_RUN_STATE_SLICE;
+              const next = reduceRunState(slice, action);
+              return next === slice
+                ? state
+                : { runStateByThread: { ...state.runStateByThread, [threadId]: next } };
+            });
+          },
+
           pruneStaleAssistantTurns(threadId) {
             set((state) => {
               const turns = state.turnsByThread[threadId] ?? [];
@@ -469,8 +521,47 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             return nextEventsApplied;
           },
 
-          applyTurnEvent(threadId, event) {
-            reducer.applyEvent(threadId, event);
+          applyTurnEvent(threadId, event, seq) {
+            reducer.applyEvent(threadId, event, seq);
+          },
+
+          ensureSwitchTurn(threadId, facts, seq) {
+            set((state) => {
+              const held = {
+                turns: state.turnsByThread[threadId] ?? [],
+                dividers: state.dividersByThread[threadId] ?? new Map(),
+              };
+              const next = ensureSwitchTurnIn(
+                held,
+                threadId,
+                facts,
+                seq,
+                new Date(state.now).toISOString(),
+              );
+              return next === held
+                ? state
+                : {
+                    turnsByThread: { ...state.turnsByThread, [threadId]: next.turns },
+                    dividersByThread: { ...state.dividersByThread, [threadId]: next.dividers },
+                  };
+            });
+          },
+
+          removeTurns(threadId, ids, seq) {
+            set((state) => {
+              const next = removeTurnsIn(
+                {
+                  turns: state.turnsByThread[threadId] ?? [],
+                  tombstones: state.tombstonesByThread[threadId] ?? new Map(),
+                },
+                ids,
+                seq,
+              );
+              return {
+                turnsByThread: { ...state.turnsByThread, [threadId]: next.turns },
+                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: next.tombstones },
+              };
+            });
           },
 
           applyDurableBlockEvent(threadId, event) {
@@ -512,12 +603,28 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             set((state) => {
               const localTurns = state.turnsByThread[threadId] ?? [];
               const runningTurnId = lifecycle.runningTurnId;
-              const mergedTurns = reconcileSnapshotTurns(localTurns, serverTurns, {
+              const applied = applySnapshotTo(
+                {
+                  tombstones: state.tombstonesByThread[threadId] ?? new Map(),
+                  dividers: state.dividersByThread[threadId] ?? new Map(),
+                },
+                serverTurns,
+                nextSeq,
+              );
+              const mergedTurns = reconcileSnapshotTurns(localTurns, applied.turns, {
                 runningTurnId,
               });
+              // A row still waiting on its admission answer is an identity bridge: the answer
+              // may name a turn another tab handed back. Covered tombstones stay until it settles.
+              const awaitingAdmission = localTurns.some((turn) => isOptimisticTurnId(turn.id));
+              const tombstones = awaitingAdmission
+                ? (state.tombstonesByThread[threadId] ?? applied.tombstones)
+                : applied.tombstones;
 
               const nextState: Partial<ThreadStoreSliceState> = {
                 turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
+                tombstonesByThread: { ...state.tombstonesByThread, [threadId]: tombstones },
+                dividersByThread: { ...state.dividersByThread, [threadId]: applied.dividers },
               };
 
               const reconciledInterruptResponses = reconcileInterruptResponsesForThread(
@@ -730,6 +837,16 @@ export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { child
 
 export function useThreadStore<T>(selector: (state: ThreadStoreSlice) => T): T {
   return useStore(useThreadStoreApi(), selector);
+}
+
+/** The chat's run-state slice: its newest record, this device's intents, and the news the hooks speak. */
+export function useRunStateSlice(threadId: string): RunStateSlice {
+  return useThreadStore((state) => state.runStateByThread[threadId] ?? INITIAL_RUN_STATE_SLICE);
+}
+
+/** The chat's run-state view, the one input to the package's selectors (`isBusy`, `stopRequest`, ...). */
+export function useRunState(threadId: string): RunStateView {
+  return useRunStateSlice(threadId).view;
 }
 
 export function useThreadActions(): ThreadStoreActions {

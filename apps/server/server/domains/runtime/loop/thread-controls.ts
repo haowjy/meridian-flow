@@ -6,8 +6,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type {
   ControlBody,
-  PendingInboxItem,
-  ThreadPendingInbox,
+  RunState,
   Turn,
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
@@ -39,12 +38,11 @@ export function createThreadControls(deps: {
   enqueueSettled(draft: MessageDraft, cancelledIds: readonly string[]): Promise<void>;
   selectPending(threadId: ThreadId): Promise<InboxMessage[]>;
   threadWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
-  /** The thread's journal head in the socket's cursor space: the last frame seq it holds. */
-  headSeq(threadId: ThreadId): Promise<bigint>;
   /** The Work's default follows the writer's latest choice, applied or not. */
   setWorkDefault(threadId: ThreadId, mode: AiWriteMode): Promise<void>;
   findControlTurn(threadId: ThreadId, controlId: string): Promise<Turn | null>;
-  pending(threadId: ThreadId): Promise<ThreadPendingInbox>;
+  /** The run-state record an answer carries, read under the thread lock (publishes first if needed). */
+  answerRunState(threadId: ThreadId): Promise<RunState>;
   acknowledge(threadId: ThreadId, ids: readonly string[]): Promise<void>;
   hasCompletedReply(threadId: ThreadId): Promise<boolean>;
 }): ThreadControls {
@@ -95,26 +93,13 @@ export function createThreadControls(deps: {
         provenance: { kind: "writer", actorId: input.actorId },
         idempotencyKey: input.id,
       };
-      // One read under the lock: every switch transition commits under it, so
-      // the mode and queue read at the end are the server's switch state as of `seq`.
+      // One read under the lock: every switch transition commits under it, so the control's turn
+      // and the record read here are the server's state at the record's version.
       return deps.withThreadLock(input.threadId, async () => {
         const created = await enqueueRow(input, draft);
         const turn = await deps.findControlTurn(input.threadId, input.id);
-        const items = (await deps.pending(input.threadId)).items;
-        const mode = await deps.threadWriteMode(input.threadId);
-        // Last, so it is at or past the frame of every transition read above.
-        const seq = (await deps.headSeq(input.threadId)).toString();
-        return {
-          created,
-          response: {
-            id: input.id,
-            queued: items.some((item) => item.id === input.id),
-            pending: items.find(isQueuedSwitch) ?? null,
-            turnId: turn?.id ?? null,
-            seq,
-            mode,
-          },
-        };
+        const runState = await deps.answerRunState(input.threadId);
+        return { created, response: { id: input.id, turnId: turn?.id ?? null, runState } };
       });
     },
     async effectiveWriteMode(threadId) {
@@ -134,17 +119,8 @@ export function createThreadControls(deps: {
           if (row.body.kind === "write_mode")
             await deps.setWorkDefault(threadId, await deps.threadWriteMode(threadId));
         }
-        // The ack's frame is appended inline above, so the queue and mode read here are the
-        // switch state after the withdrawal; `seq` is read last, at or past that frame.
-        const items = (await deps.pending(threadId)).items;
-        const mode = await deps.threadWriteMode(threadId);
-        return {
-          outcome,
-          queued: items.some((item) => item.id === controlId),
-          pending: items.find(isQueuedSwitch) ?? null,
-          mode,
-          seq: (await deps.headSeq(threadId)).toString(),
-        };
+        // The record read here includes the withdrawal's own transaction.
+        return { outcome, runState: await deps.answerRunState(threadId) };
       }),
   };
 }
@@ -153,8 +129,4 @@ function sameControl(left: ControlBody, right: ControlBody): boolean {
   if (left.kind === "compact")
     return right.kind === "compact" && left.instructions === right.instructions;
   return right.kind === "write_mode" && left.mode === right.mode;
-}
-
-function isQueuedSwitch(item: PendingInboxItem): boolean {
-  return item.control?.kind === "write_mode";
 }

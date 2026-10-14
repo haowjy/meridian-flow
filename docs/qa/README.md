@@ -15,6 +15,7 @@ commit, date, stack/provider, outcome, and evidence path after each run. A recip
 is not a claim that it passed on the current commit.
 
 - [Runtime protocols](runtime-probes.md): RP-1 through RP-12, server protocol checks driven with `./mf`.
+- [Stop and hand-back](stop-and-hand-back.md): written steps for the pure Stop rows with no unit case, each naming the DB row or browser item that pins it.
 - [Browser state envelopes](browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Chat session](chat-session.md): compare a chat in the browser with `./mf thread view --json` by row identity, kind, item kinds and text.
 - [Chat submissions](chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.

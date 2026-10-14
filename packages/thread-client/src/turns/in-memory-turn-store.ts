@@ -9,9 +9,17 @@ import type { Block, Turn } from "@meridian/contracts/protocol";
 import { compareSeq, parseSeq } from "@meridian/contracts/protocol";
 import type { TurnStore } from "./reduce-turn-event";
 import {
+  type AwaitingDivider,
+  applySnapshotTo,
+  dividersAwaitingAnchorIn,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
+  ensureSwitchTurnIn,
+  type HeldDividers,
   patchTurnStatusIn,
+  removeTurnsIn,
+  type SwitchTurnFacts,
+  type Tombstones,
   type TurnStatusPatch,
   upsertBlockIn,
 } from "./turn-ops";
@@ -26,6 +34,8 @@ export class InMemoryTurnStore implements TurnStore {
   private readonly turnsByThread = new Map<string, Turn[]>();
   private readonly eventCounts = new Map<string, number>();
   private readonly floors = new Map<string, string>();
+  private readonly tombstonesByThread = new Map<string, Tombstones>();
+  private readonly dividersByThread = new Map<string, HeldDividers>();
 
   constructor(options: InMemoryTurnStoreOptions) {
     this.now = options.now;
@@ -41,9 +51,27 @@ export class InMemoryTurnStore implements TurnStore {
    */
   hydrate(threadId: string, turns: readonly Turn[], nextSeq: string): boolean {
     if (!this.acceptsSnapshot(threadId, nextSeq)) return false;
-    this.turnsByThread.set(threadId, [...turns]);
+    const applied = applySnapshotTo(
+      {
+        tombstones: this.tombstonesByThread.get(threadId) ?? new Map(),
+        dividers: this.dividersByThread.get(threadId) ?? new Map(),
+      },
+      turns,
+      nextSeq,
+    );
+    this.turnsByThread.set(threadId, applied.turns);
+    this.tombstonesByThread.set(threadId, applied.tombstones);
+    this.dividersByThread.set(threadId, applied.dividers);
     this.floors.set(threadId, nextSeq);
     return true;
+  }
+
+  /** The held dividers whose anchor turn is not here; only a newer snapshot resolves them. */
+  dividersAwaitingAnchor(threadId: string): AwaitingDivider[] {
+    return dividersAwaitingAnchorIn({
+      turns: this.turnsByThread.get(threadId) ?? [],
+      dividers: this.dividersByThread.get(threadId) ?? new Map(),
+    });
   }
 
   acceptsSnapshot(threadId: string, nextSeq: string): boolean {
@@ -56,6 +84,17 @@ export class InMemoryTurnStore implements TurnStore {
     const existing = this.turnsByThread.get(threadId) ?? [];
     const result = ensureAssistantTurnIn(existing, threadId, turnId, this.now(), opts);
     if (result.kind !== "rejected") this.turnsByThread.set(threadId, result.turns);
+  }
+
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts, seq: string): void {
+    const state = {
+      turns: this.turnsByThread.get(threadId) ?? [],
+      dividers: this.dividersByThread.get(threadId) ?? new Map(),
+    };
+    const next = ensureSwitchTurnIn(state, threadId, facts, seq, this.now());
+    if (next === state) return;
+    this.turnsByThread.set(threadId, next.turns);
+    this.dividersByThread.set(threadId, next.dividers);
   }
 
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void {
@@ -71,6 +110,19 @@ export class InMemoryTurnStore implements TurnStore {
   ): void {
     const next = patchTurnStatusIn(this.turnsByThread.get(threadId) ?? [], turnId, status, patch);
     if (next) this.turnsByThread.set(threadId, next);
+  }
+
+  removeTurns(threadId: string, ids: readonly string[], seq: string): void {
+    const next = removeTurnsIn(
+      {
+        turns: this.turnsByThread.get(threadId) ?? [],
+        tombstones: this.tombstonesByThread.get(threadId) ?? new Map(),
+      },
+      ids,
+      seq,
+    );
+    this.turnsByThread.set(threadId, next.turns);
+    this.tombstonesByThread.set(threadId, next.tombstones);
   }
 
   bumpEventsApplied(threadId: string): number {

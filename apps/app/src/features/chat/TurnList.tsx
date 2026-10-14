@@ -2,7 +2,6 @@
 
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus } from "@meridian/contracts/protocol";
-import { answeredControlIds } from "@meridian/contracts/threads";
 import type { InheritedMark, TranscriptView, ViewRow } from "@meridian/thread-client";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
@@ -28,6 +27,7 @@ import { AppliedWriteModeNotice } from "./thread-controls/WriteModeNotice";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
+import type { ChatStop } from "./useChatStop";
 import type { ReplyRetry } from "./useReplyRetry";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
@@ -47,6 +47,8 @@ export type TurnListProps = {
   waitingForUsage?: boolean;
   /** Writer commands: queued `/compact` and switches with their Stop, and Stop on a running divider. */
   controls?: ThreadControls | null;
+  /** The chat's Stop: a compaction divider's Stop is this one, not a turn cancel. */
+  chatStop?: ChatStop | null;
   /** Retry and Stop on this handoff destination's brief cards. */
   brief?: HandoffBrief | null;
   /** Retry on the latest failed reply, and the new replies it stands in for. */
@@ -75,9 +77,10 @@ export type TurnListProps = {
 type ListRow =
   | ViewRow
   | { kind: "inherited-failed" }
-  | { kind: "queued-controls"; controls: readonly QueuedControl[] };
+  | { kind: "queued-controls"; key: string; controls: readonly QueuedControl[] };
 
 const QUEUED_CONTROLS_KEY = "queued-controls";
+const SWITCHES_BEFORE_REPLY_KEY = "queued-controls-before-reply";
 const INHERITED_FAILED_KEY = "inherited-failed";
 const NO_CONTROLS: readonly QueuedControl[] = [];
 
@@ -97,6 +100,7 @@ export function TurnList({
   submissionRecoveryByTurnId,
   waitingForUsage,
   controls = null,
+  chatStop = null,
   brief = null,
   replyRetry = null,
   busy = false,
@@ -113,22 +117,49 @@ export function TurnList({
   let lastReplyRowIdx = rows.length - 1;
   while (lastReplyRowIdx > 0 && rows[lastReplyRowIdx]?.kind === "write-mode") lastReplyRowIdx -= 1;
   // A command runs only when no message waits, so queued commands sit at the
-  // tail, after every queued message: they take no position until they run.
-  const tailControls = useMemo(() => {
-    const answered = answeredControlIds(view.turns);
-    return (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id));
-  }, [controls?.queued, view.turns]);
-  // List rows are transcript rows shifted down by the alert, when it shows.
+  // tail, after every queued message: they take no position until they run. A switch the
+  // record says applies at the next run's start is the exception: its turn lands before that
+  // run's reply, so its notice sits where `viewTranscript` puts the slot.
+  const { beforeReply, tailControls } = useMemo(() => {
+    const pending = controls?.queued ?? NO_CONTROLS;
+    return {
+      beforeReply: pending.filter((control) => control.awaitsRun),
+      tailControls: pending.filter((control) => !control.awaitsRun),
+    };
+  }, [controls?.queued]);
+  // List rows are transcript rows shifted down by the alert, when it shows, and by the notice
+  // that sits among them.
   const rowOffset = onRetryInherited ? 1 : 0;
+  const { controlSlot } = view;
+  const noticeAt = beforeReply.length ? rowOffset + controlSlot : -1;
   const listRows = useMemo<ListRow[]>(
     () => [
       ...(onRetryInherited ? [{ kind: "inherited-failed" as const }] : []),
-      ...rows,
+      ...rows.slice(0, controlSlot),
+      ...(beforeReply.length
+        ? [
+            {
+              kind: "queued-controls" as const,
+              key: SWITCHES_BEFORE_REPLY_KEY,
+              controls: beforeReply,
+            },
+          ]
+        : []),
+      ...rows.slice(controlSlot),
       ...(tailControls.length
-        ? [{ kind: "queued-controls" as const, controls: tailControls }]
+        ? [{ kind: "queued-controls" as const, key: QUEUED_CONTROLS_KEY, controls: tailControls }]
         : []),
     ],
-    [onRetryInherited, tailControls, rows],
+    [onRetryInherited, beforeReply, tailControls, rows, controlSlot],
+  );
+  /** A transcript row's place in the list, and back. */
+  const listIndexOf = useCallback(
+    (rowIdx: number) => rowIdx + rowOffset + (noticeAt >= 0 && rowIdx >= controlSlot ? 1 : 0),
+    [rowOffset, noticeAt, controlSlot],
+  );
+  const rowIndexOf = useCallback(
+    (listIdx: number) => listIdx - rowOffset - (noticeAt >= 0 && listIdx > noticeAt ? 1 : 0),
+    [rowOffset, noticeAt],
   );
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
@@ -146,7 +177,7 @@ export function TurnList({
       const row = listRows[index];
       if (!row) return index;
       if (row.kind === "inherited-failed") return INHERITED_FAILED_KEY;
-      return row.kind === "queued-controls" ? QUEUED_CONTROLS_KEY : row.renderKey;
+      return row.kind === "queued-controls" ? row.key : row.renderKey;
     },
     overscan: 8,
     paddingStart: TOP_INSET,
@@ -196,7 +227,7 @@ export function TurnList({
       // A transcript that has just mounted is still following the live edge,
       // and would pin back to the bottom once the target's rows are measured.
       releaseFollow();
-      virtualizer.scrollToIndex(index + rowOffset, { align: "center" });
+      virtualizer.scrollToIndex(listIndexOf(index), { align: "center" });
     },
   });
 
@@ -215,8 +246,8 @@ export function TurnList({
         return (
           <CompactionDivider
             turn={turn}
-            stopping={local && (controls?.stoppingTurnIds.has(turn.id) ?? false)}
-            onStop={local ? controls?.stop : undefined}
+            stopping={local && (chatStop?.status === "pending" || chatStop?.status === "stopping")}
+            onStop={local ? chatStop?.stop : undefined}
           />
         );
       }
@@ -281,8 +312,9 @@ export function TurnList({
                     replyRetry.retry(turn);
                   }
                 : undefined,
-              // Like Retry, the refused note is only for the current reply.
-              refused: endsTranscript && replyRetry.refused.has(turn.id),
+              // The refused note is the state of what the writer did, so it stays on the reply
+              // even when another tab's reply landed below it; the next action clears it.
+              refused: replyRetry.refused.has(turn.id),
               requestLost: standIn === "failed",
             }
           : undefined;
@@ -312,6 +344,7 @@ export function TurnList({
       enterFollow,
       replyRetry,
       controls,
+      chatStop,
       lastAssistantIdx,
       lastReplyRowIdx,
       navigateToChange,
@@ -357,7 +390,7 @@ export function TurnList({
           />
         );
       }
-      const content = renderTranscriptRow(row, idx - rowOffset);
+      const content = renderTranscriptRow(row, rowIndexOf(idx));
       return row.inherited ? (
         <InheritedRow mark={row.inherited} owners={inherited?.owners ?? null}>
           {content}
@@ -366,7 +399,7 @@ export function TurnList({
         content
       );
     },
-    [controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowOffset],
+    [busy, controls, inherited?.owners, onRetryInherited, renderTranscriptRow, rowIndexOf],
   );
 
   return (

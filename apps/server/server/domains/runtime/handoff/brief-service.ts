@@ -1,4 +1,5 @@
 /** Owns handoff seed generation, Stop, Retry, accounting, and destination wake-up. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { Thread, Turn } from "@meridian/contracts/threads";
@@ -17,6 +18,7 @@ import type {
   HandoffBriefHold,
   HandoffBriefLauncher,
 } from "../../threads/ports/handoff-brief-launcher.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import { historyReadableAt } from "../loop/history-tool-availability.js";
 import { createLocalTurn } from "../loop/local-turn.js";
@@ -441,7 +443,7 @@ export function createHandoffBriefs(deps: HandoffBriefServiceDeps): HandoffBrief
         if (!latest || !["error", "cancelled"].includes(latest.status))
           throw new HandoffRetryError("handoff_retry_unavailable");
         const leafId = thread.activeLeafTurnId as TurnId | null;
-        const leaf = leafId ? await deps.repos.turns.findById(leafId) : null;
+        const leaf = leafId ? await turnGraph(deps.repos.turns).findById(leafId) : null;
         if (leafId && !leaf) throw new Error("Handoff destination leaf is missing");
         const metadata = HandoffSeedMetadataCodec.parse(latest.metadata);
         const seed = createLocalTurn({

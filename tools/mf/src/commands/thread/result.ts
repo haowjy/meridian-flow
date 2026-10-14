@@ -4,6 +4,7 @@ import { EXIT, type ExitCode } from "../../core/cli-error";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { type LiveDiff, renderLiveDiff } from "./reduced-thread";
+import { currentTurnId, owedWriterMessages } from "./run-state";
 
 export type Outcome =
   | "accepted"
@@ -152,12 +153,11 @@ export function classifyDeadline(
 
 /** Obligations from the mandatory live-state projection, never durable thread.status. */
 export function snapshotActivity(snapshot: ThreadSnapshotResponse) {
-  const turnId = snapshot.liveState.runningTurnId;
+  const { runState } = snapshot.liveState;
+  const turnId = currentTurnId(runState);
   const turn = snapshot.turns.find((candidate) => candidate.id === turnId);
   return {
     stillRunning: turnId ? { turnId, status: turn?.status ?? "unknown" } : null,
-    owed: snapshot.liveState.pending.items.filter(
-      (item) => item.intent === "message" && item.provenance.kind === "writer",
-    ),
+    owed: owedWriterMessages(runState),
   };
 }

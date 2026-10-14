@@ -1,12 +1,17 @@
 /**
  * CLI presentation and follow predicates over the shared socket subscription.
  */
-import type { ThreadLiveState } from "@meridian/contracts/protocol";
+import {
+  apiThreadSnapshotPath,
+  type ThreadLiveState,
+  type ThreadSnapshotResponse,
+} from "@meridian/contracts/protocol";
 import type { ThreadTransport } from "@meridian/thread-client";
 import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
 import type { ReducedThread } from "./reduced-thread";
+import { currentTurnId, runStateOfEvent } from "./run-state";
 import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
@@ -42,6 +47,8 @@ export type FollowOptions = {
   reduced?: ReducedThread;
 };
 
+const ANCHOR_RETRY_MS = 250;
+
 export async function followThread(options: FollowOptions): Promise<FollowResult> {
   const transport = options.transport ?? createThreadClient(options.session);
   const subscription = subscribeThread(transport, options.threadId, options.lastSeq);
@@ -52,12 +59,33 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
   let stopRequested = false;
   let truncated = false;
   let state: ThreadLiveState | null = null;
+  let anchorAskedAt = 0;
+
+  /**
+   * A switch divider waits for a user turn the event stream never carries (a message this
+   * follower did not hydrate, or another client's). Ask for a snapshot, bounded by the deadline,
+   * at most once per interval; there is no tail-insertion fallback.
+   */
+  const recoverAnchor = async () => {
+    const reduced = options.reduced;
+    if (!reduced?.awaitsAnchor()) return;
+    const remaining = options.deadlineAt - Date.now();
+    if (remaining <= 0 || Date.now() - anchorAskedAt < ANCHOR_RETRY_MS) return;
+    anchorAskedAt = Date.now();
+    const snapshot = await options.session.request<ThreadSnapshotResponse>(
+      "GET",
+      apiThreadSnapshotPath(options.threadId),
+      undefined,
+      { timeoutMs: remaining },
+    );
+    reduced.hydrate(snapshot, { observed: false });
+  };
 
   const emit = (event: CliEvent): boolean => {
     if ("turnId" in event) turnIds.add(event.turnId);
-    if (event.type === "event" && event.name === "meridian.thread.status") {
-      const runningTurnId = (event.value as { runningTurnId?: unknown } | undefined)?.runningTurnId;
-      if (typeof runningTurnId === "string") turnIds.add(runningTurnId);
+    if (event.type === "event") {
+      const turn = runStateOfEvent(event);
+      if (turn?.execution?.currentTurnId) turnIds.add(turn.execution.currentTurnId);
     }
     const shown = options.present
       ? options.present(event)
@@ -84,13 +112,16 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
     for (;;) {
       const message = await subscription.next(options.deadlineAt);
       switch (message.type) {
-        case "live":
+        case "live": {
           state = message.state;
-          if (state.runningTurnId) turnIds.add(state.runningTurnId);
+          const turn = currentTurnId(state.runState);
+          if (turn) turnIds.add(turn);
           if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;
+        }
         case "event": {
-          options.reduced?.apply(message.event.event);
+          options.reduced?.apply(message.event.event, message.event.seq);
+          await recoverAnchor();
           const stop = consume(message.event.seq, message.event);
           if (stop) {
             stopRequested = true;

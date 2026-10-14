@@ -11,11 +11,11 @@
 
 import type { AgentSelection } from "@meridian/contracts/agents";
 import {
-  parseSeq,
+  readRunState,
   type SubmittedReference,
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import type { PendingInboxItem } from "@meridian/contracts/threads";
+import type { RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
@@ -37,14 +37,12 @@ export type ChatSubmissionStorage = {
 };
 
 /**
- * The server's answer to a switch, stamped on its record: the journal head `seq` the answer is
- * labelled with, the chat's applied `mode`, and its queued switch, all read in one transaction.
- * Every tab reads the stamp as a server fact. `at` (ms) lets the journal prune it.
+ * The server's answer to a switch, stamped on its record: the whole run-state record the answer
+ * carries, labelled with its version. Every tab reads the stamp as a server fact. `at` (ms) lets
+ * the journal prune it.
  */
 export type ControlAnswer = {
-  seq: string;
-  mode: AiWriteMode;
-  pending: PendingInboxItem | null;
+  runState: RunState;
   at: number;
 };
 
@@ -125,17 +123,9 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 function parseAnswer(value: unknown): ControlAnswer | undefined {
-  if (!isObject(value)) return undefined;
-  const { seq, mode, pending, at } = value;
-  if (
-    typeof seq !== "string" ||
-    parseSeq(seq) === null ||
-    !isAiWriteMode(mode) ||
-    (pending !== null && !isObject(pending)) ||
-    typeof at !== "number"
-  )
-    return undefined;
-  return { seq, mode, pending: pending as PendingInboxItem | null, at };
+  if (!isObject(value) || typeof value.at !== "number") return undefined;
+  const runState = readRunState(value.runState);
+  return runState ? { runState, at: value.at } : undefined;
 }
 
 function isAiWriteMode(value: unknown): value is AiWriteMode {

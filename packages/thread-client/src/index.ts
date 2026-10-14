@@ -2,6 +2,14 @@
 
 export { buildMessageDoc } from "./message/build";
 export {
+  type ChatReferenceScope,
+  chatReferenceResolver,
+  composerDocFromHandedBack,
+  prependMessageDoc,
+  type ReferenceFacts,
+  type ResolveReference,
+} from "./message/hand-back";
+export {
   imageCapable,
   referenceOccurrence,
   referenceSpelling,
@@ -19,8 +27,11 @@ export type {
   MessageSkill,
   MessageSkillNode,
   MessageTextNode,
+  RestorableReference,
   SerializedMessage,
+  StableReferenceAuthority,
 } from "./message/types";
+export * from "./run-state";
 export type * from "./socket/socket-ports";
 export { ThreadSocketClient, type ThreadSocketClientOptions } from "./socket/thread-socket-client";
 export type * from "./socket/thread-transport";
@@ -35,11 +46,20 @@ export {
 } from "./turns/reduce-turn-event";
 export { baseTurnFields } from "./turns/state-helpers";
 export {
+  type AwaitingDivider,
+  applySnapshotTo,
   createAssistantTurn,
+  dividersAwaitingAnchorIn,
   type EnsureAssistantTurnOptions,
   ensureAssistantTurnIn,
+  ensureSwitchTurnIn,
+  type HeldDividers,
   patchTurnStatusIn,
+  removeTurnsIn,
+  type SwitchTurnFacts,
+  type Tombstones,
   type TurnStatusPatch,
+  type TurnsWithTombstones,
   upsertBlockIn,
 } from "./turns/turn-ops";
 export type { AssistantView, ViewItem, ViewRun } from "./view/assistant-view";
@@ -52,7 +72,6 @@ export {
 } from "./view/group-delivery-segments";
 export type { DirectInvocationResult } from "./view/invocation-direct-result";
 export { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./view/optimistic-turn-id";
-export { queuedWriterTurnIds } from "./view/pending-writer-turns";
 export { placeStandIns } from "./view/retry-stand-ins";
 export { type FoldDigest, foldDigest } from "./view/thinking-digest";
 export { threadMessageRow } from "./view/thread-message-result";

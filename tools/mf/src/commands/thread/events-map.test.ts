@@ -18,8 +18,7 @@ describe("RunEventMapper", () => {
       executionId: "execution_golden",
       reservedForUserTurnIds: ["turn_golden_user"],
     });
-    expect(types).toContain("messages.delivered");
-    expect(types.slice(-2)).toEqual(["turn.finished", "execution.ended"]);
+    expect(types).toContain("turn.finished");
     const completed = events.filter((event) => event.type === "message.completed");
     expect(completed).toHaveLength(1);
     const deltas = events

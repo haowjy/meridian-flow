@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * A pending switch is a writer-action notice, not a compaction: no dashed rule, and
- * its words depend on whether a reply that held the chat first makes it wait.
+ * its words depend on whether a reply it can't affect holds the chat.
  */
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
@@ -55,12 +55,6 @@ it("says a switch is queued while a reply it can't affect runs, and names Stop f
   expect(host.textContent).toContain("Switch to draft mode queued");
   expect(host.querySelector("[aria-label='Stop compaction']")).not.toBeNull();
   expect(host.querySelectorAll(".border-dashed")).toHaveLength(1);
-});
-
-it("shows an applied switch awaiting its turn with no Stop", async () => {
-  const host = await render([{ ...draftSwitch, status: "applied", waiting: true }]);
-  expect(host.textContent).toContain("Switched to draft mode");
-  expect(host.querySelector("button")).toBeNull();
 });
 
 it("shows Stop from the first frame, disabled while the switch's post is unanswered", async () => {

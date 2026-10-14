@@ -3,6 +3,7 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
@@ -313,7 +314,7 @@ else
         expect(await runClaim.readRunningTurnId(ids.threadId)).toBe(noticeOnly.next.id);
         expect(await updates()).toHaveLength(2);
       } finally {
-        await runClaim.release(lease);
+        await releaseLeaseUnderLock(db, runClaim, lease);
       }
     });
 

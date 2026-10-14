@@ -7,10 +7,12 @@ import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/con
 import {
   blockContentRecord,
   EventType,
-  EXECUTION_ENDED_EVENT,
   interruptIdForBlock,
-  MESSAGES_DELIVERED_EVENT,
+  MESSAGES_HANDED_BACK_EVENT,
+  RUN_STATE_EVENT,
+  readMessagesHandedBack,
   readRunStartedMeta,
+  readWriteModeSwitched,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
@@ -22,6 +24,7 @@ import {
   readString,
   toBlockContent,
 } from "./state-helpers";
+import type { SwitchTurnFacts } from "./turn-ops";
 
 type InterruptLifecyclePayload = {
   turnId: string;
@@ -58,6 +61,8 @@ export type TurnStore = {
     turnId: string,
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
+  /** Adds the write-mode divider a `meridian.write_mode.switched` frame names (see `ensureSwitchTurnIn`). */
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts, seq: string): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   /** Adapter hook: ask the host to refetch. Reduction never depends on it. */
   invalidateThreadSnapshot?(threadId: string): void;
@@ -67,6 +72,11 @@ export type TurnStore = {
     status: Turn["status"],
     patch?: Partial<Pick<Turn, "completedAt" | "error" | "finishReason">>,
   ): void;
+  /**
+   * Removes turns that left the conversation (handed-back messages) and keeps a tombstone at
+   * `seq`, so a snapshot read before the removal cannot bring them back.
+   */
+  removeTurns(threadId: string, ids: readonly string[], seq: string): void;
   bumpEventsApplied(threadId: string): number;
   settleInterruptResponse(identity: {
     threadId: string;
@@ -112,7 +122,8 @@ function parseCustomBlockUpsertPayload(value: unknown): CustomBlockUpsertPayload
 }
 
 export type TurnReducer = {
-  applyEvent(threadId: string, event: AGUIEvent): void;
+  /** `seq` is the event's stream seq; the frames that remove turns need it for their tombstones. */
+  applyEvent(threadId: string, event: AGUIEvent, seq?: string): void;
   /** False means the owned vocabulary was malformed or not for this thread. */
   applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
   clearPendingInterruptPatchesForThread(threadId: string): void;
@@ -653,7 +664,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
   }
 
   /** Applies one live AG-UI event to the unified thread store. */
-  function applyEvent(threadId: string, event: AGUIEvent): void {
+  function applyEvent(threadId: string, event: AGUIEvent, seq?: string): void {
     if (eventH(event) && event.threadId !== threadId) return;
 
     if (isDurableBlockEvent(event)) {
@@ -1078,22 +1089,30 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         // source durably, and its value holds the child's whole prompt.
         if (event.name === "meridian.subagent.activity" || event.name === "meridian.agent.spawn")
           return;
+        // Waiting messages that left the chat: the turns go, and a tombstone at this frame's
+        // seq keeps an older snapshot from bringing them back.
+        if (event.name === MESSAGES_HANDED_BACK_EVENT) {
+          const handedBack = readMessagesHandedBack(event.value);
+          if (handedBack) store.removeTurns(threadId, handedBack.userTurnIds, seq ?? "0");
+          return;
+        }
+        // The switch turn is not announced by a turn event, so its frame is how a follower gets
+        // the divider; the run-state slice answers the writer's control from the same frame.
+        if (event.name === WRITE_MODE_SWITCHED_EVENT) {
+          const switched = readWriteModeSwitched(event.value);
+          if (switched) store.ensureSwitchTurn(threadId, switched, seq ?? "0");
+          return;
+        }
         // Durable custom projections are consumed by live listeners — the
-        // useThreadDurableProjections trail/Work-binding listener and the
-        // pending-inbox projection (usePendingInbox) — so they are not transcript
+        // useThreadDurableProjections trail/Work-binding listener — so they are not transcript
         // content. Falling through here rendered each one as an "Unknown
         // component" note under the digest for the duration of the turn.
         if (
           event.name === "meridian.turn_change_trail.updated" ||
           event.name === "meridian.turn_change_trail.settled" ||
           event.name === WORK_CONTEXT_PROJECTION_EVENT ||
-          event.name === "meridian.inbox.changed" ||
-          // Run-state facts (delivery, execution end, write-mode switch) are read
-          // by their owners: the run controller and the switch view. The divider
-          // row comes from the durable system turn, never from this frame.
-          event.name === MESSAGES_DELIVERED_EVENT ||
-          event.name === EXECUTION_ENDED_EVENT ||
-          event.name === WRITE_MODE_SWITCHED_EVENT
+          // The run-state record is the chat's run-state slice's.
+          event.name === RUN_STATE_EVENT
         ) {
           return;
         }

@@ -192,7 +192,7 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   const draft = composerSessionDraft(account, { kind: "new-chat", id: "project-1" }).initialDraft;
   if (!draft) throw new Error("No transferred draft");
   expect(serializeComposerDraft(draft.doc).text).toBe(
-    "First rejected\nSecond rejected\nThird unsent\nFourth existing",
+    "First rejected\n\nSecond rejected\n\nThird unsent\n\nFourth existing",
   );
   expect(scenario.turns()).toEqual([]);
   expect(mounted.dissolved).toHaveBeenCalledOnce();

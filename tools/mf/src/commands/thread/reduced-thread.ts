@@ -55,20 +55,35 @@ export class ReducedThread {
   }
 
   /** False when the snapshot is older than what the store already covers. */
-  hydrate(snapshot: Pick<ThreadSnapshotResponse, "turns" | "nextSeq">): boolean {
+  hydrate(
+    snapshot: Pick<ThreadSnapshotResponse, "turns" | "nextSeq">,
+    { observed = true }: { observed?: boolean } = {},
+  ): boolean {
     const accepted = this.store.hydrate(this.threadId, snapshot.turns, snapshot.nextSeq);
-    if (accepted) for (const turn of snapshot.turns) this.observedFromStart.add(turn.id);
+    if (accepted && observed)
+      for (const turn of snapshot.turns) this.observedFromStart.add(turn.id);
     return accepted;
+  }
+
+  /**
+   * Whether a switch divider is held for a turn this follower lacks. User turns are not on the
+   * event stream, so only a snapshot brings the anchor (or releases the divider, if it covers
+   * the switch frame). The app asks the same shared store question.
+   */
+  awaitsAnchor(): boolean {
+    return this.store.dividersAwaitingAnchor(this.threadId).length > 0;
   }
 
   /**
    * Applies every delivered event. Which events arrive is the subscription's
    * cursor (`resumeAfterSeq`); `nextSeq` only decides which snapshot is fresh
-   * enough to hydrate, so it never filters events here.
+   * enough to hydrate, so it never filters events here. The event's seq is required, as in the
+   * app: a removal (`messages.handed_back`) tombstones its turns at that seq, so a snapshot read
+   * before it can't bring them back.
    */
-  apply(event: AGUIEvent): void {
+  apply(event: AGUIEvent, seq: string): void {
     if (event.type === "RUN_STARTED") this.observedFromStart.add(event.runId);
-    this.reducer.applyEvent(this.threadId, event);
+    this.reducer.applyEvent(this.threadId, event, seq);
   }
 
   turns(): Turn[] {

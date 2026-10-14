@@ -23,8 +23,15 @@ it.each([
     for (const turn of stack.turns) turn.status = status;
     stack.publish({
       type: "CUSTOM",
-      name: "meridian.inbox.changed",
-      value: { items: [] },
+      name: "meridian.run_state",
+      value: {
+        version: "9999",
+        items: [],
+        sentThrough: 0,
+        execution: null,
+        mode: "direct",
+        blocked: null,
+      },
     } as AGUIEvent);
     stack.publish(
       status === "error"
@@ -58,8 +65,15 @@ it("covers every turn in batched catch-up and reports failure even after a later
     stack.publish({ type: "RUN_STARTED", threadId: THREAD_ID, runId: "A" } as AGUIEvent);
     stack.publish({
       type: "CUSTOM",
-      name: "meridian.inbox.changed",
-      value: { items: [] },
+      name: "meridian.run_state",
+      value: {
+        version: "9999",
+        items: [],
+        sentThrough: 0,
+        execution: null,
+        mode: "direct",
+        blocked: null,
+      },
     } as AGUIEvent);
     stack.publish({ type: "RUN_ERROR", message: "boom" } as AGUIEvent);
     stack.turns.push({ id: "B", role: "assistant", status: "cancelled", error: null, text: "" });
@@ -199,7 +213,18 @@ it.each([
       publish({ type: "TEXT_MESSAGE_START", messageId: "A::0", role: "assistant" });
       publish({ type: "TEXT_MESSAGE_CONTENT", messageId: "A::0", delta: "Hello " });
     }
-    publish({ type: "CUSTOM", name: "meridian.inbox.changed", value: { items: [] } });
+    publish({
+      type: "CUSTOM",
+      name: "meridian.run_state",
+      value: {
+        version: "9999",
+        items: [],
+        sentThrough: 0,
+        execution: null,
+        mode: "direct",
+        blocked: null,
+      },
+    });
     while (stack.snapshotReads() < 2) await new Promise((resolve) => setTimeout(resolve, 1));
     if (kind === "tool")
       publish({

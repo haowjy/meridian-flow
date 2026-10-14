@@ -40,8 +40,10 @@ rebinds; the model's `work switch` never does
 
 The neutral `useWriteModeToolbarControl` shows a value and reports a choice:
 no dialog, no draft query. In an existing chat the value is the chat's mode
-(the snapshot's record, else `thread.effectiveAiWriteMode` from the project thread list: the
-queued switch's mode, else the applied `aiWriteMode`) with the switch view's intents laid over it
+(the record's mode when the record is there, else `thread.effectiveAiWriteMode` from the
+project thread list, else the Work's default; `effectiveAiWriteMode` is the queued switch's mode,
+else the applied `aiWriteMode`, so a reload shows a pending switch before the snapshot lands)
+with the switch view's intents laid over it
 (`useThreadControls().writeMode`), and a choice dispatches a `write_mode`
 control: a record in the chat's submission journal, posted in order with the
 messages around it. In the new-chat composer the value is the selected Work's
@@ -50,19 +52,17 @@ the writer picked one there. Switching never touches drafts: the dock keeps
 showing pending changes in either mode, and its generating state reads the
 running turn's own mode.
 
-The **switch view** is the one owner of a switch on screen (`client/run-state/`, pure, importing
-only `@meridian/contracts`; `thread-controls/useSwitchView.ts` is its hook). Every server fact
-about a switch carries one clock, the thread's event `seq`, and the view is a function of those
-facts plus this device's unanswered intents. The mechanics live in the module headers:
-`switch-record.ts` (where a record comes from), `switch-reducer.ts` (the one reducer, and what is
-news), `run-state/run-state-view.ts` (records, intents, answers) and `run-state/fold-switches.ts`
-(the fold the toolbar and rows read). The constraints that shape callers:
+The **switch view** is a read of the chat's run-state slice (`client/run-state/run-state-slice.ts`;
+`thread-controls/useSwitchView.ts` is its hook). Every server fact about a switch is a whole
+`RunState` record, and the view is a function of the latest record plus this device's unanswered
+intents. The mechanics live in the module headers: `run-state-slice.ts` (what is news, and what has
+been spoken), `thread-client`'s `run-state/run-state-view.ts` (records, intents, answers) and
+`run-state/fold-switches.ts` (the fold the toolbar and rows read). The constraints that shape callers:
 
-- The first record is always a snapshot. A frame, stamp or answer before it extends nothing, so a
-  failed first load shows no rows and announces nothing. `subscribed` is never a source.
-- Another tab's stamp answers a record this tab chose, so a hidden driving tab cannot strand the
-  choosing tab's row. An unanswered intent is laid over the record even if the record already
-  includes it; the answer's `seq` bounds the effect.
+- The first record is always a snapshot. A frame or answer before it extends nothing, so a failed
+  first load shows no rows and announces nothing.
+- An unanswered intent is laid over the record even if the record already includes it; the
+  answer's record version bounds the effect.
 - A row the server lists is `queued`; one only this device holds is `sending`; a failed or refused
   one shows Retry and is left out of the fold.
 - One reducer decides what is news. A pending switch learned from a live frame or an answer after
@@ -75,23 +75,25 @@ news), `run-state/run-state-view.ts` (records, intents, answers) and `run-state/
   in order with the messages around it.
 
 **The notice.** `thread-controls/WriteModeNotice.tsx` is a quiet, one-line writer-action notice with
-an icon for the mode (no compaction mark, rule or icon). It is the pending switch at the
-transcript tail and the applied switch turn. A pending switch reads "Switched to …" while no reply
-holds the chat (it applies when the next run is admitted) and "Switch to … queued" while one does.
-"Holds the chat" is a server fact, never the client's running-reply flag: the row reads the record
-item's `deliveryState === "waiting"` (the server lists the switch behind a run that held the chat
-first), and the announcer reads the same fact. Only the unlisted `sending` row, which has no record
-item yet, falls back to the flag.
-Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
-the Work default follows the writer's latest choice, Stop included. The bridge row is the
-transcript layer's: an applied switch whose turn has not rendered shows the notice with no Stop,
-keyed by the `write_mode.switched` frame's turn, until that turn renders.
+an icon for the mode (no compaction mark, rule or icon). It is the pending switch and the applied switch turn. A pending switch reads "Switch to … queued" only when its record item's
+`deliveryState` is `waiting` (a reply that already held the chat when it was made has to finish
+first), and "Switched to …" otherwise (`awaiting_run`: the next run applies it, whether or not a
+reply is running when you look). The row and the announcer read that same fact; before the server
+lists the switch (the `sending` row) a running reply is the only fact, and it is not announced. Stop
+is on the row from its first frame, disabled while the switch's post is unanswered.
+A pending switch sits at the transcript tail, except when the record says it applies at the next
+run's start (`awaiting_run`) and a Retry's reply stand-in is showing: `viewTranscript`'s
+`controlSlot` puts it before that stand-in, where its turn lands. Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
+the Work default follows the writer's latest choice, Stop included. An applied switch has no row of its own:
+the `write_mode.switched` frame carries the switch turn's anchor (`prevTurnId`, `position`) and the
+shared reducer inserts the turn right after that turn. When the anchor is not in the transcript the
+turn is held out and the subscriber's gap-only refresh brings both.
 
 No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
-mode but never rewrites an existing row's. Instead the control's POST, Stop's withdraw and a
-queued-switch transition in the pending inbox (`queuedSwitchKey` in `pending-inbox.ts`, so another
-tab's included) call `invalidateWriteModeReads` (thread and Works reads), and a `switched` frame
-invalidates the project thread data. The queue POST does not invalidate the chat feed.
+mode but never rewrites an existing row's, and a queued or cancelled switch (the control's POST) and a `switched` frame invalidate the Works query
+and the project thread lists instead (the chat feed is not among them: it waits for the switch turn). So does a change in the ids of the record's `write_mode`
+items (another tab's queue, cancel or withdrawal): `useSwitchView` compares that key between
+records, taking the first record as its baseline, and calls `invalidateWriteModeReads`.
 
 The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
 Work's draft list, in the trigger and the menu option; with none it reads "Draft".
@@ -134,4 +136,4 @@ resize loop requires `field-sizing: fixed`. Keep that override inline:
 Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
 
 For the shared pending projection and draft-review lifecycle, see
-[draft review](draft-review.md).
+[draft review](../../draft-review/.context/draft-review.md).

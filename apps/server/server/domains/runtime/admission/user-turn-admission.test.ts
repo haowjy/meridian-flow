@@ -45,7 +45,7 @@ function accepted() {
     threadId,
     submissionId: "submission-1",
     userTurnId: "55555555-5555-4555-8555-555555555555" as never,
-    steersTurnId: "66666666-6666-4666-8666-666666666666" as never,
+    runStateVersion: null,
     resumeAfterSeq: "4",
     snapshotFloorNextSeq: "9",
   };
