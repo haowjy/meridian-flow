@@ -100,6 +100,47 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
     return completion;
   }
 
+  /**
+   * The cause a run closes with: a remote Stop's durable cancel flag wins, then the run's local
+   * abort (a parent's cancel or shutdown, which the lease never records), then the run's own.
+   */
+  const closeCause = (
+    input: { cause: TerminalCause; localCancellation?: () => TerminalCause | null },
+    receipt: { cancelRequested: boolean } | null,
+  ): TerminalCause =>
+    receipt?.cancelRequested
+      ? { kind: "cancelled", reason: "cancelled" }
+      : (input.localCancellation?.() ?? input.cause);
+
+  /** A close's terminal write when no successor follows: receipt, cause and settlement under one lock. */
+  const settleClosed = (input: {
+    lease: Lease;
+    turnId: TurnId;
+    cause: TerminalCause;
+    localCancellation?: () => TerminalCause | null;
+  }) =>
+    threadLock.withThreadLock(input.lease.threadId, async () => {
+      const receipt = await leaseStore.lockReceipt(input.lease);
+      return settleTerminal(input.lease, input.turnId, closeCause(input, receipt), receipt);
+    });
+
+  /** Persists a response and acknowledges what the response answered, under the receipt's run. */
+  const ackWithResponse = <T>(
+    lease: Lease,
+    ids: readonly string[],
+    byTurn: Pick<Turn, "id" | "position">,
+    persist: () => Promise<T>,
+  ) =>
+    threadLock.withThreadLock(lease.threadId, async () => {
+      const result = await persist();
+      if (ids.length > 0) {
+        if (!(await leaseStore.clearReceipt(lease, ids)))
+          throw new Error("Cannot ack after losing live run lease");
+        await ack(lease.threadId, [...ids], deliveredBy(lease, byTurn));
+      }
+      return result;
+    });
+
   const clearOrphanedTurn = async (threadId: ThreadId, turnId: TurnId) => {
     const receipt = await leaseStore.lockThreadReceipt(threadId);
     if (!receipt || receipt.turnId !== turnId) return null;
@@ -236,6 +277,9 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
     clearBlockWhenIdle,
     endExecution,
     settleTerminal,
+    closeCause,
+    settleClosed,
+    ackWithResponse,
     settleStaleExecution,
     releaseExecution,
     blockForUsage,

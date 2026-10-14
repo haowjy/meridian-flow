@@ -1,7 +1,7 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
 
 import type { Turn } from "@meridian/contracts/threads";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
@@ -1929,29 +1929,34 @@ else
                 await interleave();
               });
           },
-          /**
-           * Runs `interleave` once, at the first boundary a pending switch can apply behind:
-           * a separate pre-claim apply step where one exists, otherwise the run claim.
-           */
+          /** Runs `interleave` once, at the run claim: before the start selects anything. */
           beforeSwitchApplies(interleave: () => Promise<unknown>) {
             let armed = true;
-            const fire = async () => {
-              if (!armed) return;
-              armed = false;
-              await interleave();
-            };
-            const delivery = rig.delivery as unknown as Record<string, unknown>;
-            const preClaim = delivery.applyDueSwitches;
-            if (typeof preClaim === "function")
-              delivery.applyDueSwitches = async (...args: unknown[]) => {
-                await fire();
-                return preClaim.apply(rig.delivery, args);
-              };
             rig.runClaim.startExecution = (threadId, executionId, settle) =>
               start(threadId, executionId, async () => {
                 await settle();
-                await fire();
+                if (!armed) return;
+                armed = false;
+                await interleave();
               });
+          },
+          /**
+           * Runs `probe` once, in the preparation that follows the start's selection while the
+           * thread lock is held: the first history read under a granted advisory lock.
+           */
+          duringPreparation(probe: () => Promise<unknown>) {
+            const list = rig.repos.blocks.listByThread.bind(rig.repos.blocks);
+            let armed = true;
+            rig.repos.blocks.listByThread = async (...args) => {
+              const held = await db.execute(
+                sql`select 1 from pg_locks where locktype = 'advisory' and granted and database = (select oid from pg_database where datname = current_database())`,
+              );
+              if (armed && held.length > 0) {
+                armed = false;
+                await probe();
+              }
+              return list(...args);
+            };
           },
           retry: (replyTurnId: string) =>
             rig.orchestrator.retryReply({
@@ -1962,13 +1967,49 @@ else
         };
       }
 
-      it("applies a switch queued while Retry claims the chat and chains the retry after it", async () => {
-        const { gateway, rig, failed, whileClaiming, retry } = await failedReplyRig();
-        whileClaiming(() => switchMode(rig, "draft"));
+      it("applies a switch queued while Retry claims the chat with the Retry's reservation, or not at all", async () => {
+        const { gateway, rig, failed, beforeSwitchApplies, duringPreparation, retry } =
+          await failedReplyRig();
+        beforeSwitchApplies(() => switchMode(rig, "draft"));
+        const aborted = new AbortController();
+        const abort = () => aborted.abort();
+        duringPreparation(async () => abort());
 
+        // A start discarded after it selected the due switch leaves the switch pending.
+        await expect(
+          rig.orchestrator.prepare({
+            threadId: rig.threadId,
+            drain: true,
+            replyTurnId: crypto.randomUUID() as never,
+            retryOf: failed.id as never,
+            signal: aborted.signal,
+          }),
+        ).rejects.toThrow();
+        await processDetachedWork.drain();
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(await threadMode(rig)).toBe("direct");
+        expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.intent)).toEqual([
+          "control",
+        ]);
+
+        // The Retry that follows applies it with its own reservation: mid-preparation, no other
+        // connection sees the mode, the switch turn or the acknowledgement.
+        const midway: { mode?: string; switches?: number; pending?: number } = {};
+        duringPreparation(async () => {
+          // Plain queries on the pool: the start's own transaction is not this connection's.
+          const [row] = await db.execute(sql`
+            select
+              (select ai_write_mode from threads where id = ${rig.threadId}) as mode,
+              (select count(*)::int from turns where thread_id = ${rig.threadId}
+                 and metadata->>'kind' = 'write_mode_switch') as switches,
+              (select count(*)::int from thread_inbox_messages where thread_id = ${rig.threadId}
+                 and intent = 'control' and delivered_at is null) as pending`);
+          Object.assign(midway, row);
+        });
         const replyTurnId = crypto.randomUUID();
         const started = await retry(replyTurnId);
         await processDetachedWork.drain();
+        expect(midway).toEqual({ mode: "direct", switches: 0, pending: 1 });
 
         // The Retry starts a reply, so the switch applies first, though it arrived after Retry's reads.
         const [switchTurn] = await switchTurns(rig);

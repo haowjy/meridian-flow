@@ -163,7 +163,7 @@ same rule.
 
 After a run releases its claim, `wakeIfRunnable` uses the same run-start selector as
 setup; a due write-mode switch applies inside the admitted run start
-(`selectRunStart`), never in the wake. It re-reads after runs that found no
+(`selectRunStart`), never in the wake, and in the transaction that reserves the run. It re-reads after runs that found no
 work and after setup cancellation, so work enqueued while a claim was held is
 not lost. A failed assistant acknowledges its adopted messages before release,
 so neither the reread nor the periodic sweep replays that execution. The wake has no
@@ -220,7 +220,7 @@ thread lock, then uses the drain-start path. The protocol selects pending IDs,
 peeks notices, and reads the active leaf without the lock; prepares image
 decisions, references, skills, and turn drafts without writes; then takes the
 thread lock and validates the leaf and pending batch. A changed selection is
-discarded and retried for at most three attempts; attempt three prepares under
+discarded and retried for at most three attempts; attempt three, or any start whose selection holds a due write-mode switch, prepares under
 the lock. One ambient transaction consumes exactly the selected notice IDs,
 persists the first prompt bake and preparation effects, adopts the batch, and
 reserves/binds the assistant. Preparation failure leaves notices queued but

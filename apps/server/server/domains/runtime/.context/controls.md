@@ -85,11 +85,22 @@ whose only pending row is a switch. A switch queued while setup is in flight is
 found by the selection's retry loop, and the start commit validates that
 selection.
 
-The apply is one transaction under the thread lock: set `threads.ai_write_mode`,
-append a complete `system` turn at the active leaf (`writeMode` = the new mode,
-metadata `{ kind: "write_mode_switch", mode, controlMessageId }`) whose text
-block is the model's `<system_update>` notice, acknowledge the control and
-publish the run-state record (which carries the new mode). No model call and no lease.
+The apply commits in the thread-lock transaction that reserves the run: set
+`threads.ai_write_mode`, append a complete `system` turn at the active leaf
+(`writeMode` = the new mode, metadata `{ kind: "write_mode_switch", mode,
+controlMessageId }`) whose text block is the model's `<system_update>` notice,
+acknowledge the control and publish the run-state record (which carries the new
+mode), then the reservation. All of it commits together or none of it does, so a
+start that is aborted, cancelled or refused after it selected the switch leaves S
+pending. No model call and no lease.
+
+Preparation (references, images, skills, the compaction decision) reads storage,
+and the history it builds must include the switch turn and the new mode. A start
+that selects a due switch therefore skips the optimistic attempts and prepares in
+the locked attempt, applying S first; there is no projected switch and no
+compensating one. This holds the thread lock for that preparation, so a writer
+admission on the chat waits for it (a start with no due switch prepares outside
+the lock as before).
 
 A switch never wakes the chat and the route never applies one. Switching back,
 or Stop, cancels the queued switch with nothing recorded. The Work's
