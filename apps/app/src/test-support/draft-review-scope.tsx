@@ -54,17 +54,12 @@ export const listed = {
   binary: false,
   wholeItem: false,
   conflict: null,
-  tokens: {
-    locationToken: "location-1",
-    liveTextToken: "live-1",
-    branchGenerationToken: "generation-1",
-  },
+  tokens: { locationToken: "location-1" },
   settling: false,
   itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
   contextLocation: null,
-  branchGeneration: 1,
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
 };

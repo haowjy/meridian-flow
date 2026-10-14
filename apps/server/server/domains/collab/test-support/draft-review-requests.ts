@@ -42,10 +42,10 @@ export async function commitBranchEdit(
   },
   mutate: (doc: Y.Doc) => void,
 ) {
-  const staged = await fixture.branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
+  const staged = await fixture.branchCoordinator.readBranch(branchId, async (doc) => {
     const clone = createCollabYDoc({ gc: false });
     Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-    return { clone, generation: snapshot.generation };
+    return { clone };
   });
   try {
     if (author.clientId !== undefined) staged.clone.clientID = author.clientId;

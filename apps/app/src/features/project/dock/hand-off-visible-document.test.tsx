@@ -130,7 +130,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         wholeItem: true,
         conflict: null,
         settling: false,
-        tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
+        tokens: { locationToken: "location" },
         contextLocation: { scheme: tab.scheme, path: tab.path },
         isNew: draftOnly,
       },

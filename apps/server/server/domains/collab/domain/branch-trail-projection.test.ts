@@ -445,7 +445,6 @@ it("keeps an unrelated deletion and insertion in one push as separate events", (
   const row = (id: number, updateData: Uint8Array): BranchJournalRow => ({
     id,
     branchId: "branch-1",
-    generation: 1,
     wId: null,
     source: "agent",
     threadId: null,

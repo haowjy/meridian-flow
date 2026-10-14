@@ -93,20 +93,6 @@ export function blockTextMap(model: YProsemirrorDocumentModel, doc: Y.Doc): Map<
   }
   return result;
 }
-
-export function stablePushIdempotencyKey(input: {
-  branchId: string;
-  generation: number;
-  journalIds: number[];
-}): string {
-  return createHash("sha256")
-    .update(input.branchId)
-    .update("\0")
-    .update(String(input.generation))
-    .update("\0")
-    .update([...input.journalIds].sort((a, b) => a - b).join(","))
-    .digest("hex");
-}
 export class BranchPeerIntegrationError extends Error {
   constructor(
     readonly operation: string,

@@ -54,14 +54,11 @@ export const documentEdits = pgTable(
       .references(() => users.id, { onDelete: "set null" }),
     wId: integer("w_id"),
     kind: text("kind").$type<"write" | "undo" | "redo" | "revert" | "rollback">().notNull(),
-    actionId: uuid("action_id"),
-    consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     createdAt: createdAt(),
   },
   (t) => [
     index("document_edits_document_idx").on(t.documentId),
     index("document_edits_turn_idx").on(t.turnId),
-    index("document_edits_action_idx").on(t.actionId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
     check(
       "document_edits_kind_valid",
@@ -93,13 +90,13 @@ export const documentEditParts = pgTable(
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
     index("document_edit_parts_pending_idx")
-      .on(sql`(${t.placement}->>'branchId')`, sql`(${t.placement}->>'generation')`)
+      .on(sql`(${t.placement}->>'branchId')`)
       .where(sql`${t.placement}->>'kind' = 'pending'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
     check(
-      "document_edit_parts_placement_valid",
-      sql`${t.placement}->>'kind' IN ('pending','live','discarded','retired')`,
+      "document_edit_parts_placement_kind_valid",
+      sql`${t.placement}->>'kind' IN ('pending','live','discarded')`,
     ),
   ],
 );

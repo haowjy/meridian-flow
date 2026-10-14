@@ -1332,10 +1332,10 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     );
     const branch = await branchStore.resolveWorkDraftBranchForThread(ALPHA_ID, THREAD_ID);
     branch.doc.destroy();
-    const staged = await branchCoordinator.readBranch(branch.branchId, async (doc, snapshot) => {
+    const staged = await branchCoordinator.readBranch(branch.branchId, async (doc) => {
       const stagedDoc = new Y.Doc({ gc: false });
       Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
-      return { doc: stagedDoc, generation: snapshot.generation };
+      return { doc: stagedDoc };
     });
     try {
       const block = model.getBlocks(toDocHandle(staged.doc))[0];
@@ -2099,19 +2099,11 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     pollTrails: () => trailDelivery.drain(),
     /** Stops debounced live pulls (scheduled by AI live commits) leaking into later tests. */
     cancelScheduledPulls: () => branchPulls.cancelScheduledPulls(),
-    async branchGeneration(branchId: string) {
-      const [branch] = await db
-        .select({ generation: schema.documentBranches.generation })
-        .from(schema.documentBranches)
-        .where(eq(schema.documentBranches.id, branchId));
-      if (!branch) throw new Error("missing branch");
-      return branch.generation;
-    },
     async stageAnotherDestructiveEdit(branchId: string) {
-      const staged = await branchCoordinator.readBranch(branchId, async (doc, snapshot) => {
+      const staged = await branchCoordinator.readBranch(branchId, async (doc) => {
         const stagedDoc = new Y.Doc({ gc: false });
         Y.applyUpdate(stagedDoc, Y.encodeStateAsUpdate(doc));
-        return { doc: stagedDoc, generation: snapshot.generation };
+        return { doc: stagedDoc };
       });
       try {
         const doc = staged.doc;
@@ -2329,7 +2321,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       if (!owned) throw new Error("missing owned journal row");
       await db.insert(schema.branchWriteJournal).values({
         branchId: owned.branchId,
-        generation: owned.generation,
         wId: owned.wId,
         source: owned.source,
         threadId: owned.threadId,

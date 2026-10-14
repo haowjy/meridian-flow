@@ -37,9 +37,7 @@ describeDraftTreeDb("Apply all and holds (postgres)", (start) => {
     await s.model(beacon).copy("charts/cover.png", "art/map.png");
     const [first] = await s.items(ascension);
     const [second] = await s.items(beacon);
-    expect
-      .soft([first?.binary, first?.branchGeneration], "an image has no branch")
-      .toEqual([true, null]);
+    expect.soft(first?.binary, "an image has no branch").toBe(true);
     expect.soft(first?.documentId, "two pictures").not.toBe(second?.documentId);
 
     expect.soft(await s.applyAll(ascension), "payload-only").toMatchObject({

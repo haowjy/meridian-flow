@@ -153,10 +153,8 @@ export function createDrizzleBranchStore(
       workId: mapped?.workId ?? null,
       threadId: row.threadId,
       status: row.status,
-      generation: row.generation,
       state: row.state,
       stateVector: row.stateVector,
-      discardedStateVector: row.discardedStateVector,
       baseRevision: row.baseRevision,
       schemaVersion: row.schemaVersion,
     });
@@ -246,7 +244,7 @@ export function createDrizzleBranchStore(
   }
 
   /**
-   * §12.5, O-11: a contribution is any journal row of the branch's current generation that
+   * §12.5, O-11: a contribution is any journal row of the branch that
    * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
    */
   async function retractCreatedDraftBranch(input: {
@@ -260,7 +258,6 @@ export function createDrizzleBranchStore(
     const drafted = await tx
       .select({
         id: documentBranches.id,
-        generation: documentBranches.generation,
         threadId: documentBranches.threadId,
       })
       .from(documentBranches)
@@ -278,7 +275,6 @@ export function createDrizzleBranchStore(
         : await tx
             .select({
               id: documentBranches.id,
-              generation: documentBranches.generation,
               threadId: documentBranches.threadId,
             })
             .from(documentBranches)
@@ -296,7 +292,6 @@ export function createDrizzleBranchStore(
         .where(
           and(
             eq(branchWriteJournal.branchId, branch.id),
-            eq(branchWriteJournal.generation, branch.generation),
             sql`${branchWriteJournal.status} <> 'discarded'`,
           ),
         )
@@ -497,24 +492,14 @@ export function createDrizzleBranchStore(
           const [head] = await tx
             .select({ id: sql<number>`coalesce(max(${branchWriteJournal.id}), 0)::bigint` })
             .from(branchWriteJournal)
-            .where(
-              and(
-                eq(branchWriteJournal.branchId, journal.branchId),
-                eq(branchWriteJournal.generation, journal.generation),
-              ),
-            );
+            .where(and(eq(branchWriteJournal.branchId, journal.branchId)));
           if ((head?.id ?? 0) > journal.expectedJournalWatermark) return false;
         }
         if (journal.expectedJournalRevision !== undefined) {
           const rows = await tx
             .select({ id: branchWriteJournal.id, status: branchWriteJournal.status })
             .from(branchWriteJournal)
-            .where(
-              and(
-                eq(branchWriteJournal.branchId, journal.branchId),
-                eq(branchWriteJournal.generation, journal.generation),
-              ),
-            )
+            .where(and(eq(branchWriteJournal.branchId, journal.branchId)))
             .orderBy(branchWriteJournal.id)
             .for("update");
           if (branchJournalRevision(rows) !== journal.expectedJournalRevision) return false;
@@ -527,7 +512,6 @@ export function createDrizzleBranchStore(
           .values(
             journals.map((journal) => ({
               branchId: journal.branchId,
-              generation: journal.generation,
               updateData: Buffer.from(journal.updateData),
               draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
               source: journal.source,
@@ -595,7 +579,6 @@ export function createDrizzleBranchStore(
             .insert(branchWriteJournal)
             .values({
               branchId: input.branchId,
-              generation: input.generation,
               updateData: Buffer.from(input.updateData),
               draftBaseUpdateSeq: draftBaseForBranch(input.branchId),
               source: input.source,
@@ -622,7 +605,6 @@ export function createDrizzleBranchStore(
       return {
         branchId: row.branchId,
         doc: materializeBranch(row, threadId),
-        generation: row.generation,
       };
     },
 
@@ -641,7 +623,6 @@ export function createDrizzleBranchStore(
       return {
         branchId: row.branchId,
         doc: materializeBranch(row, threadId),
-        generation: row.generation,
       };
     },
 
@@ -662,7 +643,6 @@ export function createDrizzleBranchStore(
       return {
         branchId: branch.branchId,
         doc: materializeBranch(branch, "" as ThreadId),
-        generation: branch.generation,
       };
     },
 
@@ -747,10 +727,8 @@ function selectBranch(db: DrizzleDb) {
       workId: branchDraftWork.workId,
       threadId: documentBranches.threadId,
       status: documentBranches.status,
-      generation: documentBranches.generation,
       state: documentBranches.state,
       stateVector: documentBranches.stateVector,
-      discardedStateVector: documentBranches.discardedStateVector,
       baseRevision: documentBranches.baseRevision,
       schemaVersion: documentBranches.schemaVersion,
     })
@@ -768,10 +746,8 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     workId: (row.workId as WorkId | null) ?? null,
     threadId: row.threadId,
     status: row.status,
-    generation: row.generation,
     state: row.state,
     stateVector: row.stateVector,
-    discardedStateVector: row.discardedStateVector,
     baseRevision: row.baseRevision,
     schemaVersion: unpackCollabSchemaVersion(row.schemaVersion),
   };
@@ -815,7 +791,6 @@ async function captureBranchEdits(
       origin: {
         kind: "pending",
         branchId: branch.branchId,
-        generation: branch.generation,
         rowId: rows[i].id,
       },
     })),

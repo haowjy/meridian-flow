@@ -60,7 +60,7 @@ it("returns editKind from the pending part's origin, whatever its placement or t
     const read = createDrizzleBranchJournalReadStore(db);
     const kinds = (found: Awaited<ReturnType<typeof read.listJournalRowsForBranch>>) =>
       found.map((row) => [row.id, row.editKind]);
-    const input = { branchId: branch.branchId, generation: branch.generation };
+    const input = { branchId: branch.branchId };
 
     // Inside an open transaction, a row inserted earlier in it is read.
     await runInDrizzleTransaction(db, async () => {

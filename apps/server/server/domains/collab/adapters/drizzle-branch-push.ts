@@ -55,29 +55,24 @@ export function sortPushesByDocumentId<T extends { branch: { documentId: string 
 
 export function createDrizzleBranchJournalReadStore(db: Database): BranchJournalReadStore {
   return {
-    async listActiveJournalRows(branchId, generation) {
+    async listActiveJournalRows(branchId) {
       const rows = await db
         .select()
         .from(branchWriteJournal)
         .where(
-          and(
-            eq(branchWriteJournal.branchId, branchId),
-            eq(branchWriteJournal.generation, generation),
-            eq(branchWriteJournal.status, "active"),
-          ),
+          and(eq(branchWriteJournal.branchId, branchId), eq(branchWriteJournal.status, "active")),
         )
         .orderBy(branchWriteJournal.id);
       return rows.map(mapJournalRow);
     },
 
-    async listReviewableJournalRows(branchId, generation) {
+    async listReviewableJournalRows(branchId) {
       const rows = await db
         .select()
         .from(branchWriteJournal)
         .where(
           and(
             eq(branchWriteJournal.branchId, branchId),
-            eq(branchWriteJournal.generation, generation),
             inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
           ),
         )
@@ -91,9 +86,6 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
         eq(branchWriteJournal.turnId, input.turnId),
       ];
       if (input.branchId) conditions.push(eq(branchWriteJournal.branchId, input.branchId));
-      if (input.generation !== undefined) {
-        conditions.push(eq(branchWriteJournal.generation, input.generation));
-      }
       if (input.statuses && input.statuses.length > 0) {
         conditions.push(inArray(branchWriteJournal.status, [...input.statuses]));
       }
@@ -106,10 +98,7 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
     },
 
     async listJournalRowsForBranch(input) {
-      const conditions = [
-        eq(branchWriteJournal.branchId, input.branchId),
-        eq(branchWriteJournal.generation, input.generation),
-      ];
+      const conditions = [eq(branchWriteJournal.branchId, input.branchId)];
       if (input.throughJournalId !== undefined) {
         conditions.push(sql`${branchWriteJournal.id} <= ${input.throughJournalId}`);
       }
@@ -124,7 +113,6 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
           sql`
           ${documentEditParts.origin}->>'kind' = 'pending'
           and ${documentEditParts.origin}->>'branchId' = ${branchWriteJournal.branchId}::text
-          and ${documentEditParts.origin}->>'generation' = ${branchWriteJournal.generation}::text
           and ${documentEditParts.origin}->>'rowId' = ${branchWriteJournal.id}::text
         `,
         )
@@ -169,7 +157,7 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
       return rows.map(mapLineage);
     },
 
-    async listConcurrentJournalRows(branchId, generation, options) {
+    async listConcurrentJournalRows(branchId, options) {
       const floor = options.afterJournalId ?? 0;
       // A save's attribution reads inside its own transaction: the root pool handle would
       // wait on another connection and miss that transaction's uncommitted rows.
@@ -184,15 +172,11 @@ export function createDrizzleBranchJournalReadStore(db: Database): BranchJournal
             // Same-branch active rows and cross-branch pushed rows are both needed for
             // attribution. Cold-start scans are deliberately unbounded until we add a
             // push-ordered floor; max(journal.id) is unsound because journal ids can include
-            // unpushed sibling rows and do not encode push order. Each row remains bounded
-            // by its owning branch generation so reset/future-generation rows cannot leak
-            // backward.
+            // unpushed sibling rows and do not encode push order.
             sql`(
               (${branchWriteJournal.branchId} = ${branchId}
-                AND ${branchWriteJournal.generation} <= ${generation}
                 AND ${branchWriteJournal.status} IN ('active', 'pushed'))
               OR (${branchWriteJournal.branchId} <> ${branchId}
-                AND ${branchWriteJournal.generation} <= ${documentBranches.generation}
                 AND ${branchWriteJournal.status} = 'pushed')
             )`,
           ),
@@ -439,7 +423,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         .select({
           branchId: documentBranches.id,
           documentId: documentBranches.documentId,
-          generation: documentBranches.generation,
           updatedAt: documentBranches.updatedAt,
           hasEffect: documentBranches.hasEffect,
           blocking: documentBranches.blocking,
@@ -451,7 +434,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
           branchWriteJournal,
           and(
             eq(branchWriteJournal.branchId, documentBranches.id),
-            eq(branchWriteJournal.generation, documentBranches.generation),
             inArray(branchWriteJournal.status, ["active", "rollback_pending"]),
           ),
         )
@@ -473,7 +455,6 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
             branchId: row.branchId,
             documentId: row.documentId,
             draftId,
-            generation: row.generation,
             updatedAt: row.updatedAt,
             hasEffect: row.hasEffect,
             blocking: row.blocking,
@@ -508,7 +489,6 @@ async function commitPreparedPush(
     .insert(pushLineage)
     .values({
       branchId: input.branch.branchId,
-      branchGeneration: input.branch.generation,
       documentId: input.branch.documentId,
       // A content member moves no journal rows (the column stays NOT NULL for historical rows).
       journalIds: [],
@@ -529,7 +509,6 @@ function mapJournalRow(row: typeof branchWriteJournal.$inferSelect): BranchJourn
   return {
     id: row.id,
     branchId: row.branchId,
-    generation: row.generation,
     wId: row.wId,
     toolCallId: row.toolCallId,
     source: row.source,

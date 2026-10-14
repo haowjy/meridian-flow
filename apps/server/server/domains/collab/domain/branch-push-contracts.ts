@@ -47,7 +47,6 @@ export class BranchPushRetryExhaustedError extends Error {
 export type BranchJournalRow = {
   id: number;
   branchId: string;
-  generation: number;
   wId: number | null;
   /** The model's tool call that made this write; null for writer rows and legacy rows. */
   toolCallId?: string | null;
@@ -84,7 +83,6 @@ export type PublicationBlockChange = {
 export type PushLineageRow = {
   id: number;
   branchId: string | null;
-  branchGeneration: number;
   documentId: DocumentId;
   journalIds: number[];
   upstreamUpdateSeq: number | null;
@@ -195,23 +193,20 @@ export type TrailContributionReplacement = {
 };
 
 export type BranchJournalReadStore = {
-  listActiveJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
-  listReviewableJournalRows(branchId: string, generation: number): Promise<BranchJournalRow[]>;
+  listActiveJournalRows(branchId: string): Promise<BranchJournalRow[]>;
+  listReviewableJournalRows(branchId: string): Promise<BranchJournalRow[]>;
   listConcurrentJournalRows(
     branchId: string,
-    generation: number,
     options: { afterJournalId?: number; documentId: DocumentId },
   ): Promise<BranchJournalRow[]>;
   listJournalRowsForTurn(input: {
     branchId?: string;
-    generation?: number;
     threadId: ThreadId;
     turnId: TurnId;
     statuses?: readonly BranchJournalRow["status"][];
   }): Promise<BranchJournalRow[]>;
   listJournalRowsForBranch(input: {
     branchId: string;
-    generation: number;
     throughJournalId?: number;
   }): Promise<BranchJournalRow[]>;
   listPushLineageForTurn(input: { threadId: ThreadId; turnId: TurnId }): Promise<PushLineageRow[]>;

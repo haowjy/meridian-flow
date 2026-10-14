@@ -203,7 +203,6 @@ describe("change trail dirty signals (postgres)", () => {
         .insert(schema.branchWriteJournal)
         .values({
           branchId,
-          generation: 1,
           source: "writer",
           updateData: Buffer.from([0, 0]),
           draftBaseUpdateSeq: 0,
@@ -215,7 +214,6 @@ describe("change trail dirty signals (postgres)", () => {
         .insert(schema.pushLineage)
         .values({
           documentId: ALPHA_ID,
-          branchGeneration: 1,
           journalIds: [journal.id],
           idempotencyKey: "inverse-only",
         })

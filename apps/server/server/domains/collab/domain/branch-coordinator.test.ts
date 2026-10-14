@@ -58,7 +58,6 @@ function branchSnapshot(input: {
     workId: WORK_ID,
     threadId: input.kind === "thread_peer" ? THREAD_ID : null,
     status: "active",
-    generation: 1,
     state: Y.encodeStateAsUpdate(input.doc),
     stateVector: Y.encodeStateVector(input.doc),
     schemaVersion: COLLAB_SCHEMA_VERSION,
@@ -100,7 +99,6 @@ class MemoryBranchStore implements BranchStore {
   private persist(
     input: {
       branchId: string;
-      expectedGeneration?: number;
       expectedStateVector?: Uint8Array;
       expectedState?: Uint8Array;
     },
@@ -112,8 +110,6 @@ class MemoryBranchStore implements BranchStore {
     }
     const current = this.branches.get(input.branchId);
     if (!current) return false;
-    if (input.expectedGeneration !== undefined && current.generation !== input.expectedGeneration)
-      return false;
     if (input.expectedStateVector && !bytesEqual(current.stateVector, input.expectedStateVector)) {
       return false;
     }
@@ -446,8 +442,8 @@ describe("a save's owned session (U1)", () => {
         rows: [],
       });
       await session.checkpoint("peer");
-      await session.listHelperHistory({ branchId: "work", generation: 1 });
-      await session.listConcurrentRows("work", 1, { documentId: DOCUMENT_ID });
+      await session.listHelperHistory({ branchId: "work" });
+      await session.listConcurrentRows("work", { documentId: DOCUMENT_ID });
       expect(run).not.toHaveBeenCalled();
       expect(listJournalRowsForBranch).toHaveBeenCalledOnce();
       expect(listConcurrentJournalRows).toHaveBeenCalledOnce();
@@ -456,8 +452,8 @@ describe("a save's owned session (U1)", () => {
         () => session.read("other", async () => undefined),
         () => session.withTransient("other", async () => undefined),
         () => session.checkpoint("other"),
-        () => session.listHelperHistory({ branchId: "other", generation: 1 }),
-        () => session.listConcurrentRows("other", 1, { documentId: DOCUMENT_ID }),
+        () => session.listHelperHistory({ branchId: "other" }),
+        () => session.listConcurrentRows("other", { documentId: DOCUMENT_ID }),
       ])
         await expect(call()).rejects.toBeInstanceOf(BranchLeaseScopeError);
       expect(run).not.toHaveBeenCalled();
@@ -487,7 +483,6 @@ describe("peer containment", () => {
     // not a state to repair by resetting the peer.
     await pull(coordinator, "peer", cloneOf(shared));
     expect(notContained).toHaveBeenCalledWith({ branchId: "peer", upstreamBranchId: "work" });
-    expect(storedBranch(store, "peer").generation).toBe(1);
     expect(materialize(storedBranch(store, "peer")).getText("content").toString()).toBe(
       "base discarded",
     );

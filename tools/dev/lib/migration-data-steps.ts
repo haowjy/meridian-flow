@@ -9,10 +9,16 @@
  * version, a new marker and a new migration entry.
  *
  * Strict both ways, before any work: a pending migration whose marker names an unregistered
- * `id@version`, and a registered step that does not have exactly one anchor carrying its own
- * `id@version`, both refuse the run.
+ * `id@version` (no step, or another version of one) refuses the run, and so does a registered step
+ * marked by more than one migration. A registered step with no marker in the given history has nothing
+ * pending; the repository's own history keeps every registered step anchored (a durable test).
  */
-import type { DataStepContext } from "@meridian/database/migration-steps";
+import {
+  convertReviewBases,
+  type DataStepContext,
+  preflightReviewBaseConversion,
+  REVIEW_BASE_CONVERSION_STEP_ID,
+} from "@meridian/database/migration-steps";
 import type postgres from "postgres";
 import type { MigrationIdentity } from "./migration-history";
 
@@ -26,7 +32,14 @@ export interface MigrationDataStep {
   run(session: postgres.Sql, context: DataStepContext): Promise<unknown>;
 }
 
-export const MIGRATION_DATA_STEPS: readonly MigrationDataStep[] = [];
+export const MIGRATION_DATA_STEPS: readonly MigrationDataStep[] = [
+  {
+    id: REVIEW_BASE_CONVERSION_STEP_ID,
+    version: 1,
+    preflight: preflightReviewBaseConversion,
+    run: convertReviewBases,
+  },
+];
 
 const MARKER = /^--[ \t]*data-step:[ \t]*([\w-]+)@(\d+)[ \t]*$/gm;
 
@@ -68,15 +81,11 @@ export function planDataSteps(
   const due: DataStepPlan["due"] = [];
   for (const step of steps) {
     const tags = anchors.get(stepKey(step)) ?? [];
-    if (tags.length !== 1) {
+    if (tags.length > 1) {
       issues.push(
-        tags.length === 0
-          ? `data step ${stepKey(step)} has no migration carrying its marker`
-          : `data step ${stepKey(step)} is marked by ${tags.length} migrations (${tags.join(", ")})`,
+        `data step ${stepKey(step)} is marked by ${tags.length} migrations (${tags.join(", ")})`,
       );
-      continue;
-    }
-    if (pendingTags.has(tags[0])) due.push({ step, anchorTag: tags[0] });
+    } else if (tags[0] && pendingTags.has(tags[0])) due.push({ step, anchorTag: tags[0] });
   }
   return { issues, due };
 }

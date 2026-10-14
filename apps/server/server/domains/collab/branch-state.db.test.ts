@@ -103,7 +103,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // The Work's pending membership still needs a journal row beside the effect (R2 drops that).
       await branches.appendJournal({
         branchId: BRANCH_ID,
-        generation: 1,
         updateData: new Uint8Array([1]),
         source: "agent",
       });

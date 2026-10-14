@@ -4,7 +4,6 @@ import { branchRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
 import type { EventSink } from "../../observability/index.js";
 import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import { closeBranchRooms } from "../hocuspocus-rooms.js";
 
 const BRANCH_AGENT_BROADCAST_ORIGIN = {
   source: "local",
@@ -23,9 +22,6 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
     require(): Hocuspocus {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
-    },
-    closeBranch(branchId: string): void {
-      closeBranchRooms(instance, branchId);
     },
     publishBranchUpdate({ branchId, update }: { branchId: string; update: Uint8Array }): void {
       try {

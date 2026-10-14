@@ -202,7 +202,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     criticalSections,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
     onLateWriterEdits: createLateWriterEditsReporter(deps.eventSink),
-    onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),
     onPeerNotContained: ({ branchId, upstreamBranchId }) => {
       if (!deps.eventSink) return;
       emitEvent(deps.eventSink, {

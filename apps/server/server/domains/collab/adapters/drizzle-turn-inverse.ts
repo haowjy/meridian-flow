@@ -238,7 +238,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                   .insert(branchWriteJournal)
                   .values({
                     branchId: draft.branch.branchId,
-                    generation: draft.branch.generation,
                     updateData: Buffer.from(part.update),
                     source: query.model ? "agent" : "writer",
                     threadId: query.model ? query.threadId : null,
@@ -263,7 +262,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 origin = {
                   kind: "pending",
                   branchId: draft.branch.branchId,
-                  generation: draft.branch.generation,
                   rowId: row.id,
                 };
               } else {

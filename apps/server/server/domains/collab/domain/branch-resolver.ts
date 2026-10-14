@@ -17,7 +17,6 @@ export interface BranchResolver {
 export type BranchState = {
   branchId: string;
   doc: Y.Doc;
-  generation: number;
 };
 
 export class BranchNotFoundError extends Error {
@@ -40,13 +39,11 @@ export class BranchCorruptError extends Error {
   readonly branchId: string;
   readonly documentId: DocumentId;
   readonly threadId: ThreadId | undefined;
-  readonly generation: number | undefined;
 
   constructor(input: {
     branchId: string;
     documentId: DocumentId;
     threadId?: ThreadId;
-    generation?: number;
     cause?: unknown;
   }) {
     super(
@@ -58,7 +55,6 @@ export class BranchCorruptError extends Error {
     this.branchId = input.branchId;
     this.documentId = input.documentId;
     this.threadId = input.threadId;
-    this.generation = input.generation;
   }
 }
 

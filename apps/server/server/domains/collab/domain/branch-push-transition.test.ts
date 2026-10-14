@@ -63,7 +63,6 @@ function fixture() {
       const push = {
         id: 1,
         branchId: "branch",
-        branchGeneration: 1,
         documentId,
         journalIds: [],
         upstreamUpdateSeq: 1,
@@ -135,7 +134,6 @@ function fixture() {
       workId: "work" as WorkId,
       threadId: null,
       status: "active",
-      generation: 1,
       state: Y.encodeStateAsUpdate(branch),
       stateVector: Y.encodeStateVector(branch),
       schemaVersion: COLLAB_SCHEMA_VERSION,
