@@ -6,12 +6,11 @@
  */
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import {
-  ownerOf,
-  type ParentRef,
-  type ResourceLocation,
-  type ResourcePlacement,
-  type ResourceRecord,
+import type {
+  ParentRef,
+  ResourceLocation,
+  ResourcePlacement,
+  ResourceRecord,
 } from "@meridian/resource-replica";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { ContextEntrySibling } from "../context-entry-name";
@@ -85,12 +84,7 @@ export function placeEntryRef(
   const record = records.find((candidate) => candidate.resource.identity.documentId === ref.id);
   const location = record ? placement.resourceLocation(record) : null;
   if (!record || !location) return null;
-  // A document the server hasn't confirmed has no parent edge; one at an area's top level still has a home.
-  const parent =
-    placement.parentForResource(record) ??
-    (location.path.lastIndexOf("/") === 0
-      ? { kind: "root" as const, scheme: location.scheme, owner: ownerOf(location) }
-      : null);
+  const parent = placement.parentForResource(record);
   return parent ? { ref, name: location.name, location, parent } : null;
 }
 

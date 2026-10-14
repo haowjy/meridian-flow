@@ -8,11 +8,12 @@ import { owningLocationIntent } from "./resource-intent-policy";
 import { projectResourceLocation } from "./resource-projection";
 import type {
   FolderNamespaceRecord,
+  ParentRef,
   ResourceLocation,
   ResourceProjectionSnapshot,
   ResourceRecord,
 } from "./resource-records";
-import { sameOwner } from "./resource-records";
+import { ownerOf, sameOwner } from "./resource-records";
 import {
   catalogEntryOwner,
   ownerListedInScope,
@@ -114,6 +115,19 @@ export function createResourcePlacement(
     const result = placed.hidden ? null : { ...placed.location, provisional: own.provisional };
     resourceLocations.set(record, result);
     return result;
+  }
+  /** The placed folder whose location is the directory of `location`, else the area root. */
+  function parentAtLocation(location: ResourceLocation): ParentRef | null {
+    const directory = location.path.slice(0, location.path.lastIndexOf("/"));
+    if (!directory) return { kind: "root", scheme: location.scheme, owner: ownerOf(location) };
+    for (const [folderId, folder] of graph.locations)
+      if (
+        folder.scheme === location.scheme &&
+        folder.path === directory &&
+        sameOwner(folder, location)
+      )
+        return { kind: "folder", folderId };
+    return null;
   }
   function projectCatalog(
     input: readonly CatalogEntry[],
@@ -325,13 +339,16 @@ export function createResourcePlacement(
         record.intents,
         Boolean(record.resource.obligations.canonicalRefresh),
       )?.desired;
-      return desired?.kind === "set-location"
-        ? desired.destination.parent
-        : record.resource.canonical
-          ? (record.resource.canonicalParent ??
-            parents.get(record.resource.identity.documentId) ??
-            null)
-          : null;
+      if (desired?.kind === "set-location") return desired.destination.parent;
+      if (record.resource.canonical)
+        return (
+          record.resource.canonicalParent ??
+          parents.get(record.resource.identity.documentId) ??
+          null
+        );
+      // An unconfirmed create has no edge yet; it sits in the folder that holds its shown location.
+      const shown = resourceLocation(record);
+      return shown ? parentAtLocation(shown) : null;
     },
     projectCatalog,
   };
