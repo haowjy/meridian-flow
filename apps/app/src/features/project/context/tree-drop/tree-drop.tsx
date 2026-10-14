@@ -31,7 +31,7 @@ export type TreeDropTarget = {
 
 /**
  * What dropping an internal payload on a target would do. `accept` lights the
- * target and allows the drop; `refuse` lights it as refused and says why. A
+ * target and allows the drop; `refuse` leaves it unlit with the no-drop cursor and says why. A
  * null verdict leaves the target quiet (the drop would change nothing).
  */
 export type EntriesVerdict = { kind: "accept" | "refuse"; label: string };
