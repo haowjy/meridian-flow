@@ -79,8 +79,11 @@ Paths outside this directory are relative to `apps/app/src`.
 - Change-row excerpts read complete ordered hunk runs, including attributed
   insertions, never the operations’ first-hunk summaries. Only row CSS truncates
   their display; repeated words in separate runs remain separate.
-- A draft-only tab is the document's one workspace tab and is never persisted: its
-  address (document and item key) reopens it. Apply settles the same tab in place
+- A draft-only Editor tab is the document's one workspace tab and is never
+  persisted (Editor persistence strips `reviews`): its address (document and item key)
+  reopens it. The dock persists its single `reviews` entry too, since nothing else
+  tells a restored tab from a live document under review; draft-only settlement
+  removes a stale entry. Apply settles the same tab in place
   (`settle-draft` drops the review metadata); a gone/404 read is not remote-Discard evidence. Apply and
   Discard settle every container through `draft-only-lifecycle.ts`; Close and
   Back to live stay with the container used. A review tab is identified by
