@@ -21,6 +21,8 @@ export const imports = pgTable(
     destinationUri: text("destination_uri").notNull(),
     folderId: uuid("folder_id"),
     roots: jsonb("roots").notNull(),
+    placement: jsonb("placement"),
+    placementGeneration: integer("placement_generation").notNull().default(0),
     fingerprint: text("fingerprint").notNull(),
     state: text("state").notNull(),
     /** Retained when entries expire, so exact-command replay still returns the terminal summary. */
@@ -63,6 +65,7 @@ export const importEntries = pgTable(
     reason: text("reason"),
     storageUrl: text("storage_url"),
     objectKey: text("object_key"),
+    convertedKey: text("converted_key"),
     receivedSize: bigint("received_size", { mode: "number" }),
     sha256: text("sha256"),
   },

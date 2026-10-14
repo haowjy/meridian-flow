@@ -1,5 +1,5 @@
 {
-  "id": "cb0fd709-b0e6-48f5-b5b4-579c2043ca62",
+  "id": "a08f5fe0-5ba2-4dc4-9cd3-ad6a26cf0686",
   "prevId": "df05f70b-b924-4992-9153-16c9aba4c987",
   "version": "7",
   "dialect": "postgresql",
@@ -6748,6 +6748,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "converted_key": {
+          "name": "converted_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "received_size": {
           "name": "received_size",
           "type": "bigint",
@@ -6865,6 +6871,19 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "placement": {
+          "name": "placement",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "placement_generation": {
+          "name": "placement_generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "fingerprint": {
           "name": "fingerprint",
