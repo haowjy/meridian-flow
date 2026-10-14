@@ -66,29 +66,53 @@ leaving the journal, or the id leaving the inbox, is not terminal: the entry sta
 was and the hook asks for a snapshot. Terminal evidence:
 
 - `applied` retires once the transcript this tab renders holds the divider naming the id.
-- `gone` comes from a `null`/`null` answer (a cancel-out, which also removes the earlier
-  queued switches to the other mode), a server Withdraw answering `withdrawn`, a server 404 for
-  an entry the journal no longer holds (the server never had it), a local Withdraw the driver
-  allowed (never posted, or refused), or a snapshot whose request began after the entry's last
-  live observation and shows the id neither pending nor as a divider. The snapshot query takes
-  a request number when its fetch starts (`snapshotRequestCount`) and returns it with the data,
-  so a failed, skipped or joined-older fetch proves nothing.
+- `gone` comes from a `null`/`null` answer for its own id (a cancel-out), a server Withdraw
+  answering `withdrawn`, a server 404 for an entry the journal no longer holds (the server never
+  had it), a local Withdraw the driver allowed (never posted, or refused), or a snapshot whose
+  request began after the entry's last observation and shows the id neither pending nor as a
+  divider.
+- A cancel-out is evidence about its own id only. The answer carries no ids, so the switch the
+  server cancelled is predicted: the journal entry ordered just before the answered one, of
+  the other mode, still `posted` or `queued`, is marked **cancel-predicted**. It is hidden from
+  rows and the overlay and not terminal. A snapshot that began after the answer settles it: one
+  that lists the id clears the mark, one that doesn't makes it `gone`. An answer never touches
+  an entry the journal doesn't hold, so another device's newer switch survives a delayed answer.
+- **Watermark.** Every source that shows an entry raises its `observedAt` to the larger of the
+  old value and the new reading: the journal, inbox and answer by the request counter at
+  observation, a snapshot that lists it by its `request`. An absent snapshot proves absence
+  only with `request > observedAt`. The counter (`snapshotRequestCount`) is read when a
+  fetch starts, and `threadSnapshotQueryOptions` stamps every fetch of the snapshot key, so no
+  producer (host, passive observer, invalidation) can return an unstamped result.
+- **Proof loop.** While the ledger holds an entry only a snapshot can settle (`proofNeed`),
+  `useProofLoop`, the chat's one owner, drives acquisitions from completion: an insufficient
+  success (request not above the bar) is followed at once by one fresh fetch, which qualifies;
+  an error is followed after 3 s, doubling to 30 s; offline and hidden pause it, and reconnect
+  or showing the page resumes it.
 
 Display derives from the ledger alone. Rows are every entry that is not `gone`, not
-withdrawing, not retired, and not folded by a predicted switch back (a switch back before its
-answer hides both rows; the server's `null`/`null` answer confirms it). `sending` and `posted`
-show as sending, `queued` and not-yet-rendered `applied` as queued (so no frame lacks both
-the row and the divider). A failed row shows Retry; Withdraw shows unless the server may hold
-it (posted and not refused). The mode is the rendered snapshot's `thread.aiWriteMode` with
-each entry laid over it in `seq` order, the last winning, until a snapshot holding the
-entry's divider has rendered. No client path writes a write mode into a cache; an applied
-entry or a newly rendered divider invalidates the Works query and the project thread lists
-instead.
+cancel-predicted, not withdrawing, not retired, and not folded by a predicted switch back (a
+switch back before its answer hides both rows, only against a predecessor still `sending`,
+`posted` or `queued`: an `applied` one stays a row and the later switch shows). `sending` and
+`posted` show as sending, `queued` and not-yet-rendered `applied` as queued (so no frame lacks
+both the row and the divider). A failed row shows Retry; Withdraw shows unless the server may
+hold it (posted and not refused). Entries are ordered causally: those the server has applied
+(transcript order) first, then those it holds queued (inbox order), then those only this tab's
+journal knows (`seq` order), the id breaking a tie. The mode is the rendered snapshot's
+`thread.aiWriteMode` with each entry laid over it in that order, the last winning, until a
+snapshot holding the entry's divider has rendered. No client path writes a write mode into a
+cache: a snapshot may insert a project-list row with its mode but never rewrites an existing
+row's, and an applied entry or a newly rendered divider invalidates the Works query and the
+project thread lists instead.
+
+One ledger host per chat per tab. The desktop shell keeps a single `ChatSurface` and moves it
+between the center and the dock, so a chat has one mounted `ChatView` and one ledger; mobile
+has its own lifetime. A dev-only registry in `useSwitchLedger` warns when a second ledger
+mounts for a chat that already has one.
 
 One hook speaks it: "Switch to … queued" when an entry becomes queued, "Switched to …" when a
-divider renders. Entries and dividers present when history first settles (mount, reload) are
-silent, and a cancel-out is silent. A failure stays with the journal owner's keyed
-announcement, cleared on Retry and when the record is withdrawn.
+divider renders. Entries and dividers present when the first successful history load lands
+(mount, reload; an error does not count) are silent, and a cancel-out is silent. A failure stays
+with the journal owner's keyed announcement, cleared on Retry and when the record is withdrawn.
 
 The dock projection is tri-state while its query loads: pending count and review
 availability are `null`, distinct from loaded zero/false; loading client state

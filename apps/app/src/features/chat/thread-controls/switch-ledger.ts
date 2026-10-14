@@ -16,18 +16,23 @@
  * - `queued`: an answer with `pending`, the inbox, or a snapshot's pending
  *   inbox lists it. `applied`: an answer with a turn id, or any divider names it.
  * - `applied` retires once the transcript this tab renders holds its divider.
- * - `gone` comes from a `null`/`null` answer (cancel-out), a server Withdraw
- *   that answered `withdrawn`, a server 404 for a switch the journal no longer
- *   holds (the server never had it), a local Withdraw the driver allowed, or a
- *   snapshot that shows the id neither pending nor as a divider and whose
- *   request began after the entry's last live observation. The server reads
- *   turns and inbox in one transaction, so absence in a fresh snapshot is proof.
+ * - `gone` comes from a `null`/`null` answer for its own id (cancel-out), a server Withdraw
+ *   that answered `withdrawn`, a server 404 for a switch the journal no longer holds (the
+ *   server never had it), a local Withdraw the driver allowed, or a snapshot that shows the id
+ *   neither pending nor as a divider and whose request began after the entry's watermark.
+ *   The server reads turns and inbox in one transaction, so absence in a fresh snapshot is proof.
+ * - A cancel-out cannot name the switch it cancelled, so that one is only `predicted`: the
+ *   journal entry just before the answered one, of the other mode, still posted or queued.
+ *   It is hidden but not terminal; a fresh snapshot lists it (mark cleared) or doesn't
+ *   (gone). An answer never touches an entry the journal doesn't hold.
  *
- * A record leaving the journal, or the id leaving the inbox, proves nothing:
- * the entry stays where it was, the ledger's `proofNeed` turns non-null, and the
- * caller asks for a snapshot. `at` and `request` are readings of one counter of snapshot
- * requests started; a snapshot proves absence only when `request > observedAt`,
- * so a failed, skipped or joined-older fetch never does.
+ * A record leaving the journal, or the id leaving the inbox, proves nothing: the entry stays
+ * where it was, `proofNeed` turns non-null, and the caller asks for a snapshot. `observedAt`
+ * is the highest reading of one counter of snapshot requests started, raised by every source
+ * that shows the entry (a snapshot that lists it counts at its `request`); a snapshot proves
+ * absence only when `request > observedAt`, so a failed, skipped or joined-older fetch never
+ * does. Entries are ordered causally: applied (transcript order), then queued (inbox order),
+ * then journal-only (`seq` order), the id breaking a tie.
  *
  * Display derives from here alone: `switchRows`, `overlaidMode`, and
  * `transitions` (what to announce and when caches are stale).

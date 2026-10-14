@@ -6,7 +6,7 @@ It is not a thread replica: no assistant turns. One observable account/thread mo
 attempts and the shared recovery eligibility/status snapshot for every mounted pane; views never enumerate persistence.
 
 - One record per `(accountId, recordId)`, keyed
-  `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
+  `meridian:chat-submissions:v3:<accountId>:<recordId>`. Enumeration matches
   `prefix + accountId + ":"`, so an account id that is a string prefix of
   another never leaks the longer account's records.
 - One key per submission is deliberate: a write touches one record, not a
