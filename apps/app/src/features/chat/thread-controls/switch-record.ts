@@ -110,6 +110,17 @@ function applyFrame(view: RunStateView, frame: SwitchFrame): RunStateView {
 }
 
 /**
+ * A newer inbox frame replaces every held inbox frame (each carries the whole queue), so
+ * a snapshot that never loads holds only the applied-switch frames and one queue.
+ */
+function holdFrame(held: readonly SwitchFrame[], frame: SwitchFrame): readonly SwitchFrame[] {
+  return [
+    ...(frame.kind === "inbox" ? held.filter((known) => known.kind !== "inbox") : held),
+    frame,
+  ];
+}
+
+/**
  * Take a frame. A `write_mode.switched` frame is also the answer for its control's intent:
  * the apply it reports is that control's effect, at the frame's seq. Before the first
  * record the frame is held, not dropped: subscribe-then-fetch means the snapshot's head
@@ -118,7 +129,7 @@ function applyFrame(view: RunStateView, frame: SwitchFrame): RunStateView {
 export function receiveFrame(state: Received, frame: SwitchFrame): Received {
   return state.view.record
     ? { view: applyFrame(state.view, frame), early: state.early }
-    : { view: state.view, early: [...state.early, frame] };
+    : { view: state.view, early: holdFrame(state.early, frame) };
 }
 
 /** After any step that may have made the first record: apply the held frames in order. */

@@ -90,8 +90,18 @@ function reduceView(
       let next = view;
       const held = new Set(action.switches.map((entry) => entry.id));
       for (const entry of action.switches) {
-        // A stamp is the server's answer, read as a fact by every tab.
-        if (entry.answer) next = receiveRecord(next, recordFromAnswer(next.record, entry.answer));
+        if (entry.answer) {
+          // A stamp is the server's answer, read as a fact by every tab. Without a snapshot
+          // it has nothing to extend: it is evidence for its intent, never a record, and a
+          // stamp left over from before a reload makes no row.
+          if (next.record) next = receiveRecord(next, recordFromAnswer(next.record, entry.answer));
+          else if (
+            !next.intents.some((known) => known.kind === "switch" && known.id === entry.id)
+          ) {
+            next = answerIntent(next, "switch", entry.id, entry.answer.seq);
+            continue;
+          }
+        }
         next = addIntent(next, {
           kind: "switch",
           id: entry.id,
@@ -121,7 +131,7 @@ function reduceView(
     case "withdrawn":
       // Like the enqueue answer: the server's facts at its head, then the intent's answer.
       return answerIntent(
-        receiveRecord(view, recordFromAnswer(view.record, action.answer)),
+        view.record ? receiveRecord(view, recordFromAnswer(view.record, action.answer)) : view,
         "withdraw",
         action.id,
         action.answer.seq,

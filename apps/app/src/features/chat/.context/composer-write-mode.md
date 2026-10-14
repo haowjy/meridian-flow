@@ -65,9 +65,12 @@ facts plus this device's unanswered intents:
   `write_mode.switched` frame at K (`{ ...current, version: K, mode }` without the row of the
   control it applied, because the apply removed that row in the same transaction); and a switch's or
   a withdrawal's answer, which carries `seq`, `mode` and `pending` (the current items with every
-  write-mode control row replaced by `pending`). A frame before the first record is held, then
-  applied in order once a snapshot or answer supplies one, because subscribe-then-fetch makes a
-  snapshot older than frames already received a normal race. `subscribed` is never a source.
+  write-mode control row replaced by `pending`). The first record is always a snapshot: a frame
+  before it is held (a newer inbox frame replaces held ones), then applied in order once the
+  snapshot lands, because subscribe-then-fetch makes a snapshot older than frames already received a
+  normal race. A stamp or answer before the snapshot extends nothing: it is evidence for its intent
+  (and makes no row if this tab never chose it), so a failed first load shows no rows and announces
+  nothing. `subscribed` is never a source.
 - **Intents.** A `switch` intent is a journal record the writer chose; a `withdraw` intent is a
   Withdraw in flight. An intent with an `answer` leaves once the record's version is at or after it;
   an unanswered one leaves only by `dropIntent` (the journal record vanished unstamped, a refusal
