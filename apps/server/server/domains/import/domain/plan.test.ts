@@ -51,18 +51,15 @@ describe("import planning", () => {
         .map((node) => node.name),
     ).toEqual(["Lore", "Magic System", "magic system"]);
   });
-  it("matches resume by root content rather than client ids/order", () => {
-    const original = manifest(),
-      resumed = structuredClone(original);
-    resumed.roots[0].rootId = 77;
-    resumed.entries.reverse().forEach((entry, index) => {
-      entry.rootId = 77;
-      entry.entryId = index + 20;
-    });
-    resumed.folders[0].rootId = 77;
-    expect(manifestFingerprint(resumed)).toBe(manifestFingerprint(original));
-    resumed.entries[0].sha256 = "b".repeat(64);
-    expect(manifestFingerprint(resumed)).not.toBe(manifestFingerprint(original));
+  it("identifies the exact command: a re-POST replays, any other command under the id conflicts", () => {
+    const original = manifest();
+    expect(manifestFingerprint(structuredClone(original))).toBe(manifestFingerprint(original));
+    const elsewhere = structuredClone(original);
+    elsewhere.destination.folderUri = "manuscript://";
+    const reidentified = structuredClone(original);
+    reidentified.entries[0].entryId = 99;
+    for (const other of [elsewhere, reidentified])
+      expect(manifestFingerprint(other)).not.toBe(manifestFingerprint(original));
   });
   it("keeps identically named selected roots independent", async () => {
     const selection = manifest();

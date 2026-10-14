@@ -1,13 +1,8 @@
 /** Drizzle import state, shared fences and commit-ordered incremental report cuts. */
-import type {
-  ImportCounts,
-  ImportEntryState,
-  ImportManifest,
-  ImportState,
-} from "@meridian/contracts";
+import type { ImportCounts, ImportEntryState, ImportState } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { importEntries, importProgress, imports } from "@meridian/database/schema";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleTransactionParticipant,
@@ -17,6 +12,8 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { ImportArea } from "../domain/export-marker.js";
+import type { ImportLinkCandidate } from "../domain/link-index.js";
+import type { PlannedRoot } from "../domain/plan.js";
 import type {
   ImportEntry,
   ImportEntryColumnPatch,
@@ -27,8 +24,25 @@ import type {
   ImportRepository,
 } from "../ports/import-repository.js";
 
-function record(row: typeof imports.$inferSelect): ImportRecord {
-  return { ...row, manifest: row.manifest as ImportManifest, state: row.state as ImportState };
+/** The plan header: every import column but the frozen existing-document snapshot. */
+const headerColumns = {
+  id: imports.id,
+  projectId: imports.projectId,
+  userId: imports.userId,
+  destinationUri: imports.destinationUri,
+  roots: imports.roots,
+  fingerprint: imports.fingerprint,
+  sourceId: imports.sourceId,
+  folderId: imports.folderId,
+  state: imports.state,
+  createdAt: imports.createdAt,
+};
+function record(
+  row: {
+    [K in keyof typeof headerColumns]: (typeof imports.$inferSelect)[K];
+  },
+): ImportRecord {
+  return { ...row, roots: row.roots as PlannedRoot[], state: row.state as ImportState };
 }
 function entry(row: typeof importEntries.$inferSelect): ImportEntry {
   return {
@@ -154,7 +168,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
   }
   async function read(id: string, projectId: string) {
     const [row] = await tx()
-      .select()
+      .select(headerColumns)
       .from(imports)
       .where(and(eq(imports.id, id), eq(imports.projectId, projectId)));
     return row ? record(row) : null;
@@ -210,8 +224,12 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         await lockSeamWorks(db, []);
         return run();
       }),
-    async insert(input, nodes) {
-      const inserted = await tx().insert(imports).values(input).onConflictDoNothing().returning();
+    async insert(input, existingLinks, nodes) {
+      const inserted = await tx()
+        .insert(imports)
+        .values({ ...input, existingLinks })
+        .onConflictDoNothing()
+        .returning({ id: imports.id });
       if (!inserted.length) return;
       await tx().insert(importProgress).values({ importId: input.id });
       for (let offset = 0; offset < nodes.length; offset += 200)
@@ -238,11 +256,32 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
     read,
     async fence(id, projectId, exclusive = false) {
       const [row] = await tx()
-        .select()
+        .select({ state: imports.state, sourceId: imports.sourceId })
         .from(imports)
         .where(and(eq(imports.id, id), eq(imports.projectId, projectId)))
         .for(exclusive ? "update" : "share");
-      return row ? record(row) : null;
+      return row ? { ...row, state: row.state as ImportState } : null;
+    },
+    async existingLinks(id) {
+      const [row] = await tx()
+        .select({ existingLinks: imports.existingLinks })
+        .from(imports)
+        .where(eq(imports.id, id));
+      return (row?.existingLinks ?? []) as ImportLinkCandidate[];
+    },
+    async fileEntryIds(importId, entryIds) {
+      if (!entryIds.length) return new Set();
+      const rows = await tx()
+        .select({ entryId: importEntries.entryId })
+        .from(importEntries)
+        .where(
+          and(
+            eq(importEntries.importId, importId),
+            inArray(importEntries.entryId, [...entryIds]),
+            gte(importEntries.entryId, 0),
+          ),
+        );
+      return new Set(rows.flatMap((row) => (row.entryId === null ? [] : [row.entryId])));
     },
     async entries(id) {
       return (
@@ -273,7 +312,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
     listOpen: (projectId) =>
       runInRootDrizzleReadSnapshot(db, async () => {
         const rows = await tx()
-          .select()
+          .select(headerColumns)
           .from(imports)
           .where(and(eq(imports.projectId, projectId), sql`${imports.state} <> 'finished'`))
           .orderBy(desc(imports.createdAt));

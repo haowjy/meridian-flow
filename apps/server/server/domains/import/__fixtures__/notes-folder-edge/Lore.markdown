@@ -1,1 +1,0 @@
-Folder and note conflict.

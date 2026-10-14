@@ -15,7 +15,7 @@ import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/impor
 import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-writer.js";
 import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } from "./manifest.js";
 import { sweepImportObjects } from "./object-sweep.js";
-import { allocateName, planWithDerivedIds } from "./plan.js";
+import { allocateName, plannedRoots, planWithDerivedIds } from "./plan.js";
 import {
   convertImportedNote,
   isMarkdownNote,
@@ -24,7 +24,6 @@ import {
 } from "./prepared-selection.js";
 import { type ImportAdmission, mapBounded } from "./receive-admission.js";
 
-/** Where the writer knows a link target from: its selected path, or an existing document's address. */
 /**
  * The one claim policy: an entry takes bytes when planned, failed, or landing under a
  * lapsed lease. A live lease belongs to a running attempt; a lapsed one to a dead process.
@@ -59,6 +58,17 @@ export function createImportService(deps: {
       }
     }
   }
+  /** The locked parent for `folderId`; an export area root (null parent) lives in that area's source. */
+  async function lockParent(
+    fenced: { sourceId: string },
+    entry: { area?: ImportEntry["area"]; parentId: string | null },
+  ) {
+    const source =
+      entry.area && !entry.parentId
+        ? (await tree.destination(`${entry.area}://`)).sourceId
+        : fenced.sourceId;
+    return tree.parent(source, entry.parentId);
+  }
   function allocate(
     entry: ImportEntry,
     parent: NonNullable<Awaited<ReturnType<ImportTreeWriter["parent"]>>>,
@@ -72,7 +82,7 @@ export function createImportService(deps: {
   }
   /** An export's rows sit in their own areas; every other row is in the destination's. */
   function schemeOf(record: ImportRecord, entry: ImportEntry) {
-    return (entry.area ?? record.manifest.destination.folderUri.split("://")[0]) as ImportScheme;
+    return (entry.area ?? record.destinationUri.split("://")[0]) as ImportScheme;
   }
   function summary(cut: {
     record: ImportRecord;
@@ -84,7 +94,7 @@ export function createImportService(deps: {
     return {
       importId: record.id,
       state: record.state,
-      destination: { folderUri: record.manifest.destination.folderUri, folderId: record.folderId },
+      destination: { folderUri: record.destinationUri, folderId: record.folderId },
       counts: cut.counts,
       lastActivityAt: cut.lastActivityAt,
       version: cut.version,
@@ -114,7 +124,7 @@ export function createImportService(deps: {
       .filter((entry) => entry.entryId !== null)
       .map((entry) => entryStatus(entry, scheme(entry)));
     // A since-cut holds only changed rows: it reports just the roots whose node changed.
-    const roots = record.manifest.roots.flatMap((root) => {
+    const roots = record.roots.flatMap((root) => {
       const node = entries.find(
         (entry) =>
           entry.rootId === root.rootId &&
@@ -176,12 +186,7 @@ export function createImportService(deps: {
         if (locked?.state !== "planning") return "done";
         const group = await repo.nextPlanningGroup(record.id);
         if (!group) return "admit";
-        const parent = await tree.parent(
-          group.area && !group.parentId
-            ? { ...locked, ...(await tree.destination(`${group.area}://`)) }
-            : locked,
-          group.parentId,
-        );
+        const parent = await lockParent(locked, group);
         // One parent per chunk makes lock ordering stable even after cross-area moves.
         const chunk = await repo.lockEntries(
           group.pending.slice(0, IMPORT_LIMITS.chunkSize).map((entry) => entry.id),
@@ -352,6 +357,13 @@ export function createImportService(deps: {
     const limit = parts.length > 1 ? IMPORT_ADMISSION.requestBytes : IMPORT_ADMISSION.fileBytes;
     if (total > limit) throw new ImportError(413, "import_request_too_large", { limit });
   }
+  /** The persisted plan, read once per receive and only when a Markdown note needs it. */
+  const loadSelection = (id: string, projectId: string) =>
+    selectionLoader(async () => ({
+      record: await requireImport(id, projectId),
+      entries: await repo.entries(id),
+      existingLinks: await repo.existingLinks(id),
+    }));
   /** Claims and lands one file's bytes. `selectionFor` is shared by a receive's Markdown landings. */
   async function landFile(
     projectId: string,
@@ -373,10 +385,10 @@ export function createImportService(deps: {
         leaseUntil = new Date(now().getTime() + IMPORT_LIMITS.leaseMs);
       const prepend = entry.prependOnRetry;
       await repo.updateEntry(entry.id, { state: "landing", attemptId, leaseUntil });
-      return { record, entry: { ...entry, attemptId, leaseUntil }, prepend };
+      return { entry: { ...entry, attemptId, leaseUntil }, prepend };
     });
     if (!claimed) return await entryOutcome(id, projectId, entryId);
-    const { record, entry, prepend } = claimed;
+    const { entry, prepend } = claimed;
     let pending: ReadonlySet<string> | undefined;
     const stopHeartbeat = heartbeat(id, entryId, () =>
       renewLease(projectId, id, entryId, entry.attemptId as string),
@@ -396,10 +408,9 @@ export function createImportService(deps: {
           : null;
       if ((entry.kind === "note" || entry.kind === "docx") && !holderUri)
         throw new DeletedBeforeArrivalError();
-      const source = record.manifest.entries.find((source) => source.entryId === entry.entryId);
       if (
-        source?.sniff !== undefined &&
-        !Buffer.from(source.sniff, "base64").equals(
+        entry.sniff !== undefined &&
+        !Buffer.from(entry.sniff, "base64").equals(
           Buffer.from(bytes.subarray(0, IMPORT_ADMISSION.sniffBytes)),
         )
       )
@@ -414,7 +425,7 @@ export function createImportService(deps: {
             ? ""
             : Buffer.from(bytes).toString("utf8");
       // Only a Markdown note reads the selection; other kinds touch just their own entry.
-      const selection = isMarkdownNote(entry) ? await selectionFor(record) : null;
+      const selection = isMarkdownNote(entry) ? await selectionFor() : null;
       const prepared = selection
         ? await convertImportedNote(tree, selection, entry, holderUri, text)
         : null;
@@ -456,12 +467,7 @@ export function createImportService(deps: {
         const fenced = await repo.fence(id, projectId);
         if (fenced?.state !== "ready") return await releaseStraggling(fenced, pending);
         const parent = ["binary", "code"].includes(entry.kind)
-          ? await tree.parent(
-              entry.area && !entry.parentId
-                ? { ...record, ...(await tree.destination(`${entry.area}://`)) }
-                : record,
-              entry.parentId,
-            )
+          ? await lockParent(fenced, entry)
           : null;
         const liveNote =
           entry.kind === "note" || entry.kind === "docx" ? await tree.lockDocument(entry.id) : true;
@@ -574,12 +580,14 @@ export function createImportService(deps: {
           await stop();
         }
         checkParts(parts);
-        const record = await requireImport(id, projectId);
-        const known = new Set(record.manifest.entries.map((entry) => entry.entryId));
+        const known = await repo.fileEntryIds(
+          id,
+          parts.map((part) => part.entryId),
+        );
         if (parts.some((part) => !known.has(part.entryId)))
           throw new ImportError(404, "entry_not_found");
         // Every Markdown landing of this request shares one prepared selection.
-        const selectionFor = selectionLoader(() => repo.entries(id));
+        const selectionFor = loadSelection(id, projectId);
         return {
           entries: await mapBounded(parts, IMPORT_LIMITS.landingConcurrency, (part) =>
             landFile(projectId, id, part.entryId, part.bytes, selectionFor),
@@ -614,11 +622,13 @@ export function createImportService(deps: {
               id: manifest.importId,
               projectId,
               userId,
-              manifest: { ...manifest, existingLinks },
+              destinationUri: manifest.destination.folderUri,
+              roots: plannedRoots(manifest),
               fingerprint,
               ...destination,
               state: "planning",
             },
+            existingLinks,
             nodes,
           ),
         );
@@ -628,13 +638,7 @@ export function createImportService(deps: {
       return api.resume(record.id, projectId);
     },
     land: (projectId: string, id: string, entryId: number, bytes: Uint8Array) =>
-      landFile(
-        projectId,
-        id,
-        entryId,
-        bytes,
-        selectionLoader(() => repo.entries(id)),
-      ),
+      landFile(projectId, id, entryId, bytes, loadSelection(id, projectId)),
   };
   return api;
 }

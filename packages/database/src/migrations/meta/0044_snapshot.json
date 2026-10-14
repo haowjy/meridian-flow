@@ -6966,8 +6966,20 @@
           "primaryKey": false,
           "notNull": true
         },
-        "manifest": {
-          "name": "manifest",
+        "destination_uri": {
+          "name": "destination_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roots": {
+          "name": "roots",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "existing_links": {
+          "name": "existing_links",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true

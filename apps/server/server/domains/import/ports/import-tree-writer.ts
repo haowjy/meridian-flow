@@ -2,7 +2,7 @@
 import type { StoredDocumentProperties } from "@meridian/contracts";
 import type { BoundWrite } from "../../collab/index.js";
 import type { ImportLinkCandidate } from "../domain/link-index.js";
-import type { ImportEntry, ImportRecord } from "./import-repository.js";
+import type { ImportEntry } from "./import-repository.js";
 export interface ImportParent {
   sourceId: string;
   folderId: string | null;
@@ -28,7 +28,7 @@ export interface ImportTreeWriter {
   ): Promise<void>;
   destination(uri: string): Promise<{ sourceId: string; folderId: string | null }>;
   /** Resolve, lock the current source, reread. Throw ParentMovedError to retry a fresh transaction. */
-  parent(record: ImportRecord, folderId: string | null): Promise<ImportParent | null>;
+  parent(sourceId: string, folderId: string | null): Promise<ImportParent | null>;
   lockDocument(id: string): Promise<boolean>;
   create(parent: ImportParent, nodes: ImportEntry[]): Promise<void>;
   bind(entry: ImportEntry, write: ImportWrite): Promise<BoundWrite | null>;

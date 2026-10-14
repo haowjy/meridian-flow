@@ -20,7 +20,13 @@ export const imports = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     userId: uuid("user_id").notNull(),
-    manifest: jsonb("manifest").notNull(),
+    /** The create command's original destination URI; entries and `folder_id` hold what it resolved to. */
+    destinationUri: text("destination_uri").notNull(),
+    /** Root descriptors (id, kind, name, parsed settings) the plan was admitted with. */
+    roots: jsonb("roots").notNull(),
+    /** Existing-document link candidates frozen at admission; they rank fallback matches and never follow moves. */
+    existingLinks: jsonb("existing_links").notNull(),
+    /** Hash of the exact create command; a re-POST under this id must match it. */
     fingerprint: text("fingerprint").notNull(),
     sourceId: uuid("source_id").notNull(),
     folderId: uuid("folder_id"),
@@ -38,7 +44,7 @@ export const importEntries = pgTable(
       .notNull()
       .references(() => imports.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
-    /** Planned node fields no query filters on. */
+    /** Planned node fields no query filters on, including the source facts landing needs (sniff, aliases). */
     spec: jsonb("spec").notNull(),
     kind: text("kind").notNull(),
     /** The manifest file's id; null for folders. */

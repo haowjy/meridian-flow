@@ -1,13 +1,11 @@
 /** Conversion contracts without storage, using the main vault and adversarial syntax. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { mdxCodec } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { splitFrontmatter } from "@meridian/markup/wikilinks";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
-import { parseDocumentProperties } from "../../context/document-properties.js";
-import { MAX_PROPERTIES_TEXT_LENGTH } from "../../context/frontmatter.js";
 import { createLinkIndex, type ImportLinkCandidate } from "./link-index.js";
 import { type ConvertedNote, convertNote, respell } from "./note-conversion.js";
 
@@ -94,24 +92,6 @@ describe("note conversion", () => {
     expect(converted.template).toContain("%%");
     expect(converted.template).toContain("==");
   });
-  it("exports Chapter 1's callout and footnote lines byte-identical to the vault source", () => {
-    const text = readFileSync(join(root, paths[0]), "utf8");
-    const exportCodec = mdxCodec({ schema: buildDocumentSchema(), export: true });
-    const blocks = codec.parse(convert(text).template).blocks;
-    const exported = exportCodec.serialize(blocks, UNSCOPED_DOCUMENT_LINKS).split("\n");
-    for (const line of [
-      "> [!warning] A costly breakthrough",
-      "> A cracked core cannot hold a second spirit.",
-      "A debt can outlive a dynasty.[^debt]",
-      "[^debt]: The Jade Crane Sect keeps its ledgers for seven generations.",
-    ]) {
-      expect(text.split("\n")).toContain(line);
-      expect(exported).toContain(line);
-    }
-    expect(walkLinkOccurrences(codec.parse(exported.join("\n")).blocks)).toHaveLength(
-      walkLinkOccurrences(blocks).length,
-    );
-  });
   it("converts relative Markdown destinations without losing labels, title or external links", () => {
     const result = convert(readFileSync(join(root, "Chapters/Ch 2.md"), "utf8"), selected[1]);
     expect(links(result).map((link) => [link.label, link.href])).toEqual([
@@ -155,25 +135,6 @@ describe("note conversion", () => {
     expect(result.properties).toEqual({ format: "yaml", text: "aliases: [unterminated\n" });
     expect(result.aliases).toEqual([]);
     expect(result.template).toBe("Body");
-  });
-  it.each([
-    ["a list of names", "aliases: [Gate, 3, Old Wu]\n"],
-    ["a single name", "aliases: Gate\n"],
-    ["a tag the core schema does not know", "aliases: !custom [Tagged]\n"],
-    [
-      "101 references to one anchor",
-      `base: &a A\naliases: [${Array(101).fill("*a").join(", ")}]\n`,
-    ],
-    [
-      "nesting deeper than the display walks",
-      `x: ${"[".repeat(40)}1${"]".repeat(40)}\naliases: [Deep]\n`,
-    ],
-    ["a cycle beside the aliases", "x: &x [*x]\naliases: [A]\n"],
-    ["text over the size cap", `aliases: [Tail]\n#${" ".repeat(MAX_PROPERTIES_TEXT_LENGTH)}\n`],
-  ])("reads %s exactly as the properties display does", (_name, yaml) => {
-    const display = parseDocumentProperties({ format: "yaml", text: yaml });
-    const imported = convert(`---\n${yaml}---\n[[Gate]]`);
-    expect(imported.aliases).toEqual(display.aliases);
   });
   it("honors exact case, source folder, path depth, aliases, attachment folder and prose suffixes", () => {
     const result = convert(

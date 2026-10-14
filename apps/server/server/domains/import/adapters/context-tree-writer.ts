@@ -112,9 +112,9 @@ export function createContextImportTreeWriter(deps: {
       if (!found) throw new ImportError(404, "destination_not_found");
       return found;
     },
-    async parent(record, folderId) {
+    async parent(sourceId, folderId) {
       try {
-        return await deps.locations.lockParent(record.sourceId, folderId);
+        return await deps.locations.lockParent(sourceId, folderId);
       } catch (error) {
         if (error instanceof ContextParentMovedError) throw new ParentMovedError();
         throw error;

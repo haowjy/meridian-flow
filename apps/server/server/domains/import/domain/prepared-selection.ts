@@ -4,14 +4,14 @@
  * plan data: current addresses and entry lifecycle state are read per landing, because
  * hrefs must follow moves.
  */
-import { frontmatterAliases } from "../../context/index.js";
 import type { ImportEntry, ImportRecord } from "../ports/import-repository.js";
 import type { ImportTreeWriter } from "../ports/import-tree-writer.js";
 import {
   createLinkIndex,
+  DEFAULT_ROOT_SETTINGS,
   type ImportLinkCandidate,
   type ImportLinkIndex,
-  obsidianSettings,
+  type ImportRootSettings,
 } from "./link-index.js";
 import { type ConvertedNote, convertNote, respell } from "./note-conversion.js";
 
@@ -21,7 +21,7 @@ export interface PreparedSelection {
   readonly candidates: ReadonlyMap<string, ImportLinkCandidate>;
   /** Binaries and code land after notes: a note binds them by ahead ref until they do. */
   readonly pending: ReadonlySet<string>;
-  readonly settings: ReadonlyMap<number, ReturnType<typeof obsidianSettings>>;
+  readonly settings: ReadonlyMap<number, ImportRootSettings>;
   /** Each folder root's planned root folder; its `uri` is only the fallback for a missing live one. */
   readonly rootFolders: ReadonlyMap<number, { id: string; uri: string | null }>;
   /** Where a planned file would sit if it has no live address yet. */
@@ -37,12 +37,19 @@ export interface PreparedSelection {
 export const isMarkdownNote = (entry: ImportEntry) =>
   entry.kind === "note" && entry.filetype === "markdown";
 
-export function prepareSelection(
-  record: ImportRecord,
-  entries: readonly ImportEntry[],
-): PreparedSelection {
-  const roots = new Map(record.manifest.roots.map((root) => [root.rootId, root]));
-  const inputs = new Map(record.manifest.entries.map((input) => [input.entryId, input]));
+/** The persisted plan: header, planned entries and the existing-document snapshot. */
+export interface SelectionPlan {
+  record: ImportRecord;
+  entries: readonly ImportEntry[];
+  existingLinks: readonly ImportLinkCandidate[];
+}
+
+export function prepareSelection({
+  record,
+  entries,
+  existingLinks,
+}: SelectionPlan): PreparedSelection {
+  const roots = new Map(record.roots.map((root) => [root.rootId, root]));
   const candidates = new Map<string, ImportLinkCandidate>();
   const reserved = new Map<string, { parentId: string | null; name: string; extension: string }>();
   const rootFolders = new Map<number, { id: string; uri: string | null }>();
@@ -56,20 +63,19 @@ export function prepareSelection(
     if (item.kind === "binary" || item.kind === "code") pending.add(item.id);
     if (item.state === "skipped") continue;
     const root = roots.get(item.rootId);
-    const input = item.entryId === null ? undefined : inputs.get(item.entryId);
     candidates.set(item.id, {
       id: item.id,
       uri: item.uri ?? "",
       rankingUri: item.uri ?? "",
       path: root?.kind === "file" ? root.name : item.path,
       rootId: root?.kind === "file" ? null : item.rootId,
-      aliases: input?.frontmatter ? frontmatterAliases(input.frontmatter) : [],
+      aliases: item.aliases ?? [],
       kind: item.kind,
       filetype: item.filetype,
     });
   }
   // The existing-name snapshot taken at plan time ranks fallback matches; it never follows moves.
-  const existing = (record.manifest.existingLinks ?? []).map((candidate) => ({
+  const existing = existingLinks.map((candidate) => ({
     ...candidate,
     rankingUri: candidate.uri,
   }));
@@ -77,28 +83,25 @@ export function prepareSelection(
     index: createLinkIndex([...candidates.values()], existing),
     candidates,
     pending,
-    settings: new Map([...roots].map(([rootId, root]) => [rootId, obsidianSettings(root)])),
+    settings: new Map([...roots].map(([rootId, root]) => [rootId, root.settings])),
     rootFolders,
     reserved,
     folderId: record.folderId,
-    destinationUri: record.manifest.destination.folderUri,
+    destinationUri: record.destinationUri,
   };
 }
 
 /**
  * Lazily prepares the selection on first use and shares that promise. A receive of only
- * binaries never loads entries; a failed load is retried by the next landing.
+ * binaries never loads the plan; a failed load is retried by the next landing.
  */
-export function selectionLoader(loadEntries: () => Promise<readonly ImportEntry[]>) {
+export function selectionLoader(loadPlan: () => Promise<SelectionPlan>) {
   let prepared: Promise<PreparedSelection> | undefined;
-  return (record: ImportRecord): Promise<PreparedSelection> => {
-    prepared ??= loadEntries().then(
-      (entries) => prepareSelection(record, entries),
-      (error) => {
-        prepared = undefined;
-        throw error;
-      },
-    );
+  return (): Promise<PreparedSelection> => {
+    prepared ??= loadPlan().then(prepareSelection, (error) => {
+      prepared = undefined;
+      throw error;
+    });
     return prepared;
   };
 }
@@ -117,7 +120,7 @@ export async function convertImportedNote(
 ): Promise<{ converted: ConvertedNote; hrefs: Map<number, string> } | null> {
   const source = selection.candidates.get(entry.id);
   if (!source) return null;
-  const settings = selection.settings.get(entry.rootId) ?? obsidianSettings(undefined);
+  const settings = selection.settings.get(entry.rootId) ?? DEFAULT_ROOT_SETTINGS;
   const current = holderUri ?? source.uri;
   let aheadFolder: string;
   if (settings.newFileLocation === "current")
