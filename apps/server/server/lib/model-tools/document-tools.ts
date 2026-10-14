@@ -113,6 +113,11 @@ export async function resolveDocumentAddress(
     const unknownAddress =
       ref.error.code === "invalid_uri" &&
       (ref.error.workSlug !== undefined || ref.error.unknownScheme !== undefined);
+    if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
+      return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
+        path: canonicalPath,
+      });
+    }
     return writeToolError(
       command,
       contextErrorMessage(ref.error),

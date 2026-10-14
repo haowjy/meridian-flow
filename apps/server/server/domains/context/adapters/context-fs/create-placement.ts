@@ -227,6 +227,7 @@ function draftPlacement(
 /** What a path two of a draft's files share answers, to a create and to a read alike. */
 export const AMBIGUOUS_PATH_FAULT: AdapterFault = {
   code: "invalid_operation",
+  reason: "ambiguous_path",
   message: "More than one file has this path in the draft; review the draft to resolve the clash",
 };
 
