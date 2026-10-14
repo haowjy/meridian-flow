@@ -14,22 +14,28 @@
  * - an answer is kept beside the intents (`answers`), so one that arrives before its intent,
  *   or an intent that a journal rebuild adds again after it left, still meets its answer.
  *
- * Folds (`fold-switches.ts`) are pure selectors over the view and decide nothing about
+ * Folds (`fold-switches.ts`, `fold-messages.ts`) are pure selectors over the view and decide nothing about
  * either. This directory imports only `@meridian/contracts`.
  */
 import { compareSeq } from "@meridian/contracts/protocol";
-import type { PendingInboxItem } from "@meridian/contracts/threads";
+import type { RunState } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 
-export type RunStateRecord = {
-  version: string;
-  /** The chat's applied write mode. */
-  mode: AiWriteMode;
-  /** The unacknowledged inbox, including the queued write-mode switch as a control row. */
-  items: readonly PendingInboxItem[];
-};
-
-export type Intent =
+export type RunStateIntent =
+  /** An admitted writer message. `id` is the user turn id; `answer` is the admission's `runStateVersion`. */
+  | { kind: "message"; id: string; answer: string }
+  /**
+   * A hand-back request (Stop, the x, Cancel queue). `id` is its requestId. `candidates` are the
+   * waiting writer messages it covers, frozen at the press: it hides those and nothing else.
+   */
+  | {
+      kind: "handBack";
+      id: string;
+      candidates: readonly string[];
+      /** The last attempt did not succeed: the rows show again, still queued. */
+      failed: boolean;
+      answer: string | null;
+    }
   | {
       kind: "switch";
       id: string;
@@ -54,24 +60,30 @@ export type Intent =
     };
 
 export type RunStateView = {
-  record: RunStateRecord | null;
-  intents: readonly Intent[];
+  /** The newest record of the chat any carrier delivered, or null before the first. */
+  readonly record: RunState | null;
+  readonly intents: readonly RunStateIntent[];
   /**
    * Answer evidence by `${kind}:${id}`. It outlives the intent, so a source that adds the
    * intent again (the journal re-adds every unstamped entry on each rebuild) cannot erase it.
    */
-  answers: ReadonlyMap<string, string>;
+  readonly answers: ReadonlyMap<string, string>;
 };
 
-export const EMPTY_VIEW: RunStateView = { record: null, intents: [], answers: new Map() };
+export const INITIAL_RUN_STATE_VIEW: RunStateView = {
+  record: null,
+  intents: [],
+  answers: new Map(),
+};
 
 /** Answers held per view: other devices' switches have no local source to clear them. */
 const MAX_ANSWERS = 32;
 
-const same = (a: Intent, kind: Intent["kind"], id: string) => a.kind === kind && a.id === id;
-const answerKey = (kind: Intent["kind"], id: string) => `${kind}:${id}`;
+const same = (a: RunStateIntent, kind: RunStateIntent["kind"], id: string) =>
+  a.kind === kind && a.id === id;
+const answerKey = (kind: RunStateIntent["kind"], id: string) => `${kind}:${id}`;
 
-const covered = (record: RunStateRecord | null, answer: string | null) =>
+const covered = (record: RunState | null, answer: string | null) =>
   answer !== null && record !== null && compareSeq(record.version, answer) >= 0;
 
 /** The later of two answers. */
@@ -81,7 +93,7 @@ const later = (a: string | null | undefined, b: string | null | undefined) =>
 /** Record an answer, keeping the later of two, and the newest ones when over the cap. */
 function withAnswer(
   answers: ReadonlyMap<string, string>,
-  kind: Intent["kind"],
+  kind: RunStateIntent["kind"],
   id: string,
   version: string,
 ): ReadonlyMap<string, string> {
@@ -115,7 +127,7 @@ function retire(view: RunStateView): RunStateView {
 }
 
 /** Take a server record: it replaces the current one only if newer, then covered intents leave. */
-export function receiveRecord(view: RunStateView, record: RunStateRecord): RunStateView {
+export function receiveRecord(view: RunStateView, record: RunState): RunStateView {
   const current = view.record;
   if (current && compareSeq(record.version, current.version) <= 0) return view;
   return retire({ ...view, record });
@@ -125,7 +137,7 @@ export function receiveRecord(view: RunStateView, record: RunStateRecord): RunSt
  * Add an intent, or replace the same one. Its answer is the latest of its own, the held
  * intent's and the evidence for it. An intent the record already covers is not kept.
  */
-export function addIntent(view: RunStateView, intent: Intent): RunStateView {
+export function addIntent(view: RunStateView, intent: RunStateIntent): RunStateView {
   const existing = view.intents.find((known) => same(known, intent.kind, intent.id));
   const answer = later(
     later(intent.answer, existing?.answer),
@@ -138,7 +150,7 @@ export function addIntent(view: RunStateView, intent: Intent): RunStateView {
       : view.answers;
   const others = view.intents.filter((known) => known !== existing);
   if (covered(view.record, answer)) return { ...view, intents: others, answers };
-  const next = { ...intent, answer } as Intent;
+  const next = { ...intent, answer } as RunStateIntent;
   return {
     ...view,
     answers,
@@ -154,7 +166,7 @@ export function addIntent(view: RunStateView, intent: Intent): RunStateView {
  */
 export function answerIntent(
   view: RunStateView,
-  kind: Intent["kind"],
+  kind: RunStateIntent["kind"],
   id: string,
   version: string,
 ): RunStateView {
@@ -165,11 +177,15 @@ export function answerIntent(
         known === existing ? { ...known, answer: later(known.answer, version) } : known,
       )
     : view.intents;
-  return retire({ ...view, answers, intents: answered as readonly Intent[] });
+  return retire({ ...view, answers, intents: answered as readonly RunStateIntent[] });
 }
 
 /** Remove an intent the server will never answer, and its evidence: a refusal, a failed request, a local cancel. */
-export function dropIntent(view: RunStateView, kind: Intent["kind"], id: string): RunStateView {
+export function dropIntent(
+  view: RunStateView,
+  kind: RunStateIntent["kind"],
+  id: string,
+): RunStateView {
   const intents = view.intents.filter((known) => !same(known, kind, id));
   const key = answerKey(kind, id);
   if (intents.length === view.intents.length && !view.answers.has(key)) return view;

@@ -21,6 +21,7 @@ export type {
   MessageTextNode,
   SerializedMessage,
 } from "./message/types";
+export * from "./run-state";
 export type * from "./socket/socket-ports";
 export { ThreadSocketClient, type ThreadSocketClientOptions } from "./socket/thread-socket-client";
 export type * from "./socket/thread-transport";

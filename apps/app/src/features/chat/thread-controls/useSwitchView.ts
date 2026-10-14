@@ -1,14 +1,13 @@
 /**
  * useSwitchView — the chat's write-mode switch display, as a pure view over server facts.
  *
- * Every server fact about a switch carries one clock, the thread's event `seq`: the
- * accepted snapshot (labelled at its head), `inbox.changed` and `write_mode.switched`
- * frames, and the answer to a switch or its journal stamp. This hook only receives them
- * into the run-state view (`switch-record.ts` composes the record each one makes) and
- * folds the view for the toolbar's mode and the queued rows. It carries the writer's
- * Withdraw to the journal and the server, speaks queued and applied transitions (the one
- * announcer for a switch; a failure stays with the journal owner's keyed announcement),
- * and marks the Works and project thread lists stale when a switch applies.
+ * Every server fact about a switch is a whole `RunState`: the accepted snapshot's, each
+ * `meridian.run_state` frame, the answer to a switch or its journal stamp. This hook only
+ * receives them into the run-state view and folds the view for the toolbar's mode and the
+ * queued rows. It carries the writer's Withdraw to the journal and the server, speaks queued
+ * and applied transitions (the one announcer for a switch; a failure stays with the journal
+ * owner's keyed announcement), and marks the Works and project thread lists stale when a
+ * switch applies.
  *
  * The bridge row, an applied switch whose divider has not rendered yet, is the transcript
  * layer's: it is keyed by the `write_mode.switched` frame's turn and leaves with its divider.
@@ -23,6 +22,8 @@ import {
   compareSeq,
   EventType,
   parseSeq,
+  RUN_STATE_EVENT,
+  readRunState,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import { readWriteModeSwitch } from "@meridian/contracts/threads";
@@ -45,15 +46,13 @@ import { invalidateProjectThreadData } from "@/client/query/project-invalidation
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
 import { announce, announceError, useIsThreadPendingCreation } from "@/client/stores";
-import { pendingInboxFromEvent } from "../pending-inbox";
 import {
   controlAlreadyStartedCopy,
   controlStatusCopy,
   controlWithdrawnCopy,
   writeModeSwitchedCopy,
 } from "./control-copy";
-import { switchDisplay } from "./switch-record";
-import { INITIAL_SWITCH_STATE, reduceSwitch } from "./switch-reducer";
+import { INITIAL_SWITCH_STATE, reduceSwitch, switchDisplay } from "./switch-reducer";
 import type { QueuedControl } from "./thread-controls";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
@@ -139,7 +138,7 @@ export function useSwitchView(input: {
   const announcedQueued = useRef(0);
 
   useLayoutEffect(() => {
-    if (snapshot) dispatch({ type: "snapshot", snapshot });
+    if (snapshot) dispatch({ type: "snapshot", runState: snapshot.liveState.runState });
   }, [snapshot]);
 
   useLayoutEffect(
@@ -154,15 +153,14 @@ export function useSwitchView(input: {
         if (sourceThreadId && sourceThreadId !== threadId) return;
         if ("threadId" in event && event.threadId !== threadId) return;
         if (seq == null || parseSeq(seq) === null) return;
-        const inbox = pendingInboxFromEvent(event);
-        if (inbox)
-          return dispatch({ type: "frame", frame: { kind: "inbox", seq, pending: inbox } });
+        if (event.type === EventType.CUSTOM && event.name === RUN_STATE_EVENT) {
+          const runState = readRunState(event.value);
+          if (runState) dispatch({ type: "record", runState });
+          return;
+        }
         const switched = switchedFrom(event);
         if (!switched) return;
-        dispatch({
-          type: "frame",
-          frame: { kind: "switched", seq, mode: switched.mode, controlId: switched.controlId },
-        });
+        dispatch({ type: "switched", seq, controlId: switched.controlId });
         if (seed.current === null || compareSeq(seq, seed.current) <= 0) return;
         if (switchedTurns.current.has(switched.turnId)) return;
         switchedTurns.current.add(switched.turnId);
@@ -207,7 +205,7 @@ export function useSwitchView(input: {
         try {
           const answer = await withdrawThreadControl(threadId, id);
           const { outcome } = answer;
-          dispatch({ type: "withdrawn", id, answer });
+          dispatch({ type: "withdrawn", id, runState: answer.runState });
           if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));

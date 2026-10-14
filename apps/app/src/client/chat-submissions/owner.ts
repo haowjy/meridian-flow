@@ -482,7 +482,7 @@ export class ChatSubmissionOwner {
           entry.posted === other.posted &&
           entry.refused === other.refused &&
           entry.failed === other.failed &&
-          entry.answer?.seq === other.answer?.seq
+          entry.answer?.runState.version === other.answer?.runState.version
         );
       });
     if (!same) this.model.switches = next;
