@@ -13,14 +13,16 @@ Follow [Runtime probes](runtime-probes.md#setup-and-evidence): a disposable work
 explicitly, and `E` set to a directory under the work item's `evidence/`. Create the probe Agent and a
 thread `T` as there. Every step below uses a fresh thread.
 
-Helpers (existing routes, no new verbs). `stop` takes the press body; `seen` reads what the writer saw
-from the run-state record:
+Helpers (existing routes, no new verbs). `seen` reads what the writer saw from the run-state record in the
+raw snapshot (`thread view --json` prints the app's chat rows, which carry no run-state record). `stop`
+takes `seenThrough`, then `seenExecutionId` (a quoted id or `null`), then `mine` (a JSON array):
 
 ```bash
-seen() { ./mf thread view "$T" --json | jq -c '.runState // .snapshot.runState | {seenThrough:.sentThrough, seenExecutionId:(.execution.executionId // null)}'; }
-stop() { # $1 = seenThrough, $2 = seenExecutionId or null, $3 = mine (JSON array)
-  ./mf api POST "/api/threads/$T/stop" --json --data "{\"requestId\":\"$(node -p 'crypto.randomUUID()')\",\"seenThrough\":$1,\"seenExecutionId\":$2,\"mine\":${3:-[]}}"
+seen() { ./mf api GET "/api/threads/$T/snapshot" | jq -c '.liveState.runState | {seenThrough:.sentThrough, seenExecutionId:(.execution.executionId // null)}'; }
+stop() { # $1 = seenThrough, $2 = "\"<executionId>\"" or null, $3 = mine (JSON array)
+  ./mf api POST "/api/threads/$T/stop" --json --data "{\"requestId\":\"$(node -p 'crypto.randomUUID()')\",\"seenThrough\":$1,\"seenExecutionId\":${2:-null},\"mine\":${3:-[]}}"
 }
+# S=$(seen); stop "$(jq .seenThrough <<<"$S")" "$(jq .seenExecutionId <<<"$S")"
 ```
 
 Hold a reply open with a delayed mock script, send writer messages behind it (they queue, `Queued` in
@@ -28,19 +30,26 @@ the app), then press Stop:
 
 ```bash
 ./mf thread send "$T" first --mock '[{"text":"A long reply.","delayMs":20000}]' --json > "$E/first.ndjson" & FIRST=$!
-# wait until `./mf thread view "$T" --json` shows the reply streaming
+for i in $(seq 20); do sleep 1; seen | grep -q '"seenExecutionId":"' && break; done   # the reply is streaming
 ```
+
+`--mock` scripts match the thread's latest user message and are removed when the send settles. A script
+queued with `./mf mock script '<steps>' --match '<text>'` stays until `./mf mock clear`; run that after
+a step that queued one. An error step is `{"error":{"status":400,"message":"boom"}}`.
 
 SQL reads (`psql "$DATABASE_URL"` for this worktree's database): the inbox rows with their hand-back
 mark, the open execution, and the turns.
 
 ```sql
-SELECT seq, id, delivered_at IS NOT NULL AS delivered, handed_back_by FROM thread_inbox_messages WHERE thread_id = :'T' ORDER BY seq;
-SELECT id, status FROM turns WHERE thread_id = :'T' ORDER BY created_at;
+SELECT seq, provenance->>'kind' AS prov, delivered_at IS NOT NULL AS delivered, delivered_by_turn_id, handed_back_by FROM thread_inbox_messages WHERE thread_id = '<T>' ORDER BY seq;
+SELECT id, role, status, execution_id FROM turns WHERE thread_id = '<T>' ORDER BY created_at;
 ```
 
-(Column names follow `0048_run_state_hand_back.sql`; check them there if a read fails.) Join every
-background `send` with `wait`. A cancelled send exits 5.
+Substitute the thread id for `<T>`. `DATABASE_URL` is the one in the dev server's environment
+(`/proc/<pid>/environ` of the `run-state.server` owner), not necessarily the shell's. A handed-back row has
+`delivered` true (it left the queue), `delivered_by_turn_id` null and `handed_back_by` set; a message a
+run answered has `delivered_by_turn_id` set. Join every background `send` with `wait`, but do not use its
+exit code or result as evidence: after a Stop it can report `timeout` (exit 124). Read the `turns` rows.
 
 For each step, confirm in the browser last: open the thread, repeat the action with the Stop button, and
 check that the composer and the rows match `thread view --json`.
@@ -48,7 +57,7 @@ check that the composer and the rows match `thread view --json`.
 ## SB-26: a send in flight at the press is untouched (row 26)
 
 - **Setup:** idle thread (no execution). Send M1 and let it settle. Read `seen`: `seenThrough` is M1's seq.
-- **Action:** send M2 (its seq is above the watermark) without waiting, then `stop` with the **old**
+- **Action:** send M2 with `--no-wait` (its seq is above the watermark), then `stop` with the **old**
   `seenThrough` and `seenExecutionId: null`, as a press from a screen that had not yet shown M2.
 - **Expect:** `handedBack`, `answered` and `gone` are all empty, `cancelledExecutionId` is null. M2 is
   answered normally, and no row has `handed_back_by` set.
@@ -57,13 +66,21 @@ check that the composer and the rows match `thread view --json`.
 
 ## SB-20: a child report wake is not the execution the writer saw (row 20)
 
-- **Setup:** a parent thread whose child (subagent) reports back while the parent is idle. Send M1 to the
-  parent and let it answer; read `seen` (`seenThrough` is M1's seq, `seenExecutionId: null`). Then spawn a
-  child that reports, so the wake opens execution E3 with only the child's report in its receipt (a
-  delayed mock reply keeps E3 open).
-- **Action:** `stop` with the earlier `seenThrough`/`seenExecutionId` from before the wake, `mine: []`.
-- **Expect:** `cancelledExecutionId` is null; E3 keeps running; M1 appears in `answered`; nothing is
-  handed back. A press that names E3 itself, or whose message E3 adopted, cancels it instead.
+- **Setup:** queue a delayed reply for the wake, then spawn a background child from M1:
+
+  ```bash
+  ./mf mock script '[{"text":"Wake reply.","delayMs":25000}]' --match 'finished (succeeded)'
+  ./mf thread send "$T" 'Spawn a check' --mock '[{"toolCalls":[{"name":"spawn","args":{"prompt":"Inspect","name":"Check","mode":"background"}}]},{"text":"Started."}]' --json
+  ```
+
+  The child's report (`finished (succeeded)`) opens execution E3 with only that report in its receipt,
+  and the delayed reply keeps E3 open (`turns` shows it `streaming`, and the inbox has a `child` row).
+  `seen` now names E3. M1's seq, from the inbox read, is the earlier `seenThrough`, with
+  `seenExecutionId: null`.
+- **Action:** `stop <M1 seq> null`, as from a screen that had not yet shown E3.
+- **Expect:** `cancelledExecutionId` is null; E3 keeps running; `handedBack`, `answered` and `gone` are
+  all empty. M1 is delivered, but not by E3 and not handed back, so the press names it nowhere (it is
+  not in `answered`). A press that names E3 in `seenExecutionId` cancels it instead.
 - **Why a probe:** the unit case fed prefiltered writer facts, so it never checked that the receipt's
   child provenance is dropped. Only the real adapter can show that.
 - **Still pins it:** DB row 34 (a wake that adopts the message answers it and hands nothing back).
@@ -93,9 +110,15 @@ check that the composer and the rows match `thread view --json`.
 
 ## SB-30: Stop on a running Retry (row 30)
 
-- **Setup:** make a reply fail (`./mf thread send "$T" hi --mock '[{"error":"boom"}]'`), then start Retry
-  with a delayed script (`./mf mock script '[{"text":"Retried.","delayMs":20000}]'`, then
-  `POST /api/threads/$T/turns/<failed>/retry`). Read `seen`: the Retry's execution is open.
+- **Setup:** make a reply fail (`./mf thread send "$T" hi --mock '[{"error":{"status":400,"message":"boom"}}]'`; the last assistant
+  turn in `turns` is `<failed>`), then start Retry with a delayed script:
+
+  ```bash
+  ./mf mock script '[{"text":"Retried.","delayMs":20000}]' --match hi
+  ./mf api POST "/api/threads/$T/turns/<failed>/retry" --data "{\"id\":\"$(node -p 'crypto.randomUUID()')\"}" --json
+  ```
+
+  Read `seen`: the Retry's execution is open.
 - **Action:** `stop` with that `seenThrough` and `seenExecutionId`.
 - **Expect:** `cancelledExecutionId` is the Retry's execution; the Retry reply settles cancelled; nothing
   is handed back. In the browser, the stand-in retires and the failed reply does not return.
@@ -108,7 +131,7 @@ check that the composer and the rows match `thread view --json`.
 - **Action:** `stop` with the `seen` values.
 - **Expect:** `cancelledExecutionId` is the open execution; `answered` holds M1; `handedBack` is empty.
   The reply is cancelled with its partial text kept; M1 stays in the chat, answered by the cancelled
-  reply. `first`'s send exits 5.
+  reply. `first`'s send reports `timeout`; its `turns` row is `cancelled`.
 - **Still pins it:** DB rows 23 and 24 (the live holder cancels, a dead holder's reply keeps its message)
   and browser item 1 (Stop a streaming reply, desktop and phone).
 
