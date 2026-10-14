@@ -1,6 +1,6 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   type ChangeCommandState,
   changeCommandState,
@@ -11,6 +11,10 @@ import {
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
+import {
+  type DraftImagePreviewTarget,
+  isDraftImagePath,
+} from "@/features/draft-review/DraftImagePreview";
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { type ReviewChange, targetOfChanges } from "@/features/draft-review/review-changes";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
@@ -32,6 +36,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
   const records = useChangeCommandRecords();
+  const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
   const { projectId, workId } = controller;
 
   const candidates = useMemo(
@@ -76,10 +81,15 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
 
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
-      if (file.row.draft.branchGeneration === null) return;
+      // A draft-only picture has no review room: it opens as a preview.
+      if (file.row.draft.branchGeneration === null) {
+        if (isDraftImagePath(file.row.contextLocation?.path))
+          setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
+        return;
+      }
       openReviewFile(file.row, workId, change?.operationIds ?? file.changes[0]?.operationIds);
     },
-    [openReviewFile, workId],
+    [openReviewFile, projectId, workId],
   );
 
   const send = useCallback(
@@ -125,6 +135,8 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     workId,
     fileFailures,
     review,
+    imagePreview,
+    closeImagePreview: () => setImagePreview(null),
     apply: () => send("apply"),
     discard: () => send("discard"),
   };

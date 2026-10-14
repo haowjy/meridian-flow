@@ -23,13 +23,11 @@ function failed(result: Record<string, unknown>): ToolView {
   };
 }
 
-it("says the writer discarded what the AI edited", () => {
+it("says why a write failed, and gives every undo and redo refusal its own copy", () => {
   expect(
     documentToolFailureCopy(failed({ status: "invalid_write", rejected: "discarded_edit" })),
   ).toBe("You discarded the text it edited, so the change wasn't kept. The AI will read it again.");
-});
 
-it("gives every undo and redo refusal its own copy", () => {
   const statuses = [
     "cant_undo_applied",
     "cant_undo_discarded",
