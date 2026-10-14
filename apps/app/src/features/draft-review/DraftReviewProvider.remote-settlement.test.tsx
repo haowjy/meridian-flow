@@ -178,7 +178,7 @@ describe("DraftReviewProvider remote settlement", () => {
       return (
         <PresentedDocumentContext.Provider value={presented}>
           <DraftReviewBoundary value={selected}>
-            <DraftOnlySettlement projectId="project-a" />
+            <DraftOnlySettlement projectId="project-a" editorWorkId="work-a" />
             <ReviewAddressOwner
               review={selected}
               presented={presented}
@@ -223,7 +223,11 @@ describe("DraftReviewProvider remote settlement", () => {
             projectId="project-a"
             openContextRoute={async () => ({ kind: "cancelled" }) as never}
           >
-            {container === "dock" ? <DockReview /> : <DraftOnlySettlement projectId="project-a" />}
+            {container === "dock" ? (
+              <DockReview />
+            ) : (
+              <DraftOnlySettlement projectId="project-a" editorWorkId="work-a" />
+            )}
           </EditorReviewHandoffProvider>
         </TooltipProvider>
       </QueryClientProvider>,

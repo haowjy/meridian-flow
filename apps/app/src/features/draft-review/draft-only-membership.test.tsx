@@ -103,13 +103,14 @@ it("a join seen first by one Work keeps the review another Work has on screen", 
     documentId: "document-a",
     scheme: "manuscript" as const,
     path: "/chapter.md",
-    review: { workId: "work-b", itemKey: "draft-b" },
+    // The route dropped `item` (New file moved the writer on): Work B's own entry is what to restore.
+    review: null,
     draftOnly: true,
   };
   await withReactRoot(
     <QueryClientProvider client={new QueryClient()}>
       <PresentedDocumentContext.Provider value={presented}>
-        <DraftOnlySettlement projectId="project-a" />
+        <DraftOnlySettlement projectId="project-a" editorWorkId="work-b" />
       </PresentedDocumentContext.Provider>
     </QueryClientProvider>,
     async () => {
