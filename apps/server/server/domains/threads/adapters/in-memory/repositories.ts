@@ -111,6 +111,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     projectId: input.projectId,
     workId: null,
     aiWriteMode: input.aiWriteMode,
+    effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: normalized.kind,
     status: "idle",
@@ -451,7 +452,12 @@ export function createInMemoryRepositories(
     async setAiWriteMode(id, mode) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
-      threads.set(id, { ...thread, aiWriteMode: mode, updatedAt: toIsoString(new Date()) });
+      threads.set(id, {
+        ...thread,
+        aiWriteMode: mode,
+        effectiveAiWriteMode: mode,
+        updatedAt: toIsoString(new Date()),
+      });
     },
     async bakeInitialPrompt(id, input) {
       const thread = threads.get(id);

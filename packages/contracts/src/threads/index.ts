@@ -325,6 +325,8 @@ export interface Thread {
   workId: string | null;
   /** The chat's own write mode, copied at creation from the request or its Work's default. */
   aiWriteMode: AiWriteMode;
+  /** The mode the chat writes in next: a queued mode switch's mode, else `aiWriteMode`. */
+  effectiveAiWriteMode: AiWriteMode;
   userId: string;
   kind: ThreadKind;
   status: ThreadLifecycleStatus;

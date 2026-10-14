@@ -17,6 +17,20 @@ export async function invalidateProjectThreadData(
   ]);
 }
 
+/**
+ * A write-mode switch changed (queued, cancelled or withdrawn): the list rows carry its pending
+ * mode and the Works read its default. The chat feed waits for the switch turn.
+ */
+export async function invalidateWriteModeReads(
+  client: QueryClient,
+  projectId: string,
+): Promise<void> {
+  await Promise.all([
+    client.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) }),
+    client.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) }),
+  ]);
+}
+
 export function invalidateProjectChatFeed(client: QueryClient, projectId: string): Promise<void> {
   return client.invalidateQueries({
     queryKey: projectQueryKeys.chatFeed(projectId),

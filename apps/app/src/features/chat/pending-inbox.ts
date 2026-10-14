@@ -35,6 +35,14 @@ export function owedWriterMessageIds(pending: ThreadPendingInbox): string[] {
     .map((item) => item.id);
 }
 
+/** The ids of queued write-mode switches, as one comparable key; "" when none is queued. */
+export function queuedSwitchKey(pending: ThreadPendingInbox): string {
+  return pending.items
+    .filter((item) => item.control?.kind === "write_mode")
+    .map((item) => item.id)
+    .join(",");
+}
+
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   return Array.isArray((value as ThreadPendingInbox).items);
