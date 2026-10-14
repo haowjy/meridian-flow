@@ -18,12 +18,16 @@ import {
   MESSAGES_DELIVERED_EVENT,
   type MessagesDeliveredValue,
   type RunStartedMeta,
+  WRITE_MODE_SWITCHED_EVENT,
+  type WriteModeSwitchedValue,
 } from "@meridian/contracts/protocol";
 import type { BlockUpsertedRow, OrchestratorEvent } from "@meridian/contracts/threads";
 import {
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
+
+import { WriteModeSwitchMetadataCodec } from "./turn-metadata.js";
 
 const USER_INTERRUPT_PROVENANCE: InterruptAnswerProvenance = "user";
 
@@ -126,7 +130,22 @@ export function createOrchestratorEventProjector() {
   function project(event: OrchestratorEvent): AGUIEvent[] {
     switch (event.type) {
       case "turn.created": {
-        if (event.turn.role !== "assistant") return [];
+        if (event.turn.role !== "assistant") {
+          const switched = WriteModeSwitchMetadataCodec.safeParse(event.turn.metadata);
+          if (event.turn.role !== "system" || !switched.success) return [];
+          return [
+            parseAguiEvent({
+              type: EventType.CUSTOM,
+              name: WRITE_MODE_SWITCHED_EVENT,
+              value: {
+                threadId: event.turn.threadId,
+                mode: switched.data.mode,
+                controlId: switched.data.controlMessageId,
+                turnId: event.turn.id,
+              } satisfies WriteModeSwitchedValue,
+            }),
+          ];
+        }
         state.activeRunId = event.turn.id;
         state.activeThreadId = event.turn.threadId;
         state.nextBlockSequence = event.turn.blocks.length;

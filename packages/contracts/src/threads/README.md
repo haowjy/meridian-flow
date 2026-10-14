@@ -23,6 +23,21 @@ idempotency and withdrawal outcomes (`withdrawn` or `already_started`).
 Frontend commands and divider rendering are separate from these transport
 contracts.
 
+### Switch clock
+
+A control answer is read in one transaction under the thread lock and carries
+`seq` (the thread's journal head as a decimal string, in the socket's frame
+space: the snapshot's `nextSeq - 1`) and `mode` (the applied write mode).
+`pending` is the thread's queued write-mode switch, which may be another
+request's row. Every switch transition commits under that lock and appends
+its frames, so the state the answer reports is the server's switch state as
+of every frame at or below `seq`. The withdraw answer carries `seq` likewise.
+An applied switch also projects `meridian.write_mode.switched`
+(`{ threadId, mode, controlId, turnId }`) at its own journal `seq`, ahead of
+the `meridian.inbox.changed` that empties the queue; catch-up replay delivers
+it. The snapshot's `thread.aiWriteMode`, `liveState.pending` and `nextSeq` are
+one transaction; label that state `nextSeq - 1`.
+
 ### Failed reply Retry
 
 A failed assistant acknowledges the messages it adopted and remains failed in

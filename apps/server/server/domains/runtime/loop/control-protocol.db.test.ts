@@ -2,7 +2,11 @@
 import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { TurnStartConflictError } from "../../threads/index.js";
+import {
+  createOrchestratorEventProjector,
+  cursorSeqForJournalHead,
+  TurnStartConflictError,
+} from "../../threads/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
@@ -40,6 +44,19 @@ else
       const rig = await fixture({ gateway: scriptedGateway({ usage: lowUsage }), ...options });
       rig.setThreshold(100000);
       return rig;
+    }
+
+    /** Every journal append with its journal seq, and the socket frames each one projects to. */
+    async function appendedFrames(appended: {
+      mock: { calls: unknown[][]; results: { value: unknown }[] };
+    }) {
+      const projector = createOrchestratorEventProjector();
+      return Promise.all(
+        appended.mock.calls.map(async ([, event], index) => ({
+          journalSeq: (await appended.mock.results[index]?.value) as bigint,
+          frames: projector.project(event as never) as { name?: string }[],
+        })),
+      );
     }
 
     async function compactControl(
@@ -810,10 +827,17 @@ else
       const rig = await manualFixture();
       const withdrawn = await compactControl(rig);
       await rig.send(rig.threadId, "B behind withdrawn compact");
-      expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toEqual({
-        outcome: "withdrawn",
-      });
-      expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toEqual({
+      const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+      const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
+      expect(answer.outcome).toBe("withdrawn");
+      // The answer's clock reaches the withdrawal's own inbox.changed frame.
+      const [withdrawal] = (await appendedFrames(appended)).filter((row) =>
+        row.frames.some((frame) => frame.name === "meridian.inbox.changed"),
+      );
+      expect(BigInt(answer.seq)).toBeGreaterThanOrEqual(
+        cursorSeqForJournalHead(withdrawal?.journalSeq as bigint),
+      );
+      expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toMatchObject({
         outcome: "withdrawn",
       });
       await drainControls(rig);
@@ -823,12 +847,12 @@ else
 
       const started = await compactControl(rig);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
-      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toEqual({
+      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toMatchObject({
         outcome: "already_started",
       });
       await run.execute();
       await settled(rig);
-      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toEqual({
+      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toMatchObject({
         outcome: "already_started",
       });
     });
@@ -1199,12 +1223,36 @@ else
       it("applies at once in an idle chat as one complete switch turn", async () => {
         const rig = await manualFixture();
         const leaf = (await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId;
+        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
         const applied = await switchMode(rig, "draft");
 
         const [turn] = await switchTurns(rig);
         expect(applied).toMatchObject({
           created: true,
-          response: { pending: null, turnId: turn?.id },
+          response: { pending: null, turnId: turn?.id, mode: "draft" },
+        });
+        // The apply is a frame of its own, ahead of the inbox.changed that
+        // empties the queue, and the answer's seq is at or past that frame.
+        const rows = await appendedFrames(appended);
+        const names = rows.flatMap((row) => row.frames.map((frame) => frame.name));
+        const switched = names.indexOf("meridian.write_mode.switched");
+        expect(switched).toBeGreaterThan(-1);
+        expect(names.lastIndexOf("meridian.inbox.changed")).toBeGreaterThan(switched);
+        const lastInbox = [...rows]
+          .reverse()
+          .find((row) => row.frames.some((frame) => frame.name === "meridian.inbox.changed"));
+        expect(BigInt(applied.response.seq)).toBeGreaterThanOrEqual(
+          cursorSeqForJournalHead(lastInbox?.journalSeq as bigint),
+        );
+        expect(
+          rows.flatMap((row) => row.frames).find((f) => f.name === "meridian.write_mode.switched"),
+        ).toMatchObject({
+          value: {
+            threadId: rig.threadId,
+            mode: "draft",
+            controlId: applied.response.id,
+            turnId: turn?.id,
+          },
         });
         expect(turn).toMatchObject({
           role: "system",
@@ -1222,9 +1270,11 @@ else
         );
         expect(await threadMode(rig)).toBe("draft");
         expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
-        expect(await rig.delivery.withdrawControl(rig.threadId, applied.response.id)).toEqual({
-          outcome: "already_started",
-        });
+        expect(await rig.delivery.withdrawControl(rig.threadId, applied.response.id)).toMatchObject(
+          {
+            outcome: "already_started",
+          },
+        );
       });
 
       it("answers a switch a reply's release applies mid-answer as queued or applied, never both null", async () => {
@@ -1685,9 +1735,9 @@ else
             turnId: null,
           });
           appended.mockClear();
-          expect(await switchMode(rig, "direct", back)).toEqual({
+          expect(await switchMode(rig, "direct", back)).toMatchObject({
             created: true,
-            response: { id: back, pending: null, turnId: null },
+            response: { id: back, pending: null, turnId: null, mode: "direct" },
           });
           expect(publishedQueues()).toEqual([[]]);
           expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
@@ -1697,15 +1747,16 @@ else
           });
           appended.mockClear();
           // Same mode as the queued switch: written settled, the queued one stays.
+          // The answer names the thread's queued switch, not only its own row.
           expect((await switchMode(rig, "draft")).response).toMatchObject({
-            pending: null,
+            pending: { id: newer },
             turnId: null,
           });
           expect(publishedQueues()).toEqual([[newer]]);
           // A retried cancel answers its own settled row.
-          expect(await switchMode(rig, "direct", back)).toEqual({
+          expect(await switchMode(rig, "direct", back)).toMatchObject({
             created: false,
-            response: { id: back, pending: null, turnId: null },
+            response: { id: back, pending: { id: newer }, turnId: null, mode: "direct" },
           });
           await expect(switchMode(rig, "draft", back)).rejects.toMatchObject({
             statusCode: 409,
@@ -1724,7 +1775,7 @@ else
           turns.map((turn) => (turn.metadata as { controlMessageId: string }).controlMessageId),
         ).toEqual([newer]);
         expect(await threadMode(rig)).toBe("draft");
-        expect(await rig.delivery.withdrawControl(rig.threadId, first)).toEqual({
+        expect(await rig.delivery.withdrawControl(rig.threadId, first)).toMatchObject({
           outcome: "withdrawn",
         });
         // Already in draft mode: a new draft request changes nothing.
