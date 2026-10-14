@@ -88,20 +88,16 @@ export function useCreateLinkedDocument(projectId: string | null): CreateLinkedD
           if (!segment) throw new Error("Destination area is unavailable");
           createFolders.unshift(segment);
         }
-        const reservation = await resources.reserveDocument(projectId);
+        const reservation = await resources.reserveDocument(projectId, "", {
+          parent,
+          ...(createFolders.length ? { createFolders } : {}),
+          name: target.name,
+        });
         if (reservation.content.kind !== "opened")
           throw new Error("Local document content is unavailable");
         reserved = { key: reservation.key };
         documentId = reservation.content.handle.documentId;
-        try {
-          await resources.setLocation(projectId, reservation.key, {
-            parent,
-            ...(createFolders.length ? { createFolders } : {}),
-            name: target.name,
-          });
-        } finally {
-          reservation.content.handle.release();
-        }
+        reservation.content.handle.release();
       } catch {
         documentId = null;
         // A reservation that never reached its address is discarded, not left

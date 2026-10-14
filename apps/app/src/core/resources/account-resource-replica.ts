@@ -8,9 +8,11 @@ import {
   type FolderNamespaceWrite,
   folderNeedsBackgroundReconciliation,
   installedFolderObservation,
+  joinReservation,
   markResourceCreateEligible,
   ownerOf,
   type ParentRef,
+  pendingJoinTarget,
   planCachedSessionAdoption,
   planFolderDeletion,
   planFolderLocation,
@@ -32,6 +34,7 @@ import {
   resourcePlacementForSnapshot,
   resourceVisibleInProject,
   sameOwner,
+  settleNamespaceOutcome,
 } from "@meridian/resource-replica";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { nativeLocks } from "@/core/cross-context-locks";
@@ -226,9 +229,16 @@ export class AccountResourceReplica {
     };
   }
 
+  /**
+   * Reserve a document under a client-minted id. `destination` is where the writer put it (the
+   * sidebar's New file, a link's Create): it goes out with the create so the server can join a
+   * draft's document waiting there, and the replica shows it there at once. Without one the
+   * create is nameless.
+   */
   async reserveDocument(
     projectId: string,
     folderPath = "",
+    destination?: ResourceDestination,
   ): Promise<{
     key: ResourceKey;
     name: string;
@@ -242,7 +252,7 @@ export class AccountResourceReplica {
         async (lock) => {
           if (!lock) throw new Error("Resource reservation lock is unavailable");
           this.requireOpen();
-          return this.reserveDocumentSerial(projectId, folderPath);
+          return this.reserveDocumentSerial(projectId, folderPath, destination);
         },
       );
     }
@@ -253,7 +263,7 @@ export class AccountResourceReplica {
     });
     await before;
     try {
-      return await this.reserveDocumentSerial(projectId, folderPath);
+      return await this.reserveDocumentSerial(projectId, folderPath, destination);
     } finally {
       release();
     }
@@ -262,6 +272,7 @@ export class AccountResourceReplica {
   private async reserveDocumentSerial(
     projectId: string,
     folderPath: string,
+    destination?: ResourceDestination,
   ): Promise<{
     key: ResourceKey;
     name: string;
@@ -292,12 +303,13 @@ export class AccountResourceReplica {
       schema: collabSchemaKeyTag(),
       intentId: crypto.randomUUID(),
       folderPath,
-      provisionalName: name,
+      provisionalName: destination?.name ?? name,
+      ...(destination ? { destination: { value: destination, eligibleAt: Date.now() } } : {}),
     });
     if ((await this.metadata.commitResource(write)) !== "committed")
       throw new Error("Resource identity reservation collided");
     const content = await this.content.open(projectId, key, `reservation:${key.handle}`);
-    return { key, name, content };
+    return { key, name: destination?.name ?? name, content };
   }
 
   start(): void {
@@ -795,6 +807,9 @@ export class AccountResourceReplica {
         lock: this.lock,
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
+      if (namespace === "needs-join") {
+        if (await this.followJoin(key)) continue;
+      }
       if (namespace === "needs-repair") {
         if (await this.remintCreateConflict(key)) continue;
       }
@@ -832,6 +847,46 @@ export class AccountResourceReplica {
       return true;
     });
     return result.kind === "acquired" && result.value;
+  }
+
+  /**
+   * The create was answered `joined`: re-identify the reservation to the joined document around
+   * its session, as a remint does. When another record already holds that id nothing folds; the
+   * create is settled as refused and the next pass reminted it.
+   */
+  private async followJoin(key: ResourceKey): Promise<boolean> {
+    const current = await this.metadata.readResource(key);
+    const target = current && pendingJoinTarget(current);
+    if (!current || !target) return false;
+    const projectId = current.intents.find((intent) => intent.desired.kind === "create")?.projectId;
+    if (!projectId) return false;
+    const { records } = await this.metadata.readProjection(projectId);
+    const taken = records.some(
+      (other) =>
+        other.resource.handle !== key.handle &&
+        (other.resource.identity.documentId === target.documentId ||
+          target.documentId in other.resource.aliases),
+    );
+    const write = taken
+      ? settleNamespaceOutcome(current, Date.now(), true)
+      : joinReservation({ record: current, target, settledAt: Date.now() });
+    if (!write) return false;
+    const prepared = taken
+      ? null
+      : this.content.prepareReidentity(
+          key,
+          current.resource.identity.documentId,
+          target.documentId,
+          write.next.resource.identity.revision,
+        );
+    if ((await this.metadata.commitResource(write)) === "stale") {
+      prepared?.abort();
+      const winner = await this.metadata.readResource(key);
+      if (winner) this.content.reconcileMetadata(winner);
+      return true;
+    }
+    prepared?.commit();
+    return true;
   }
 
   private async remintCreateConflict(key: ResourceKey): Promise<boolean> {

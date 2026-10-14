@@ -23,6 +23,8 @@ export function reserveResourceDocument(input: {
   intentId: string;
   folderPath?: string;
   provisionalName?: string;
+  /** A named create is dispatchable at once: the writer chose where it goes. */
+  destination?: { value: ResourceDestination; eligibleAt: number };
 }): ResourceWrite {
   const resource: ResourceDescriptor = {
     handle: input.handle,
@@ -38,7 +40,7 @@ export function reserveResourceDocument(input: {
     canonical: null,
     lifecycle: { kind: "local" },
     aliases: {},
-    obligations: { createEligibility: { eligibleAt: null } },
+    obligations: { createEligibility: { eligibleAt: input.destination?.eligibleAt ?? null } },
   };
   const intent: NamespaceIntent = {
     projectId: input.projectId,
@@ -50,6 +52,7 @@ export function reserveResourceDocument(input: {
       kind: "create",
       folderPath: input.folderPath ?? "",
       ...(input.provisionalName ? { provisionalName: input.provisionalName } : {}),
+      ...(input.destination ? { destination: input.destination.value } : {}),
     },
     attempts: [],
     state: "pending",
@@ -169,7 +172,7 @@ export function remintCreateConflict(input: {
   if (
     !conflicted ||
     outcome?.kind !== "create" ||
-    outcome.result.status !== "conflict" ||
+    (outcome.result.status !== "conflict" && outcome.result.status !== "joined") ||
     record.resource.lifecycle.kind !== "local" ||
     record.resource.canonical !== null
   )
