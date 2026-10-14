@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import { type ContextTab, getContextTabs, isDraftOnly, useContextTabsStore } from "@/client/stores";
 import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
@@ -214,7 +214,7 @@ it("a draft-only tab becomes the live document's tab the moment the replica show
   vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(replica as never);
   await fixture.render(async (p) => {
     await open(p);
-    expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(true);
+    expect(tabs().some(isDraftOnly)).toBe(true);
     // New file joined the hidden document: visible live, the draft's row still new (no refetch yet).
     await act(async () =>
       emit({
@@ -233,9 +233,7 @@ it("a draft-only tab becomes the live document's tab the moment the replica show
         catalogs: [],
       }),
     );
-    await settleReact(() =>
-      expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(false),
-    );
+    await settleReact(() => expect(tabs().some(isDraftOnly)).toBe(false));
     expect(
       tabs()
         .map((tab) => tab.documentId)
@@ -254,14 +252,18 @@ it("a lost whole Apply keeps the draft-only tab and review, apart from a server 
       expect(await done).toEqual({ kind: "apply-outcome-unknown" });
     });
     expect(p().header.commandError).toEqual({ code: "apply-unknown" });
-    expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
+    expect(isDraftOnly(tabs().find((tab) => tab.documentId === "document-a") as ContextTab)).toBe(
+      true,
+    );
     expect(p().presented.controller.inlineReview?.itemKey).toBe("draft-a");
     fixture.network.applyDraft.mockRejectedValue(new HttpResponseError("refused", 500, null));
     await act(async () => {
       await p().presented.controller.apply("document-a", "draft-a");
     });
     expect(p().header.commandError).toEqual({ code: "apply-server-error" });
-    expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
+    expect(isDraftOnly(tabs().find((tab) => tab.documentId === "document-a") as ContextTab)).toBe(
+      true,
+    );
   });
 });
 
@@ -284,9 +286,9 @@ it.each([
     const live = tabs().find((tab) => tab.documentId === "document-a");
     if (container === "both") {
       expect(live).toBeDefined();
-      expect(live).not.toHaveProperty("draftOnly");
+      expect(live).not.toHaveProperty("reviews");
     } else expect(tabs()).toEqual([]);
-    expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
+    expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("reviews");
     expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
     if (container === "dock") {
       const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();

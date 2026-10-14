@@ -12,9 +12,9 @@
 import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
@@ -85,7 +85,7 @@ export function ContextDocumentHost({
   const reviewItemKey = reviewRoomName ? selectedReviewItemKey : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft branch alone.
-  const branchOnly = tab.kind === "tracked" && tab.draftOnly === true;
+  const branchOnly = isDraftOnly(tab);
   const renderEditor = (
     session: DocumentSession | null,
     failed = false,

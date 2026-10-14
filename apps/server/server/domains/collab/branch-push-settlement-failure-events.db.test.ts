@@ -20,7 +20,10 @@ import {
 describe("settlement failure reporting (postgres)", () => {
   const db = createTestDatabase();
   beforeEach(() => resetSettlementFixture(db));
-  afterAll(() => closeDatabase(db));
+  afterAll(async () => {
+    await resetSettlementFixture(db);
+    await closeDatabase(db);
+  });
 
   function collectingSink() {
     const events: Array<{ name: string; level: string; payload: unknown; correlation?: unknown }> =
@@ -117,8 +120,20 @@ describe("settlement failure reporting (postgres)", () => {
     ).resolves.toBe(true);
 
     const corruptBatch = await seedPendingBatch(BETA_ID, "block-claim");
-    // The stored trail seed no longer parses: the reader names the corruption.
-    await db.update(schema.branchPushSettlementOutbox).set({ trailSeed: {} });
+    // The seed's own fields are valid; only the shared notice parser rejects it,
+    // and that nested failure must still be named as corruption, not retried.
+    const uuid = "00000000-0000-4000-8000-0000000005d1";
+    await db.update(schema.branchPushSettlementOutbox).set({
+      trailSeed: {
+        documentId: uuid,
+        documentTitle: "t",
+        receiptId: uuid,
+        threadIds: [],
+        journalOwners: [],
+        changes: [],
+        transactionalNotice: {},
+      },
+    });
     await expect(
       store.claimRecoverableBatch({
         batchId: corruptBatch,
