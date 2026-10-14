@@ -11,8 +11,8 @@
  * owner's keyed announcement), and marks the Works and project thread lists stale when a
  * switch applies.
  *
- * The bridge row, an applied switch whose divider has not rendered yet, is the transcript
- * layer's: it is keyed by the `write_mode.switched` frame's turn and leaves with its divider.
+ * The bridge row, an applied switch whose turn has not rendered yet, is the transcript
+ * layer's: it is keyed by the `write_mode.switched` frame's turn and leaves with that turn.
  *
  * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
  * the center and the dock, so a chat has one mounted `ChatView` and so one view. Two would
@@ -206,7 +206,7 @@ export function useSwitchView(input: {
           const { outcome } = answer;
           dispatch({ type: "withdrawn", id, answer });
           if (outcome === "withdrawn") announce(controlStoppedCopy(row.control));
-          // The divider shows a started one.
+          // The switch turn shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
           revalidate();
         } catch (error) {
@@ -232,7 +232,7 @@ export function useSwitchView(input: {
     () => new Set(turns.flatMap((turn) => (readWriteModeSwitch(turn) ? [turn.id] : []))),
     [turns],
   );
-  // Only a switch whose divider has not rendered yet needs the bridge.
+  // Only a switch whose turn has not rendered yet needs the bridge.
   useEffect(() => {
     setApplied((known) =>
       known.some((entry) => dividerIds.has(entry.turnId))

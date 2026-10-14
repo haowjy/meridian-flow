@@ -1,5 +1,5 @@
 /**
- * Pure read of a write-mode divider turn.
+ * Pure read of a write-mode switch turn.
  *
  * A switch is a complete `system` turn with `metadata.kind === "write_mode_switch"`.
  * Metadata is read defensively: the server owns its shape.
@@ -9,7 +9,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 
 export type WriteModeSwitchFacts = {
   mode: AiWriteMode;
-  /** The writer command this divider ran (`controlMessageId`). */
+  /** The writer command this switch turn ran (`controlMessageId`). */
   controlId: string | null;
 };
 
