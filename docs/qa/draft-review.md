@@ -22,7 +22,10 @@ and dock hosts.
   syntax lives in
   `apps/server/server/domains/runtime/gateway/adapters/mock/write-directive.ts`.
 - Drive the UI with `agent-browser` (snapshot → click by ref → re-snapshot).
-  Capture `agent-browser console` and `errors` at the end of every scenario —
+  Browsing live with no `?work=`, there is no Version chip for another Work's draft; the open
+  document's draft hint (below) says so instead. Use `?work=<the drafting Work>` for the chip.
+
+Capture `agent-browser console` and `errors` at the end of every scenario —
   a clean console is part of every pass criterion below.
 
 ### Controlled failures and evidence
@@ -117,6 +120,9 @@ remains selectable. Stage the reverse formatting proposal, then Discard each
 class separately. Live remains exactly unchanged and the other class survives
 until its own Discard. Capture the previews, dispositions and readbacks, plus
 the change-list screenshot and browser errors. Stop only this worktree's stack.
+
+The per-change recipes below (tokens, closure classes, admission) belong to the review as it stands today; the
+diff-based review rework (work item `diff-based-review`) replaces per-change review and these with it.
 
 ## Coherent review reads (CLI)
 
@@ -900,40 +906,36 @@ independent typing through the durable coordinator. Queue/retry evidence:
 with unchanged stable keys. These are integration/adapter checks, not browser
 smoke verification.
 
-## Review commands against a replying model (CLI, mock stack)
+## Review commands against a replying model (browser, mock stack)
 
-These probes cover the item, per-change and whole-draft commands, with `commandId`s, while a reply is still
-writing. Use a draft-mode chat in a Work (`aiWriteMode: "draft"` at thread creation) and an owned project. Every command body carries `draftId`,
-`itemKey` and a fresh `commandId`; read live with `./mf doc read` after each one.
+The strip's and the Work page's Apply all and Discard all while a reply is still writing. Use a draft-mode chat in a
+Work (`aiWriteMode: "draft"` at thread creation) and an owned project, and drive both pages in `agent-browser` (desktop
+1440x900). `./mf` only sets up the Work, a thread bound to it and the scripted turns, and reads durable state (`doc
+read`, the drafts list, `thread view`) after each click. Per-change controls on the rows stay locked while a reply
+streams; this recipe does not cover them.
 
 **Holding a reply mid-write.** A reply saves once per model response, after all of that response's tools have
-run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 15 to
-40 chained `replace` calls on one document (each `find` is the previous `content`) and send the command about one
-second after `./mf thread send --no-wait`; the batch takes seconds to stage. The item must already be listed, so
-run an earlier turn that saves a draft edit to it first. Take the Apply all request's tokens from the list
-before the long turn starts.
+run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 120 to
+300 chained `replace` calls on one document (each `find` is the previous `content`) with `./mf thread send
+--no-wait`, and click about one second later. An earlier turn must already have saved a draft edit to the document, so
+it is listed.
 
-1. **Per-change Apply and Discard.** Live `Alpha`, `Beta`, `Gamma` paragraphs; the AI replaces Alpha and Gamma.
-   Apply only Alpha's class (`operationIds`, both revision tokens), read live: Alpha changed, Gamma not. Discard
-   the remaining class (`closureClassIds`, `admissionTokens`, `memberPartKeys`, both tokens), read live: unchanged,
-   and the item settles `itemClosed: true`. PASS when each readback is exact.
-2. **Empty create and created image.** The AI creates `manuscript://Blank.md` with empty content and copies an
-   uploaded image to `manuscript://art/map.png` (upload through `uploads://`, then `write copy` with
-   `from: { path }`). The list shows one item for each (`wholeItem: true`; the image is `binary: true` with a
-   null branch generation). Apply each item: the empty document reads `""` live and the image is live.
-3. **Item Discard while the reply writes.** Long chained batch on `X` plus one last edit on `Y`. Discard `X`'s
-   item during the batch. PASS: every `X` write fails with `Write did not land: the user discarded the text it
-   edited. Re-read and retry.`, the `Y` write lands, live `X` is unchanged, and a later write to `X` starts a fresh
-   draft.
-4. **Apply all while the reply writes.** Same setup with two drafted documents; Apply all during the batch. PASS:
-   live shows the text saved before the command, the late writes stay in the draft, and the item remains listed.
-5. **Discard all while the reply writes.** Discard the whole draft during the batch. PASS: in-flight writes fail
-   with `Write did not land: the user discarded this draft. Re-read and retry.`; live is unchanged; the list is
-   empty; a later write lands in a draft with a different `draftId`.
-6. **Model undo, redo, revert, elsewhere.** The AI edits two paragraphs of a drafted document, then (one turn
-   each) `write undo`, `redo`, and `revert` of the first edit: each acts in the draft only. Switch the Work to
-   `direct` with `pending: "keep"`, make the model `read` the document again, then undo: PASS is
-   `cant_undo_elsewhere` naming the version, and live unchanged.
+1. **Strip Discard during the reply.** Open the Work's chat. While the reply runs, click Discard on the strip and
+   confirm. PASS: one request goes out and the strip's list empties. Live text is unchanged, and the later writes fail.
+   The expanded failed row reads "You discarded the text it edited, so the change wasn't kept. The AI will read it
+   again." Not the old "This change was updated. Check it and discard again."
+2. **Strip Apply during the reply.** Same setup, click Apply. PASS: live shows the text saved before the click. The
+   reply finishes and the strip lists the late writes ("1 change", Discard, Apply) for the next review.
+3. **Work page Apply all during the reply.** Work page, Files tab, "All changes" menu, Apply all changes. PASS: live
+   has the text saved before the click, and the document is still under Changes to review for the late writes.
+4. **Work page Discard all during the reply.** The same menu, Discard all changes, confirm (at 390x844 too: the question
+   and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "You discarded
+   this draft, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
+5. **Live-edit staleness.** Not covered here: an Apply with tokens from before a live edit refuses as `stale`, tested
+   by the DB suite (`draft-tree.apply-staleness.db.test.ts`).
+
+Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass. The API-level answers
+(`commandId` resend, conflict, unknown, `whole_item`, `cant_undo_elsewhere`) are covered by tests, not by this recipe.
 
 ## Cold-open waterfall and the ahead-link chip (browser)
 
@@ -950,3 +952,63 @@ For the link chip, record every change of `data-link-chip` and `aria-description
 the `links/resolve` response held by an owned fetch seam. A live chapter holding an `ahead:` link to a document that
 exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
 
+
+## A writer's New file joins the draft's document (browser, #757)
+
+A draft's new document is a real document with a draft, hidden live only because it is a
+draft. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
+with an ordinary draft over it. The device's instant create carries its destination, so the
+server joins the document waiting there. The only device work is identity: the reservation's id
+becomes the joined id, and what the writer typed is kept. No draft text is merged; the draft's
+text stays in the draft for review.
+
+Setup (own stack, `MODEL_PROVIDER=mock pnpm dev`): `./mf api` to create a Work with
+`aiWriteMode: "draft"` and a thread bound to it. `./mf thread send <thread> go --mock @script`
+with one scripted `write create` of `manuscript://Chapter 2` (give it text). Desktop 1440x900,
+then the phone 390x844 with touch emulation.
+
+1. **Online.** Open the project. Sidebar, Manuscript, New file, `Chapter 2`, Enter, and type a
+   line at once.
+   PASS: one `Chapter 2` row and one tab, on the draft's document (same id as the Work's draft
+   item, read with `./mf api`); the typed line is kept; the Work's review item is an edit, not
+   new. As soon as the create's answer lands, with no reload or navigation, the open document
+   shows the "Live" chip with the version menu, and Draft opens that draft's review. Measure
+   from the `create-untitled` response to the chip appearing. Check it inside the drafting
+   Work's chat and browsing live with no Work. Database: one `documents` row at that path
+   (`psql`, `hidden = false`).
+2. **Offline.** `agent-browser set offline on` before New file; New file `Chapter 2`, type a
+   line, set offline off. PASS: the same as step 1 once the connection returns; before it, the
+   row sits at `Chapter 2` in the Manuscript, not under Unfiled.
+3. **A rename while the create is out.** Offline, New file `Chapter 2`, rename it
+   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the draft's document; the rename is
+   not offered for repair.
+4. **A link's Create.** The Create button exists only on a link that reads "doesn't exist yet", and
+   following an "In a draft" link opens the review instead. So make the link in the editor (select
+   text, Link, destination `manuscript://Chapter 10`), open it so its "Create" dialog is up, have
+   the AI draft `Chapter 10` in the Work, then press Create. PASS: the same as step 1.
+5. **No regression.** New file at a free name, and at a name a visible document holds (the
+   second takes the free name, `Chapter 2 (2)`).
+
+With no `?work=` the document shows the draft hint instead of the Live chip (see the next section).
+
+Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
+
+## An open document says when a draft has changes to it (browser, #757)
+
+`GET /api/projects/:p/documents/:d/drafts` answers the active drafts in the project with changes to the
+document (`draftId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
+review. The editor shows a line under the identity row for every draft other than the one the view works
+in: "A draft has changes to this (Northern Arc)" with Review, or "2 drafts have changes to this" with a
+menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
+at 390x844.
+
+1. **The owner's flow, in No Work.** The AI drafts `manuscript://Chapter 2` in Work A. With no Work open,
+   New file `Chapter 2`. PASS: one row, and the hint naming Work A appears with no reload; Review opens
+   Work A's review of Chapter 2. Time the `create-untitled` response to the hint (a `fetch` wrapper and a
+   `MutationObserver` on `[data-document-draft-hint]`); note `uptime`.
+2. **A live document a draft edits.** Open it with no Work and from Work B: the hint. Open it in Work A: the
+   Live chip only, no hint.
+3. **After Discard** of Work A's draft (Work page, Discard all changes): the hint goes on this device at
+   once, and on another device on focus or the catalog wake.
+4. **A document no draft touches** shows no hint.
+5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.

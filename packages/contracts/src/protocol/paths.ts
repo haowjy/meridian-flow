@@ -112,6 +112,11 @@ export function apiProjectWorkingSetPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}/working-set`;
 }
 
+/** The active drafts with changes to one document, from any view. */
+export function apiProjectDocumentDraftsPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/drafts`;
+}
+
 export function apiProjectWorkDraftsPath(projectId: string, workId: string): string {
   return `${apiProjectWorksPath(projectId)}/${workId}/drafts`;
 }

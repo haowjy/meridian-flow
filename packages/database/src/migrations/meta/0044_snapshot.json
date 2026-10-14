@@ -6787,30 +6787,6 @@
           "notNull": true,
           "default": false
         },
-        "context_source_id": {
-          "name": "context_source_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_folder_id": {
-          "name": "parent_folder_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "extension": {
-          "name": "extension",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_thread_id": {
           "name": "created_thread_id",
           "type": "uuid",
@@ -6839,40 +6815,6 @@
         }
       },
       "indexes": {
-        "draft_tree_changes_location": {
-          "name": "draft_tree_changes_location",
-          "columns": [
-            {
-              "expression": "context_source_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "parent_folder_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "extension",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"draft_tree_changes\".\"context_source_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "draft_tree_changes_node": {
           "name": "draft_tree_changes_node",
           "columns": [
@@ -6893,22 +6835,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "draft_tree_changes_parent": {
-          "name": "draft_tree_changes_parent",
-          "columns": [
-            {
-              "expression": "parent_folder_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"draft_tree_changes\".\"parent_folder_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -6918,32 +6844,6 @@
           "tableTo": "drafts",
           "columnsFrom": [
             "draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_tree_changes_context_source_id_context_sources_id_fk": {
-          "name": "draft_tree_changes_context_source_id_context_sources_id_fk",
-          "tableFrom": "draft_tree_changes",
-          "tableTo": "context_sources",
-          "columnsFrom": [
-            "context_source_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_tree_changes_parent_folder_id_folders_id_fk": {
-          "name": "draft_tree_changes_parent_folder_id_folders_id_fk",
-          "tableFrom": "draft_tree_changes",
-          "tableTo": "folders",
-          "columnsFrom": [
-            "parent_folder_id"
           ],
           "columnsTo": [
             "id"
@@ -6995,13 +6895,9 @@
           "name": "draft_tree_changes_node_kind_valid",
           "value": "\"draft_tree_changes\".\"node_kind\" IN ('document', 'folder')"
         },
-        "draft_tree_changes_location_shape": {
-          "name": "draft_tree_changes_location_shape",
-          "value": "(\"draft_tree_changes\".\"context_source_id\" IS NULL AND \"draft_tree_changes\".\"parent_folder_id\" IS NULL AND \"draft_tree_changes\".\"name\" IS NULL\n        AND \"draft_tree_changes\".\"extension\" IS NULL)\n      OR (\"draft_tree_changes\".\"context_source_id\" IS NOT NULL AND \"draft_tree_changes\".\"name\" IS NOT NULL\n        AND (\"draft_tree_changes\".\"node_kind\" = 'document') = (\"draft_tree_changes\".\"extension\" IS NOT NULL))"
-        },
         "draft_tree_changes_says_something": {
           "name": "draft_tree_changes_says_something",
-          "value": "\"draft_tree_changes\".\"created\" OR \"draft_tree_changes\".\"context_source_id\" IS NOT NULL"
+          "value": "\"draft_tree_changes\".\"created\""
         }
       },
       "isRLSEnabled": false

@@ -9,6 +9,7 @@ export * from "./folder-projection";
 export * from "./namespace-receipts";
 export * from "./resource-deletion";
 export * from "./resource-intent-policy";
+export * from "./resource-join";
 export * from "./resource-namespace";
 export * from "./resource-projection";
 export type { DestinationParentLookup, ParentRef } from "./resource-records";

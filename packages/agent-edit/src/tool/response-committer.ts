@@ -1960,6 +1960,7 @@ function discardedWrite(): InternalWriteResult {
     status: "invalid_write",
     model: {
       message: "Write did not land: the user discarded the text it edited. Re-read and retry.",
+      rejected: "discarded_edit",
     },
   };
 }

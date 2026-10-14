@@ -105,6 +105,11 @@ type Snapshot = {
   addresses: Set<string>;
   /** The live settlement by ahead id; null = unsettled or unregistered. */
   settlements: Map<string, string | null>;
+  /**
+   * Ids no document holds that a device's join forwarded to the joined document: a link
+   * typed offline to the new document names the device's id.
+   */
+  forwards: Map<string, string>;
   readable: Map<string, boolean>;
   /** View key → that view's identity statuses and address index. */
   views: Map<string, ViewIndex>;
@@ -195,6 +200,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
     const loadedById = await loadRows({ ids: newIds });
     for (const id of newIds) snapshot.rows.set(id, null);
     for (const row of loadedById) remember(snapshot, row);
+    await followForwards(snapshot, newIds);
 
     // Written relative links resolve against the holder, at its address in its view.
     const holder = request.holders[0];
@@ -217,6 +223,22 @@ export function createDrizzleDocumentLinkScopes(deps: {
 
     await loadViews(snapshot, views);
     await loadReadability(snapshot);
+  }
+
+  /** Loads the joined document for each id that names no document but was forwarded to one. */
+  async function followForwards(snapshot: Snapshot, ids: readonly string[]) {
+    if (!snapshot.projectId) return;
+    const missing = ids.filter((id) => isUuid(id) && snapshot.rows.get(id) === null);
+    if (missing.length === 0) return;
+    const forwarded = await currentDrizzleDb(db).execute<{ from_id: string; to_id: string }>(
+      sql`SELECT from_document_id::text AS from_id, to_document_id::text AS to_id
+        FROM document_forwards
+        WHERE from_document_id IN (${uuidList(missing)}) AND project_id = ${snapshot.projectId}::uuid`,
+    );
+    const targets = forwarded.map((row) => row.to_id).filter((id) => !snapshot.rows.has(id));
+    for (const id of targets) snapshot.rows.set(id, null);
+    for (const row of await loadRows({ ids: targets })) remember(snapshot, row);
+    for (const row of forwarded) snapshot.forwards.set(row.from_id, row.to_id);
   }
 
   /** The live settlement of every ahead id the snapshot doesn't hold yet; returns the documents they name. */
@@ -413,6 +435,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         byUri: new Map(),
         addresses: new Set(),
         settlements: new Map(),
+        forwards: new Map(),
         readable: new Map(),
         views: new Map(),
       };
@@ -619,7 +642,7 @@ function snapshotCatalog(
   };
   return {
     document(id) {
-      const row = snapshot.rows.get(id);
+      const row = snapshot.rows.get(snapshot.forwards.get(id) ?? id);
       if (row === undefined) return undefined;
       if (row === null) return null;
       const document = toDocument(row);

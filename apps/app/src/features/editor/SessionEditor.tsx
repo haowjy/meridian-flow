@@ -18,7 +18,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useWorks } from "@/client/query/useWorks";
-import { usePaintPending } from "@/components/app/PaintHold";
+import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
@@ -38,6 +38,7 @@ import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
+import { claimEditorFocus, focusIsFree } from "./focus-on-open";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
@@ -293,6 +294,43 @@ function ActiveSessionEditorView({
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
+
+  const afterPaintRelease = useAfterPaintRelease();
+  // The paint cover that stands in while this document's surface changes parks focus on its
+  // status line. The caret was the writer's, so it goes back to the editor when the cover lifts.
+  useEffect(() => {
+    if (!editor || inReview) return;
+    const dom = editor.view.dom;
+    const onFocusOut = (event: FocusEvent) => {
+      if (
+        !(
+          event.relatedTarget instanceof Element &&
+          event.relatedTarget.hasAttribute("data-paint-status")
+        )
+      )
+        return;
+      afterPaintRelease(() => {
+        if (!editor.isDestroyed && document.activeElement?.hasAttribute("data-paint-status"))
+          editor.view.focus();
+      });
+    };
+    dom.addEventListener("focusout", onFocusOut);
+    return () => dom.removeEventListener("focusout", onFocusOut);
+  }, [afterPaintRelease, editor, inReview]);
+
+  // A document the writer just made takes the caret at its start, unless something else
+  // (a dialog that stays open, a field) already holds focus.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed || inReview || !active || !effectiveEditable) return;
+    const mine = (requestedId: string) =>
+      requestedId === documentId ||
+      (holder !== null && resourceForDocumentIdentity(records, requestedId) === holder);
+    if (!claimEditorFocus(mine)) return;
+    afterPaintRelease(() => {
+      if (!editor.isDestroyed && focusIsFree())
+        editor.commands.focus("start", { scrollIntoView: false });
+    });
+  }, [afterPaintRelease, active, documentId, editor, effectiveEditable, holder, inReview, records]);
 
   useEffect(() => {
     if (!editor || inReview || held) return;

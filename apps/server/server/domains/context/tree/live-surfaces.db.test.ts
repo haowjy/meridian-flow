@@ -15,13 +15,12 @@ import {
   contextSources,
   documentLinks,
   documents,
-  draftTreeChanges,
   linkAheadRefs,
   projects,
   userRecentDocuments,
   users,
 } from "@meridian/database/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { createApp, defineEventHandler, getRouterParam, toWebHandler } from "nitro/h3";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { downloadDocument } from "../../../lib/document-download-route.js";
@@ -108,8 +107,8 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .update(documents)
         .set({ deletedAt: new Date() })
         .where(inArray(documents.id, tombstones));
-      // A draft's move of its create (PR 3): the row stays, the draft has it elsewhere.
       const draft = await scenario.draftOf(ascension);
+      // A create moved elsewhere: its row is its place, so every surface spells the row.
       const relocated = await model.create("secret/relocated", "Relocated.");
       const anchor = await model.create("draft-location/anchor", "Anchor.");
       const [anchorRow] = await db
@@ -118,9 +117,9 @@ if (process.env.RUN_DB_TESTS !== "1" || !url) {
         .where(eq(documents.id, anchor));
       if (!anchorRow?.folderId) throw new Error("Missing the draft's folder");
       await db
-        .update(draftTreeChanges)
-        .set({ parentFolderId: anchorRow.folderId })
-        .where(and(eq(draftTreeChanges.draftId, draft.id), eq(draftTreeChanges.nodeId, relocated)));
+        .update(documents)
+        .set({ folderId: anchorRow.folderId })
+        .where(eq(documents.id, relocated));
       // Link rows a hidden holder never derives, and a recent it can't record.
       const pending = randomUUID();
       await db.insert(documentLinks).values([
