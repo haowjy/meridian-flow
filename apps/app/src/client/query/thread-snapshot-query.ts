@@ -58,7 +58,15 @@ export function useThreadSnapshotCache(
   const subscribe = useCallback(
     (listener: () => void) =>
       client.getQueryCache().subscribe((event) => {
-        if (event.query.queryHash === hash) listener();
+        // Notify on state changes (`updated`) and removal (`removed`, e.g. account close). `added`
+        // and `observerResultsUpdated` fire synchronously inside another component's render (its
+        // `useQuery` builds and reads the query), and notifying then updates this store
+        // mid-render. `removed` comes from an effect, event handler or GC timer, never a render.
+        if (
+          (event.type === "updated" || event.type === "removed") &&
+          event.query.queryHash === hash
+        )
+          listener();
       }),
     [client, hash],
   );
