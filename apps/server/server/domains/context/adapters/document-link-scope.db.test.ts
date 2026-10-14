@@ -141,7 +141,6 @@ if (!RUN) {
         targets: new Map([[0, NOTES as DocumentId]]),
       });
       expect(walkLinkOccurrences(result.blocks)[0]?.attrs.ref).toBe(`doc:${NOTES}`);
-      expect(result.aheadRefs).toEqual([]);
       for (const target of [DELETED, FOREIGN, SECRET]) {
         const invalid = await binder.bindMarkdown({
           ...input,
@@ -156,7 +155,7 @@ if (!RUN) {
         createLinkBinder(deps).bindMarkdown({ ...input, targets: new Map() } as never),
       ).rejects.toThrow("import binder");
       const ahead = await binder.bindMarkdown({ ...input, markdown: "[x](manuscript://missing)" });
-      expect(ahead.aheadRefs).toEqual([{ occurrence: 0, ref: expect.stringMatching(/^ahead:/) }]);
+      expect(walkLinkOccurrences(ahead.blocks)[0]?.attrs.ref).toMatch(/^ahead:/);
     });
 
     it("planned binding refuses nameable personal-project identities", async () => {

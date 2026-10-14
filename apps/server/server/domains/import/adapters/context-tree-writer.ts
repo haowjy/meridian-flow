@@ -1,5 +1,4 @@
 /** Context/collab import adapter using bulk creation, identity fill and the isolated binder. */
-import { parseLinkRef } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
@@ -138,10 +137,6 @@ export function createContextImportTreeWriter(deps: {
         hrefs,
         pending: pending as never,
       });
-    },
-    async settleAhead(ref, documentId) {
-      const parsed = parseLinkRef(ref);
-      if (parsed?.kind === "ahead") await deps.ahead.settleRef(parsed.aheadId, documentId as never);
     },
     async releaseAhead(documentIds) {
       await deps.ahead.releaseAwaiting(documentIds as never);

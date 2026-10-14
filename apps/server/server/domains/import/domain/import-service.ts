@@ -471,11 +471,6 @@ export function createImportService(deps: {
                   }
                 : { text },
             );
-      const ahead = (bound?.aheadRefs ?? []).flatMap(({ occurrence, ref }) => {
-        const targetId = targets.get(occurrence);
-        return targetId && pending?.has(targetId) ? [{ targetId, ref }] : [];
-      });
-      ahead.sort((a, b) => (a.targetId < b.targetId ? -1 : a.targetId > b.targetId ? 1 : 0));
       let storageUrl = entry.storageUrl;
       if (entry.kind === "binary") {
         const object = await deps.objects.put(
@@ -532,14 +527,6 @@ export function createImportService(deps: {
               prepared.converted.properties,
               prepared.converted.aliases,
             );
-          for (const ref of ahead) {
-            const target = await repo.lockEntry(ref.targetId);
-            if (target.state === "landed") await tree.settleAhead(ref.ref, target.id);
-            else
-              await repo.updateEntry(target.id, {
-                pendingRefs: [...target.pendingRefs, { holderId: entry.id, ref: ref.ref }],
-              });
-          }
           await tree.clearPending([entry.id]);
           await repo.updateEntry(entry.id, {
             state: "landed",
@@ -555,8 +542,6 @@ export function createImportService(deps: {
         } else {
           const allocated = allocate({ ...current, storageUrl }, parent);
           await tree.land(parent, allocated, bound, bytes);
-          // Each ref awaits this id alone, so settling it cannot lose to another file.
-          for (const pending of current.pendingRefs) await tree.settleAhead(pending.ref, entry.id);
           await repo.updateEntry(entry.id, {
             ...allocated,
             state: "landed",

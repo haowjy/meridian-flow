@@ -9,6 +9,7 @@ import {
   contextSources,
   documents,
   folders,
+  linkAheadRefs,
   projects,
   users,
   works,
@@ -309,10 +310,8 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
     const winner = content.find((row) => row.name === "same");
     if (!winner) throw new Error("missing winner");
     expect(winner.id === placeholderId).toBe(bulkWon);
-    expect(await ports.linkAheadRegistry.settleRef(aheadId, extraId)).toEqual({
-      settled: false,
-      documentId: winner.id,
-    });
+    const [ahead] = await db.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, aheadId));
+    expect(ahead?.settledDocumentId).toBe(winner.id);
     expect(await db.select().from(folders).where(eq(folders.id, folderId))).toHaveLength(
       bulkWon ? 1 : 0,
     );

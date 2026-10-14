@@ -224,7 +224,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys then awaited-id stripes), `settleArrivals` (inside the arrival's locked transaction; takes the awaited-id stripes), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
 | `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
 
@@ -300,7 +300,13 @@ An ahead ref settles on the first live document at its exact address, by
 compare-and-set on `settled_document_id IS NULL`; a later occupant never captures
 it. A row with `awaited_document_id` (an import's unlanded file) settles only to
 that document until `releaseAwaiting` clears it; registration and arrivals skip
-it for every other document. Arrival hooks, each once against the operation's final tree:
+it for every other document, and that document settles it wherever it lands
+(an import's target may count up or move before landing), or at registration
+when it is already live in the ref's project. Registration and arrival of an
+awaited id have no common address, so they meet on a fixed set of advisory
+stripes keyed by the awaited id: registration takes them after its namespace
+keys, `settleArrivals` takes them first, once the arrival holds every key it
+will take, so neither order can miss the other. Arrival hooks, each once against the operation's final tree:
 
 | Arrival | Where | Locks already held |
 |---|---|---|
@@ -580,10 +586,6 @@ durable Work-switch Notice names the previous canonical Scratch root.
 
 Creation conflicts carry `occupantKind` (`file` or `folder`) through ContextError
 and HTTP error data; it is absent when the failure cannot prove an occupant.
-
-`LinkAheadRegistry.settleRef` joins an ambient transaction and compares-and-sets a
-single registered ahead UUID by identity, without address lookup. A losing settler
-receives the existing document id; a missing registry row returns null.
 
 `ContextBulkCreation.create` creates one planning chunk by source and stable
 folder/document ids. Its Drizzle adapter shares the Context namespace lock,

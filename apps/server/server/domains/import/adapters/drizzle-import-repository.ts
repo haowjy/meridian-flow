@@ -213,7 +213,6 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
                 prepared: false,
                 prependOnRetry: false,
                 exists: false,
-                pendingRefs: [],
               } satisfies ImportEntryPayload,
               state,
             })),

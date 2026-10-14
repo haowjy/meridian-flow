@@ -70,7 +70,6 @@ export interface BoundWrite {
   readonly markdown: string;
   /** Code files bind to one code block; the engine refuses content of the other shape. */
   readonly schemaType: YjsTrackedSchemaType;
-  readonly aheadRefs: readonly { occurrence: number; ref: string }[];
   readonly [boundBrand]: true;
 }
 
@@ -177,7 +176,6 @@ export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBi
         blocks: [block],
         markdown: text,
         schemaType: "code",
-        aheadRefs: [],
       } as unknown as BoundWrite;
     },
   };
@@ -243,7 +241,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
         blocks,
         markdown,
         schemaType,
-        aheadRefs: [],
       });
 
     const { markdown } = input;
@@ -332,11 +329,7 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
           awaitedDocumentId,
         })),
       ]);
-    const mintedRefs = new Set<string>([...minted, ...awaiting].map(({ ref }) => ref));
-    const aheadRefs = attrs.flatMap((attrs, occurrence) =>
-      attrs?.ref && mintedRefs.has(attrs.ref) ? [{ occurrence, ref: attrs.ref }] : [],
-    );
-    return boundWrite({ ...finish(nodes, markdown), aheadRefs });
+    return boundWrite(finish(nodes, markdown));
   }
 
   return {
@@ -364,7 +357,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
           blocks: [codeBlock(markdown, filetype)],
           markdown,
           schemaType,
-          aheadRefs: [],
         });
       }
       const blocks = deps.codec.parse(markdown).blocks;
@@ -377,7 +369,6 @@ function binderFor(deps: LinkBinderDeps | ImportLinkBinderDeps, planned = false)
         blocks,
         markdown,
         schemaType,
-        aheadRefs: [],
       });
     },
   };

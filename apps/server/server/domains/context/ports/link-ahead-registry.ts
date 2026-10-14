@@ -9,7 +9,8 @@ export type AheadRegistration = {
   address: string;
   /**
    * The planned identity (an import's unlanded file) the ref awaits, persisted: only that
-   * document settles it, by `settleRef` or its own arrival, until `releaseAwaiting`.
+   * document settles it, wherever it lands and whatever address the ref spells, until
+   * `releaseAwaiting`. A document already live settles it at registration.
    */
   awaitedDocumentId?: DocumentId;
 };
@@ -38,24 +39,17 @@ export class RegistrationInsideTransactionError extends Error {
 
 export interface LinkAheadRegistry {
   /**
-   * Independent root transaction. Takes the targets' namespace keys sorted (no Work or holder
-   * lock), inserts idempotently by id (re-registering an id for another address throws), then
-   * settles any row whose address already holds a live document that is not excluded by an
-   * awaited identity.
+   * Independent root transaction. Takes the namespace keys of refs awaiting nothing, sorted (no
+   * Work or holder lock), then the awaited-id stripes; inserts idempotently by id (re-registering
+   * an id for another address throws); then settles any row whose address already holds a live
+   * document, or whose awaited document is already live in the ref's project.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
   /**
-   * Settle by identity, never address; joins the caller transaction. A ref awaiting another
-   * identity is not settled. Missing refs return null.
-   */
-  settleRef(
-    aheadId: string,
-    documentId: DocumentId,
-  ): Promise<{ settled: boolean; documentId: DocumentId } | null>;
-  /**
-   * Inside the caller's transaction, which already holds each arrival's namespace key. Takes no
-   * lock; skips deleted documents, draft-only membership and refs awaiting another identity.
-   * Returns rows settled.
+   * Inside the caller's transaction, which already holds each arrival's namespace key and takes
+   * none later. Takes the arriving ids' awaited-id stripes, then settles every ref awaiting an
+   * arrival (whatever its address) and every ref awaiting nothing at an arrival's address;
+   * skips deleted documents and draft-only membership. Returns rows settled.
    */
   settleArrivals(documentIds: readonly DocumentId[]): Promise<number>;
   /**
