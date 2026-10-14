@@ -51,7 +51,16 @@ type LeftSidebarProps = {
   onCollapse: () => void;
 };
 
-export function LeftSidebar({
+/** Drops anywhere in the rail report at its foot. */
+export function LeftSidebar(props: LeftSidebarProps) {
+  return (
+    <MoveNoticeHost projectId={props.projectId}>
+      <LeftSidebarRail {...props} />
+    </MoveNoticeHost>
+  );
+}
+
+function LeftSidebarRail({
   projectId,
   projectTitle,
   titleEdit,
@@ -90,53 +99,51 @@ export function LeftSidebar({
   const docked = activeScreen === "chat" && !projectedDock.gone ? projectedDock.tab : null;
 
   return (
-    <MoveNoticeHost projectId={projectId}>
-      <nav
-        aria-label={t`Workspace navigation`}
-        className="relative flex h-full min-h-0 w-full flex-col text-foreground"
-      >
-        <div className="flex h-10 shrink-0 items-center gap-1 px-2">
-          <PanelToggleButton
-            icon={PanelLeftClose}
-            label={t`Collapse sidebar  [`}
-            onClick={onCollapse}
-          />
-          <InlineProjectTitle
-            title={projectTitle}
-            {...titleEdit}
-            className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
-            inputClassName="h-8 px-2 text-[14px] font-semibold"
-          />
-        </div>
+    <nav
+      aria-label={t`Workspace navigation`}
+      className="relative flex h-full min-h-0 w-full flex-col text-foreground"
+    >
+      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
+        <PanelToggleButton
+          icon={PanelLeftClose}
+          label={t`Collapse sidebar  [`}
+          onClick={onCollapse}
+        />
+        <InlineProjectTitle
+          title={projectTitle}
+          {...titleEdit}
+          className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
+          inputClassName="h-8 px-2 text-[14px] font-semibold"
+        />
+      </div>
 
-        <WorkspaceNavBody
-          activeScreen={activeScreen}
-          onSelectScreen={onSelectScreen}
-          presentation="desktop"
-          scratch={
-            <RailScratchSection
-              projectId={projectId}
-              threadId={chatThreadId}
-              editorWorkId={editorWorkId}
-              resizable
-            />
-          }
-        >
-          {contextLive ? (
-            <ContextTreePanel
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              activeScheme={
-                docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
-              }
-              activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
-              onSelectFile={handleSelectFile}
-            />
-          ) : null}
-        </WorkspaceNavBody>
-        <MoveNotice className="absolute inset-x-2 bottom-2" />
-        <DragHint />
-      </nav>
-    </MoveNoticeHost>
+      <WorkspaceNavBody
+        activeScreen={activeScreen}
+        onSelectScreen={onSelectScreen}
+        presentation="desktop"
+        scratch={
+          <RailScratchSection
+            projectId={projectId}
+            threadId={chatThreadId}
+            editorWorkId={editorWorkId}
+            resizable
+          />
+        }
+      >
+        {contextLive ? (
+          <ContextTreePanel
+            projectId={projectId}
+            editorWorkId={editorWorkId}
+            activeScheme={
+              docked ? (docked.kind === "new" ? "unfiled" : docked.scheme) : activeContextScheme
+            }
+            activePath={docked ? (docked.kind === "new" ? null : docked.path) : activeContextPath}
+            onSelectFile={handleSelectFile}
+          />
+        ) : null}
+      </WorkspaceNavBody>
+      <MoveNotice className="absolute inset-x-2 bottom-2" />
+      <DragHint />
+    </nav>
   );
 }

@@ -12,6 +12,7 @@ import {
   useAccountResourceProjection,
   useAccountResourceReplica,
 } from "../account-feature-context";
+import { destinationParent } from "../move-entry";
 import { type EntriesRoute, TreeDropScope } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
 import { type DragEntry, entryKey } from "./entry";
@@ -73,7 +74,8 @@ export function useEntryList({
         if (planned?.kind !== "ready") return;
         const { works, noWork, publish, selection } = latest.current;
         selection.replace(planned.moves.map((move) => entryKey(move.ref)));
-        void executeMove(planned, { resources, projectId, works, noWork }).then((result) =>
+        const after = destinationParent(planned.destination, works, noWork);
+        void executeMove(planned, after, { resources, projectId }).then((result) =>
           publish?.(describeMove(result, planned.destinationName), result.moved),
         );
       },

@@ -49,15 +49,12 @@ export type PlacedEntry = {
   parent: ParentRef;
 };
 
-export type PlannedMove = { ref: EntryRef; name: string; before: ParentRef };
-
 /** One row the replica admitted: where it was, where it went, and the name it moved under. */
 export type MoveEffect = {
   entry: EntryRef;
   name: string;
   before: ParentRef;
   after: ParentRef;
-  operationId: string | null;
 };
 
 export type MovePlan =
@@ -67,23 +64,13 @@ export type MovePlan =
       kind: "ready";
       destination: MoveDestination;
       destinationName: string;
-      moves: readonly PlannedMove[];
+      /** Each row as placed now; its parent is where Undo returns it. */
+      moves: readonly PlacedEntry[];
     };
 
 export type ReadyMovePlan = Extract<MovePlan, { kind: "ready" }>;
 
 const NONE: MovePlan = { kind: "none" };
-
-const recordIndexes = new WeakMap<readonly ResourceRecord[], Map<string, ResourceRecord>>();
-
-function recordFor(records: readonly ResourceRecord[], documentId: string) {
-  let index = recordIndexes.get(records);
-  if (!index) {
-    index = new Map(records.map((record) => [record.resource.identity.documentId, record]));
-    recordIndexes.set(records, index);
-  }
-  return index.get(documentId);
-}
 
 /** Where `ref` sits now, or null when it is gone or its parent isn't known yet. */
 export function placeEntryRef(
@@ -95,7 +82,7 @@ export function placeEntryRef(
     const parent = placement.parentForFolder(ref.id);
     return location && parent ? { ref, name: location.name, location, parent } : null;
   }
-  const record = recordFor(records, ref.id);
+  const record = records.find((candidate) => candidate.resource.identity.documentId === ref.id);
   const location = record ? placement.resourceLocation(record) : null;
   if (!record || !location) return null;
   // A document the server hasn't confirmed has no parent edge; one at an area's top level still has a home.
@@ -130,20 +117,18 @@ export function withoutNested<T extends { ref: EntryRef }>(view: PlacementView, 
   });
 }
 
-export function sameParent(a: ParentRef, b: ParentRef): boolean {
-  if (a.kind === "folder") return b.kind === "folder" && a.folderId === b.folderId;
-  return b.kind === "root" && a.scheme === b.scheme && sameOwner(a.owner, b.owner, a.scheme);
-}
+type OwnerLike = { workId?: string | null; rootThreadId?: string | null };
+type Parent = ParentRef | { kind: "root"; scheme: ProjectContextTreeScheme; owner: OwnerLike };
 
-function sameOwner(
-  a: { workId?: string | null; rootThreadId?: string | null },
-  b: { workId?: string | null; rootThreadId?: string | null },
-  scheme: ProjectContextTreeScheme,
-): boolean {
+/** The same folder, or the same area top level (project areas ignore the owner). */
+export function sameParent(a: Parent, b: Parent): boolean {
+  if (a.kind === "folder") return b.kind === "folder" && a.folderId === b.folderId;
   return (
-    isProjectScopedScheme(scheme) ||
-    ((a.workId ?? null) === (b.workId ?? null) &&
-      (a.rootThreadId ?? null) === (b.rootThreadId ?? null))
+    b.kind === "root" &&
+    a.scheme === b.scheme &&
+    (isProjectScopedScheme(a.scheme) ||
+      ((a.owner.workId ?? null) === (b.owner.workId ?? null) &&
+        (a.owner.rootThreadId ?? null) === (b.owner.rootThreadId ?? null)))
   );
 }
 
@@ -179,13 +164,13 @@ export function planMove(
   if (sources.some((source) => entrySystem(source.location.scheme, source.location) !== system))
     return NONE;
 
-  const moves: PlannedMove[] = [];
+  const moves: PlacedEntry[] = [];
   const incoming: ContextEntrySibling[] = [];
   let refused: Extract<MovePlan, { kind: "refused" }> | null = null;
   for (const source of sources) {
     const refusal = refuse(view, source, area, destination, target, incoming);
     if (!refusal) {
-      moves.push({ ref: source.ref, name: source.name, before: source.parent });
+      moves.push(source);
       incoming.push({
         entryId: source.ref.id,
         name: source.name,
@@ -206,17 +191,12 @@ function refuse(
   target: TreeDropTarget,
   incoming: readonly ContextEntrySibling[],
 ): MoveRefusal | null {
-  const intoFolder: ParentRef | null = target.folder
+  const into: Parent = target.folder
     ? { kind: "folder", folderId: target.folder.entryId }
-    : null;
-  if (source.ref.kind === "folder" && within(view, intoFolder, source.ref.id))
+    : { kind: "root", scheme: area.scheme, owner: area.owner };
+  if (source.ref.kind === "folder" && into.kind === "folder" && within(view, into, source.ref.id))
     return { kind: "inside-itself" };
-  const there = intoFolder
-    ? sameParent(source.parent, intoFolder)
-    : source.parent.kind === "root" &&
-      source.parent.scheme === area.scheme &&
-      sameOwner(source.parent.owner, area.owner, area.scheme);
-  if (there) return { kind: "already-there" };
+  if (sameParent(source.parent, into)) return { kind: "already-there" };
   return nameRefusal(destination, source.name, source.ref.kind, source.name, incoming);
 }
 

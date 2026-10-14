@@ -104,7 +104,7 @@ it("finds a dragged row by identity in a catalog the destination list doesn't sh
   );
   expect(plan).toMatchObject({
     kind: "ready",
-    moves: [{ ref: file("ch1"), name: "ch1", before: { kind: "folder", folderId: "part" } }],
+    moves: [{ ref: file("ch1"), name: "ch1", parent: { kind: "folder", folderId: "part" } }],
   });
 });
 
