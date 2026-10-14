@@ -610,6 +610,7 @@ export async function createProductionAppPorts(input: {
     catalogMutations: contextCatalog,
     eventSink,
     arrivals,
+    backgroundTasks,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db),
@@ -1350,6 +1351,9 @@ export function createInMemoryAppServices(): AppServices {
     throw new Error("Ahead-ref registry is unsupported in the in-memory composition");
   };
   const linkAheadRegistry: LinkAheadRegistry = {
+    registerWithinTransaction: async () => {
+      throw new Error("Ahead registration requires Postgres");
+    },
     register: async () => unsupported(),
     settleArrivals: async () => unsupported(),
     releaseAwaiting: async () => unsupported(),

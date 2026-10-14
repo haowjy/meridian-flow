@@ -1020,7 +1020,7 @@ export function createServerDocumentLifecycle(
     async discardStagedStates(stagingId, limit) {
       const tx = currentDrizzleDb(db as Database);
       await tx.execute(sql`delete from collab_staged_states where staging_id = ${stagingId}
-        and document_id in (select document_id from collab_staged_states where staging_id = ${stagingId} order by document_id limit ${limit})`);
+        and document_id in (select document_id from collab_staged_states where staging_id = ${stagingId} order by document_id ${limit === undefined ? sql`` : sql`limit ${limit}`})`);
       const [row] = await tx
         .select({ id: collabStagedStates.documentId })
         .from(collabStagedStates)

@@ -1,3 +1,7 @@
+export * from "./context-staging";
+
+import * as contextStaging from "./context-staging";
+
 export * from "./account-skill-installs";
 export * from "./agent-definition-revisions";
 export * from "./agent-threads";
@@ -37,6 +41,7 @@ import * as yjs from "./yjs";
 
 /** Runtime Drizzle client schema (public tables + views). */
 export const schema = {
+  ...contextStaging,
   users,
   ...accountSkillInstalls,
   ...billing,

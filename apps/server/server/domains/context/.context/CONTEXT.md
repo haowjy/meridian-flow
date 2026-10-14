@@ -224,7 +224,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys then awaited-id stripes), `settleArrivals` (inside the arrival's locked transaction; takes the awaited-id stripes, once per transaction), `releaseAwaiting` (joins the caller: address namespace keys, then stripes, then rows), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys then awaited-id stripes), `registerWithinTransaction` (ordinary mints, caller transaction with all canonical namespace keys already held), `settleArrivals` (inside the arrival's locked transaction; takes the awaited-id stripes, once per transaction), `releaseAwaiting` (joins the caller: address namespace keys, then stripes, then rows), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
 | `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
 
@@ -289,8 +289,9 @@ leaves the row and its bytes as they are for recovery.
 `link_ahead_refs` records each `ahead:` ref with the decoded address it was
 minted for (project, scheme, Work id or lineage root id, path; owners by id, so
 a rename never orphans it). Lineage registrations and arrivals compare the root id
-as well as the exact path; two chats cannot capture each other’s waiting refs. Rows are never deleted by link edits. Server mints register before
-the write takes any lock; client mints are registered by the certified derive
+as well as the exact path; two chats cannot capture each other’s waiting refs. Rows are never deleted by link edits. Ordinary server mints register before
+the write takes any lock. Planned import mints remain private until the staged
+reveal registers them inside its already namespace-locked transaction. Client mints are registered by the certified derive
 (awaited outside a transaction, after commit inside one), and the derivation
 sweep and `flush` recover any that failed with `registerUnregistered`. A soft-deleted
 Work keeps its identity (slugs stay reserved), so a ref to its address registers
@@ -318,6 +319,7 @@ released; it releases its own pending ids when the terminal fence rejects it. Ar
 | Arrival | Where | Locks already held |
 |---|---|---|
 | Tracked create (named, untitled, model create/copy, import) | creation aggregate, after content initialization | command transaction's namespace keys |
+| Staged reveal | `commitStaged`, once over all revealed documents after membership | reveal's union of destination and mint namespace keys |
 | Binary upload, figure upload | `createBinaryDocument`, after publishing live membership in the same transaction | the store transaction's namespace keys |
 | Move-in (file, overwrite, folder) | tree store, once after all DML and any cross-project membership transfer | every participating namespace |
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
@@ -353,10 +355,12 @@ a multi-source command with a larger lock set.
 
 Ahead-ref registration uses the exported `lockNamespaceKeys` seam when it opens
 its independent root transaction. It takes only the sorted, deduplicated logical
-namespace keys: no Work lifecycle or holder lock is acquired. Arrival settlement
-runs in the caller's already-locked transaction and acquires no lock, so the
-Work → namespace → holder order used by authored moves and creates cannot form a
-cycle with registration.
+namespace keys, followed by awaited-id stripes when needed: no Work lifecycle
+or holder lock is acquired. Ambient registration asserts its canonical keys
+were acquired through the namespace helper in this transaction and takes no new
+namespace locks. Arrival settlement takes its sorted stripe union inside the
+caller's namespace-locked transaction. Never acquire another namespace after
+entering that stripe phase.
 
 Full paths can exceed the PostgreSQL B-tree tuple limit. History uses a hash
 index with exact equality rechecks, and namespace-locked replacement owns
@@ -634,3 +638,32 @@ It rebuilds only the selected file entries from authority, preserving unrelated
 catalog cache rows and publishing one ordered commit. Metadata alone does not
 advance namespace observations. Snapshot reads still build the authoritative
 full tree; incremental consumers receive the bounded commit.
+
+## Staged creation
+
+`ContextStagedCreation` is built for the upload-first organizer (lane D2);
+it has no production caller yet. Stage rows and Collab seeds carry an explicit
+generation and remain private until reveal. D2 must fence the job/generation
+and acquire the import row, then the shared project lifecycle advisory gate,
+before calling the reveal's Work/namespace phase. That gate is not built yet.
+Reveal takes **no project row lock**. It checks the destination address,
+top-level filename allocation (including opposite-kind R5 aliases), and seed
+coverage before any live writes. A changed placement returns without writing;
+the caller resets all three staging tables and replans in its transaction.
+
+Lock order is bound mutation Work admission, then one sorted union of destination
+and minted-link namespace keys, then source rows, registry rows/awaited stripes
+and manifest/catalog work. Qualified Scratch mints contribute their target
+namespace key but never acquire that target Work's authored-mutation lock.
+Ambient ahead registration asserts its keys were acquired through
+`lockNamespaceKeys`/`lockAdvisoryKeys` in this transaction rather than taking
+another namespace phase; independently acquired SQL locks do not satisfy its
+transaction-local record. Arrivals settle in set-based identity/address joins.
+
+Reveal returns touched source IDs. D2's not-yet-built durable worker must record its revealed
+cursor with the transaction, republish those sources after commit (also on
+resume), and finish only afterward. `drainDetached()` waits for the composition's
+tracked detached work; it is not a durable publication receipt.
+No-limit discard joins the caller's reset transaction; bounded discard supports
+sweeping cancelled jobs. Existing `createChildren` remains for the old planner
+until the upload-first worker replaces it.

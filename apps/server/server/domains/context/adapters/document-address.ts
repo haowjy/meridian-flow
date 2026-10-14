@@ -29,7 +29,7 @@ import {
   threads,
   works,
 } from "@meridian/database/schema";
-import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
@@ -297,82 +297,101 @@ export async function resolveCanonicalAddress(
   db: Database,
   input: { holderProjectId: ProjectId; address: string },
 ): Promise<DocumentCoordinates> {
-  const parsed = parseContextUri(input.address);
-  if (!parsed.ok || parsed.value.normalized !== input.address) {
-    throw new RangeError(`Address is not canonical: ${input.address}`);
-  }
-  const { scheme, authority, path } = parsed.value;
-  if (!isAheadFilename(path.split("/").at(-1) ?? "")) {
-    throw new RangeError(`Address needs a canonical document name: ${input.address}`);
-  }
-  if (authority.kind === "contextual" && !isProjectScopedScheme(scheme)) {
-    throw new RangeError(`Address needs a Work authority: ${input.address}`);
-  }
+  return (await resolveCanonicalAddresses(db, [input]))[0];
+}
+
+/** Resolve a batch without provisioning sources or taking any write lock. */
+export async function resolveCanonicalAddresses(
+  db: Database,
+  inputs: readonly { holderProjectId: ProjectId; address: string }[],
+): Promise<DocumentCoordinates[]> {
+  if (!inputs.length) return [];
+  const parsed = inputs.map((input) => {
+    const uri = parseContextUri(input.address);
+    if (!uri.ok || uri.value.normalized !== input.address)
+      throw new RangeError(`Address is not canonical: ${input.address}`);
+    const { scheme, authority, path } = uri.value;
+    if (!isAheadFilename(path.split("/").at(-1) ?? ""))
+      throw new RangeError(`Address needs a canonical document name: ${input.address}`);
+    if (authority.kind === "contextual" && !isProjectScopedScheme(scheme))
+      throw new RangeError(`Address needs a Work authority: ${input.address}`);
+    if (scheme === "scratch" && authority.kind === "none")
+      throw new RangeError("Scratch needs a chat handle or named Work authority");
+    return { ...input, scheme, authority, path };
+  });
   const tx = currentDrizzleDb(db);
-  const [holder] = await tx
-    .select({ userId: projects.userId })
+  const projectIds = [...new Set(inputs.map((input) => input.holderProjectId))];
+  const holders = await tx
+    .select({ id: projects.id, userId: projects.userId })
     .from(projects)
-    .where(and(eq(projects.id, input.holderProjectId), isNull(projects.deletedAt)));
-  if (!holder) throw new Error(`Holder project ${input.holderProjectId} does not exist`);
-
-  let projectId = input.holderProjectId;
-  if (scheme === "user") {
-    const [personal] = await tx
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(
-          eq(projects.userId, holder.userId),
-          eq(projects.isPersonal, true),
-          isNull(projects.deletedAt),
-        ),
-      );
-    if (!personal) throw new Error(`Personal project for ${holder.userId} does not exist`);
-    projectId = personal.id as ProjectId;
-  }
-
-  let workId: string | null = null;
-  let lockWorkId: string | null = null;
-  let rootThreadId: string | null = null;
-  if (scheme === "scratch" && authority.kind === "none")
-    throw new RangeError("Scratch needs a chat handle or named Work authority");
-  if (authority.kind === "none") {
-    const [noWork] = await tx
-      .select({ id: works.id })
-      .from(works)
-      .where(
-        and(
-          eq(works.projectId, input.holderProjectId),
-          eq(works.isNoWork, true),
-          isNull(works.deletedAt),
-        ),
-      );
-    if (!noWork) throw new Error(`No Work row for ${input.holderProjectId} does not exist`);
-    lockWorkId = noWork.id;
-  } else if (authority.kind === "lineage") {
-    const [root] = await tx
-      .select({ id: threads.id })
-      .from(threads)
-      .where(
-        and(
-          eq(threads.projectId, input.holderProjectId),
-          eq(threads.ref, authority.rootThreadRef),
-          eq(threads.rootThreadId, threads.id),
-        ),
-      );
-    if (!root) throw new Error(`Chat ${authority.rootThreadRef} does not exist`);
-    rootThreadId = root.id;
-  } else if (authority.kind === "work") {
-    // Slugs stay reserved across soft deletion, so a deleted Work keeps its identity: an
-    // address resolves against it and is occupied only once a restore makes it live again.
-    const [work] = await tx
-      .select({ id: works.id })
-      .from(works)
-      .where(and(eq(works.projectId, input.holderProjectId), eq(works.slug, authority.workSlug)));
-    if (!work) throw new Error(`Work ${authority.workSlug} does not exist`);
-    workId = lockWorkId = work.id;
-  }
-  return { projectId, userId: holder.userId, scheme, workId, lockWorkId, rootThreadId, path };
+    .where(and(inArray(projects.id, projectIds), isNull(projects.deletedAt)));
+  const holderOf = new Map(holders.map((row) => [row.id, row.userId]));
+  const [personal, workRows, rootRows] = await Promise.all([
+    parsed.some((row) => row.scheme === "user") && holders.length
+      ? tx
+          .select({ id: projects.id, userId: projects.userId })
+          .from(projects)
+          .where(
+            and(
+              inArray(projects.userId, [...new Set(holders.map((row) => row.userId))]),
+              eq(projects.isPersonal, true),
+              isNull(projects.deletedAt),
+            ),
+          )
+      : [],
+    parsed.some((row) => row.authority.kind === "work" || row.authority.kind === "none")
+      ? tx
+          .select({
+            id: works.id,
+            projectId: works.projectId,
+            slug: works.slug,
+            isNoWork: works.isNoWork,
+            deletedAt: works.deletedAt,
+          })
+          .from(works)
+          .where(inArray(works.projectId, projectIds))
+      : [],
+    parsed.some((row) => row.authority.kind === "lineage")
+      ? tx
+          .select({ id: threads.id, projectId: threads.projectId, ref: threads.ref })
+          .from(threads)
+          .where(and(inArray(threads.projectId, projectIds), eq(threads.rootThreadId, threads.id)))
+      : [],
+  ]);
+  const personalOf = new Map(personal.map((row) => [row.userId, row.id]));
+  const workOf = new Map(workRows.map((row) => [`${row.projectId}/${row.slug}`, row.id]));
+  const noneOf = new Map(
+    workRows.filter((row) => row.isNoWork && !row.deletedAt).map((row) => [row.projectId, row.id]),
+  );
+  const rootOf = new Map(rootRows.map((row) => [`${row.projectId}/${row.ref}`, row.id]));
+  return parsed.map(({ holderProjectId, scheme, authority, path }) => {
+    const userId = holderOf.get(holderProjectId);
+    if (!userId) throw new Error(`Holder project ${holderProjectId} does not exist`);
+    const projectId = scheme === "user" ? personalOf.get(userId) : holderProjectId;
+    if (!projectId) throw new Error(`Personal project for ${userId} does not exist`);
+    let workId: string | null = null,
+      lockWorkId: string | null = null,
+      rootThreadId: string | null = null;
+    if (authority.kind === "none") {
+      lockWorkId = noneOf.get(holderProjectId) ?? null;
+      if (!lockWorkId) throw new Error(`No Work row for ${holderProjectId} does not exist`);
+    } else if (authority.kind === "work") {
+      workId = lockWorkId = workOf.get(`${holderProjectId}/${authority.workSlug}`) ?? null;
+      if (!workId) throw new Error(`Work ${authority.workSlug} does not exist`);
+    } else if (authority.kind === "lineage") {
+      rootThreadId = rootOf.get(`${holderProjectId}/${authority.rootThreadRef}`) ?? null;
+      if (!rootThreadId) throw new Error(`Chat ${authority.rootThreadRef} does not exist`);
+    }
+    return {
+      projectId: projectId as ProjectId,
+      userId,
+      scheme,
+      workId,
+      lockWorkId,
+      rootThreadId,
+      path,
+    };
+  });
 }
 
 /**

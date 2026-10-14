@@ -330,6 +330,13 @@
       "when": 1791993944391,
       "tag": "0046_good_lady_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791994720070,
+      "tag": "0047_perpetual_manta",
+      "breakpoints": true
     }
   ]
 }

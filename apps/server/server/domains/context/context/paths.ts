@@ -16,19 +16,32 @@ export function splitPath(path: string): { dir: string[]; filename: string } {
   return { dir: segments, filename };
 }
 
-import { renderFilename } from "@meridian/contracts/protocol";
+import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 
 export { renderFilename } from "@meridian/contracts/protocol";
 
+/** Exact file names and both literal and document-normalized folder names (R5). */
+export type FilenameOccupancy = {
+  files: ReadonlySet<string>;
+  folders: ReadonlySet<string>;
+  folderAliases: ReadonlySet<string>;
+};
+
 /** Smallest available writer name; callers own atomic claims and batch reservations. */
 export async function allocateFilename(
-  parts: { name: string; extension: string },
-  exists: (filename: string) => boolean | Promise<boolean>,
+  parts: { name: string; extension: string; kind?: "file" | "folder" },
+  occupied: ((filename: string) => boolean | Promise<boolean>) | FilenameOccupancy,
 ): Promise<string> {
   for (let suffix = 1; ; suffix += 1) {
     const name = suffix === 1 ? parts.name : `${parts.name} (${suffix})`;
     const filename = renderFilename(name, parts.extension);
-    if (!(await exists(filename))) return filename;
+    const taken =
+      typeof occupied === "function"
+        ? await occupied(filename)
+        : parts.kind === "folder"
+          ? occupied.folders.has(name) || occupied.files.has(folderDocumentName(name))
+          : occupied.files.has(filename) || occupied.folderAliases.has(filename);
+    if (!taken) return filename;
   }
 }
 

@@ -45,6 +45,10 @@ export interface LinkAheadRegistry {
    * document, or whose awaited document is already live in the ref's project.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
+  /** Ordinary refs only; joins the caller transaction and asserts all address keys are held. */
+  registerWithinTransaction(
+    registrations: readonly Omit<AheadRegistration, "awaitedDocumentId">[],
+  ): Promise<void>;
   /**
    * Inside the caller's transaction, which already holds each arrival's namespace key and takes
    * none later. Takes the arriving ids' awaited-id stripes, then settles every ref awaiting an

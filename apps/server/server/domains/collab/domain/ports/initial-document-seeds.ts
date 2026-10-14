@@ -21,7 +21,7 @@ export interface InitialDocumentSeeds {
   ): Promise<void>;
   /** Caller has just inserted the documents in this transaction. Existing heads are an error. */
   commitStagedStates(stagingId: string): Promise<SeedAnnouncement[]>;
-  discardStagedStates(stagingId: string, limit: number): Promise<{ remaining: boolean }>;
+  discardStagedStates(stagingId: string, limit?: number): Promise<{ remaining: boolean }>;
   /** Returns true only when this call installed the first journal state. */
   seedInitialDocument(documentId: DocumentId, state: Uint8Array): Promise<boolean>;
 }

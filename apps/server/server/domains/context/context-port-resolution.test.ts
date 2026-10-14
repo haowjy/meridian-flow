@@ -68,6 +68,7 @@ describe("thread context-port resolution", () => {
 
     const calls: Array<{ workId: string; projectId: string; threadId?: string }> = [];
     const contextPorts: UnifiedContextPortFactory = {
+      async drainDetached() {},
       lineages: {
         async byId() {
           return null;

@@ -17,6 +17,7 @@ export {
   type LinkScopeMembership,
 } from "./adapters/document-link-scope.js";
 export { createDrizzleContextChildCreation } from "./adapters/drizzle-context-children.js";
+export { createDrizzleContextStagedCreation } from "./adapters/drizzle-context-staging.js";
 export { createDrizzleDocumentPropertiesReader } from "./adapters/drizzle-document-properties-reader.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { createDrizzleContextParentLocations } from "./adapters/drizzle-parent-locations.js";
@@ -116,6 +117,12 @@ export type {
   WorkScopedContextFsScheme,
   WriteProvenance,
 } from "./ports/context-port.js";
+export type {
+  ContextArea,
+  ContextPlacement,
+  ContextStage,
+  ContextStagedCreation,
+} from "./ports/context-staged-creation.js";
 export type { DocumentAddressResolver } from "./ports/document-address.js";
 export type { DocumentArrivals } from "./ports/document-arrivals.js";
 export type {
