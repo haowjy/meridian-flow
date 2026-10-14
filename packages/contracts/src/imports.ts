@@ -21,6 +21,9 @@ export interface ImportManifest {
     frontmatter?: string;
   }[];
 }
+/** The areas an import can land in. */
+export const IMPORT_SCHEMES = ["manuscript", "kb", "unfiled"] as const;
+export type ImportScheme = (typeof IMPORT_SCHEMES)[number];
 export type ImportState = "planning" | "ready" | "finished";
 export type ImportEntryState =
   | "planned"
@@ -76,7 +79,7 @@ export interface ImportSummary {
   version: string;
   dismissedAt: string | null;
 }
-export interface ImportEntryReport {
+export interface ImportEntryStatus {
   entryId: number;
   rootId: number;
   path: string;
@@ -87,7 +90,12 @@ export interface ImportEntryReport {
   kind: "note" | "docx" | "code" | "binary";
   state: ImportEntryState;
   uri: string | null;
+  /** Planned folder id; null means the root of `scheme`. */
+  parentId: string | null;
+  scheme: ImportScheme;
+  /** The stored allocated name, without the extension. */
   name: string;
+  extension: string;
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
   exists: boolean;
@@ -97,7 +105,7 @@ export interface ImportEntryReport {
    */
   wanted: boolean;
 }
-export interface ImportRootReport {
+export interface ImportRootStatus {
   rootId: number;
   kind: "folder" | "file";
   name: string;
@@ -105,15 +113,25 @@ export interface ImportRootReport {
   id: string | null;
   uri: string | null;
 }
-export interface ImportReport extends ImportSummary {
-  roots: ImportRootReport[];
-  entries: ImportEntryReport[];
+/** A folder the plan holds, whether or not the selection listed it. */
+export interface ImportFolderStatus {
+  id: string;
+  parentId: string | null;
+  scheme: ImportScheme;
+  name: string;
+  state: ImportEntryState;
+}
+export interface ImportStatus extends ImportSummary {
+  roots: ImportRootStatus[];
+  folders: ImportFolderStatus[];
+  entries: ImportEntryStatus[];
 }
 
-/** What changed since a version: changed entries, and the roots whose node changed. */
-export type ImportReportChanges = ImportSummary & {
-  roots: ImportRootReport[];
-  entries: ImportEntryReport[];
+/** What changed since a version: changed folders and entries, and the roots whose node changed. */
+export type ImportStatusChanges = ImportSummary & {
+  roots: ImportRootStatus[];
+  folders: ImportFolderStatus[];
+  entries: ImportEntryStatus[];
 };
 
 /** Stable codes for refused import requests; bounded numeric params ride beside them. */

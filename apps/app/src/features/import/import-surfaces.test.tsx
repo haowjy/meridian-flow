@@ -4,7 +4,7 @@
  * server; the project context is a coordinator handed in through the provider seam.
  */
 import { i18n } from "@lingui/core";
-import type { ImportEntryReport, ImportReport } from "@meridian/contracts";
+import type { ImportEntryStatus, ImportStatus } from "@meridian/contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -53,7 +53,7 @@ async function mount(node: React.ReactNode) {
   return element;
 }
 
-function entry(entryId: number, state: ImportEntryReport["state"]): ImportEntryReport {
+function entry(entryId: number, state: ImportEntryStatus["state"]): ImportEntryStatus {
   return {
     entryId,
     rootId: 0,
@@ -68,11 +68,14 @@ function entry(entryId: number, state: ImportEntryReport["state"]): ImportEntryR
     name: `Note ${entryId}`,
     reason: null,
     exists: true,
+    parentId: null,
+    scheme: "kb",
+    extension: "",
     wanted: false,
   };
 }
 
-function report(overrides: Partial<ImportReport> = {}): ImportReport {
+function report(overrides: Partial<ImportStatus> = {}): ImportStatus {
   const entries = overrides.entries ?? [entry(0, "planned")];
   const landed = entries.filter((e) => e.state === "landed").length;
   return {
@@ -92,6 +95,7 @@ function report(overrides: Partial<ImportReport> = {}): ImportReport {
     version: "1",
     dismissedAt: null,
     roots: [{ rootId: 0, kind: "folder", name: "Book", id: "root", uri: "kb://Book/" }],
+    folders: [],
     entries,
     ...overrides,
   };

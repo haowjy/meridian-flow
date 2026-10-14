@@ -6,7 +6,7 @@
  * unchanged copy cannot stand in for a changed one. The first difference found is
  * the one the writer is told.
  */
-import type { ImportEntryReport, ImportManifest } from "@meridian/contracts";
+import type { ImportEntryStatus, ImportManifest } from "@meridian/contracts";
 import type { HeldFile } from "./manifest";
 import type { Selection } from "./selection";
 
@@ -17,7 +17,7 @@ export type SelectionDifference = {
 
 export type StoredImport = {
   roots: readonly { rootId: number; kind: "folder" | "file"; name: string }[];
-  entries: Iterable<ImportEntryReport>;
+  entries: Iterable<ImportEntryStatus>;
 };
 
 export type CheckOptions = {
@@ -259,7 +259,7 @@ export function matchHeld(
 }
 
 /** Files the continued import will send: the ones the server still waits for. */
-export function outstanding(entries: Iterable<ImportEntryReport>): number {
+export function outstanding(entries: Iterable<ImportEntryStatus>): number {
   let count = 0;
   for (const entry of entries) if (entry.wanted) count += 1;
   return count;

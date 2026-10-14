@@ -1,10 +1,10 @@
 /** The shape of one import as this tab knows it. Immutable snapshots; the store replaces them. */
 import type {
   ImportCounts,
-  ImportEntryReport,
+  ImportEntryStatus,
   ImportFailureReason,
   ImportManifest,
-  ImportReport,
+  ImportStatus,
   ImportSummary,
 } from "@meridian/contracts";
 import type { ClientRow } from "./client-rows";
@@ -40,8 +40,8 @@ export type LocalRun = {
 
 export type ReportData = {
   summary: ImportSummary;
-  roots: ImportReport["roots"];
-  entries: ReadonlyMap<number, ImportEntryReport>;
+  roots: ImportStatus["roots"];
+  entries: ReadonlyMap<number, ImportEntryStatus>;
   /**
    * The version through which every entry change has been read: a full read, then
    * each `since` cut. Null until the full report is read. The summary can be newer
@@ -110,7 +110,7 @@ export function effectiveCounts(state: ImportState): ImportCounts | null {
 }
 
 /** One entry as shown: the server's word, except for a send that failed here. */
-export function effectiveEntry(state: ImportState, entry: ImportEntryReport): ImportEntryReport {
+export function effectiveEntry(state: ImportState, entry: ImportEntryStatus): ImportEntryStatus {
   const local = state.local;
   if (local?.retrying.has(entry.entryId)) {
     return entry.state === "failed" ? { ...entry, state: "planned", reason: null } : entry;

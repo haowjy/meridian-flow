@@ -94,7 +94,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     expect(lore).toContain("[Cultivation Realms](<Cultivation Realms>)");
     expect(lore).toContain("[Sects](Sects)");
     expect(lore).not.toContain("aliases:");
-    const report = await service.report(plan.importId, projectId);
+    const report = await service.status(plan.importId, projectId);
     const byPath = (path: string) => {
       const entry = report.entries.find((entry) => entry.path === path);
       if (!entry) throw new Error(path);
@@ -141,7 +141,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
           )
         ).state,
       ).toBe("landed");
-    const report = await service.report(plan.importId, projectId);
+    const report = await service.status(plan.importId, projectId);
     const byPath = (path: string) => {
       const entry = report.entries.find((entry) => entry.path === path);
       if (!entry) throw new Error(path);
@@ -517,7 +517,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
         plan = await service.plan(projectId, userId, selection.manifest);
       for (const entry of plan.entries)
         await service.land(projectId, plan.importId, entry.entryId, selection.bytes[entry.entryId]);
-      return (await service.report(plan.importId, projectId)).entries;
+      return (await service.status(plan.importId, projectId)).entries;
     }
     await landAll(files({ "World Notes.md": "See [[World Bible]]." }));
     const chapter1 = await ok(context().read("manuscript://Chapter 1 - The Gate"));

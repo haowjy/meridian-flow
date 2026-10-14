@@ -49,7 +49,7 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
         .filter((entry) => entry.entryId >= 0)
         .every((entry) => entry.exists && entry.size > 0 && entry.sha256.length === 64),
     ).toBe(true);
-    expect((await service.report(plan.importId, projectId, plan.version)).entries).toEqual([]);
+    expect((await service.status(plan.importId, projectId, plan.version)).entries).toEqual([]);
     expect(await service.listOpen(projectId)).toHaveLength(1);
     await expect(service.dismiss(plan.importId, projectId)).rejects.toThrow("import_not_finished");
     expect(await service.land(projectId, plan.importId, 0, Buffer.from("Changed"))).toMatchObject({
@@ -57,7 +57,7 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       state: "failed",
     });
     expect(diagnostics).toHaveLength(1);
-    const changes = await service.report(plan.importId, projectId, plan.version);
+    const changes = await service.status(plan.importId, projectId, plan.version);
     expect(changes.entries.map((entry) => entry.entryId)).toEqual([0]);
     expect(BigInt(changes.version)).toBeGreaterThan(BigInt(plan.version));
     expect(changes.counts).toMatchObject({ failed: 1, arriving: 1 });
@@ -115,20 +115,21 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     await service.land(projectId, plan.importId, 0, selection.bytes[0]);
-    const landed = await service.report(plan.importId, projectId);
-    expect((await service.report(plan.importId, projectId, landed.version)).entries).toEqual([]);
+    const landed = await service.status(plan.importId, projectId);
+    expect((await service.status(plan.importId, projectId, landed.version)).entries).toEqual([]);
     await ok(context().move("kb://A", "manuscript://Renamed"));
-    const moved = await service.report(plan.importId, projectId, landed.version);
+    const moved = await service.status(plan.importId, projectId, landed.version);
     expect(BigInt(moved.version)).toBeGreaterThan(BigInt(landed.version));
     expect(moved.entries).toEqual([
       expect.objectContaining({
         entryId: 0,
         uri: "manuscript://Renamed",
-        name: "Renamed",
+        // The stored allocated name stays; the live address moves.
+        name: "A",
         exists: true,
       }),
     ]);
-    expect((await service.report(plan.importId, projectId)).entries[0]).toMatchObject({
+    expect((await service.status(plan.importId, projectId)).entries[0]).toMatchObject({
       uri: "manuscript://Renamed",
     });
     await ok(
@@ -136,9 +137,9 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
         expected: { kind: "file", documentId: plan.entries[0].documentId },
       }),
     );
-    const deleted = await service.report(plan.importId, projectId, moved.version);
+    const deleted = await service.status(plan.importId, projectId, moved.version);
     expect(deleted.entries).toEqual([expect.objectContaining({ entryId: 0, exists: false })]);
-    expect((await service.report(plan.importId, projectId, deleted.version)).entries).toEqual([]);
+    expect((await service.status(plan.importId, projectId, deleted.version)).entries).toEqual([]);
   });
   it("incremental reports publish a moved folder root, so its Open follows it", async () => {
     const service = createImportService(ports());
@@ -146,9 +147,9 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
     book.manifest.roots = [{ rootId: 0, kind: "folder", name: "Book" }];
     book.manifest.entries[0].path = "Seed.md";
     const plan = await service.plan(projectId, userId, book.manifest);
-    expect((await service.report(plan.importId, projectId, plan.version)).roots).toEqual([]);
+    expect((await service.status(plan.importId, projectId, plan.version)).roots).toEqual([]);
     await ok(context().move("kb://Book/", "kb://Renamed/"));
-    const moved = await service.report(plan.importId, projectId, plan.version);
+    const moved = await service.status(plan.importId, projectId, plan.version);
     expect(moved.roots).toEqual([
       { rootId: 0, kind: "folder", name: "Book", id: plan.roots[0].id, uri: "kb://Renamed/" },
     ]);
@@ -167,13 +168,13 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       plan = await service.plan(projectId, userId, selection.manifest);
     const upload = service.land(projectId, plan.importId, 0, selection.bytes[0]);
     await gate.arrived;
-    const before = await service.report(plan.importId, projectId),
+    const before = await service.status(plan.importId, projectId),
       entry = await deps.repository.fileEntry(plan.importId, 0);
     expect(await service.renewLease(projectId, plan.importId, 0, randomUUID())).toBe(false);
     expect(await service.renewLease(projectId, plan.importId, 0, entry?.attemptId ?? "")).toBe(
       true,
     );
-    const renewed = await service.report(plan.importId, projectId, before.version);
+    const renewed = await service.status(plan.importId, projectId, before.version);
     expect(BigInt(renewed.version)).toBeGreaterThan(BigInt(before.version));
     expect(Date.parse(renewed.lastActivityAt)).toBeGreaterThanOrEqual(
       Date.parse(before.lastActivityAt),
@@ -196,7 +197,7 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       plan = await service.plan(projectId, userId, selection.manifest);
     const first = service.land(projectId, plan.importId, 0, selection.bytes[0]);
     await gate.arrived;
-    const before = await service.report(plan.importId, projectId);
+    const before = await service.status(plan.importId, projectId);
     const secondDeps = ports(),
       secondGate = barrier(),
       bind = secondDeps.tree.bind;
@@ -212,11 +213,11 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       selection.bytes[1],
     );
     await secondGate.arrived;
-    const cursor = await service.report(plan.importId, projectId, before.version);
+    const cursor = await service.status(plan.importId, projectId, before.version);
     expect(cursor.entries.map((entry) => entry.entryId)).toEqual([1]);
     gate.release();
     await first;
-    const after = await service.report(plan.importId, projectId, cursor.version);
+    const after = await service.status(plan.importId, projectId, cursor.version);
     expect(after.entries).toContainEqual(expect.objectContaining({ entryId: 0, state: "landed" }));
     secondGate.release();
     await second;

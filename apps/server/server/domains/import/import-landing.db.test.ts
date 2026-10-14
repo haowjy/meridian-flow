@@ -39,7 +39,7 @@ describe.skipIf(!importDbEnabled)("import landing (postgres)", () => {
         { entryId: 99, bytes: new Uint8Array() },
       ]),
     ).rejects.toMatchObject({ statusCode: 404, code: "entry_not_found" });
-    expect((await service.report(plan.importId, projectId)).counts.landed).toBe(0);
+    expect((await service.status(plan.importId, projectId)).counts.landed).toBe(0);
     await expect(
       service.receive(plan.importId, projectId, async () =>
         Array.from({ length: IMPORT_ADMISSION.partsPerRequest + 1 }, (_, entryId) => ({
@@ -148,10 +148,10 @@ describe.skipIf(!importDbEnabled)("import landing (postgres)", () => {
     expect(plan.entries[0]).toMatchObject({ state: "planned", wanted: true });
     const crashed = service.land(projectId, plan.importId, 0, selection.bytes[0]);
     await gate.arrived;
-    const live = await service.report(plan.importId, projectId);
+    const live = await service.status(plan.importId, projectId);
     expect(live.entries[0]).toMatchObject({ state: "landing", wanted: false });
     clock = new Date(clock.getTime() + IMPORT_LIMITS.leaseMs + 1);
-    const lapsed = await service.report(plan.importId, projectId);
+    const lapsed = await service.status(plan.importId, projectId);
     expect(lapsed.entries[0]).toMatchObject({ state: "landing", wanted: true });
     gate.release();
     await crashed;

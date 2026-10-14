@@ -5,6 +5,7 @@ import {
   type ImportEntryReason,
   type ImportManifest,
   type ImportUnreadableReason,
+  importNodeId,
   importPathDisposition,
 } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
@@ -57,9 +58,15 @@ export function allocateName(
   for (let count = 2; taken(name); count++) name = `${node.name} (${count})`;
   return name;
 }
+export type MintId = (
+  kind: "folder" | "entry" | "unreadable",
+  rootId: number,
+  path: string,
+) => string;
+
 export function planSelection(
   manifest: ImportManifest,
-  mintId: () => string,
+  mintId: MintId,
   destinationId: string | null,
 ): PlannedNode[] {
   const marker = readExportMarker(manifest);
@@ -82,7 +89,7 @@ export function planSelection(
       const parentId = path === "" ? destinationId : makeFolder(parentPath).id;
       const filename = path === "" ? root.name : (path.split("/").at(-1) ?? "");
       const node: PlannedNode = {
-        id: mintId(),
+        id: mintId("folder", root.rootId, path),
         ...(marker?.areas.get(path.split("/")[0])
           ? { area: marker.areas.get(path.split("/")[0]) }
           : {}),
@@ -146,7 +153,7 @@ export function planSelection(
         parentPath = folderNote;
       }
       nodes.push({
-        id: mintId(),
+        id: mintId("entry", root.rootId, entry.path),
         ...(marker?.areas.get(entry.path.split("/")[0])
           ? { area: marker.areas.get(entry.path.split("/")[0]) }
           : {}),
@@ -167,7 +174,7 @@ export function planSelection(
     const root = manifest.roots.find((root) => root.rootId === unreadable.rootId);
     const filename = unreadable.path.split("/").at(-1) || root?.name || "";
     nodes.push({
-      id: mintId(),
+      id: mintId("unreadable", unreadable.rootId, unreadable.path),
       parentId: destinationId,
       rootId: unreadable.rootId,
       entryId: -index - 1,
@@ -198,4 +205,42 @@ export function planSelection(
         Number(renderFilename(a.name, a.extension) === a.filename) ||
       codePointOrder(a.filename, b.filename),
   );
+}
+
+/**
+ * Plans with every node id derived by `importNodeId`. Planning decides which nodes exist
+ * (implied folders, folder-note relocation, routing), so a first pass collects their keys
+ * and the second mints from the digested map.
+ */
+export async function planWithDerivedIds(
+  manifest: ImportManifest,
+  scope: { projectId: string },
+  destinationId: string | null,
+): Promise<PlannedNode[]> {
+  const keys = new Map<string, Parameters<MintId>>();
+  const keyOf = (...key: Parameters<MintId>) => key.join("\0");
+  planSelection(
+    manifest,
+    (...key) => {
+      keys.set(keyOf(...key), key);
+      return keyOf(...key);
+    },
+    destinationId,
+  );
+  const ids = new Map<string, string>();
+  await Promise.all(
+    [...keys].map(async ([name, [kind, rootId, path]]) => {
+      ids.set(
+        name,
+        await importNodeId({
+          projectId: scope.projectId,
+          importId: manifest.importId,
+          rootId,
+          kind,
+          path,
+        }),
+      );
+    }),
+  );
+  return planSelection(manifest, (...key) => ids.get(keyOf(...key)) as string, destinationId);
 }

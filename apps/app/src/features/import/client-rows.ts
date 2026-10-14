@@ -4,8 +4,9 @@
  * file row for every file, each under its source name and where it will land.
  */
 
+import type { ImportScheme } from "@meridian/contracts";
 import { importPathDisposition, parseExportMarker } from "@meridian/contracts";
-import { type ImportDestination, type ImportScheme, joinCatalogPath } from "./destination";
+import { type ImportDestination, joinCatalogPath } from "./destination";
 import { filenameForDisplay } from "./display-name";
 import type { Selection } from "./selection";
 

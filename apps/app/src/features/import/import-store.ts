@@ -4,9 +4,9 @@
  * Surfaces subscribe; the polling runs only while something is watching.
  */
 import type {
-  ImportEntryReport,
-  ImportReport,
-  ImportReportChanges,
+  ImportEntryStatus,
+  ImportStatus,
+  ImportStatusChanges,
   ImportSummary,
 } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
@@ -106,7 +106,7 @@ export class ImportStore {
   }
 
   /** A full read, from the plan's answer or a first load. An older read changes nothing. */
-  installReport(report: ImportReport) {
+  installReport(report: ImportStatus) {
     this.update((state) => {
       const cursor = state.report?.cursor;
       if (cursor != null && compareVersions(cursor, report.version) > 0)
@@ -127,7 +127,7 @@ export class ImportStore {
   }
 
   /** Entries this tab's own uploads answered. */
-  mergeEntries(entries: readonly ImportEntryReport[]) {
+  mergeEntries(entries: readonly ImportEntryStatus[]) {
     this.update((state) => {
       if (!state.report) return state;
       const merged = new Map(state.report.entries);
@@ -136,7 +136,7 @@ export class ImportStore {
     });
   }
 
-  private mergeChanges(changes: ImportReportChanges) {
+  private mergeChanges(changes: ImportStatusChanges) {
     this.update((state) => {
       const report = state.report;
       if (!fullyRead(report)) return state;
@@ -186,7 +186,7 @@ export class ImportStore {
         this.mergeChanges(await this.api.changes(this.projectId, this.importId, report.cursor));
       } else if (forceFull || this.watchers.size > 0 || this.state.local) {
         this.update((state) => ({ ...state, load: state.report ? state.load : "loading" }));
-        this.installReport(await this.api.report(this.projectId, this.importId));
+        this.installReport(await this.api.status(this.projectId, this.importId));
       }
     } catch (error) {
       if (

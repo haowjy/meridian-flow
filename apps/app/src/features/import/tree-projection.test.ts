@@ -1,4 +1,4 @@
-import type { ImportEntryReport, ImportSummary } from "@meridian/contracts";
+import type { ImportEntryStatus, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import type {
   CatalogContextView,
@@ -84,7 +84,7 @@ const selection: Selection = {
   ],
 };
 
-function stateWith(report?: { entries: ImportEntryReport[]; rootUri: string }): ImportState {
+function stateWith(report?: { entries: ImportEntryStatus[]; rootUri: string }): ImportState {
   const rows = clientRowsFor(selection, destination, (_rootId, path) =>
     path === "Ch 1.md" ? 0 : path === "Lore/Sects.md" ? 1 : path === "map.png" ? 2 : undefined,
   );
@@ -123,10 +123,10 @@ function stateWith(report?: { entries: ImportEntryReport[]; rootUri: string }): 
 const entry = (
   entryId: number,
   path: string,
-  state: ImportEntryReport["state"],
+  state: ImportEntryStatus["state"],
   uri: string,
   documentId = `d${entryId}`,
-): ImportEntryReport => ({
+): ImportEntryStatus => ({
   entryId,
   rootId: 0,
   path,
@@ -140,6 +140,9 @@ const entry = (
   name: path,
   reason: null,
   exists: true,
+  parentId: null,
+  scheme: "kb",
+  extension: "",
   wanted: false,
 });
 
@@ -225,7 +228,7 @@ describe("withImportRows", () => {
   });
 
   describe("after the import finishes", () => {
-    const finishedWith = (entries: ImportEntryReport[]): ImportState => {
+    const finishedWith = (entries: ImportEntryStatus[]): ImportState => {
       const state = stateWith({ rootUri: "kb://vault/", entries });
       return {
         ...state,

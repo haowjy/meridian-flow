@@ -1,4 +1,4 @@
-import type { ImportEntryReport, ImportManifest } from "@meridian/contracts";
+import type { ImportEntryStatus, ImportManifest } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { compareDigests, compareStructure, matchHeld, outstanding } from "./continue-check";
 import { type BuiltManifest, buildManifest } from "./manifest";
@@ -9,7 +9,7 @@ const entry = (
   path: string,
   size: number,
   sha256: string,
-  state: ImportEntryReport["state"] = "planned",
+  state: ImportEntryStatus["state"] = "planned",
 ) =>
   ({
     entryId,
@@ -21,7 +21,7 @@ const entry = (
     state,
     wanted: state === "planned",
     reason: null,
-  }) as ImportEntryReport;
+  }) as ImportEntryStatus;
 
 const stored = {
   roots: [{ rootId: 0, kind: "folder" as const, name: "vault" }],
@@ -99,7 +99,7 @@ function storedFor(built: BuiltManifest, skipped: { rootId: number; path: string
             filename: item.path || names.get(item.rootId) || "",
             state: "planned",
             reason: null,
-          }) as ImportEntryReport,
+          }) as ImportEntryStatus,
       ),
       ...skipped.map(
         (item, index) =>
@@ -112,7 +112,7 @@ function storedFor(built: BuiltManifest, skipped: { rootId: number; path: string
             sha256: "",
             state: "skipped",
             reason: "unreadable",
-          }) as ImportEntryReport,
+          }) as ImportEntryStatus,
       ),
     ],
   };

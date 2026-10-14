@@ -1,4 +1,4 @@
-/** A consistent full report or changed entries after a decimal version. */
+/** A consistent full status or changed entries after a decimal version. */
 import { createError, defineEventHandler, getQuery } from "nitro/h3";
 import { resolveImportRoute } from "../../../../../../lib/import-route.js";
 export default defineEventHandler(async (event) => {
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "invalid_import_version" });
   return route.read(() =>
     typeof since === "string"
-      ? route.service.report(route.importId(), route.projectId, since)
-      : route.service.report(route.importId(), route.projectId),
+      ? route.service.status(route.importId(), route.projectId, since)
+      : route.service.status(route.importId(), route.projectId),
   );
 });

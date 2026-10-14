@@ -2,12 +2,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   ImportFailureReason,
-  ImportReport,
-  ImportReportChanges,
+  ImportScheme,
+  ImportStatus,
+  ImportStatusChanges,
   ImportSummary,
 } from "@meridian/contracts";
 import { IMPORT_ADMISSION } from "@meridian/contracts";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
 import type { ObjectStorePort } from "../../storage/index.js";
 import type { DocumentConverterPort } from "../ports/document-converter.js";
 import type { ImportDiagnostics } from "../ports/import-diagnostics.js";
@@ -15,7 +15,7 @@ import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/impor
 import { type ImportTreeWriter, ParentMovedError } from "../ports/import-tree-writer.js";
 import { IMPORT_LIMITS, ImportError, manifestFingerprint, validateManifest } from "./manifest.js";
 import { sweepImportObjects } from "./object-sweep.js";
-import { allocateName, planSelection } from "./plan.js";
+import { allocateName, planWithDerivedIds } from "./plan.js";
 import {
   convertImportedNote,
   isMarkdownNote,
@@ -69,6 +69,10 @@ export function createImportService(deps: {
       name,
       uri: `${parent.uri}${name}${entry.extension ? `.${entry.extension}` : ""}${entry.kind === "folder" ? "/" : ""}`,
     };
+  }
+  /** An export's rows sit in their own areas; every other row is in the destination's. */
+  function schemeOf(record: ImportRecord, entry: ImportEntry) {
+    return (entry.area ?? record.manifest.destination.folderUri.split("://")[0]) as ImportScheme;
   }
   function summary(cut: {
     record: ImportRecord;
@@ -125,20 +129,30 @@ export function createImportService(deps: {
       );
     });
   }
-  async function report(id: string, projectId: string): Promise<ImportReport>;
-  async function report(id: string, projectId: string, since: string): Promise<ImportReportChanges>;
-  async function report(
+  async function status(id: string, projectId: string): Promise<ImportStatus>;
+  async function status(id: string, projectId: string, since: string): Promise<ImportStatusChanges>;
+  async function status(
     id: string,
     projectId: string,
     since?: string,
-  ): Promise<ImportReport | ImportReportChanges> {
+  ): Promise<ImportStatus | ImportStatusChanges> {
     await observe(id, projectId, await repo.entries(id));
     const cut = await repo.snapshot(id, projectId, since);
     if (!cut) throw new ImportError(404, "import_not_found");
     const { record, entries } = cut;
+    const scheme = (entry: ImportEntry) => schemeOf(record, entry);
+    const folders = entries
+      .filter((entry) => entry.kind === "folder")
+      .map((entry) => ({
+        id: entry.id,
+        parentId: entry.parentId,
+        scheme: scheme(entry),
+        name: entry.name,
+        state: entry.state,
+      }));
     const reportedEntries = entries
       .filter((entry) => entry.entryId !== null)
-      .map((entry) => entryReport(entry));
+      .map((entry) => entryStatus(entry, scheme(entry)));
     // A since-cut holds only changed rows: it reports just the roots whose node changed.
     const roots = record.manifest.roots.flatMap((root) => {
       const node = entries.find(
@@ -159,11 +173,10 @@ export function createImportService(deps: {
         },
       ];
     });
-    return { ...summary(cut), roots, entries: reportedEntries };
+    return { ...summary(cut), roots, folders, entries: reportedEntries };
   }
-  function entryReport(entry: ImportEntry) {
+  function entryStatus(entry: ImportEntry, scheme: ImportScheme) {
     const exists = entry.created && entry.exists;
-    const liveName = exists ? parseDocumentFilename(entry.uri?.split("/").at(-1) ?? "") : null;
     return {
       entryId: entry.entryId as number,
       rootId: entry.rootId,
@@ -175,7 +188,10 @@ export function createImportService(deps: {
       kind: entry.kind as "note" | "docx" | "code" | "binary",
       state: entry.state,
       uri: entry.uri,
-      name: liveName?.ok ? liveName.value.name : entry.name,
+      parentId: entry.parentId,
+      scheme,
+      name: entry.name,
+      extension: entry.extension,
       exists,
       wanted: wantsBytes(entry, now()),
       reason: entry.reason,
@@ -186,7 +202,8 @@ export function createImportService(deps: {
     const entry = await repo.fileEntry(id, entryId);
     if (!entry) throw new ImportError(404, "entry_not_found");
     await observe(id, projectId, [entry]);
-    return entryReport((await repo.fileEntry(id, entryId)) ?? entry);
+    const current = (await repo.fileEntry(id, entryId)) ?? entry;
+    return entryStatus(current, schemeOf(await requireImport(id, projectId), current));
   }
   /** Ready admission is its own exclusive transition: a shared fence never upgrades. */
   async function admitReady(record: ImportRecord) {
@@ -198,7 +215,7 @@ export function createImportService(deps: {
       return true;
     });
   }
-  async function resume(record: ImportRecord) {
+  async function runPlanning(record: ImportRecord) {
     while (true) {
       const changed = await retryMoved(async () => {
         const locked = await repo.fence(record.id, record.projectId);
@@ -301,7 +318,7 @@ export function createImportService(deps: {
       await repo.setState(id, "finished");
     });
     await sweepFinished(id);
-    return automatic ? undefined : report(id, projectId);
+    return automatic ? undefined : status(id, projectId);
   }
   /** Finish is already durable: its own cleanup can only be retried later, never fail it. */
   async function sweepFinished(id: string) {
@@ -584,7 +601,7 @@ export function createImportService(deps: {
     return await entryOutcome(id, projectId, entryId);
   }
   const api = {
-    report,
+    status,
     renewLease,
     /**
      * One multipart request: admitted per import, read under a heartbeat, validated
@@ -633,9 +650,15 @@ export function createImportService(deps: {
         if (record.state !== "finished") throw new ImportError(409, "import_not_finished");
         if (!record.dismissedAt) await repo.dismiss(id);
       });
-      return report(id, projectId);
+      return status(id, projectId);
     },
     finish: (id: string, projectId: string) => finish(id, projectId),
+    /** Runs the stored plan's remaining chunks, then the automatic finish, in any state. */
+    async resume(id: string, projectId: string) {
+      await runPlanning(await requireImport(id, projectId));
+      await finish(id, projectId, true);
+      return status(id, projectId);
+    },
     sweep,
     async plan(projectId: string, userId: string, raw: unknown) {
       const manifest = validateManifest(raw);
@@ -643,7 +666,7 @@ export function createImportService(deps: {
       let record = await repo.read(manifest.importId, projectId);
       if (!record) {
         const destination = await tree.destination(manifest.destination.folderUri);
-        const nodes = planSelection(manifest, randomUUID, destination.folderId);
+        const nodes = await planWithDerivedIds(manifest, { projectId }, destination.folderId);
         const existingLinks = await tree.existingLinks();
         await repo.transaction(() =>
           repo.insert(
@@ -662,9 +685,7 @@ export function createImportService(deps: {
         record = await requireImport(manifest.importId, projectId);
       }
       if (record.fingerprint !== fingerprint) throw new ImportError(409, "selection_mismatch");
-      await resume(record);
-      await finish(record.id, projectId, true);
-      return report(record.id, projectId);
+      return api.resume(record.id, projectId);
     },
     land: (projectId: string, id: string, entryId: number, bytes: Uint8Array) =>
       landFile(

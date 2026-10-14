@@ -1,10 +1,23 @@
 /** Pure selection contracts: identity, naming, validation and classification without storage. */
 import { randomUUID } from "node:crypto";
-import { IMPORT_ADMISSION, type ImportManifest, importPathDisposition } from "@meridian/contracts";
+import {
+  IMPORT_ADMISSION,
+  type ImportManifest,
+  importNodeId,
+  importPathDisposition,
+} from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { classify } from "./classify.js";
 import { manifestFingerprint, validateManifest } from "./manifest.js";
-import { allocateName, codePointOrder, planSelection } from "./plan.js";
+import {
+  allocateName,
+  codePointOrder,
+  type MintId,
+  planSelection,
+  planWithDerivedIds,
+} from "./plan.js";
+
+const mint: MintId = (...key) => key.join("\0");
 
 function manifest(): ImportManifest {
   return {
@@ -23,7 +36,7 @@ function manifest(): ImportManifest {
 }
 describe("import planning", () => {
   it("creates the folder graph, moves folder notes inside and omits settings", () => {
-    const planned = planSelection(validateManifest(manifest()), randomUUID, null);
+    const planned = planSelection(validateManifest(manifest()), mint, null);
     const lore = planned.find((node) => node.kind === "folder" && node.path === "Lore");
     expect(planned.find((node) => node.filename === "Lore.md")).toMatchObject({
       parentId: lore?.id,
@@ -55,11 +68,43 @@ describe("import planning", () => {
     const selection = manifest();
     selection.roots.push({ rootId: 2, kind: "folder", name: "Book" });
     selection.entries.push({ ...selection.entries[0], rootId: 2, entryId: 30 });
-    const roots = planSelection(selection, randomUUID, null).filter(
+    const roots = planSelection(selection, mint, null).filter(
       (node) => node.kind === "folder" && node.path === "",
     );
     expect(roots).toHaveLength(2);
     expect(roots[0].id).not.toBe(roots[1].id);
+  });
+  it("gives every planned node the id importNodeId derives from its place in the selection", async () => {
+    const projectId = randomUUID();
+    const selection = manifest();
+    selection.roots.push({ rootId: 2, kind: "folder", name: "Book" });
+    selection.entries.push({ ...selection.entries[0], rootId: 2, entryId: 30 });
+    selection.unreadable = [{ rootId: 1, path: "Lore/Gone.md" }];
+    const validated = validateManifest(selection);
+    const planned = await planWithDerivedIds(validated, { projectId }, null);
+    const kinds = { folder: "folder", entry: "entry" } as const;
+    for (const node of planned) {
+      const kind =
+        node.kind === "folder"
+          ? kinds.folder
+          : node.reason === "unreadable"
+            ? "unreadable"
+            : kinds.entry;
+      expect(node.id).toBe(
+        await importNodeId({
+          projectId,
+          importId: validated.importId,
+          rootId: node.rootId,
+          kind,
+          path: node.path,
+        }),
+      );
+    }
+    expect(new Set(planned.map((node) => node.id)).size).toBe(planned.length);
+    // The folder note moved inside Lore keeps its own entry id, apart from the folder's.
+    const lore = planned.filter((node) => node.rootId === 1 && node.path === "Lore");
+    expect(lore.map((node) => node.kind).sort()).toEqual(["folder"]);
+    expect(planned.find((node) => node.filename === "Lore.md")?.id).not.toBe(lore[0].id);
   });
   it("allocates exact case and enforces cross-kind collisions, preserving extensions", () => {
     const children = [
@@ -91,7 +136,7 @@ describe("import planning", () => {
     ).toBe("Lore.md (2)");
     expect(codePointOrder("\uE000", "😀")).toBeLessThan(0);
   });
-  it("routes a marked whole export, omits its wrapper/area directories and reports Works", () => {
+  it("routes a marked whole export, omits its wrapper/area directories and reports Works", async () => {
     const value = manifest();
     value.roots[0].meridianExport = JSON.stringify({
       formatVersion: 1,
@@ -107,8 +152,16 @@ describe("import planning", () => {
       "Knowledge Base/Lore/Sects.md",
       "Works/No Work/Scratch/Note.md",
     ].map((path, entryId) => ({ path, entryId, rootId: 1, size: 0, sha256: "a".repeat(64) }));
-    const planned = planSelection(value, randomUUID, null);
+    const projectId = randomUUID();
+    const planned = await planWithDerivedIds(value, { projectId }, null);
     expect(planned.find((node) => node.path === "Manuscript/Chapter.md")).toMatchObject({
+      id: await importNodeId({
+        projectId,
+        importId: value.importId,
+        rootId: 1,
+        kind: "entry",
+        path: "Manuscript/Chapter.md",
+      }),
       area: "manuscript",
       parentId: null,
     });
@@ -124,7 +177,7 @@ describe("import planning", () => {
       "Knowledge Base/Lore",
     ]);
     value.roots[0].meridianExport = '{"formatVersion":2}';
-    expect(() => planSelection(value, randomUUID, null)).toThrow("export_marker_invalid");
+    expect(() => planSelection(value, mint, null)).toThrow("export_marker_invalid");
   });
   it("resume identity includes routing settings and aliases rather than trusting a new reader", () => {
     const original = manifest();

@@ -1,5 +1,5 @@
 /** Import planning: identity graphs, chunk recovery, ready admission and Stop between chunks. Barriers sit at public port boundaries. */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { folders, importEntries, imports } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -43,7 +43,7 @@ describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
     const landOne = (entryId: number) =>
       service.land(projectId, plan.importId, entryId, selection.bytes[entryId]);
     for (const entry of plan.entries) expect((await landOne(entry.entryId)).state).toBe("landed");
-    expect((await service.report(plan.importId, projectId)).state).toBe("finished");
+    expect((await service.status(plan.importId, projectId)).state).toBe("finished");
     expect(await projectDocuments()).toHaveLength(3);
     expect((await ok(context().read("kb://Foundation"))).content).not.toMatch(/^#/);
     expect((await ok(context().read("kb://Chapter"))).content).toContain("[Sects](Sects)");
@@ -139,12 +139,77 @@ describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
     const stored = await deps.repository.entries(selection.manifest.importId),
       ids = stored.map((entry) => entry.id).sort();
     expect(await projectDocuments()).toHaveLength(200);
-    const resumed = await createImportService(ports()).plan(projectId, userId, selection.manifest);
+    const resumed = await createImportService(ports()).resume(
+      selection.manifest.importId,
+      projectId,
+    );
     expect(resumed.state).toBe("ready");
+    expect(resumed.folders).toEqual([
+      { id: expect.any(String), parentId: null, scheme: "kb", name: "Resume", state: "planned" },
+    ]);
+    expect(resumed.entries[0]).toMatchObject({
+      parentId: resumed.folders[0].id,
+      scheme: "kb",
+      extension: "",
+    });
     expect(
       (await deps.repository.entries(selection.manifest.importId)).map((entry) => entry.id).sort(),
     ).toEqual(ids);
     expect(await projectDocuments()).toHaveLength(250);
+  }, 120_000);
+  it("resume with no wanted files finishes the import, and an unknown id is not found", async () => {
+    const selection = loose({ "Plot.canvas": "{}" }),
+      deps = ports();
+    await expect(
+      createImportService({
+        ...deps,
+        repository: {
+          ...deps.repository,
+          setState: async () => {
+            throw new Error("Simulated process loss before ready");
+          },
+        },
+      }).plan(projectId, userId, selection.manifest),
+    ).rejects.toThrow("Simulated process loss");
+    const service = createImportService(ports());
+    expect((await db.select().from(imports))[0].state).toBe("planning");
+    expect((await service.resume(selection.manifest.importId, projectId)).state).toBe("finished");
+    await expect(service.resume(randomUUID(), projectId)).rejects.toThrow("import_not_found");
+  });
+  it("Stop racing a resume: the chunk after Stop writes nothing, and resume answers finished", async () => {
+    const selection = loose({});
+    selection.manifest.roots = [{ rootId: 0, kind: "folder", name: "Race" }];
+    for (let entryId = 0; entryId < 650; entryId++) {
+      selection.manifest.entries.push({
+        entryId,
+        rootId: 0,
+        path: `${entryId}.md`,
+        size: 0,
+        sha256: createHash("sha256").update("").digest("hex"),
+      });
+    }
+    const crashing = ports();
+    afterFirstNoteChunk(crashing, async () => {
+      throw new Error("Simulated process loss after committed chunk");
+    });
+    await expect(
+      createImportService(crashing).plan(projectId, userId, selection.manifest),
+    ).rejects.toThrow("Simulated process loss");
+    expect(await projectDocuments()).toHaveLength(200);
+    const deps = ports(),
+      gate = barrier();
+    afterFirstNoteChunk(deps, gate.pause);
+    const service = createImportService(deps),
+      resuming = service.resume(selection.manifest.importId, projectId);
+    try {
+      await gate.arrived;
+      expect(await projectDocuments()).toHaveLength(400);
+      await service.finish(selection.manifest.importId, projectId);
+    } finally {
+      gate.release();
+    }
+    expect((await resuming).state).toBe("finished");
+    expect(await projectDocuments()).toHaveLength(400);
   }, 120_000);
   it("Stop here between chunks prevents every later placeholder and resumes as finished", async () => {
     const selection = loose({});

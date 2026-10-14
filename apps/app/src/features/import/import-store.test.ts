@@ -1,11 +1,11 @@
 /** One import's store: the entry cursor only moves past changes it has read. */
-import type { ImportEntryReport, ImportReport, ImportSummary } from "@meridian/contracts";
+import type { ImportEntryStatus, ImportStatus, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import { fakeImportServer } from "./fake-import-server";
 import type { ImportApi } from "./import-api-port";
 import { ImportStore } from "./import-store";
 
-const planned: ImportEntryReport = {
+const planned: ImportEntryStatus = {
   entryId: 0,
   rootId: 0,
   path: "",
@@ -19,9 +19,12 @@ const planned: ImportEntryReport = {
   name: "Ch 1",
   reason: null,
   exists: true,
+  parentId: null,
+  scheme: "kb",
+  extension: "",
   wanted: false,
 };
-const landed: ImportEntryReport = { ...planned, state: "landed" };
+const landed: ImportEntryStatus = { ...planned, state: "landed" };
 
 function summary(version: string, state: ImportSummary["state"] = "ready"): ImportSummary {
   const done = state === "finished";
@@ -44,10 +47,11 @@ function summary(version: string, state: ImportSummary["state"] = "ready"): Impo
   };
 }
 
-function report(version: string, entries: ImportEntryReport[]): ImportReport {
+function report(version: string, entries: ImportEntryStatus[]): ImportStatus {
   return {
     ...summary(version),
     roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null, uri: null }],
+    folders: [],
     entries,
   };
 }
@@ -59,7 +63,12 @@ function server(): { api: ImportApi; since: string[] } {
     ...fakeImportServer().api,
     changes: async (_projectId, _importId, version) => {
       since.push(version);
-      return { ...summary("2", "finished"), roots: [], entries: version === "1" ? [landed] : [] };
+      return {
+        ...summary("2", "finished"),
+        roots: [],
+        folders: [],
+        entries: version === "1" ? [landed] : [],
+      };
     },
   };
   return { api, since };
@@ -82,7 +91,7 @@ describe("ImportStore", () => {
     const reads: string[] = [];
     const api: ImportApi = {
       ...fakeImportServer().api,
-      report: async () => {
+      status: async () => {
         reads.push("full");
         // Neither a moved root nor a lapsed claim moves the import's version.
         const now = report("1", [{ ...planned, state: "landing", wanted: true }]);
@@ -90,7 +99,7 @@ describe("ImportStore", () => {
       },
       changes: async () => {
         reads.push("changes");
-        return { ...summary("1"), roots: [], entries: [] };
+        return { ...summary("1"), roots: [], folders: [], entries: [] };
       },
     };
     const store = new ImportStore("p", "import-1", api);
@@ -109,6 +118,7 @@ describe("ImportStore", () => {
       changes: async () => ({
         ...summary("2"),
         roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0", uri: "kb://Moved/Ch 1" }],
+        folders: [],
         entries: [],
       }),
     };

@@ -7,12 +7,17 @@ shared fence is never upgraded, since two resumes would deadlock. Namespace lock
 entry-row locks. A parent that changes source during lock acquisition retries
 in a new transaction. The parent capability belongs to Context, not this domain.
 
-A plan persists the complete identity graph before creating anything. Chunks
+Every planned folder, entry and unreadable id is derived, never random: the server
+digests `(projectId, importId, rootId, kind, path)` with `importNodeId` from
+contracts (`planWithDerivedIds`), and the browser derives the same ids. A plan
+persists the complete identity graph before creating anything. Chunks
 track preparation separately from creation: folders and prose/DOCX notes exist
 after planning, while binaries and code documents only have allocated names.
 Chunks process one parent at a time and use the live listing plus the import's
 own uncreated allocations. The same selection resumes by content, independent
-of client numbers/order. A different selection conflicts.
+of client numbers/order. A different selection conflicts. `POST .../resume` (no
+body) runs a stored plan's remaining chunks, then the automatic finish, and
+answers the status in any state; it is also what a re-POST of the manifest does.
 
 Landing claims use an attempt id and two-minute lease. Conversion and link
 binding happen outside transactions. Content, pending metadata and the landed
@@ -115,7 +120,8 @@ their paths keep the source names (a name Meridian refuses, like `Who?.md`, is
 reported rather than refusing the selection); only bounds, empty, dot and
 control-character segments are checked.
 
-Reports first observe created entries' live address and presence and publish
+The status (`ImportStatus`) carries the plan's folders and each entry's planned
+parent, scheme, stored allocated name and extension. Statuses first observe created entries' live address and presence and publish
 any drift as ordinary entry changes, so every report field comes from one
 versioned cut and since never misses a move or delete. Rows a landing commit
 holds are skipped (SKIP LOCKED) and compared again next time. Addresses come

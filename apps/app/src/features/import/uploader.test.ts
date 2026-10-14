@@ -1,4 +1,4 @@
-import type { ImportEntryReport } from "@meridian/contracts";
+import type { ImportEntryStatus } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import type { HeldFile } from "./manifest";
 import { type UploadOutcome, UploadQueue } from "./uploader";
@@ -9,7 +9,7 @@ const held = (entryId: number, file = new File(["x"], `f${entryId}.md`)): HeldFi
   path: `f${entryId}.md`,
   file,
 });
-const answer = (entryId: number) => ({ entryId, state: "landed" }) as ImportEntryReport;
+const answer = (entryId: number) => ({ entryId, state: "landed" }) as ImportEntryStatus;
 
 /** Resolves when the queue says every queued file has settled. */
 function drained(build: (onIdle: () => void) => UploadQueue): Promise<void> {

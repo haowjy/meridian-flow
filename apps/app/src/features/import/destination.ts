@@ -1,8 +1,6 @@
 /** Where an import lands: an area root or a folder inside Manuscript, Knowledge Base or Unfiled. */
+import { IMPORT_SCHEMES, type ImportScheme } from "@meridian/contracts";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-
-export const IMPORT_SCHEMES = ["manuscript", "kb", "unfiled"] as const;
-export type ImportScheme = (typeof IMPORT_SCHEMES)[number];
 
 export function isImportScheme(scheme: ProjectContextTreeScheme): scheme is ImportScheme {
   return (IMPORT_SCHEMES as readonly string[]).includes(scheme);

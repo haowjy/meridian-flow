@@ -1,4 +1,4 @@
-import type { ImportReport } from "@meridian/contracts";
+import type { ImportStatus } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
@@ -166,7 +166,7 @@ describe("a clean finish", () => {
 });
 
 /** A report the server holds for an import another tab started: one file still arriving. */
-function serverReport(): ImportReport {
+function serverReport(): ImportStatus {
   return {
     importId: "elsewhere",
     state: "ready",
@@ -184,6 +184,7 @@ function serverReport(): ImportReport {
     version: "1",
     dismissedAt: null,
     roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null, uri: null }],
+    folders: [],
     entries: [],
   };
 }
@@ -239,7 +240,7 @@ describe("ImportCoordinator.stop before anything was sent", () => {
   it("retires the import here: no status row, no reads of an import the server never saw", async () => {
     const server = fakeImportServer();
     let reads = 0;
-    server.api.report = async () => {
+    server.api.status = async () => {
       reads += 1;
       throw new ImportRequestError(404, "import_not_found", undefined, "missing");
     };
@@ -383,7 +384,7 @@ describe("ImportCoordinator.continueImport", () => {
 
     const coordinator = new ImportCoordinator("p", server.api);
     const store = coordinator.store("crashed");
-    store.installReport(await server.api.report("p", "crashed"));
+    store.installReport(await server.api.status("p", "crashed"));
     await coordinator.continueImport("crashed", built);
     await settled(coordinator, "crashed");
 

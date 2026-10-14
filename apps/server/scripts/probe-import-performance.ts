@@ -248,7 +248,7 @@ try {
     }),
   );
   const landMs = performance.now() - landingStart;
-  const finished = await service.report(plan.importId, projectId);
+  const finished = await service.status(plan.importId, projectId);
   record({ phase: "counters", ...counters, bindMs: Math.round(counters.bindMs) });
   record({ phase: "summary", planMs, landMs, perFileMs: landMs / notes, state: finished.state });
 } finally {

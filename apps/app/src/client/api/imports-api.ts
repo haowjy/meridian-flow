@@ -1,10 +1,10 @@
 /** HTTP client for the import routes. Refusals keep the server's code; the app writes the words. */
 import type {
-  ImportEntryReport,
+  ImportEntryStatus,
   ImportManifest,
   ImportRefusalCode,
-  ImportReport,
-  ImportReportChanges,
+  ImportStatus,
+  ImportStatusChanges,
   ImportSummary,
 } from "@meridian/contracts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
@@ -53,7 +53,7 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
 }
 
 export function planImport(projectId: string, manifest: ImportManifest, signal?: AbortSignal) {
-  return request<ImportReport>(importsPath(projectId), {
+  return request<ImportStatus>(importsPath(projectId), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(manifest),
@@ -69,7 +69,7 @@ export function sendImportFiles(
 ) {
   const form = new FormData();
   for (const part of parts) form.append(String(part.entryId), part.file, part.name);
-  return request<{ entries: ImportEntryReport[] }>(`${importsPath(projectId, importId)}/files`, {
+  return request<{ entries: ImportEntryStatus[] }>(`${importsPath(projectId, importId)}/files`, {
     method: "POST",
     body: form,
     signal,
@@ -77,21 +77,28 @@ export function sendImportFiles(
 }
 
 export function finishImport(projectId: string, importId: string, signal?: AbortSignal) {
-  return request<ImportReport>(`${importsPath(projectId, importId)}/finish`, {
+  return request<ImportStatus>(`${importsPath(projectId, importId)}/finish`, {
+    method: "POST",
+    signal,
+  });
+}
+
+export function resumeImport(projectId: string, importId: string, signal?: AbortSignal) {
+  return request<ImportStatus>(`${importsPath(projectId, importId)}/resume`, {
     method: "POST",
     signal,
   });
 }
 
 export function dismissImport(projectId: string, importId: string, signal?: AbortSignal) {
-  return request<ImportReport>(`${importsPath(projectId, importId)}/dismiss`, {
+  return request<ImportStatus>(`${importsPath(projectId, importId)}/dismiss`, {
     method: "POST",
     signal,
   });
 }
 
-export function getImportReport(projectId: string, importId: string, signal?: AbortSignal) {
-  return request<ImportReport>(importsPath(projectId, importId), { method: "GET", signal });
+export function getImportStatus(projectId: string, importId: string, signal?: AbortSignal) {
+  return request<ImportStatus>(importsPath(projectId, importId), { method: "GET", signal });
 }
 
 export function getImportChanges(
@@ -100,7 +107,7 @@ export function getImportChanges(
   since: string,
   signal?: AbortSignal,
 ) {
-  return request<ImportReportChanges>(
+  return request<ImportStatusChanges>(
     `${importsPath(projectId, importId)}?since=${encodeURIComponent(since)}`,
     { method: "GET", signal },
   );

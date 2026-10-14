@@ -3,9 +3,9 @@
  * starts.
  */
 import { t } from "@lingui/core/macro";
-import type { ImportSummary } from "@meridian/contracts";
+import type { ImportScheme, ImportSummary } from "@meridian/contracts";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { type ImportDestination, type ImportScheme, isImportScheme } from "./destination";
+import { type ImportDestination, isImportScheme } from "./destination";
 import { fullyRead, type ImportState } from "./import-state";
 import { catalogPathOfUri } from "./tree-projection";
 

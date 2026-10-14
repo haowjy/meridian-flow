@@ -1,6 +1,10 @@
 /** Selection from a file input: a folder pick (`webkitdirectory`) or loose files (`multiple`). */
-import { EXPORT_MARKER_FILENAME, importPathDisposition } from "@meridian/contracts";
-import { isImportableName, isImportablePath, normalizeName, normalizeNamePath } from "./path-rules";
+import {
+  EXPORT_MARKER_FILENAME,
+  importPathDisposition,
+  normalizeNamePath,
+} from "@meridian/contracts";
+import { isImportableName, isImportablePath, normalizeName } from "./path-rules";
 import { readSideFile, type SelectedRoot, type Selection } from "./selection";
 
 const APP_JSON = ".obsidian/app.json";

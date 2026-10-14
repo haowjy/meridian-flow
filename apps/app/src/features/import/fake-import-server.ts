@@ -1,22 +1,22 @@
 /** A stand-in import server for tests: plans every file as planned, lands what it is sent. */
 import type {
   ImportCounts,
-  ImportEntryReport,
+  ImportEntryStatus,
   ImportManifest,
-  ImportReport,
+  ImportStatus,
 } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportApi } from "./import-api-port";
 
 export function fakeImportServer(options: { failSend?: (entryId: number) => boolean } = {}) {
-  const entries = new Map<number, ImportEntryReport>();
+  const entries = new Map<number, ImportEntryStatus>();
   let manifest: ImportManifest | null = null;
   let finished = false;
   let version = 1;
-  const calls = { plan: 0, send: [] as number[][], finish: 0, dismiss: 0 };
+  const calls = { plan: 0, send: [] as number[][], finish: 0, resume: 0, dismiss: 0 };
   const counts = (): ImportCounts => {
     const all = [...entries.values()];
-    const count = (state: ImportEntryReport["state"]) =>
+    const count = (state: ImportEntryStatus["state"]) =>
       all.filter((e) => e.state === state).length;
     return {
       total: all.filter((e) => e.state !== "skipped").length,
@@ -28,7 +28,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
       skipped: count("skipped"),
     };
   };
-  const report = (): ImportReport => ({
+  const status = (): ImportStatus => ({
     importId: manifest?.importId ?? "",
     state: finished ? "finished" : "ready",
     destination: { folderUri: manifest?.destination.folderUri ?? "kb://", folderId: null },
@@ -36,6 +36,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
     lastActivityAt: new Date().toISOString(),
     version: String(version),
     dismissedAt: null,
+    folders: [],
     roots: (manifest?.roots ?? []).map((root) => ({
       ...root,
       id: `root-${root.rootId}`,
@@ -59,13 +60,16 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
           kind: "note",
           state: "planned",
           uri: null,
+          parentId: null,
+          scheme: "kb",
           name: entry.path,
+          extension: "",
           reason: null,
           exists: true,
           wanted: true,
         });
       }
-      return report();
+      return status();
     },
     async send(_projectId, _importId, parts) {
       calls.send.push(parts.map((part) => part.entryId));
@@ -77,7 +81,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
       }
       version += 1;
       if (counts().arriving === 0 && counts().failed === 0) finished = true;
-      return { entries: parts.map((part) => entries.get(part.entryId) as ImportEntryReport) };
+      return { entries: parts.map((part) => entries.get(part.entryId) as ImportEntryStatus) };
     },
     async finish() {
       calls.finish += 1;
@@ -86,17 +90,21 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
           entries.set(id, { ...entry, state: "not_imported", wanted: false });
       finished = true;
       version += 1;
-      return report();
+      return status();
     },
     async dismiss() {
       calls.dismiss += 1;
-      return { ...report(), dismissedAt: new Date().toISOString() };
+      return { ...status(), dismissedAt: new Date().toISOString() };
     },
-    async report() {
-      return report();
+    async resume() {
+      calls.resume += 1;
+      return status();
+    },
+    async status() {
+      return status();
     },
     async changes() {
-      return report();
+      return status();
     },
     async listOpen() {
       return [];

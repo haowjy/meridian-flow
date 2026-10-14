@@ -1,7 +1,11 @@
 /** Selection from a drop: walks what `captureDrop` took inside the drop event. */
-import { EXPORT_MARKER_FILENAME, importPathDisposition } from "@meridian/contracts";
+import {
+  EXPORT_MARKER_FILENAME,
+  importPathDisposition,
+  normalizeNamePath,
+} from "@meridian/contracts";
 import type { DroppedItems } from "@/lib/dropped-items";
-import { isImportableName, normalizeName, normalizeNamePath } from "./path-rules";
+import { isImportableName, normalizeName } from "./path-rules";
 import { readSideFile, type SelectedRoot, type Selection, unreadableReason } from "./selection";
 
 type Walk = {

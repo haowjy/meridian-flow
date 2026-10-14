@@ -3,9 +3,10 @@ import {
   dismissImport,
   finishImport,
   getImportChanges,
-  getImportReport,
+  getImportStatus,
   listOpenImports,
   planImport,
+  resumeImport,
   sendImportFiles,
 } from "@/client/api/imports-api";
 
@@ -13,8 +14,9 @@ export type ImportApi = {
   plan: typeof planImport;
   send: typeof sendImportFiles;
   finish: typeof finishImport;
+  resume: typeof resumeImport;
   dismiss: typeof dismissImport;
-  report: typeof getImportReport;
+  status: typeof getImportStatus;
   changes: typeof getImportChanges;
   listOpen: typeof listOpenImports;
 };
@@ -23,8 +25,9 @@ export const importApi: ImportApi = {
   plan: planImport,
   send: sendImportFiles,
   finish: finishImport,
+  resume: resumeImport,
   dismiss: dismissImport,
-  report: getImportReport,
+  status: getImportStatus,
   changes: getImportChanges,
   listOpen: listOpenImports,
 };
