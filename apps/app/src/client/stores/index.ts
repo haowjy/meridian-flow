@@ -27,6 +27,7 @@ export {
   replaceOwner,
   reviewEntryOf,
   type ServerContextTab,
+  sameServerContextTabLocator,
   serverContextTabLocatorKey,
   soleReview,
   type TabOwner,
