@@ -120,7 +120,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     changeCount: totalChanges(files),
     /** Unread previews keep the controls visible but disabled until their scope is known. */
     showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
-    canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
+    canCommand: actionableFiles.length > 0 && !controller.dispositionLocked,
     projectId,
     workId,
     fileFailures,
