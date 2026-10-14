@@ -101,7 +101,6 @@ import { useChatThreadSession } from "./useChatThreadSession";
 import { useComposerSessionDraft } from "./useComposerSessionDraft";
 import { useDraftDock } from "./useDraftDock";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
-import { useOwedMessagesBlocked } from "./useOwedMessagesBlocked";
 import { useReplyRetry } from "./useReplyRetry";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
@@ -247,9 +246,8 @@ export function ChatView({
   // Only what the server has can be stopped: a stand-in brief is not a run yet.
   const { canStop: canStopSeed } = brief;
   // The record says the chat works or owes a reply; a message owed with no run, while the
-  // account can't start a turn, leaves the composer idle.
-  const owedMessagesBlocked = useOwedMessagesBlocked(isAwaitingExecution(runState));
-  const working = isBusy(runState) && !owedMessagesBlocked;
+  // record says the start is blocked on usage, leaves the composer idle.
+  const working = isBusy(runState) && !(isAwaitingExecution(runState) && usageBlocked);
   const run = useMemo(
     () => composerRun(turns.filter((turn) => !isHandoffSeed(turn) || canStopSeed(turn))),
     [canStopSeed, turns],

@@ -76,9 +76,6 @@ export const INITIAL_RUN_STATE_VIEW: RunStateView = {
   answers: new Map(),
 };
 
-/** Answers held per view: other devices' switches have no local source to clear them. */
-const MAX_ANSWERS = 32;
-
 const same = (a: RunStateIntent, kind: RunStateIntent["kind"], id: string) =>
   a.kind === kind && a.id === id;
 const answerKey = (kind: RunStateIntent["kind"], id: string) => `${kind}:${id}`;
@@ -90,7 +87,10 @@ const covered = (record: RunState | null, answer: string | null) =>
 const later = (a: string | null | undefined, b: string | null | undefined) =>
   a == null ? (b ?? null) : b == null ? a : compareSeq(a, b) >= 0 ? a : b;
 
-/** Record an answer, keeping the later of two, and the newest ones when over the cap. */
+/**
+ * Record an answer, keeping the later of two. Evidence is never evicted: the view is per chat,
+ * so it stays small, and dropping an old answer would let the journal rebuild bring its intent back.
+ */
 function withAnswer(
   answers: ReadonlyMap<string, string>,
   kind: RunStateIntent["kind"],
@@ -100,13 +100,7 @@ function withAnswer(
   const key = answerKey(kind, id);
   const held = answers.get(key);
   if (held !== undefined && compareSeq(held, version) >= 0) return answers;
-  const next = new Map(answers).set(key, version);
-  if (next.size > MAX_ANSWERS) {
-    let lowest: [string, string] | null = null;
-    for (const entry of next) if (!lowest || compareSeq(entry[1], lowest[1]) < 0) lowest = entry;
-    if (lowest) next.delete(lowest[0]);
-  }
-  return next;
+  return new Map(answers).set(key, version);
 }
 
 /**

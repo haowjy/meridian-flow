@@ -340,6 +340,12 @@ const SCENARIOS: {
       [record(at(2, 1), "draft"), "draft", []],
       [switched(at(3), "s9"), "draft", []],
       [record(at(3, 1), "direct"), "direct", []],
+      // Another device applies 32 more switches: none may evict s1's evidence.
+      ...Array.from({ length: 32 }, (_, i): [Event, Mode, string[]] => [
+        switched(at(4 + i), `x${i}`),
+        "direct",
+        [],
+      ]),
       // The journal still holds s1 unstamped; adding s2 re-adds it.
       [choose("s2", "draft", 2), "draft", ["s2:sending"]],
     ],
