@@ -26,6 +26,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } 
 import { httpErrorStatus } from "@/client/api/http-client";
 import { withdrawThreadControl } from "@/client/api/threads-api";
 import type { JournalSwitch, SwitchAnswer } from "@/client/chat-submissions/owner";
+import type { SwitchFrontier } from "@/client/chat-submissions/store";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
@@ -42,6 +43,7 @@ import {
 } from "./control-copy";
 import {
   EMPTY_LEDGER,
+  frontierOf,
   ledgerReducer,
   overlaidMode,
   proofNeed,
@@ -55,7 +57,7 @@ import { readWriteModeSwitch } from "./write-mode-model";
 /** What the chat's submission journal offers the ledger: its switches and their order. */
 export type SwitchJournal = {
   pending: readonly JournalSwitch[];
-  submit(id: string, mode: AiWriteMode): boolean;
+  submit(id: string, mode: AiWriteMode, after: SwitchFrontier): boolean;
   retry(id: string): void;
   /**
    * `removed`: the server can't have it (never posted, or refused). `admitted`: the record
@@ -121,8 +123,8 @@ export function useSwitchLedger(input: {
   const queryClient = useQueryClient();
   useSingleHostWarning(threadId);
   const [ledger, dispatch] = useReducer(ledgerReducer, EMPTY_LEDGER);
-  const latest = useRef({ journal, projectId });
-  latest.current = { journal, projectId };
+  const latest = useRef({ journal, projectId, ledger });
+  latest.current = { journal, projectId, ledger };
   const cache = useThreadSnapshotCache(threadId);
 
   useLayoutEffect(() => {
@@ -133,6 +135,7 @@ export function useSwitchLedger(input: {
         id: entry.id,
         mode: entry.mode,
         seq: entry.seq,
+        after: entry.after,
         posted: entry.posted,
         refused: entry.refused,
         failed: entry.failed,
@@ -206,17 +209,18 @@ export function useSwitchLedger(input: {
 
   useProofLoop({
     need: proofNeed(ledger),
-    snapshot: {
-      requestSeq: snapshot?.requestSeq,
-      dataUpdatedAt: cache?.dataUpdatedAt ?? 0,
-      errorUpdatedAt: cache?.errorUpdatedAt ?? 0,
-      isFetching: cache?.fetchStatus === "fetching",
-    },
+    accepted: snapshot,
+    errorUpdatedAt: cache?.errorUpdatedAt ?? 0,
+    isFetching: cache?.fetchStatus === "fetching",
     acquire: revalidate,
   });
 
   const switchWriteMode = useCallback((mode: AiWriteMode) => {
-    if (!latest.current.journal.submit(crypto.randomUUID(), mode)) {
+    // The record carries the server order this tab has seen, so every tab knows what the
+    // writer had seen when they chose.
+    if (
+      !latest.current.journal.submit(crypto.randomUUID(), mode, frontierOf(latest.current.ledger))
+    ) {
       announceError(controlStatusCopy({ kind: "write_mode", mode }, "failed"));
     }
   }, []);

@@ -18,6 +18,7 @@ import {
   onSwitchAnswered,
   type SwitchAnswer,
 } from "@/client/chat-submissions/owner";
+import type { SwitchFrontier } from "@/client/chat-submissions/store";
 import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
@@ -159,7 +160,8 @@ export function useChatSubmissions(
     /** Write-mode switches ride the same journal, so they are posted in order with the messages. */
     switches: {
       pending: driver.current?.switches ?? NO_SWITCHES,
-      submit: (id: string, mode: AiWriteMode) => driver.current?.submitSwitch(id, mode) ?? false,
+      submit: (id: string, mode: AiWriteMode, after?: SwitchFrontier) =>
+        driver.current?.submitSwitch(id, mode, after) ?? false,
       retry: (id: string) => driver.current?.retrySwitch(id),
       withdraw: (id: string) => driver.current?.withdrawSwitch(id) ?? Promise.resolve("admitted"),
       onAnswered,

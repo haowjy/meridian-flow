@@ -22,22 +22,25 @@
  *   neither pending nor as a divider and whose request began after the entry's watermark.
  *   The server reads turns and inbox in one transaction, so absence in a fresh snapshot is proof.
  * - A cancel-out cannot name the switch it cancelled, so that one is only `predicted`: the
- *   journal entry just before the answered one, of the other mode, still posted or queued.
- *   It is hidden but not terminal; a fresh snapshot lists it (mark cleared) or doesn't
- *   (gone). An answer never touches an entry the journal doesn't hold.
+ *   latest entry ordered before the answered one by what the writer had seen (the journal's
+ *   earlier records, or a server entry at or below the answered record's frontier), of the
+ *   other mode, still posted or queued. It may be another device's switch. It is hidden but
+ *   not terminal; a fresh snapshot lists it (mark cleared) or doesn't (gone). An answer never
+ *   touches an entry the journal doesn't hold, or one above the frontier.
  *
  * A record leaving the journal, or the id leaving the inbox, proves nothing: the entry stays
  * where it was, `proofNeed` turns non-null, and the caller asks for a snapshot. `observedAt`
  * is the highest reading of one counter of snapshot requests started, raised by every source
  * that shows the entry (a snapshot that lists it counts at its `request`); a snapshot proves
  * absence only when `request > observedAt`, so a failed, skipped or joined-older fetch never
- * does. Entries are ordered causally, as a merge of the journal's order and the server's
- * (see `causalOrder`).
+ * does. Entries are ordered causally, as a merge of the journal's `(seq, id)` order and the
+ * server's, joined by each local switch's frontier (see `causalOrder`).
  *
  * Display derives from here alone: `switchRows`, `overlaidMode`, and
  * `transitions` (what to announce and when caches are stale).
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
+import type { SwitchFrontier } from "@/client/chat-submissions/store";
 import type { QueuedControl, QueuedControlStatus } from "./thread-controls";
 
 export type LedgerState = "sending" | "posted" | "queued" | "applied" | "gone";
@@ -46,11 +49,13 @@ export type LedgerEntry = {
   id: string;
   mode: AiWriteMode;
   /**
-   * The order in which this tab's journal first held the entry, counted by the ledger, or
-   * `null` for a switch only the server has shown. A record's own `seq` is not it: the journal
-   * allocates `seq` above the records it still holds, so a retired record's number is reused.
+   * The journal's `seq` for the entry, or `null` for a switch only the server has shown. It
+   * is unique and monotonic per chat and survives retirement, so `(seq, id)` orders every
+   * entry the journal ever held, the same way the driver drains them.
    */
-  held: number | null;
+  seq: number | null;
+  /** The server order the choosing tab had seen when the writer chose it; travels with the record. */
+  after: SwitchFrontier | null;
   /** The server's pending-inbox order, once an inbox or snapshot has listed it. */
   serverSeq: number | null;
   state: LedgerState;
@@ -80,8 +85,6 @@ export type LedgerEntry = {
 
 export type Ledger = {
   entries: readonly LedgerEntry[];
-  /** How many entries the journal has held so far: the next entry's `held`. */
-  heldCount: number;
   /** Control ids that a rendered divider names. A stale inbox frame cannot revive these. */
   named: ReadonlySet<string>;
   /** Rendered divider turn ids, with the mode each switched to. */
@@ -94,7 +97,6 @@ export type Ledger = {
 
 export const EMPTY_LEDGER: Ledger = {
   entries: [],
-  heldCount: 0,
   named: new Set(),
   dividers: new Map(),
   positions: new Map(),
@@ -104,8 +106,10 @@ export const EMPTY_LEDGER: Ledger = {
 export type JournalRecord = {
   id: string;
   mode: AiWriteMode;
-  /** The journal's order among the records it holds now; not comparable with a retired record's. */
+  /** The journal's per-chat order: unique, monotonic, and kept across retirement. */
   seq: number;
+  /** The server order the choosing tab had seen; null for a record that carries none. */
+  after: SwitchFrontier | null;
   posted: boolean;
   /** The server refused it: Withdraw is local. */
   refused: boolean;
@@ -161,28 +165,61 @@ function serverPlace(entry: LedgerEntry, positions: ReadonlyMap<string, number>)
 
 const byId = (a: LedgerEntry, b: LedgerEntry) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+/** The journal's order, which is also the driver's drain order. */
+const byJournal = (a: LedgerEntry, b: LedgerEntry) => (a.seq ?? 0) - (b.seq ?? 0) || byId(a, b);
+
+/**
+ * What this tab has seen of the server's order for the chat's switches: the value a new local
+ * switch records, so that every tab knows what the writer had seen when they chose it.
+ */
+export function frontierOf(ledger: Ledger): SwitchFrontier {
+  const positions = [...ledger.positions.values()];
+  const seqs = ledger.entries.flatMap((entry) =>
+    entry.serverSeq === null ? [] : [entry.serverSeq],
+  );
+  return {
+    position: positions.length ? Math.max(...positions) : null,
+    seq: seqs.length ? Math.max(...seqs) : null,
+  };
+}
+
+/** The server held `entry` at or below `frontier`: it happened before the choice that recorded it. */
+function seenBy(
+  entry: LedgerEntry,
+  frontier: SwitchFrontier | null,
+  positions: ReadonlyMap<string, number>,
+): boolean {
+  if (!frontier) return false;
+  const position = positions.get(entry.id);
+  if (position !== undefined && frontier.position !== null && position <= frontier.position)
+    return true;
+  return entry.serverSeq !== null && frontier.seq !== null && entry.serverSeq <= frontier.seq;
+}
+
 /**
  * The chat's causal order, a merge of the two chains the sources give:
  *
- * - the journal chain: entries this tab's journal has held, in the order it first held them
- *   (this tab's known happens-before);
+ * - the journal chain: entries the journal ever held, by `(seq, id)` (the driver's order, so
+ *   the happens-before the writer made);
  * - the server chain: entries the server has placed (a divider's transcript position, else
  *   its inbox order).
  *
  * An entry on both chains anchors them together, so neither chain's order is ever reversed
- * by what the other holds: lifecycle state moves nothing. Where the chains disagree about
- * two anchors the journal wins. Between two entries no anchor relates, an applied entry
- * with no divider yet goes before what the server still holds queued (the server consumed it
- * first), and everything else the server holds goes before what only the journal knows.
+ * by what the other holds: lifecycle state moves nothing there. Where the chains disagree
+ * about two anchors the journal wins. A journal entry the server has not placed records the
+ * server order its tab had seen when it was chosen (`after`): everything the server holds at
+ * or below that comes before it, in every tab. Once the entry has its own server place, that
+ * place rules. The one pair still unrelated is a server entry above the frontier against a
+ * journal entry the server has not placed: an applied one (the server consumed it directly)
+ * goes before what the server still holds queued, and anything else the server holds goes
+ * first, since it is already ahead in the queue.
  */
 function causalOrder(
   entries: readonly LedgerEntry[],
   positions: ReadonlyMap<string, number>,
 ): LedgerEntry[] {
   const place = new Map(entries.map((entry) => [entry, serverPlace(entry, positions)] as const));
-  const journal = entries
-    .filter((e) => e.held !== null)
-    .sort((a, b) => (a.held ?? 0) - (b.held ?? 0) || byId(a, b));
+  const journal = entries.filter((e) => e.seq !== null).sort(byJournal);
   const server = entries
     .filter((e) => place.get(e))
     .sort((a, b) => {
@@ -207,6 +244,7 @@ function causalOrder(
       else if (onServer.has(jh) && !onJournal.has(sh)) take = sh;
       else if (onJournal.has(sh) && !onServer.has(jh)) take = jh;
       else if (onServer.has(jh)) take = jh;
+      else if (seenBy(sh, jh.after, positions)) take = sh;
       else take = jh.state === "applied" && place.get(sh)?.[0] === 1 ? jh : sh;
       out.push(take);
       placed.add(take);
@@ -237,7 +275,8 @@ function blank(id: string, mode: AiWriteMode, at: number, state: LedgerState): L
   return {
     id,
     mode,
-    held: null,
+    seq: null,
+    after: null,
     serverSeq: null,
     state,
     failed: false,
@@ -297,10 +336,8 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
   switch (event.type) {
     case "journal": {
       let next = ledger;
-      let heldCount = ledger.heldCount;
       const held = new Set(event.records.map((record) => record.id));
-      const inOrder = [...event.records].sort((a, b) => a.seq - b.seq || (a.id < b.id ? -1 : 1));
-      for (const record of inOrder) {
+      for (const record of event.records) {
         const state: LedgerState = next.named.has(record.id)
           ? "applied"
           : record.posted
@@ -310,7 +347,8 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
           const advanced = advance(entry, state);
           return {
             ...advanced,
-            held: advanced.held ?? heldCount++,
+            seq: record.seq,
+            after: record.after,
             inJournal: true,
             observedAt: raise(advanced, event.at),
             failed: RANK[advanced.state] <= RANK.posted && record.failed,
@@ -318,7 +356,6 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
           };
         });
       }
-      next = { ...next, heldCount };
       return mapEntries(next, (entry) =>
         entry.inJournal && !held.has(entry.id)
           ? {
@@ -361,18 +398,21 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
         },
       );
       if (event.result !== "cancelled") return next;
-      // The answer is evidence about its own id. The switch the server cancelled is the one
-      // this tab's journal ordered just before it, when that one is still held; the answer
-      // never lists ids, so anything else stays until a snapshot says otherwise.
+      // The answer is evidence about its own id. The switch the server cancelled is the latest
+      // one the writer had seen when they chose this: the journal's earlier record, or a server
+      // entry at or below this record's frontier. The answer never lists ids, so a switch above
+      // the frontier (one the server took after the choice) is left to a snapshot.
       const own = next.entries.find((entry) => entry.id === event.id);
-      if (own?.held == null) return next;
-      const ownHeld = own.held;
-      let before: LedgerEntry | null = null;
-      for (const entry of next.entries) {
-        if (entry.held === null || entry.held >= ownHeld || entry.state === "gone") continue;
-        if (!before || entry.held > (before.held ?? 0)) before = entry;
+      if (own?.seq == null) return next;
+      const { positions } = next;
+      const ordered = causalOrder(next.entries, positions);
+      let target: LedgerEntry | null = null;
+      for (const entry of ordered) {
+        if (entry === own || entry.state === "gone") continue;
+        const before =
+          entry.seq !== null ? byJournal(entry, own) < 0 : seenBy(entry, own.after, positions);
+        if (before) target = entry;
       }
-      const target = before;
       if (
         !target ||
         target.mode === event.mode ||

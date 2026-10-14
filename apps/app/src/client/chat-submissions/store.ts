@@ -20,6 +20,8 @@ import {
 
 export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 3;
 export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v3:";
+/** Per-chat `seq` counters. Outside the record prefix, so enumerating records never sees them. */
+export const CHAT_SUBMISSION_SEQ_PREFIX = "meridian:chat-submission-seq:v1:";
 
 export type ChatSubmissionStorage = {
   getItem(key: string): string | null;
@@ -29,6 +31,13 @@ export type ChatSubmissionStorage = {
   key(index: number): string | null;
 };
 
+/**
+ * The server order the writer's tab had seen for a chat's switches when they chose one: the
+ * highest transcript position of a switch divider and the highest pending-inbox `seq`. What
+ * the server held at or below it happened before the choice.
+ */
+export type SwitchFrontier = { position: number | null; seq: number | null };
+
 export type ChatSubmission = {
   recordId: string;
   submissionId: string;
@@ -36,9 +45,10 @@ export type ChatSubmission = {
   projectId: string | null;
   createdAt: string;
   /**
-   * The record's place in its chat's order: the chat's largest `seq` plus one, allocated
-   * when the record is first appended. Drain order and refusal barriers sort by it, then by
-   * `recordId`; `createdAt` is display only.
+   * The record's place in its chat's order, allocated when the record is first appended: one
+   * above both the chat's durable counter and its largest held `seq`, so a retired record's
+   * number is never reused. Drain order, refusal barriers and the switch ledger sort by it,
+   * then by `recordId`; `createdAt` is display only.
    */
   seq: number;
   text: string;
@@ -51,7 +61,7 @@ export type ChatSubmission = {
    * `seq` order with the messages around it; `recordId` and `submissionId` are
    * the control's own id, and the message fields are empty.
    */
-  control?: { kind: "write_mode"; mode: AiWriteMode };
+  control?: { kind: "write_mode"; mode: AiWriteMode; after?: SwitchFrontier };
   /**
    * Set before the control's first POST. A control without it never reached the server,
    * so the writer may withdraw it locally; with it, only the server's Withdraw is safe.
@@ -79,6 +89,10 @@ export function compareSubmissions(a: ChatSubmission, b: ChatSubmission): number
   return a.seq - b.seq || (a.recordId < b.recordId ? -1 : a.recordId > b.recordId ? 1 : 0);
 }
 
+export function chatSubmissionSeqKey(accountId: string, threadId: string): string {
+  return `${CHAT_SUBMISSION_SEQ_PREFIX}${accountId}:${threadId}`;
+}
+
 export function chatSubmissionStorageKey(accountId: string, recordId: string): string {
   return `${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:${recordId}`;
 }
@@ -89,6 +103,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isFrontierPart(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isSafeInteger(value));
+}
+
+function parseFrontier(value: unknown): SwitchFrontier | undefined {
+  return isObject(value) && isFrontierPart(value.position) && isFrontierPart(value.seq)
+    ? { position: value.position, seq: value.seq }
+    : undefined;
 }
 
 function isAiWriteMode(value: unknown): value is AiWriteMode {
@@ -159,7 +183,15 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
     ...(value.state === "rejected" ? { state: "rejected" } : {}),
-    ...(control ? { control: { kind: "write_mode", mode: control.mode as AiWriteMode } } : {}),
+    ...(control
+      ? {
+          control: {
+            kind: "write_mode",
+            mode: control.mode as AiWriteMode,
+            ...(parseFrontier(control.after) ? { after: parseFrontier(control.after) } : {}),
+          },
+        }
+      : {}),
     ...(value.posted ? { posted: true as const } : {}),
     ...(draft ? { draft } : {}),
     ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
@@ -255,7 +287,8 @@ export class DeviceChatSubmissionJournal {
   }
 
   /**
-   * Write a record. A new one gets the chat's next `seq`, read and written in this one
+   * Write a record. A new one gets the chat's next `seq`: the larger of the chat's durable
+   * counter and its largest held `seq`, plus one, with the counter raised in the same
    * synchronous step (localStorage has no await between them); an existing one keeps its
    * `seq`. Two tabs appending in the same tick can tie, and the id breaks that tie.
    */
@@ -263,14 +296,41 @@ export class DeviceChatSubmissionJournal {
     if (this.state?.accountId !== accountId) return false;
     const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));
     const existing = stored.read();
-    const seq =
-      existing?.seq ??
-      this.entries()
-        .filter((other) => other.threadId === entry.threadId)
-        .reduce((largest, other) => Math.max(largest, other.seq), 0) + 1;
+    const seq = existing?.seq ?? this.nextSeq(accountId, entry.threadId);
     const written = stored.write({ ...entry, seq });
     if (written) this.notify();
     return written;
+  }
+
+  private nextSeq(accountId: string, threadId: string): number {
+    const key = chatSubmissionSeqKey(accountId, threadId);
+    let counter = 0;
+    try {
+      const stored = Number(this.storage.getItem(key));
+      if (Number.isSafeInteger(stored) && stored > 0) counter = stored;
+    } catch {
+      /* An unreadable counter falls back to the held records. */
+    }
+    const held = this.entries()
+      .filter((other) => other.threadId === threadId)
+      .reduce((largest, other) => Math.max(largest, other.seq), 0);
+    const seq = Math.max(counter, held) + 1;
+    try {
+      this.storage.setItem(key, String(seq));
+    } catch {
+      /* Best effort: the held records still order this append. */
+    }
+    return seq;
+  }
+
+  /** Drop a deleted chat's counter with its other journal state. */
+  forgetOrder(accountId: string, threadId: string): void {
+    if (this.state?.accountId !== accountId) return;
+    try {
+      this.storage.removeItem(chatSubmissionSeqKey(accountId, threadId));
+    } catch {
+      /* Best effort. */
+    }
   }
 
   private recordFor(accountId: string, key: string, onError?: (error: unknown) => void) {
