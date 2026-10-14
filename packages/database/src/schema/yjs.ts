@@ -1,6 +1,7 @@
 import type {
   DocumentAuthorityId,
   DocumentId,
+  DraftBaseRevision,
   DraftCommandId,
   DraftCommandKind,
   DraftCommandResult,
@@ -76,9 +77,19 @@ export const documentBranches = pgTable(
     status: text("status").$type<DocumentBranchStatus>().notNull().default("active"),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
-    /** Current visible effect against the durable last-pulled live cut. */
-    hasEffect: boolean("has_effect").notNull().default(true),
+    /**
+     * The text differs from its base. Every write sets it explicitly; the default only governs an
+     * ensure that writes nothing.
+     */
+    hasEffect: boolean("has_effect").notNull().default(false),
     blocking: boolean("blocking").notNull().default(false),
+    /**
+     * The live revision the draft's `review_base` fragment reflects. Null means uninitialized: no
+     * base was ever written, and rebase refuses it.
+     */
+    baseRevision: jsonb("base_revision").$type<DraftBaseRevision>(),
+    /** Encoded rebase cuts, oldest first, retained for late-peer recovery. */
+    rebaseCuts: byteaColumn("rebase_cuts").array().notNull().default(sql`'{}'::bytea[]`),
     liveCut: byteaColumn("live_cut"),
     discardedStateVector: byteaColumn("discarded_state_vector"),
     schemaVersion: integer("schema_version")
@@ -177,6 +188,8 @@ export const pushLineage = pgTable(
       .references(() => turns.id, { onDelete: "set null" }),
     idempotencyKey: text("idempotency_key").notNull(),
     receiptId: uuid("receipt_id").notNull().default(sql`gen_random_uuid()`),
+    /** A content Apply's durable input and result; null for a publication that pushed journal rows. */
+    applyPayload: jsonb("apply_payload").$type<unknown>(),
     createdAt: createdAt(),
   },
   (table) => [
