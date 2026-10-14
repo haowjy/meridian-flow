@@ -1536,9 +1536,10 @@ msgid "Couldn't stop the brief. Try again."
 msgstr "Couldn't stop the brief. Try again."
 
 #: src/features/chat/thread-controls/useThreadControls.ts
-msgid "Couldn't stop the compaction. Try again."
-msgstr "Couldn't stop the compaction. Try again."
+#~ msgid "Couldn't stop the compaction. Try again."
+#~ msgstr "Couldn't stop the compaction. Try again."
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/useChatStop.ts
 msgid "Couldn't stop. Try again."
 msgstr "Couldn't stop. Try again."
@@ -3812,13 +3813,13 @@ msgstr "stopped"
 msgid "Stopped"
 msgstr "Stopped"
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/useChatStop.ts
 msgid "Stopping"
 msgstr "Stopping"
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/thread-controls/useThreadControls.ts
 msgid "Stopping compaction"
 msgstr "Stopping compaction"
 
