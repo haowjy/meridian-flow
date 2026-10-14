@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { catalogViewFromSnapshot } from "./catalog";
 import { planCatalogInstallation } from "./catalog-installation";
+import { createResourcePlacement } from "./folder-projection";
 import { joinReservation, pendingJoinTarget } from "./resource-join";
 import {
   prepareNamespaceAttempt,
@@ -176,5 +177,11 @@ describe("a create that joins a draft's document", () => {
     expect(dispatched?.next.intents.find((intent) => intent.intentId === "rename@2")).toMatchObject(
       { state: "submitted" },
     );
+  });
+
+  it("names the reservation's parent, so a rename typed before the answer can queue", () => {
+    // The rename form asks where the document sits to build its destination.
+    const placement = createResourcePlacement("project", [], []);
+    expect(placement.parentForResource(submitted())).toEqual(root);
   });
 });
