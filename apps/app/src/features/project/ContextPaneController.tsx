@@ -35,7 +35,7 @@ import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
 } from "./routing/ProjectNavigationContext";
-import type { ProjectRouteMask } from "./routing/ProjectRouteBoundary";
+import { isProjectRouteMasked, type ProjectRouteMask } from "./routing/ProjectRouteBoundary";
 import type { NavigationOptions } from "./routing/project-route";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -233,6 +233,7 @@ export function ContextViewerSurfaceController({
   // route. Their activation must not depend on search-param validation.
   const paneState = deriveContextPaneState({
     activeTab,
+    masked: isProjectRouteMasked(mask),
     destination:
       activeContextScheme !== null && activeContextPath && openTabKey
         ? {
