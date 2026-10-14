@@ -1,5 +1,4 @@
 /** Pure selection-first wikilink resolution and the shared project fallback ranking. */
-import type { ImportManifest } from "@meridian/contracts";
 import {
   type Located,
   locate,
@@ -41,29 +40,35 @@ export function normalizedPath(value: string): string {
   if (parts.length) parts[parts.length - 1] = storedName(parts.at(-1) ?? "");
   return parts.join("/");
 }
-/** A folder root's `.obsidian/app.json` settings, or the defaults when absent or not a JSON object. */
-export function obsidianSettings(root: ImportManifest["roots"][number] | undefined): {
+/** A folder root's `.obsidian/app.json` settings that steer where converted links point. */
+export interface ImportRootSettings {
   attachmentFolderPath: string;
   newFileLocation: string;
   newFileFolderPath: string;
-} {
-  const defaults = { attachmentFolderPath: "", newFileLocation: "root", newFileFolderPath: "" };
-  if (root?.appJson === undefined) return defaults;
+}
+export const DEFAULT_ROOT_SETTINGS: ImportRootSettings = {
+  attachmentFolderPath: "",
+  newFileLocation: "root",
+  newFileFolderPath: "",
+};
+/** Parses the settings once, at admission; absent or not a JSON object gives the defaults. */
+export function rootSettings(appJson: string | undefined): ImportRootSettings {
+  if (appJson === undefined) return DEFAULT_ROOT_SETTINGS;
   let value: unknown;
   try {
-    value = JSON.parse(root.appJson);
+    value = JSON.parse(appJson);
   } catch {
-    return defaults;
+    return DEFAULT_ROOT_SETTINGS;
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
-  const read = (key: string, fallback: string) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return DEFAULT_ROOT_SETTINGS;
+  const read = (key: keyof ImportRootSettings) => {
     const field = (value as Record<string, unknown>)[key];
-    return typeof field === "string" ? field : fallback;
+    return typeof field === "string" ? field : DEFAULT_ROOT_SETTINGS[key];
   };
   return {
-    attachmentFolderPath: read("attachmentFolderPath", ""),
-    newFileLocation: read("newFileLocation", "root"),
-    newFileFolderPath: read("newFileFolderPath", ""),
+    attachmentFolderPath: read("attachmentFolderPath"),
+    newFileLocation: read("newFileLocation"),
+    newFileFolderPath: read("newFileFolderPath"),
   };
 }
 interface Indexed {

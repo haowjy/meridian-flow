@@ -7,6 +7,16 @@ shared fence is never upgraded, since two resumes would deadlock. Namespace lock
 entry-row locks. A parent that changes source during lock acquisition retries
 in a new transaction. The parent capability belongs to Context, not this domain.
 
+Admission persists one plan and never the create command. `imports` is the
+header: identity, the destination as spelled, root descriptors with their parsed
+settings, the command fingerprint and the frozen existing-document snapshot
+(`existing_links`, read only to prepare a selection). Each folder, entry and
+unreadable item is one immutable `import_entries` record carrying the source
+facts landing needs: sniff bytes and frontmatter `aliases`. Claim, receive
+membership (one batched `fileEntryIds` lookup), preparation and replay read
+entries, never a manifest. Fences select only `state` and `sourceId`.
+`ImportManifest` is the POST body DTO and ends at admission.
+
 Every planned folder, entry and unreadable id is derived, never random: the server
 digests `(projectId, importId, rootId, kind, path)` with `importNodeId` from
 contracts (`planWithDerivedIds`), and the browser derives the same ids. A plan
@@ -47,7 +57,7 @@ write only when creation uses exactly that id.
 Conversion runs per landing note, outside transactions, over a link index built
 once per note: selected paths, basenames and aliases, then the project's
 existing Manuscript, Knowledge Base and Unfiled documents. Existing names and
-aliases are frozen into the record at plan time (manifest.existingLinks), so
+aliases are frozen into the plan header at admission (`imports.existing_links`), so
 their ranking locations never move; only the written addresses are respelled
 from current locations. Project fallback uses markup's shared wikilink
 ranking, the same one paste uses. Frontmatter is stored verbatim in

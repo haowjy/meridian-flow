@@ -10,8 +10,10 @@ import {
 } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
 import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
+import { frontmatterAliases } from "../../context/index.js";
 import { classify } from "./classify.js";
 import { type ImportArea, readExportMarker } from "./export-marker.js";
+import { type ImportRootSettings, rootSettings } from "./link-index.js";
 
 export interface PlannedNode {
   id: string;
@@ -31,6 +33,24 @@ export interface PlannedNode {
   state: "planned" | "skipped";
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
+  /** Admission facts landing needs: the leading bytes checked against the arrival, and `aliases:` from frontmatter. */
+  sniff?: string;
+  aliases?: string[];
+}
+/** What the plan header keeps of each selected root. */
+export interface PlannedRoot {
+  rootId: number;
+  kind: "folder" | "file";
+  name: string;
+  settings: ImportRootSettings;
+}
+export function plannedRoots(manifest: ImportManifest): PlannedRoot[] {
+  return manifest.roots.map(({ rootId, kind, name, appJson }) => ({
+    rootId,
+    kind,
+    name,
+    settings: rootSettings(appJson),
+  }));
 }
 export function codePointOrder(a: string, b: string): number {
   const left = Array.from(a, (character) => character.codePointAt(0) ?? 0);
@@ -165,6 +185,8 @@ export function planSelection(
         ...typed,
         size: entry.size,
         sha256: entry.sha256,
+        ...(entry.sniff !== undefined ? { sniff: entry.sniff } : {}),
+        aliases: entry.frontmatter ? frontmatterAliases(entry.frontmatter) : [],
         state: skip ? "skipped" : "planned",
         reason: skip,
       });

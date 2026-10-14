@@ -1,23 +1,30 @@
 /** Durable import state and transaction/fence ownership. */
-import type {
-  ImportCounts,
-  ImportEntryState,
-  ImportManifest,
-  ImportState,
-} from "@meridian/contracts";
+import type { ImportCounts, ImportEntryState, ImportState } from "@meridian/contracts";
 import type { ImportArea } from "../domain/export-marker.js";
 import type { ImportLinkCandidate } from "../domain/link-index.js";
-import type { PlannedNode } from "../domain/plan.js";
+import type { PlannedNode, PlannedRoot } from "../domain/plan.js";
+/**
+ * The plan header admission persists: identity, the create command's destination and root
+ * descriptors, and its fingerprint. The planned entries are the plan's body; the create
+ * command itself is never kept.
+ */
 export interface ImportRecord {
   id: string;
   projectId: string;
   userId: string;
-  manifest: ImportManifest & { existingLinks?: ImportLinkCandidate[] };
+  /** The destination as the command spelled it; `folderId` is what it resolved to. */
+  destinationUri: string;
+  roots: PlannedRoot[];
   fingerprint: string;
   sourceId: string;
   folderId: string | null;
   state: ImportState;
   createdAt?: Date;
+}
+/** What a fence needs to order work: lifecycle state and the destination's source. */
+export interface ImportFence {
+  state: ImportState;
+  sourceId: string;
 }
 /**
  * What `import_entries.spec` holds: the planned node fields no query or lease logic
@@ -68,10 +75,20 @@ export type ImportEntryColumnPatch = Partial<
 export type ImportEntryPatch = ImportEntryPayloadPatch & ImportEntryColumnPatch;
 export interface ImportRepository {
   transaction<T>(run: () => Promise<T>): Promise<T>;
-  insert(record: ImportRecord, nodes: PlannedNode[]): Promise<void>;
+  /** Persists the whole plan once: header, frozen existing-document snapshot and every node. */
+  insert(
+    record: ImportRecord,
+    existingLinks: readonly ImportLinkCandidate[],
+    nodes: PlannedNode[],
+  ): Promise<void>;
   read(id: string, projectId: string): Promise<ImportRecord | null>;
-  fence(id: string, projectId: string, exclusive?: boolean): Promise<ImportRecord | null>;
+  /** Locks the import row, selecting only the fields a fence reads. */
+  fence(id: string, projectId: string, exclusive?: boolean): Promise<ImportFence | null>;
+  /** The existing-document snapshot frozen at admission. */
+  existingLinks(id: string): Promise<ImportLinkCandidate[]>;
   entries(id: string): Promise<ImportEntry[]>;
+  /** Which of these file entry ids belong to the import: one lookup, however many. */
+  fileEntryIds(importId: string, entryIds: readonly number[]): Promise<Set<number>>;
   snapshot(
     id: string,
     projectId: string,
