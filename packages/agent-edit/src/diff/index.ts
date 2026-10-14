@@ -10,7 +10,13 @@ export { blocksEqual } from "./equal.js";
 export { REVIEW_BASE_FRAGMENT, readBlocks } from "./fragments.js";
 export { type BlockDiff, diffBlocks, type Hunk } from "./hunks.js";
 export { findLostEdits, invisibleInsertions, type LostEdit } from "./late-peer.js";
-export { type LateRecovery, recoverLatePeerEdits } from "./late-peer-recovery.js";
+export {
+  type LateRecovery,
+  type LateTyping,
+  NO_LATE_TYPING,
+  recoverLatePeerEdits,
+  revisesLateTyping,
+} from "./late-peer-recovery.js";
 export { type Conflict, type RebaseResult, rebase } from "./merge.js";
 export {
   composeGroups,

@@ -14,6 +14,14 @@ The subject is migrations `0048` to `0053` and the registered data step `review-
 DATABASE_URL=<local server url> pnpm --filter @meridian/server exec tsx scripts/prove-review-base-upgrade.ts
 ```
 
+The fixture seeds rows with explicit ids and revisions, so after the last seed the script advances every sequence
+past its column's highest value (`advanceSeededSequences` in
+`apps/server/server/test-support/foundation-upgrade-fixture.ts`): owned serials such as `push_lineage`'s, and the
+free-standing `context_availability_generation_seq` and `context_namespace_observation_version_seq`. A database built
+from this recipe by hand (a browser proof on the upgraded data) must do the same before the app writes to it.
+Otherwise the first new push collides on `push_lineage_pkey`, and a restored Work's availability revision (say 3)
+loses to a seeded head (7) under the client's monotonic rule, so the Work stays out of Active until reload (R5c U1).
+
 Each run allocates a random prefix, `r4b_proof_<run id>_*`, for every database it creates (cloned from one train
 database), never drops one it did not create, and drops only its own at the end. Runs can share a server.
 Assertions, each printed as `ok - ...`:
@@ -40,6 +48,6 @@ Record the commit, date and the printed assertions in the active work directory.
 
 ## Last run
 
-2026-10-14, branch `feat/dbr-kf6` at `341b71486` on the renamed `0050` to `0053` chain: exit 0, **49 assertions
-passed** in 63 s, no `r4b_proof_*` database left on the server afterwards. **Provisional:** KF4 removes
-`document_branches.rebase_cuts` and regenerates `0048` to `0053`; the final proof is re-run in R5c after that merges.
+2026-10-14, branch `feat/dbr-kf7` on `e17c72c1d` plus the sequence step: exit 0, **50 assertions passed** in 63 s
+(the new first one: the seeds moved `push_lineage_id_seq` and `context_availability_generation_seq`, and a second pass
+moves none), no `r4b_proof_*` database left on the server afterwards.
