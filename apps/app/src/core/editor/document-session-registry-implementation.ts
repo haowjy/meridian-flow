@@ -1,6 +1,6 @@
 /**
- * Account-scoped owner of live document sessions and generation-fenced branch rooms.
- * Live acquisition is lease-required; branch rooms remain generation-qualified.
+ * Account-scoped owner of live document sessions and branch (review) rooms.
+ * Live acquisition is lease-required; branch rooms are keyed by draft id.
  */
 import type {
   AccountId,
@@ -32,8 +32,7 @@ export {
   type LocalResourceLifetimePort,
 } from "./document-session-coordination-contract";
 
-import { BranchRoomPool, type BranchRoomRef } from "./branch-room-pool";
-import { BranchWriterHandoff } from "./branch-writer-handoff";
+import { BranchRoomPool } from "./branch-room-pool";
 import type {
   LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
@@ -71,7 +70,6 @@ export class DocumentSessionRegistry
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
   private readonly branchRooms: BranchRoomPool;
-  private readonly writerHandoff: BranchWriterHandoff;
   private readonly retainedByOwner = new Map<string, Map<DocumentId, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
@@ -111,7 +109,6 @@ export class DocumentSessionRegistry
       document,
       awareness,
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
-    epochSignal: AbortSignal = new AbortController().signal,
   ) {
     this.branchRooms = new BranchRoomPool({
       openSession: (roomKey) => {
@@ -121,12 +118,6 @@ export class DocumentSessionRegistry
       },
       teardownOwner: this.teardownOwner,
       teardownGraceMs,
-      carry: (carry) => this.writerHandoff.carry(carry),
-    });
-    this.writerHandoff = new BranchWriterHandoff({
-      pool: this.branchRooms,
-      epochSignal,
-      retryDelaysMs: [100, 500, 1_000, 5_000],
     });
     if (!accountId) return;
     this.accountId = accountId;
@@ -265,8 +256,8 @@ export class DocumentSessionRegistry
     return () => this.retainedObservers.delete(observer);
   }
 
-  retainBranchRooms(ownerId: string, refs: readonly BranchRoomRef[]): void {
-    this.branchRooms.retain(ownerId, refs);
+  retainBranchRooms(ownerId: string, roomKeys: readonly string[]): void {
+    this.branchRooms.retain(ownerId, roomKeys);
   }
 
   releaseBranchRooms(ownerId: string): void {
@@ -312,7 +303,6 @@ export class DocumentSessionRegistry
   beginCloseAccountRuntime(): void {
     if (this.accountRuntimeState !== "open") return;
     this.accountRuntimeState = "closing";
-    this.writerHandoff.dispose();
     this.localResources?.beginClose();
     this.coordination?.beginClose();
   }
@@ -347,7 +337,6 @@ export class DocumentSessionRegistry
   invalidateAll(): Promise<void> {
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
-    this.writerHandoff.dispose();
     this.branchRooms.invalidate();
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);

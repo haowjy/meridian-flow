@@ -79,8 +79,8 @@ lifetime.
   retains reconciliation, local-session, HA-before-HD hold, and authority-store
   stages across rejected attempts. Live rooms are acquired only through
   project-qualified availability leases and use explicit
-  account/document/generation persistence; review rooms use the opaque,
-  generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
+  account/document/generation persistence; review rooms use the opaque
+  `branch:<draftId>` room name from the draft's review metadata. Switching live ↔
   review is a session identity change and must remount the TipTap editor because
   Collaboration binds to a concrete Y.Doc/fragment at construction. The `review`
   mount identity requires both `itemKey` and `roomName`;
@@ -88,7 +88,7 @@ lifetime.
 - `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
   the contract:
   - `EditorMountIdentity` is a discriminated union over the two surfaces (live
-    room, optionally detached, versus a generation-fenced review room) plus the
+    room, optionally detached, versus a review room) plus the
     construction facts both share: document, project, schema type, and whether
     CollaborationCaret is installed. Every field changes which extensions exist
     or which shared document backs them, so `editorMountKey()` renders it into
@@ -146,16 +146,14 @@ lifetime.
   there is no detached-duration timer: a healthy cold load is `detached` for
   about a second.
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
-  the branch room is server-persisted and generation-fenced, and a local cache
-  risks recovering state into the wrong review generation. Every session receives
+  the branch room is server-persisted, and a local cache
+  risks recovering state into a draft that was closed and reopened. Every session receives
   either a qualified IndexedDB key or `none`. Admitted live keys include the
   authoritative generation; local resource keys include account and an exact
   persistence identity; branch/review sessions use `none`. A room-derived default
   key is not permitted. Writer edits the server has not acknowledged therefore
   survive a branch session's retirement only in its transport outbox: the pool
-  drains it on release or carries it on reset, and `BranchWriterHandoff`
-  replays a carry into the successor room
-  ([#731](https://github.com/haowjy/meridian-flow/issues/731)); a tab close or
+  drains it on release; nothing is carried to a successor room. A tab close or
   sign-out before acknowledgement loses them
   ([#739](https://github.com/haowjy/meridian-flow/issues/739)).
 - `local-content-initialization.ts` records exact-cache initialization in the
@@ -212,8 +210,8 @@ lifetime.
   reports nothing. There is no room-level reporter or suppression protocol.
 - Live peer marks are the session projection of durable trail changes. Their
   anchored popover lazy-reads trail detail and the originating thread snapshot.
-  The popover is evidence and navigation only; producing-turn receipt Undo/Redo
-  is the sole reversal authority for AI changes.
+  The popover is evidence and navigation only; the writer removes an AI change by
+  discarding it in the draft or with Ctrl+Z.
 - Opening a mark belongs to the projection, not to the host: the press
   ([`extensions/peer-mark-press.ts`](../extensions/peer-mark-press.ts)) is a
   per-editor store the plugin writes from its own DOM handlers, holding the
@@ -285,8 +283,19 @@ lifetime.
   it still owns, meaning it is the session's current caret publisher
   (`LocalPresence.caretPublisher`, one slot set by each accepted cursor write), never by
   comparing cursor values, so retire-then-publish and publish-then-retire with equal
-  cursors both leave the front view's caret. Undo needs no such rule: stacks are per editor and both track every
-  local edit.
+  cursors both leave the front view's caret. Undo is the other half: the room is shared, undo authorship is
+  not. y-tiptap tags every editor's local write with the one global `ySyncPluginKey`
+  origin, so two editors on one Y.Doc would each capture the other's typing.
+  `UndoOwnershipExtension` gives each editor its own origin (stamped on its binding's
+  writes, and used by its Discards) and its UndoManager keeps only those, so Ctrl+Z in
+  either view undoes only that view's own typing and Discards.
+  The stamp is written by an exact-version `pnpm patch` of `@tiptap/y-tiptap@3.0.5`
+  (`patches/@tiptap__y-tiptap@3.0.5.patch`): the binding gains `ownershipMeta`, and
+  `_prosemirrorChanged` sets that meta key on its own PM-to-Y transaction. Wrapping the
+  private method from outside stamped only after the transaction returned, so it worked
+  only under an outer transaction. Bumping y-tiptap makes pnpm fail the install, so
+  re-port the patch (two lines in `dist/y-tiptap.js` and `.cjs`) and re-run the two-editor
+  undo test. After installing or patching, run `pnpm dev:restart`.
 - The account resource replica durably reserves metadata before exact content
   opening. Content opening awaits account authority readiness and initializes
   the reserved database before exposing an editable handle. A failure may leave
@@ -651,7 +660,7 @@ the codec reads, and all of them produce the same node.
 `MarkdownAutoformatExtension` owns the fence info string and the Backspace
 recovery policy for inherited rules; a typed `[[name]]` stays text.
 `MarkdownAutoformatExtension.test.ts` exercises representative inherited
-triggers and the local mutation, refusal, and Undo/Redo boundaries. It is not
+triggers and the local mutation, refusal, and undo boundaries. It is not
 an exhaustive table of accepted Markdown spellings; when changing a distinct
 local rule or upgrading inherited rules, check the affected behavior directly.
 
@@ -677,63 +686,34 @@ the schema says `order`, so every list opened at one whatever number was typed.
 `MeridianOrderedList` renames it across the input rule and the DOM mapping
 both. Expect the same shape from any other inherited rule that carries attrs.
 
-## Draft review — projection-only view extension
+## Draft review: painting the browser-computed review
 
 Colocated under `extensions/inline-review/`. The extension is a ProseMirror
-plugin that owns a single `DecorationSet` describing every hunk in the current
-server review model. Keep this directory view-only: plugin state, decorations,
-commands, and the lightweight hunk model used by the plugin.
+plugin that owns one `DecorationSet` painted from a `ProjectedReview`
+(`projectReview(diffBlocks(review_base, draft))` plus the editor doc it was
+computed on and the `Y.Snapshot` it was computed at). Keep this directory
+view-only: plugin state, decorations, commands, and the removal widget.
 
-- Only installed when the editor is bound to a review branch room. The
-  `enableDraftInlineReview` flag on `createEditorExtensions` follows the
-  `review` variant of `EditorMountIdentity`, which needs both a draft id and its
-  generation-fenced room name; live editors never pay for it.
-- The plugin is the sole owner of decoration state. React talks to it via TipTap
-  commands (`setInlineReviewModel`, `setInlineReviewActiveOperation`,
-  `scrollInlineReviewOperationIntoView`) — never by holding decoration objects.
-- Stepping scrolls the manuscript block from the plugin's cached hunk geometry,
-  independent of painted marks and without moving the writer's selection.
-- Anchor resolution routes through the shared `relative-position-runtime.ts`
-  extraction of the y-prosemirror binding (`ySyncPluginKey` state).
-  `Y.RelativePosition` decode is separated from
-  decoration construction so anchor handling can be unit-tested without a DOM.
-- Remote Yjs sync and a new model from `useInlineReviewSync` re-resolve
-  RelativePositions. Pending writer ranges have their own coalesced relative-anchor
-  overlay, captured after the binding writes local edits. Local inserted ranges
-  paint gold immediately, even while marks are hidden; a model refresh retires
-  only the text it explicitly covers with writer attribution. Decorations are
-  output, never the source of pending attribution: a remote Yjs update rebuilds
-  the PM document as one whole-document replacement, which maps decoration
-  ranges away. Capture anchors after the binding writes; before `view.update`
-  the typed Yjs items do not exist.
-  Review dispositions never use browser mutation origins or collaborative history; Ctrl+Z is not a review restore
-  mechanism.
-- Editor-side click seam: mousedown on any decoration DOM
-  (`[data-review-operations]`) dispatches
-  `setInlineReviewActiveOperation` for the first listed operation. This is
-  the editor→sidebar direction of bidirectional linking; the sidebar
-  reads plugin state via `useEditorState` and reacts (scroll card into
-  view + emphasise). Pure deletions use an empty, visible navigation seam with
-  focused-operation emphasis; its DOM contains no manuscript text.
+- Only installed when the editor is bound to a draft room
+  (`enableDraftInlineReview`); live editors never pay for it.
+- `features/draft-review/review-runtime.ts` computes and pushes the
+  frame (`setReviewProjection`); the plugin maps the writer's edits lazily (`currentReview`); React also drives `setReviewActiveChange`,
+  `setReviewPulse`, `setReviewMarksVisible`, `setReviewBarSlot` and
+  `scrollReviewChangeIntoView`. Never hold decoration objects.
+- Red and green only. Draft text a change added is `meridian-review-added`
+  (a block mark over a wholly new block); base text it removed is a read-only
+  red widget at the hunk's anchor, ahead of the green. Format and whitespace
+  hunks paint green only. Who wrote a change is not painted.
+- Between projections the painted set maps through the writer's edits, so
+  typing never blanks the review. A projection computed on another doc than
+  the editor's now is ignored; the next one is on its way (120 ms debounce,
+  at once for a peer's write or a `review_base` change).
+- Every mark and removal carries `data-review-change` (the group id). A click
+  focuses its change (`inlineReviewFocusIntent`).
+- Discard writes under the editor's own undo origin (`undoOriginOf`), which its
+  `Y.UndoManager` tracks; Ctrl+Z restores it, in that editor only. Apply is a server merge and is not undone.
 
-Attribution → highlight color (agent = jade, writer = gold), review palette
-lives in `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
-
-The plugin paints **one decoration per `ReviewHunk.spans` entry** rather
-than one per hunk, so nested authorship (a writer edit inside an AI
-insertion) renders in each owner's own color — gold inside green. Hunks with no
-resolvable spans fall back to whole-hunk coloring.
-
-Tone is decided once per hunk (`hunkTone` in `model.ts`), before text or block
-geometry: a merge artifact or an unclassified hunk is **neutral** (the dashed
-seam, a ring on a block, an unattributed struck removal and fold), never an
-invented AI colour. Anchors are resolved once per model and document into
-`ReviewGeometry` (`resolveGeometry`), kept in plugin state; focus, pulse, folds,
-the bar slot and a locale change repaint from it (`paintDecorations`) without
-resolving a position. Marks visibility gates only the view output, retaining
-the full projection. Remote rebuilds, a new model and a changed document re-resolve. The removal widget's copy is Lingui, drawn at
-render time. Widget reuse keys include exact removal text, segment attribution
-and emitted attributes; identical refetches retain unfolded state.
+Palette: `packages/design-tokens/src/ink-jade.css` under `--color-review-*`.
 
 ## Change-trail navigation
 
@@ -791,11 +771,11 @@ the writer's next edit or caret move. Remote Yjs transactions (`ySyncPluginKey`
 meta) do not clear it: they arrive constantly and would wipe the mark before it
 was read.
 
-## Selective Discard
+## Discard
 
-Discard is a server command for a closure class, never a browser edit to the
-review Y.Doc. The shared command record owns its claim; the executor retains
-that claim through refresh. See the [draft-review lifecycle reference](../../../features/draft-review/.context/draft-review.md) for command ordering.
+Discard of a change or the whole draft is a local edit of the review Y.Doc under
+the editor's own undo origin, tracked by its `Y.UndoManager` so one Ctrl+Z restores it. Only item
+and Work Discard are server commands, and they close the draft. See the [draft-review reference](../../../features/draft-review/.context/draft-review.md).
 
 ## Math extension decision
 

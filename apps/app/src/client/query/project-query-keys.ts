@@ -72,9 +72,6 @@ export const projectQueryKeys = {
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
   /** Client-only: this project's Work command records (`work-command-store`). */
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
-  /** Client-only, account-cache lifetime: undisplayed/dismissible handoff loss on this document. */
-  writerHandoffLoss: (projectId: string, documentId: string) =>
-    ["projects", projectId, "documents", documentId, "writer-handoff-loss"] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,
   /** The drafts with changes to one document; invalidated with the Work draft lists. */
@@ -82,7 +79,20 @@ export const projectQueryKeys = {
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>
     ["projects", projectId, "document-draft-hints"] as const,
-  workDraftPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
+  /** An item's chat-name hint; a hint only, never read for a decision. */
+  workDraftAttribution: (projectId: string, workId: string, documentId: string, itemKey: string) =>
+    [
+      "projects",
+      projectId,
+      "works",
+      workId,
+      "documents",
+      documentId,
+      "draft-attribution",
+      itemKey,
+    ] as const,
+  /** Where to open one item (`DraftItemMeta`): its room, whether it has changes. */
+  workDraftMeta: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
     [
       "projects",
       projectId,

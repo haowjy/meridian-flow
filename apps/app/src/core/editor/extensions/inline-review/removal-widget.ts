@@ -1,6 +1,6 @@
 /**
- * Removed live text, shown inline in the draft as a read-only struck-through
- * mark. The text is a ProseMirror widget DOM node: it is never part of the
+ * Removed base text, shown inline in the draft as a read-only red struck-through
+ * widget. The text is a ProseMirror widget DOM node: it is never part of the
  * Y.Doc or the TipTap document, so it cannot be typed into, saved, copied
  * out of the editor, or selected into the document.
  *
@@ -9,152 +9,87 @@
  * plan lands; the extension supplies the click handlers.
  */
 import { plural, t } from "@lingui/core/macro";
-import type { RemovalKind } from "./model";
 
 /** A removal longer than this many characters folds to a one-line label until clicked. */
 export const REMOVAL_COLLAPSE_CHARS = 200;
 
 export const REMOVAL_CLASS = "meridian-review-removal";
 export const REMOVAL_BLOCK_CLASS = "meridian-review-removal-block";
-export const REMOVAL_WRITER_CLASS = "meridian-review-removal-writer";
-/** Every removed stretch is unattributed: the fold wears no author's colour. */
-export const REMOVAL_UNATTRIBUTED_CLASS = "meridian-review-removal-unattributed";
 export const REMOVAL_TOGGLE_CLASS = "meridian-review-removal-toggle";
 /** The removal sits before punctuation or a line end, so it keeps no air after it. */
 export const REMOVAL_TIGHT_CLASS = "meridian-review-removal-tight";
 export const REMOVAL_TEXT_CLASS = "meridian-review-removal-text";
-export const REMOVAL_TEXT_WRITER_CLASS = "meridian-review-removal-text-writer";
-export const REMOVAL_TEXT_UNATTRIBUTED_CLASS = "meridian-review-removal-text-unattributed";
-/** On a removal whose change is being discarded: drawn as the plain prose it is about to become (the markup under it stays, so a withdrawn Discard can show it struck again). */
-export const RESTORED_CLASS = "meridian-review-restored";
 /**
  * On a block removal: how many top-level blocks of the document it stands for.
  * Said by the widget, not counted from its children (a fold has none, an open one
  * also holds a button), so what reads a captured page counts its blocks right.
  */
 export const REMOVED_BLOCKS_ATTR = "data-review-removed-blocks";
-/**
- * A block's Yjs item (`blockItemKey`). On a removal's paragraph it is the live
- * block it was, which the draft's next generation still has; on a cover's copy of
- * a real block, the block itself.
- */
-export const BLOCK_ID_ATTR = "data-review-block-id";
-/** A long removal shown as its label only: its text is in the widget, hidden, for whatever restores it. */
+/** A long removal shown as its label only: its text is in the widget, hidden. */
 export const REMOVAL_FOLDED_CLASS = "meridian-review-removal-folded";
 
-/** A stretch of removed text and who took it out; `unattributed` when the server could not say. */
-export interface RemovalSegment {
-  text: string;
-  kind: RemovalKind;
-}
-
-/** One removal widget: the live text one or more adjacent hunks took out at a single position. */
+/** One removal widget: the base text one or more adjacent hunks took out at a single position. */
 export interface RemovalPlan {
-  /** Stable across preview refetches (hunk ids are positional, so they are not used). */
+  /** Stable across projections (positions are not part of it). */
   identity: string;
   position: number;
   /** Sits between blocks and renders as paragraphs, rather than inside a text block. */
   block: boolean;
   /** Followed by punctuation or the end of the line: no gap after the struck text. */
   tight: boolean;
-  /**
-   * The writer's only when every segment is, unattributed only when every
-   * segment is, the AI's otherwise; colours the fold, since the text carries its own.
-   */
-  kind: RemovalKind;
-  /** Each paragraph is its removed stretches in order, each in its author's colour. */
-  paragraphs: RemovalSegment[][];
-  /** The live block each paragraph was (its `blockItemKey`), where the server named it. */
-  blockIds: (string | null)[];
-  hunkIds: string[];
-  operationIds: string[];
-  /** Its change is being discarded: drawn as plain prose, with no strike, tint, fold or click. */
-  restored: boolean;
+  paragraphs: string[];
+  /** The change that removed it. */
+  changeId: string;
 }
 
-/** One removal before grouping: a single hunk's deleted text at its resolved position. */
+/** One removal before grouping: a single hunk's removed text at its position. */
 export interface RemovalInput {
   position: number;
   block: boolean;
-  segments: RemovalSegment[];
-  blockId?: string | undefined;
+  paragraphs: string[];
   tight: boolean;
-  hunkId: string;
-  operationIds: string[];
-  restored: boolean;
+  changeId: string;
 }
 
 /**
- * Merge consecutive block-level removals that land at the same position into
+ * Merge consecutive block-level removals of one change that land at the same position into
  * one plan, so three deleted paragraphs read "3 paragraphs removed". Inline
  * removals stay one plan each.
  */
 export function planRemovals(inputs: readonly RemovalInput[]): RemovalPlan[] {
   const plans: RemovalPlan[] = [];
   for (const input of inputs) {
-    const segments = input.segments.filter((segment) => segment.text !== "");
-    if (
-      segments
-        .map((segment) => segment.text)
-        .join("")
-        .trim() === ""
-    )
-      continue;
+    const paragraphs = input.paragraphs.filter((paragraph) => paragraph !== "");
+    if (paragraphs.join("").trim() === "") continue;
     const last = plans[plans.length - 1];
     if (
       input.block &&
       last?.block &&
       last.position === input.position &&
-      last.restored === input.restored
+      last.changeId === input.changeId
     ) {
-      last.paragraphs.push(segments);
-      last.blockIds.push(input.blockId ?? null);
-      last.hunkIds.push(input.hunkId);
-      for (const id of input.operationIds) {
-        if (!last.operationIds.includes(id)) last.operationIds.push(id);
-      }
-      last.kind = planKind(last.paragraphs);
-      last.identity = removalIdentity(last.operationIds, last.paragraphs);
+      last.paragraphs.push(...paragraphs);
+      last.identity = removalIdentity(last.changeId, last.paragraphs);
       continue;
     }
     plans.push({
-      identity: removalIdentity(input.operationIds, [segments]),
+      identity: removalIdentity(input.changeId, paragraphs),
       position: input.position,
       block: input.block,
       tight: input.tight,
-      kind: planKind([segments]),
-      paragraphs: [segments],
-      blockIds: [input.blockId ?? null],
-      hunkIds: [input.hunkId],
-      operationIds: [...input.operationIds],
-      restored: input.restored,
+      paragraphs,
+      changeId: input.changeId,
     });
   }
   return plans;
 }
 
-function paragraphText(paragraph: readonly RemovalSegment[]): string {
-  return paragraph.map((segment) => segment.text).join("");
-}
-
-function planKind(paragraphs: readonly RemovalSegment[][]): RemovalKind {
-  const every = (kind: RemovalKind) =>
-    paragraphs.every((paragraph) => paragraph.every((segment) => segment.kind === kind));
-  return every("writer") ? "writer" : every("unattributed") ? "unattributed" : "agent";
-}
-
-function removalIdentity(
-  operationIds: readonly string[],
-  paragraphs: readonly RemovalSegment[][],
-): string {
-  return JSON.stringify([
-    operationIds,
-    paragraphs.map((paragraph) => paragraph.map(({ text, kind }) => [text, kind])),
-  ]);
+function removalIdentity(changeId: string, paragraphs: readonly string[]): string {
+  return JSON.stringify([changeId, paragraphs]);
 }
 
 export function removalCharCount(plan: RemovalPlan): number {
-  return plan.paragraphs.reduce((total, paragraph) => total + paragraphText(paragraph).length, 0);
+  return plan.paragraphs.reduce((total, paragraph) => total + paragraph.length, 0);
 }
 
 export function isCollapsible(plan: RemovalPlan): boolean {
@@ -171,7 +106,7 @@ export function removalLabel(plan: RemovalPlan): string {
     const count = plan.paragraphs.length;
     return plural(count, { one: "# paragraph removed", other: "# paragraphs removed" });
   }
-  const words = plan.paragraphs.map(paragraphText).join(" ").split(/\s+/).filter(Boolean).length;
+  const words = plan.paragraphs.join(" ").split(/\s+/).filter(Boolean).length;
   return plural(words, { one: "# word removed", other: "# words removed" });
 }
 
@@ -181,7 +116,7 @@ export interface RemovalHandlers {
    * fold toggles that removal open or closed. `keyboard` is true when the fold
    * was activated from the keyboard, so focus can follow it to the rebuilt widget.
    */
-  activate: (operationId: string, toggleIdentity: string | null, keyboard: boolean) => void;
+  activate: (changeId: string, toggleIdentity: string | null, keyboard: boolean) => void;
   /**
    * A click on the struck text: the caret goes to where the removal stands, on
    * the side of it that was clicked, so typing lands there. The removal itself
@@ -198,8 +133,7 @@ export interface RemovalRenderOptions {
   /** Put keyboard focus on the fold once this widget is in the document. */
   refocusToggle: boolean;
   handlers: RemovalHandlers;
-  hunkAttr: string;
-  operationAttr: string;
+  changeAttr: string;
 }
 
 /** Build the widget DOM. Non-editable and unselectable; clicking focuses the change or toggles a fold. */
@@ -208,26 +142,21 @@ export function createRemovalElement(
   plan: RemovalPlan,
   options: RemovalRenderOptions,
 ): HTMLElement {
-  // A Discard in flight shows the whole original: nothing is folded.
-  const collapsible = isCollapsible(plan) && !plan.restored;
+  const collapsible = isCollapsible(plan);
   const folded = collapsible && !options.expanded;
   const root: HTMLElement = doc.createElement(plan.block ? "div" : "span");
   root.className = [
     REMOVAL_CLASS,
     plan.block ? REMOVAL_BLOCK_CLASS : "",
-    plan.restored ? RESTORED_CLASS : "",
     folded ? REMOVAL_FOLDED_CLASS : "",
     plan.tight && !plan.block ? REMOVAL_TIGHT_CLASS : "",
-    plan.kind === "writer" ? REMOVAL_WRITER_CLASS : "",
-    plan.kind === "unattributed" ? REMOVAL_UNATTRIBUTED_CLASS : "",
     options.focused ? "meridian-review-emphasized" : "",
     options.pulsed ? "meridian-review-arrived" : "",
   ]
     .filter(Boolean)
     .join(" ");
   root.setAttribute("contenteditable", "false");
-  root.setAttribute(options.hunkAttr, plan.hunkIds.join(" "));
-  root.setAttribute(options.operationAttr, plan.operationIds.join(" "));
+  root.setAttribute(options.changeAttr, plan.changeId);
   if (plan.block) root.setAttribute(REMOVED_BLOCKS_ATTR, String(plan.paragraphs.length));
 
   if (collapsible) {
@@ -239,29 +168,17 @@ export function createRemovalElement(
     root.append(toggle);
     if (options.refocusToggle) queueMicrotask(() => toggle.focus());
   }
-  // The text is always here: a fold only hides it, so a projection that shows the
-  // original (a Discard accepted under a cover) has it to show.
-  for (const [index, segments] of plan.paragraphs.entries()) {
-    const struck = segments.map((segment) => {
-      const del = doc.createElement("del");
-      del.className = [
-        REMOVAL_TEXT_CLASS,
-        segment.kind === "writer" ? REMOVAL_TEXT_WRITER_CLASS : "",
-        segment.kind === "unattributed" ? REMOVAL_TEXT_UNATTRIBUTED_CLASS : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      del.textContent = segment.text;
-      return del;
-    });
+  // The text is always here: a fold only hides it.
+  for (const text of plan.paragraphs) {
+    const del = doc.createElement("del");
+    del.className = REMOVAL_TEXT_CLASS;
+    del.textContent = text;
     if (plan.block) {
       const paragraph = doc.createElement("p");
-      const blockId = plan.blockIds[index];
-      if (blockId) paragraph.setAttribute(BLOCK_ID_ATTR, blockId);
-      paragraph.append(...struck);
+      paragraph.append(del);
       root.append(paragraph);
     } else {
-      root.append(...struck);
+      root.append(del);
     }
   }
   // Keep the editor's caret and focus where the writer left them. The change is
@@ -269,17 +186,13 @@ export function createRemovalElement(
   // between press and release would swallow the click.
   root.addEventListener("mousedown", (event) => event.preventDefault());
   root.addEventListener("click", (event) => {
-    // The original of a change being discarded is prose now: it activates nothing.
-    if (plan.restored) return;
-    const [operationId] = plan.operationIds;
-    if (!operationId) return;
     const onToggle =
       event.target instanceof Element && event.target.closest(`.${REMOVAL_TOGGLE_CLASS}`);
     // A pointer click on the struck text (not the fold, not Enter on it). The side
     // is read before activating: activating rebuilds this widget, and a detached
     // one has no box to measure.
     const side = !onToggle && event.detail > 0 ? clickedSide(root, event, plan.block) : null;
-    options.handlers.activate(operationId, onToggle ? plan.identity : null, event.detail === 0);
+    options.handlers.activate(plan.changeId, onToggle ? plan.identity : null, event.detail === 0);
     if (side !== null) options.handlers.placeCaret(plan.identity, side);
   });
   return root;

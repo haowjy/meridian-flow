@@ -30,7 +30,7 @@ Affected paths: `apps/app/src/core/editor/document-session.ts` and
 
 Design reference: [inline-diff-decoration-architecture.md].
 
-[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
+[inline-diff-decoration-architecture.md]: https://github.com/haowjy/meridian-flow-docs/blob/main/archive/work/human-undo-affordance/design/inline-diff-decoration-architecture.md
 
 ## Prove a block move leaves every other block's hash alone — [#111]
 

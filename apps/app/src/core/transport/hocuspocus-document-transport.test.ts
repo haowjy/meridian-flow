@@ -74,7 +74,7 @@ describe("Hocuspocus document transport adapter", () => {
     pending,
     disposition,
   }) => {
-    const roomName = "branch:draft-1:gen:1";
+    const roomName = "branch:draft-1";
     const document = new Y.Doc();
     const awareness = new Awareness(document);
     const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
