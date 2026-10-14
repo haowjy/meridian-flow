@@ -135,4 +135,16 @@ ALTER TABLE "document_branches"
   DROP COLUMN IF EXISTS "work_id", -- migration-lint: skip DROP_COLUMN (0042 keyed every branch by its Work's draft)
   DROP COLUMN IF EXISTS "deleted_by_work_id"; -- migration-lint: skip DROP_COLUMN (0042 reopened the branches a Work delete closed)
 --> statement-breakpoint
+-- A device's create id that joined a draft's document (additive: a new table and its index).
+CREATE TABLE "document_forwards" (
+	"from_document_id" uuid PRIMARY KEY NOT NULL,
+	"to_document_id" uuid NOT NULL,
+	"project_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "document_forwards" ADD CONSTRAINT "document_forwards_to_document_id_documents_id_fk" FOREIGN KEY ("to_document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "document_forwards" ADD CONSTRAINT "document_forwards_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "document_forwards_to" ON "document_forwards" USING btree ("to_document_id");
+--> statement-breakpoint
 RESET lock_timeout;

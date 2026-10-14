@@ -9,6 +9,7 @@
 import { randomUUID } from "node:crypto";
 import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
 import type { DraftCommandResult, ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { CreateUntitledContextDocumentAnswer } from "@meridian/contracts/protocol";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { branchPushSettlementBatches, works } from "@meridian/database/schema";
@@ -37,6 +38,7 @@ import {
   createContextEntry,
   parseCreateContextEntryBody,
 } from "../routes/api/projects/[projectId]/context/[scheme]/create.post.js";
+import { createUntitledContextDocument } from "../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js";
 import { bindEditAgent, type useComposedRuntimes } from "./composed-runtime.js";
 import { type DraftTreeWorld, type ScenarioWork, sourceOf } from "./draft-tree-seeds.js";
 import { expirePendingSettlementClaims } from "./settlement-claims.js";
@@ -69,12 +71,18 @@ export interface ScenarioWriter {
   create(
     path: string,
     options?: {
-      documentId?: DocumentId;
       content?: string;
       /** Create in this Work's Scratch (`scratch://@slug/path`) instead of a project source. */
       inScratchOf?: ScenarioWork;
     },
   ): Promise<{ status: "created" | "conflict"; documentId?: string }>;
+  /**
+   * The sidebar's New file: the create-untitled route's core with the typed destination,
+   * under the id the device minted. `path` is Manuscript-relative.
+   */
+  createInstant(path: string, documentId: DocumentId): Promise<CreateUntitledContextDocumentAnswer>;
+  /** The editor's New document: a nameless create into the Manuscript root. */
+  createNameless(documentId: DocumentId): Promise<CreateUntitledContextDocumentAnswer>;
   /** `create` with content that must succeed; the document's id. */
   createDocument(path: string, content: string): Promise<DocumentId>;
   mkdir(path: string): Promise<void>;
@@ -368,12 +376,43 @@ export function draftTreeCommands(
           type: "file",
           path: `/${rel}`,
           ...(createOptions.content !== undefined ? { content: createOptions.content } : {}),
-          ...(createOptions.documentId ? { documentId: createOptions.documentId } : {}),
         }),
       });
       return result.status === "created"
         ? { status: "created", ...(result.documentId ? { documentId: result.documentId } : {}) }
         : { status: "conflict" };
+    },
+    async createInstant(path, documentId) {
+      const segments = path.split("/").filter(Boolean);
+      const name = segments.pop() ?? "";
+      return createUntitledContextDocument({
+        port: await livePort(),
+        userId,
+        scheme: "manuscript",
+        workId: null,
+        body: {
+          documentId,
+          destination: {
+            parent: {
+              kind: "root",
+              scheme: "manuscript",
+              owner: { workId: null },
+              ...(segments.length ? { createFolders: segments } : {}),
+            },
+            name,
+          },
+        },
+        destinationRootUri: "manuscript://",
+      });
+    },
+    async createNameless(documentId) {
+      return createUntitledContextDocument({
+        port: await livePort(),
+        userId,
+        scheme: "manuscript",
+        workId: null,
+        body: { documentId },
+      });
     },
     async createDocument(path, content) {
       const created = await writer.create(path, { content });

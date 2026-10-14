@@ -2,7 +2,7 @@
  * The hidden-node lifecycle's vocabulary, with no database dependency, so ports and
  * adapters can name it without importing the Drizzle implementation (`creates.ts`, `end-use.ts`).
  */
-import type { ContextSourceId, DocumentId, ProjectId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
@@ -47,11 +47,7 @@ export type LiveCreateCandidate =
 export type RevealExpectation = {
   documentId: DocumentId;
   sourceId: ContextSourceId;
-} & (
-  | { byId: false }
-  /** Named by the caller (link Create, untitled id): authorized only within its project. */
-  | { byId: true; projectId: ProjectId }
-);
+};
 
 /**
  * What a live create claims under its locks (§6.3 step 4): `any` reveals the hidden
@@ -64,14 +60,3 @@ export type LiveClaim =
   | { kind: "none" }
   | { kind: "mint" }
   | { kind: "reveal"; reveal: RevealExpectation };
-
-/**
- * A caller-named identity as a live create may use it (§6.4): hidden and used by a draft
- * of this project, visible in this project, or unusable (missing, a tombstone, deleted,
- * hidden with no use, or another project's), which never mints.
- */
-export type RevealIdentity =
-  | { kind: "hidden"; documentId: DocumentId; sourceId: ContextSourceId }
-  | { kind: "visible"; documentId: DocumentId; sourceId: ContextSourceId }
-  | { kind: "unusable" }
-  | { kind: "absent" };

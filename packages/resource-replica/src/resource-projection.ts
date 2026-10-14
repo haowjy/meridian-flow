@@ -1,6 +1,6 @@
 /** Project visibility policy over account-global resources and installed catalogs. */
 import { namespaceRepairDestination } from "./namespace-journal-policy";
-import { intentOwnsDeletionAt, owningLocationIntent } from "./resource-intent-policy";
+import { intentOwnsDeletionAt, placementDestination } from "./resource-intent-policy";
 import {
   type DestinationParentLookup,
   destinationLocation,
@@ -66,13 +66,9 @@ export function projectResourceLocation(
     )
   )
     return null;
-  const placement = owningLocationIntent(
-    projectId,
-    record.intents,
-    Boolean(record.resource.obligations.canonicalRefresh),
-  )?.desired;
-  if (placement?.kind === "set-location") {
-    const location = destinationLocation(placement.destination, lookup);
+  const placement = placementDestination(projectId, record);
+  if (placement) {
+    const location = destinationLocation(placement, lookup);
     if (location) return { ...location, provisional: false };
   }
 
@@ -80,13 +76,16 @@ export function projectResourceLocation(
     (intent) => intent.projectId === projectId && intent.desired.kind === "create",
   )?.desired;
   // Refused filing returns a normal file to its accepted home, not a provisional reservation.
-  const filed = record.intents.some(
-    (intent) =>
-      intent.desired.kind === "set-location" &&
-      (intent.state === "settled" ||
-        intent.state === "needs-repair" ||
-        intent.state === "superseded"),
-  );
+  const filed =
+    create?.kind === "create" && create.destination
+      ? true
+      : record.intents.some(
+          (intent) =>
+            intent.desired.kind === "set-location" &&
+            (intent.state === "settled" ||
+              intent.state === "needs-repair" ||
+              intent.state === "superseded"),
+        );
   if (record.resource.canonical)
     return { ...record.resource.canonical, provisional: create?.kind === "create" && !filed };
   if (create?.kind !== "create") return null;
