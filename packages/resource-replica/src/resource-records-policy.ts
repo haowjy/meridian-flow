@@ -148,16 +148,13 @@ export function validateResourceRecordUpdate(
       );
     const acquiredServerCache =
       previous?.resource.lifecycle.kind === "acknowledged" &&
-      adoption.generation !== null &&
       resource.lifecycle.kind === "acknowledged" &&
-      resource.lifecycle.availabilityGeneration === adoption.generation &&
       previous.resource.identity.documentId === adoption.documentId &&
       previous.resource.identity.revision === adoption.identityRevision &&
       (previousContent.kind === "unacquired" ||
         (previousContent.initialization !== "reserved" &&
           previousContent.databaseName === adoption.exactDatabaseName));
-    const createdLocalContent =
-      previous?.resource.lifecycle.kind === "local" && source && adoption.generation === null;
+    const createdLocalContent = previous?.resource.lifecycle.kind === "local" && source;
     if (!createdLocalContent && !sameAcknowledgedCache && !acquiredServerCache)
       throw new Error("Session adoption requires created or acquired exact content");
   }
@@ -189,22 +186,13 @@ export function validateResourceRecordUpdate(
   if (oldRefresh && nextRefresh && JSON.stringify(oldRefresh) !== JSON.stringify(nextRefresh))
     throw new Error("Canonical refresh obligation cannot be replaced");
   const oldAdoption = previous?.resource.obligations.sessionAdoption;
-  if (oldAdoption && adoption) {
-    const { generation: _oldGeneration, ...oldWitness } = oldAdoption;
-    const { generation: _nextGeneration, ...nextWitness } = adoption;
-    if (
-      JSON.stringify(oldWitness) !== JSON.stringify(nextWitness) ||
-      (oldAdoption.generation !== null && adoption.generation !== oldAdoption.generation)
-    )
-      throw new Error("Session adoption obligation cannot be replaced");
-  }
+  if (oldAdoption && adoption && JSON.stringify(oldAdoption) !== JSON.stringify(adoption))
+    throw new Error("Session adoption obligation cannot be replaced");
   if (
     oldAdoption &&
     !adoption &&
     resource.lifecycle.kind !== "terminal" &&
-    (oldAdoption.generation === null ||
-      resource.lifecycle.kind !== "acknowledged" ||
-      resource.lifecycle.availabilityGeneration !== oldAdoption.generation)
+    resource.lifecycle.kind !== "acknowledged"
   )
     throw new Error("Session adoption can clear only after exact admission");
 }

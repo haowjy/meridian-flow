@@ -152,7 +152,7 @@ export class DocumentSessionRegistry
       const originLineageHandle =
         (await this.localResources?.lineageHandleFor(projectId, documentId)) ?? undefined;
       const admitted = await this.translateCoordination(() =>
-        coordination.admit(projectId, documentId, generation, originLineageHandle),
+        coordination.admit(projectId, documentId, generation, { originLineageHandle }),
       );
       return {
         accountId: admitted.accountId,
