@@ -21,7 +21,10 @@ import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { DiscardedRow } from "@/features/draft-review/DiscardedRow";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import type { ReviewChange } from "@/features/draft-review/review-model";
+import {
+  type HeadlessDiscards,
+  useHeadlessDiscards,
+} from "@/features/draft-review/useHeadlessDiscards";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
@@ -48,20 +51,26 @@ export function MobileDocumentReview({
   const review = controller.inlineReview;
   const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
   const { openReviewFile } = useAiDraftLauncher();
+  // The phone's review is read-only: a Discard is a headless edit of the draft's room with its own Undo,
+  // scoped to this document's open review so its rows end with it.
+  const { fileForDocument, reviewRoomNameForDraft } = useDraftReview();
+  const discards = useHeadlessDiscards(
+    projectId,
+    controller.workId,
+    `${documentId}:${itemKey ?? ""}`,
+  );
+  const file = fileForDocument(documentId);
+  const roomName = itemKey ? reviewRoomNameForDraft(documentId, itemKey) : null;
   const header = useReviewHeader({
     documentId,
     itemKey: itemKey ?? "",
+    headless: file && roomName ? { discards, file, roomName } : undefined,
     onCloseDraftOnly,
     onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.workId),
   });
   const [listOpen, setListOpen] = useState(false);
-  // The phone's review is read-only, so its one Discard is the last step of the "editor" surface's history.
-  const [discarded, setDiscarded] = useState<ReviewChange | null>(null);
   useEffect(() => {
-    if (!itemKey) {
-      setListOpen(false);
-      setDiscarded(null);
-    }
+    if (!itemKey) setListOpen(false);
   }, [itemKey]);
 
   return (
@@ -79,8 +88,8 @@ export function MobileDocumentReview({
             header={header}
             listOpen={listOpen}
             onListOpenChange={setListOpen}
-            discarded={discarded}
-            onDiscarded={setDiscarded}
+            discards={discards}
+            itemKey={itemKey}
           />
         ) : null}
       </div>
@@ -125,32 +134,33 @@ function ReviewBottom({
   header,
   listOpen,
   onListOpenChange,
-  discarded,
-  onDiscarded,
+  discards,
+  itemKey,
 }: {
   header: ReviewHeaderModel;
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
-  discarded: ReviewChange | null;
-  onDiscarded: (change: ReviewChange | null) => void;
+  discards: HeadlessDiscards;
+  itemKey: string;
 }) {
   const { view } = header;
+  const rows = discards.entries.filter((entry) => entry.file.draft.itemKey === itemKey);
   return (
     <>
-      {discarded ? (
+      {rows.length > 0 ? (
         <ul data-phone-discarded className="shrink-0 border-t border-border-subtle bg-background">
-          <DiscardedRow
-            touch
-            entry={{ id: discarded.id, change: discarded, phase: "discarded" }}
-            name=""
-            onUndo={() => {
-              view.undoLastDiscard();
-              onDiscarded(null);
-            }}
-          />
+          {rows.map((entry) => (
+            <DiscardedRow
+              key={entry.id}
+              touch
+              entry={entry}
+              name={entry.file.documentName ?? ""}
+              onUndo={() => discards.undo(entry.id)}
+            />
+          ))}
         </ul>
       ) : null}
-      <MobileChangeBar view={view} onDiscarded={onDiscarded} />
+      <MobileChangeBar view={view} />
       <MobileChangeSheet open={listOpen} onOpenChange={onListOpenChange} view={view} />
     </>
   );

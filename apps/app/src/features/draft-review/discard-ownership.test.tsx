@@ -8,9 +8,11 @@ import { act } from "react";
 import { expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { DocumentSession } from "@/core/editor/document-session";
+import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { projectRoom } from "@/features/draft-review/review-frame";
 import { reviewChanges } from "@/features/draft-review/review-model";
 import { useHeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
+import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import {
   createReviewScopeFixture,
@@ -82,5 +84,62 @@ it("a text Discard without an editor never closes the item, and a same-chat Work
     fixture.dispose();
     vi.restoreAllMocks();
     vi.useRealTimers();
+  }
+});
+
+it("the phone's Discards each own their history: Discard A, Discard B, Undo A restores A and leaves B discarded", async () => {
+  const fixture = createReviewScopeFixture();
+  const room = new DocumentSession({ roomKey: "r", persistence: { kind: "none" } });
+  room.whenSynced = () => Promise.resolve();
+  fixture.rooms.set("r", room);
+  const fragment = room.document.getXmlFragment("prosemirror");
+  for (const line of ["Door green.", "Keep me.", "Sky blue."]) {
+    const paragraph = new Y.XmlElement("paragraph");
+    const text = new Y.XmlText();
+    paragraph.insert(0, [text]);
+    text.insert(0, line);
+    fragment.insert(fragment.length, [paragraph]);
+  }
+  seedReviewBase(room.document, ["Door red.", "Keep me.", "Sky grey."]);
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  fixture.network.getDraftMeta.mockResolvedValue(meta as never);
+  const file = { documentId: listed.documentId, draft: listed } as never;
+  let phone!: ReturnType<typeof useReviewHeader>;
+  let discards!: ReturnType<typeof useHeadlessDiscards>;
+  function Phone() {
+    const { controller } = useDraftReview();
+    discards = useHeadlessDiscards(controller.projectId, controller.workId, "phone");
+    phone = useReviewHeader({
+      ...draftA,
+      onOpenDraft: () => {},
+      headless: { discards, file, roomName: "r" },
+    });
+    return null;
+  }
+  const paragraphs = () => fragment.toArray().map((node) => String(node.toString()));
+  try {
+    await fixture.render(
+      async (read) => {
+        await act(async () =>
+          read().presented.controller.enterInlineReview(draftA.documentId, draftA.itemKey),
+        );
+        const [door, sky] = reviewChanges(projectRoom(room.document));
+        await act(async () => phone.view.discard(door));
+        await act(async () => phone.view.discard(sky));
+        const [first, second] = discards.entries;
+        expect(first.change?.id).not.toBe(second.change?.id);
+        expect(paragraphs().join("")).toContain("red");
+        expect(paragraphs().join("")).toContain("grey");
+
+        await act(async () => phone.view.undoDiscard?.(first.id));
+        expect(paragraphs().join("")).toContain("green");
+        expect(paragraphs().join("")).toContain("grey");
+        expect(phone.view.discarded?.map((entry) => entry.id)).toEqual([second.id]);
+      },
+      { surface: <Phone /> },
+    );
+  } finally {
+    fixture.dispose();
+    vi.restoreAllMocks();
   }
 });

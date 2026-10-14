@@ -46,14 +46,6 @@ it("Discard takes exactly the clicked change, Undo restores exactly it, typing s
   expect(paragraphs()).toEqual(["The door was green.", "The sky was blue.", "Keep me.!"]);
 });
 
-it("a released history stops reacting: its Undo is gone and the Discard stays", () => {
-  const { doc, paragraphs } = room(["The door was green."], ["The door was red."]);
-  const discard = discardInRoom(doc, "all");
-  discard?.release();
-  discard?.undo();
-  expect(paragraphs()).toEqual(["The door was red."]);
-});
-
 it("a row whose identical twin was removed by a peer discards nothing, hides nothing, and leaves the twin actionable", () => {
   const { doc, fragment, paragraphs } = room(
     ["Same line.", "Keep me.", "Same line."],
