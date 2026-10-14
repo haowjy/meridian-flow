@@ -107,7 +107,7 @@ describe("useThreadControls", () => {
     await act(async () => latest.withdraw(queued));
     expect(api.withdrawThreadControl).not.toHaveBeenCalled();
     expect(latest.queued).toEqual([]);
-    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction withdrawn");
+    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction stopped");
     await act(async () =>
       enqueued.resolve({
         id,
