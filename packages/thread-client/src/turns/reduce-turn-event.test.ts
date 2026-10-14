@@ -4,7 +4,7 @@
  */
 import type { AGUIEvent, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
-import { readWriteModeSwitch } from "@meridian/contracts/threads";
+import { answeredControlIds, readWriteModeSwitch } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import {
   TURN_FIXTURE_EVENTS,
@@ -138,6 +138,9 @@ describe("turn reducer", () => {
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
     const turns = store.turns(THREAD) ?? [];
     expect(readWriteModeSwitch(turns[1] as Turn)).toEqual({ mode: "draft", controlId: "c-d1" });
+    // Risk (F19): a queued switch's row retires on its control id in the store's turns, so the
+    // answered set holds a divider's id only once the divider is placed, never while it is held.
+    expect([...answeredControlIds(turns)]).toEqual(["c-d1", "c-d2"]);
     // A snapshot read before both frames keeps both where they were.
     store.hydrate(THREAD, replies, "6000");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
@@ -147,8 +150,10 @@ describe("turn reducer", () => {
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3"]);
     // The store says which held dividers still wait, with the frame's seq: the one rule hosts ask.
     expect(store.dividersAwaitingAnchor(THREAD)).toEqual([{ turnId: "d3", seq: "7200" }]);
+    expect(answeredControlIds(store.turns(THREAD) ?? []).has("c-d3")).toBe(false);
     store.hydrate(THREAD, [...replies, t("m9", "r3")], "6500");
     expect(ids(store)).toEqual(["r1", "d1", "r2a", "r2b", "d2", "r3", "m9", "d3"]);
+    expect(answeredControlIds(store.turns(THREAD) ?? []).has("c-d3")).toBe(true);
     expect(store.dividersAwaitingAnchor(THREAD)).toEqual([]);
     // The covering snapshot's stored turn replaces the divider by id; a later one without it drops it.
     const stored = { ...turns[1], position: 3 } as Turn;

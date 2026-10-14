@@ -320,7 +320,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       toThreadSnapshotApplyOptions(snapshot),
     );
     actions.dispatchRunState(threadId, {
-      type: "snapshot",
+      type: "history",
       runState: snapshot.liveState.runState,
     });
     owner.takeSnapshot(snapshot.liveState.runState, snapshot.liveState.resumeAfterSeq);

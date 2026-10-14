@@ -18,6 +18,7 @@
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
  */
+import { compareSeq } from "@meridian/contracts/protocol";
 import type { ControlBody, PendingInboxItem } from "@meridian/contracts/threads";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
@@ -116,8 +117,6 @@ export type MergeInput = {
   local: LocalControls;
   /** The run-state record's items, in inbox order. */
   items: readonly PendingInboxItem[];
-  /** Commands a divider already names. */
-  executedControlIds: ReadonlySet<string>;
 };
 
 /**
@@ -125,7 +124,7 @@ export type MergeInput = {
  * then local ones the server has not listed yet.
  */
 export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
-  const { local, items, executedControlIds } = input;
+  const { local, items } = input;
   const result: QueuedControl[] = [];
   const listed = new Set<string>();
   for (const item of items) {
@@ -142,7 +141,7 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
   for (const entry of local.sends) {
     const withdrawal = local.withdrawals.get(entry.id);
     if (listed.has(entry.id) || (withdrawal && withdrawal !== "failed")) continue;
-    const status = requestStatus(entry, executedControlIds);
+    const status = requestStatus(entry);
     if (!status) continue;
     result.push({
       id: entry.id,
@@ -153,13 +152,59 @@ export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
   return result;
 }
 
-function requestStatus(
-  entry: LocalSend,
-  executed: ReadonlySet<string>,
-): QueuedControlStatus | null {
+function requestStatus(entry: LocalSend): QueuedControlStatus | null {
   if (entry.request === "sending") return "sending";
   if (entry.request === "failed") return "failed";
-  if (entry.request === "finished" || executed.has(entry.id)) return null;
+  if (entry.request === "finished") return null;
   // Accepted, and the inbox echo has not arrived yet.
   return "queued";
+}
+
+/** A row last seen, and the record version at which its sources first stopped showing it. */
+export type HeldControls = Map<string, { row: QueuedControl; droppedAt: string | null }>;
+
+/**
+ * The one retirement rule for a queued command's row, switch or compaction, whichever source
+ * showed it. A row stays until a transcript turn carries its control id (`answered`). A source
+ * dropping it is not that: the record drops an item as the command starts, before its turn
+ * reaches the transcript. The one other way out is proof it won't run: an accepted snapshot at
+ * or after the dropping record (`history`) whose turns lack it, as after a Withdraw from another
+ * tab. This device's own Withdraw releases the row at once (`held.delete`). Keyed by control
+ * id, mutating `held` between calls.
+ */
+export function retainControls(
+  held: HeldControls,
+  input: {
+    rows: readonly QueuedControl[];
+    answered: ReadonlySet<string>;
+    /** The newest record's version. */
+    version: string | null;
+    history: string | null;
+  },
+): QueuedControl[] {
+  const { rows, answered, version, history } = input;
+  const shown = new Set<string>();
+  for (const row of rows) {
+    shown.add(row.id);
+    held.set(row.id, { row, droppedAt: null });
+  }
+  const result: QueuedControl[] = [];
+  for (const [id, entry] of held) {
+    if (answered.has(id)) {
+      held.delete(id);
+      continue;
+    }
+    if (!shown.has(id)) {
+      entry.droppedAt ??= version;
+      if (
+        entry.droppedAt === null ||
+        (history !== null && compareSeq(history, entry.droppedAt) >= 0)
+      ) {
+        held.delete(id);
+        continue;
+      }
+    }
+    result.push(entry.row);
+  }
+  return result;
 }

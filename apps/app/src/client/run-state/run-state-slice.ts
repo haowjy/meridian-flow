@@ -92,6 +92,12 @@ export type RunStateSlice = {
    * so a remounted view speaks only what no mounted view has.
    */
   spoken: { queued: number; applied: number };
+  /**
+   * The version of the newest accepted snapshot, whose turns reached the transcript with it:
+   * proof that a control absent from those turns, and from a record at or below this version,
+   * did not run.
+   */
+  history: string | null;
 };
 export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
   view: INITIAL_RUN_STATE_VIEW,
@@ -101,11 +107,14 @@ export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
   appliedHeard: new Set(),
   applied: [],
   spoken: { queued: 0, applied: 0 },
+  history: null,
 };
 
 export type RunStateAction =
   /** A record that is not news: an accepted snapshot, a `subscribed` state, or an answer's. */
   | { type: "snapshot"; runState: RunState }
+  /** The accepted snapshot's record, dispatched with its turns: a `snapshot` that also marks `history`. */
+  | { type: "history"; runState: RunState }
   /** A `meridian.run_state` frame. */
   | { type: "record"; runState: RunState }
   /** A `meridian.write_mode.switched` frame: the server's answer for its control. */
@@ -122,6 +131,15 @@ export type RunStateAction =
   | { type: "dropWithdraw"; id: string };
 
 export function reduceRunState(state: RunStateSlice, action: RunStateAction): RunStateSlice {
+  const next = reduceSlice(state, action);
+  if (action.type !== "history") return next;
+  const { version } = action.runState;
+  return next.history !== null && compareSeq(version, next.history) <= 0
+    ? next
+    : { ...next, history: version };
+}
+
+function reduceSlice(state: RunStateSlice, action: RunStateAction): RunStateSlice {
   if (action.type === "spoken") {
     const queued = Math.max(state.spoken.queued, action.queued);
     const applied = Math.max(state.spoken.applied, action.applied);
@@ -186,6 +204,7 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
     case "drop":
       return dropIntent(view, action.kind, action.id);
     case "snapshot":
+    case "history":
     case "record":
       return receiveRecord(view, action.runState);
     case "switched":
