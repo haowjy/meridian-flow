@@ -163,6 +163,9 @@ export function optimisticHandoffSeed(
     createdAt: input.createdAt,
     completedAt: null,
     blocks: [],
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
     siblingIds: [],
     responses: [],
   };

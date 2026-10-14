@@ -137,7 +137,16 @@ it("focuses this document, then applies and discards its classes without closing
       expect(navigate).not.toHaveBeenCalled();
     },
     {
-      surface: <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate} />,
+      surface: (
+        <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate}>
+          {({ version, controls }) => (
+            <>
+              {version}
+              {controls}
+            </>
+          )}
+        </DraftReviewBand>
+      ),
       host: (children) => (
         <I18nProvider i18n={i18n}>
           <TooltipProvider>
@@ -215,7 +224,14 @@ it.each([
     {
       surface:
         surface === "desktop" ? (
-          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate} />
+          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate}>
+            {({ version, controls }) => (
+              <>
+                {version}
+                {controls}
+              </>
+            )}
+          </DraftReviewBand>
         ) : (
           <MobileDocumentReview projectId="project-a" tab={reviewedTab}>
             <div />

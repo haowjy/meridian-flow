@@ -1,11 +1,23 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
+import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createOrchestratorEventProjector,
+  cursorSeqForJournalHead,
+  TurnStartConflictError,
+} from "../../threads/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
-import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
+import {
+  createTestDrizzleDelivery,
+  createTestOrphanRepair,
+} from "./__tests__/test-drizzle-delivery.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
 import { createOrchestrator } from "./orchestrator.js";
+import { createRunStarter } from "./run-starter.js";
+import { createWakeIfRunnable } from "./wake-if-runnable.js";
 
 const url = process.env.DATABASE_URL;
 if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
@@ -33,6 +45,19 @@ else
       return rig;
     }
 
+    /** Every journal append with its journal seq, and the socket frames each one projects to. */
+    async function appendedFrames(appended: {
+      mock: { calls: unknown[][]; results: { value: unknown }[] };
+    }) {
+      const projector = createOrchestratorEventProjector();
+      return Promise.all(
+        appended.mock.calls.map(async ([, event], index) => ({
+          journalSeq: (await appended.mock.results[index]?.value) as bigint,
+          frames: projector.project(event as never) as { name?: string }[],
+        })),
+      );
+    }
+
     async function compactControl(
       rig: Awaited<ReturnType<typeof fixture>>,
       id: string = crypto.randomUUID(),
@@ -56,6 +81,70 @@ else
       return rig.repos.turns.listByThread(rig.threadId);
     }
 
+    async function journal() {
+      return db
+        .select({ eventType: schema.eventJournal.eventType, payload: schema.eventJournal.payload })
+        .from(schema.eventJournal)
+        .orderBy(schema.eventJournal.threadId, schema.eventJournal.seq);
+    }
+
+    /**
+     * A turn's run identity: its row, which must match the turn its journaled
+     * start carries (the `RUN_STARTED` payload's source).
+     */
+    async function identity(turnId: string | undefined) {
+      if (!turnId) throw new Error("No turn");
+      const [row] = await db
+        .select({
+          executionId: schema.turns.executionId,
+          reservedFor: schema.turns.reservedForUserTurnIds,
+        })
+        .from(schema.turns)
+        .where(eq(schema.turns.id, turnId as never));
+      const started = (await journal())
+        .filter(({ eventType }) => eventType === "turn.created")
+        .map(({ payload }) => (payload as { turn: Turn }).turn)
+        .find((turn) => turn.id === turnId);
+      const fromRow = {
+        executionId: row?.executionId ?? null,
+        reservedForUserTurnIds: row?.reservedFor ?? [],
+      };
+      expect({
+        executionId: started?.executionId ?? null,
+        reservedForUserTurnIds: started?.reservedForUserTurnIds ?? [],
+      }).toEqual(fromRow);
+      return fromRow;
+    }
+
+    /** The turn that delivered a message, and that `messages.delivered` journaled it once. */
+    async function deliveredBy(messageId: string | undefined) {
+      if (!messageId) throw new Error("No message");
+      const [row] = await db
+        .select({
+          deliveredAt: schema.threadInboxMessages.deliveredAt,
+          byTurnId: schema.threadInboxMessages.deliveredByTurnId,
+        })
+        .from(schema.threadInboxMessages)
+        .where(eq(schema.threadInboxMessages.id, messageId));
+      if (!row?.deliveredAt) return undefined;
+      const journaled = (await journal())
+        .filter(({ eventType }) => eventType === "messages.delivered")
+        .map(({ payload }) => payload as { byTurnId: string | null; userTurnIds: string[] })
+        .filter(({ userTurnIds }) => userTurnIds.includes(messageId));
+      expect(journaled.map(({ byTurnId }) => byTurnId)).toEqual([row.byTurnId]);
+      return row.byTurnId;
+    }
+
+    /** How many times an execution's end was journaled. */
+    async function endsOf(executionId: string | null) {
+      return (await journal()).filter(
+        ({ eventType, payload }) =>
+          eventType === "execution.ended" &&
+          (payload as { executionId: string }).executionId === executionId,
+      ).length;
+    }
+
+    /** Starts a reply; a due switch applies at its run-start boundary. */
     async function drainControls(rig: Awaited<ReturnType<typeof fixture>>) {
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
       return run.execute();
@@ -78,6 +167,7 @@ else
       );
 
       const otherThread = await rig.repos.threads.create({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         userId: rig.ids.user,
         projectId: rig.ids.project,
@@ -138,6 +228,7 @@ else
       });
       const forkAtRequest = (
         await rig.repos.threads.createDerivedPrimary({
+          aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
           workId: source.workId,
@@ -162,6 +253,7 @@ else
 
       const firstFork = (
         await rig.repos.threads.createDerivedPrimary({
+          aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source,
           workId: source.workId,
@@ -180,6 +272,7 @@ else
       });
       const secondFork = (
         await rig.repos.threads.createDerivedPrimary({
+          aiWriteMode: "direct",
           id: crypto.randomUUID(),
           source: firstFork,
           workId: firstFork.workId,
@@ -208,6 +301,7 @@ else
       );
       if (!source || !answer) throw new Error("Expected source thread and completed reply");
       const { thread: fork } = await rig.repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
         workId: source.workId,
@@ -318,7 +412,19 @@ else
         return input;
       };
       expect(started.created).toBe(true);
-      expect(duplicate).toMatchObject({ created: false, turn: { id: replyTurnId } });
+      // The Retry is reserved for the failed reply's messages, in a new execution.
+      const retried = await identity(replyTurnId);
+      expect(retried.reservedForUserTurnIds).toEqual(
+        (await identity(failed.id)).reservedForUserTurnIds,
+      );
+      expect(retried.reservedForUserTurnIds).toEqual([failed.prevTurnId]);
+      expect(retried.executionId).not.toBe((await identity(failed.id)).executionId);
+      expect(started.executionId).toBe(retried.executionId);
+      expect(duplicate).toMatchObject({
+        created: false,
+        turn: { id: replyTurnId },
+        executionId: retried.executionId,
+      });
       expect(replayed).toMatchObject({
         id: replyTurnId,
         role: "assistant",
@@ -443,7 +549,7 @@ else
       const staleAt = new Date(Date.now() - 60_000);
       await db.insert(schema.threadRunLeases).values({
         threadId: rig.threadId,
-        runId: "crashed-run",
+        executionId: "crashed-run",
         turnId: orphan.id,
         boundTurnIds: [orphan.id],
         adoptedMessageIds: adopted.map(({ message }) => message.id),
@@ -459,9 +565,10 @@ else
         eventWriter: rig.eventWriter,
         runClaim: replacement,
       });
-      const repairLease = await replacement.startExecution(rig.threadId, "repair-run");
+      const repairLease = await replacement.startExecution(rig.threadId, crypto.randomUUID(), () =>
+        delivery.settleStaleExecution(rig.threadId),
+      );
       if (!repairLease) throw new Error("Expected replacement run claim");
-      await delivery.repairOrphanedTurns(repairLease);
       await replacement.release(repairLease);
 
       expect(await rig.repos.turns.findById(orphan.id)).toMatchObject({
@@ -482,7 +589,9 @@ else
       await processDetachedWork.drain();
 
       expect(retry.created).toBe(true);
-      expect(await rig.repos.turns.findById(retry.turn.id)).toMatchObject({ status: "complete" });
+      expect(await rig.repos.turns.findById(retry.turn?.id as never)).toMatchObject({
+        status: "complete",
+      });
       expect(gateway.requests).toHaveLength(1);
       expect(await delivery.selectPending(rig.threadId)).toEqual([]);
     });
@@ -521,7 +630,7 @@ else
       if (!failed) throw new Error("Failed reply was not persisted");
 
       const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
-      rig.runClaim.startExecution = async (threadId, runId) => {
+      rig.runClaim.startExecution = async (threadId, executionId, settle) => {
         await rig.repos.turns.create({
           threadId: rig.threadId,
           prevTurnId: failed.id,
@@ -529,7 +638,7 @@ else
           origin: "system",
           status: "complete",
         });
-        return startExecution(threadId, runId);
+        return startExecution(threadId, executionId, settle);
       };
 
       await expect(
@@ -718,10 +827,21 @@ else
       const rig = await manualFixture();
       const withdrawn = await compactControl(rig);
       await rig.send(rig.threadId, "B behind withdrawn compact");
-      expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toEqual({
+      const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+      const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
+      expect(answer).toMatchObject({
         outcome: "withdrawn",
+        pending: null,
+        mode: (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode,
       });
-      expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toEqual({
+      // The answer's clock reaches the withdrawal's own inbox.changed frame.
+      const [withdrawal] = (await appendedFrames(appended)).filter((row) =>
+        row.frames.some((frame) => frame.name === "meridian.inbox.changed"),
+      );
+      expect(BigInt(answer.seq)).toBeGreaterThanOrEqual(
+        cursorSeqForJournalHead(withdrawal?.journalSeq as bigint),
+      );
+      expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toMatchObject({
         outcome: "withdrawn",
       });
       await drainControls(rig);
@@ -731,12 +851,12 @@ else
 
       const started = await compactControl(rig);
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
-      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toEqual({
+      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toMatchObject({
         outcome: "already_started",
       });
       await run.execute();
       await settled(rig);
-      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toEqual({
+      expect(await rig.delivery.withdrawControl(rig.threadId, started.id)).toMatchObject({
         outcome: "already_started",
       });
     });
@@ -948,7 +1068,7 @@ else
       // Drop the owning DB session after the command's start commit, as a process crash does.
       await rig.runClaim.release({
         threadId: rig.threadId,
-        runId: run.runId,
+        executionId: run.executionId,
         holderId: "fixture-owner",
       });
       const replacement = createDrizzleRunClaim(db);
@@ -1032,5 +1152,1290 @@ else
       );
       const reply = [...turns].reverse().find((turn) => turn.role === "assistant");
       expect(compact?.position).toBeGreaterThan(reply?.position ?? -1);
+    });
+
+    describe("write-mode switch", () => {
+      type Rig = Awaited<ReturnType<typeof fixture>>;
+      const toolUse = {
+        content: [
+          {
+            type: "tool_use" as const,
+            toolCallId: "switch-boundary",
+            toolName: "unavailable_probe_tool",
+            input: {},
+          },
+        ],
+        toolCalls: [],
+        finishReason: "tool_use" as const,
+        usage: lowUsage,
+        model: "gpt-4.1-mini",
+        provider: "openai",
+      };
+
+      function switchMode(rig: Rig, mode: "direct" | "draft", id: string = crypto.randomUUID()) {
+        return rig.delivery.enqueueControl({
+          threadId: rig.threadId,
+          actorId: rig.ids.user,
+          id,
+          control: { kind: "write_mode", mode },
+        });
+      }
+      const switchTurns = async (rig: Rig) =>
+        (await rig.repos.turns.listByThread(rig.threadId)).filter(
+          (turn) => (turn.metadata as { kind?: string } | null)?.kind === "write_mode_switch",
+        );
+      const threadMode = async (rig: Rig) =>
+        (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode;
+
+      it("serves the pending mode on the thread and the project list until switch-back or Stop", async () => {
+        const rig = await manualFixture();
+        const served = async () => {
+          const listed = (await rig.repos.threads.listByProject(rig.ids.project as never)).find(
+            (item) => item.id === rig.threadId,
+          );
+          const got = await rig.repos.threads.findById(rig.threadId);
+          return [listed?.aiWriteMode, listed?.effectiveAiWriteMode, got?.effectiveAiWriteMode];
+        };
+        expect(await served()).toEqual(["direct", "direct", "direct"]);
+        await switchMode(rig, "draft");
+        expect(await served()).toEqual(["direct", "draft", "draft"]);
+        await switchMode(rig, "direct");
+        expect(await served()).toEqual(["direct", "direct", "direct"]);
+        const queued = await switchMode(rig, "draft");
+        await rig.delivery.withdrawControl(rig.threadId, queued.response.id);
+        expect(await served()).toEqual(["direct", "direct", "direct"]);
+      });
+
+      it("does not apply a queued switch after the chat is deleted", async () => {
+        const rig = await manualFixture();
+        const lease = await rig.runClaim.startExecution(
+          rig.threadId as never,
+          crypto.randomUUID() as never,
+          async () => {},
+        );
+        if (!lease) throw new Error("Expected a run claim");
+        const queued = await switchMode(rig, "draft");
+        expect(queued.response.pending).not.toBeNull();
+        await rig.repos.threads.setTrashState(rig.threadId, "deleted");
+        await rig.runClaim.release(lease);
+        await processDetachedWork.drain();
+        await expect(rig.orchestrator.startDrain(rig.threadId)).rejects.toThrow("Thread not found");
+        expect(await switchTurns(rig)).toEqual([]);
+        expect((await rig.repos.threads.lockByIdIncludingDeleted(rig.threadId))?.aiWriteMode).toBe(
+          "direct",
+        );
+        expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      });
+
+      it("ends a reserved execution cleanly when its chat is deleted before execution", async () => {
+        const rig = await manualFixture();
+        const run = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "reserved",
+        });
+        const reserved = (await rig.repos.turns.listByThread(rig.threadId)).at(-1);
+        expect(reserved?.executionId).toBeTruthy();
+        await rig.repos.threads.setTrashState(rig.threadId, "deleted");
+        await run.execute();
+        await processDetachedWork.drain();
+        expect((await rig.repos.turns.findById(reserved?.id as never))?.status).toBe("error");
+        expect(await endsOf(reserved?.executionId ?? null)).toBe(1);
+        expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+      });
+
+      it("keeps an idle switch pending until a reply starts, then applies it as one complete switch turn", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage });
+        const rig = await manualFixture({ gateway });
+        const queued = await switchMode(rig, "draft");
+
+        // Nothing runs, so nothing applies: no turn, the chat keeps its mode, and
+        // the answer carries the pending switch for the toolbar.
+        expect(queued).toMatchObject({
+          created: true,
+          response: { pending: { id: queued.response.id }, turnId: null, mode: "direct" },
+        });
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(await threadMode(rig)).toBe("direct");
+
+        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+        // Writer admission persists the message first; the switch applies behind it, before the reply.
+        const admitted = await rig.send(rig.threadId, "Write it.");
+        await drainControls(rig);
+        const turns = await settled(rig);
+        const [turn] = await switchTurns(rig);
+        expect(turn).toMatchObject({
+          role: "system",
+          status: "complete",
+          writeMode: "draft",
+          prevTurnId: admitted.userTurnId,
+          metadata: {
+            kind: "write_mode_switch",
+            mode: "draft",
+            controlMessageId: queued.response.id,
+          },
+        });
+        expect((await rig.repos.blocks.listByTurn(turn?.id as never))[0]?.textContent).toContain(
+          "The writer switched this chat to draft mode.",
+        );
+        const tail = turns.slice(turns.findIndex((entry) => entry.id === admitted.userTurnId));
+        expect(tail.map((entry) => entry.role)).toEqual(["user", "system", "assistant"]);
+        expect(tail[2]).toMatchObject({ writeMode: "draft" });
+        expect(await threadMode(rig)).toBe("draft");
+        expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
+          "The writer switched this chat to draft mode.",
+        );
+        // The apply is a frame of its own, ahead of the inbox.changed that empties the queue.
+        const frames = (await appendedFrames(appended)).flatMap((row) => row.frames);
+        const names = frames.map((frame) => frame.name);
+        const switched = names.indexOf("meridian.write_mode.switched");
+        expect(switched).toBeGreaterThan(-1);
+        expect(names.lastIndexOf("meridian.inbox.changed")).toBeGreaterThan(switched);
+        expect(frames[switched]).toMatchObject({
+          value: {
+            threadId: rig.threadId,
+            mode: "draft",
+            controlId: queued.response.id,
+            turnId: turn?.id,
+          },
+        });
+        expect(await rig.delivery.withdrawControl(rig.threadId, queued.response.id)).toMatchObject({
+          outcome: "already_started",
+        });
+      });
+
+      it("leaves no turn and no notice for a switch and its switch back in an idle chat", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage });
+        const rig = await manualFixture({ gateway });
+        await switchMode(rig, "draft");
+        expect((await switchMode(rig, "direct")).response).toMatchObject({
+          pending: null,
+          mode: "direct",
+        });
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Nothing changed." },
+          idempotencyKey: "after-switch-back",
+        });
+        await drainControls(rig);
+        await settled(rig);
+
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(JSON.stringify(gateway.requests.at(-1)?.messages)).not.toContain(
+          "The writer switched",
+        );
+      });
+
+      it("ends the reply at the next request boundary for a message behind a queued switch, even out of budget", async () => {
+        let rig: Rig;
+        let queued: Awaited<ReturnType<typeof switchMode>> | undefined;
+        let admitted: Awaited<ReturnType<Rig["send"]>> | undefined;
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results: [toolUse],
+          onStream: async (call) => {
+            if (call !== 1) return;
+            // Another tab's switch commits after this send reads the inbox but
+            // before it takes the thread lock: the stamp must still say `send`.
+            const lock = rig.delivery.withThreadLock;
+            vi.spyOn(rig.delivery, "withThreadLock").mockImplementationOnce(async (...args) => {
+              queued = await switchMode(rig, "draft");
+              return lock(...args);
+            });
+            admitted = await rig.send(rig.threadId, "M2 behind the switch");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        // The budget is spent while the switch waits: only a yield before the
+        // budget check keeps A from failing.
+        vi.spyOn(rig.deps.billingUsage, "canContinueModelCall").mockImplementation(async () =>
+          (await rig.delivery.selectPending(rig.threadId)).every(
+            (row) => row.body.kind !== "write_mode",
+          ),
+        );
+        const start = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        const outcome = await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
+        ).execute();
+        const tail = (await settled(rig)).slice(start);
+
+        expect(queued?.response).toMatchObject({
+          pending: { deliveryState: "waiting", control: { kind: "write_mode", mode: "draft" } },
+          turnId: null,
+        });
+        expect(outcome).toMatchObject({ status: "complete" });
+        expect(outcome.status === "failed" ? null : outcome.turn).toMatchObject({
+          role: "assistant",
+          status: "complete",
+          finishReason: "end_turn",
+        });
+        expect(
+          tail.map((turn) =>
+            turn.role === "system" ? (turn.metadata as { kind: string }).kind : turn.role,
+          ),
+        ).toEqual(["user", "assistant", "user", "write_mode_switch", "assistant"]);
+        expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+          tail.slice(0, -1).map((turn) => turn.id),
+        );
+        // A made one request; the next reply answers M2 after the notice.
+        expect(gateway.requests).toHaveLength(2);
+        const reply = JSON.stringify(gateway.requests[1]?.messages);
+        expect(reply.indexOf("The writer switched this chat to draft mode.")).toBeGreaterThan(
+          reply.indexOf("M2 behind the switch"),
+        );
+        expect(tail[2]?.metadata).not.toMatchObject({ delivery: "steer" });
+        // M2 does not join A, so admission names no reply: the client learns
+        // M2's answer from its RUN_STARTED, never A's id.
+        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, steersTurnId: null });
+        expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
+        // A yielded with M2 undelivered, so A's execution ended and B, in a new
+        // execution reserved for M2, delivered it.
+        const a = await identity(tail[1]?.id);
+        const b = await identity(tail[4]?.id);
+        expect(a.reservedForUserTurnIds).toEqual([tail[0]?.id]);
+        expect(b.reservedForUserTurnIds).toEqual([tail[2]?.id]);
+        expect(b.executionId).not.toBe(a.executionId);
+        expect(await deliveredBy(tail[0]?.id)).toBe(tail[1]?.id);
+        expect(await deliveredBy(tail[2]?.id)).toBe(tail[4]?.id);
+        expect(await endsOf(a.executionId)).toBe(1);
+        expect(await endsOf(b.executionId)).toBe(1);
+        expect(await threadMode(rig)).toBe("draft");
+      });
+
+      it("splits a steered reply into a successor in the same execution", async () => {
+        let rig: Rig;
+        let admitted: Awaited<ReturnType<Rig["send"]>> | undefined;
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results: [toolUse],
+          onStream: async (call) => {
+            if (call === 1) admitted = await rig.send(rig.threadId, "M2 steers the reply");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        const start = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
+        ).execute();
+        const tail = (await settled(rig)).slice(start);
+
+        expect(tail.map((turn) => turn.role)).toEqual(["user", "assistant", "user", "assistant"]);
+        // M2 was steered into A, so admission names A; B, in A's execution,
+        // is reserved for M2 and delivers it.
+        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, steersTurnId: tail[1]?.id });
+        expect(tail[2]?.metadata).toMatchObject({ delivery: "steer" });
+        const a = await identity(tail[1]?.id);
+        const b = await identity(tail[3]?.id);
+        expect(a.executionId).toEqual(expect.any(String));
+        expect(b.executionId).toBe(a.executionId);
+        expect(a.reservedForUserTurnIds).toEqual([tail[0]?.id]);
+        expect(b.reservedForUserTurnIds).toEqual([tail[2]?.id]);
+        expect(await deliveredBy(tail[0]?.id)).toBe(tail[1]?.id);
+        expect(await deliveredBy(tail[2]?.id)).toBe(tail[3]?.id);
+        expect(await endsOf(a.executionId)).toBe(1);
+      });
+
+      it("names no reply for a message admitted after the live reply ended and its switch pending", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+        const rig = await manualFixture({ gateway });
+        const a = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "first reply",
+        });
+        const aDone = a.execute();
+        await gateway.untilGatewayBoundary();
+        await switchMode(rig, "draft");
+        // M2 saw A live, then A ends and its release applies the switch before
+        // M2 takes the thread lock: M2 is answered by a new reply, not A.
+        const lock = rig.delivery.withThreadLock;
+        vi.spyOn(rig.delivery, "withThreadLock").mockImplementationOnce(async (...args) => {
+          gateway.release();
+          await aDone;
+          await processDetachedWork.drain();
+          expect(await threadMode(rig)).toBe("direct");
+          return lock(...args);
+        });
+
+        const admitted = await rig.send(rig.threadId, "M2 after A ended");
+        expect(admitted.steersTurnId).toBeNull();
+        expect(
+          (await rig.repos.turns.findById(admitted.userTurnId as never))?.metadata,
+        ).not.toMatchObject({ delivery: "steer" });
+
+        await drainControls(rig);
+        const turns = await settled(rig);
+        // The message's turn is persisted at admission; the pending switch applies after it, before the reply.
+        const switchTurn = turns.find((turn) => turn.prevTurnId === admitted.userTurnId);
+        expect(switchTurn?.metadata).toMatchObject({ kind: "write_mode_switch" });
+        const answer = turns.find((turn) => turn.prevTurnId === switchTurn?.id);
+        expect(answer).toMatchObject({ role: "assistant", status: "complete", writeMode: "draft" });
+        expect(answer?.id).not.toBe(a.executionTurnId);
+      });
+
+      it("re-resolves the live reply when admission retries after that reply ended", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+        const rig = await manualFixture({ gateway });
+        const a = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "first reply",
+        });
+        const aDone = a.execute();
+        await gateway.untilGatewayBoundary();
+        // The first attempt sees A live and loses its turn start; A ends before
+        // the retry takes the lock, so the retry must not join A.
+        vi.spyOn(rig.repos, "runTurnStartTransition").mockRejectedValueOnce(
+          new TurnStartConflictError(rig.threadId, "already_running"),
+        );
+        const lock = rig.delivery.withThreadLock;
+        let calls = 0;
+        vi.spyOn(rig.delivery, "withThreadLock").mockImplementation(async (...args) => {
+          if (++calls === 2) {
+            gateway.release();
+            await aDone;
+            await processDetachedWork.drain();
+          }
+          return lock(...args);
+        });
+
+        const admitted = await rig.send(rig.threadId, "M2 retried after A ended");
+
+        expect(calls).toBeGreaterThanOrEqual(2);
+        expect(admitted.steersTurnId).toBeNull();
+        expect(
+          (await rig.repos.turns.findById(admitted.userTurnId as never))?.metadata,
+        ).not.toMatchObject({ delivery: "steer" });
+      });
+
+      it.each([
+        { name: "at final close", results: [], raceEarlyCheck: false },
+        {
+          name: "when the switch lands after the early check",
+          results: [toolUse],
+          raceEarlyCheck: true,
+        },
+      ])("ends the reply with no successor $name", async ({ results, raceEarlyCheck }) => {
+        let rig: Rig;
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results,
+          onStream: async (call) => {
+            if (call !== 1) return;
+            await switchMode(rig, "draft");
+            await rig.send(rig.threadId, "M2 behind the switch");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        if (raceEarlyCheck) vi.spyOn(rig.delivery, "yieldsAtBoundary").mockResolvedValueOnce(false);
+        const start = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
+        ).execute();
+        const tail = (await settled(rig)).slice(start);
+
+        expect(
+          tail.map((turn) =>
+            turn.role === "system" ? (turn.metadata as { kind: string }).kind : turn.role,
+          ),
+        ).toEqual(["user", "assistant", "user", "write_mode_switch", "assistant"]);
+        expect(tail[1]).toMatchObject({ status: "complete" });
+        expect(tail.slice(1).map((turn) => turn.prevTurnId)).toEqual(
+          tail.slice(0, -1).map((turn) => turn.id),
+        );
+        expect(gateway.requests).toHaveLength(2);
+      });
+
+      it("lets a parent's abort at the yield cancel the reply instead of completing it", async () => {
+        let rig: Rig;
+        const parent = new AbortController();
+        const gateway = scriptedGateway({
+          usage: lowUsage,
+          results: [toolUse],
+          onStream: async (call) => {
+            if (call !== 1) return;
+            await switchMode(rig, "draft");
+            await rig.send(rig.threadId, "M2 behind the switch");
+          },
+        });
+        rig = await manualFixture({ gateway });
+        // The parent aborts while the boundary read is in flight; no durable flag is set.
+        const yields = rig.delivery.yieldsAtBoundary.bind(rig.delivery);
+        vi.spyOn(rig.delivery, "yieldsAtBoundary").mockImplementation(async (id) => {
+          const result = await yields(id);
+          if (result) parent.abort();
+          return result;
+        });
+
+        const run = await rig.orchestrator.prepare({
+          threadId: rig.threadId,
+          userText: "first reply",
+          signal: parent.signal,
+        });
+        await run.execute();
+        await settled(rig);
+
+        expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+          role: "assistant",
+          status: "cancelled",
+        });
+      });
+
+      it("lets a running compaction keep its outcome and leaves the message behind the switch pending", async () => {
+        const summarizer = scriptedSummarizer(async () => ({
+          kind: "complete",
+          text: "Earlier context.",
+          model: "summary-model",
+          modelResponses: [],
+        }));
+        const rig = await manualFixture({ summarizer });
+        await (
+          await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "Build a tail." })
+        ).execute();
+        await settled(rig);
+        const control = await compactControl(rig);
+        const summarize = summarizer.summarize.bind(summarizer);
+        let queuedMessageId = "";
+        summarizer.summarize = async (input) => {
+          const result = await summarize(input);
+          await switchMode(rig, "draft");
+          queuedMessageId = (
+            await rig.delivery.enqueue({
+              threadId: rig.threadId,
+              intent: "message",
+              provenance: { kind: "writer", actorId: rig.ids.user },
+              body: { kind: "text", text: "M2 behind the switch" },
+              idempotencyKey: "m2-behind-switch",
+            })
+          ).id;
+          return result;
+        };
+        const requestsBefore = rig.gateway.requests.length;
+
+        const outcome = await drainControls(rig);
+        // The compaction run released with C as its last turn: no successor.
+        expect(outcome.status === "failed" ? null : outcome.turn).toMatchObject({
+          role: "compaction",
+          status: "complete",
+          metadata: { controlMessageId: control.id },
+        });
+        const turns = await settled(rig);
+        const compaction = turns.find((turn) => turn.role === "compaction");
+        const [switchTurn] = await switchTurns(rig);
+        const message = turns.find((turn) => turn.id === queuedMessageId);
+        const answer = turns.find(
+          (turn) => turn.role === "assistant" && turn.position > (switchTurn?.position ?? 0),
+        );
+        expect(compaction?.status).toBe("complete");
+        expect(switchTurn?.position).toBeGreaterThan(compaction?.position ?? 0);
+        // M2 was never adopted by the compaction run: it joins the graph after the switch.
+        expect(message?.prevTurnId).toBe(switchTurn?.id);
+        expect(answer).toMatchObject({ status: "complete", prevTurnId: message?.id });
+        expect(
+          turns.filter(
+            (turn) =>
+              turn.role === "assistant" &&
+              turn.position > (compaction?.position ?? 0) &&
+              turn.position < (switchTurn?.position ?? 0),
+          ),
+        ).toEqual([]);
+        expect(rig.gateway.requests.length - requestsBefore).toBe(1);
+      });
+
+      it("recovers a crashed automatic compaction with one reply to M1 and M2 after the switch", async () => {
+        const rig = await fixture({ gateway: scriptedGateway({ usage: lowUsage }) });
+        const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "M1 asks" });
+        expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+          role: "compaction",
+          status: "pending",
+        });
+        await switchMode(rig, "draft");
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "M2 follows" },
+          idempotencyKey: "m2-after-crashed-compaction",
+        });
+        // A crash drops the claim's DB session but leaves the lease row and its C/[M1] receipt.
+        const [lease] = await db
+          .select()
+          .from(schema.threadRunLeases)
+          .where(eq(schema.threadRunLeases.threadId, rig.threadId));
+        if (!lease) throw new Error("Expected the compaction's run lease");
+        expect(lease.adoptedMessageIds).toEqual([run.userTurnId]);
+        await rig.runClaim.release({
+          threadId: rig.threadId,
+          executionId: run.executionId,
+          holderId: "fixture-owner",
+        });
+        await db.insert(schema.threadRunLeases).values(lease);
+        rig.setThreshold(100000);
+        // A replacement process: its own claim, delivery, and wake path.
+        const replacement = createDrizzleRunClaim(db, { holderId: "replacement-worker" });
+        const delivery = createTestDrizzleDelivery(db, {
+          repos: rig.repos,
+          eventWriter: rig.eventWriter,
+          runClaim: replacement,
+        });
+        let recovery!: ReturnType<typeof createOrchestrator>;
+        const wake = createWakeIfRunnable({
+          delivery,
+          runStarter: createRunStarter(
+            { startDrain: (id) => recovery.startDrain(id) },
+            rig.deps.eventSink,
+          ),
+        });
+        recovery = createOrchestrator({
+          ...rig.deps,
+          runClaim: replacement,
+          delivery,
+          wakeIfRunnable: wake,
+        });
+
+        await wake(rig.threadId);
+        await processDetachedWork.drain();
+
+        expect(await delivery.selectPending(rig.threadId)).toEqual([]);
+
+        expect(rig.gateway.requests).toHaveLength(1);
+        const request = JSON.stringify(rig.gateway.requests[0]?.messages);
+        expect(request).toContain("M1 asks");
+        expect(request).toContain("M2 follows");
+        expect(await threadMode(rig)).toBe("draft");
+      });
+
+      it("cancels a queued switch with a switch back and never cancels a newer one on replay", async () => {
+        const rig = await manualFixture();
+        const first = crypto.randomUUID();
+        const back = crypto.randomUUID();
+        const newer = crypto.randomUUID();
+        // The journal is what other tabs and replays see: a settled request
+        // publishes only the final queue, never a state with both switches.
+        const appended = vi.spyOn(rig.eventWriter, "appendEvent");
+        const publishedQueues = () =>
+          appended.mock.calls.flatMap(([, event]) =>
+            event.type === "inbox.changed"
+              ? [(event as { pending: ThreadPendingInbox }).pending.items.map((item) => item.id)]
+              : [],
+          );
+        expect((await switchMode(rig, "draft", first)).response).toMatchObject({
+          pending: { id: first },
+          turnId: null,
+        });
+        appended.mockClear();
+        expect(await switchMode(rig, "direct", back)).toMatchObject({
+          created: true,
+          response: { id: back, pending: null, turnId: null, mode: "direct" },
+        });
+        expect(publishedQueues()).toEqual([[]]);
+        expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
+
+        expect((await switchMode(rig, "draft", newer)).response.pending).toMatchObject({
+          id: newer,
+        });
+        appended.mockClear();
+        // Same mode as the queued switch: written settled, the queued one stays.
+        // The answer names the thread's queued switch, not only its own row.
+        expect((await switchMode(rig, "draft")).response).toMatchObject({
+          pending: { id: newer },
+          turnId: null,
+        });
+        expect(publishedQueues()).toEqual([[newer]]);
+        // A retried cancel answers its own settled row.
+        expect(await switchMode(rig, "direct", back)).toMatchObject({
+          created: false,
+          response: { id: back, pending: { id: newer }, turnId: null, mode: "direct" },
+        });
+        await expect(switchMode(rig, "draft", back)).rejects.toMatchObject({
+          statusCode: 409,
+          message: "control_id_conflict",
+        });
+        expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.id)).toEqual([
+          newer,
+        ]);
+        // A message starts the next run, which applies the switch queued ahead of it.
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Go." },
+          idempotencyKey: "after-newer-switch",
+        });
+        await drainControls(rig);
+        const turns = await switchTurns(rig);
+        expect(
+          turns.map((turn) => (turn.metadata as { controlMessageId: string }).controlMessageId),
+        ).toEqual([newer]);
+        expect(await threadMode(rig)).toBe("draft");
+        expect(await rig.delivery.withdrawControl(rig.threadId, first)).toMatchObject({
+          outcome: "withdrawn",
+        });
+        // Already in draft mode: a new draft request changes nothing.
+        expect((await switchMode(rig, "draft")).response).toMatchObject({
+          pending: null,
+          turnId: null,
+        });
+        expect(await switchTurns(rig)).toHaveLength(1);
+      });
+
+      it("blocks a saved message and its queued switch for usage, then answers both once usage returns", async () => {
+        const rig = await manualFixture();
+        const canStart = vi.spyOn(rig.deps.billingUsage, "canStartTurn").mockResolvedValue(false);
+        await switchMode(rig, "draft");
+        const message = await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Wait for usage." },
+          idempotencyKey: "blocked-with-switch",
+        });
+        const turnsBefore = (await rig.repos.turns.listByThread(rig.threadId)).length;
+
+        // The production starter: the refusal comes before the switch applies.
+        const starter = createRunStarter(
+          { startDrain: (id) => rig.orchestrator.startDrain(id) },
+          rig.deps.eventSink,
+        );
+        await starter.start(rig.threadId);
+
+        // The refusal reserves nothing: no turn, no lease, no execution, no switch.
+        expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toEqual({
+          reason: "credits_exhausted",
+        });
+        expect((await rig.repos.turns.listByThread(rig.threadId)).length).toBe(turnsBefore);
+        expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+        expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+        expect(await threadMode(rig)).toBe("direct");
+        expect(await switchTurns(rig)).toEqual([]);
+
+        canStart.mockRestore();
+        await starter.start(rig.threadId);
+        const tail = (await settled(rig)).slice(turnsBefore);
+
+        const reply = tail.find((turn) => turn.role === "assistant");
+        expect(reply).toMatchObject({ status: "complete" });
+        expect(await switchTurns(rig)).toHaveLength(1);
+        expect(await threadMode(rig)).toBe("draft");
+        // Usage returning clears the block with the last waiting row, and the reply's
+        // execution ended once with its delivery recorded.
+        expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toBeUndefined();
+        const execution = await identity(reply?.id);
+        expect(execution.executionId).not.toBeNull();
+        expect(await endsOf(execution.executionId)).toBe(1);
+        expect(await deliveredBy(message.id)).toBe(reply?.id);
+        expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
+      });
+
+      /** A chat whose latest reply failed, and a hook that runs while a start waits on the run claim. */
+      async function failedReplyRig() {
+        const gateway = scriptedGateway({ usage: lowUsage });
+        let fail = true;
+        const stream = gateway.stream.bind(gateway);
+        gateway.stream = async function* (request) {
+          if (!fail) {
+            yield* stream(request);
+            return;
+          }
+          gateway.requests.push(request);
+          yield {
+            type: "error" as const,
+            code: "provider_error",
+            message: "provider unavailable",
+            retryable: false,
+          };
+        };
+        const rig = await manualFixture({ gateway });
+        await rig.send(rig.threadId, "Answer after the switch.");
+        expect((await drainControls(rig)).status).toBe("error");
+        await processDetachedWork.drain();
+        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        if (!failed) throw new Error("Failed reply was not persisted");
+        fail = false;
+        const start = rig.runClaim.startExecution.bind(rig.runClaim);
+        return {
+          gateway,
+          rig,
+          failed,
+          /** Runs `interleave` after Retry's eligibility reads, before its run-start boundary. */
+          whileClaiming(interleave: () => Promise<unknown>) {
+            rig.runClaim.startExecution = (threadId, executionId, settle) =>
+              start(threadId, executionId, async () => {
+                await settle();
+                await interleave();
+              });
+          },
+          /**
+           * Runs `interleave` once, at the first boundary a pending switch can apply behind:
+           * a separate pre-claim apply step where one exists, otherwise the run claim.
+           */
+          beforeSwitchApplies(interleave: () => Promise<unknown>) {
+            let armed = true;
+            const fire = async () => {
+              if (!armed) return;
+              armed = false;
+              await interleave();
+            };
+            const delivery = rig.delivery as unknown as Record<string, unknown>;
+            const preClaim = delivery.applyDueSwitches;
+            if (typeof preClaim === "function")
+              delivery.applyDueSwitches = async (...args: unknown[]) => {
+                await fire();
+                return preClaim.apply(rig.delivery, args);
+              };
+            rig.runClaim.startExecution = (threadId, executionId, settle) =>
+              start(threadId, executionId, async () => {
+                await settle();
+                await fire();
+              });
+          },
+          retry: (replyTurnId: string) =>
+            rig.orchestrator.retryReply({
+              threadId: rig.threadId,
+              failedTurnId: failed.id as never,
+              replyTurnId: replyTurnId as never,
+            }),
+        };
+      }
+
+      it("applies a switch queued while Retry claims the chat and chains the retry after it", async () => {
+        const { gateway, rig, failed, whileClaiming, retry } = await failedReplyRig();
+        whileClaiming(() => switchMode(rig, "draft"));
+
+        const replyTurnId = crypto.randomUUID();
+        const started = await retry(replyTurnId);
+        await processDetachedWork.drain();
+
+        // The Retry starts a reply, so the switch applies first, though it arrived after Retry's reads.
+        const [switchTurn] = await switchTurns(rig);
+        expect(switchTurn).toBeDefined();
+        expect(started).toMatchObject({
+          created: true,
+          turn: { prevTurnId: switchTurn?.id },
+        });
+        // The switch turn between them does not hide the failed reply's user turn.
+        expect((await identity(replyTurnId)).reservedForUserTurnIds).toEqual([failed.prevTurnId]);
+        expect(await rig.repos.turns.findById(replyTurnId as never)).toMatchObject({
+          role: "assistant",
+          status: "complete",
+          prevTurnId: switchTurn?.id,
+          writeMode: "draft",
+        });
+        expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
+          "The writer switched this chat to draft mode.",
+        );
+      });
+
+      it("refuses a Retry a newer message overtook and leaves the queued switch pending", async () => {
+        const { rig, beforeSwitchApplies, retry } = await failedReplyRig();
+        // The switch is already queued when Retry starts; the message lands after Retry's
+        // eligibility reads and before the switch applies, so applying would bury it.
+        await switchMode(rig, "draft");
+        expect(await switchTurns(rig)).toEqual([]);
+        beforeSwitchApplies(async () => {
+          await rig.send(rig.threadId, "A newer message");
+        });
+
+        const replyTurnId = crypto.randomUUID();
+        await expect(retry(replyTurnId)).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(await threadMode(rig)).toBe("direct");
+        expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();
+        expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.intent)).toContain(
+          "control",
+        );
+      });
+    });
+
+    describe("run identity", () => {
+      function gate() {
+        let open!: () => void;
+        const promise = new Promise<void>((resolve) => {
+          open = resolve;
+        });
+        return { promise, open };
+      }
+
+      async function journalOrder(threadId: string) {
+        const rows = await db
+          .select({
+            seq: schema.eventJournal.seq,
+            eventType: schema.eventJournal.eventType,
+            payload: schema.eventJournal.payload,
+          })
+          .from(schema.eventJournal)
+          .where(eq(schema.eventJournal.threadId, threadId as never))
+          .orderBy(schema.eventJournal.seq);
+        return rows.map((row) => ({
+          seq: row.seq,
+          type: row.eventType,
+          payload: row.payload as Record<string, unknown> & { turn?: { id: string } },
+        }));
+      }
+
+      async function leaseRow(threadId: string) {
+        const [row] = await db
+          .select()
+          .from(schema.threadRunLeases)
+          .where(eq(schema.threadRunLeases.threadId, threadId as never));
+        return row;
+      }
+
+      it("ends an execution whose start-time compaction is cancelled and leaves its message for the next", async () => {
+        const summaryStarted = gate();
+        const summaryReleased = gate();
+        const summarizer = scriptedSummarizer(async () => {
+          summaryStarted.open();
+          await summaryReleased.promise;
+          return {
+            kind: "complete",
+            text: "Earlier context.",
+            model: "summary-model",
+            modelResponses: [],
+          };
+        });
+        const rig = await fixture({ summarizer, gateway: scriptedGateway({ usage: lowUsage }) });
+        // An empty lease is never an observable execution.
+        const empty = await rig.runClaim.startExecution(rig.threadId, crypto.randomUUID(), () =>
+          rig.delivery.settleStaleExecution(rig.threadId),
+        );
+        if (!empty) throw new Error("Expected an empty lease");
+        expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBeNull();
+        await rig.delivery.releaseExecution(empty);
+        expect(await endsOf(empty.executionId)).toBe(0);
+
+        const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "M1 asks" });
+        const c = await rig.repos.turns.findById(run.executionTurnId);
+        expect(c).toMatchObject({ role: "compaction", status: "pending" });
+        const e1 = await identity(c?.id);
+        expect(e1.reservedForUserTurnIds).toEqual([run.userTurnId]);
+        expect(e1.executionId).toBe(run.executionId);
+        expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBe(e1.executionId);
+        rig.setThreshold(100000);
+
+        const done = run.execute();
+        await summaryStarted.promise;
+        expect(await rig.orchestrator.cancel(rig.threadId, run.executionTurnId)).toBe("cancelled");
+        summaryReleased.open();
+        expect(await done).toMatchObject({ status: "cancelled" });
+        await processDetachedWork.drain();
+        if ((await rig.delivery.selectPending(rig.threadId)).length > 0) {
+          await expect(rig.orchestrator.startDrain(rig.threadId)).rejects.toThrow(
+            "Thread not found",
+          );
+          await processDetachedWork.drain();
+        }
+
+        // C's cancel ended E1 without delivering M1; the next execution did.
+        expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+          status: "cancelled",
+        });
+        expect(await endsOf(e1.executionId)).toBe(1);
+        const turns = await settled(rig);
+        const reply = turns.find(
+          (turn) => turn.role === "assistant" && turn.position > (c?.position ?? 0),
+        );
+        const e2 = await identity(reply?.id);
+        expect(e2.executionId).not.toBe(e1.executionId);
+        expect(e2.reservedForUserTurnIds).toEqual([run.userTurnId]);
+        expect(await deliveredBy(run.userTurnId)).toBe(reply?.id);
+        expect(await endsOf(e2.executionId)).toBe(1);
+        expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBeNull();
+
+        // Each end is journaled after its execution's last terminal turn, and
+        // E1's before E2 reserved anything.
+        const order = await journalOrder(rig.threadId);
+        const at = (match: (entry: (typeof order)[number]) => boolean) => order.findIndex(match);
+        const cCancelled = at(
+          (entry) => entry.type === "turn.cancelled" && entry.payload.turn?.id === c?.id,
+        );
+        const e1Ended = at(
+          (entry) =>
+            entry.type === "execution.ended" && entry.payload.executionId === e1.executionId,
+        );
+        const replyCreated = at(
+          (entry) => entry.type === "turn.created" && entry.payload.turn?.id === reply?.id,
+        );
+        expect(cCancelled).toBeGreaterThanOrEqual(0);
+        expect(e1Ended).toBeGreaterThan(cCancelled);
+        expect(replyCreated).toBeGreaterThan(e1Ended);
+      });
+
+      it("answers a Retry replay from its execution, before and after it reserves, and copies its messages", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage });
+        const stream = gateway.stream.bind(gateway);
+        let calls = 0;
+        gateway.stream = async function* (request) {
+          calls += 1;
+          if (calls <= 2) {
+            gateway.requests.push(request);
+            yield {
+              type: "error",
+              code: "provider_error",
+              message: "provider unavailable",
+              retryable: false,
+            };
+            return;
+          }
+          yield* stream(request);
+        };
+        const summaryReleased = gate();
+        let summaries = 0;
+        const summarizer = scriptedSummarizer(async () => {
+          summaries += 1;
+          await summaryReleased.promise;
+          return {
+            kind: "complete",
+            text: "Earlier context.",
+            model: "summary-model",
+            modelResponses: [],
+          };
+        });
+        const rig = await fixture({ gateway, summarizer });
+        rig.setThreshold(100000);
+        const m1 = await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Answer M1." },
+          idempotencyKey: "identity-retry-m1",
+        });
+        await drainControls(rig);
+        await processDetachedWork.drain();
+        const f1 = await rig.repos.turns.getLatestByThread(rig.threadId);
+        expect(f1).toMatchObject({ role: "assistant", status: "error" });
+        expect((await identity(f1?.id)).reservedForUserTurnIds).toEqual([m1.id]);
+
+        // A Retry of the failed reply fails too; its own Retry copies [M1] again.
+        const r1 = await rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId: f1?.id as never,
+          replyTurnId: crypto.randomUUID() as never,
+        });
+        await processDetachedWork.drain();
+        const failedRetry = await rig.repos.turns.findById(r1.turn?.id as never);
+        expect(failedRetry).toMatchObject({ status: "error", metadata: { retryOf: f1?.id } });
+        expect((await identity(failedRetry?.id)).reservedForUserTurnIds).toEqual([m1.id]);
+
+        // The next Retry compacts at start. Hold its claim before it reserves.
+        rig.setThreshold(2500);
+        const claimed = gate();
+        const proceed = gate();
+        const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
+        rig.runClaim.startExecution = async (threadId, executionId, settle) =>
+          startExecution(threadId, executionId, async () => {
+            await settle();
+            claimed.open();
+            await proceed.promise;
+          });
+        const replyTurnId = crypto.randomUUID();
+        const retry = {
+          threadId: rig.threadId,
+          failedTurnId: failedRetry?.id as never,
+          replyTurnId: replyTurnId as never,
+        };
+        const first = rig.orchestrator.retryReply(retry);
+        await claimed.promise;
+        // Nothing is reserved yet: this replay can't know whose the claim is.
+        await expect(rig.orchestrator.retryReply(retry)).rejects.toMatchObject({
+          code: "retry_pending",
+        });
+        // Another tab's Retry of the same reply is refused once one is under way.
+        proceed.open();
+        const accepted = await first;
+        expect(accepted).toMatchObject({ created: true, executionId: expect.any(String) });
+        rig.runClaim.startExecution = startExecution;
+
+        // C is reserved and summarizing; the reply is not: the replay finds C.
+        const c = await rig.repos.turns.findRetryReservation(rig.threadId, replyTurnId as never);
+        expect(c).toMatchObject({
+          role: "compaction",
+          executionId: accepted.executionId,
+          metadata: { retryOf: failedRetry?.id, retryReplyId: replyTurnId },
+        });
+        expect((await identity(c?.id)).reservedForUserTurnIds).toEqual([m1.id]);
+        expect(await rig.orchestrator.retryReply(retry)).toEqual({
+          created: false,
+          turn: null,
+          executionId: accepted.executionId,
+        });
+        await expect(
+          rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),
+        ).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+
+        summaryReleased.open();
+        await processDetachedWork.drain();
+        expect(summaries).toBe(1);
+        const reply = await rig.repos.turns.findById(replyTurnId as never);
+        expect(reply).toMatchObject({ role: "assistant", status: "complete" });
+        expect(await identity(replyTurnId)).toEqual({
+          executionId: accepted.executionId,
+          reservedForUserTurnIds: [m1.id],
+        });
+        expect(await rig.orchestrator.retryReply(retry)).toMatchObject({
+          created: false,
+          turn: { id: replyTurnId },
+          executionId: accepted.executionId,
+        });
+        expect(await endsOf(accepted.executionId)).toBe(1);
+        // M1 was delivered once, by the first reply that failed it.
+        expect(await deliveredBy(m1.id)).toBe(f1?.id);
+      });
+
+      async function failedReply(rig: Awaited<ReturnType<typeof fixture>>, key: string) {
+        await rig.delivery.enqueue({
+          threadId: rig.threadId,
+          intent: "message",
+          provenance: { kind: "writer", actorId: rig.ids.user },
+          body: { kind: "text", text: "Answer M1." },
+          idempotencyKey: key,
+        });
+        await drainControls(rig);
+        await processDetachedWork.drain();
+        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        expect(failed).toMatchObject({ role: "assistant", status: "error" });
+        return failed?.id as never;
+      }
+
+      it.each([
+        { first: "assistant", threshold: 100000 },
+        { first: "compaction", threshold: 2500 },
+      ])("runs a Retry whose answer read fails after it reserved its $first", async ({
+        first,
+        threshold,
+      }) => {
+        const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
+        const rig = await manualFixture({ gateway });
+        const failedTurnId = await failedReply(rig, `retry-describe-${first}`);
+        rig.setThreshold(threshold);
+        const replyTurnId = crypto.randomUUID() as never;
+        // The replay lookup reads the reply first; the next read describes the answer.
+        const findById = rig.repos.turns.findById.bind(rig.repos.turns);
+        let replyReads = 0;
+        rig.repos.turns.findById = async (id) => {
+          if (id === replyTurnId && ++replyReads === 2) throw new Error("turn read unavailable");
+          return findById(id);
+        };
+        const answer = await rig.orchestrator.retryReply({
+          threadId: rig.threadId,
+          failedTurnId,
+          replyTurnId,
+        });
+        rig.repos.turns.findById = findById;
+        expect(answer.executionId).toEqual(expect.any(String));
+        const reservation = await rig.repos.turns.findRetryReservation(rig.threadId, replyTurnId);
+        expect(reservation).toMatchObject({ role: first, executionId: answer.executionId });
+
+        await processDetachedWork.drain();
+        expect(await rig.repos.turns.findById(replyTurnId)).toMatchObject({
+          status: "complete",
+          executionId: answer.executionId,
+        });
+        expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+        expect(await endsOf(answer.executionId)).toBe(1);
+        expect(await leaseRow(rig.threadId)).toBeUndefined();
+      });
+
+      it.each([
+        { shuttingDown: false, otherRequest: "reply_retry_unavailable" },
+        // Shutdown stops new work; it never denies work already accepted.
+        { shuttingDown: true, otherRequest: "runtime_shutting_down" },
+      ])("answers a same-id replay that read the leaf after its own Retry reserved (shutdown: $shuttingDown)", async ({
+        shuttingDown,
+        otherRequest,
+      }) => {
+        const gateway = scriptedGateway({ usage: lowUsage, errorAtCall: 1 });
+        const rig = await manualFixture({ gateway });
+        const failedTurnId = await failedReply(rig, "retry-replay-race");
+        const retry = {
+          threadId: rig.threadId,
+          failedTurnId,
+          replyTurnId: crypto.randomUUID() as never,
+        };
+        // The winner holds the claim with no lease row and nothing reserved.
+        const claimed = gate();
+        const proceed = gate();
+        const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
+        rig.runClaim.startExecution = async (threadId, executionId, settle) =>
+          startExecution(threadId, executionId, async () => {
+            await settle();
+            claimed.open();
+            await proceed.promise;
+          });
+        const winner = rig.orchestrator.retryReply(retry);
+        await claimed.promise;
+        await expect(rig.orchestrator.retryReply(retry)).rejects.toMatchObject({
+          code: "retry_pending",
+        });
+
+        // The repeated replay reads status (asleep) before the winner reserves,
+        // and the leaf only after the winner's reply finished.
+        const latestRead = gate();
+        const latestReleased = gate();
+        const getLatestByThread = rig.repos.turns.getLatestByThread.bind(rig.repos.turns);
+        rig.repos.turns.getLatestByThread = async (threadId) => {
+          rig.repos.turns.getLatestByThread = getLatestByThread;
+          latestRead.open();
+          await latestReleased.promise;
+          return getLatestByThread(threadId);
+        };
+        const statusRead = gate();
+        const read = rig.runClaim.read.bind(rig.runClaim);
+        rig.runClaim.read = async (threadId) => {
+          rig.runClaim.read = read;
+          const state = await read(threadId);
+          statusRead.open();
+          return state;
+        };
+        const replay = rig.orchestrator.retryReply(retry);
+        await Promise.all([latestRead.promise, statusRead.promise]);
+        rig.runClaim.startExecution = startExecution;
+        proceed.open();
+        const accepted = await winner;
+        await processDetachedWork.drain();
+        expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
+        if (shuttingDown) rig.deps.shutdown.started = true;
+        latestReleased.open();
+
+        expect(await replay).toMatchObject({
+          created: false,
+          turn: { id: retry.replyTurnId },
+          executionId: accepted.executionId,
+        });
+        // Another tab's request id is still refused.
+        await expect(
+          rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),
+        ).rejects.toMatchObject({ code: otherRequest });
+      });
+
+      it("abandons an execution whose terminal write failed, and the next claim holder settles it first", async () => {
+        const gateway = scriptedGateway({ usage: lowUsage, pauseAt: [1] });
+        const rig = await manualFixture({ gateway });
+        const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "M1 asks" });
+        const e1 = await identity(run.executionTurnId);
+        const done = run.execute();
+        await gateway.untilGatewayBoundary(1);
+        const close = rig.delivery.close;
+        rig.delivery.close = async () => {
+          throw new Error("terminal write unavailable");
+        };
+        gateway.release(1);
+        expect(await done).toMatchObject({ status: "failed" });
+        rig.delivery.close = close;
+
+        // Abandoned: unlocked and asleep, but not ended, and still open.
+        const abandoned = await leaseRow(rig.threadId);
+        expect(abandoned?.executionId).toBe(e1.executionId);
+        expect(abandoned?.expiresAt.getTime()).toBeLessThanOrEqual(Date.now());
+        expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
+        expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+          status: "streaming",
+        });
+        expect(await endsOf(e1.executionId)).toBe(0);
+        expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBe(e1.executionId);
+
+        // The next holder repairs, ends E1 and deletes its row before its own lease exists.
+        const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
+        let rowAtInsert: Awaited<ReturnType<typeof leaseRow>> | "unseen" = "unseen";
+        rig.runClaim.startExecution = async (threadId, executionId, settle) =>
+          startExecution(threadId, executionId, async () => {
+            await settle();
+            rowAtInsert = await leaseRow(threadId);
+          });
+        await rig.send(rig.threadId, "M2 follows");
+        await rig.orchestrator.startDrain(rig.threadId);
+        await processDetachedWork.drain();
+        rig.runClaim.startExecution = startExecution;
+        expect(rowAtInsert).toBeUndefined();
+
+        expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+          status: "error",
+          metadata: { reason: "orphaned" },
+        });
+        expect(await deliveredBy(run.userTurnId)).toBe(run.executionTurnId);
+        expect(await endsOf(e1.executionId)).toBe(1);
+        const order = await journalOrder(rig.threadId);
+        const orphanError = order.findIndex(
+          (entry) => entry.type === "turn.error" && entry.payload.turn?.id === run.executionTurnId,
+        );
+        const ended = order.findIndex(
+          (entry) =>
+            entry.type === "execution.ended" && entry.payload.executionId === e1.executionId,
+        );
+        const next = order.findIndex(
+          (entry, index) =>
+            index > ended &&
+            entry.type === "turn.created" &&
+            (entry.payload.turn as unknown as Turn | undefined)?.role === "assistant",
+        );
+        expect(orphanError).toBeGreaterThanOrEqual(0);
+        expect(ended).toBeGreaterThan(orphanError);
+        expect(next).toBeGreaterThan(ended);
+        const turns = await settled(rig);
+        expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
+        expect((await identity(turns.at(-1)?.id)).executionId).not.toBe(e1.executionId);
+      });
+
+      it("settles an expired lease with no unsettled turn from the repair lane", async () => {
+        const rig = await manualFixture();
+        // A crash after repair committed the turn's error but before the end:
+        // the turn carries the execution, the expired row remains.
+        const executionId = crypto.randomUUID();
+        const leaf = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const repaired = await rig.repos.turns.create({
+          threadId: rig.threadId,
+          prevTurnId: leaf?.id as never,
+          role: "assistant",
+          origin: "assistant",
+          status: "error",
+          executionId,
+          reservedForUserTurnIds: [],
+        });
+        const stale = new Date(Date.now() - 60_000);
+        await db.insert(schema.threadRunLeases).values({
+          threadId: rig.threadId,
+          executionId,
+          turnId: repaired.id,
+          holderId: "dead-worker",
+          acquiredAt: stale,
+          renewedAt: stale,
+          expiresAt: stale,
+        });
+        expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBe(executionId);
+        const legacy = await rig.repos.threads.create({
+          aiWriteMode: "direct",
+          id: crypto.randomUUID(),
+          userId: rig.ids.user,
+          projectId: rig.ids.project,
+        });
+        await db.insert(schema.threadRunLeases).values({
+          threadId: legacy.id,
+          executionId: "run-before-identity",
+          holderId: "dead-worker",
+          acquiredAt: stale,
+          renewedAt: stale,
+          expiresAt: stale,
+        });
+        expect(await rig.runClaim.readOpenExecutionId(legacy.id as never)).toBeNull();
+
+        const repair = createTestOrphanRepair(db, {
+          repos: rig.repos,
+          inbox: rig.delivery,
+          eventWriter: rig.eventWriter,
+          authority: rig.runClaim,
+          publisher: { publish: async () => "already" as const },
+          eventSink: rig.deps.eventSink,
+        });
+        await repair.sweep(10);
+
+        expect(await leaseRow(rig.threadId)).toBeUndefined();
+        expect(await leaseRow(legacy.id)).toBeUndefined();
+        expect(await endsOf(executionId)).toBe(1);
+        expect(await endsOf("run-before-identity")).toBe(0);
+        expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBeNull();
+      });
     });
   });

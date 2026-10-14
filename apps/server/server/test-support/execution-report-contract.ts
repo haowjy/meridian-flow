@@ -45,6 +45,7 @@ export function executionReportContract(create: () => Promise<ExecutionScenario>
       await s.admit();
       await s.admit();
       const other = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.user,
         projectId: ids.project,
         parentThreadId: ids.caller,

@@ -116,7 +116,6 @@ describe("response helper revocation (Postgres)", () => {
       createdByUserId: USER_ID,
       name: "Other Work",
       slug: "other-work",
-      aiWriteMode: "draft",
     });
     await db.insert(schema.threads).values({
       id: threadB as never,
@@ -126,6 +125,7 @@ describe("response helper revocation (Postgres)", () => {
       title: "Other chat",
       kind: "primary",
       status: "idle",
+      aiWriteMode: "draft",
     });
     await db.insert(schema.threadWorks).values({
       threadId: threadB as never,

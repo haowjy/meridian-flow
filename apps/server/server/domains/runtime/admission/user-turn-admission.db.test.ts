@@ -421,7 +421,7 @@ if (!RUN) {
         threadId: THREAD,
         submissionId: "submission",
         userTurnId: "00000000-0000-4000-8000-000000000f54" as never,
-        assistantTurnId: "00000000-0000-4000-8000-000000000f55" as never,
+        steersTurnId: "00000000-0000-4000-8000-000000000f55" as never,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "4",
       };
@@ -466,7 +466,7 @@ if (!RUN) {
             threadId: THREAD,
             submissionId: "late",
             userTurnId: "00000000-0000-4000-8000-000000000f56" as never,
-            assistantTurnId: "00000000-0000-4000-8000-000000000f57" as never,
+            steersTurnId: "00000000-0000-4000-8000-000000000f57" as never,
             resumeAfterSeq: "0",
             snapshotFloorNextSeq: "4",
           },
@@ -512,7 +512,11 @@ if (!RUN) {
         },
       });
       const remoteOwnership = createDrizzleRunClaim(secondDb);
-      const liveClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
+      const liveClaim = await remoteOwnership.startExecution(
+        THREAD,
+        crypto.randomUUID(),
+        async () => {},
+      );
       expect(liveClaim).not.toBeNull();
       try {
         await expect(service[operation](input)).resolves.toMatchObject({ kind: "pending" });
@@ -528,7 +532,11 @@ if (!RUN) {
       ).rejects.toMatchObject({ code: "idempotency_conflict" });
       expect(await firstDb.select().from(schema.turns)).toHaveLength(0);
       expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
-      const releasedClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
+      const releasedClaim = await remoteOwnership.startExecution(
+        THREAD,
+        crypto.randomUUID(),
+        async () => {},
+      );
       expect(releasedClaim).not.toBeNull();
       if (releasedClaim) await remoteOwnership.release(releasedClaim);
     });

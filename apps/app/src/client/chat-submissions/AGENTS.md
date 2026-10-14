@@ -6,7 +6,7 @@ It is not a thread replica: no assistant turns. One observable account/thread mo
 attempts and the shared recovery eligibility/status snapshot for every mounted pane; views never enumerate persistence.
 
 - One record per `(accountId, recordId)`, keyed
-  `meridian:chat-submissions:v2:<accountId>:<recordId>`. Enumeration matches
+  `meridian:chat-submissions:v3:<accountId>:<recordId>`. Enumeration matches
   `prefix + accountId + ":"`, so an account id that is a string prefix of
   another never leaks the longer account's records.
 - One key per submission is deliberate: a write touches one record, not a
@@ -27,7 +27,7 @@ attempts and the shared recovery eligibility/status snapshot for every mounted p
   live or recovered row keeps each reference's document like the snapshot does.
 - The journal owns every displayed unadmitted writer message. `creation` carries
   create-or-get inputs on every record until the server confirms the chat.
-  `ChatSubmissionDriver` serializes requests in `createdAt` order under
+  `ChatSubmissionDriver` serializes requests in `seq` order (then record id) under
   `meridian:chat-submissions:<accountId>:<threadId>`. Derivation waits stay outside
   that lock. Account/lifetime cancellation abandons work without presenting failure;
   each request has a timeout so a departed owner cannot block takeover.
@@ -38,16 +38,50 @@ attempts and the shared recovery eligibility/status snapshot for every mounted p
 - Retry looks up the same submission id first. Acceptance bridges without a POST;
   not-seen posts the same id; only a durable rejection re-mints the id in the same
   record key. Edit fences an existing chat's submission before transferring its
-  structured draft ahead of newer writing. Never-created chat Edit transfers all
-  its journal drafts and this tab's unsent writing to New chat before retirement.
+  structured draft ahead of newer writing. Never-created chat Edit transfers its messages'
+  journal drafts and this tab's unsent writing to New chat, and retires the whole cohort,
+  queued switches included, in one step.
 - Browser envelopes use the shared `client/storage/browser-record.ts` boundary.
 - Codec rejects wrong-version and foreign envelopes without throwing. Unreadable
   records and unavailable enumeration retain the last complete snapshot and never sweep rows.
 
+Every record carries `seq`: its place in the chat's order. It is unique and monotonic per chat
+and orders across retirement: it is one above the larger of the chat's durable counter
+(`meridian:chat-submission-seq:v1:<account>:<thread>` in `localStorage`) and the largest held
+`seq`, read and written with the counter in the same synchronous step as the first write
+(`localStorage` has no await between). A retired record's number is never reused. Drain order,
+the refusal barrier and the switch fold sort by `seq`, then by record id; `createdAt` is
+display only. Two tabs appending in one tick can still tie, and the id breaks that tie: the
+writer cannot have made an order between actions in the same millisecond. A rewrite keeps its
+`seq`. The counter goes with the chat's records (`forgetOrder`, called by deleted-chat cleanup). The schema is v3; older keys are not read.
+
+A write-mode switch is a record too (`control: { kind: "write_mode", mode }`, empty
+message fields, `recordId` = its control id). The one driver posts it to the controls
+route in `seq` order with the messages around it, so a switch waits behind a
+chat's in-flight creation and a message never overtakes it, reload included. A
+record is marked `posted` durably before its first request leaves. A transient failure
+leaves it unresolved (same id on retry); a refusal stores `state: "rejected"` and holds
+the records after it until Stop or an admitted Retry. `withdrawControl` drops a
+record under the lock only when the server can't have it (never posted, or refused);
+a posted unresolved one is kept (Retry only), and a record already gone is the
+server's to withdraw. It has no writer row: its queued row, Retry and Stop come
+from `useThreadControls`.
+
+The driver does not delete a switch the server answers: it stamps `answer: { seq, mode, pending, at }`
+on the record (and spends its `creation`). The stamp is the answer's journal-head `seq`, the chat's
+applied mode and its queued switch, all read by the server in one transaction. Every tab, driving or
+not, reads it as a server fact through `switches[].answer` (the owner exposes id, mode, `seq`, posted,
+refused, failed and the stamp), so the display needs no in-process answer channel and a hidden tab
+that drove the record cannot strand the tab that chose it. The drain skips a stamped record, Retry
+ignores it, and a Stop on it goes to the server (`admitted`). The journal prunes stamped records
+past 60 s at its next write; a record that vanishes unstamped was withdrawn or refused here, or its
+stamp was pruned while a tab was blind, and the tab drops it (frames bring the server state). The
+switch view (`features/chat/thread-controls/useSwitchView.ts`) decides what the writer sees. The owner
+keeps only the journal side: `seq`, `posted`, the posted-aware Stop, and the keyed "Couldn't
+switch" announcement (cleared on Retry and when the record leaves).
+
 `creation` carries first-send inputs; `draft` retains the composer snapshot.
-Account bind rewrites v1 under the driver thread lock. A v2 copy is not
-drivable or retirable until its v1 key is gone; failed deletion leaves words in v1. The
-bounded rewrite removal trigger is in `.context/TODO`.
+Records under older storage keys are ignored.
 
 Record/retire notify in-tab subscribers; cross-tab localStorage events forward
 to the same listeners. `useIsThreadPendingCreation` synchronously combines

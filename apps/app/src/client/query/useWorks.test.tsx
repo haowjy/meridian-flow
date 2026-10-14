@@ -46,7 +46,6 @@ vi.mock("@/client/api/projects-api", () => ({
   restoreWork: vi.fn(),
   unarchiveWork: vi.fn(),
   updateWork: vi.fn(),
-  updateWorkWriteMode: vi.fn(),
 }));
 
 beforeEach(() => notifyManager.setScheduler(queueMicrotask));
