@@ -22,6 +22,8 @@ import {
   ThreadStoreProvider,
 } from "@/client/stores";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
+import { ToastRegion } from "@/components/app/ToastRegion";
+import { ToastRegistryProvider } from "@/components/app/toast-registry";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { AccountSettingsProvider } from "@/features/account/AccountSettingsProvider";
@@ -214,24 +216,27 @@ function AuthenticatedProviderTree({
         <TransportProvider>
           <MeridianCopilotProvider>
             <DensityPopoverCollisionProvider>
-              <div className="app-frame flex flex-col">
-                <ConnectionBanner />
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                  <Outlet />
+              <ToastRegistryProvider>
+                <div className="app-frame flex flex-col">
+                  <ConnectionBanner />
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                    <Outlet />
+                  </div>
                 </div>
-              </div>
-              <SettingsDialog />
-              {DebugOverlay ? (
-                <Suspense fallback={null}>
-                  <DebugOverlay />
-                </Suspense>
-              ) : null}
-              {ReactQueryDevtools ? (
-                <Suspense fallback={null}>
-                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-                </Suspense>
-              ) : null}
+                <SettingsDialog />
+                <ToastRegion />
+                {DebugOverlay ? (
+                  <Suspense fallback={null}>
+                    <DebugOverlay />
+                  </Suspense>
+                ) : null}
+                {ReactQueryDevtools ? (
+                  <Suspense fallback={null}>
+                    <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+                  </Suspense>
+                ) : null}
+              </ToastRegistryProvider>
             </DensityPopoverCollisionProvider>
           </MeridianCopilotProvider>
         </TransportProvider>
