@@ -119,18 +119,27 @@ transaction). Adoption and `bindTurn` validate under the same lock and refuse a 
 
 ### Leaving the chat: the graph and the conversation
 
-`turns.listByThread` is the **graph** (positions, `prevTurnId`, the leaf, fork cutoffs) and still returns
-a handed-back turn; the leaf does not move, because positions are unique per chat and allocated from it.
-The **conversation** is the graph without handed-back user turns and their blocks
-(`turns.listHandedBackIds`). Content readers use the conversation:
-`loadThreadConversationContext` (resolves forks and cutoffs on the graph, filters last, returns the
-inherited prefix and the local turns apart), `listConversationTurns`, `listConversationBlocks`, run
-start (`orchestrator.ts` keeps the graph for the leaf, positions and known ids), the compaction
-projection (a pin to a handed-back turn drops; a cut at one resolves to the last turn before its
-successor, `resolveCut`), the snapshot, the summary-path walk, both transcript-page key builders with
-the count and ordinal SQL (`notHandedBackSql`), `listMessageDeliveries`, `listLatestLocalRequesterText`,
-and the chat-activity projection (`0049`). `stop-protocol.db.test.ts` row 37 pins every one of these
-and fails if a new file reads turns, blocks or transcript rows without being a named graph reader.
+The repository ports return the **conversation**: `TurnRepository.findById` and `listByThread`, and every
+`BlockRepository` read, drop a handed-back writer message and its blocks. The adapters own the one SQL
+predicate (`notHandedBackSql`), which also guards the transcript page keys, the count and ordinal SQL,
+`listMessageDeliveries`, `listLatestLocalRequesterText` and the chat-activity projection (`0049`). A reader
+of content that knows nothing about hand-back gets the safe read.
+
+The **graph** (positions, `prevTurnId`, the leaf, fork cutoffs) still holds the handed-back turn, because the
+leaf does not move: positions are unique per chat and allocated from it. It is a separate read,
+`turnGraph(turns)` (`listByThread`, `findById`, `latest`), exported only from
+`threads/ports/turn-graph.ts`. Biome's `noRestrictedImports` (`biome.json`) lets only the graph modules,
+adapters, tests and contract suites import that file, so an unlisted module cannot compile into the graph.
+Add a module to the override list only when it walks `prevTurnId` or positions and filters its output:
+`loadThreadConversationContext` (resolves forks and cutoffs on the graph, filters last), run start and
+`inbox-context` (the leaf), `run-session` (Retry's leaf and the switch walk), the snapshot, transcript-page
+cutoffs, the handoff brief's leaf, `thread-ls` and readable-thread origin lookups. The compaction projection
+drops a pin to a handed-back turn and resolves a cut at one by position (`resolveCut`).
+
+A compaction that starts before it reaches the loop's cancel read still holds the adopted message in its
+captured history. `executeCompaction` reads the lease's `cancelRequested` flag immediately before the
+summarizer call: a Stop on another server sets it in the transaction that hands the message back.
+`stop-protocol.db.test.ts` row 37 pins the port defaults and row 14 the ordering.
 
 ## Command selection and release wake
 
