@@ -1,6 +1,6 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type { Block, OrchestratorEvent, RunState, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
@@ -14,6 +14,11 @@ export type DeliveryTransaction = {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   acknowledge(ids: readonly string[]): Promise<void>;
   materializePrefix(): Promise<void>;
+  /**
+   * Appends the chat's run-state record now and returns its stream version, so an admission can store
+   * it. Null where no record is published.
+   */
+  publishRunState(): Promise<string | null>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
 export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
@@ -154,6 +159,8 @@ export interface RuntimeDelivery
   /** Clear a crash-finalized non-reply selector without acknowledging its messages. */
   clearOrphanedTurn(threadId: ThreadId, turnId: TurnId): Promise<void>;
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
+  /** The run-state record a command answers with, read under the chat's thread lock. */
+  answerRunState(threadId: ThreadId): Promise<RunState>;
   /** Parent-first business transaction; the producer does not reacquire the lock. */
   withThreadLock<T>(
     threadId: ThreadId,

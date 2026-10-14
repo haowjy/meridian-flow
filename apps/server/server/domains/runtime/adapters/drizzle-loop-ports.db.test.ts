@@ -1,11 +1,13 @@
-import { eq } from "drizzle-orm";
-import { createInMemoryEventSink } from "../../observability/index.js";
 /** PostgreSQL coverage for the drizzle DeliveryStore and lease-backed RunClaim adapters. */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import type { MessageDraft } from "../loop/ports.js";
+import { readRunStateAtHead } from "./drizzle-run-state.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -31,6 +33,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
+    const { createLockedDrizzleInbox } = await import("../../../test-support/locked-inbox.js");
     const { sweepWakes } = await import("../loop/sweep-wakes.js");
     const { createTestDrizzleDelivery } = await import(
       "../loop/__tests__/test-drizzle-delivery.js"
@@ -73,6 +76,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
+    // The transitional `inbox.changed` frames these tests read; the run-state record follows each.
+    const inboxJournal = async (threadId: ThreadId) =>
+      (await journalEventsByThread(db, threadId)).filter(
+        (event) => event.eventType !== "run_state.changed",
+      );
+
     function message(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
       return {
         threadId,
@@ -94,7 +103,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     it("acks delivered messages and redelivers the unacked", async () => {
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const first = await inbox.enqueue(message("a1"));
       await inbox.enqueue(message("a2"));
 
@@ -104,7 +113,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("collapses a duplicate enqueue on the idempotency key", async () => {
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const first = await inbox.enqueue(message("same-key"));
       const second = await inbox.enqueue(message("same-key"));
 
@@ -114,7 +123,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("keeps the same idempotency key distinct across threads", async () => {
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const first = await inbox.enqueue(message("shared-key", THREAD_A));
       const second = await inbox.enqueue(message("shared-key", THREAD_B));
 
@@ -124,7 +133,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("lists distinct pending-message threads oldest first and excludes notices", async () => {
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       await inbox.enqueue(notice("s1", THREAD_A));
       await inbox.enqueue(message("a1", THREAD_A));
       await inbox.enqueue(message("b1", THREAD_B));
@@ -138,7 +147,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("discovers queued messages behind pending handoff seeds for ordinary repair", async () => {
       const repos = createDrizzleRepositoriesForTest(db);
       const runClaim = createDrizzleRunClaim(db, { holderId: "handoff-repair" });
-      const inbox = createDrizzleInbox(db);
+      const inbox = createLockedDrizzleInbox(db);
       const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
       const seed = await repos.turns.create({
         threadId: THREAD_A,
@@ -169,7 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "error",
         metadata: { reason: "interrupted", phase: "recovery" },
       });
-      await runClaim.release(repairLease);
+      await releaseLeaseUnderLock(db, runClaim, repairLease);
 
       expect(await delivery.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
       expect(await inbox.selectPending(THREAD_A)).toMatchObject([{ id: waiting.id }]);
@@ -490,7 +499,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const lease = required(await claim.startExecution(THREAD_A, "live", async () => {}));
       expect(await claim.withExclusiveThread(THREAD_A, async () => true)).toBeNull();
       expect(await remote.withExclusiveThread(THREAD_A, async () => true)).toBeNull();
-      await claim.release(lease);
+      await releaseLeaseUnderLock(db, claim, lease);
       expect(await remote.withExclusiveThread(THREAD_A, async () => true)).toBe(true);
     });
 
@@ -558,7 +567,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .from(schema.threads)
             .where(eq(schema.threads.id, THREAD_A));
           expect(thread?.inboxBlockedReason).toBeNull();
-          expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).not.toHaveProperty(
+          expect((await inboxJournal(THREAD_A)).at(-1)?.payload).not.toHaveProperty(
             "pending.blocked",
           );
           // A refused wake with only notices cannot install a new orphan block.
@@ -571,7 +580,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await delivery.enqueue(message("funded"));
           expect((await delivery.readPendingProjection(THREAD_A)).blocked).toBeUndefined();
         } finally {
-          await runClaim.release(lease);
+          await releaseLeaseUnderLock(db, runClaim, lease);
         }
       });
       it("persists the usage block and publishes it until the next run starts", async () => {
@@ -588,7 +597,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).rejects.toThrow("projection unavailable");
         expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
         await delivery.blockForUsage(lease);
-        await runClaim.release(lease);
+        await releaseLeaseUnderLock(db, runClaim, lease);
         const saved = await readPendingInbox(createDrizzleInbox(db), THREAD_A);
         const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
         const snapshot = await buildThreadSnapshot(
@@ -611,13 +620,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             readRunningTurnId: runClaim.readRunningTurnId,
             readOpenExecutionId: runClaim.readOpenExecutionId,
             readPending: (threadId) => readPendingInbox(delivery, threadId),
+            readRunState: (threadId) => readRunStateAtHead(db, threadId),
           },
           THREAD_A,
         );
         expect(snapshot.liveState.pending.blocked).toEqual({ reason: "credits_exhausted" });
         expect(saved.blocked).toEqual({ reason: "credits_exhausted" });
         expect(saved.items.map((item) => item.id)).toEqual([row.id]);
-        const events = await journalEventsByThread(db, THREAD_A);
+        const events = await inboxJournal(THREAD_A);
         expect(events.at(-1)?.payload).toMatchObject({
           pending: { blocked: { reason: "credits_exhausted" } },
         });
@@ -631,13 +641,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           messageIds: [row.id],
         }));
         expect((await readPendingInbox(delivery, THREAD_A)).blocked).toBeUndefined();
-        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).toMatchObject({
+        expect((await inboxJournal(THREAD_A)).at(-1)?.payload).toMatchObject({
           pending: { items: expect.any(Array) },
         });
-        expect((await journalEventsByThread(db, THREAD_A)).at(-1)?.payload).not.toHaveProperty(
+        expect((await inboxJournal(THREAD_A)).at(-1)?.payload).not.toHaveProperty(
           "pending.blocked",
         );
-        await runClaim.release(nextLease);
+        await releaseLeaseUnderLock(db, runClaim, nextLease);
       });
       it("rolls back enqueue when projection fails; commits one replacement before the wake", async () => {
         const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
@@ -666,9 +676,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await delivery.enqueue(message("atomic"))).id).toBe(accepted.id);
         expect(await db.select().from(schema.threadInboxMessages)).toHaveLength(1);
         expect(wakes).toBe(2);
+        // Each enqueue journals `inbox.changed`, then its run-state record, before the wake.
         expect(visible).toEqual([
-          [1, 1],
           [1, 2],
+          [1, 3],
         ]);
       });
       it("rolls back initial adoption, response+ack and terminal+release on projection failure", async () => {
@@ -742,13 +753,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               },
             },
           });
-          const events = await journalEventsByThread(db, THREAD_A);
+          const events = await inboxJournal(THREAD_A);
           expect(events.at(-1)?.payload).toMatchObject({
             type: "inbox.changed",
             pending: { items: [{ deliveryState: "awaiting_run" }] },
           });
         } finally {
-          await runClaim.release(lease);
+          await releaseLeaseUnderLock(db, runClaim, lease);
         }
       });
       it.each([
@@ -785,7 +796,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
           }
         } finally {
-          await runClaim.release(lease);
+          await releaseLeaseUnderLock(db, runClaim, lease);
         }
       });
       it.each([
@@ -831,7 +842,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             pending ? [pending.id] : [],
           );
         } finally {
-          await runClaim.release(lease);
+          await releaseLeaseUnderLock(db, runClaim, lease);
         }
       });
       it("serializes a racing enqueue after terminal commit and leaves it recoverable", async () => {

@@ -6,6 +6,7 @@ import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
 import type { Lease } from "../../loop/ports.js";
 import { createDrizzleInbox } from "../drizzle-inbox.js";
+import { markRunStateChanged } from "../drizzle-run-state.js";
 import { createDrizzleThreadLock } from "../drizzle-thread-lock.js";
 import { createDeliveryAdapter, type DeliveryLeaseStore } from "../runtime-delivery.js";
 
@@ -43,6 +44,7 @@ export function createDrizzleRuntimeDelivery(
         )
         .returning({ turnId: schema.threadRunLeases.turnId });
       if (!bound) throw new Error("Cannot bind current turn after losing live run lease");
+      markRunStateChanged(lease.threadId);
     },
 
     async setAdoptedMessageIds(lease, messageIds) {
@@ -51,6 +53,7 @@ export function createDrizzleRuntimeDelivery(
         .set({ adoptedMessageIds: [...messageIds] })
         .where(and(ownedLease(lease), isNotNull(schema.threadRunLeases.turnId)))
         .returning({ turnId: schema.threadRunLeases.turnId });
+      if (rows.length > 0) markRunStateChanged(lease.threadId);
       return rows.length > 0;
     },
 
@@ -62,6 +65,7 @@ export function createDrizzleRuntimeDelivery(
           and(ownedLease(lease), eq(schema.threadRunLeases.adoptedMessageIds, [...expectedIds])),
         )
         .returning({ threadId: schema.threadRunLeases.threadId });
+      if (rows.length > 0) markRunStateChanged(lease.threadId);
       return rows.length > 0;
     },
     async clearOrphanedReceipt(threadId, turnId, expectedIds) {
@@ -76,6 +80,7 @@ export function createDrizzleRuntimeDelivery(
           ),
         )
         .returning({ threadId: schema.threadRunLeases.threadId });
+      if (rows.length > 0) markRunStateChanged(threadId);
       return rows.length > 0;
     },
     async cancelThreadReceipt(threadId, turnId) {
@@ -128,6 +133,7 @@ export function createDrizzleRuntimeDelivery(
           ),
         )
         .returning({ threadId: schema.threadRunLeases.threadId });
+      if (rows.length > 0) markRunStateChanged(threadId);
       return rows.length > 0;
     },
     async lockReceipt(lease) {
@@ -146,7 +152,7 @@ export function createDrizzleRuntimeDelivery(
     ...deps,
     inbox: createDrizzleInbox(db),
     leaseStore,
-    threadLock: createDrizzleThreadLock(db),
+    threadLock: createDrizzleThreadLock(db, deps.eventWriter),
     schedulePostCommit: runAfterDrizzleCommit,
   });
 }

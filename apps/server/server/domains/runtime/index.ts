@@ -13,6 +13,7 @@ export {
   createDrizzleRunClaim,
   type DrizzleRunClaimOptions,
 } from "./adapters/drizzle-run-claim.js";
+export { readRunStateAtHead } from "./adapters/drizzle-run-state.js";
 export { createDrizzleThreadLock } from "./adapters/drizzle-thread-lock.js";
 export {
   createInMemoryInbox,

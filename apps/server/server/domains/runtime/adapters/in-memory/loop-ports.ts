@@ -13,6 +13,7 @@ import {
   type RunStarter,
   type ThreadPhase,
 } from "../../loop/ports.js";
+import { projectRunState } from "../../loop/run-state.js";
 import type { ThreadLock } from "../../loop/thread-lock.js";
 import { createDeliveryAdapter, type DeliveryStore } from "../runtime-delivery.js";
 
@@ -21,6 +22,16 @@ export function createInMemoryInbox(): DeliveryStore {
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
+    // The in-memory adapter publishes no run-state record.
+    markRunStateChanged() {},
+    async publishRunState() {
+      return null;
+    },
+    async answerRunState() {
+      throw new Error(
+        "The in-memory inbox answers run state through createInMemoryRuntimeDelivery",
+      );
+    },
     async setBlockedReason(threadId, reason) {
       if (reason) blocked.set(threadId, reason);
       else blocked.delete(threadId);
@@ -423,6 +434,29 @@ export function createInMemoryRuntimeDelivery(
     leaseStore: deps.runClaim,
     inbox: {
       ...deps.inbox,
+      // In memory the record is derived on demand at the journal head; nothing is published.
+      async answerRunState(threadId) {
+        const projection = await deps.inbox.readPendingProjection(threadId);
+        const run = deps.runClaim.readDeliveryRun(threadId);
+        const executionId = await deps.runClaim.readOpenExecutionId(threadId);
+        const thread = await deps.repos.threads.findById(threadId);
+        const body = projectRunState({
+          messages: projection.messages,
+          lease: executionId
+            ? { executionId, turnId: run?.turnId ?? null, adoptedMessageIds: run?.messageIds ?? [] }
+            : null,
+          executionOpen: executionId !== null,
+          sentThrough: Math.max(
+            0,
+            ...projection.messages
+              .filter((m) => m.intent === "message" && m.provenance.kind === "writer")
+              .map((m) => m.seq),
+          ),
+          mode: thread?.aiWriteMode ?? "direct",
+          blockedReason: projection.blocked?.reason ?? null,
+        });
+        return { ...body, version: (await deps.headSeq(threadId)).toString() };
+      },
       async readPendingProjection(threadId) {
         return {
           ...(await deps.inbox.readPendingProjection(threadId)),

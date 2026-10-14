@@ -31,6 +31,7 @@ export type {
   ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
+  ThreadRunStateReader,
   ThreadStatusReader,
   ThreadUserStateRepository,
   ThreadWorksRepository,

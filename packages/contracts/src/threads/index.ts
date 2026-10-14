@@ -11,6 +11,7 @@ import type {
   PrefixCachePredictionReason,
   PrefixCachePredictionState,
 } from "./prefix-cache-prediction.js";
+import type { RunState } from "./run-state.js";
 import type { TurnStatus } from "./status.js";
 
 export type {
@@ -182,11 +183,15 @@ export type EnqueueThreadControlResponse = {
   seq: string;
   /** The thread's applied write mode at the same read. */
   mode: AiWriteMode;
+  /** The record after this request, from `answerRunState` under the thread lock. */
+  runState: RunState;
 };
 export type WithdrawThreadControlResponse = {
   outcome: "withdrawn" | "already_started";
   /** Decimal string of the journal head after the withdrawal; same clock as the enqueue answer. */
   seq: string;
+  /** The record the withdrawal's own transaction published, from `answerRunState`. */
+  runState: RunState;
 };
 
 /** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */

@@ -737,6 +737,8 @@ export const userTurnAdmissions = pgTable(
     userTurnId: uuid("user_turn_id").$type<TurnId>(),
     /** The live reply the admitted message was steered into; a Stop hint only. */
     steersTurnId: uuid("steers_turn_id").$type<TurnId>(),
+    /** Stream version of the run-state record the admission's transaction published; null for rows from before it existed. */
+    runStateVersion: text("run_state_version"),
     resumeAfterSeq: text("resume_after_seq"),
     snapshotFloorNextSeq: text("snapshot_floor_next_seq"),
     claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),

@@ -337,6 +337,13 @@
       "when": 1791915815119,
       "tag": "0047_d62_chat_write_mode_online",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791951308711,
+      "tag": "0048_crazy_machine_man",
+      "breakpoints": true
     }
   ]
 }

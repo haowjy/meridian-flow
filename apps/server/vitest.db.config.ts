@@ -115,6 +115,7 @@ const expectedSuites = [
   "apps/server/server/domains/runtime/loop/work-context-notices.db.test.ts",
   "apps/server/server/domains/runtime/spawn/report-publication.db.test.ts",
   "apps/server/server/domains/runtime/adapters/drizzle-loop-ports.db.test.ts",
+  "apps/server/server/domains/runtime/adapters/drizzle-run-state.db.test.ts",
   "apps/server/server/domains/runtime/admission/user-turn-admission.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-repository-root.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-liveness.db.test.ts",

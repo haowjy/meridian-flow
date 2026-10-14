@@ -11,6 +11,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
 import type { ToolCall } from "../test-support/composed-runtime.js";
+import { releaseLeaseUnderLock } from "../test-support/release-lease.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -277,7 +278,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await switchTurns()).toEqual([]);
 
         // The release wake applies the switch once.
-        await runtime.ports.runClaim.release(lease);
+        await releaseLeaseUnderLock(runtime.ports.db, runtime.ports.runClaim, lease);
         await runtime.app.runStarter.start(THREAD.threadId as never);
         await processDetachedWork.drain();
         const turns = await switchTurns();

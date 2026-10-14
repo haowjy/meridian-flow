@@ -74,6 +74,7 @@ describe("ThreadRunController write outcomes", () => {
       submissionId: "sub-1",
       userTurnId: "turn-user",
       steersTurnId: "turn-assistant",
+      runStateVersion: null,
       resumeAfterSeq: "42",
       snapshotFloorNextSeq: "43",
     });
@@ -107,6 +108,7 @@ describe("ThreadRunController write outcomes", () => {
       submissionId: "sub-1",
       userTurnId: "turn-user",
       steersTurnId: "turn-assistant",
+      runStateVersion: null,
       resumeAfterSeq: "42",
       snapshotFloorNextSeq: "43",
     });
@@ -123,6 +125,7 @@ describe("ThreadRunController write outcomes", () => {
         threadId: "thread_1",
         submissionId,
         userTurnId: `turn-${submissionId}`,
+        runStateVersion: null,
         steersTurnId: `assistant-${submissionId}`,
         resumeAfterSeq: "42",
         snapshotFloorNextSeq: "43",

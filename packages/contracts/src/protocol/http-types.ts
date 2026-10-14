@@ -21,6 +21,7 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRetention,
   ModelResponse,
+  RunState,
   Thread,
   ThreadActivity,
   ThreadListItem,
@@ -59,6 +60,8 @@ export type ThreadLiveState = {
   activity: ThreadActivity;
   /** Undelivered inbox rows for this thread, ordered by `seq`; derived, never a turn block. */
   pending: ThreadPendingInbox;
+  /** What the chat is doing, read with the journal head in one transaction; `version` is that head. */
+  runState: RunState;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
 };
@@ -483,6 +486,8 @@ export type ReplyRetryRequest = z.infer<typeof replyRetryRequestSchema>;
 export type ReplyRetryResponse = {
   executionId: string | null;
   turn: Turn | null;
+  /** The record after the Retry's reservation (read again on a replay), from `answerRunState`. */
+  runState: RunState;
 };
 
 /**
@@ -522,6 +527,11 @@ export type SendMessageResponse = {
    * execution. A Stop hint only: it may be cancelled, and it answers nothing.
    */
   steersTurnId: string | null;
+  /**
+   * The stream version of the run-state record this admission's own transaction published, stored so
+   * a replay answers the same value. Null for an admission recorded before run state existed.
+   */
+  runStateVersion: string | null;
   /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
   /**

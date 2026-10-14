@@ -86,6 +86,14 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         turnId: "switch-turn",
         seq: "1",
         mode: "direct",
+        runState: {
+          version: "0",
+          items: [],
+          sentThrough: 0,
+          execution: null,
+          mode: "direct",
+          blocked: null,
+        },
       }),
       status: (entry, status) => {
         if (entry.control) return;
@@ -606,7 +614,21 @@ describe("write-mode switches in the journal", () => {
       const { owner } = r.mount({
         postControl: async () => {
           order.push(`switch after ${r.scenario.appendRequests.length} message(s)`);
-          return { id: "switch-1", pending: null, turnId: "switch-turn", seq: "1", mode: "direct" };
+          return {
+            id: "switch-1",
+            pending: null,
+            turnId: "switch-turn",
+            seq: "1",
+            mode: "direct",
+            runState: {
+              version: "0",
+              items: [],
+              sentThrough: 0,
+              execution: null,
+              mode: "direct",
+              blocked: null,
+            },
+          };
         },
       });
       await owner.drive("thread_1");
@@ -638,7 +660,21 @@ describe("write-mode switches in the journal", () => {
         postControl: async () => {
           if (lost) throw new HttpResponseError("busy", 503, null);
           if (refuse) throw new HttpResponseError("work_unavailable", 400, null);
-          return { id: "switch-1", pending: null, turnId: "switch-turn", seq: "1", mode: "direct" };
+          return {
+            id: "switch-1",
+            pending: null,
+            turnId: "switch-turn",
+            seq: "1",
+            mode: "direct",
+            runState: {
+              version: "0",
+              items: [],
+              sentThrough: 0,
+              execution: null,
+              mode: "direct",
+              blocked: null,
+            },
+          };
         },
       });
       await owner.drive("thread_1");
