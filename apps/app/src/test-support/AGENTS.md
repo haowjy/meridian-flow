@@ -33,7 +33,7 @@ visible is a browser question and belongs in a probe.
 
 - **`draft-review-scope.tsx`** — real presented-review, Chat and third-Work scopes,
   controllers, query cache, mutations and header model. `createReviewScopeFixture`
-  installs test-lifetime spies on `getDraftMeta`, `applyContent`, `discardDraft` and account seams, and exposes `rooms` (its detached sessions resolve `whenSynced`); always
+  installs test-lifetime spies on `getDraftMeta`, `applyDraft`, `applyDraftChanges`, `discardDraft` and account seams, and exposes `rooms` (its detached sessions resolve `whenSynced`); always
   dispose it after the render finishes, and do not use concurrent tests with it.
   `deferredReviewAnswer` holds each request independently. Pass scenario Works
   and identities to `render`; mount actual document/phone/Work UI through

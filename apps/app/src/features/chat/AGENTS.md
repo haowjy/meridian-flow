@@ -246,9 +246,9 @@ lists the drafts with changes this chat has pending edits in (`useThreadDraftFil
 and keeps each file's changes the attribution hint ties to the chat
 (`acquireChatChanges`, from the draft's text and the server's edit parts; a best-effort
 hint, nothing gates on it). A chat with none shows no strip. Apply sends this chat's
-changes per file; only new documents are one whole-draft item. Discard happens in place:
+changes per file; only new documents are one whole item. Discard happens in place:
 the row reads "Discarded" with Undo until the writer leaves (`useHeadlessDiscards`), and a
-new document's Discard closes its draft. Creation-bound Work batches hide every queued
+new document's Discard closes its item. Creation-bound Work batches hide every queued
 item at the click; failure restores its file.
 Summary and commands share one row. Each document name opens its own review,
 including the single-document summary (also when a launch fails); the chevron and remaining summary area
