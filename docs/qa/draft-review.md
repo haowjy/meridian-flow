@@ -265,9 +265,11 @@ metadata read or a 404 never does.
    failures, not product refusals.
 3. Stale typing on rewritten text (D33). Offline again, in one paragraph type a new sentence,
    type a second one and delete it, and delete one existing word. From the direct-mode peer,
-   rewrite that paragraph so the rebase replaces its words (retype it, or move it). Reconnect.
-   PASS: the surviving offline sentence appears once, green, as its own paragraph beside the
-   paragraph's last neighbour; the deleted offline sentence never appears; the rewritten
+   rewrite that paragraph so the rebase replaces its words (retype it, move it, or cut it and type
+   an unrelated paragraph in its place). Type with native per-key typing: the browser resends each
+   keystroke as its own frame. Reconnect.
+   PASS: the surviving offline sentence appears once, green, as ONE paragraph with its spaces
+   (never a column of letters) beside the paragraph's last neighbour; the deleted offline sentence never appears; the rewritten
    paragraph keeps every word including the one deleted offline (delete it again); a second
    reconnect changes nothing. No refusal. Automated: `late-peer-admission.test.ts`.
 4. Open the live room's WebSocket frames while idle. Known issue

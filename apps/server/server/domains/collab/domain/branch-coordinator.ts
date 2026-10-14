@@ -3,8 +3,11 @@
 import {
   DRAFT_SERVER_CLIENT_ID,
   findLostEdits,
+  type LateTyping,
   type LostEdit,
+  NO_LATE_TYPING,
   recoverLatePeerEdits,
+  revisesLateTyping,
 } from "@meridian/agent-edit/diff";
 import type { SemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { bytesEqual } from "@meridian/agent-edit/integration";
@@ -282,6 +285,10 @@ export function createBranchCoordinator(input: {
   const dirtyTransientBranches = new Set<string>();
   const maxCasRetries = input.maxCasRetries ?? 3;
   const maxCachedReplicas = input.maxCachedReplicas ?? 32;
+  // Late typing recovered per draft, so a reconnect's keystroke-per-frame replay extends one paragraph
+  // per typed span. Process memory: after a restart or eviction later keystrokes start new paragraphs.
+  const lateTyping = new Map<string, LateTyping>();
+  const MAX_LATE_TYPING_BRANCHES = 64;
   // Branches an operation is using right now: their replica is never destroyed under it.
   const pins = new Map<string, number>();
 
@@ -542,6 +549,7 @@ export function createBranchCoordinator(input: {
       doc,
       update: inputWriter.updateData,
       lost,
+      memory: lateTyping.get(snapshot.branchId) ?? NO_LATE_TYPING,
       schema: draftSchema,
       fragmentName: PROSEMIRROR_FRAGMENT_NAME,
       clientId: DRAFT_SERVER_CLIENT_ID,
@@ -550,6 +558,7 @@ export function createBranchCoordinator(input: {
     // late deletion is log-only (D33), never replayed against the rebased text.
     if (bytesEqual(Y.encodeStateAsUpdate(currentDocument), Y.encodeStateAsUpdate(doc))) {
       doc.destroy();
+      rememberLateTyping(snapshot.branchId, recovery.memory);
       return false;
     }
     input.onLateWriterEdits?.({
@@ -568,7 +577,18 @@ export function createBranchCoordinator(input: {
           : inputWriter.updateData,
       },
     ]);
+    rememberLateTyping(snapshot.branchId, recovery.memory);
     return true;
+  }
+
+  /** Keeps a draft's late typing once its frame is persisted, dropping the least recent drafts beyond the bound. */
+  function rememberLateTyping(branchId: string, memory: LateTyping): void {
+    lateTyping.delete(branchId);
+    lateTyping.set(branchId, memory);
+    for (const oldest of lateTyping.keys()) {
+      if (lateTyping.size <= MAX_LATE_TYPING_BRANCHES) break;
+      lateTyping.delete(oldest);
+    }
   }
 
   async function persistJournaledUpdate(
@@ -766,6 +786,7 @@ export function createBranchCoordinator(input: {
       cached.clear();
       pendingTransients.clear();
       dirtyTransientBranches.clear();
+      lateTyping.clear();
     },
 
     broadcastUpdate(update) {
@@ -808,9 +829,14 @@ export function createBranchCoordinator(input: {
                     throw new BranchClosedError(inputWriter.branchId);
                 },
                 // Containment first: a repeated delete set is no new instruction, so recovery judges
-                // only what the document has not seen.
+                // only what the document has not seen. A deletion of recovered typing is the exception:
+                // the document holds it already (the typing was dead), but the paragraph does not.
                 isContained: () =>
-                  documentContainment.contains(currentDocument, inputWriter.updateData),
+                  documentContainment.contains(currentDocument, inputWriter.updateData) &&
+                  !revisesLateTyping(
+                    lateTyping.get(inputWriter.branchId) ?? NO_LATE_TYPING,
+                    lost.deleted,
+                  ),
                 append: () => persistWriterUpdate(snapshot, inputWriter, currentDocument, lost),
               });
               return { admitted: admission.admitted && admission.value };

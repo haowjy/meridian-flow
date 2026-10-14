@@ -27,7 +27,8 @@ export interface LostEdit {
  *
  * Typed text is net of the update's own delete set (D33): characters the same frame also deletes were
  * revised away by the peer (an Undo manager keeps their structs, so they still travel), and only what
- * survives in the peer's view is lost. One edit per surviving run.
+ * survives in the peer's view is lost. One edit per surviving run of an incoming struct: a browser sends
+ * one struct per keystroke, so recovery regroups the runs by what the peer sees side by side.
  */
 export function findLostEdits(
   doc: Y.Doc,
