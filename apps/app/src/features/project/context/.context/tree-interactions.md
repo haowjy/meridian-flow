@@ -168,9 +168,12 @@ and dialog serve all Scratch rows, retaining each target's owner. The actual own
 
 ## Selecting and dragging rows
 
-The Files tree, the chat's Scratch and a Work's Files each own one selection
-(`useEntrySelection`) and pass it to their rows (`EntrySelectionProvider`) and to
-their drop route. A plain click opens or toggles the row as before and leaves no
+The Files tree, the chat's Scratch and a Work's Files are each one list:
+`useEntryList` owns its selection, its entries route and, through `EntryList`,
+its drop scope (the Files tree is one list over all four areas, with each
+section keeping its own expansion). Rows join through `EntrySelectionProvider`.
+Selection keys are `kind:id` and carry no scheme or place, so a moved row keeps
+its key and stays selected. A plain click opens or toggles the row as before and leaves no
 selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
 is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
 starts an explicit selection from the open row and adds or removes rows;
@@ -188,27 +191,30 @@ data until the drop). The transfer carries only Meridian's entries type, no
 (the composer, the editor, until mention drops land) ignores the drop instead of
 pasting names that look like a half-made link.
 
-Each list has a `TreeDropScope` (the Files tree one per area, all sharing the
-tree's selection) whose `entries` route (`use-entry-move-route.ts`)
-answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
+Each list has a `TreeDropScope` whose entries route (`use-entry-list.tsx`,
+planning in `move-plan.ts`) answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
 itself", "Act 2 already has chapter-2", including two selected rows with the
 same name), or nothing (the row is already there, the target is a
 navigation-only folder, or the drag comes from another system, which Move or
 Copy will handle). A drop moves every carried row through `move-entry.ts` at
-once, reselects them, opens the destination folder and shows "Moved chapter-3 to
-Act 2." with Undo on the surface that took the drop (`MoveNotice`: the sidebar
-foot, or under Work Files, which stays visible with the sidebar collapsed).
+once (`execute-move.ts`), reselects them, reveals the destination (the target's
+own `reveal`, the same one the spring calls) and shows "Moved chapter-3 to Act
+2." with Undo on the surface that took the drop (`MoveNotice` in that surface's
+`MoveNoticeHost`: the sidebar foot, or under Work Files, which stays visible
+with the sidebar collapsed). A project keeps only its latest result, as data.
 
 Placement is optimistic, exactly as for Move…: each placement's operation is
 remembered, so the row's link-update note follows its receipt and a later server
 refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
 each row to its previous parent under its current name, skips a row that moved
-again since or is gone (the writer's newer choice), and reads the catalogs as
-they are when pressed, not as they were at the drop. Verdicts likewise read
-each dragged row as the catalog shows it now, so a peer's rename or move during
-the drag can't slip a folder inside itself. A lone moved row stays selected on
-its own (an explicit selection of one), not the open row.
+again since or is gone (the writer's newer choice), and reads the replica as it
+is when pressed, not as it was at the drop. Verdicts likewise resolve each
+dragged row by identity from the replica's placement graph (rows another list
+dragged included), so a peer's rename or move during the drag can't slip a
+folder inside itself. A lone moved row stays selected on its own (an explicit
+selection of one), not the open row, and Undo needs no reselect because keys
+never change.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the
@@ -217,4 +223,4 @@ several catalogs (Scratch and its earlier notes) resolves the right one. The
 scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one
 block (Work Files, a flat list, lights each row of the folder). Hovering a
-closed folder or area for 600 ms opens it. The phone shell has no drag.
+closed folder or area for 600 ms reveals it, and so does an accepted drop on it. The phone shell has no drag.
