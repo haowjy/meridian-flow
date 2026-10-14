@@ -20,8 +20,8 @@ import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
 } from "./DesktopProjectController";
-import { DockOpenInEditor } from "./dock/DockDocumentButtons";
-import { useDockViewStore } from "./dock/dock-view-store";
+import { DockDocumentActions } from "./dock/DockDocumentActions";
+import { dockDocument, useDockDocumentStore } from "./dock/dock-document-store";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./routing/chat-navigation";
 import {
@@ -76,7 +76,7 @@ beforeEach(() => {
     _workspaceHydrated: true,
     byProject: { [projectId]: { tabs: [A, B], selectedTabIdByWork: { [workId]: "A" } } },
   });
-  useDockViewStore.setState(useDockViewStore.getInitialState(), true);
+  useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   useProjectSurfacePrefsStore.setState(useProjectSurfacePrefsStore.getInitialState(), true);
 });
 afterEach(async () => {
@@ -121,7 +121,7 @@ async function setup(source: ScreenKey = "context") {
   function Controller() {
     const failures = useDocumentSwitchFailures();
     const railSwitchFailed = useRailSwitchFailed();
-    const revision = useDockViewStore((state) => state.revision);
+    const revision = useDockDocumentStore((state) => state.revision);
     const entry = useSyncExternalStore(
       (listener) => history.subscribe(listener),
       () => history.location,
@@ -163,9 +163,7 @@ async function setup(source: ScreenKey = "context") {
         </button>
         {railSwitchFailed && <p role="alert">Rail failure</p>}
         {headerFailure(failures.failures, revision) && <p>Header failure</p>}
-        {switcher.dockDocument && (
-          <DockOpenInEditor projectId={projectId} document={switcher.dockDocument} />
-        )}
+        {switcher.dockDocument && <DockDocumentActions document={switcher.dockDocument} />}
         <ProjectRouteBoundary
           issue={acceptedFailure ? "error" : issue}
           retainWhileLoading={switcher.editorPresentation.retainWhileLoading}
@@ -187,7 +185,7 @@ async function setup(source: ScreenKey = "context") {
         address: address(history.location.pathname.split(projectId)[1]),
         editorWorkId: workId,
         noWorkId: null,
-        manuscriptCatalog: null,
+        documentCatalog: null,
       }),
       lookup: async () => ({ kind: "failed" }),
       admitDraftReview: (tab) => removal.admitDraftReview(projectId, tab),
@@ -244,18 +242,28 @@ async function setup(source: ScreenKey = "context") {
     navigation.dispose();
     client.clear();
   };
-  const click = async (label: string) =>
-    act(async () =>
+  const click = async (label: string) => {
+    if (label === "Header") {
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="Document actions"]')
+          ?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })),
+      );
+      await act(async () =>
+        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+          .find((item) => item.textContent === "Open in Editor")
+          ?.click(),
+      );
+      return;
+    }
+    await act(async () =>
       container
         .querySelector<HTMLButtonElement>(
-          label === "Header"
-            ? 'button[aria-label="Open in Editor"]'
-            : label === "Chat"
-              ? "button:nth-of-type(1)"
-              : "button:nth-of-type(2)",
+          label === "Chat" ? "button:nth-of-type(1)" : "button:nth-of-type(2)",
         )
         ?.click(),
     );
+  };
   return {
     history,
     navigation,
@@ -281,10 +289,12 @@ async function setup(source: ScreenKey = "context") {
     },
     replace: async (tab: ContextTab) =>
       act(async () => {
-        const store = useDockViewStore.getState();
+        const store = useDockDocumentStore.getState();
         store.commit(store.claim(), {
           projectId,
           screen: source === "work" ? "work" : "chat",
+          review: null,
+          screenWorkId: null,
           tab,
         });
       }),
@@ -304,13 +314,13 @@ it.each([true, false])("retained A, not pending B (cached: %s), moves to Chat", 
   await rig.pending("loading");
   await rig.click("Chat");
   expect(rig.history.location.pathname).toContain("/chats");
-  expect(useDockViewStore.getState().occupant?.tab.documentId).toBe("A");
+  expect(useDockDocumentStore.getState().occupant?.tab.documentId).toBe("A");
 });
 it.each(["error", "unavailable"] as const)("hidden %s pane carries nothing", async (issue) => {
   const rig = await setup();
   await rig.pending(issue);
   await rig.click("Chat");
-  expect(useDockViewStore.getState().occupant).toBeNull();
+  expect(useDockDocumentStore.getState().occupant).toBeNull();
 });
 it.each([
   "chat",
@@ -318,17 +328,23 @@ it.each([
 ] as const)("%s document opens as a real Editor tab before dock consumption", async (source) => {
   const rig = await setup(source);
   await rig.replace(B);
+  await act(async () =>
+    useDockDocumentStore.getState().setDocumentReview({ workId, draftId: "draft-B" }),
+  );
   await rig.click("Editor");
+  expect(rig.history.location.search).toContain("draft=draft-B");
   expect(rig.history.location.pathname).toContain("/editor/manuscript/B.md");
   expect(useContextTabsStore.getState().byProject[projectId].selectedTabIdByWork[workId]).toBe("B");
-  expect(useDockViewStore.getState().occupant).toBeNull();
+  expect(useDockDocumentStore.getState().occupant).toBeNull();
 });
 it("Work Files can follow the rail to Chat", async () => {
   const rig = await setup("work");
   await rig.replace(B);
   await rig.click("Chat");
-  expect(useDockViewStore.getState().occupant).toMatchObject({
+  expect(useDockDocumentStore.getState().occupant).toMatchObject({
     screen: "chat",
+    review: null,
+    screenWorkId: null,
     tab: { documentId: "B" },
   });
 });
@@ -342,7 +358,7 @@ it("collapsed occupant carries nothing", async () => {
   );
   await rig.click("Editor");
   expect(rig.history.location.pathname).toBe(`/p/${projectId}/editor`);
-  expect(useDockViewStore.getState().occupant?.tab.documentId).toBe("B");
+  expect(useDockDocumentStore.getState().occupant?.tab.documentId).toBe("B");
 });
 it("cancel and supersede leave the document and show no failure", async () => {
   const rig = await setup("chat");
@@ -354,7 +370,7 @@ it("cancel and supersede leave the document and show no failure", async () => {
   });
   await rig.click("Editor");
   expect(rig.history.location.pathname).toContain("/chats");
-  expect(useDockViewStore.getState().occupant?.tab.documentId).toBe("B");
+  expect(useDockDocumentStore.getState().occupant?.tab.documentId).toBe("B");
   expect(rig.container.querySelector('[role="alert"]')).toBeNull();
   let intent: Parameters<ProjectLeaveGuard["request"]>[0] | undefined;
   rig.navigation.registerGuard({
@@ -369,7 +385,7 @@ it("cancel and supersede leave the document and show no failure", async () => {
     rig.navigation.beginIntent();
     intent?.run();
   });
-  expect(useDockViewStore.getState().occupant?.tab.documentId).toBe("B");
+  expect(useDockDocumentStore.getState().occupant?.tab.documentId).toBe("B");
   expect(rig.container.querySelector('[role="alert"]')).toBeNull();
 });
 it("failed admission stays on Editor, keeps the dock, and Retry clears its failure", async () => {
@@ -383,7 +399,7 @@ it("failed admission stays on Editor, keeps the dock, and Retry clears its failu
     useContextTabsStore.setState({ openTab: original });
   }
   expect(rig.history.location.pathname).toContain("/editor/manuscript/B.md");
-  expect(useDockViewStore.getState().occupant?.tab.documentId).toBe("B");
+  expect(useDockDocumentStore.getState().occupant?.tab.documentId).toBe("B");
   expect(rig.container.textContent).toContain("This destination couldn’t load.");
   await act(async () =>
     Array.from(rig.container.querySelectorAll("button"))
@@ -397,15 +413,15 @@ it("newer dock intent wins without blocking successful tab installation", async 
   await rig.replace(B);
   rig.navigation.registerGuard({
     request: (intent) => {
-      const store = useDockViewStore.getState();
-      store.commit(store.claim(), { projectId, screen: "chat", tab: A });
+      const store = useDockDocumentStore.getState();
+      store.commit(store.claim(), dockDocument(projectId, "chat", A, null));
       intent.run();
     },
     dirty: () => true,
     cancel: () => undefined,
   });
   await rig.click("Editor");
-  expect(useDockViewStore.getState().occupant?.tab.documentId).toBe("A");
+  expect(useDockDocumentStore.getState().occupant?.tab.documentId).toBe("A");
   expect(useContextTabsStore.getState().byProject[projectId].selectedTabIdByWork[workId]).toBe("B");
 });
 it("source rail feedback expires on same-screen navigation, and ordinary opens do not opt in", async () => {
@@ -506,7 +522,7 @@ it.each([
     .toContain("renamed.md");
   await rig.click(source === "context" ? "Chat" : "Editor");
   if (source === "context")
-    expect(useDockViewStore.getState().occupant?.tab.name).toBe("renamed.md");
+    expect(useDockDocumentStore.getState().occupant?.tab.name).toBe("renamed.md");
   else expect(rig.history.location.pathname).toContain("/editor/manuscript/renamed.md");
 });
 it.each(["removed", "terminal"] as const)("a %s projection carries nothing", async (lifecycle) => {
@@ -524,23 +540,23 @@ it.each(["removed", "terminal"] as const)("a %s projection carries nothing", asy
     })
     .toBe("Chooser");
   await rig.click("Chat");
-  expect(useDockViewStore.getState().occupant).toBeNull();
+  expect(useDockDocumentStore.getState().occupant).toBeNull();
 });
 it.each(["recover", "chooser"] as const)("%s presentation carries nothing", async (mode) => {
   const rig = await setup();
   await rig[mode]();
   await rig.click("Chat");
-  expect(useDockViewStore.getState().occupant).toBeNull();
+  expect(useDockDocumentStore.getState().occupant).toBeNull();
 });
 it("another project's parked occupant carries nothing", async () => {
   const rig = await setup("chat");
   await act(async () => {
-    const store = useDockViewStore.getState();
-    store.commit(store.claim(), { projectId: "another", screen: "chat", tab: B });
+    const store = useDockDocumentStore.getState();
+    store.commit(store.claim(), dockDocument("another", "chat", B, null));
   });
   await rig.click("Editor");
   expect(rig.history.location.pathname).toBe(`/p/${projectId}/editor`);
-  expect(useDockViewStore.getState().occupant?.projectId).toBe("another");
+  expect(useDockDocumentStore.getState().occupant?.projectId).toBe("another");
 });
 
 it("Work receives no document and leaves a parked Chat occupant alone", async () => {
@@ -552,8 +568,10 @@ it("Work receives no document and leaves a parked Chat occupant alone", async ()
       ?.click(),
   );
   expect(rig.history.location.pathname).toContain(`/works/${workId}`);
-  expect(useDockViewStore.getState().occupant).toMatchObject({
+  expect(useDockDocumentStore.getState().occupant).toMatchObject({
     screen: "chat",
+    review: null,
+    screenWorkId: null,
     tab: { documentId: "B" },
   });
 });

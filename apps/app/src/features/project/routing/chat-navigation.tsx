@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { isThreadAwaitingCreation } from "@/client/chat-submissions";
+import { threadAvailability } from "@/client/chat-submissions/thread-availability";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -197,7 +198,7 @@ export function useProjectChatNavigation({
   useEffect(() => {
     if (urlChatId) remember(urlChatId);
   }, [urlChatId, remember]);
-  useMissingChatFallback(surfaceThreadId, () => {
+  useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void go({ kind: "chat-index" }, { replace: true });
@@ -221,13 +222,19 @@ export function useProjectChatNavigation({
  * go. A 404 recorded before the chat was last pending creation is the benign
  * race of a first send, not a missing chat, even once the send is acknowledged.
  */
-function useMissingChatFallback(threadId: string | null, onMissing: () => void) {
+function useMissingChatFallback(accountId: string, threadId: string | null, onMissing: () => void) {
   const pending = useIsThreadPendingCreation(threadId);
   const { error, errorUpdatedAt } = useQuery({
     ...threadSnapshotQueryOptions(threadId ?? ""),
     enabled: false,
   });
-  const notFound = !!error && "status" in error && error.status === 404;
+  const availability = threadAvailability(error, accountId);
+  const notFound =
+    !!error &&
+    "status" in error &&
+    error.status === 404 &&
+    availability !== "deleted" &&
+    availability !== "project-deleted";
   const pendingAt = useRef(0);
   const latest = useRef(onMissing);
   latest.current = onMissing;

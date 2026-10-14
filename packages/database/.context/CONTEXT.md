@@ -126,11 +126,18 @@ for what it means and its current (logging-only) scope.
 ### Yjs document heads and checkpoints
 
 `document_yjs_heads.latest_checkpoint_id` is declared in the Drizzle schema as an
-FK to `document_yjs_checkpoints.id` with `ON DELETE SET NULL`. Checkpoints are
-append-only in the production lifecycle: compaction deletes retained
-`document_yjs_updates` rows, not checkpoint rows, and checkpoints are removed by
-the `documents` cascade. Do not document this relationship as custom SQL or as an
-absent FK.
+FK to `document_yjs_checkpoints.id` with `ON DELETE SET NULL`. Compaction deletes
+retained `document_yjs_updates` rows, not checkpoint rows. Routine persistence
+may remove the initial zero-sequence seed checkpoint; other checkpoints remain
+until the `documents` cascade. Do not document this relationship as custom SQL
+or as an absent FK.
+
+The generation-local head `retired_through_seq` monotonically records every
+compacted prefix in the deletion transaction, including zero-fold compaction.
+Generation replacement resets it. Lazy checkpoint cuts validate their captured
+suffix floor against it after fetching inputs and again under the persistence
+lock. The parent-document cascade removes both journal and head, invalidating
+that authority.
 
 `document_yjs_heads.schema_version` and `document_branches.schema_version` store
 the packed integer form of `COLLAB_SCHEMA_VERSION`
@@ -225,7 +232,7 @@ Existing databases that ran the pre-relaunch chain must be reset with
 `pnpm db:reset` (local data is destroyed), not incrementally migrated.
 
 The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
-change-trail lifecycle functions/triggers on `branch_write_journal`. The six
+change-trail lifecycle functions/triggers on `branch_write_journal`. The
 functions in `src/functions/` remain a separate post-migration install that the
 `db:migrate` runner synchronizes. Fresh installs seed no users, Projects, or
 Works: the historical No Work and thread binding backfills had no rows to
@@ -233,17 +240,22 @@ transform. Application project bootstrap creates locked No Work; thread
 admission establishes the primary binding. Legacy user imports belong in a
 separate ETL, not universal schema migrations.
 
+The checkpoint range capture function takes only immutable references and sequence
+bounds under the document mutation lock. Its exception subtransaction releases
+capture-owned locks before returning, including inside an ambient transaction.
+Keep this a single SQL statement: a client-managed savepoint spanning awaits can
+roll back sibling operations queued concurrently on the same connection.
+
 ### Merging parallel migration lanes
 
 For generated migrations, when two branches add at the same ordinal, **regenerate the
-incoming branch's migration from the merged schema; never renumber, rename, or
-hand-edit its identity.** Reapply the online-safety SQL edits after regeneration.
-Never touch a migration already present on the target branch
-(or on `main`).
+unmerged lane's migration from the merged schema; never renumber, rename, or
+hand-edit its identity.** Preserve frozen `main`/`staging` history regardless of
+which branch receives the merge. Reapply online-safety SQL edits after regeneration.
 
-1. Keep the target branch's migrations, snapshots, and journal entries as
-   they are.
-2. Delete the incoming branch's colliding `.sql`, its `meta/NNNN_snapshot.json`,
+1. Keep the frozen base branch's migrations, snapshots, and journal entries
+   unchanged.
+2. Delete the unmerged lane's colliding `.sql`, its `meta/NNNN_snapshot.json`,
    and its `_journal.json` entry.
 3. Resolve `src/schema/` so it holds both sides. A constraint or enum both
    branches rewrote must carry the union of their values.
@@ -254,6 +266,14 @@ Never touch a migration already present on the target branch
    names them.
 5. A handwritten `--custom` migration cannot be regenerated. Recreate it with
    `drizzle-kit generate --custom` at the new ordinal and copy its body.
+6. Read the target's highest ordinal from its journal rather than trusting a
+   brief: the base may have gained several migrations, and the regenerated one
+   lands after all of them.
+7. A lane database that applied the replaced identity cannot migrate onto the
+   regenerated history. Its owner must separately authorize a reset before
+   syncing that checkout (`pnpm db:reset` destroys local data). This does not
+   prevent merging or probing with disposable databases. Never reset or migrate
+   another checkout's database as part of the merge.
 
 Why: two lanes that each recreate the same CHECK constraint can each list only
 their own value. Renumbering one by hand keeps that SQL, so whichever runs last

@@ -321,7 +321,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       if (typeof documentId !== "string") throw new Error("the copy reported no documentId");
 
       const rolledBack = await script.runtime.ports.documentSync.finalizeResponseRollback(
-        responseId,
+        { providerResponseId: responseId, editScopeId: responseId },
         THREAD as never,
       );
 

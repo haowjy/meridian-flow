@@ -9,11 +9,7 @@ import {
 } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { NoticePort } from "../domains/notices/index.js";
-import type {
-  ProjectRepository,
-  WorkContextNotices,
-  WorkRepository,
-} from "../domains/projects/index.js";
+import type { WorkContextNotices, WorkRepository } from "../domains/projects/index.js";
 import type { RunClaim } from "../domains/runtime/index.js";
 import {
   RebindThreadWorkError,
@@ -22,14 +18,13 @@ import {
   type ThreadRepository,
   type ThreadWorksRepository,
 } from "../domains/threads/index.js";
-import { throwHttpInterrupt } from "./interrupt-boundary.js";
+import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import { requireRequestId } from "./request-id.js";
 import { recordWriterWorkSwitchNotice } from "./writer-work-switch-notice.js";
 
 export interface ThreadWorkRebindRouteDeps {
   threads: Pick<ThreadRepository, "findById" | "findByIdIncludingDeleted">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
-  projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findById" | "findNoWork">;
   workContextNotices: Pick<WorkContextNotices, "threadChanged" | "materializeIdle">;
   notices: Pick<NoticePort, "record">;
@@ -58,11 +53,7 @@ export async function handleRebindThreadWorkRequest(
     body: RebindThreadWorkRequest;
   },
 ): Promise<RebindThreadWorkResponse> {
-  const thread = await requireThreadOwner(
-    { threads: deps.threads, projects: deps.projects },
-    input.threadId,
-    input.userId,
-  );
+  const thread = await requireThreadOwner({ threads: deps.threads }, input.threadId, input.userId);
   let workId: WorkId;
   if (input.body.workId === null) {
     const noWork = await deps.works.findNoWork(thread.projectId);

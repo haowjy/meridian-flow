@@ -22,6 +22,37 @@ socket. `CollabSchemaWebSocket` formats the current version through
 subclass wraps `TappedWebSocket` in debug builds and the native `WebSocket` in
 production so observation does not create a second transport path.
 
+## Outbox and acknowledgement edges
+
+The outbox is the session layer's evidence that the writer has typing the
+server has not acknowledged. Draft review counts it as changes at the shown
+generation, and `BranchWriterHandoff` carries it into the next generation, so
+it must be visible to every observer before anything can act on its absence.
+
+- **Store, then send.** `handleDocumentUpdate` registers on the `Y.Doc` before
+  `HocuspocusProvider` is constructed. Yjs (lib0 `ObservableV2`) runs update
+  listeners in registration order, so local bytes are stored before the
+  provider's own listener sends them and the native send tracker publishes
+  acknowledgement `false`. The provider constructor does not mutate the
+  document, and the explicit websocket keeps it from attaching on its own, so
+  the early registration sees no constructor updates.
+- **Edges only.** The transport publishes its own acknowledgement observation
+  only when the outbox goes from empty to pending. An acknowledgement clears
+  the outbox before notifying. `DocumentSession.recomputeStatus` deduplicates
+  on status, server acknowledgement and outbox presence, so a typing burst
+  yields one pending snapshot and one clearing snapshot. A per-update emission
+  re-rendered every subscribed editor on each keystroke.
+
+The order used to be reversed: the provider sent and the tracker published
+`false` before the outbox listener stored anything, and the outbox write
+published nothing. In a live two-tab whole Discard, the empty successor read
+then arrived while the writer's words were held, saw no pending writing, and
+ended the review. The test fake stored bytes before publishing, so two fixes
+passed their witness and failed live. A witness for this ordering must run the
+real transport over `test-support/DocumentSocketHarness`, as
+`hocuspocus-document-transport.acknowledgement.test.ts` and the remote whole
+Discard case in `features/editor/EditorView.writer-handoff.test.tsx` do.
+
 ## Access scope and 4409
 
 The server names a room's scope in Hocuspocus's authenticated message on every
@@ -145,3 +176,23 @@ new hints. Working-set pagehide/hidden-visibility flushes are persistence signal
 its preference owner binds recovery only for the committed account epoch.
 Local document peers and session wakeup keep their content-recovery listeners,
 independent of network jitter, cooldowns, or unrelated connection successes.
+
+## Thread socket deadlines
+
+`SocketLifecycleController` owns the attempt phases: connecting, transport-open
+awaiting the protocol `connected` frame, and connected. One watchdog starts at
+socket creation and ends only on `connected`, close, or teardown. Its default
+is 10 seconds (`handshakeTimeoutMs` is injectable); opening or receiving other
+frames does not extend it. The separate 45-second ping deadline starts on open
+and resets on every inbound frame. Expiry of either deadline retires the socket
+before requesting native close and uses the same reconnect backoff as a network
+close, without waiting for a close acknowledgement. Retired sockets cannot drive
+product callbacks. Both timers are cancelled on retirement or teardown; protocol
+`connected` cancels only the handshake watchdog.
+
+Protocol readiness lives in this lifecycle, not in a second transport flag.
+Subscriptions still resume from the last delivered cursor after `connected`;
+catch-up and gap reconciliation are unchanged. These deadlines bound handshake
+wait and inbound silence, not time to recovery: retries still depend on the
+server/network returning and browser timers running (background suspension can
+delay either deadline).

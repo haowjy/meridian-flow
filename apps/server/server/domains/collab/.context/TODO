@@ -1,0 +1,6 @@
+# Collab follow-ups
+
+- Formatting-only draft edits remain invisible in review on main too:
+  `domain/draft-review-hunks.ts` compares block text rather than marks/attributes.
+  Add formatting review coverage separately. Complete-effect settlement preserves
+  these drafts for document-level Apply draft / Discard draft meanwhile.

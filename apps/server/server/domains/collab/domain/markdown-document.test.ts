@@ -48,7 +48,7 @@ function setup(filetype = "typescript") {
       async seedInitialDocument(documentId, state) {
         const snapshot = await journal.read(documentId);
         if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.checkpoint(documentId, state, 0);
+        await journal.seedInitialDocument(documentId, state);
         return true;
       },
     },
@@ -136,6 +136,7 @@ describe("checkpoint restore", () => {
       async (subject) => {
         const live = subject.coordinator.ensureEmpty(DOCUMENT_ID);
         model.insertBlocks(toDocHandle(live), null, { blocks: [uploadingImageParagraph()] });
+        await subject.journal.seedInitialDocument(DOCUMENT_ID, Y.encodeStateAsUpdate(live));
       },
       async (subject) => {
         const [paragraph] = model.projectBlocks(
@@ -153,7 +154,7 @@ describe("checkpoint restore", () => {
     const checkpoints = createCheckpointService({
       coordinator: subject.coordinator,
       store: subject.journal,
-      latestUpdateSeq: (documentId) => subject.journal.latestUpdateSeq(documentId),
+      journal: subject.journal,
       markdownDocuments: subject.engine,
     });
     const checkpoint = await checkpoints.checkpoint(DOCUMENT_ID, "before edit");

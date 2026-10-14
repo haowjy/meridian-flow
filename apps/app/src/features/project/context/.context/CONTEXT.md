@@ -89,8 +89,8 @@ ContextPaneController
        └─ ContextViewer
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DocumentPaneChrome (shared with the dock's document)
-              │     ├─ PassageNotice, DraftReviewHeader, ArchivedWorkNotice
-              │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips, incl. DraftReviewChip)
+              │     ├─ PassageNotice, ArchivedWorkNotice, ImportDocumentNotice
+              │     ├─ DocumentIdentityBar (DocumentPath crumbs + chips and painted DraftReviewBand)
               │     └─ DocumentProperties (read-only frontmatter; mounts when the catalog entry
               │        has `hasProperties`, then fetches by document id; open/closed is one
               │        device preference in the surface-prefs store)
@@ -145,9 +145,15 @@ Resting crumbs are passive: project-menu acquisition mounts only when a crumb
 opens. The source owns `own.crumbTrail(path, depth)`, including the exception for
 an area not offered at the root; `own.openAt(path)` remains the full folder trail
 used by placement. The first menu mounts with its final trail and highlight IDs.
-Path fit is selected from intrinsic-width candidates rendered by the same
-`CrumbRow` as the visible path. A link-update note is a direct sibling of the
+`DocumentIdentityBar` measures one shared collapse priority list against its actual
+row width: parent crumbs, icon labels, stepper count, then Apply label. The
+filename keeps 64px and every command remains in the row. A link-update note is a direct sibling of the
 path, so an absent note occupies neither a flex item nor a gap.
+Identity-row touch targets extend vertically to 44px without changing row height.
+Their horizontal hit area is exactly their visible box; gaps, including the full
+gap beside Discard draft, stay unclaimed. The fit ladder measures the real 24px
+minimum control widths on phone/coarse pointers.
+
 
 Link-update feedback derives its destination from the matched move receipt, not
 from a picker-provided label. The remount registry retains only operation

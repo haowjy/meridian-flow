@@ -23,7 +23,6 @@ import {
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
-import { BranchNotFoundError } from "../../domain/branch-resolver.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
@@ -37,7 +36,6 @@ import {
 import { createResponseWriteFinalizer } from "../../domain/response-write-finalizer.js";
 import { createThreadPeerCorePool } from "../../domain/thread-peer-core-pool.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
-import { reverseTurn } from "../../domain/turn-reversal.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
 import {
@@ -84,7 +82,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       async seedInitialDocument(documentId, state) {
         const snapshot = await journal.read(documentId);
         if (snapshot.checkpoint || snapshot.updates.length > 0) return false;
-        await journal.checkpoint(documentId, state, 0);
+        await journal.seedInitialDocument(documentId, state);
         return true;
       },
     },
@@ -96,17 +94,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = createThreadPeerCorePool({
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
-    liveHistory: journal,
-    reversalHistory: {
-      branches: {
-        resolveThreadBranch: async (documentId, threadId) => {
-          throw new BranchNotFoundError(documentId, threadId);
-        },
-        getBranch: async () => null,
-      },
-      branchRows: { listJournalRowsForBranch: async () => [] },
-    },
-    discardThreadPeerBranches: async () => {},
     pullThreadPeer: async () => undefined,
     commitThreadResponseAtomically: (operation) => operation(),
     responseTransactionSettlement: {
@@ -123,7 +110,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     journal,
     hocuspocus: hocuspocusBinding.current,
     metaForOrigin,
-    latestUpdateSeq: store.latestUpdateSeq,
     emitAgentEditInvariantViolation() {},
   });
   const authorityHeads = createInMemoryAuthorityHeads(journal);
@@ -133,29 +119,19 @@ export function createInMemoryCollabDomain(): CollabDomain {
   });
   const responseFinalizer = createResponseWriteFinalizer({
     agentEdit,
-    liveAgentEdit: runtime.liveUtilityCore,
-    reversalStore: journal,
-    liveReversal: {
-      checkDependentLaterLiveRows: async () => ({
-        hasDependents: false,
-        blockingActorTypes: [],
-        checkedUntilSeq: 0,
-      }),
-    },
-    resolveDocumentUri: async (documentId) => documentId,
-    branches: {
-      async checkpointThreadPeer() {},
-      async prepareFailedResponseRollback() {
-        return async () => {};
+    rollback: {
+      async rollbackResponse() {
+        throw new Error("Durable inverse rollback requires the receipt-backed Postgres adapter");
       },
     },
+    branches: { async checkpointThreadPeer() {} },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
   });
   const checkpoints = createCheckpointService({
     coordinator,
     store,
-    latestUpdateSeq: store.latestUpdateSeq,
+    journal: journal,
     markdownDocuments: runtime.markdownDocuments,
   });
 
@@ -187,21 +163,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       agentEdit: () => agentEdit,
     },
     reversal: {
-      reverseTurn: (input) =>
-        reverseTurn(
-          {
-            reversalStore: journal,
-            agentEdit: runtime.liveUtilityCore,
-            resolveDocumentUri: async (documentId) => documentId,
-            checkDependentLaterLiveRows: async () => ({
-              hasDependents: false,
-              blockingActorTypes: [],
-              checkedUntilSeq: 0,
-            }),
-            refreshDocumentProjection: projections.refresh,
-          },
-          input,
-        ),
+      reverseTurn: async () => {
+        throw new Error("Turn receipts require the durable Postgres receipt adapter");
+      },
       reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
@@ -249,7 +213,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       runtime.codec,
       links,
     ),
-    drafts: createInMemoryDraftStub(runtime.markdownDocuments),
+    drafts: createInMemoryDraftStub(),
     documentCreation,
   });
 }
@@ -266,9 +230,6 @@ const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   },
   async setWorkPushPolicy() {
     throw new Error("Branch push service is not configured");
-  },
-  async markFailedResponseRollbackPending() {
-    throw new Error("Branch review service is not configured");
   },
 };
 
@@ -321,22 +282,14 @@ function createInMemoryBranchPeerStub(
   };
 }
 
-function createInMemoryDraftStub(documents: {
-  readAsMarkdown(
-    documentId: string,
-  ): ReturnType<
-    import("../../domain/markdown-document.js").MarkdownDocumentEngine["readAsMarkdown"]
-  >;
-}): CollabDrafts {
+function createInMemoryDraftStub(): CollabDrafts {
   return {
     draftReview: {
       async list() {
         return [];
       },
       async preview(input) {
-        const live = await documents.readAsMarkdown(input.documentId);
-        if (!live.ok) throw new Error(`read_failed:${live.error.code}`);
-        return { status: "gone", draftId: input.draftId, live: live.value };
+        return { status: "gone", draftId: input.draftId };
       },
       async applyWorkDraft(input) {
         return {
@@ -344,16 +297,14 @@ function createInMemoryDraftStub(documents: {
           draftId: input.draftId,
         };
       },
+      async applyWorkDraftChanges(input) {
+        return { status: "gone", draftId: input.draftId };
+      },
       async discardWorkDraft(input) {
         return {
           status: "discarded",
           draftId: input.draftId,
         };
-      },
-    },
-    draftSessionStats: {
-      async listActiveDraftsByWork() {
-        return [];
       },
     },
   };
@@ -398,8 +349,7 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
 
 function inMemoryStore(journal: InMemoryJournal) {
   return {
-    createCheckpoint: (docId: string, state: Uint8Array, reason: string, upToSeq: number) =>
-      journal.createCheckpoint(docId, state, reason, upToSeq),
+    createCheckpoint: journal.createCheckpoint.bind(journal),
     getCheckpoint: (id: string) => journal.getCheckpoint(id),
     listCheckpoints: (docId: string) => journal.listCheckpoints(docId),
     latestUpdate: (docId: string) => journal.latestUpdate(docId),

@@ -39,9 +39,18 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
 - Send transfers the exact structured fingerprint to the journal before clearing
   unchanged editor words. `onSubmit` returns whether local recording succeeded;
   network admission does not quarantine or lock authoring. A local storage refusal
-  keeps the live draft and reports the failure inside the composer frame, above the
-  words, as the shared `ErrorCard` (`components/app/ErrorCard.tsx`), a live alert
-  whose only control is an X (`onDismiss`) that dismisses it and returns to the
-  editor. Pressing Send again is the retry, and the next recorded send clears
-  it. The Composer owns it, so every host draws it the same and it never stacks
-  with the strips above the box.
+  keeps the live draft and reports the failure above the box as the shared
+  `NoticeCard` (`components/app/NoticeCard.tsx`, error tone), a live alert whose
+  only control is an X (`onDismiss`) that dismisses it and returns to the editor.
+  Pressing Send again is the retry, and the next recorded send clears it.
+- Every note above the box is a `NoticeCard` in one stack the Composer draws:
+  the host's own (`notices`, such as the dismissible deleted-chat note and the
+  nondismissible usage note) and then the Composer's failure. The stack sits
+  above the strips joined to the box's top edge (`attached`, the draft dock),
+  never between a strip and the box.
+- Usage waiting is the server inbox projection (`blocked.reason:
+  credits_exhausted`), not an account-balance guess. ChatView supplies its
+  info-tone note through `notices`; waiting writer rows say "Waiting for usage".
+  The server clears the fact through the ordinary inbox event (at run start, or
+  when no message or control remains pending). The box stays editable, and the
+  client never polls.

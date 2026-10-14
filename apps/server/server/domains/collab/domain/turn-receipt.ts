@@ -15,6 +15,7 @@ export type TurnReceiptState =
 export type TurnReceiptControl = "undo" | "redo" | "view_change";
 
 export type TurnReceiptChip = {
+  skips?: import("@meridian/contracts/protocol").TurnInverseSkip[];
   state: TurnReceiptState;
   control: TurnReceiptControl;
 };

@@ -102,19 +102,26 @@ Dev uses Portless HTTPS routes. Never assume raw ports, bind ports manually, or
 probe `ws://127.0.0.1:<port>`. Start with `pnpm dev`; discover URLs with
 `pnpm portless:list`.
 
+The dev server doesn't watch `node_modules`: pnpm hardlinks its shared store into
+every worktree, so another worktree's install would otherwise restart this one's
+server and kill in-flight replies ([#817](https://github.com/haowjy/meridian-flow/issues/817)).
+After installing, upgrading, or patching a package, run `pnpm dev:restart`.
+
 Postgres is a plain `postgres:16` container; `DATABASE_URL` is the app seam. Use
 noninteractive libpq authentication (`PGPASSWORD` or `-w`).
 
 Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 [tools/dev/AGENTS.md](tools/dev/AGENTS.md).
 
-Driving or inspecting the running app (threads, docs, mock model, logs): use
-`./mf` for setup and durable reads (`thread view`, `thread events`, `thread context`,
-`log`, `doc read`). Until [#768](https://github.com/haowjy/meridian-flow/issues/768)
-lands, `./mf thread send` and `thread tail --until-idle` can report another message's
-reply or stop before the reply that answers yours: check run outcomes against
-`./mf thread view` (the durable transcript) or in the browser. See
-[docs/debugging.md](docs/debugging.md#drive-the-app-from-the-cli).
+**Verify app behavior in the browser.** A runtime check, a probe, or a PR's
+walkthrough or Before/After drives a real browser (`agent-browser`) and judges what
+the screen shows, with the durable transcript as truth. `./mf` doesn't test the app:
+it is a separate client over the API. Use it only to set up state (Works, threads,
+seeded documents, mock-model scripts, queued controls) and to read durable state
+(`thread view`, `thread events`, `thread context`, `log`, `doc read`). Never cite
+`./mf thread send` or `thread tail` output as evidence. Until
+[#768](https://github.com/haowjy/meridian-flow/issues/768) lands, they can also report
+another message's reply. See [docs/debugging.md](docs/debugging.md#set-up-and-read-with-the-cli).
 
 ## Build and test
 
@@ -148,6 +155,20 @@ Don't defer this: if the integration branch is later squash-merged, none of
 its side-lane branches remain provable as merged by PR match or by ancestry,
 and only a human who tracked the actual history can confirm by hand that they
 are safe to remove.
+
+**Clean up as soon as you're done with something.** Idle dev stacks, databases and
+checkouts waste the machine's memory, CPU and disk. When a worktree, dev stack, probe,
+review checkout or temporary branch has done its job:
+
+1. Stop its dev stack with `pnpm dev --stop`.
+2. End anything still running from it (the Nx daemon, `agent-browser` sessions, watchers).
+3. Remove the worktree, its database and its merged branch with
+   `pnpm dev:prune-worktrees -- --target <branch|path>`.
+4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
+   `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
+
+Run `pnpm dev:gc-dbs` after a batch of cleanups to drop databases that no worktree owns.
+Before you hand control back, check that nothing you started is still running.
 
 Never switch the branch of a checkout you do not own. From the primary
 checkout, create another branch under the sibling worktree root, then pass its

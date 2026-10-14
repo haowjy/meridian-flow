@@ -12,6 +12,12 @@ export function createToolRegistry(options: CreateToolRegistryOptions = {}): Too
 
   function addRegistration(registration: ToolRegistration): void {
     const name = registration.definition.name;
+    // Core publication supports object roots and command unions, not intersections.
+    if ("allOf" in registration.definition.inputSchema) {
+      throw new Error(
+        `Tool ${name}: root allOf is unsupported at registration; use an object or command union`,
+      );
+    }
     if (registrations.has(name)) {
       throw new Error(`Tool registration already exists for name: ${name}`);
     }

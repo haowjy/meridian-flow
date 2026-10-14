@@ -1,3 +1,4 @@
+import type { ModelResponseIdentity } from "@meridian/contracts";
 /**
  * Canonical tool-execution types: tool call inputs, handler/context shapes,
  * registry and executor interfaces. The vocabulary the registry, executor,
@@ -61,7 +62,7 @@ export interface ToolExecutionContext {
   threadId: ThreadId;
   turnId: TurnId;
   /** Model-response id currently dispatching tool calls. */
-  responseId?: string;
+  responseIdentity?: ModelResponseIdentity;
   agentSlug: string | null;
   signal?: AbortSignal;
   /**
@@ -154,7 +155,7 @@ export interface ToolHandlerContext {
   threadId: string;
   turnId: string;
   /** Model-response id currently dispatching tool calls. */
-  responseId?: string;
+  responseIdentity?: ModelResponseIdentity;
   /** Bound revision slug; null when the thread has no bound agent. */
   agentSlug: string | null;
   /**

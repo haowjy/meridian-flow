@@ -9,10 +9,12 @@ export * from "./document-link-api.js";
 export * from "./document-properties.js";
 export * from "./document-ref.js";
 export * from "./drafts/index.js";
+export type { EditOrigin, EditPlacement } from "./edit-placement.js";
 export * from "./enums";
 export * from "./ids";
 export * from "./imports.js";
 export * from "./jsonb";
+export type { ModelResponseIdentity } from "./model-response-identity.js";
 export type {
   ExportOutsideArea,
   ProjectExportOptions,

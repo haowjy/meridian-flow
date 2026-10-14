@@ -7,7 +7,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
-import { ErrorCard } from "@/components/app/ErrorCard";
+import { NoticeCard } from "@/components/app/NoticeCard";
 import { Button } from "@/components/ui/button";
 import { useOpenChatDocument } from "@/features/project/context/open-chat-document";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
@@ -23,6 +23,7 @@ export type UserTurnProps = {
   turn: Turn;
   /** True while the accepted writer turn has not yet been read by the model. */
   queued?: boolean;
+  waitingForUsage?: boolean;
   /** Retry and, after a durable server refusal, Edit on the unadmitted writer row. */
   submissionRecovery?: UserTurnRecovery | null;
 };
@@ -61,7 +62,12 @@ export function projectUserTurn(turn: Turn): {
   return { text, references, skills };
 }
 
-function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: UserTurnProps) {
+function UserTurnComponent({
+  turn,
+  submissionRecovery = null,
+  queued = false,
+  waitingForUsage = false,
+}: UserTurnProps) {
   // Hand off from a message the model has. A queued one sits beyond the
   // cutoff the server would use, so it offers none.
   const handoff = useTurnDerivation() !== null && !queued && turn.status === "complete";
@@ -111,7 +117,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
           role="status"
           className="mt-[var(--chat-space-inline)] text-right text-xs text-muted-foreground"
         >
-          {t`Queued`}
+          {waitingForUsage ? t`Waiting for usage` : t`Queued`}
         </p>
       ) : null}
       {turn.status === "error" && submissionRecovery?.moving ? (
@@ -129,7 +135,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
         <div className="mt-[var(--chat-space-block)] flex w-0 min-w-full justify-end">
           {/* The chat announces the failure once through its own assertive region, and a
               rejection restored on reload must stay silent, so the card is not an alert. */}
-          <ErrorCard inline announce={false}>
+          <NoticeCard tone="error" inline announce={false}>
             <p data-user-turn-status="error" role="status">
               {t`Couldn't send.`}
             </p>
@@ -154,7 +160,7 @@ function UserTurnComponent({ turn, submissionRecovery = null, queued = false }: 
                 {t`Edit`}
               </Button>
             ) : null}
-          </ErrorCard>
+          </NoticeCard>
         </div>
       ) : null}
       {handoff ? (
@@ -176,6 +182,7 @@ export const UserTurn = memo(
   (prev, next) =>
     prev.turn === next.turn &&
     prev.submissionRecovery === next.submissionRecovery &&
-    prev.queued === next.queued,
+    prev.queued === next.queued &&
+    prev.waitingForUsage === next.waitingForUsage,
 );
 UserTurn.displayName = "UserTurn";

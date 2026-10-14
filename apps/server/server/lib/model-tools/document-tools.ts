@@ -48,7 +48,6 @@ import {
   inContainer,
   keptDraftReader,
   withDraftWork,
-  withRefusedWrites,
 } from "./file-access.js";
 import { readDocument } from "./read-document.js";
 import { deleteCreatedTrackedDocument } from "./response-write-lifecycle.js";
@@ -210,7 +209,7 @@ async function writeUnderGrant(
         sessionId: ctx.threadId,
         threadId: ctx.threadId,
         turnId: ctx.turnId,
-        responseId: ctx.responseId,
+        responseIdentity: ctx.responseIdentity,
         tool_use_id: ctx.toolCallId,
         createdDocument: address.created === true,
         grant,
@@ -227,12 +226,10 @@ async function writeUnderGrant(
   if (written.isError) return { isError: true, output: written.result, shown };
   // The showing is host-only evidence: it leaves here only as `shown`.
   const { showing: _showing, ...outcome } = written;
-  // Undo and redo go where history says, so only forward writes name a destination.
-  const reversal = parsed.command === "undo" || parsed.command === "redo";
-  const routed = reversal
-    ? withRefusedWrites(outcome)
-    : withDestination(outcome, grant.destination);
-  return { ...routed, shown } as WriteOutcome & { isError: false; shown: ShownLinkShowing[] };
+  return { ...withDestination(outcome, grant.destination), shown } as WriteOutcome & {
+    isError: false;
+    shown: ShownLinkShowing[];
+  };
 }
 
 export function createReadHandler(deps: ToolWiringDeps) {
@@ -339,7 +336,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           threadId: ctx.threadId,
           turnId: ctx.turnId,
         },
-        deferTrackedDocumentSync: creates && ctx.responseId !== undefined,
+        deferTrackedDocumentSync: creates && ctx.responseIdentity?.editScopeId !== undefined,
         ...(parsed.command === "copy" && copied
           ? {
               metadata: { copiedFrom: copied.copiedFrom, ...copied.inherited },
@@ -351,7 +348,8 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     if (isToolError(address)) return address;
 
     const outcome = await writeUnderGrant(deps, principal, parsed, address, copied, ctx);
-    const stagedCreate = creates && ctx.responseId !== undefined && address.created === true;
+    const stagedCreate =
+      creates && ctx.responseIdentity?.editScopeId !== undefined && address.created === true;
     if (outcome.isError) {
       if (stagedCreate) {
         try {
@@ -373,7 +371,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       return { isError: true, output: outcome.output, shown: outcome.shown };
     }
     if (stagedCreate) {
-      const responseId = ctx.responseId;
+      const responseId = ctx.responseIdentity?.editScopeId;
       if (responseId === undefined) {
         return writeToolError(parsed.command, "Missing staged response id", "internal_error");
       }
@@ -386,14 +384,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     }
 
     recordTouchInBackground(deps, address.documentId, ctx);
-    // Undo and redo apply at once; every other write stages until the response
-    // commits. A write that changed nothing has nothing to stage or refresh.
+    // Settlement phase, not command names, decides who still owes admission.
     const unchanged = outcome.result.unchanged === true;
-    const stagedWrite =
-      !unchanged &&
-      ctx.responseId !== undefined &&
-      parsed.command !== "undo" &&
-      parsed.command !== "redo";
+    const stagedWrite = outcome.status === "success" && outcome.phase === "staged";
     if (!stagedWrite && !unchanged) {
       await deps.documentSync.refreshDocumentProjection({
         documentId: address.documentId,
