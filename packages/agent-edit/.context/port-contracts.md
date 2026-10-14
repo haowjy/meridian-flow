@@ -14,8 +14,8 @@ cut even when no update rows remain above it.
 Checkpoint production belongs to the host, whose captured-cut port binds bytes
 to guaranteed durable coverage.
 
-Undo/redo state does not live in transport rows. `DocumentEdits` reads immutable
-edit parts and delegates model stack operations to the host's inverse policy.
+Inverse state does not live in transport rows. `DocumentEdits` reads immutable
+edit parts and delegates model `revert` to the host's inverse policy.
 Compaction folds journal updates without expiring immutable receipts or lineage.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
@@ -26,9 +26,9 @@ through another transport; the host owns that concurrency fence.
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
 `DocumentNotFoundError` when the doc is missing.
 
-Movable-generation hosts implement `withStagedWrites`: checked whole-write replay
-and publication under their existing authority lock. It accepts an explicit helper
-base cut (generation and state), independent of historical write generations,
+Hosts whose destination can be discarded or retired implement `withStagedWrites`: checked
+whole-write replay and publication under their existing authority lock. It accepts an
+explicit helper base cut (its state),
 and returns typed kept entries, new helper bytes/cut and the before cut only
 after admission and CAS accept. The buffer applies kept writes, failed-receipt
 owners and helper replacement together after that acceptance. The response helper is replaced from that cut plus
@@ -172,8 +172,8 @@ prepared read leases, response-document discovery and thread invalidation.
 the host settles that scope exactly once. `invalidateThread` drops buffered
 writes and evicts the runtime so the next access starts from its canonical view.
 
-Model `undo`, `redo`, `revert` and `read(format: "edits")` use `DocumentEdits` after
-the prepared-lease gate. The host owns destination choice, stack policy, immutable
+Model `revert` and `read(format: "edits")` use `DocumentEdits` after
+the prepared-lease gate. The host owns destination choice, inverse policy, immutable
 receipt persistence, notices and publish-after-commit. No public core method
 reconstructs an UndoManager from historical journal rows.
 

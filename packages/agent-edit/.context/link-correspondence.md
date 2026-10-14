@@ -103,7 +103,7 @@ codec never rendered, or a reparse that disagrees, counts nothing. They ride
 as one `showing: { holderUri, view, links }` (`LinkShowing`): the facts with
 the holder URI and view the command's links spelled them from
 (`shownEvidence` in `links/shown.ts`), on `WriteOutcome.showing` (reads,
-echoes, undo and redo), `ResponseCommitWriteReceipt.showing`, and each
+echoes and revert), `ResponseCommitWriteReceipt.showing`, and each
 `ConcurrentEditRun.showing` (per run, because the request budget may drop
 runs). None of them reaches `result`. `WriteContext.shownLinks(documentId)`
 delivers the thread's stored showings back to assignment; agent-edit never
