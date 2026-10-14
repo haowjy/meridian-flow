@@ -252,6 +252,19 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     expect: { rows: ["s1:queued", "s3:queued"], mode: "direct" },
   },
   {
+    // F2: s1 is queued with the server, s2 came after it in the journal and its answer says
+    // applied before s1's divider arrives. Journal order is known; the answer's state doesn't
+    // move s2 ahead of s1.
+    name: "keeps this tab's journal order between a queued switch and a newer applied one",
+    events: [
+      journal(1, record("s1", "draft", { posted: true })),
+      inbox(2, ["s1", "draft"]),
+      journal(3, record("s1", "draft", { posted: true }), record("s2", "direct", { posted: true })),
+      answer("s2", "direct", "applied", 4),
+    ],
+    expect: { rows: ["s1:queued", "s2:queued"], mode: "direct" },
+  },
+  {
     // R4: the server can't cancel a switch it already applied, so the later switch is its own row.
     name: "shows a switch made after one that applied but has no divider yet",
     events: [

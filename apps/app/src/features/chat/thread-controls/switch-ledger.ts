@@ -31,8 +31,8 @@
  * is the highest reading of one counter of snapshot requests started, raised by every source
  * that shows the entry (a snapshot that lists it counts at its `request`); a snapshot proves
  * absence only when `request > observedAt`, so a failed, skipped or joined-older fetch never
- * does. Entries are ordered causally: applied (transcript order), then queued (inbox order),
- * then journal-only (`seq` order), the id breaking a tie.
+ * does. Entries are ordered causally, as a merge of the journal's order and the server's
+ * (see `causalOrder`).
  *
  * Display derives from here alone: `switchRows`, `overlaidMode`, and
  * `transitions` (what to announce and when caches are stale).
@@ -144,30 +144,73 @@ const raise = (entry: LedgerEntry, at: number): number => Math.max(entry.observe
 
 const RANK: Record<LedgerState, number> = { sending: 0, posted: 1, queued: 2, applied: 3, gone: 4 };
 
+/** Where the server has put an entry: its divider in the transcript, else its place in the inbox. */
+function serverPlace(entry: LedgerEntry, positions: ReadonlyMap<string, number>): number[] | null {
+  const position = positions.get(entry.id);
+  if (position !== undefined) return [0, position];
+  return entry.serverSeq === null ? null : [1, entry.serverSeq];
+}
+
+const byId = (a: LedgerEntry, b: LedgerEntry) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
 /**
- * The chat's causal order: what the server has applied (in transcript order, those
- * without a place yet after), then what it holds queued (in its inbox order), then what only
- * this tab's journal knows (in journal order). Ties break on the id.
+ * The chat's causal order, a merge of the two chains the sources give:
+ *
+ * - the journal chain: entries with a `seq`, in `seq` order (this tab's known happens-before);
+ * - the server chain: entries the server has placed (a divider's transcript position, else
+ *   its inbox order).
+ *
+ * An entry on both chains anchors them together, so neither chain's order is ever reversed
+ * by what the other holds: lifecycle state moves nothing. Where the chains disagree about
+ * two anchors the journal wins. Between two entries no anchor relates, an applied entry
+ * with no divider yet goes before what the server still holds queued (the server consumed it
+ * first), and everything else the server holds goes before what only the journal knows.
  */
-function orderKey(entry: LedgerEntry, positions: ReadonlyMap<string, number>): number[] {
-  const seq = entry.seq ?? Number.MAX_SAFE_INTEGER;
-  if (entry.state === "applied")
-    return [0, positions.get(entry.id) ?? Number.MAX_SAFE_INTEGER, seq];
-  if (entry.serverSeq !== null) return [1, entry.serverSeq, seq];
-  return [2, seq, 0];
+function causalOrder(
+  entries: readonly LedgerEntry[],
+  positions: ReadonlyMap<string, number>,
+): LedgerEntry[] {
+  const place = new Map(entries.map((entry) => [entry, serverPlace(entry, positions)] as const));
+  const journal = entries
+    .filter((e) => e.seq !== null)
+    .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || byId(a, b));
+  const server = entries
+    .filter((e) => place.get(e))
+    .sort((a, b) => {
+      const [pa, pb] = [place.get(a) as number[], place.get(b) as number[]];
+      return (pa[0] ?? 0) - (pb[0] ?? 0) || (pa[1] ?? 0) - (pb[1] ?? 0) || byId(a, b);
+    });
+  const onJournal = new Set(journal);
+  const onServer = new Set(server);
+  const out: LedgerEntry[] = [];
+  const placed = new Set<LedgerEntry>();
+  let j = 0;
+  let s = 0;
+  while (j < journal.length || s < server.length) {
+    const jh = journal[j];
+    const sh = server[s];
+    if (jh && placed.has(jh)) j += 1;
+    else if (sh && placed.has(sh)) s += 1;
+    else {
+      let take: LedgerEntry;
+      if (!sh) take = jh as LedgerEntry;
+      else if (!jh || jh === sh) take = sh;
+      else if (onServer.has(jh) && !onJournal.has(sh)) take = sh;
+      else if (onJournal.has(sh) && !onServer.has(jh)) take = jh;
+      else if (onServer.has(jh)) take = jh;
+      else take = jh.state === "applied" && place.get(sh)?.[0] === 1 ? jh : sh;
+      out.push(take);
+      placed.add(take);
+    }
+  }
+  const unplaced = entries.filter((entry) => !placed.has(entry)).sort(byId);
+  return [...out, ...unplaced];
 }
 
 function sorted(ledger: Ledger): Ledger {
-  const keyed = ledger.entries.map((entry) => ({ entry, key: orderKey(entry, ledger.positions) }));
-  keyed.sort((a, b) => {
-    for (let i = 0; i < 3; i += 1) {
-      const difference = (a.key[i] ?? 0) - (b.key[i] ?? 0);
-      if (difference) return difference;
-    }
-    return a.entry.id < b.entry.id ? -1 : a.entry.id > b.entry.id ? 1 : 0;
-  });
-  return keyed.some(({ entry }, index) => entry !== ledger.entries[index])
-    ? { ...ledger, entries: keyed.map(({ entry }) => entry) }
+  const entries = causalOrder(ledger.entries, ledger.positions);
+  return entries.some((entry, index) => entry !== ledger.entries[index])
+    ? { ...ledger, entries }
     : ledger;
 }
 
