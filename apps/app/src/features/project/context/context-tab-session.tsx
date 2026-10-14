@@ -187,7 +187,8 @@ function ContextTabSession({
     session,
     state.kind === "failed" && state.documentId === documentId,
     selectedSession !== null && selectedSession === localSession,
-    binding.retry,
+    // Remounting redoes the local probe as well as the live open.
+    onReopen,
   );
 }
 
