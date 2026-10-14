@@ -191,6 +191,13 @@ export type OrchestratorEvent =
       pending: ThreadPendingInbox;
     }
   | {
+      /** Waiting writer messages left the chat; their turns stay in the database but no conversation read returns them. */
+      type: "messages.handed_back";
+      userTurnIds: string[];
+      /** The hand-back request that took them out. */
+      requestId: string;
+    }
+  | {
       type: "run_state.changed";
       threadId: string;
       /** The record without its version: the journal row's own seq is the version. */
