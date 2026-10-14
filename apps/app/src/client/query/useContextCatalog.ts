@@ -44,6 +44,7 @@ import {
   type CatalogNode,
   refusedMoveDestination,
 } from "@/client/query/context-catalog-projection";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
@@ -496,8 +497,10 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   } & ContextOwner,
 ): Record<S, CatalogViewResult> {
   const projectPending = useIsProjectPendingCreation(projectId);
-  const enabled = (options.enabled ?? true) && !projectPending;
   const { workId, rootThreadId, uploadsWorkId } = options;
+  // A first send's chat is not on the server yet; its lineage scope would answer 404.
+  const lineagePending = useIsThreadPendingCreation(rootThreadId);
+  const enabled = (options.enabled ?? true) && !projectPending && !lineagePending;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
       aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
@@ -573,6 +576,9 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
   const projectPending = useIsProjectPendingCreation(projectId);
+  const lineagePending = useIsThreadPendingCreation(
+    scope.kind === "lineage" ? scope.rootThreadId : null,
+  );
   const scopeKind = scope.kind;
   const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
   const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
@@ -601,7 +607,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: enabled && !projectPending,
+    enabled: enabled && !projectPending && !lineagePending,
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(
