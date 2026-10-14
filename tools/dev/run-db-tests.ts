@@ -57,7 +57,14 @@ async function main(): Promise<void> {
     testArgs.shift();
     if (testArgs[0] === "--") testArgs.shift();
   }
-  const workerCount = Number(process.env.DB_TEST_WORKERS ?? "8");
+  // Local default is 4, not 8. Measured on the shared host with the identical
+  // 912 cases: 8 fork workers peak at 6,038MB in 65s and flaked a settlement
+  // test; 4 workers peak at 3,869MB in 91s and ran all 912 green. Fork workers
+  // are whole processes, so this is the largest per-run memory knob in the repo
+  // — nearly twice the unit suite's 3.1GB. CI keeps 8 against its dedicated
+  // Postgres. Override with DB_TEST_WORKERS=1..8.
+  const defaultWorkers = process.env.CI ? 8 : 4;
+  const workerCount = Number(process.env.DB_TEST_WORKERS ?? String(defaultWorkers));
   if (!Number.isInteger(workerCount) || workerCount < 1 || workerCount > 8) {
     throw new Error(
       "DB_TEST_WORKERS must be an integer from 1 to 8 (shared Postgres connection budget).",
@@ -101,6 +108,7 @@ async function main(): Promise<void> {
         ...(testArgs.some((arg) => arg === "--reporter" || arg.startsWith("--reporter="))
           ? []
           : ["--reporter=default"]),
+        `--reporter=${join(repoRoot, "tools/ci/test-budget-reporter.ts")}`,
         `--reporter=${join(repoRoot, "tools/ci/db-test-reporter.ts")}`,
       ],
       databaseUrl,
