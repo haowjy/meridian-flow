@@ -117,7 +117,7 @@ order they were sent in, oldest first; they take no transcript position until
 they run. A queued row's Stop cancels the command before it runs; it is not the Stop of a running
 compaction divider.
 
-The local state is two small pieces: sends the inbox has not listed yet
+The local state is two small pieces: sends the record has not listed yet
 (dropped once it lists the id, since the server owns it then) and withdrawals.
 Stop on a queued row removes it at once (focus stays in the transcript when it was
 the last) and, once any in-flight enqueue settles, always calls the server,
@@ -125,10 +125,10 @@ even for a row whose enqueue looked failed: only the response may have been
 lost, and a command the client hid must not run unseen. The server answers
 `withdrawn`, `already_started` once a divider carries the command's id, or 404
 when it does not have the command. A confirmed answer (`withdrawn` or
-`already_started`) keeps the id hidden against stale inbox frames. On
+`already_started`) keeps the id hidden against stale run-state records. On
 `already_started` the row still goes and the pending divider carries the
 state; the announcer says "This compaction already started." A 404 only drops
-the local send: the enqueue may still have been committing, so if the inbox
+the local send: the enqueue may still have been committing, so if the record
 lists the id later the row shows again, queued, with Stop. A failed
 withdrawal brings the row back with "Couldn't withdraw. Try again." A command
 a divider already names (`controlMessageId`) is no longer queued.
@@ -141,6 +141,6 @@ Status words come from `thread-controls/control-copy.ts`, so the announcement an
 the row say the same thing.
 
 Compaction turns have no AG-UI stream, and a cancelled one ends without
-`RUN_FINISHED`. The snapshot revalidates on run end and on every inbox frame
-(the server sends one after every lease release); see
+`RUN_FINISHED`. The snapshot revalidates on run end and on every run-state
+record whose open execution changed (a lease release publishes one); see
 [thread live updates](thread-live-updates.md).

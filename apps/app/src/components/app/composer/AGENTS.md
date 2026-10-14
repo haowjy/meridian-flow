@@ -32,6 +32,12 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   refusal (nothing to summarize yet) lands on its row. Manuscript
   slash insertion is a different catalog.
 
+- Stop sits beside Send, never in its place: `showStop` while a reply runs or
+  this tab's Stop is pending, stopping or failed; `showSend` whenever there is
+  something to send (Send then queues a steer). A failed Stop stays reachable
+  with a draft. Escape presses Stop only in an empty composer (`escapeStops`),
+  because menus and dialogs also own Escape. These are lead calls open to the
+  owner, each one line to change.
 - The host owns session persistence through `initialDraft` / `onDraftChange`.
   An initial snapshot is never applied again to a live draft. Successful catalog
   acquisition removes restored reference atoms whose resources are gone;

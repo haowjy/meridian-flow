@@ -104,3 +104,14 @@
   completion; only the reviewer's probe script covers it. Add a mock script that
   lands two completions on one reply, and a step in `docs/qa/chat-session.md`
   that checks the `./mf thread view` delivery grouping against the screen.
+
+- Live-region announcements linger after their action resolves. The polite and
+  assertive regions (`client/stores/thread-store/announcements.ts`) keep their
+  last text until something replaces it, so "Couldn't retry."
+  (`useRetryStandIns.ts`), "This response failed." and a raw "WebSocket closed
+  (1006)" from the stream's `onError` (`client/query/useThreadSnapshotSync.ts`,
+  `announceError(failure.message)`) stay readable after the Retry, the next
+  reply or the reconnect. Screen-reader only and older than run state. Clear
+  each one with its keyed owner (`clearAnnouncement`) when its state ends, and
+  word the stream failure for the writer instead of passing the close code
+  through. Found in the run-state browser re-check (p12381).

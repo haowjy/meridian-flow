@@ -7,7 +7,7 @@ runtime `control`. A control is not model-visible chat text. Its body is
 
 `PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. The snapshot's run-state record
 and `meridian.run_state` frames share the same schema. A queued control has no transcript
-position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages and notices run before the oldest command, which runs alone once no message remains. Stop only ends the turn. Requests, responses and status codes are in the
+position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages and notices run before the oldest command, which runs alone once no message remains. Stop gives no command priority. Requests, responses and status codes are in the
 [HTTP control API](../../../../docs/api/thread-controls.md); queue selection, the
 run-start apply and Retry are in the
 [runtime controls context](../../../../apps/server/server/domains/runtime/.context/controls.md).
@@ -38,6 +38,21 @@ where the switch turn sits) at its own journal `seq`, ahead of
 the `meridian.run_state` record that empties the queue; catch-up replay delivers
 it. The snapshot's `thread.aiWriteMode`, `liveState.runState` and `nextSeq` are
 one transaction; label that state `nextSeq - 1`.
+
+### Stop and hand-back
+
+`run-state.ts` holds the shapes. `StopRequest { requestId, seenThrough,
+seenExecutionId, mine }` is decided once under the thread lock and stored by
+request id; a replay with the same body answers the stored decision, and another
+body is a 409. Each message the press covers is in exactly one of
+`StopResponse.handedBack` (with its `UserMessageBlock`s, in send order),
+`answered` or `gone`; a message is never both handed back and answered. `gone`
+lists every message another request handed back at or below `seenThrough`, so
+clients treat it as idempotent. `HandBackScope` (`ids` for the queue's x, `seen`
+for Stop and Cancel queue) is the same decision without a cancel; its route lands
+with the queue controls. A handed-back message leaves every conversation read
+and is removed live by `meridian.messages.handed_back { userTurnIds }` at its
+journal seq. See the [Stop API](../../../../docs/api/thread-stop.md).
 
 ### Failed reply Retry
 

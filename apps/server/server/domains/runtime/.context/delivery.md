@@ -130,7 +130,11 @@ drops a pin to a handed-back turn and resolves a cut at one by position (`resolv
 
 A compaction that starts before it reaches the loop's cancel read still holds the adopted message in its
 captured history. `executeCompaction` reads the lease's `cancelRequested` flag immediately before the
-summarizer call: a Stop on another server sets it in the transaction that hands the message back.
+summarizer call: a Stop on another server sets it in the transaction that hands the message back. The
+read is `RunClaim.readOwned(lease)`: this execution's own row (thread, execution id, holder) whatever its
+expiry, because Stop flags an expired lease that is still held. A missing or reassigned row cancels. The
+expiry-filtered `read()` reports such a lease as asleep and would let the handed-back message reach the
+summarizer. The orchestrator's cancel decision after a failure reads the same way.
 `stop-protocol.db.test.ts` row 37 pins the port defaults and row 14 the ordering.
 
 ## Command selection and release wake
@@ -171,7 +175,7 @@ The bound Work must exist, but archiving does not freeze its chats: sends,
 retries, and interrupt answers remain admissible. The admission fence runs
 under the thread lock before writer-turn persistence.
 
-`UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly). Under the thread lock, on every turn-start attempt, the producer decides which reply the message joins, reading both the runner's live reply and the inbox there (a reply that ended, or a switch that applied, before the lock is visible): with a live assistant binding and no queued write-mode switch it joins that reply, is stamped `metadata.delivery: "steer"`, and admission returns that reply as `steersTurnId`, a Stop hint only; otherwise (idle, or behind a queued switch, which ends the reply instead) it is stamped `send` and `steersTurnId` is null. Which reply answers the message is never inferred from admission or stream order: it comes from [run identity](#run-identity). The stamp and the returned id come from that one decision and cannot disagree. Response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
+`UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly). Under the thread lock, on every turn-start attempt, the producer decides which reply the message joins, reading both the runner's live reply and the inbox there (a reply that ended, or a switch that applied, before the lock is visible): with a live assistant binding and no queued write-mode switch it joins that reply and is stamped `metadata.delivery: "steer"`; otherwise (idle, or behind a queued switch, which ends the reply instead) it is stamped `send`. Admission answers the user turn and `runStateVersion` (the version of the record its own transaction published), never a reply id. Which reply answers the message is never inferred from admission or stream order: it comes from [run identity](#run-identity). Response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
 
 A writer send is never an inbox delivery: `writer-enqueue.ts` persists the
 writer's user turn with its own metadata (activated skill slugs or null) and no
@@ -394,7 +398,8 @@ The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn 
 `prepareLoop` asks RuntimeDelivery to save `credits_exhausted` when a drain
 claim cannot pass `canStartTurn`. Delivery alone sets and clears the thread's
 `inbox_blocked_reason`: under the thread lock with a held, unbound claim, and
-in the same transaction as `inbox.changed`. A successful initial adoption
+the change marks the chat, so the transaction publishes the run-state record
+that carries `blocked`. A successful initial adoption
 clears it with binding the first turn. Every inbox retirement goes through the
 shared acknowledgement helper, which clears the marker when no message/control
 remains (notices alone cannot sustain a block). Empty-inbox refused wakes never

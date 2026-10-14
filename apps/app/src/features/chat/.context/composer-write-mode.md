@@ -136,4 +136,4 @@ resize loop requires `field-sizing: fixed`. Keep that override inline:
 Tailwind merge does not reliably deduplicate `field-sizing-*` utilities.
 
 For the shared pending projection and draft-review lifecycle, see
-[draft review](draft-review.md).
+[draft review](../../draft-review/.context/draft-review.md).
