@@ -194,8 +194,11 @@ remembered, so the row's link-update note follows its receipt and a later server
 refusal lands on the row as its failure mark. A row the replica won't admit is
 named in the notice, and Undo still covers the rows that moved. Undo returns
 each row to its previous parent under its current name, skips a row that moved
-again since (the writer's newer choice), and reads the catalogs as they are
-when pressed, not as they were at the drop.
+again since or is gone (the writer's newer choice), and reads the catalogs as
+they are when pressed, not as they were at the drop. Verdicts likewise read
+each dragged row as the catalog shows it now, so a peer's rename or move during
+the drag can't slip a folder inside itself. A lone moved row stays selected on
+its own (an explicit selection of one), not the open row.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the

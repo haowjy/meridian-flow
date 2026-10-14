@@ -94,7 +94,10 @@ export function useEntryMoveRoute({
       const moving: SelectableEntry[] = [];
       const incoming: ContextEntrySibling[] = [];
       let refusal: Plan["refusal"] = null;
-      for (const entry of drag.entries) {
+      for (const dragged of drag.entries) {
+        // A peer may have renamed or moved the row since the drag began.
+        const entry = asNow(dragged, catalog);
+        if (!entry) continue;
         const refused = moveRefusal(entry, destination, entry.name, incoming);
         if (!refused) {
           moving.push(entry);
@@ -131,22 +134,15 @@ export function useEntryMoveRoute({
         .map(({ entry }) => entry);
     };
 
-    /** The node as the list shows it now (name and folder may have changed since the drop). */
-    const currentNode = (entry: SelectableEntry): CatalogNode | null => {
-      for (const { catalog } of latestAreas.current) {
-        const node =
-          entry.kind === "file" ? catalog.findDocument(entry.id) : menuEntryFor(catalog, entry.id);
-        if (node) return node;
-      }
-      return null;
-    };
-
     const undo = (moved: readonly SelectableEntry[], destination: MoveDestination) => async () => {
-      // A row that moved again since is the writer's newer choice; leave it.
+      // Only a row still where the drop put it goes back; one moved since (or gone)
+      // carries the writer's newer choice.
       const returning = moved.flatMap((entry) => {
-        const node = currentNode(entry);
-        if (node && node.parentId !== destination.entryId) return [];
-        return [{ entry, name: node?.name ?? entry.name, parent: entry.origin }];
+        const node = latestAreas.current
+          .map(({ catalog }) => nodeIn(catalog, entry))
+          .find((found) => found !== null);
+        if (!node || node.parentId !== destination.entryId) return [];
+        return [{ entry, name: node.name, parent: entry.origin }];
       });
       const stuck = await place(returning);
       selection.replace(
@@ -222,4 +218,23 @@ export function useEntryMoveRoute({
       },
     };
   }, [areas, works, noWork, resources, projectId, selection, surface, onLanded]);
+}
+
+function nodeIn(catalog: CatalogContextView, entry: SelectableEntry): CatalogNode | null {
+  return entry.kind === "file" ? catalog.findDocument(entry.id) : menuEntryFor(catalog, entry.id);
+}
+
+/** The entry as `catalog` shows it now, null if it's gone; entries of other catalogs pass as they are. */
+function asNow(entry: SelectableEntry, catalog: CatalogContextView): SelectableEntry | null {
+  if (entry.catalogRootId !== catalog.root.entryId) return entry;
+  const node = nodeIn(catalog, entry);
+  if (!node) return null;
+  const parentId = node.parentId ?? catalog.root.entryId;
+  return {
+    ...entry,
+    name: node.name,
+    path: node.path,
+    parentId: node.parentId,
+    origin: { ...entry.origin, entryId: parentId },
+  };
 }

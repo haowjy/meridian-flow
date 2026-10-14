@@ -1,7 +1,8 @@
 /**
  * Selection is explicit or it is the open row: Ctrl/Cmd-click toggles rows in
  * and out (starting from the open row) without ever re-adding what the writer
- * removed, and a drag that spans systems carries everything but moves nowhere.
+ * removed, a row reselected after a move stays the selection on its own, and a
+ * drag that spans systems carries everything but moves nowhere.
  */
 import { act } from "react";
 import { expect, it, vi } from "vitest";
@@ -47,6 +48,7 @@ function List({ rows }: { rows: SelectableEntry[] }) {
   const selection = useEntrySelection();
   return (
     <EntrySelectionProvider selection={selection}>
+      <button type="button" id="moved" onClick={() => selection.replace([rows[1]?.key ?? ""])} />
       {rows.map((row, index) => (
         <Row key={row.key} row={row} active={index === 0} />
       ))}
@@ -71,6 +73,14 @@ it("toggles rows in and out from the open row", async () => {
     expect([selected("a"), selected("b")]).toEqual(["false", "true"]);
     await click("b", true);
     expect([selected("a"), selected("b")]).toEqual(["false", "false"]);
+  });
+});
+
+it("keeps a lone moved row as the selection, not the open row", async () => {
+  await withReactRoot(<List rows={[entry("a"), entry("b"), entry("c")]} />, async () => {
+    await click("moved");
+    await click("c", true);
+    expect([selected("a"), selected("b"), selected("c")]).toEqual(["false", "true", "true"]);
   });
 });
 
