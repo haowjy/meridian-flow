@@ -10,7 +10,7 @@ export function useEntryRow(entry: SelectableEntry, active: boolean) {
     selected,
     rowProps: {
       ...rowProps,
-      draggable: true,
+      draggable: scope?.draggable ?? false,
       onDragStart: (event: DragEvent) => {
         event.stopPropagation();
         startEntryDrag(event, scope ? scope.dragged(entry) : [entry]);

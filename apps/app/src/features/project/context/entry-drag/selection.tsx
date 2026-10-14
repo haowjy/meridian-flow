@@ -18,9 +18,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePhoneShell } from "@/hooks/use-phone-shell";
 import type { SelectableEntry } from "./entry";
 
 type SelectionValue = {
+  /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
+  draggable: boolean;
   /** Selected and shown as selected: one of two or more, or the open row itself. */
   isSelected(key: string, active: boolean): boolean;
   /** True when the click was a selection gesture and must not open the row. */
@@ -43,6 +46,7 @@ export function EntrySelectionScope({ children }: { children: ReactNode }) {
   const registry = useRef(new Map<string, SelectableEntry>());
   const activeKey = useRef<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const draggable = usePhoneShell() !== true;
 
   const screenOrder = useCallback((): string[] => {
     const nodes = root.current?.querySelectorAll<HTMLElement>(`[${KEY_ATTRIBUTE}]`) ?? [];
@@ -56,6 +60,7 @@ export function EntrySelectionScope({ children }: { children: ReactNode }) {
         .map((key) => registry.current.get(key))
         .filter((entry): entry is SelectableEntry => entry !== undefined);
     return {
+      draggable,
       isSelected: (key, active) => selected.has(key) && (selected.size > 1 || active),
       click(entry, event) {
         const toggle = event.metaKey || event.ctrlKey;
@@ -102,7 +107,7 @@ export function EntrySelectionScope({ children }: { children: ReactNode }) {
         else if (activeKey.current === entry.key) activeKey.current = null;
       },
     };
-  }, [selected, screenOrder]);
+  }, [selected, screenOrder, draggable]);
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape" && selected.size > 0) setSelected(new Set());
