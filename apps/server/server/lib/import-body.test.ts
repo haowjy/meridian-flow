@@ -49,8 +49,9 @@ describe("bounded import bodies", () => {
     const form = new FormData();
     form.append("3", new Blob(["hello"]), "a.md");
     const ok = new Request("https://import.test/", { method: "POST", body: form });
-    expect(await readImportParts({ req: ok })).toEqual([
-      { entryId: 3, bytes: new TextEncoder().encode("hello") },
+    const parts = await readImportParts({ req: ok });
+    expect(parts.map((part) => [part.entryId, new TextDecoder().decode(part.bytes)])).toEqual([
+      [3, "hello"],
     ]);
     const bad = new FormData();
     bad.append("x", new Blob(["hello"]), "a.md");
@@ -62,4 +63,21 @@ describe("bounded import bodies", () => {
       ),
     ).toMatchObject({ status: 400, code: "invalid_import_file_parts" });
   });
+});
+
+it("reports a grown oversized part by entry id instead of rejecting the entire request", async () => {
+  const encoder = new TextEncoder();
+  const { event } = streamed(
+    [
+      encoder.encode(
+        '--probe\r\nContent-Disposition: form-data; name="7"; filename="grown.bin"\r\nContent-Type: application/octet-stream\r\n\r\n',
+      ),
+      ...Array.from({ length: 52 }, () => new Uint8Array(1024 * 1024)),
+      encoder.encode("\r\n--probe--\r\n"),
+    ],
+    { "content-type": "multipart/form-data; boundary=probe" },
+  );
+  expect(await readImportParts(event)).toEqual([
+    { entryId: 7, bytes: new Uint8Array(), tooLarge: true },
+  ]);
 });

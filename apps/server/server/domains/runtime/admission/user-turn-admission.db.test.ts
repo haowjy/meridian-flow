@@ -171,7 +171,7 @@ if (!RUN) {
                     parentId: SOURCE,
                     name: "map.png",
                     aliases: [],
-                    importPending: false,
+
                     hasProperties: false,
                     path: ["map.png"],
                     provisionalName: false,

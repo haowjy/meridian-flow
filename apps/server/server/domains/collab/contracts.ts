@@ -208,18 +208,6 @@ export type HashlineRead = VersionedDocumentRead<string[]> & {
  * `bindMarkdown` before opening any transaction, then apply it inside one
  * (contract §6.2).
  */
-export type DocumentLandingStore = {
-  /** Null refuses fill after any journal admission since the seed. */
-  fillEmptyDocument(
-    documentId: DocumentId,
-    content: BoundWrite,
-  ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  prependBlocks(
-    documentId: DocumentId,
-    content: BoundWrite,
-  ): Promise<Result<PersistedUpdate | null, SyncError>>;
-};
-
 export type MarkdownDocumentStore = LinkBinder & {
   readVersionedMarkdown(
     documentId: string,
@@ -469,7 +457,6 @@ export type CollabLifecycle = {
 };
 
 export type CollabDomain = CollabTransport &
-  DocumentLandingStore &
   CollabLifecycle &
   DocumentAuthorityHeads &
   AgentEditAccess &

@@ -1,10 +1,10 @@
 /** Manifest refusals: every bound is checked before a node is minted, and answers a stable code. */
 import { randomUUID } from "node:crypto";
-import { IMPORT_ADMISSION, type ImportManifest } from "@meridian/contracts";
+import { IMPORT_ADMISSION, type ImportSelection } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
-import { IMPORT_LIMITS, ImportError, validateManifest } from "./manifest.js";
+import { IMPORT_LIMITS, ImportError, validateSelection } from "./manifest.js";
 
-function vault(entries: ImportManifest["entries"]): ImportManifest {
+function vault(entries: ImportSelection["entries"]): ImportSelection {
   return {
     importId: randomUUID(),
     destination: { folderUri: "kb://" },
@@ -15,7 +15,7 @@ function vault(entries: ImportManifest["entries"]): ImportManifest {
 }
 function refusal(raw: unknown) {
   try {
-    validateManifest(raw);
+    validateSelection(raw);
   } catch (error) {
     if (error instanceof ImportError)
       return { status: error.statusCode, code: error.code, params: error.params };
@@ -28,7 +28,7 @@ const note = (entryId: number, path: string) => ({
   rootId: 0,
   path,
   size: 0,
-  sha256: "a".repeat(64),
+  modifiedAt: 0,
 });
 
 describe("manifest bounds", () => {
@@ -85,7 +85,7 @@ describe("unreadable paths", () => {
         { rootId: 0, path: "Notes: old/Draft.md", reason: "unreadable" },
       ],
     };
-    expect(validateManifest(raw).unreadable).toHaveLength(2);
+    expect(validateSelection(raw).unreadable).toHaveLength(2);
   });
 
   it("still refuses an unreadable path no file system could hold", () => {

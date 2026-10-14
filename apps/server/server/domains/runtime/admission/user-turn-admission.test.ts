@@ -71,7 +71,7 @@ function availableResolution(resolvedUri = uri) {
       parentId: "source",
       name: "map.png",
       aliases: [],
-      importPending: false,
+
       hasProperties: false,
       path: ["map.png"],
       provisionalName: false,

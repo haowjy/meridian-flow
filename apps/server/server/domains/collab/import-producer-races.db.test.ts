@@ -1,7 +1,7 @@
 /** Production-composed import races against socket admission and ordinary Manuscript creation. */
 import { randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
-import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
+import { yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
@@ -15,16 +15,12 @@ import {
   works,
 } from "@meridian/database/schema";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import {
   createDrizzleContextChildCreation,
@@ -32,7 +28,6 @@ import {
 } from "../context/index.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
-import { createStaticDocumentLinkScopes } from "./adapters/in-memory/static-document-link-scopes.js";
 
 const enabled =
   (process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true") &&
@@ -45,8 +40,8 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
   let app: ReturnType<typeof composeAppServices>;
   let hp: Hocuspocus;
   const schema = buildDocumentSchema(),
-    codec = mdxCodec({ schema }),
-    model = yProsemirrorModel(schema);
+    _codec = mdxCodec({ schema }),
+    _model = yProsemirrorModel(schema);
   async function ok<T>(promise: Promise<{ ok: true; value: T } | { ok: false; error: unknown }>) {
     const result = await promise;
     if (!result.ok) throw new Error(JSON.stringify(result.error));
@@ -171,84 +166,6 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
   }
 
   it.each(
-    (["fill", "writer"] as const).flatMap((first) =>
-      [false, true].map((rollback) => ({ first, rollback })),
-    ),
-  )("fill versus socket admission first=$first rollback=$rollback preserves committed writer content", async ({
-    first,
-    rollback,
-  }) => {
-    const context = app.contextPorts.forProject(projectId, userId, new Map());
-    const id = (await ok(context.createTrackedDocument("kb://pending", "")))
-      .documentId as DocumentId;
-    const connection = await hp.openDirectConnection(id);
-    const room = connection.document;
-    if (!room) throw new Error("missing room");
-    const client = createCollabYDoc({ gc: false });
-    try {
-      Y.applyUpdate(client, Y.encodeStateAsUpdate(room));
-      const before = Y.encodeStateVector(client);
-      model.insertBlocks(toDocHandle(client), null, { blocks: codec.parse("writer").blocks });
-      const update = Y.encodeStateAsUpdate(client, before);
-      const bound = await ports.documentSync.bindMarkdown({
-        holder: { documentId: id },
-        markdown: "imported",
-      });
-      const generation = await ports.documentSync.currentLiveGeneration(id);
-      const fill = () => ports.documentSync.fillEmptyDocument(id, bound);
-      const writer = async () => {
-        const result = await ports.documentSync.admitLiveWriterUpdate({
-          documentId: id,
-          document: room,
-          update,
-          origin: { type: "user", userId },
-          expectedGeneration: generation,
-        });
-        expect(result.admitted).toBe(true);
-        // This models the socket's pre-apply boundary: only the committed admission broadcasts.
-        deferUntilDrizzleCommit(() => {
-          Y.applyUpdate(room, update);
-        });
-        return result;
-      };
-      const loser = await contend(
-        first === "fill" ? fill : writer,
-        first === "fill" ? writer : fill,
-        rollback,
-      );
-      if ("error" in loser) throw loser.error;
-      if (first === "writer") {
-        expect(loser.value).toMatchObject({
-          ok: true,
-          value: rollback ? { updateSeq: expect.any(Number) } : null,
-        });
-      }
-      const read = await ok(ports.documentSync.readAsMarkdown(id));
-      expect(read.includes("imported")).toBe(first === "fill" ? !rollback : rollback);
-      expect(read.includes("writer")).toBe(first === "fill" || !rollback);
-      expect(
-        codec.serialize(
-          model.projectBlocks(toDocHandle(room)),
-          createStaticDocumentLinkScopes().reader({ uri: null, view: { kind: "live" } }),
-        ),
-      ).toBe(read);
-      expect((await createDrizzleJournal(db).read(id)).updates).toHaveLength(
-        !rollback && first === "fill" ? 2 : 1,
-      );
-      if (first === "fill" || !rollback) {
-        const writerNode = fragmentOf(client).get(0);
-        const writerRoomNode = fragmentOf(room)
-          .toArray()
-          .find((node) => node.toString().includes("writer"));
-        expect(writerRoomNode?._item?.id).toEqual(writerNode._item?.id);
-      }
-    } finally {
-      client.destroy();
-      await connection.disconnect();
-    }
-  });
-
-  it.each(
     (["bulk", "ordinary"] as const).flatMap((first) =>
       [false, true].map((rollback) => ({ first, rollback })),
     ),
@@ -284,7 +201,7 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
       name,
       extension: "",
       filetype: "markdown" as const,
-      metadata: { importPending: true },
+      metadata: { aliases: ["imported"] },
     });
     const chunk = () =>
       children.createChildren({
@@ -345,9 +262,7 @@ describe.skipIf(!enabled)("import producer races (postgres)", () => {
       expect(changedIds.has(extraId)).toBe(false);
       expect(changedIds.has(folderId)).toBe(false);
     }
-    expect(files.every((entry) => entry.kind === "file" && entry.importPending === bulkWon)).toBe(
-      true,
-    );
+
     expect(refreshes).toBe(first === "bulk" || bulkWon ? 1 : 0);
     expect(await ok(ports.documentSync.readAsMarkdown(winner.id))).toBe(
       bulkWon ? "" : "ordinary\n",

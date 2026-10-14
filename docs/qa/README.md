@@ -30,7 +30,6 @@ workloads separately. A missing prerequisite or skipped check is not a pass.
 - `pnpm smoke:prod-boot`: [production build, startup and public routes](../../tools/dev/smoke-app-prod-boot.ts). Both boot checks also run in CI; neither verifies authenticated writing.
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
-- `pnpm probe:db apps/server/scripts/probe-import-performance.ts --out <file.ndjson> [--notes 2000]`: [import plan, bulk tree creation and landing timings](../../apps/server/scripts/probe-import-performance.ts) on a generated vault and an owned database.
 - `pnpm --filter @meridian/server exec tsx scripts/probe-link-resolution.ts`: [import link resolution and frontmatter parse timings](../../apps/server/scripts/probe-link-resolution.ts) at vault scale; pure, no database. These scale checks stay out of the correctness gate.
 - [Project repository smoke](../../tools/dev/smoke-project-domain.ts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
 
@@ -73,28 +72,35 @@ DOCX corpus conversion, numbered collisions, bootstrap, CLI and file download.
 
 ## Import
 
-Run on an owned worktree and database; use `pnpm dev:local` if the app's fixed
-port is taken. Copy `apps/server/server/domains/import/__fixtures__/notes-folder`
-somewhere outside the repository, then:
+Start the owned stack with `pnpm dev`; discover HTTPS origins with
+`pnpm portless:list`. The upload-first server and app switch together: do not use
+the old landing UI or old plan/finish probe scripts to certify the new protocol.
 
-1. Log in at `/api/auth/dev-login`, open a project's Editor, expand Knowledge
-   Base and hover its header. The Import… icon opens a menu with Folder… and
-   Files….
-2. Choose Folder… and give the real hidden input the copy:
-   `agent-browser upload '[data-import-input="folder"]' <copy>`. The import
-   starts with no dialog and the folder appears in the tree, muted until its
-   files land, with the area and the new folder expanded.
-3. A clean finish leaves no status row, badge or mark. Open
-   `Chapters/Chapter 1 - The Gate`: Properties sits under the path bar, aligned
-   with the prose, with list values as chips.
-4. Repeat with Files… and with a drop onto a folder row (highlighted "Import
-   here"). Pick an empty folder: a dialog says there is nothing to import.
-5. To see a failed file, make a send fail (block the import's file requests in
-   the browser's network tools). The file's row shows the warning and its
-   document shows the notice with Retry. Reload the page with no document open:
-   the tree still shows the row's warning, because the coordinator reads every
-   open import's status. After a few hundred files finish, start a small import:
-   its rows appear at once (a finished import stops throttling the tree).
+For the upload-phase server slice, use an authenticated browser against the
+worktree's API origin and inspect the rendered detail/open-list responses:
+
+1. Create a selection with two small files and one declared over 50 MiB. Create
+   returns uploading, a pending root identity (`created: false`), and one failed
+   `too_large` file. No Context folder or document exists yet.
+2. Send one numbered multipart file, with its id in `X-Import-Changed-Entries`.
+   Detail reports received/changed_after_pick; replay the part and confirm the
+   receipt remains unchanged. Reload and confirm the other file is awaiting.
+3. Skip the missing file with `not_found`. State becomes organizing without any
+   additional browser command. Stop now cancels and removes it from the open
+   list. Stop returns without waiting for storage cleanup.
+4. Pick a small file, then send a 52 MiB body for its id. The response must be a
+   durable failed/too_large entry, not a 413 leaving the import awaiting. Send
+   Stop immediately afterwards to check keep-alive transport remains usable.
+5. After the app and organize lanes merge, drive the real Folder/Files picker on
+   desktop and phone: toast appears immediately, Continue sends only missing
+   files, project navigation does not interrupt upload, Stop discards everything
+   before reveal, and successful reveal shows complete documents. Verify note
+   properties and links using the notes-folder fixture under
+   `apps/server/server/domains/import/__fixtures__/`.
+
+The DB upload suite covers overlapping receipts, cumulative byte overflow,
+per-user admission, expiry, tombstones, key-age fences, and binary retention.
+Those checks do not replace the browser workflow on the merged app.
 
 ## Before you call it a defect
 

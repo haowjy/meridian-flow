@@ -40,7 +40,6 @@ import { documentAuthority } from "./document-handle.js";
 import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
 import type { BoundWrite } from "./link-binding.js";
-import type { DocumentLandingJournal } from "./ports/document-landing-journal.js";
 import {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -84,7 +83,6 @@ type MarkdownDocumentEngineDeps = {
   links: DocumentLinkScopes;
   model: YProsemirrorDocumentModel;
   journal: UpdateJournal;
-  landingJournal?: DocumentLandingJournal;
   coordinator: DocumentCoordinator;
   lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
   initialDocumentSeeds: InitialDocumentSeeds;
@@ -112,14 +110,6 @@ type DraftMutation = (
 ) => Result<void, SyncError> | Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
-  fillEmptyDocument(
-    documentId: DocumentId,
-    content: BoundWrite,
-  ): Promise<Result<PersistedUpdate | null, SyncError>>;
-  prependBlocks(
-    documentId: DocumentId,
-    content: BoundWrite,
-  ): Promise<Result<PersistedUpdate | null, SyncError>>;
   /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
   /** `view` is the version `doc` is: a Work draft's links spell in that draft. */
@@ -410,74 +400,7 @@ export function createMarkdownDocumentEngine(
     }
   }
 
-  async function landBlocks(
-    documentId: DocumentId,
-    content: BoundWrite,
-    onlySeed: boolean,
-  ): Promise<Result<PersistedUpdate | null, SyncError>> {
-    const format = await documentFormat(documentId);
-    if (!format.ok) return format;
-    const bound = checkBound(documentId, content, format.value, "write");
-    if (!bound.ok) return bound;
-    if (!deps.landingJournal) throw new Error("Document landing requires a journal admission port");
-    await deps.lifecycle.ensureDocument(documentId);
-    let markdown = "";
-    const admitted = await deps.landingJournal.admitDocumentLanding(
-      documentId,
-      onlySeed,
-      async (snapshot) => {
-        const draft = createCollabYDoc({ gc: false });
-        try {
-          if (snapshot.checkpoint) Y.applyUpdate(draft, snapshot.checkpoint);
-          for (const row of snapshot.updates) Y.applyUpdate(draft, row.update);
-          const vector = Y.encodeStateVector(draft);
-          draft.transact(
-            () => {
-              if (onlySeed) {
-                const fragment = fragmentOf(draft);
-                if (fragment.length > 0) fragment.delete(0, fragment.length);
-              }
-              const handle = toDocHandle(draft);
-              const first = deps.model.getBlocks(handle)[0];
-              if (!onlySeed && format.value.schemaType === "code" && first) {
-                // Code documents have exactly one block; prepend its text without replacing its items.
-                const imported = content.blocks[0]?.textContent ?? "";
-                const separator = imported && deps.model.getText(first) ? "\n" : "";
-                deps.model.applyTextEdit(handle, first, { from: 0, to: 0 }, imported + separator);
-              } else {
-                deps.model.insertBlocks(handle, null, { blocks: [...content.blocks] });
-              }
-            },
-            yjsTransactionOrigin({ type: "system" }),
-          );
-          markdown = serializeForSchema(
-            documentId,
-            draft,
-            format.value.schemaType,
-            await spelling(documentId, [draft]),
-          );
-          return {
-            update: Y.encodeStateAsUpdate(draft, vector),
-            meta: deps.metaForOrigin({ type: "system" }),
-          };
-        } finally {
-          draft.destroy();
-        }
-      },
-    );
-    if (admitted) {
-      const publish = async () => {
-        await deps.coordinator.recover(documentId);
-        await deps.afterWrite?.({ documentId, markdown });
-      };
-      if (!deps.deferUntilCommit?.(publish)) await publish();
-    }
-    return Ok(admitted ? { updateSeq: admitted.seq, updateData: admitted.update } : null);
-  }
-
   const engine: MarkdownDocumentEngine = {
-    fillEmptyDocument: (documentId, content) => landBlocks(documentId, content, true),
-    prependBlocks: (documentId, content) => landBlocks(documentId, content, false),
     async serializeDocument(documentId, doc, view) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
