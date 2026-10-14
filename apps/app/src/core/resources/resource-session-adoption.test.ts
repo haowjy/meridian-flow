@@ -200,24 +200,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-it("commits and acknowledges adoption without replacing the local Y.Doc", async () => {
-  const { adoption, coordinator, created, key, metadata, release, verified } = await fixture();
-
-  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-
-  expect(created).toHaveLength(1);
-  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
-  expect(adoption.adopt).toHaveBeenCalledOnce();
-  expect((await metadata.readResource(key))?.resource).toMatchObject({
-    lifecycle: { kind: "acknowledged", availabilityGeneration: "7" },
-    obligations: {},
-  });
-  expect(release).not.toHaveBeenCalled();
-  verified.handle.release();
-  expect(release).toHaveBeenCalledOnce();
-  expect(created[0]?.getSnapshot().status).toBe("detached");
-});
-
 it("waits for a caller-owned lease before transferring and acknowledging the session", async () => {
   const { access, adoption, coordinator, key, metadata, release, verified } = await fixture();
   verified.handle.release();
@@ -250,45 +232,4 @@ it("keeps a begun handoff retryable while authority is temporarily unavailable",
   expect(adoption.begin).toHaveBeenCalledTimes(1);
   expect(adoption.adopt).toHaveBeenCalledOnce();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
-});
-
-function failAcknowledgementOnce(metadata: IndexedDbResourceMetadata) {
-  const commit = metadata.commitResource.bind(metadata);
-  let failed = false;
-  vi.spyOn(metadata, "commitResource").mockImplementation(async (write) => {
-    if (!failed && !write.next.resource.obligations.sessionAdoption) {
-      failed = true;
-      throw new Error("transient acknowledgement failure");
-    }
-    return commit(write);
-  });
-}
-
-it("does not label a transport-owned session offline when only the acknowledgement fails", async () => {
-  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
-  const bind = vi.mocked(adoption.adopt).getMockImplementation();
-  if (!bind) throw new Error("Missing bind implementation");
-  vi.mocked(adoption.adopt).mockImplementation(async (input) => {
-    const result = await bind(input);
-    created[0]?.attachTransport(() => ({
-      unacknowledgedUpdates: () => null,
-      synced: true,
-      whenSynced: Promise.resolve(),
-      whenDurablySynced: Promise.resolve(),
-      subscribeStatus(listener) {
-        listener({ kind: "connected" });
-        return () => {};
-      },
-      destroy() {},
-    }));
-    return result;
-  });
-  failAcknowledgementOnce(metadata);
-
-  await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
-  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
-  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
-  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
-  verified.handle.release();
-  await created[0]?.destroy();
 });

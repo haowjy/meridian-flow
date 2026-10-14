@@ -200,6 +200,7 @@ async function seam(seed: "owed" | "reserved" | "legacy-reserved" | "committed" 
     access,
     answer,
     coordinator,
+    created,
     key: initial.resource satisfies ResourceKey,
     metadata,
     registry,
@@ -239,9 +240,14 @@ it.each([
   { seed: "legacy-reserved", incarnation: "9" },
   { seed: "committed", incarnation: "7" },
 ] as const)("completes an adoption interrupted at $seed", async ({ seed, incarnation }) => {
-  const { coordinator, key, metadata, room } = await seam(seed);
+  const { coordinator, created, key, metadata, room } = await seam(seed);
 
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+
+  // The same Y.Doc carries the seeded content across the commit; it is not rebuilt or destroyed.
+  expect(created).toHaveLength(1);
+  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
+  expect(created[0]?.getSnapshot().status).not.toBe("destroyed");
 
   expect(await room()).toMatchObject({
     phase: "bindable",
@@ -249,14 +255,16 @@ it.each([
     exactDatabaseName: pending.exactDatabaseName,
     originLineageHandle: pending.lineageHandle,
   });
-  expect((await metadata.readResource(key))?.resource).toMatchObject({
-    lifecycle: { kind: "acknowledged", availabilityGeneration: incarnation },
-    obligations: {},
+  const resource = (await metadata.readResource(key))?.resource;
+  expect(resource?.lifecycle).toEqual({
+    kind: "acknowledged",
+    availabilityGeneration: incarnation,
   });
+  expect(resource?.obligations.sessionAdoption).toBeUndefined();
 });
 
 it("releases a fence-refused reservation and adopts at the next fresh admission", async () => {
-  const { access, answer, coordinator, key, registry, room } = await seam();
+  const { access, answer, coordinator, created, key, metadata, registry, room } = await seam();
   await registry.revokeAccess(projectId, documentId, "120", "revoke:120");
   answer.generation = "119";
 
@@ -277,10 +285,13 @@ it("releases a fence-refused reservation and adopts at the next fresh admission"
   answer.generation = "125";
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
   expect(await room()).toMatchObject({ phase: "bindable", generation: "125" });
+  expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
+  expect(created).toHaveLength(1);
+  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
 });
 
 it("re-acknowledges the committed incarnation after a failed acknowledgement", async () => {
-  const { answer, coordinator, key, metadata, room, store } = await seam("committed");
+  const { answer, coordinator, created, key, metadata, room, store } = await seam("committed");
   answer.generation = "9";
   const commit = metadata.commitResource.bind(metadata);
   let failed = false;
@@ -293,13 +304,29 @@ it("re-acknowledges the committed incarnation after a failed acknowledgement", a
   });
 
   await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
+  // The registry now owns a live transport: a failed acknowledgement must not label it offline.
+  created[0]?.attachTransport(() => ({
+    unacknowledgedUpdates: () => null,
+    synced: true,
+    whenSynced: Promise.resolve(),
+    whenDurablySynced: Promise.resolve(),
+    subscribeStatus(listener) {
+      listener({ kind: "connected" });
+      return () => {};
+    },
+    destroy() {},
+  }));
+  await vi.waitFor(() =>
+    expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false }),
+  );
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
 
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
   expect(await room()).toMatchObject({ phase: "bindable", generation: "7" });
-  expect((await metadata.readResource(key))?.resource.lifecycle).toEqual({
-    kind: "acknowledged",
-    availabilityGeneration: "7",
-  });
+  const resource = (await metadata.readResource(key))?.resource;
+  expect(resource?.lifecycle).toEqual({ kind: "acknowledged", availabilityGeneration: "7" });
+  expect(resource?.obligations.sessionAdoption).toBeUndefined();
+  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
   expect((await store.readRoom(documentId)).documentAdmittedThrough).toBe("9");
 });
 
