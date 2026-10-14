@@ -200,11 +200,10 @@ export function selectRows(
   return { rows: matched.slice(-last), total: matched.length };
 }
 
-/** The mode line: the applied mode, and a queued switch's mode, from the shared switch fold. */
+/** The mode line: the chat's applied mode, and the mode of a switch queued behind the reply (the shared switch fold). */
 function switchLine(live: ThreadSnapshotResponse["liveState"]) {
-  const folded = switchState(viewOfLive(live));
-  const queued = folded?.rows.find((row) => row.status === "queued");
-  return { mode: folded?.mode ?? live.runState.mode, switchQueued: queued?.mode ?? null };
+  const queued = switchState(viewOfLive(live))?.rows.find((row) => row.status === "queued");
+  return { mode: live.runState.mode, switchQueued: queued?.mode ?? null };
 }
 
 export function projectChatView(
