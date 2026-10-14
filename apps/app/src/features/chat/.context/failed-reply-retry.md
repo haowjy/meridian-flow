@@ -9,7 +9,9 @@ reply itself.
 | Failed reply | Row |
 |---|---|
 | Latest turn | Tinted block: "This response failed." with **Retry** beside it |
-| Not the latest turn | The quiet line "This response failed.", with no action |
+| Not the latest turn, never retried | The quiet line "This response failed.", with no action (the writer never acted on it) |
+| Retried (accepted or pending) | Not drawn: the Retry's row takes its place |
+| A retry that failed too | One failure, the newest, in that same place |
 | Its Retry was refused | Adds the muted note "Couldn't retry." while it is the latest turn |
 | The provider declined it | "The AI provider turned this request down." with **Retry** when latest and a retry handler is present |
 
@@ -37,7 +39,11 @@ text; the provider's own message stays in turn metadata for diagnostics.
 
 `useReplyRetry.ts` mints the new reply's id and, at once, puts a working reply
 (`optimisticRetryReply`: pending, empty, `prevTurnId` the failed reply) below
-the failed one; the failed reply then reads as history. It then posts `{ id }`
+the failed one, and the failed reply is no longer drawn: the transcript is not a log, so
+the Retry's row is in its place (`viewTranscript` drops a turn that a stand-in or stored
+turn names with `metadata.retryOf`, and one in the explicit `retried` set, after placing
+stand-ins; a chain of failed retries draws only the newest). Suppression is drawing only: the
+failed reply stays in the store. It then posts `{ id }`
 to `POST /api/threads/:threadId/turns/:turnId/retry`. The response's turn
 replaces the stand-in by id, and the store's turn (from the live stream or the
 snapshot) replaces that.

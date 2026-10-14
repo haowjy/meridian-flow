@@ -5,7 +5,8 @@
  * the background. Retry on the latest failed reply shows a new reply working
  * below it at once, under a client-minted id, then asks the server to answer
  * from the ordinary conversation history (`POST /turns/:turnId/retry`). The
- * failed reply stays in history above it. `useRetryStandIns` owns the stand-in,
+ * failed reply is not drawn: the Retry takes its place (`viewTranscript`, from the
+ * stand-in's `metadata.retryOf` and the explicit `retried` set). `useRetryStandIns` owns the stand-in,
  * the refusal note, and the re-send of a lost request.
  *
  * The request is known by its execution (from the response) or, when the
@@ -21,7 +22,7 @@ import type { RunFacts } from "@/client/copilot/run-follow";
 import { announce } from "@/client/stores";
 import { type RetryStandIns, type StandInIdentity, useRetryStandIns } from "./useRetryStandIns";
 
-export type ReplyRetry = Pick<RetryStandIns, "standIns" | "requestOf" | "refused"> & {
+export type ReplyRetry = Pick<RetryStandIns, "standIns" | "requestOf" | "refused" | "retried"> & {
   /** A new reply after `failed`, or the same request again when `failed` is a lost Retry. */
   retry: (failed: Turn) => void;
 };
@@ -46,7 +47,8 @@ export function optimisticRetryReply(input: { id: string; failed: Turn; createdA
     responseCount: 0,
     usage: null,
     error: null,
-    metadata: null,
+    // The Retry's target, carried explicitly: the transcript draws this in the failed reply's place.
+    metadata: { retryOf: failed.id },
     createdAt,
     completedAt: null,
     blocks: [],
@@ -100,6 +102,7 @@ export function useReplyRetry(input: {
     post: (id, from) => retryReply(threadId, from, { id }),
     lostCopy: t`Couldn't start the retry. Try again.`,
     retired,
+    supersedes: true,
   });
   const { retry: retryStandIn } = standIns;
   const retry = useCallback(
@@ -115,6 +118,7 @@ export function useReplyRetry(input: {
     standIns: standIns.standIns,
     requestOf: standIns.requestOf,
     refused: standIns.refused,
+    retried: standIns.retried,
     retry,
   };
 }
