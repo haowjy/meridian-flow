@@ -13,8 +13,8 @@
  * - a switch answer is its `seq`, `mode` and `pending`, over the current record's items
  *   with every write-mode control row replaced by that `pending`.
  *
- * A frame before the first snapshot has no record to extend and is ignored. `subscribed`
- * is never a source: its head is read outside the pending read's transaction.
+ * A frame before the first record is held and applied, in order, once there is one.
+ * `subscribed` is never a source: its head is read outside the pending read's transaction.
  */
 import { headSeq } from "@meridian/contracts/protocol";
 import type { PendingInboxItem, ThreadPendingInbox } from "@meridian/contracts/threads";
@@ -78,15 +78,32 @@ export function recordFromAnswer(
   };
 }
 
-/**
- * Take a frame into the view. A `write_mode.switched` frame is also the answer for its
- * control's intent: the apply it reports is that control's effect, at the frame's seq.
- */
-export function receiveFrame(view: RunStateView, frame: SwitchFrame): RunStateView {
+/** The view, and the frames that arrived before it had a first record. */
+export type Received = { view: RunStateView; early: readonly SwitchFrame[] };
+
+function applyFrame(view: RunStateView, frame: SwitchFrame): RunStateView {
   const record = recordFromFrame(view.record, frame);
   if (!record) return view;
   const next = receiveRecord(view, record);
   return frame.kind === "switched"
     ? answerIntent(next, "switch", frame.controlId, frame.seq)
     : next;
+}
+
+/**
+ * Take a frame. A `write_mode.switched` frame is also the answer for its control's intent:
+ * the apply it reports is that control's effect, at the frame's seq. Before the first
+ * record the frame is held, not dropped: subscribe-then-fetch means the snapshot's head
+ * can be older than frames that already arrived.
+ */
+export function receiveFrame(state: Received, frame: SwitchFrame): Received {
+  return state.view.record
+    ? { view: applyFrame(state.view, frame), early: state.early }
+    : { view: state.view, early: [...state.early, frame] };
+}
+
+/** After any step that may have made the first record: apply the held frames in order. */
+export function seedFrames(view: RunStateView, early: readonly SwitchFrame[]): Received {
+  if (!view.record || early.length === 0) return { view, early };
+  return { view: early.reduce(applyFrame, view), early: [] };
 }

@@ -62,10 +62,12 @@ import {
 } from "./control-copy";
 import {
   isWriteModeControl,
+  type Received,
   receiveFrame,
   recordFromAnswer,
   recordFromSnapshot,
   type SwitchFrame,
+  seedFrames,
 } from "./switch-record";
 import type { QueuedControl } from "./thread-controls";
 import { readWriteModeSwitch } from "./write-mode-model";
@@ -90,12 +92,15 @@ type Action =
   | { type: "withdrawn"; id: string; seq: string }
   | { type: "dropWithdraw"; id: string };
 
-function reduce(view: RunStateView, action: Action): RunStateView {
+function reduce(state: Received, action: Action): Received {
+  if (action.type === "frame") return receiveFrame(state, action.frame);
+  return seedFrames(reduceView(state.view, action), state.early);
+}
+
+function reduceView(view: RunStateView, action: Exclude<Action, { type: "frame" }>): RunStateView {
   switch (action.type) {
     case "snapshot":
       return receiveRecord(view, recordFromSnapshot(action.snapshot));
-    case "frame":
-      return receiveFrame(view, action.frame);
     case "journal": {
       let next = view;
       const held = new Set(action.switches.map((entry) => entry.id));
@@ -209,14 +214,13 @@ export function useSwitchView(input: {
   const transport = useThreadTransport();
   const isPendingCreation = useIsThreadPendingCreation(threadId);
   useSingleHostWarning(threadId);
-  const [view, dispatch] = useReducer(reduce, EMPTY_VIEW);
+  const [{ view }, dispatch] = useReducer(reduce, { view: EMPTY_VIEW, early: [] });
   const [applied, setApplied] = useState<readonly Applied[]>([]);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
   /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
   const seed = useRef<string | null>(null);
   const heard = useRef(new Set<string>());
-  const order = useRef(0);
 
   useLayoutEffect(() => {
     if (snapshot) dispatch({ type: "snapshot", snapshot });
