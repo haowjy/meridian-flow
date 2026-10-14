@@ -45,9 +45,9 @@ state a later `read` forks from.
 
 The review lives in the browser: the draft room projects `prosemirror` against its
 server-owned `review_base` into changes (`projectReview` in
-`@meridian/agent-edit/diff`). The server keeps no review cut, change classes,
-revision tokens or admission evidence, and no read of the review consumes a
-repeatable-read snapshot. What the server answers is small:
+`@meridian/agent-edit/diff`). The server stores no change, token or evidence of its
+own, and no read of the review needs a repeatable-read snapshot. What the server
+answers is small:
 
 - **Item metadata** (`GET …/documents/:documentId/draft?itemKey=`, `DraftItemMeta`)
   for every addressable item, listed or not: a text item carries its `roomName`,
