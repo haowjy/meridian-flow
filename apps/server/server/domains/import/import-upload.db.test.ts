@@ -243,6 +243,20 @@ describe.runIf(enabled)("durable upload", () => {
     await sweepImportObjects(repository, objects, { importId: input.importId });
     expect((await objects.get(entry.objectKey as string)).ok).toBe(true);
   });
+  it("refuses Stop after reveal while catalog publication still reports organizing", async () => {
+    const input = selection(1);
+    await service().create(projectId, userId, input);
+    await send(input.importId, 0);
+    await db.update(imports).set({ revealedAt: new Date() }).where(eq(imports.id, input.importId));
+    await expect(service().stop(input.importId, projectId)).rejects.toMatchObject({
+      code: "import_finished",
+    });
+    expect(await repository.read(input.importId)).toMatchObject({
+      state: "organizing",
+      acknowledgedAt: null,
+      finishedAt: null,
+    });
+  });
   it("retains prepared conversion keys until cancellation and reports preparation separately", async () => {
     const input = selection(1);
     await service().create(projectId, userId, input);

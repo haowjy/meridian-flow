@@ -47,8 +47,10 @@ out after ten minutes; an expired receive cannot commit a receipt.
 
 ## Commands and cleanup
 
-Stop cancels and acknowledges uploading, organizing, or failed imports. Finished
-imports refuse with `import_finished`. A failed import can Retry or Stop; only
+Stop cancels and acknowledges uploading, organizing, or failed imports before
+reveal. A non-null `revealed_at` refuses with `import_finished`, even while still
+organizing for catalog publication; finished imports refuse too. D2 sets the
+reveal timestamp and only marks finished after publication commits. A failed import can Retry or Stop; only
 finished/cancelled imports can acknowledge. Stop returns without object-store I/O.
 The recovery lane discovers terminal headers with an unset sweep marker.
 
