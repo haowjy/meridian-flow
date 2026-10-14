@@ -12,7 +12,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FilePlus, FolderInput, FolderPlus, Plus } from "lucide-react";
+import { FilePlus, FolderPlus, Plus, Upload } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -66,7 +66,7 @@ export function MobileCreateEntryMenu({ onSelect, onImport }: MobileCreateEntryM
         {onImport ? (
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="cursor-pointer">
-              <FolderInput className="size-4 text-muted-foreground" aria-hidden />
+              <Upload className="size-4 text-muted-foreground" aria-hidden />
               <Trans>Import…</Trans>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>

@@ -6,7 +6,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { FolderInput, Loader2, TriangleAlert } from "lucide-react";
+import { Loader2, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { type ContextTab, tabContextOwner } from "@/client/stores";
@@ -153,7 +153,7 @@ function EntryNotice({
   return (
     <DocumentNotice
       className={className}
-      icon={<FolderInput aria-hidden className="size-4 text-status-warning" />}
+      icon={<Upload aria-hidden className="size-4 text-status-warning" />}
       action={
         <Button
           size="sm"
