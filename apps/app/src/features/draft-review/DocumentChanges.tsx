@@ -22,7 +22,7 @@ export function DocumentChanges({
   onFocused?: () => void;
 }) {
   const stateLine = () => {
-    if (view.completing || view.unlisted) {
+    if (view.completing) {
       return (
         <p
           className="flex items-center gap-2 px-2 py-2 text-caption text-muted-foreground"

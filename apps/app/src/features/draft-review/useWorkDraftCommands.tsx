@@ -4,18 +4,18 @@ import { isWorkArchived } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import {
-  type CommandStart,
+  type ChatApplyPlan,
   type DraftCommandOutcome,
-  type DraftSelection,
-  newestKnownProposal,
-  runDraftBatch,
-  runDraftSelection,
-  runWholeDraftIntent,
+  discardDraftItem,
+  type PreparedApply,
   runWorkWideCommand,
-  startDraftCommand,
+  applyChanges as sendApplyChanges,
+  applyChatChanges as sendApplyChatChanges,
+  applyDraft as sendApplyDraft,
 } from "@/client/query/draft-command-executor";
-import type { DraftRef } from "@/client/query/draft-command-record";
+import type { ChangeTarget, DraftRef } from "@/client/query/draft-command-record";
 import { getContextTabs, matchesReviewItem } from "@/client/stores";
+import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
   useIsCurrentContextRoute,
@@ -23,9 +23,16 @@ import {
 } from "@/features/project/routing/ProjectNavigationContext";
 import { useDraftOnlyLifecycle } from "./draft-only-lifecycle";
 import type { DraftReviewSelection } from "./draft-review-session";
-import type { ChangeTarget } from "./review-changes";
+import { acquireItemSnapshot } from "./useDraftApply";
 
 export type WorkDraftCommands = ReturnType<typeof useWorkDraftCommands>;
+
+/** How an Apply gets its snapshot: from the frame the writer clicked. */
+export type PrepareApply = () => Promise<PreparedApply>;
+
+export type CommandStart = { sent: boolean; outcome: Promise<DraftCommandOutcome> };
+
+const BLOCKED: DraftCommandOutcome = { kind: "blocked" };
 
 export function useWorkDraftCommands({
   projectId,
@@ -38,21 +45,38 @@ export function useWorkDraftCommands({
 }) {
   const workId = work?.id ?? "";
   const queryClient = useQueryClient();
+  const registry = useLiveDocumentSessionRegistry();
   const lifecycle = useDraftOnlyLifecycle(projectId);
   const openContextRoute = useOpenContextRoute();
   const isCurrentContextRoute = useIsCurrentContextRoute();
   const frozen = !work || isWorkArchived(work);
-  const changesLocked = frozen;
   const commands = useMemo(() => {
     const scope = { projectId, workId };
-    /** An Apply that left no newer proposal promotes the draft-only document; the route follows. */
-    const promoteIfSettled = (
-      target: DraftRef,
-      generation: number | undefined,
-      tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
-    ) => {
-      const newest = newestKnownProposal(queryClient, target);
-      if (newest !== undefined && generation !== undefined && newest > generation) return;
+    const refOf = (draft: DraftReviewSelection): DraftRef => ({
+      ...scope,
+      documentId: draft.documentId,
+      itemKey: draft.itemKey,
+    });
+
+    /**
+     * The item's own command outcome is the only promote or remove signal (contract §3.4): an Apply that
+     * dropped a created item's row turns its tab live, an item Discard closes it, and every other outcome
+     * leaves the tab alone. A list or a metadata read never reaches this.
+     */
+    const settleTab = (draft: DraftReviewSelection, outcome: DraftCommandOutcome) => {
+      const target = refOf(draft);
+      if (outcome.kind === "discarded") {
+        try {
+          lifecycle.remove(target);
+        } catch {
+          /* The committed command must not be resent for route repair. */
+        }
+        return;
+      }
+      if (outcome.kind !== "applied" || !outcome.itemClosed) return;
+      const tab = getContextTabs(projectId).tabs.find((candidate) =>
+        matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
+      );
       void (async () => {
         try {
           await lifecycle.promote(target);
@@ -68,112 +92,90 @@ export function useWorkDraftCommands({
         }
       })();
     };
-    const refOf = (draft: DraftReviewSelection): DraftRef => ({
-      ...scope,
-      documentId: draft.documentId,
-      itemKey: draft.itemKey,
-    });
-    const tabOf = (draft: DraftReviewSelection) =>
-      getContextTabs(projectId).tabs.find((candidate) =>
-        matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
-      );
-    const sendWhole = (mode: "apply" | "discard", draft: DraftReviewSelection): CommandStart => {
-      if (frozen) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
-      const target = { ...scope, documentId: draft.documentId, itemKey: draft.itemKey };
-      const generation = newestKnownProposal(queryClient, target);
-      const tab = getContextTabs(projectId).tabs.find((candidate) =>
-        matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
-      );
-      const start = startDraftCommand(
-        queryClient,
-        {
-          target: "all",
-          draft: target,
-          mode,
-          generation,
-          completesDraft: true,
-        },
-        threadId,
-      );
+    const settled = (draft: DraftReviewSelection, outcome: Promise<DraftCommandOutcome>) =>
+      outcome.then((result) => {
+        settleTab(draft, result);
+        return result;
+      });
+
+    const applyChanges = (
+      draft: DraftReviewSelection,
+      targets: readonly ChangeTarget[],
+      baseKey: string,
+      prepare: PrepareApply,
+    ): Promise<DraftCommandOutcome> =>
+      frozen
+        ? Promise.resolve(BLOCKED)
+        : settled(
+            draft,
+            sendApplyChanges(
+              queryClient,
+              { scope: "change", draft: refOf(draft), targets, baseKey, prepare },
+              threadId,
+            ),
+          );
+
+    /** Apply the changes of one chat in an item nobody has open: the room is read inside the command. */
+    const applyChatChanges = (
+      draft: DraftReviewSelection,
+      acquire: () => Promise<ChatApplyPlan | null>,
+    ): Promise<DraftCommandOutcome> =>
+      frozen
+        ? Promise.resolve(BLOCKED)
+        : settled(draft, sendApplyChatChanges(queryClient, refOf(draft), acquire, threadId));
+
+    /**
+     * Apply a whole item. With no `prepare`, the item is one nobody has open: its room is read inside the
+     * command, for as long as the command lasts, under the claim taken at the click.
+     */
+    const applyDraft = (draft: DraftReviewSelection, prepare?: PrepareApply): CommandStart => {
+      if (frozen) return { sent: false, outcome: Promise.resolve(BLOCKED) };
       return {
-        ...start,
-        outcome: start.outcome.then((outcome) => {
-          if (outcome.kind === "applied") promoteIfSettled(target, generation, tab);
-          if (outcome.kind === "discarded") {
-            try {
-              lifecycle.remove(target);
-            } catch {
-              /* The committed command must not be resent for route repair. */
-            }
-          }
-          return outcome;
-        }),
+        sent: true,
+        outcome: settled(
+          draft,
+          sendApplyDraft(
+            queryClient,
+            {
+              scope: "item",
+              draft: refOf(draft),
+              prepare: prepare ?? (() => acquireItemSnapshot(registry, queryClient, refOf(draft))),
+            },
+            threadId,
+          ),
+        ),
       };
     };
-    const selection = (
+
+    /** Item Discard: closes the item on the server. A review's own Discard draft is a local edit instead. */
+    const discardDraft = (draft: DraftReviewSelection): CommandStart => {
+      if (frozen) return { sent: false, outcome: Promise.resolve(BLOCKED) };
+      return {
+        sent: true,
+        outcome: settled(draft, discardDraftItem(queryClient, refOf(draft), threadId)),
+      };
+    };
+
+    /** The Work page's Apply all and Discard all: one command over the Work's draft. */
+    const disposeDrafts = async (
       mode: "apply" | "discard",
-      draft: DraftReviewSelection,
-      changes: DraftSelection["selection"],
-    ) =>
-      frozen
-        ? Promise.resolve<DraftCommandOutcome>({ kind: "blocked" })
-        : runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
-    const whole = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
-      runWholeDraftIntent(
-        { ...scope, documentId: draft.documentId, itemKey: draft.itemKey },
-        mode,
-        () => sendWhole(mode, draft),
-      );
-    const commandChange = (
-      mode: "apply" | "discard",
-      draft: DraftReviewSelection,
-      target: ChangeTarget,
-    ) =>
-      target.kind === "draft"
-        ? whole(mode, draft).outcome
-        : target.kind === "operations"
-          ? selection(mode, draft, target.selection)
-          : Promise.resolve<DraftCommandOutcome>({ kind: "blocked" });
-    const batch = (
-      mode: "apply" | "discard",
-      items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
-    ) => runDraftBatch(items, (item) => commandChange(mode, item.draft, item.target));
+      drafts: readonly DraftReviewSelection[],
+    ): Promise<DraftCommandOutcome[]> => {
+      if (frozen) return drafts.map(() => BLOCKED);
+      const outcomes = await runWorkWideCommand(queryClient, scope, mode, drafts, threadId);
+      for (const [index, outcome] of outcomes.entries()) settleTab(drafts[index], outcome);
+      return outcomes;
+    };
+
     return {
-      commandChange,
       projectId,
       workId,
       threadId,
-      startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => whole(mode, draft),
-      apply: (documentId: string, itemKey: string) =>
-        whole("apply", { documentId, itemKey }).outcome,
-      discard: (documentId: string, itemKey: string) =>
-        whole("discard", { documentId, itemKey }).outcome,
-      applyChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
-        selection("apply", draft, changes),
-      discardChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
-        selection("discard", draft, changes),
-      applyBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
-        batch("apply", items),
-      discardBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
-        batch("discard", items),
-      /** Work Files' Apply all and Discard all: one server command over the listed items. */
-      disposeDrafts: async (
-        mode: "apply" | "discard",
-        drafts: readonly DraftReviewSelection[],
-      ): Promise<DraftCommandOutcome[]> => {
-        if (frozen) return drafts.map(() => ({ kind: "blocked" }));
-        const before = drafts.map((draft) => ({
-          generation: newestKnownProposal(queryClient, refOf(draft)),
-          tab: tabOf(draft),
-        }));
-        const outcomes = await runWorkWideCommand(queryClient, scope, mode, drafts, threadId);
-        outcomes.forEach((outcome, index) => {
-          if (outcome.kind === "discarded") lifecycle.remove(refOf(drafts[index]));
-          if (outcome.kind === "applied")
-            promoteIfSettled(refOf(drafts[index]), before[index].generation, before[index].tab);
-        });
-        return outcomes;
-      },
+      applyChanges,
+      applyChatChanges,
+      applyDraft,
+      discardDraft,
+      disposeDrafts,
     };
   }, [
     projectId,
@@ -181,11 +183,12 @@ export function useWorkDraftCommands({
     threadId,
     frozen,
     queryClient,
+    registry,
     lifecycle,
     openContextRoute,
     isCurrentContextRoute,
   ]);
-  return { ...commands, dispositionLocked: frozen, changesLocked };
+  return { ...commands, dispositionLocked: frozen, changesLocked: frozen };
 }
 
 const WorkDraftCommandsContext = createContext<WorkDraftCommands | null>(null);

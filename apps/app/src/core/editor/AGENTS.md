@@ -228,24 +228,10 @@ and navigation contracts.
 → [`images/AGENTS.md`](images/AGENTS.md) — how a picture gets into a document
 
 - `DocumentSession.resetDisposition` describes terminal resets: `superseded`
-  and `rebuild` keep unacknowledged updates available for retirement; `refused`
-  rejects pending edits and `schema` fences the room. The transport owns the
-  outbox; the session exposes it without reconstructing a document diff.
-- `BranchRoomPool` retains draft refs per owner without opening rooms. A released
-  room with an outbox drains before teardown; terminal retirement takes its
-  carry before destruction and installs the teardown quarantine before delivery.
-  `BranchWriterHandoff` belongs to the account epoch, not the review UI. Its
-  attempt retains the successor across retries and waits for first sync. Missing
-  anchors in a same-generation rebuild may still arrive, so their original carry
-  and pending signal survive partial acknowledgements. A synced newer generation
-  is the durable retirement cut: absent source identities cannot arrive from its
-  fenced old journal. `writer-carry-recovery.ts` re-expresses only pending writer
-  operations with surviving own anchors/parents under a fresh client, transfers
-  their current tombstones, and never replays the retired AI snapshot. The rest
-  is deliberately dropped, reported once through the document-scoped ref, and
-  released; pending evidence lasts only until any rescued update is acknowledged.
-
-Private Yjs reconstruction mechanics live in the browser-safe
-`@meridian/agent-edit/yjs-mutation` adapter, pinned to Yjs 13.6.31. The app's
-carry recovery selects operations and identity mappings; retirement, retry,
-ownership and document loss presentation remain app concerns.
+  (the draft closed), `refused` (pending edits rejected) and `schema` (the room
+  is fenced). The transport owns the outbox; the session exposes it without
+  reconstructing a document diff.
+- `BranchRoomPool` holds one room per draft id (`branch:<draftId>`). It retains
+  room keys per owner without opening rooms. A released room with an outbox
+  drains before teardown; a reset room is retired and its teardown quarantine
+  installed before anything can reopen it. Nothing is carried to a successor.

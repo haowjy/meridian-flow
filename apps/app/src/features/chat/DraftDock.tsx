@@ -2,12 +2,21 @@
 
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
-import { Plural, Trans } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  dismissOverrode,
+  draftOverrode,
+  useDraftCommandRecords,
+} from "@/client/query/draft-command-record";
+import { DiscardedRow } from "@/features/draft-review/DiscardedRow";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
+import { FileCommandStatus } from "@/features/draft-review/ReviewCompletion";
+import { AppliedOverNotice } from "@/features/draft-review/ReviewHeaderNotices";
+import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useDraftView } from "@/features/draft-review/useDraftView";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
@@ -16,12 +25,11 @@ import type { DockFile } from "./draft-dock-files";
 import type { DockFileFailure, DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
+  const touch = useCoarsePointer();
   const [expanded, setExpanded] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
-  const troubledFileCount = dock.files.filter(
-    (file) => file.status === "error" || dock.fileFailures(file).length > 0,
-  ).length;
-  // A refusal or a preview that did not load opens the strip so the writer sees it.
+  const troubledFileCount = dock.files.filter((file) => dock.fileFailures(file).length > 0).length;
+  // A refusal opens the strip so the writer sees it.
   useEffect(() => {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
@@ -116,12 +124,10 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             ) : only ? (
               <DockFileName file={only} onReview={() => dock.review(only)} />
             ) : null}
-            {trouble ||
-              (dock.changeCount !== null ? (
-                <span className="hidden shrink-0 whitespace-nowrap text-ink-subtle @min-[25rem]/dock:inline">
-                  <ChangeCount count={dock.changeCount} />
-                </span>
-              ) : null)}
+            {trouble}
+            {!multi || expanded || !dock.pendingMode ? null : (
+              <FileCommandStatus mode={dock.pendingMode} />
+            )}
           </div>
         )}
         {commands}
@@ -142,14 +148,23 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
             summary={multi ? undefined : summary}
           />
         ))}
+        {dock.discardedFiles.length > 0 ? (
+          <ul>
+            {dock.discardedFiles.map((entry) => (
+              <DiscardedRow
+                key={entry.id}
+                entry={entry}
+                name={reviewFileTargetName(entry.file, t`Document`)}
+                touch={touch}
+                onUndo={() => dock.discards.undo(entry.id)}
+              />
+            ))}
+          </ul>
+        ) : null}
       </div>
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );
-}
-
-function ChangeCount({ count }: { count: number }) {
-  return <Plural value={count} one="# change" other="# changes" />;
 }
 
 /** The chat's changes, with file headers only when the summary names multiple documents. */
@@ -165,39 +180,44 @@ function DockFileLine({
   summary?: (trouble: ReactNode) => ReactNode;
 }) {
   const touch = useCoarsePointer();
-  const view = useDraftView(
-    {
-      projectId: dock.projectId,
-      workId: dock.workId,
-      documentId: file.row.documentId,
-      itemKey: file.row.draft.itemKey,
-    },
-    { controller: dock.controller, enabled: expanded },
+  const draft = {
+    projectId: dock.projectId,
+    workId: dock.workId,
+    documentId: file.row.documentId,
+    itemKey: file.row.draft.itemKey,
+  };
+  const overrode = draftOverrode(useDraftCommandRecords(), draft);
+  const view = useDraftView(draft, {
+    controller: dock.controller,
+    enabled: expanded,
+    file: file.row,
+    discards: dock.discards,
+  });
+  // The strip shows this chat's changes: those the attribution hint names it for.
+  const items = useMemo(
+    () =>
+      view.wholeDocument
+        ? view.items
+        : view.items.filter((item) =>
+            item.change.chats.some((chat) => chat.chatId === dock.threadId),
+          ),
+    [view.items, view.wholeDocument, dock.threadId],
   );
-  const own = new Set(file.changes.map((change) => change.classId));
-  const items = view.items.filter(({ change }) => own.has(change.classId));
-  const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
-  // Ownership comes from the rows that will actually render, not the kind of document.
+  const wholeDocument = isWholeDocumentChange({ ...view, items });
+  // A failure shows on the row that will render it, else on the file.
   const renderedItems =
-    expanded && !(summary && wholeDocument) && file.status !== "error" && view.status === "ready"
-      ? items
-      : [];
-  const failures = dock.fileFailures(file).filter(
-    (held) =>
-      !renderedItems.some((item) => {
-        if (held.kind === "draft") return item.draftFailure === held.failure;
-        if (item.draftFailure || !item.failure) return false;
-        return (
-          item.failure.code === held.failure.code &&
-          item.failure.mode === held.failure.mode &&
-          item.failure.serverCode === held.failure.serverCode &&
-          item.failure.serverReason === held.failure.serverReason
-        );
-      }),
-  );
+    expanded && !(summary && wholeDocument) && view.status === "ready" ? items : [];
+  const failures = dock
+    .fileFailures(file)
+    .filter((held) => !renderedItems.some((item) => item.draftFailure === held.failure));
   const trouble =
-    failures.length > 0 || file.status === "error" ? (
-      <FileTrouble file={file} failures={failures} row={!summary} />
+    failures.length > 0 || view.completing ? (
+      <>
+        {view.completing ? <FileCommandStatus mode={view.completing} /> : null}
+        {failures.length > 0 ? (
+          <FileTrouble file={file} failures={failures} row={!summary} />
+        ) : null}
+      </>
     ) : null;
   if (!summary && !expanded) return null;
   return (
@@ -214,13 +234,19 @@ function DockFileLine({
         </div>
       ) : null}
       {!summary && wholeDocument ? trouble : null}
-      {expanded && file.status !== "error" && !(summary && wholeDocument) ? (
+      <AppliedOverNotice
+        items={overrode}
+        onDismiss={() => dismissOverrode(draft)}
+        touch={touch}
+        className="px-2"
+      />
+      {expanded && !(summary && wholeDocument) ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
             view={{ ...view, items, locked: view.locked || dock.generating }}
             touch={touch}
-            onSelect={(change) => dock.review(file, change)}
+            onSelect={(change) => dock.review(file, change.id)}
           />
         </div>
       ) : null}
@@ -228,11 +254,7 @@ function DockFileLine({
   );
 }
 
-/**
- * What went wrong on a file, in the strip's error voice: a command or launch
- * that did not land, and a preview that did not load. They are independent, so
- * both show when both are held, and Retry stays with the unreadable preview.
- */
+/** What went wrong on a file, in the strip's error voice: a command or launch that did not land. */
 function FileTrouble({
   file,
   failures,
@@ -242,8 +264,7 @@ function FileTrouble({
   failures: readonly DockFileFailure[];
   row?: boolean;
 }) {
-  const unreadable = file.status === "error";
-  if (failures.length === 0 && !unreadable) return null;
+  if (failures.length === 0) return null;
   return (
     <>
       {failures.map((failure) => (
@@ -251,25 +272,6 @@ function FileTrouble({
           <DockFailureText failure={failure} fileName={file.name} />
         </TroubleLine>
       ))}
-      {unreadable ? (
-        <TroubleLine
-          row={row}
-          code="unreadable"
-          action={
-            file.retry ? (
-              <button
-                type="button"
-                onClick={file.retry}
-                className="text-button shrink-0 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11"
-              >
-                <Trans>Retry</Trans>
-              </button>
-            ) : null
-          }
-        >
-          <Trans>Changes couldn't load.</Trans>
-        </TroubleLine>
-      ) : null}
     </>
   );
 }
@@ -277,12 +279,10 @@ function FileTrouble({
 function TroubleLine({
   row,
   code,
-  action,
   children,
 }: {
   row: boolean;
   code: string;
-  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { i18n } = useLingui();
@@ -303,7 +303,6 @@ function TroubleLine({
       <span ref={text} className="min-w-0 flex-1 truncate">
         {children}
       </span>
-      {action}
     </p>
   );
 }

@@ -32,7 +32,7 @@ import {
   DraftReviewBoundary,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
-import { createReviewScopeFixture, listed, preview, work } from "@/test-support/draft-review-scope";
+import { createReviewScopeFixture, listed, meta, work } from "@/test-support/draft-review-scope";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import * as account from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
@@ -97,9 +97,7 @@ vi.mock("@/features/editor/useInlineReviewSync", () => ({
 vi.mock("@/components/app/PaintHold", () => ({
   PaintCapture: () => null,
   PaintScope: ({ children }: { children: ReactNode }) => children,
-  useAfterPaintRelease: () => (work: (cover: { read: unknown }) => void) =>
-    work({ read: undefined }),
-  usePaintCoverProjection: () => () => {},
+  useAfterPaintRelease: () => (work: () => void) => work(),
 }));
 const liveSession = {
   suspendPresence: () => {},
@@ -138,20 +136,11 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
       },
     ],
   });
-  fixture.network.getDraftPreview.mockResolvedValue({
-    ...preview,
+  fixture.network.getDraftMeta.mockResolvedValue({
+    ...meta,
     draftId: "whole-draft",
-    item: {
-      ...listed,
-      draftId: "whole-draft",
-      origin: "edited",
-      isNew: false,
-      binary: false,
-      wholeItem: false,
-      conflict: null,
-      settling: false,
-      tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
-    },
+    isNew: draftOnly,
+    wholeItem: true,
   });
   let setEditorItemKey!: (itemKey: string | undefined) => void;
   const route = vi.fn(async (_target: unknown, options?: { itemKey?: string }) => {

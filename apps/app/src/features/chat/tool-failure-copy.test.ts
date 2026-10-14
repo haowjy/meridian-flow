@@ -1,4 +1,4 @@
-/** A failed write tells the writer why, and every undo/redo refusal has its own plain copy. */
+/** A failed write tells the writer why. */
 import { i18n } from "@lingui/core";
 import type { ToolView } from "@meridian/thread-client";
 import { beforeEach, expect, it } from "vitest";
@@ -32,7 +32,7 @@ function failed(result: Record<string, unknown>): ToolView {
   };
 }
 
-it("says why a write failed, and gives every undo and redo refusal its own copy", () => {
+it("says why a write failed", () => {
   expect(
     documentToolFailureCopy(failed({ status: "invalid_write", rejected: "discarded_edit" })),
   ).toBe("You discarded the text it edited, so the change wasn't kept. The AI will read it again.");
@@ -45,21 +45,4 @@ it("says why a write failed, and gives every undo and redo refusal its own copy"
       toolName: "read",
     }),
   ).toBe(clash);
-
-  const statuses = [
-    "cant_undo_applied",
-    "cant_undo_discarded",
-    "cant_undo_changed",
-    "cant_undo_held",
-    "cant_undo_elsewhere",
-    "cant_redo_applied",
-    "cant_redo_discarded",
-    "cant_redo_changed",
-    "cant_redo_held",
-    "cant_redo_elsewhere",
-    "cant_redo_users_undo",
-  ];
-  const copies = statuses.map((status) => documentToolFailureCopy(failed({ status })));
-  expect(new Set(copies).size).toBe(statuses.length);
-  for (const copy of copies) expect(copy).not.toContain("Something went wrong");
 });

@@ -1,14 +1,10 @@
-/** Renders durable document and Work change receipts. */
-import { plural, t } from "@lingui/core/macro";
+/** Renders durable document and Work change receipts. The writer reverses a change in the draft or the editor, never here. */
 import { Trans } from "@lingui/react/macro";
-import type { ReversalOutcome, Turn, TurnReceiptChip } from "@meridian/contracts/protocol";
-import { isReversibleWorkReceipt } from "@meridian/contracts/works";
+import type { Turn } from "@meridian/contracts/protocol";
 import type { WorkReceipt } from "@meridian/thread-client";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
 import type { ChangeTrailShell } from "@/client/change-trails";
-import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
 import { DraftStatsLabel } from "@/features/draft-review/draft-stats";
 import { cn } from "@/lib/utils";
@@ -25,6 +21,7 @@ export type TurnEditDocument = {
   path: string;
   uri: string;
   scope: "live" | "draft";
+  invisibleWrites?: true;
 };
 
 function hasTurnEditsReceiptDocuments(
@@ -36,7 +33,7 @@ function hasTurnEditsReceiptDocuments(
   );
 }
 
-/** Whether this turn has a receipt to show at all: document edits, or a reversible Work mutation receipt. */
+/** Whether this turn has a receipt to show at all: document edits, or a Work mutation receipt. */
 export function hasTurnEditsReceiptContent(
   documents: TurnEditDocument[],
   changeTrail: ChangeTrailShell | undefined,
@@ -44,7 +41,7 @@ export function hasTurnEditsReceiptContent(
 ): boolean {
   return (
     hasTurnEditsReceiptDocuments(documents, changeTrail) ||
-    workReceipts.some(isReversibleWorkReceipt)
+    workReceipts.some((receipt) => receipt.changed)
   );
 }
 
@@ -52,7 +49,6 @@ export type TurnEditsReceiptProps = {
   threadId: string;
   turn: Turn;
   documents: TurnEditDocument[];
-  receipt: TurnReceiptChip | null;
   /** Work receipts carried by this turn's tool results (`turnWorkReceipts`). */
   workReceipts?: readonly WorkReceipt[];
   changeTrail?: ChangeTrailShell;
@@ -63,7 +59,6 @@ export function TurnEditsReceipt({
   threadId,
   turn,
   documents,
-  receipt,
   workReceipts = [],
   changeTrail,
   navigateToChange,
@@ -73,23 +68,12 @@ export function TurnEditsReceipt({
   const canOpenContextUri = useChatContextRoutability();
   const [expanded, setExpanded] = useState(false);
   const changeReveal = useChangeReveal(threadId, turn.id);
-  const [pending, setPending] = useState(false);
-  const [draftOutcome, setDraftOutcome] = useState(false);
-  const [actionSkips, setActionSkips] = useState<
-    import("@meridian/contracts/protocol").TurnInverseSkip[] | null
-  >(null);
-  const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
-  const [restoredNotices, setRestoredNotices] = useState<string[] | null>(null);
-  const turnMutation = useReverseTurnMutation(threadId);
 
-  const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal) : undoGuardCopy(receipt);
   const trailDocuments = changeTrail?.documents ?? [];
   const hasEditedDocuments = hasTurnEditsReceiptDocuments(documents, changeTrail);
-  // Reversible Work mutation receipts are content in their own right: their
-  // lines list as rows, and their presence is what keeps a Work-only turn's
-  // Undo on screen.
-  const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
+  // Work mutation receipts are content in their own right: their lines list as
+  // rows, and a Work-only turn still gets a card.
+  const changedWorkReceipts = workReceipts.filter((receipt) => receipt.changed);
   // Chrome counts, never names. A document name here would sit inside the
   // disclosure toggle, competing for the click at the moment the writer is
   // reaching to open it — and the names it would compete with are the ones in
@@ -113,7 +97,6 @@ export function TurnEditsReceipt({
           removed: changeTrail.wordsRemoved ?? 0,
         }
       : null;
-  const undoUnavailable = receipt == null || receipt.control === "view_change";
 
   // The change stage of a conversation reveal — only a reveal naming a change
   // row inside THIS turn reaches here. The request is never copied into local
@@ -135,58 +118,14 @@ export function TurnEditsReceipt({
     setExpanded(true);
   }, [changeReveal, changeTrail, hasEditedDocuments, navigateToChange]);
 
-  useEffect(() => {
-    if (receipt?.control !== "view_change") setCommandRefusal(null);
-  }, [receipt?.control]);
-
   if (!hasTurnEditsReceiptContent(documents, changeTrail, workReceipts)) return null;
 
-  async function reverseTurn() {
-    if (pending || !receipt || receipt.control === "view_change") return;
-    setPending(true);
-    try {
-      const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      setActionSkips(outcome.skips ?? []);
-      const undoneInDraft =
-        direction === "undo" &&
-        outcome.documents.some(
-          (document) => document.status === "reversed" && document.destination?.kind === "draft",
-        );
-      setDraftOutcome(undoneInDraft);
-      if (undoneInDraft) setExpanded(true);
-      const restored = successfulWorkReversals(outcome);
-      const status =
-        outcome.status === "partial" && outcome.acceptedParts
-          ? null
-          : refusedReversalStatus(outcome.status);
-      // A Work-only turn has no document half, so its "nothing to undo" is a
-      // fact about documents that were never part of the claim. With a Work
-      // restored, repeating it would report a successful restore as refusal.
-      const documentHalfEmpty =
-        !hasEditedDocuments &&
-        restored.length > 0 &&
-        (status === "nothing_to_undo" || status === "nothing_to_redo");
-      const refusal = status && !documentHalfEmpty ? status : null;
-      setCommandRefusal(refusal ? { direction, status: refusal } : null);
-      setRestoredNotices(restored.length > 0 ? [...new Set(restored.map(reversedWorkLine))] : null);
-      if (refusal || restored.length > 0 || outcome.skips?.length) setExpanded(true);
-    } catch {
-      // A rejected request is a refusal the writer never asked for: the command
-      // is the only thing that can report it, so it says so here rather than
-      // leaving the click looking like it worked.
-      setCommandRefusal({ direction, status: "request_failed" });
-      setExpanded(true);
-    } finally {
-      setPending(false);
-    }
-  }
   return (
     <div
       className="overflow-hidden rounded-lg border border-border bg-chat-interactive text-caption text-ink-muted"
       data-turn-receipt
     >
-      {/* The WHOLE header row is the expand/collapse target — hover washes the
-            full width, wrapping around the Undo chip, which fences its own click. */}
+      {/* The WHOLE header row is the expand/collapse target — hover washes the full width. */}
       {/* biome-ignore lint/a11y/useKeyWithClickEvents: the inner button is the keyboard-accessible toggle; the row onClick is a mouse convenience. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: same — mouse-convenience toggle over a semantic inner button. */}
       <div
@@ -217,7 +156,7 @@ export function TurnEditsReceipt({
             <span className="min-w-0 truncate font-medium text-prose-foreground">
               {headerDocumentCount > 0
                 ? documentCountLabel(headerDocumentCount)
-                : workCountLabel(reversibleWorkReceipts.length)}
+                : workCountLabel(changedWorkReceipts.length)}
             </span>
             {wordStats ? (
               <span className="ml-2 shrink-0">
@@ -227,89 +166,9 @@ export function TurnEditsReceipt({
             ) : null}
           </span>
         </button>
-        {undoUnavailable ? (
-          <span
-            className="shrink-0 rounded-full border border-border-subtle px-[var(--chat-space-block)] py-0.5 font-medium text-ink-muted"
-            data-undo-unavailable
-          >
-            <Trans>Can't undo</Trans>
-          </span>
-        ) : (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            onClick={(event) => {
-              event.stopPropagation();
-              void reverseTurn();
-            }}
-            disabled={pending}
-            className="shrink-0 text-jade-text"
-          >
-            {pending
-              ? direction === "redo"
-                ? t`Redoing…`
-                : t`Undoing…`
-              : direction === "redo"
-                ? t`Redo`
-                : t`Undo`}
-          </Button>
-        )}
       </div>
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
-          {draftOutcome ? (
-            <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
-              data-turn-draft-outcome
-              role="status"
-            >
-              <Trans>Undone in your draft. Apply it to change your manuscript.</Trans>
-            </p>
-          ) : null}
-          {(actionSkips ?? receipt?.skips ?? []).length > 0 ? (
-            <div
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)]"
-              data-turn-skips
-              role="status"
-            >
-              <p>
-                {plural((actionSkips ?? receipt?.skips ?? []).length, {
-                  one: "# part stayed",
-                  other: "# parts stayed",
-                })}
-              </p>
-              <ul>
-                {(actionSkips ?? receipt?.skips ?? []).map((skip, index) => (
-                  <li key={`${skip.documentId}:${index}`}>
-                    {skip.before ? `“${skip.before}”` : ""}
-                    {skip.before && skip.after ? " → " : ""}
-                    {skip.after ? `“${skip.after}”` : ""}
-                    <span className="ml-1">{skip.reason}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {restoredNotices?.map((notice) => (
-            <p
-              key={notice}
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground"
-              data-work-restored
-              role="status"
-            >
-              {notice}
-            </p>
-          ))}
-          {guardCopy ? (
-            <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-ink-muted"
-              data-undo-unavailable-reason
-              role="status"
-            >
-              {guardCopy}
-            </p>
-          ) : null}
           {showTrailDetail && changeTrail && navigateToChange ? (
             <ChangeViewDetail
               threadId={threadId}
@@ -334,9 +193,9 @@ export function TurnEditsReceipt({
               ))}
             </ul>
           ) : null}
-          {reversibleWorkReceipts.length > 0 ? (
+          {changedWorkReceipts.length > 0 ? (
             <ul className="flex flex-col">
-              {reversibleWorkReceipts.map((workRow, index) => (
+              {changedWorkReceipts.map((workRow, index) => (
                 <li key={`${index}:${workRow.operation}:${workRow.workId}`}>
                   <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
                     {workReceiptLine(workRow)}
@@ -349,69 +208,6 @@ export function TurnEditsReceipt({
       ) : null}
     </div>
   );
-}
-
-/** A reversal the writer asked for and did not get, plus the direction they asked in — the direction the receipt carries can flip under a refusal, and the copy has to name the comm.... */
-type ReversalRefusal = {
-  direction: ReversalDirection;
-  status: Exclude<ReversalOutcome["status"], SuccessfulReversalStatus> | "request_failed";
-};
-
-type SuccessfulReversalStatus = "success" | "reversed" | "reconciled";
-
-/** The reversal statuses that mean the manuscript changed as asked. */
-function refusedReversalStatus(
-  status: ReversalOutcome["status"],
-): ReversalRefusal["status"] | null {
-  if (status === "success" || status === "reversed" || status === "reconciled") return null;
-  return status;
-}
-
-/** Writer-facing copy for a refused reversal. */
-function reversalRefusalCopy(refusal: ReversalRefusal): string {
-  switch (refusal.status) {
-    case "nothing_to_redo":
-      return t`Redo is no longer available because the manuscript changed.`;
-    case "nothing_to_undo":
-      return t`Undo is no longer available.`;
-    case "cant_undo_dependent":
-      return dependentChangeCopy();
-    case "expired":
-      return t`This change is no longer reversible.`;
-    case "partial":
-    case "partial_failure":
-      return t`Only part of this change could be reversed.`;
-    case "not_found":
-    case "document_not_found":
-      return t`That chapter is no longer available, so this change can't be reversed.`;
-    case "ambiguous_match":
-    case "invalid_write":
-      return t`This change no longer matches the chapter text, so it can't be reversed.`;
-    case "binary_file":
-      return t`This file is binary, so this change can't be reversed.`;
-    case "permission_denied":
-      return t`This file's Work is archived. Unarchive the Work to reverse this change.`;
-    case "internal_error":
-    case "read_required":
-    case "request_failed":
-      return reversalRetryCopy(refusal.direction);
-    default: {
-      // Model-only refusal codes do not drive writer controls. Unknown
-      // statuses keep the existing retry path.
-      return reversalRetryCopy(refusal.direction);
-    }
-  }
-}
-
-/** The one sentence for "later live edits depend on this", wherever it surfaces. */
-function dependentChangeCopy(): string {
-  return t`Later edits build on this change. View the change instead of undoing it.`;
-}
-
-function reversalRetryCopy(direction: ReversalDirection): string {
-  return direction === "redo"
-    ? t`Redo didn't go through. Try again.`
-    : t`Undo didn't go through. Try again.`;
 }
 
 /** Authorized durable evidence for one settled trail, and the change stage's
@@ -514,19 +310,6 @@ function ChangeViewDetail({
   });
 }
 
-function undoGuardCopy(receipt: TurnReceiptChip | null): string | undefined {
-  // Same fact as the refused-command copy, so it is the same sentence: a
-  // receipt that rests on `cant_undo_dependent` and a command refused with it
-  // are the writer's one situation.
-  if (receipt?.state === "cant_undo_dependent") {
-    return dependentChangeCopy();
-  }
-  if (receipt?.control === "view_change" || receipt == null) {
-    return t`This change is no longer reversible.`;
-  }
-  return undefined;
-}
-
 /** Full-width document row: hover washes the row, click opens the file. */
 function DocumentRow({
   document,
@@ -537,22 +320,33 @@ function DocumentRow({
   onOpenContextUri: ((uri: string) => void) | null;
   canOpenContextUri: ((uri: string) => boolean) | null;
 }) {
+  const note = document.invisibleWrites ? (
+    <p className="px-[var(--chat-card-pad-x)] pb-1 pl-[var(--chat-geometry-receipt-indent)] text-ink-muted">
+      <Trans>Some of this reply's words went into text you discarded.</Trans>
+    </p>
+  ) : null;
   if (!onOpenContextUri || !canOpenContextUri?.(document.uri)) {
     return (
-      <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
-        <DocumentName path={document.uri} insideDoor />
-      </span>
+      <>
+        <span className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-prose-foreground">
+          <DocumentName path={document.uri} insideDoor />
+        </span>
+        {note}
+      </>
     );
   }
   return (
-    <button
-      type="button"
-      onClick={() => onOpenContextUri(document.uri)}
-      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
-    >
-      {/* The whole row is the door here, so the name inside it stays inert. */}
-      <DocumentName path={document.uri} insideDoor />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => onOpenContextUri(document.uri)}
+        className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-muted"
+      >
+        {/* The whole row is the door here, so the name inside it stays inert. */}
+        <DocumentName path={document.uri} insideDoor />
+      </button>
+      {note}
+    </>
   );
 }
 
@@ -564,12 +358,4 @@ function documentCountLabel(count: number) {
  * writer's own word for the entity the turn changed. */
 function workCountLabel(count: number) {
   return count === 1 ? <Trans>Changed 1 Work</Trans> : <Trans>Changed {count} Work</Trans>;
-}
-
-/** One receipt-style line per restored Work. The server names the Work when it
- * can; without a name the sentence stays factual instead of guessing one. */
-function reversedWorkLine(work: { name: string; status: string }): string {
-  return work.status === "redone"
-    ? t`Redid change to Work ${work.name}.`
-    : t`Undid change to Work ${work.name}.`;
 }

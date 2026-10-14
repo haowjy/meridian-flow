@@ -6,7 +6,7 @@
  * right margin it is portalled into the manuscript's scroll pane beside the
  * change's first line, so a scroll carries it with the text. Without room it
  * moves into a block the editor opens after the paragraph the change ends in
- * (`setInlineReviewBarSlot`), which pushes the text below it down.
+ * (`setReviewBarSlot`), which pushes the text below it down.
  *
  * The change is a decoration, and the plugin rebuilds every decoration on each
  * refetch and remote write, so its element (and the slot) is looked up again
@@ -31,12 +31,9 @@ import { useManuscriptColumn } from "./useManuscriptColumn";
 export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const { controller } = useDraftReview();
   const reviewing = !editor.isDestroyed && getInlineReviewPluginState(editor.state) !== null;
-  const view = useReviewChanges(controller, { enabled: reviewing });
-  const focusedItem = view.items.find((item) => item.change.classId === view.focused?.classId);
-  const anchor = useChangeElement(
-    editor,
-    reviewing ? (focusedItem?.change.anchorOperationId ?? null) : null,
-  );
+  const view = useReviewChanges(controller, { enabled: reviewing, editor });
+  const focusedItem = view.items.find((item) => item.change.id === view.focused?.id);
+  const anchor = useChangeElement(editor, reviewing ? (focusedItem?.change.id ?? null) : null);
   const rect = useAnchorRect(editor, anchor);
   const column = useManuscriptColumn(editor, reviewing);
   const overlay = manuscriptOverlay(editor);
@@ -51,7 +48,6 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
       ? placeReviewBar({
           anchor: rect,
           ...column,
-          includesWriterEdits: focusedItem.change.includesWriterEdits,
         })
       : null;
   const wantsSlot = placement?.kind === "below";
@@ -100,13 +96,13 @@ function useBarSlot(editor: Editor, wanted: boolean): HTMLElement | null {
       const found = editor.isDestroyed ? null : editor.view.dom.querySelector(`[${BAR_SLOT_ATTR}]`);
       setSlot(found instanceof HTMLElement ? found : null);
     };
-    editor.commands.setInlineReviewBarSlot(true);
+    editor.commands.setReviewBarSlot(true);
     find();
     // The transaction event fires once the view has the new DOM.
     editor.on("transaction", find);
     return () => {
       editor.off("transaction", find);
-      if (!editor.isDestroyed) editor.commands.setInlineReviewBarSlot(false);
+      if (!editor.isDestroyed) editor.commands.setReviewBarSlot(false);
     };
   }, [editor, wanted]);
 
@@ -121,7 +117,7 @@ function useBarSlot(editor: Editor, wanted: boolean): HTMLElement | null {
 function useChangeElement(editor: Editor, operationId: string | null): HTMLElement | null {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const selector = useMemo(
-    () => (operationId ? `[data-review-operations~="${escapeCssIdent(operationId)}"]` : null),
+    () => (operationId ? `[data-review-change="${escapeCssIdent(operationId)}"]` : null),
     [operationId],
   );
 

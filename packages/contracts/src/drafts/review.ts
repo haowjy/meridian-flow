@@ -477,6 +477,33 @@ export type DraftCommandOutcome =
   | DraftItemDiscardResult
   | DraftDiscardAllResponse;
 
+/**
+ * `GET documents/:documentId/draft?itemKey=` (contract §3.2): where to open one item and whether it has
+ * changes. It answers for every addressable item, listed or not; a 404 `{ code: "gone" }` means the item is
+ * closed. The review itself is computed in the browser from `roomName`, which the client never builds or parses.
+ */
+export type DraftItemMeta =
+  | {
+      kind: "text";
+      draftId: DraftId;
+      itemKey: DraftItemKey;
+      documentId: string;
+      roomName: string;
+      isNew: boolean;
+      wholeItem: boolean;
+      hasChanges: boolean;
+    }
+  | {
+      /** A created image or blank create with no text branch: no room; only item-level actions exist. */
+      kind: "branchless";
+      draftId: DraftId;
+      itemKey: DraftItemKey;
+      documentId: string;
+      isNew: boolean;
+      wholeItem: true;
+      hasChanges: false;
+    };
+
 // Strict command bodies. Unknown fields answer 400, so an old tab's per-change Discard can never
 // be read as item Discard. Request types are the schemas' inference.
 

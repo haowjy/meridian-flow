@@ -1,103 +1,98 @@
-/** Bind a listed draft's domain view to its caller's Work authority, without joining a room. */
+/** Bind a listed draft's domain view to its caller's Work authority, projecting its room without mounting an editor. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import {
-  type DraftRef,
-  useChangeCommandRecords,
-  wholeDraftDisposition,
-  wholeDraftPending,
-} from "@/client/query/draft-command-record";
-import { useDraftPreviews } from "@/client/query/useDraftPreview";
-import { usePresentedDraftReview } from "./DraftReviewProvider";
-import {
-  type DraftChangesData,
-  type DraftChangesView,
-  listablePreview,
-  useChangeItems,
-} from "./draft-changes";
-import { type ReviewChange, reviewChangesOfPreview, wholeItemChange } from "./review-changes";
-import { useOpenReviewChanges } from "./useOpenReviewChanges";
+import { useMemo } from "react";
+import type { DraftRef } from "@/client/query/draft-command-record";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { isSameChange } from "@/core/editor/extensions/inline-review";
+import { type DraftChangesView, useChangeItems } from "./draft-changes";
+import { baseKeyOf } from "./review-frame";
+import { itemChange, type ReviewChange } from "./review-model";
+import { prepareFromFrame } from "./useDraftApply";
+import type { HeadlessDiscards } from "./useHeadlessDiscards";
+import { useRoomReview } from "./useReviewRuntime";
 import type { WorkDraftCommands } from "./useWorkDraftCommands";
 
-const EMPTY: readonly ReviewChange[] = [];
-
-/** Share a painted review's continuity, never borrow its command authority. */
+/**
+ * A listed draft's changes, read from the draft's review state: the same frames the manuscript paints when
+ * the draft is open, otherwise its room's while `enabled` (the row is expanded). Every row carries the frame
+ * it was drawn from. Apply sends that frame's snapshot; Discard edits the draft's room headlessly, finding
+ * the change the row drew again by its pin, and the row reads "Discarded" with Undo (`discards`). A new
+ * document is one change: Apply applies it whole and Discard closes it (item Discard).
+ */
 export function useDraftView(
   draft: DraftRef,
   {
     controller,
     enabled = true,
-    item,
+    file,
+    discards,
   }: {
-    controller: Pick<WorkDraftCommands, "commandChange" | "changesLocked">;
+    controller: Pick<
+      WorkDraftCommands,
+      "applyChanges" | "applyDraft" | "discardDraft" | "changesLocked"
+    >;
     enabled?: boolean;
-    item?: ThreadDraftListItem;
+    file: ReviewFileTarget;
+    discards: HeadlessDiscards;
   },
 ): DraftChangesView {
-  const records = useChangeCommandRecords();
-  const locked = controller.changesLocked || wholeDraftPending(records, draft);
-  const presented = usePresentedDraftReview().controller;
-  const open = presented.inlineReview;
-  const sharing =
-    enabled &&
-    presented.projectId === draft.projectId &&
-    presented.workId === draft.workId &&
-    open?.documentId === draft.documentId &&
-    open.itemKey === draft.itemKey;
-  const painted = useOpenReviewChanges(presented, { enabled: sharing });
-  const branchless = item?.branchGeneration === null;
-  const entry = useDraftPreviews(enabled && !sharing && !branchless ? [draft] : [], {
-    openReview: open,
-  })[0];
-  const preview = entry?.status === "ready" ? listablePreview(entry.preview) : null;
-  const { items, hiding } = useChangeItems(
-    draft,
-    branchless && item && enabled
-      ? wholeDraftDisposition(records, draft, undefined, item) === null
-        ? [wholeItemChange(item)]
-        : EMPTY
-      : preview
-        ? reviewChangesOfPreview(preview)
-        : EMPTY,
+  const room = useRoomReview(draft, { enabled });
+  const wholeDocument = room.wholeItem;
+  const read = useChangeItems(draft, { wholeDocument, read: enabled && !room.branchless });
+  const { completing } = read;
+  // A branchless item (an image, an empty create) has no text: its one change is the item, by file name.
+  const items = useMemo(
+    () => (room.branchless ? [{ change: itemChange(file.draft), failure: null }] : read.items),
+    [room.branchless, file.draft, read.items],
   );
-  const status =
-    branchless && enabled
-      ? "ready"
-      : !entry
-        ? "idle"
-        : entry.status === "error" ||
-            (entry.status === "ready" && entry.preview.status === "corrupt")
-          ? "error"
-          : preview
-            ? "ready"
-            : entry.status === "ready" && entry.preview.status === "gone"
-              ? "gone"
-              : "loading";
-  const data: DraftChangesData = sharing
-    ? {
-        documentId: painted.documentId,
-        itemKey: painted.itemKey,
-        status: painted.status,
-        items: painted.items,
-        unlisted: painted.unlisted,
-      }
-    : {
-        documentId: draft.documentId,
-        itemKey: draft.itemKey,
-        status,
-        items: status === "ready" ? items : [],
-        unlisted: !branchless && status === "ready" && items.length === 0 && !hiding,
-        ...(entry?.status === "error" ? { retry: entry.retry } : {}),
-      };
+  // A shared runtime can be ready before this reader holds the room: no row is drawn without its capability.
+  const ready = room.branchless ? room.status === "ready" : read.ready && room.status === "ready";
+  const discarded = discards.entries.filter(
+    (entry) => entry.file.draft.itemKey === draft.itemKey && entry.change,
+  );
+  const ref = { documentId: draft.documentId, itemKey: draft.itemKey };
+  const send = async (change: ReviewChange) => {
+    const { frame } = change;
+    // A whole item, or a change with no frame (branchless), is applied as the item.
+    if (wholeDocument || !frame) {
+      await controller.applyDraft(ref, frame ? prepareFromFrame(draft, frame) : undefined).outcome;
+      return;
+    }
+    await controller.applyChanges(
+      ref,
+      [{ id: change.id, pin: change.pin }],
+      baseKeyOf(frame),
+      prepareFromFrame(draft, frame),
+    );
+  };
   return {
-    ...data,
+    documentId: draft.documentId,
+    itemKey: draft.itemKey,
+    status: room.status,
+    items: ready ? items : [],
+    wholeDocument,
+    finished: ready && items.length === 0 && completing === null && discarded.length === 0,
+    completing,
+    ...(room.retry ? { retry: room.retry } : {}),
     focused: null,
-    locked,
-    apply: async (change) => {
-      await controller.commandChange("apply", draft, change.target);
-    },
+    locked: controller.changesLocked,
+    apply: send,
     discard: async (change) => {
-      await controller.commandChange("discard", draft, change.target);
+      if (wholeDocument) {
+        await controller.discardDraft(ref).outcome;
+        return;
+      }
+      // A row is drawn only from a ready room, so the edit is made now, not after a fetch.
+      if (room.status !== "ready" || room.roomName === null)
+        throw new Error("A change row is drawn only from a ready room");
+      discards.discardChange(
+        file,
+        change,
+        items.findIndex((item) => isSameChange(change, item.change.id, item.change.pin)),
+        room.roomName,
+      );
     },
+    discarded,
+    undoDiscard: discards.undo,
   };
 }

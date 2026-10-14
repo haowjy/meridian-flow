@@ -117,7 +117,7 @@ const CORRELATION_STRING_KEYS = [
   "yjsSpans",
 ] as const;
 
-const CORRELATION_NUMBER_KEYS = ["iteration", "branchGeneration", "yjsClient"] as const;
+const CORRELATION_NUMBER_KEYS = ["iteration", "yjsClient"] as const;
 const UTC_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
 
 type GatewayEventRecord = EventRecord & {

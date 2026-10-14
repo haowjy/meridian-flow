@@ -6,7 +6,6 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
-import type { BranchRoomRef } from "./branch-room-pool";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
 
 export type RetainedLiveDocumentReference = Readonly<{
@@ -43,7 +42,7 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   ): () => void;
   /** A fresh session for a branch room whose last one reset, synced from the server alone. */
   rebuildBranchRoom(roomKey: string): Promise<DocumentSession>;
-  retainBranchRooms(ownerId: string, rooms: readonly BranchRoomRef[]): void;
+  retainBranchRooms(ownerId: string, roomKeys: readonly string[]): void;
   releaseBranchRooms(ownerId: string): void;
 }
 

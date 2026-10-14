@@ -1,77 +1,46 @@
 // @vitest-environment jsdom
-/** S-work: unopened selective commands and filtered whole-Work authority, independent of presented review A. */
+/**
+ * The Work page's Changes to review: Apply all and Discard all act on every draft of the Work whatever the
+ * search box filters, and read each unopened draft's room for the length of its Apply.
+ */
 
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { act, type ReactNode, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DocumentSession } from "@/core/editor/document-session";
-import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
-import {
-  applied,
-  createReviewScopeFixture,
-  deferredReviewAnswer,
-  listed,
-  preview,
-  workC,
-} from "@/test-support/draft-review-scope";
+import { createReviewScopeFixture, listed, workC } from "@/test-support/draft-review-scope";
 import { settleReact } from "@/test-support/react-dom-harness";
 import { WorkChanges } from "./WorkChanges";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
-let room: DocumentSession;
-const retain = vi.fn();
-const navigate = vi.fn().mockResolvedValue(undefined);
 beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
-  navigate.mockClear();
   i18n.loadAndActivate({ locale: "en", messages: {} });
-  room = new DocumentSession({ roomKey: "room-draft-a", persistence: { kind: "none" } });
-  retain.mockClear();
-  fixture = createReviewScopeFixture({
-    registry: {
-      retainBranchRooms: retain,
-      releaseBranchRooms: () => {},
-      getBranchRoom: () => room,
-    } as unknown as LiveDocumentSessionRegistry,
-  });
-  vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
+  fixture = createReviewScopeFixture();
+  vi.spyOn(projectsApi, "listProjectWorks").mockReturnValue(new Promise(() => {}));
+  vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(vi.fn().mockResolvedValue(undefined));
 });
 afterEach(() => {
   fixture.dispose();
-  room.destroy();
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
-const draftB = {
+
+const draftOf = (id: string, name: string) => ({
   ...listed,
-  documentId: "document-b",
-  itemKey: "draft-b",
-  documentName: "Chapter 13",
-  contextLocation: { scheme: "manuscript" as const, path: "/chapter-13.md" },
-};
-const draftC = {
-  ...listed,
-  documentId: "document-c",
-  itemKey: "draft-c",
-  documentName: "Filtered chapter",
-  contextLocation: { scheme: "manuscript" as const, path: "/filtered.md" },
-};
-function DesktopEnvironment({ children }: { children: ReactNode }) {
-  window.matchMedia ??= () =>
-    ({
-      matches: false,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-    }) as unknown as MediaQueryList;
-  return children;
-}
+  documentId: `document-${id}`,
+  itemKey: `draft-${id}`,
+  documentName: name,
+  contextLocation: { scheme: "manuscript" as const, path: `/${id}.md` },
+});
+
 function Page() {
   const [filter, setFilter] = useState(false);
   return (
@@ -87,112 +56,128 @@ function Page() {
     </>
   );
 }
-const button = (label: string) =>
+function Desktop({ children }: { children: ReactNode }) {
+  window.matchMedia = (() => ({
+    matches: false,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as never;
+  return children;
+}
+const find = (label: string) =>
   [...document.querySelectorAll<HTMLElement>("button, [role=menuitem]")].find(
-    (b) => (b.getAttribute("aria-label") ?? b.textContent)?.trim() === label,
+    (candidate) =>
+      (candidate.getAttribute("aria-label") ?? candidate.textContent)?.trim() === label,
   );
-const click = (label: string) =>
-  act(async () => {
-    expect(button(label)).toBeDefined();
-    button(label)?.click();
-  });
+const press = (label: string) => act(async () => find(label)?.click());
+/** Radix opens a menu on the key, not the click. */
+const openMenu = () =>
+  act(async () =>
+    find("All changes")?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    ),
+  );
 
-/** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
+const host = (children: ReactNode) => (
+  <I18nProvider i18n={i18n}>
+    <TooltipProvider>
+      <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
+        <ProjectNavigationProvider openContextRoute={vi.fn()} openWork={vi.fn()}>
+          <Desktop>{children}</Desktop>
+        </ProjectNavigationProvider>
+      </ChatThreadNavigationProvider>
+    </TooltipProvider>
+  </I18nProvider>
+);
 
-it("applies an unopened C row, then discards every C draft despite filtering without moving presented review A", async () => {
-  const network = fixture.network;
-  network.listWorkDrafts.mockImplementation(async (_project, work) => ({
-    items: work === workC.id ? [draftB, draftC] : [listed],
-  }));
-  network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
-    ...preview,
-    itemKey: id,
-    reviewRoomName: `room-${id}`,
-  }));
-  const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
-  network.applyDraftChanges.mockReturnValueOnce(answer.promise);
-  network.discardAllDrafts.mockResolvedValue({ status: "discarded", draftId: listed.draftId });
+it("Apply all is one command over every listed draft, even files the search hides", async () => {
+  const items = [draftOf("b", "Chapter 13"), draftOf("c", "Filtered chapter")];
+  fixture.network.listWorkDrafts.mockResolvedValue({ items });
+  fixture.network.applyAllDrafts.mockResolvedValue({
+    status: "completed",
+    draftId: listed.draftId,
+    items: items.map((item) => ({
+      status: "applied",
+      itemKey: item.itemKey,
+      itemClosed: false,
+      overrode: [],
+    })),
+  } as never);
   await fixture.render(
-    async (probe) => {
-      await settleReact(() => expect(probe().third.files).toHaveLength(2));
-      await act(async () =>
-        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
-      );
-      await settleReact(() => expect(probe().header.view.items).toHaveLength(2));
-      const presentedReview = probe().presented.controller.inlineReview;
-      await settleReact(() => expect(retain).toHaveBeenCalled());
-      await click("Changes in Chapter 13");
-      await settleReact(() =>
-        expect(document.querySelectorAll("[data-review-change-row]")).toHaveLength(2),
-      );
-      await act(async () =>
-        document
-          .querySelector<HTMLButtonElement>(
-            '[data-review-change-row="class-1"] [aria-label="Apply"]',
-          )
-          ?.click(),
-      );
-      expect(network.applyDraftChanges.mock.calls).toEqual([
-        [
-          "project-a",
-          "work-c",
-          "document-b",
-          expect.objectContaining({
-            draftId: listed.draftId,
-            commandId: expect.any(String),
-            itemKey: "draft-b",
-            operationIds: ["1"],
-            liveRevisionToken: "live-1",
-            draftRevisionToken: "draft-1",
-          }),
-        ],
-      ]);
-      expect(document.querySelector('[data-review-change-row="class-1"]')).toBeNull();
-      expect(probe().presented.controller.inlineReview).toEqual(presentedReview);
-      await act(async () => answer.resolve({ ...applied(false, "1"), itemKey: "draft-b" }));
-      await click("Filter files");
-      expect(button("Changes in Filtered chapter")).toBeUndefined();
-      await act(async () =>
-        button("All changes")?.dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-        ),
-      );
-      await click("Discard all changes");
-      expect(document.body.textContent).toContain("Discard all changes?");
-      expect(network.discardDraft).not.toHaveBeenCalled();
-      await click("Discard");
-      await settleReact(() =>
-        expect(network.discardAllDrafts.mock.calls).toEqual([
-          ["project-a", "work-c", { draftId: listed.draftId, commandId: expect.any(String) }],
-        ]),
-      );
-      expect(probe().presented.controller.inlineReview).toEqual(presentedReview);
-      expect(probe().header.view.items.map((item) => item.change.operationIds)).toEqual([
-        ["1"],
-        ["2"],
-      ]);
-      expect(
-        retain.mock.calls.flatMap(([, rooms]) =>
-          rooms.map((room: { roomKey: string }) => room.roomKey),
-        ),
-      ).toEqual(["room-draft-a"]);
-      expect(navigate).not.toHaveBeenCalled();
+    async () => {
+      await settleReact(() => expect(document.body.textContent).toContain("Chapter 13"));
+      await press("Filter files");
+      await openMenu();
+      await press("Apply all changes");
+      await settleReact(() => expect(fixture.network.applyAllDrafts).toHaveBeenCalledOnce());
+      const request = fixture.network.applyAllDrafts.mock.calls[0][2];
+      expect(request.draftId).toBe(listed.draftId);
+      expect(request.items.map((item) => item.itemKey)).toEqual(["draft-b", "draft-c"]);
     },
-    {
-      surface: <Page />,
-      host: (children) => (
-        <DesktopEnvironment>
-          <I18nProvider i18n={i18n}>
-            <TooltipProvider>
-              <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
-                <ChatThreadNavigationProvider onOpenThread={navigate}>
-                  {children}
-                </ChatThreadNavigationProvider>
-              </ProjectNavigationProvider>
-            </TooltipProvider>
-          </I18nProvider>
-        </DesktopEnvironment>
-      ),
+    { surface: <Page />, host },
+  );
+});
+
+it("Discard all asks first, then closes the Work's draft with one command, so a running reply opens a new draft", async () => {
+  const items = [draftOf("b", "Chapter 13"), draftOf("c", "Filtered chapter")];
+  fixture.network.listWorkDrafts.mockResolvedValue({ items });
+  fixture.network.discardAllDrafts.mockResolvedValue({
+    status: "discarded",
+    draftId: listed.draftId,
+  });
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(document.body.textContent).toContain("Chapter 13"));
+      await openMenu();
+      await press("Discard all changes");
+      expect(fixture.network.discardAllDrafts).not.toHaveBeenCalled();
+      await press("Discard");
+      await settleReact(() => expect(fixture.network.discardAllDrafts).toHaveBeenCalledOnce());
+      expect(fixture.network.discardAllDrafts.mock.calls[0][2]).toMatchObject({
+        draftId: listed.draftId,
+      });
+      expect(fixture.network.discardDraft).not.toHaveBeenCalled();
     },
+    { surface: <Page />, host },
+  );
+});
+
+it("a new document's row Discard closes the item on the server instead of editing text", async () => {
+  const created = {
+    ...draftOf("b", "Chapter 13"),
+    isNew: true,
+    wholeItem: true,
+    origin: "created" as const,
+  };
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [created] });
+  fixture.network.getDraftMeta.mockResolvedValue({
+    kind: "branchless",
+    draftId: listed.draftId,
+    itemKey: created.itemKey,
+    documentId: created.documentId,
+    isNew: true,
+    wholeItem: true,
+  } as never);
+  fixture.network.discardDraft.mockResolvedValue({
+    status: "discarded",
+    draftId: listed.draftId,
+    itemKey: created.itemKey,
+    itemClosed: true,
+    itemDisposition: "discarded",
+  });
+  await fixture.render(
+    async () => {
+      await settleReact(() => expect(document.body.textContent).toContain("Chapter 13"));
+      await act(async () =>
+        document.querySelector<HTMLElement>('[aria-label="Changes in Chapter 13"]')?.click(),
+      );
+      await settleReact(() => expect(find("Discard")).toBeDefined());
+      await press("Discard");
+      await settleReact(() => expect(fixture.network.discardDraft).toHaveBeenCalledOnce());
+      expect(fixture.network.discardDraft.mock.calls[0][3]).toMatchObject({
+        itemKey: created.itemKey,
+      });
+    },
+    { surface: <Page />, host },
   );
 });

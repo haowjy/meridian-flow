@@ -53,6 +53,7 @@ import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
+import { createUndoOwnership } from "./extensions/UndoOwnershipExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
 import { ImageIngressExtension, ImageUploadPresenceExtension } from "./images";
 import { LinkSurfaceExtension, WikilinkPasteExtension, type WikilinkPasteOptions } from "./links";
@@ -232,9 +233,12 @@ function createCollaborationExtensions({
     color: pickCursorColor(presence.peers),
   };
 
+  const ownership = createUndoOwnership();
   const collaboration = [
+    ownership.extension,
     Collaboration.configure({
       document,
+      yUndoOptions: { trackedOrigins: [ownership.origin] },
       // Passing the concrete Y.XmlFragment keeps the shared type name at the
       // server contract value (`prosemirror`).
       fragment: document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
@@ -311,14 +315,7 @@ export function createEditorExtensions({
     // ephemeral half of image ingress mounts here rather than beside the door.
     ...(schemaType === "document" ? [ImageUploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
-    ...(enableDraftInlineReview
-      ? [
-          DraftInlineReviewExtension.configure({
-            document,
-            adoptDocumentClient: presence.adoptDocumentClient,
-          }),
-        ]
-      : []),
+    ...(enableDraftInlineReview ? [DraftInlineReviewExtension] : []),
   ];
 }
 

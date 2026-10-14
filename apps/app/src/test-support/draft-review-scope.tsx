@@ -20,6 +20,7 @@ import {
 } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftChangesView } from "@/features/draft-review/draft-changes";
 import { useDraftView } from "@/features/draft-review/useDraftView";
+import type { HeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
 import { type ReviewChangesView, useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import {
@@ -68,64 +69,20 @@ export const listed = {
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
 
-export const operation = (id: string) => ({
-  operationId: id,
-  closureClassId: `class-${id}`,
-  admissionToken: `class-${id}`,
-  kind: "agent" as const,
-  classification: "addition" as const,
-});
-
-export const preview = {
+/** Where one item's review opens: the metadata answer. */
+export const meta = {
+  kind: "text" as const,
   draftId: listed.draftId,
-  item: listed,
-  status: "active" as const,
   itemKey: "draft-a",
-  branchGeneration: 1,
-
-  reviewRoomName: "review-room-a",
-  liveRevisionToken: "live-1",
-  draftRevisionToken: "draft-1",
-  operations: [operation("1"), operation("2")],
-  hunks: [],
+  documentId: "document-a",
+  roomName: "review-room-a",
+  isNew: false,
+  wholeItem: false,
+  hasChanges: true,
 };
-
-/** A preview holding only these changes. */
-export const previewOf = (...ids: string[]) => ({ ...preview, operations: ids.map(operation) });
 
 /** The reviewed draft's identity, as a command names it. */
 export const draftA = { documentId: "document-a", itemKey: "draft-a" };
-
-/** A selection of these changes (one class each). */
-export const change = (...ids: string[]) => ({
-  classIds: ids.map((id) => `class-${id}`),
-  admissionTokens: ids.map((id) => `class-${id}`),
-  operationIds: ids,
-});
-
-export const applied = (itemClosed: boolean, id = "2") => ({
-  draftId: listed.draftId,
-  status: "applied" as const,
-  itemKey: "draft-a",
-  operationIds: [id],
-  closureClassIds: [`class-${id}`],
-  itemClosed,
-});
-
-/** Item Apply's 200: the item settled with no notes. */
-export const itemApplied = (itemKey = "draft-a") => ({
-  draftId: listed.draftId,
-  status: "applied" as const,
-  itemKey,
-  item: { itemKey, status: "applied" as const, notes: [] },
-});
-
-export const discarded = (itemClosed: boolean) => ({
-  draftId: listed.draftId,
-  status: "discarded" as const,
-  itemKey: "draft-a",
-  itemClosed,
-});
 
 export type ScopeProbe = {
   queryClient: QueryClient;
@@ -145,6 +102,14 @@ export type ScopeProbe = {
 };
 
 export type ReviewedDraft = { documentId: string; itemKey: string };
+
+const IDLE_FILE = {} as ReviewFileTarget;
+const NO_DISCARDS: HeadlessDiscards = {
+  entries: [],
+  discardChange: () => {},
+  discardFile: () => {},
+  undo: () => {},
+};
 
 export async function renderReviewScopes(
   run: (probe: () => ScopeProbe) => Promise<void>,
@@ -176,7 +141,10 @@ export async function renderReviewScopes(
   const changeLists = new Map<DraftRef, DraftChangesView>();
   function ChangeList({ target, scope }: { target: DraftRef; scope: "chat" | "third" }) {
     const controller = current[scope]?.commands as WorkDraftCommands;
-    changeLists.set(target, useDraftView(target, { controller }));
+    changeLists.set(
+      target,
+      useDraftView(target, { controller, file: IDLE_FILE, discards: NO_DISCARDS }),
+    );
     return null;
   }
   function RunnerProbe() {
@@ -304,7 +272,9 @@ export function createReviewScopeFixture(
   });
   const network = {
     listWorkDrafts: vi.spyOn(draftsApi, "listWorkDrafts"),
-    getDraftPreview: vi.spyOn(draftsApi, "getDraftPreview"),
+    getDraftMeta: vi.spyOn(draftsApi, "getDraftMeta"),
+    getThreadDraftFiles: vi.spyOn(draftsApi, "getThreadDraftFiles"),
+    getDraftAttribution: vi.spyOn(draftsApi, "getDraftAttribution"),
     applyAllDrafts: vi.spyOn(draftsApi, "applyAllDrafts"),
     discardAllDrafts: vi.spyOn(draftsApi, "discardAllDrafts"),
     observeDraftCommand: vi.spyOn(draftsApi, "observeDraftCommand"),
@@ -328,6 +298,8 @@ export function createReviewScopeFixture(
         let room = rooms.get(roomKey);
         if (!room) {
           room = new DocumentSession({ roomKey, persistence: { kind: "none" } });
+          // A detached room has no server to sync with; its text is whatever the test put in it.
+          room.whenSynced = () => Promise.resolve();
           rooms.set(roomKey, room);
         }
         return room;
@@ -345,6 +317,8 @@ export function createReviewScopeFixture(
     network,
     epoch,
     removal,
+    /** The detached sessions standing in for draft rooms, by room name; fill their `document` to give a draft text. */
+    rooms,
     render: renderReviewScopes,
     dispose() {
       epoch.abort();

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** A review opened on given operations focuses their change once, after the requested review paints. */
+/** A review opened on given changes focuses the first still listed once, after the requested review paints. */
 
 import { act, useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -20,12 +20,12 @@ import {
 type Open = { documentId: string; itemKey: string; shown: boolean } | null;
 type Model = {
   inline: Open;
+  /** `active` once the review has its projection. */
   preview: { status: "active" | "gone" } | null;
-  changes: { classId: string; operationIds: string[]; anchorOperationId: string }[];
+  changes: { id: string }[];
 };
 
-// The preview read is the one boundary that needs a query client; the claimant
-// is what these tests drive.
+// The projection read is the one boundary that needs an editor; the claimant is what these tests drive.
 vi.mock("@/features/draft-review/useOpenReviewChanges", () => ({ useOpenReviewChanges: vi.fn() }));
 
 const target: AiDraftLaunchTarget = {
@@ -33,13 +33,10 @@ const target: AiDraftLaunchTarget = {
   documentId: "doc-1",
   itemKey: "draft-1",
   contextLocation: { scheme: "manuscript", path: "chapters/one.md" },
-  focusOperationIds: ["op-2"],
+  focusChangeIds: ["change-2"],
 };
 const other = { documentId: "doc-0", itemKey: "draft-0" };
-const changes = [
-  { classId: "c1", operationIds: ["op-1"], anchorOperationId: "op-1" },
-  { classId: "c2", operationIds: ["op-2", "op-3"], anchorOperationId: "op-2" },
-];
+const changes = [{ id: "change-1" }, { id: "change-2" }];
 
 function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = false) {
   const focusReviewChange = vi.fn();
@@ -74,8 +71,7 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
     const [mounted, setMounted] = useState(!delayedAdmission);
     const [addressed, setAddressed] = useState(false);
     vi.mocked(useOpenReviewChanges).mockReturnValue({
-      preview: state.preview,
-      active: state.preview?.status === "active" ? state.preview : null,
+      status: state.preview ? (state.preview.status === "active" ? "ready" : "gone") : "loading",
       changes: state.changes,
     } as unknown as ReturnType<typeof useOpenReviewChanges>);
     fixture.update = (next) => setState((previous) => ({ ...previous, ...next }));
@@ -108,19 +104,16 @@ function createLaunchFixture(start: Partial<Model> = {}, delayedAdmission = fals
         <CommandCapture />
         {delayedAdmission && (
           <ReviewAddressOwner
-            admission="admitted"
             review={review}
+            admission="admitted"
             presented={{
               container: "editor",
               documentId: target.documentId,
               scheme: "manuscript",
               path: target.contextLocation.path,
               draftOnly: false,
-              review: (addressed ? target.itemKey : undefined)
-                ? {
-                    workId: review.controller.workId,
-                    itemKey: (addressed ? target.itemKey : undefined)!,
-                  }
+              review: addressed
+                ? { workId: review.controller.workId, itemKey: target.itemKey }
                 : null,
             }}
             port={{
@@ -154,7 +147,7 @@ async function launch(
 
 const requested = { documentId: target.documentId, itemKey: target.itemKey };
 
-describe("opening a review on given operations", () => {
+describe("opening a review on given changes", () => {
   it("focuses the change once the requested review has painted and loaded", async () => {
     await launch(target, {}, async ({ enterInlineReview, focusReviewChange, update }) => {
       expect(enterInlineReview).toHaveBeenCalledWith("doc-1", "draft-1");
@@ -164,7 +157,7 @@ describe("opening a review on given operations", () => {
       expect(focusReviewChange).not.toHaveBeenCalled();
       await act(async () => update?.({ preview: { status: "active" }, changes }));
       expect(focusReviewChange).toHaveBeenCalledOnce();
-      expect(focusReviewChange).toHaveBeenCalledWith(requested, changes[1], { scroll: true });
+      expect(focusReviewChange).toHaveBeenCalledWith(requested, "change-2", { scroll: true });
       // Applied once: later previews do not pull the writer back.
       await act(async () => update?.({ changes: [...changes] }));
       expect(focusReviewChange).toHaveBeenCalledOnce();
@@ -176,15 +169,15 @@ describe("opening a review on given operations", () => {
       target,
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ focusReviewChange }) =>
-        expect(focusReviewChange).toHaveBeenCalledExactlyOnceWith(requested, changes[1], {
+        expect(focusReviewChange).toHaveBeenCalledExactlyOnceWith(requested, "change-2", {
           scroll: true,
         }),
     );
   });
 
-  it("opens at the top when none of the operations is in the review any more", async () => {
+  it("opens at the top when none of the changes is in the review any more", async () => {
     await launch(
-      { ...target, focusOperationIds: ["op-gone"] },
+      { ...target, focusChangeIds: ["change-gone"] },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ enterInlineReview, focusReviewChange, update }) => {
         expect(enterInlineReview).toHaveBeenCalledOnce();
@@ -202,7 +195,7 @@ describe("opening a review on given operations", () => {
       async ({ focusReviewChange, update }) => {
         expect(focusReviewChange).not.toHaveBeenCalled();
         await act(async () => update?.({ inline: { ...requested, shown: true } }));
-        expect(focusReviewChange).toHaveBeenCalledExactlyOnceWith(requested, changes[1], {
+        expect(focusReviewChange).toHaveBeenCalledExactlyOnceWith(requested, "change-2", {
           scroll: true,
         });
       },
@@ -220,9 +213,9 @@ describe("opening a review on given operations", () => {
     });
   });
 
-  it("does not focus a launch that names no operation", async () => {
+  it("does not focus a launch that names no change", async () => {
     await launch(
-      { ...target, focusOperationIds: undefined },
+      { ...target, focusChangeIds: undefined },
       { inline: { ...requested, shown: true }, preview: { status: "active" }, changes },
       async ({ focusReviewChange }) => expect(focusReviewChange).not.toHaveBeenCalled(),
     );
@@ -257,7 +250,7 @@ describe("a launch whose route settles before the Editor mounts the document", (
           changes,
         }),
       );
-      expect(focusReviewChange).toHaveBeenCalledExactlyOnceWith(requested, changes[1], {
+      expect(focusReviewChange).toHaveBeenCalledExactlyOnceWith(requested, "change-2", {
         scroll: true,
       });
     });

@@ -1,18 +1,15 @@
 /**
- * useReconcileReviewFocus — keeps the review's focus naming the change the
- * writer was looking at when the server regroups it.
+ * useReconcileReviewFocus: keeps the review's focus naming a change that exists.
  *
- * The focus (`controller.focus`) is one value for the whole review: a class and
- * the operations it held. When a fresh preview no longer lists that class but
- * lists a change that shares one of its operations, that change is the same
- * one, and the focus is moved onto it here, once. Every surface then reads the
- * same focus through `resolveFocusedChange`, whether it was mounted before the
- * regrouping or after. Mounted by the review's owner (`useDraftReviewScopeValue`),
- * never by a reader.
+ * The focus (`controller.focus`) is one group id for the whole review. A group id is a content hash, so it
+ * changes when the change's text does (the AI extends it, the writer types inside it). When the focused id
+ * is no longer listed, focus follows the writer's caret to the change it sits in, else lets go. A launch
+ * that named a change (`presented.review.changeId`) is applied once, when the review is ready.
  */
 import { useEffect, useRef } from "react";
+import { currentReview, getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
 import type { PresentedDocument } from "@/features/project/presented-document";
-import { resolveFocusedChange } from "./review-changes";
+import { reviewRuntimeOf } from "./review-runtime";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
@@ -21,28 +18,42 @@ export function useReconcileReviewFocus(
   presented?: PresentedDocument | null,
 ): void {
   const { documentId, itemKey, changes, status } = useOpenReviewChanges(controller);
-  const { focus, reportFocusedChange } = controller;
+  const { focus, reportFocusedChange, projectId, workId } = controller;
   const restored = useRef<string | null>(null);
   useEffect(() => {
     if (!documentId || !itemKey) {
       restored.current = null;
       return;
     }
+    const review = { documentId, itemKey };
     const identity = `${documentId}:${itemKey}`;
     if (restored.current !== identity) {
       if (status !== "ready") return;
       restored.current = identity;
       if (presented?.review?.itemKey === itemKey && presented.review.changeId && !focus) {
-        // Stable part-key classes survive reload; a handled class falls back silently.
-        const change =
-          changes.find((item) => item.classId === presented.review?.changeId) ?? changes[0];
-        if (change) controller.focusReviewChange({ documentId, itemKey }, change);
+        // Ids are content hashes; a handled or edited change falls back to the first silently.
+        const change = changes.find((item) => item.id === presented.review?.changeId) ?? changes[0];
+        if (change) controller.focusReviewChange(review, change.id);
         return;
       }
     }
-    const resolved = resolveFocusedChange(changes, focus);
-    if (!resolved) return;
-    reportFocusedChange({ documentId, itemKey }, resolved);
+    if (status !== "ready" || !focus || changes.some((change) => change.id === focus)) return;
+    // The caret and the painted marks share the editor's coordinates; the chrome's frame may be behind them.
+    const editor = reviewRuntimeOf({ projectId, workId, documentId, itemKey })?.editorHandle()
+      ?.editor;
+    const live = editor && !editor.isDestroyed ? editor : null;
+    const painted = live ? getInlineReviewPluginState(live.state) : null;
+    const reviewAtCaret = painted ? currentReview(painted) : null;
+    const caret = live?.state.selection.head;
+    const here =
+      caret === undefined || !reviewAtCaret
+        ? null
+        : reviewAtCaret.groups.find((group) =>
+            group.hunks.some(
+              (hunk) => hunk.inserted && caret >= hunk.inserted.from && caret <= hunk.inserted.to,
+            ),
+          );
+    reportFocusedChange(review, here?.id ?? null);
   }, [
     changes,
     focus,
@@ -51,6 +62,8 @@ export function useReconcileReviewFocus(
     reportFocusedChange,
     presented,
     status,
+    projectId,
+    workId,
     controller.focusReviewChange,
   ]);
 }

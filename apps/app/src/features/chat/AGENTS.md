@@ -232,22 +232,24 @@ composer mode, and review state live in
 
 ## Draft-review boundary
 
-Inline review is the only draft-review surface. It uses server-backed
-Apply/Discard disposition commands; dispositions never ride browser mutation
-history, even though the review editor itself stays editable. The review's
+Inline review is the only draft-review surface. Apply is a server merge; Discard
+of a change or a draft is a local edit of the draft text that the editor's Ctrl+Z
+restores. The review's
 provider, controller, command executor, refusal copy and file model are
 `features/draft-review`'s; Chat is a consumer (the composer's `DraftDock` strip,
 review-prose focus). See
 [`../draft-review/.context/draft-review.md`](../draft-review/.context/draft-review.md)
-for the lifecycle, execution, preview, and projection contracts.
+for the lifecycle, execution, and projection contracts.
 
 **The strip is this chat's changes, not the Work's.** `useDraftDock(threadId)`
-lists the Work's drafts whose `actorThreads` name the chat, reads each one's
-preview (`useDraftPreviews`) and keeps the changes whose `threadIds` include the
-chat. A chat with none shows no strip. Apply and Discard send the union of this
-chat's complete classes per file; only new documents
-are one whole-draft item using existing whole commands. Creation-bound
-Work batches hide every queued item at the click; failure restores its file.
+lists the drafts with changes this chat has pending edits in (`useThreadDraftFiles`)
+and keeps each file's changes the attribution hint ties to the chat
+(`acquireChatChanges`, from the draft's text and the server's edit parts; a best-effort
+hint, nothing gates on it). A chat with none shows no strip. Apply sends this chat's
+changes per file; only new documents are one whole-draft item. Discard happens in place:
+the row reads "Discarded" with Undo until the writer leaves (`useHeadlessDiscards`), and a
+new document's Discard closes its draft. Creation-bound Work batches hide every queued
+item at the click; failure restores its file.
 Summary and commands share one row. Each document name opens its own review,
 including the single-document summary (also when a launch fails); the chevron and remaining summary area
 toggle expansion. There is no summary-wide Review command. Narrow strips hide the count before
@@ -284,9 +286,8 @@ it scrolls the current chat into view without taking focus from search.
 → [KB: chat scroll follow-state decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/chat/composer/chat-scroll-follow-state.md)
 
 → [`.context/CONTEXT.md`](.context/CONTEXT.md)
-→ [Requirements: Undo & Draft Review UX](https://github.com/haowjy/meridian-flow-docs/blob/main/work/human-undo-affordance/requirements.md)
-→ [Editable draft review authority decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/review/draft-review-editable-branch.md)
-→ [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing disposition state, the composer strip, the Work page's Changes to review, or the review launcher
+→ [Diff-review decisions](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/drafts/diff-review/)
+→ [QA runtime probes for draft review](../../../../../docs/qa/draft-review.md) — run when changing Apply or Discard, the composer strip, the Work page's Changes to review, or the review launcher
 
 Tool rows call writes edits in Draft and direct mode alike; the fold digest omits
 successful writes because the receipt summarizes them. Neither consumes write

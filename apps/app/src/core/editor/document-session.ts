@@ -91,7 +91,7 @@ export type DocumentSessionStatus =
 export type DocumentSessionSnapshot = {
   /** Live document id for live rooms; draft/branch sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>` for a branch room. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -122,7 +122,7 @@ export type DocumentSessionResetReason =
   | typeof WS_CLOSE.WRITE_REFUSED.reason;
 
 /** How a terminal room reset treats its unacknowledged writer updates. */
-export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";
+export type ResetDisposition = "superseded" | "refused" | "schema";
 
 export type DocumentSessionConnectionState =
   | Exclude<ConnectionState, { kind: "reset" }>
@@ -180,7 +180,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>:gen:<generation>` for a branch room. */
+  /** Hocuspocus room key: the bare document id for a live document, `branch:<branchId>` for a branch room. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };

@@ -21,8 +21,8 @@ of freezing the state it had at press time.
 
 **Evidence is read, never reversed.** Detail comes from the shared trail cache
 in [`features/change-trail`](../../../change-trail/AGENTS.md), and the receipt is
-the only place an AI change is undone. While a first read is genuinely in flight
-the actions row is withheld rather than drawn half-empty.
+not where an AI change is removed: the writer discards it in the draft. While a first
+read is genuinely in flight the actions row is withheld rather than drawn half-empty.
 
 ## Key rules
 

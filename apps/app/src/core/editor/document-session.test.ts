@@ -288,7 +288,7 @@ describe("DocumentSession status derivation", () => {
     current().emit({
       kind: "reset",
       reason: WS_CLOSE.BRANCH_CLOSED.reason,
-      disposition: "rebuild",
+      disposition: "superseded",
       code: WS_CLOSE.BRANCH_CLOSED.code,
     });
 

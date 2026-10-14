@@ -41,11 +41,11 @@ and address owners own no paint state. Pane continuity belongs to
 Only finished paint replaces its snapshot; loading statuses and token handoff
 gaps retain it. Launch and command adapters do not manage the copy.
 
-A launch may name `focusOperationIds`. The claimant that enters the review
+A launch may name `focusChangeIds`. The claimant that enters the review
 mounts `FocusOpenedReview`, which focuses and scrolls to the change holding
-them once, when that very review has painted and its preview has loaded. A
+them once, when that very review has painted and its projection is ready. A
 review being left that is still painted is never focused, and ids no longer in
-the preview open the review at the top. The route can settle before the Editor
+the review open the review at the top. The route can settle before the Editor
 has mounted the document, with the address already naming the draft: the address
 owner restores no review for a draft whose launch is still unclaimed
 (`usePendingEditorReviewItemKey`), because a restore is a second launch and the

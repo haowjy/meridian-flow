@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpResponseError } from "@/client/api/http-client";
 import { getContextTabs, reviewEntryOf, useContextTabsStore } from "@/client/stores";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useDraftReviewScopeValue } from "@/features/draft-review/DraftReviewProvider";
@@ -274,7 +275,7 @@ describe("ReviewAddressOwner", () => {
         },
       ],
     });
-    fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", itemKey: "draft-a" });
+    fixture.network.getDraftMeta.mockRejectedValue(new HttpResponseError("gone", 404, undefined));
     useContextTabsStore.setState({ byProject: {} });
     useContextTabsStore.getState().openTab(
       "project-a",

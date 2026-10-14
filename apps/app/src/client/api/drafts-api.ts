@@ -1,37 +1,40 @@
 /**
- * drafts-api — HTTP client for AI document draft review endpoints.
+ * drafts-api — HTTP client for the AI draft review endpoints.
  *
- * Typed wrappers for listing active thread drafts, reading live-vs-draft
- * markdown previews, and applying/discarding a draft without exposing route
- * strings to query hooks.
+ * The review itself is computed in the browser from the item's room, so the wire carries the Work's item
+ * rows, where to open one item (`DraftItemMeta`), Apply's commands and the close-only Discard commands.
+ * Bodies and results are the contract's strict schemas and types (re-landing contract §1).
  */
 import type {
   DocumentDraftHintsResponse,
-  DraftApplyAllRequest,
-  DraftApplyAllResponse,
-  DraftApplyChangesRequest,
-  DraftApplyChangesResponse,
-  DraftApplyHttpResponse,
-  DraftApplyRefusalBody,
-  DraftApplyRequest,
+  DraftApplyAllBody,
+  DraftApplyAllResult,
+  DraftApplyChangesBody,
+  DraftApplyItemBody,
+  DraftApplyPendingResponse,
+  DraftAttribution,
   DraftCommandObservation,
-  DraftDiscardAllRequest,
+  DraftDiscardAllBody,
   DraftDiscardAllResponse,
-  DraftDiscardRequest,
-  DraftDiscardResponse,
-  DraftPreviewResponse,
+  DraftItemApplyResult,
+  DraftItemDiscardBody,
+  DraftItemDiscardResult,
+  DraftItemMeta,
+  ThreadDraftFilesResponse,
   ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import {
   apiProjectDocumentDraftsPath,
   apiProjectWorkDocumentDraftApplyChangesPath,
   apiProjectWorkDocumentDraftApplyPath,
+  apiProjectWorkDocumentDraftAttributionPath,
   apiProjectWorkDocumentDraftDiscardPath,
   apiProjectWorkDocumentDraftPath,
   apiProjectWorkDraftCommandPath,
   apiProjectWorkDraftsApplyPath,
   apiProjectWorkDraftsDiscardPath,
   apiProjectWorkDraftsPath,
+  apiThreadDraftFilesPath,
 } from "@meridian/contracts/protocol";
 
 import { getJson, httpErrorStatus, postJson } from "./http-client";
@@ -50,34 +53,29 @@ export function listDocumentDraftHints(
   return getJson<DocumentDraftHintsResponse>(apiProjectDocumentDraftsPath(projectId, documentId));
 }
 
-export async function getDraftPreview(
+/** Where to open one item. A 404 means the item is closed (`gone`); the caller maps it. */
+export async function getDraftMeta(
   projectId: string,
   workId: string,
   documentId: string,
   itemKey: string,
   signal?: AbortSignal,
-): Promise<DraftPreviewResponse> {
+): Promise<DraftItemMeta> {
   const params = new URLSearchParams({ itemKey });
-  const preview = await getJson<DraftPreviewResponse>(
+  return getJson<DraftItemMeta>(
     `${apiProjectWorkDocumentDraftPath(projectId, workId, documentId)}?${params}`,
     { signal },
   );
-  if (preview.status === "active" && !preview.reviewRoomName) {
-    throw new Error("Draft preview response is missing reviewRoomName");
-  }
-  if (preview.status === "active" && typeof preview.branchGeneration !== "number") {
-    throw new Error("Draft preview response is missing branchGeneration");
-  }
-  return preview;
 }
 
 /**
- * A command's refusal that is a recognized outcome, not an error: the server answers it 409 with a
- * body naming the outcome (`stale`, `held`, ...). A 409 without one (`command_conflict`) stays an error.
+ * A command's refusal that is a recognized outcome, not an error: the server answers it 409 (or 404
+ * `gone`) with a body naming the outcome (`stale`, `held`, ...). An error without one
+ * (`command_conflict`) stays an error.
  */
 function acceptOutcomeBody(status: number, payload: unknown): boolean {
   return (
-    status === 409 &&
+    (status === 409 || status === 404) &&
     typeof payload === "object" &&
     payload !== null &&
     "status" in payload &&
@@ -86,87 +84,77 @@ function acceptOutcomeBody(status: number, payload: unknown): boolean {
 }
 const outcomeOptions = { acceptErrorResponse: acceptOutcomeBody };
 
-/** Item Apply: 200 applied, 202 pending (observe the command), or a held or stale refusal body. */
-export async function applyDraft(
-  projectId: string,
-  workId: string,
-  documentId: string,
-  request: DraftApplyRequest,
-): Promise<DraftApplyHttpResponse | DraftApplyRefusalBody> {
-  const response = await postJson<DraftApplyHttpResponse | DraftApplyRefusalBody>(
-    apiProjectWorkDocumentDraftApplyPath(projectId, workId, documentId),
-    request,
-    outcomeOptions,
-  );
-  if (
-    (response.status === "applied" || response.status === "held" || response.status === "stale") &&
-    response.itemKey !== request.itemKey
-  )
-    throw new Error("Draft Apply response did not identify the requested item");
-  return response;
+function identifies(response: { itemKey?: string }, itemKey: string): void {
+  if (response.itemKey !== itemKey)
+    throw new Error("Draft command response did not identify the requested item");
 }
 
+/** Apply some changes of one item: 200 applied, 202 pending (observe the command), or a refusal body. */
 export async function applyDraftChanges(
   projectId: string,
   workId: string,
   documentId: string,
-  request: DraftApplyChangesRequest,
-): Promise<DraftApplyChangesResponse> {
-  const response = await postJson<DraftApplyChangesResponse>(
+  request: DraftApplyChangesBody,
+): Promise<DraftItemApplyResult | DraftApplyPendingResponse> {
+  const response = await postJson<DraftItemApplyResult | DraftApplyPendingResponse>(
     apiProjectWorkDocumentDraftApplyChangesPath(projectId, workId, documentId),
     request,
     outcomeOptions,
   );
-  if (response.status === "pending") return response;
-  if (
-    response.itemKey !== request.itemKey ||
-    !["applied", "stale", "gone", "whole_item", "incomplete_class"].includes(response.status)
-  )
-    throw new Error("Draft change Apply response did not identify the requested item");
-  if (
-    response.status === "applied" &&
-    (!Array.isArray(response.operationIds) ||
-      response.operationIds.length !== new Set(request.operationIds).size ||
-      request.operationIds.some((id) => !response.operationIds.includes(id)) ||
-      !Array.isArray(response.closureClassIds) ||
-      response.closureClassIds.length === 0)
-  )
-    throw new Error("Draft change Apply response did not prove the requested changes were applied");
+  if (response.status !== "pending") identifies(response, request.itemKey);
   return response;
 }
 
-/** Item or per-change Discard; completes in its own transaction, so it is never pending. */
+/** Apply one whole item (open review, Work row, or a whole-item item's single change). */
+export async function applyDraft(
+  projectId: string,
+  workId: string,
+  documentId: string,
+  request: DraftApplyItemBody,
+): Promise<DraftItemApplyResult | DraftApplyPendingResponse> {
+  const response = await postJson<DraftItemApplyResult | DraftApplyPendingResponse>(
+    apiProjectWorkDocumentDraftApplyPath(projectId, workId, documentId),
+    request,
+    outcomeOptions,
+  );
+  if (response.status !== "pending") identifies(response, request.itemKey);
+  return response;
+}
+
+/** Item Discard (a created, binary or live-deleted item): close-only, completes in its own transaction. */
 export async function discardDraft(
   projectId: string,
   workId: string,
   documentId: string,
-  request: DraftDiscardRequest,
-): Promise<DraftDiscardResponse> {
-  return postJson<DraftDiscardResponse>(
+  request: DraftItemDiscardBody,
+): Promise<DraftItemDiscardResult> {
+  const response = await postJson<DraftItemDiscardResult>(
     apiProjectWorkDocumentDraftDiscardPath(projectId, workId, documentId),
     request,
     outcomeOptions,
   );
+  identifies(response, request.itemKey);
+  return response;
 }
 
 /** Work Files' "Apply all changes": one server command over the listed items. */
 export async function applyAllDrafts(
   projectId: string,
   workId: string,
-  request: DraftApplyAllRequest,
-): Promise<DraftApplyAllResponse> {
-  return postJson<DraftApplyAllResponse>(
+  request: DraftApplyAllBody,
+): Promise<DraftApplyAllResult | DraftApplyPendingResponse> {
+  return postJson<DraftApplyAllResult | DraftApplyPendingResponse>(
     apiProjectWorkDraftsApplyPath(projectId, workId),
     request,
     outcomeOptions,
   );
 }
 
-/** Work Files' "Discard all changes": one server command that closes the Work's draft. */
+/** Work Files' "Discard all changes": one `discard_draft` command that closes the Work's draft. */
 export async function discardAllDrafts(
   projectId: string,
   workId: string,
-  request: DraftDiscardAllRequest,
+  request: DraftDiscardAllBody,
 ): Promise<DraftDiscardAllResponse> {
   return postJson<DraftDiscardAllResponse>(
     apiProjectWorkDraftsDiscardPath(projectId, workId),
@@ -192,4 +180,24 @@ export async function observeDraftCommand(
     if (httpErrorStatus(error) === 404) return { state: "unknown" };
     throw error;
   }
+}
+
+/** The AI edit parts pending in an item: the ranges the browser matches to a change to name its chats. */
+export async function getDraftAttribution(
+  projectId: string,
+  workId: string,
+  documentId: string,
+  itemKey: string,
+  signal?: AbortSignal,
+): Promise<DraftAttribution> {
+  const params = new URLSearchParams({ itemKey });
+  return getJson<DraftAttribution>(
+    `${apiProjectWorkDocumentDraftAttributionPath(projectId, workId, documentId)}?${params}`,
+    { signal },
+  );
+}
+
+/** The chat strip's collapsed list: items with changes this chat has pending AI edits in. */
+export async function getThreadDraftFiles(threadId: string): Promise<ThreadDraftFilesResponse> {
+  return getJson<ThreadDraftFilesResponse>(apiThreadDraftFilesPath(threadId));
 }
