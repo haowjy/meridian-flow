@@ -61,6 +61,20 @@ export async function installPublicationAudit(db: Database) {
   }
 }
 
+/** Removes the audit, so catalog-inspecting suites sharing the worker database never see it. */
+export async function removePublicationAudit(db: Database) {
+  for (const [name, table] of [
+    ["run_state_audit_inbox", "thread_inbox_messages"],
+    ["run_state_audit_lease", "thread_run_leases"],
+    ["run_state_audit_threads", "threads"],
+    ["run_state_audit_journal", "event_journal"],
+  ])
+    await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${name} ON ${table}`));
+  await db.execute(sql`DROP FUNCTION IF EXISTS run_state_audit_input()`);
+  await db.execute(sql`DROP FUNCTION IF EXISTS run_state_audit_record()`);
+  await db.execute(sql`DROP TABLE IF EXISTS run_state_audit`);
+}
+
 export async function assertPublicationHooks(db: Database) {
   const unpublished = await db.execute<{ txid: string; thread_id: string }>(sql`
     SELECT DISTINCT i.txid::text, i.thread_id FROM run_state_audit i
