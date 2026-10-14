@@ -157,35 +157,5 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect([...(row?.state ?? [])]).toEqual([0, 0]);
       await expect(projectionState()).resolves.toEqual(before);
     });
-
-    // Risk: bytea[] has no driver mapping of its own; a cut that comes back changed is a replay that diverges.
-    it("round-trips rebase cuts as bytes, replaces them on request and leaves them alone otherwise", async () => {
-      const { db, branches } = await fixture();
-      const cuts = [new Uint8Array([0, 1, 2, 255]), new Uint8Array([]), new Uint8Array([7])];
-      const cutsOf = async () => {
-        const [row] = await db
-          .select({ cuts: documentBranches.rebaseCuts })
-          .from(documentBranches)
-          .where(eq(documentBranches.id, BRANCH_ID));
-        return (row?.cuts ?? []).map((cut) => [...cut]);
-      };
-      expect(await cutsOf()).toEqual([]);
-      const write = (expected: number[], next: number[], rebaseCuts?: Uint8Array[]) =>
-        runInDrizzleTransaction(db, () =>
-          branches.writeBranchState({
-            branchId: BRANCH_ID,
-            expectedState: new Uint8Array(expected),
-            ...state(next),
-            effect: { kind: "text", hasEffect: true },
-            ...(rebaseCuts ? { rebaseCuts } : {}),
-          }),
-        );
-      await expect(write([0, 0], [0, 1], cuts)).resolves.toBe(true);
-      expect(await cutsOf()).toEqual([[0, 1, 2, 255], [], [7]]);
-      await expect(write([0, 1], [0, 2])).resolves.toBe(true);
-      expect(await cutsOf()).toEqual([[0, 1, 2, 255], [], [7]]);
-      await expect(write([0, 2], [0, 3], [])).resolves.toBe(true);
-      expect(await cutsOf()).toEqual([]);
-    });
   });
 }

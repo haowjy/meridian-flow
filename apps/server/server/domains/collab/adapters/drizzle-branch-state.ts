@@ -17,18 +17,6 @@ import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { PersistBranchInput } from "../domain/branch-coordinator.js";
 
 /** The stored schema stamp never moves backwards: the greater of the row's, the given and the running one. */
-/**
- * A bytea[] built in SQL: the driver sends a JS array of Buffers as text, which Postgres rejects as
- * invalid UTF8 as soon as a cut holds a zero byte.
- */
-function byteaArray(cuts: readonly Uint8Array[]) {
-  if (cuts.length === 0) return sql`'{}'::bytea[]`;
-  return sql`ARRAY[${sql.join(
-    cuts.map((cut) => sql`${Buffer.from(cut)}`),
-    sql`, `,
-  )}]::bytea[]`;
-}
-
 export function monotonicSchemaStamp(version: CollabSchemaVersion = COLLAB_SCHEMA_VERSION) {
   const packedVersion = packCollabSchemaVersion(version);
   const packedRunningVersion = packCollabSchemaVersion(COLLAB_SCHEMA_VERSION);
@@ -49,7 +37,6 @@ export async function casBranchState(db: DrizzleDb, input: PersistBranchInput): 
       updatedAt: new Date(),
       ...(input.effect.kind === "text" ? { hasEffect: input.effect.hasEffect } : {}),
       ...(input.baseRevision === undefined ? {} : { baseRevision: input.baseRevision }),
-      ...(input.rebaseCuts === undefined ? {} : { rebaseCuts: byteaArray(input.rebaseCuts) }),
     })
     .where(
       and(

@@ -112,7 +112,6 @@ describe("Yjs branch handshake route guard", () => {
           baseRevision,
           schemaVersion: COLLAB_SCHEMA_VERSION,
         }),
-        readRebaseCuts: async () => [],
         async commitBranchMutation(input) {
           write(input);
           return true;

@@ -61,37 +61,20 @@ export function createDraftRebaseDiagnostics(eventSink?: EventSink): DraftRebase
 }
 
 /**
- * The writer-admission side of the rebase's emitter: what late-peer recovery found in one update. Counts
- * only, never the writer's words. One event per update that lost something, as it does not repeat.
+ * The writer-admission side of the rebase's emitter: what late-peer recovery did with one update. Counts
+ * only, never the writer's words. `edit_lost` for every update that touched text a rebase changed; the
+ * typing written back as its own paragraph and the deletions dropped (log-only, D33) ride on it.
  */
 export function createLateWriterEditsReporter(eventSink?: EventSink) {
-  return ({ branchId, documentId, lost, recovered, unplaced, fallback }: LateWriterEdits) => {
+  return ({ branchId, documentId, lost, written, dropped }: LateWriterEdits) => {
     if (!eventSink) return;
-    const correlation = { documentId, branchId };
-    const source = "collab.draft_rebase";
     emitEvent(eventSink, {
       level: "warn",
-      source,
+      source: "collab.draft_rebase",
       name: "late_peer.edit_lost",
-      correlation,
-      payload: { count: lost },
+      correlation: { documentId, branchId },
+      payload: { count: lost, written, dropped },
     });
-    if (recovered)
-      emitEvent(eventSink, {
-        level: "info",
-        source,
-        name: "late_peer.recovered",
-        correlation,
-        payload: { count: recovered, placed: "exact" },
-      });
-    if (unplaced)
-      emitEvent(eventSink, {
-        level: "error",
-        source,
-        name: "late_peer.unrecovered",
-        correlation,
-        payload: { count: unplaced, placed: fallback ? "fallback" : "exact" },
-      });
   };
 }
 

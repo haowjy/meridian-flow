@@ -24,6 +24,10 @@ export interface LostEdit {
  * What a peer update would silently lose, found before the update is applied to `doc`: incoming text
  * whose parent chain reaches a deleted item, and deletions of items that are already deleted. Each edit
  * carries the id of the item it touched, which recovery needs to find the blocks the edits belong to.
+ *
+ * Typed text is net of the update's own delete set (D33): characters the same frame also deletes were
+ * revised away by the peer (an Undo manager keeps their structs, so they still travel), and only what
+ * survives in the peer's view is lost. One edit per surviving run.
  */
 export function findLostEdits(
   doc: Y.Doc,
@@ -58,9 +62,22 @@ export function findLostEdits(
     const owner = (item.parent as Y.AbstractType<unknown>)._item;
     return !!owner && gone(owner);
   };
-  for (const s of incoming)
-    if (s.content instanceof Y.ContentString && !known(s.id) && hidden(s))
-      out.typed.push({ id: s.id, text: s.content.str });
+  for (const s of incoming) {
+    if (!(s.content instanceof Y.ContentString) || !hidden(s)) continue;
+    let run: LostEdit | null = null;
+    for (let i = 0; i < s.length; i++) {
+      const id = Y.createID(s.id.client, s.id.clock + i);
+      if (known(id) || Y.isDeleted(ds, id)) {
+        run = null;
+        continue;
+      }
+      if (!run) {
+        run = { id, text: "" };
+        out.typed.push(run);
+      }
+      run.text += s.content.str[i];
+    }
+  }
   for (const [client, ranges] of ds.clients)
     for (const r of ranges)
       for (let c = r.clock; c < r.clock + r.len; c++) {

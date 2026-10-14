@@ -57,15 +57,14 @@ function plans a content Apply's live update, with the patch as the draft side.
 
 A peer update authored before it received a rebase can type into, or delete
 from, text the rebase already removed or re-created. Yjs merges that silently
-into dead state. `findLostEdits` detects it, `invisibleInsertions` finds words a
-reply wrote into text the writer had discarded (reported, never refused), and
-`recoverLatePeerEdits` replays affected blocks as paragraph-level rebases using
-`rebase-cuts.ts`: encoded `Y.Snapshot`s of the draft just before each rebase,
-stored in `document_branches.rebase_cuts` (up to `MAX_REBASE_CUTS` entries and
-`MAX_REBASE_CUT_BYTES` in total, oldest dropped first). Typing recovery cannot
-place goes in as its own paragraph beside its last neighbour; a deletion alone
-is reported unplaced and not written, because a reconnect replays whole delete
-sets.
+into dead state. `findLostEdits` detects it (typing net of the update's own
+delete set: what the peer still shows), and `invisibleInsertions` finds words a
+reply wrote into text the writer had discarded (reported, never refused).
+`recoverLatePeerEdits` writes the surviving typing, read in document order, as
+its own paragraph beside its last known neighbour; the words the rebase replaced
+are never revived around it. Deletions of rebased text are never written
+(log-only): a reconnect resends the whole delete set, and a replay looks like a
+first arrival (D33).
 
 ## Migration seam
 

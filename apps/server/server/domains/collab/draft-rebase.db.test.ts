@@ -396,31 +396,4 @@ describe("late-peer recovery in writer admission", () => {
       harness.destroyWarmState();
     }
   });
-
-  // Risk: the retained cuts are not reaching the column, or an update older than every cut is dropped.
-  it("keeps a typed word when the peer predates every retained cut, with the column capped", async () => {
-    const { harness, draftRow, decode, read, rebaseTo, writerUpdate } = await setup();
-    try {
-      const start = (await draftRow()).baseRevision?.seq ?? 0;
-      await rebaseTo(start + 1, paragraphs("alpha beta gamma", "tail"));
-      const peer = decode((await draftRow()).state);
-      for (let i = 0; i < 34; i++) {
-        await rebaseTo(start + 2 + i, paragraphs(`step${i} delta epsilon`, "tail"));
-      }
-      const rebased = await draftRow();
-      expect(rebased.rebaseCuts).toHaveLength(32);
-      await writerUpdate(
-        peer,
-        decode(rebased.state),
-        (d) => firstText(d, "prosemirror").insert(5, " zzqq"),
-        rebased.id,
-      );
-      const { draft } = await read();
-      expect(draft.join("\n").split("zzqq")).toHaveLength(2);
-      expect(draft.join("\n")).not.toContain("alpha");
-    } finally {
-      harness.cancelScheduledPulls();
-      harness.destroyWarmState();
-    }
-  });
 });

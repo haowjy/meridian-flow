@@ -227,7 +227,7 @@ migrations are named by role:
 
 | Role | Migration | Does |
 |---|---|---|
-| A1 | `0048_dbr_review_base_columns` | `document_branches.base_revision`, `rebase_cuts`, `push_lineage.apply_payload` (all metadata-only), and `has_effect` defaults `false` |
+| A1 | `0048_dbr_review_base_columns` | `document_branches.base_revision`, `push_lineage.apply_payload` (both metadata-only), and `has_effect` defaults `false` |
 | A2 | `0049_dbr_trail_owners_content_apply` | `change_trail_owners` gains the content-Apply arm |
 | B1 index drop | `0050_dbr_drop_edit_action_index` | no-transaction `DROP INDEX CONCURRENTLY` over `document_edits.action_id` |
 | B1 column drop | `0051_dbr_drop_edit_action_columns` | bounded `DROP COLUMN` for `action_id` and `consumes` |

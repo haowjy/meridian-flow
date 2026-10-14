@@ -1,6 +1,6 @@
 /** Shadow branch coordinator conformance for peer pulls and CAS persistence. */
 
-import { captureRebaseCut, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
+import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {
   allocateDocumentClient,
@@ -83,12 +83,6 @@ class MemoryBranchStore implements BranchStore {
 
   async getBranch(branchId: string): Promise<BranchSnapshot | null> {
     return this.branches.get(branchId) ?? null;
-  }
-
-  readonly cuts: Uint8Array[] = [];
-
-  async readRebaseCuts(): Promise<Uint8Array[]> {
-    return this.cuts;
   }
 
   async updateBranchSnapshot(input: {
@@ -232,8 +226,9 @@ describe("BranchCoordinator", () => {
     expect(reports).toEqual([]);
   });
 
-  // Risk (D32): a reconnect repeats the client's whole delete set; recovering a late deletion erased words
-  // the writer wrote back since (K1-1). Late deletions of rebased text are log-only, so replay is inert.
+  // Risk (D33): a reconnect repeats the client's whole delete set; recovering a late deletion erased words
+  // the writer wrote back since (K1-1). Late deletions of rebased text are log-only, so the exact replay
+  // is inert. The property test in `late-peer-admission.test.ts` covers the mixed frames around it.
   it("never lets a replayed late deletion erase words written since", async () => {
     const schema = buildDocumentSchema();
     const para = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
@@ -255,7 +250,6 @@ describe("BranchCoordinator", () => {
     });
     ((peer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText).delete(6, 5);
     const store = new MemoryBranchStore();
-    store.cuts.push(captureRebaseCut(server));
     server.transact(
       () =>
         writeBlocks(server.getXmlFragment("prosemirror"), schema, [

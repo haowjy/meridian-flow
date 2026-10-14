@@ -1,5 +1,5 @@
 {
-  "id": "3f54036d-652b-4dbb-b708-4171996b2f2c",
+  "id": "f31c9599-d596-4ace-9a42-94d4dcb7d0cf",
   "prevId": "1177d607-0077-4ffa-ba6d-98d3d5b161db",
   "version": "7",
   "dialect": "postgresql",
@@ -9623,13 +9623,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "rebase_cuts": {
-          "name": "rebase_cuts",
-          "type": "bytea[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::bytea[]"
         },
         "live_cut": {
           "name": "live_cut",

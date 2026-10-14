@@ -49,8 +49,7 @@ A text branch's document holds two fragments:
 
 `document_branches` carries `base_revision` (jsonb, the live revision `review_base`
 reflects; null means no base was ever written and the rebase refuses
-`base_uninitialized`), `rebase_cuts` (`bytea[]`, see below), `has_effect` and
-`blocking`. A new text branch is seeded by `seedDraftState`: live's text written
+`base_uninitialized`), `has_effect` and `blocking`. A new text branch is seeded by `seedDraftState`: live's text written
 twice as fresh items by the reserved server client (`DRAFT_SERVER_CLIENT_ID`, 1),
 once into each fragment, with `UNKNOWN_BASE_REVISION` (older than every real
 revision, so the first rebase reconciles whatever moved). The draft shares no Yjs
@@ -62,7 +61,7 @@ inverse admission) goes through the branch store's `writeBranchState`, on the
 caller's transaction. It is a compare-and-swap on the full prior `state` that
 writes state, `has_effect` (the effect arm: `text` states `draftDiffersFromBase`
 of the document being written, `peer` carries no membership effect),
-`base_revision` and `rebase_cuts` together or not at all, inside the Work
+and `base_revision` together or not at all, inside the Work
 projection mutation so the Work page and catalog see an effect change in the same
 transaction. The raw CAS (`casBranchState`) is private to the adapter.
 
@@ -81,18 +80,21 @@ while any settlement batch with a member on the document is `pending` or
 rebase failure is typed (`DraftRebaseFailedError`), not retried on the same inputs,
 and reported once per transition.
 
-**Late-peer recovery.** A writer's update authored before the peer got a rebase can
-type into blocks the rebase removed or retyped. Writer admission (`commitWriterUpdate`
-under the branch's critical section) finds such edits before applying the update
-(`findLostEdits`) and writes one ordinary `writer` journal row holding the update
-merged with the recovery (`recoverLatePeerEdits`): typing comes back green, placed
-exactly when a retained rebase cut shows the block as the peer saw it, else as its
-own paragraph beside its last known neighbour. A late deletion alone is log-only
-(`late_peer.edit_lost`): a repeated delete set is indistinguishable from the first
-arrival, so replaying it would erase newer writing. Containment is checked first, so
-a reconnect's whole delete set never reaches recovery. `rebase_cuts` holds up to 32
-encoded `Y.Snapshot`s (1 MiB total, oldest dropped first) taken just before a rebase
-changed the draft, written in the same CAS as the rebased state.
+**Late-peer recovery (D33).** A writer's update authored before the peer got a rebase
+can type into blocks the rebase removed or retyped. A stale frame is not current
+intent: on text a rebase changed it contributes only its net surviving typing.
+Writer admission (`commitWriterUpdate` under the branch's critical section) finds
+that typing before applying the update (`findLostEdits`: inserted text minus what the
+same frame deletes, so words typed and deleted again offline never come back) and
+writes one ordinary `writer` journal row holding the update merged with the recovery
+(`recoverLatePeerEdits`): the typing goes in as its own paragraph beside its last
+known neighbour, green in review for the writer to keep or drop. The frame's
+deletions of rebased text never apply (`late_peer.edit_lost`, log-only): a reconnect
+resends the client's whole delete set, and a replay is indistinguishable from the
+first arrival, so acting on it would erase newer writing. Words the writer deleted
+offline on rewritten text reappear, and they delete them again. Containment is
+checked first, so a clean reconnect is a no-op that reports nothing. Nothing is
+retained beside the document for this; the full CRDT update still persists.
 
 Draft HTTP routes share `requireDraftWorkAccess`: a deleted Work is 404
 `Draft not found` before any draft read or mutation. Archived Works still permit
@@ -309,7 +311,7 @@ comes from context's tree views, never a Yjs manifest.
   new semantic edit. Immutable edit parts and certified aliases own reversal
   correspondence.
 - `document_branches` stores branch snapshots, state vectors, `has_effect`,
-  `blocking`, `base_revision` and `rebase_cuts`.
+  `blocking` and `base_revision`.
 - `branch_write_journal` stores branch write rows (agent and writer) and their
   status; Apply no longer marks rows `pushed`.
 - `push_lineage` stores publication identity and idempotency lineage, and for a
