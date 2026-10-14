@@ -3,10 +3,13 @@ export {
   cancelQueueScope,
   handBackCandidates,
   hiddenWriterTurns,
+  isAwaitingExecution,
   isBusy,
+  isUsageBlocked,
   retryRetired,
   stopRequest,
   waitingWriterMessages,
+  writerMessages,
 } from "./fold-messages";
 export { type SwitchRow, type SwitchRowStatus, switchState } from "./fold-switches";
 export {

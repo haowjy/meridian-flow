@@ -10,8 +10,10 @@ import {
   addIntent,
   INITIAL_RUN_STATE_VIEW,
   isBusy,
+  isUsageBlocked,
   type RunStateView,
   receiveRecord,
+  writerMessages,
 } from "@meridian/thread-client";
 
 /** The view over one live state's record. */
@@ -28,7 +30,7 @@ export const recordIsIdle = (live: Pick<ThreadLiveState, "runState">): boolean =
 
 /** The writer messages the server still holds for this chat, in inbox order. */
 export const owedWriterMessages = (runState: RunState): PendingInboxItem[] =>
-  runState.items.filter((item) => item.intent === "message" && item.provenance.kind === "writer");
+  writerMessages(runState);
 
 /** The run state a `meridian.run_state` frame carries, or null for any other event. */
 export function runStateOfEvent(event: { name?: unknown; value?: unknown }): RunState | null {
@@ -71,10 +73,9 @@ export class AdmittedMessage {
 
   /** This message is waiting on usage: the record holds it and says the start is blocked. */
   blockedForUsage(): boolean {
-    const record = this.view.record;
     return (
-      record?.blocked?.reason === "credits_exhausted" &&
-      record.items.some((item) => item.id === this.userTurnId)
+      isUsageBlocked(this.view) &&
+      (this.view.record?.items.some((item) => item.id === this.userTurnId) ?? false)
     );
   }
 }
