@@ -8,7 +8,8 @@ import type {
   ImportSummary,
   ImportUnreadableReason,
 } from "@meridian/contracts";
-import type { Filetype } from "@meridian/contracts/protocol";
+import type { ImportPlacement } from "../domain/placement.js";
+import type { FileReceipt } from "../domain/receipt.js";
 export type ImportRoot = ImportSelection["roots"][number] & { id: string | null; created: boolean };
 export interface ImportRecord {
   id: string;
@@ -17,7 +18,7 @@ export interface ImportRecord {
   destinationUri: string;
   folderId: string | null;
   roots: ImportRoot[];
-  placement: Record<string, unknown> | null;
+  placement: ImportPlacement | null;
   placementGeneration: number;
   fingerprint: string;
   state: ImportState;
@@ -35,49 +36,33 @@ export interface ImportRecord {
   objectsSweptAt: Date | null;
   finalSweepAt: Date | null;
 }
-export interface ImportEntrySpec {
+export interface ImportEntrySelection {
   rootId: number;
   path: string;
   size: number;
   modifiedAt: number;
   reasonParams?: { readReason: ImportUnreadableReason };
-  fileKind?: "note" | "code" | "docx" | "binary";
-  filetype?: Filetype;
-  mimeType?: string;
-  name?: string;
-  extension?: string;
-  aliases?: string[];
 }
-export interface ImportEntry {
+interface ImportEntryBase {
   id: string;
   importId: string;
   ordinal: number;
-  kind: "folder" | "file" | "unreadable";
-  entryId: number | null;
-  spec: ImportEntrySpec;
+  selection: ImportEntrySelection;
   state: ImportEntryState;
   reason: ImportEntryReason | null;
-  storageUrl: string | null;
-  objectKey: string | null;
   convertedKey: string | null;
-  receivedSize: number | null;
-  sha256: string | null;
 }
+export type ImportEntry = ImportEntryBase &
+  (
+    | { kind: "file"; entryId: number; receipt: FileReceipt | null }
+    | { kind: "folder"; entryId: null; receipt: null }
+    | { kind: "unreadable"; entryId: number; receipt: null }
+  );
 export type ImportPatch = Partial<
   Omit<ImportRecord, "id" | "projectId" | "userId" | "fingerprint" | "createdAt">
 >;
 export type ImportEntryPatch = Partial<
-  Pick<
-    ImportEntry,
-    | "spec"
-    | "state"
-    | "reason"
-    | "storageUrl"
-    | "objectKey"
-    | "convertedKey"
-    | "receivedSize"
-    | "sha256"
-  >
+  Pick<ImportEntry, "state" | "reason" | "convertedKey" | "receipt">
 >;
 export interface ImportRepository {
   transaction<T>(run: () => Promise<T>): Promise<T>;

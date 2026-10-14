@@ -12,20 +12,12 @@ import type { Filetype } from "@meridian/contracts/protocol";
 import { renderFilename } from "@meridian/contracts/protocol";
 import { type ImportArea, readExportMarker } from "./export-marker.js";
 import { type ImportRootSettings, rootSettings } from "./link-index.js";
+import type { FileReceipt } from "./receipt.js";
 
 /** Organize supplies only files with receipts, plus folders and unreadable selection items. */
 export type ReceiptSelection = Omit<ImportSelection, "entries"> & {
-  entries: (ImportSelection["entries"][number] & {
-    sha256: string;
-    aliases: string[];
-    facts: {
-      kind: "note" | "docx" | "code" | "binary";
-      filetype: Filetype;
-      name: string;
-      extension: string;
-      mimeType: string;
-    };
-  })[];
+  entries: (ImportSelection["entries"][number] &
+    Pick<FileReceipt, "sha256" | "aliases" | "facts">)[];
 };
 export interface PlannedNode {
   id: string;

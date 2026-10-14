@@ -20,6 +20,7 @@ import type { ImportDestination } from "../ports/import-tree-writer.js";
 import type { OrganizeWake } from "../ports/organize-wake.js";
 import { classify } from "./classify.js";
 import { IMPORT_LIMITS, ImportError, selectionFingerprint, validateSelection } from "./manifest.js";
+import type { FileReceipt } from "./receipt.js";
 import type { ImportAdmission } from "./receive-admission.js";
 import { selectionRows } from "./selection.js";
 import { stagingKey, stagingKeyTime } from "./staging-key.js";
@@ -166,21 +167,17 @@ export function createImportUploadService(deps: {
           const receipts: {
             entry: ImportEntry;
             part: ImportPart;
-            key: string;
-            storageUrl: string;
-            facts: Awaited<ReturnType<typeof classify>>;
-            sha256: string;
-            aliases: string[];
+            receipt: FileReceipt;
           }[] = [];
           for (const part of parts) {
             signal.throwIfAborted();
             const entry = entries.get(part.entryId) as ImportEntry;
-            if (entry.objectKey) continue;
+            if (entry.receipt) continue;
             uploading(record);
             if (entry.state !== "awaiting") continue;
             if (part.tooLarge || part.bytes.byteLength > IMPORT_ADMISSION.fileBytes) continue;
-            const root = record.roots.find((r) => r.rootId === entry.spec.rootId);
-            const filename = entry.spec.path.split("/").at(-1) || root?.name || "";
+            const root = record.roots.find((r) => r.rootId === entry.selection.rootId);
+            const filename = entry.selection.path.split("/").at(-1) || root?.name || "";
             const facts = await classify(filename, part.bytes);
             const key = stagingKey(id, part.entryId);
             const put = await deps.objects.put(key, part.bytes, facts.mimeType);
@@ -188,17 +185,20 @@ export function createImportUploadService(deps: {
             receipts.push({
               entry,
               part,
-              key,
-              storageUrl: put.value.storageUrl,
-              facts,
-              sha256: createHash("sha256").update(part.bytes).digest("hex"),
-              aliases:
-                facts.kind === "note"
-                  ? frontmatterAliases(
-                      splitFrontmatter(Buffer.from(part.bytes).toString("utf8")).frontmatter
-                        ?.text ?? "",
-                    )
-                  : [],
+              receipt: {
+                objectKey: key,
+                receivedSize: part.bytes.byteLength,
+                storageUrl: put.value.storageUrl,
+                facts,
+                sha256: createHash("sha256").update(part.bytes).digest("hex"),
+                aliases:
+                  facts.kind === "note"
+                    ? frontmatterAliases(
+                        splitFrontmatter(Buffer.from(part.bytes).toString("utf8")).frontmatter
+                          ?.text ?? "",
+                      )
+                    : [],
+              },
             });
           }
           await repo.transaction(async () => {
@@ -221,20 +221,16 @@ export function createImportUploadService(deps: {
                 patches.push({ id: entry.id, patch: { state: "failed", reason: "too_large" } });
               } else if (
                 receipt &&
-                now.getTime() - stagingKeyTime(receipt.key) < IMPORT_LIMITS.receiptAgeMs
+                now.getTime() - stagingKeyTime(receipt.receipt.objectKey) <
+                  IMPORT_LIMITS.receiptAgeMs
               ) {
                 receivedBytes += part.bytes.byteLength;
-                const { kind: fileKind, ...facts } = receipt.facts;
                 patches.push({
                   id: entry.id,
                   patch: {
                     state: "received",
                     reason: part.changedAfterPick ? "changed_after_pick" : null,
-                    objectKey: receipt.key,
-                    storageUrl: receipt.storageUrl,
-                    receivedSize: part.bytes.byteLength,
-                    sha256: receipt.sha256,
-                    spec: { ...entry.spec, ...facts, fileKind, aliases: receipt.aliases },
+                    receipt: receipt.receipt,
                   },
                 });
               }
@@ -348,13 +344,13 @@ export function createImportUploadService(deps: {
             .filter((e) => e.entryId !== null)
             .map((e) => ({
               entryId: e.entryId as number,
-              rootId: e.spec.rootId,
-              path: e.spec.path,
-              size: e.spec.size,
-              modifiedAt: e.spec.modifiedAt,
+              rootId: e.selection.rootId,
+              path: e.selection.path,
+              size: e.selection.size,
+              modifiedAt: e.selection.modifiedAt,
               state: e.state,
               reason: e.reason,
-              reasonParams: e.spec.reasonParams,
+              reasonParams: e.selection.reasonParams,
               documentId: e.id,
             })),
         };

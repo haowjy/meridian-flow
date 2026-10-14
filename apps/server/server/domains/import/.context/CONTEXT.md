@@ -71,8 +71,12 @@ Its identity graph preserves folder-note relocation and export-marker routing.
 Name allocation belongs to Context. The header stores nullable placement facts and
 a generation (initially zero); entries can become `prepared` and retain a
 `converted_key` for DOCX Markdown. Counts distinguish prepared from organized.
+The repository projects nullable storage columns into one verified `FileReceipt`
+at its boundary. Entries expose immutable `selection` separately; folders and
+unreadable items have no receipt. Placement records destinations (including fallback),
+top-level names and the creation-set digest, independent of its header generation.
 Active sweeps protect both receipt and converted keys. D2 owns preparation,
-placement typing, staged discard, and atomic reveal after lanes A and B merge. `convertNote` produces occurrence-indexed
+staged discard, and atomic reveal after lanes A and B merge. `convertNote` produces occurrence-indexed
 targets and hrefs, preserving adjacent links that spell the same address. The
 organizer binds selected targets directly by their planned document ids; ordinary
 unresolved links keep address-based ahead refs. There is no release-to-address

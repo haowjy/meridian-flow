@@ -61,9 +61,12 @@ export async function sweepImportObjects(
     const terminal = record.state === "finished" || record.state === "cancelled";
     const protectedKeys = new Set(
       entries.flatMap((entry) => {
-        if (!terminal) return [entry.objectKey, entry.convertedKey].filter((key) => key !== null);
-        return entry.objectKey && entry.state === "organized" && entry.spec.fileKind === "binary"
-          ? [entry.objectKey]
+        if (!terminal)
+          return [entry.receipt?.objectKey ?? null, entry.convertedKey].filter(
+            (key) => key !== null,
+          );
+        return entry.receipt && entry.state === "organized" && entry.receipt.facts.kind === "binary"
+          ? [entry.receipt.objectKey]
           : [];
       }),
     );

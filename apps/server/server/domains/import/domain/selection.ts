@@ -42,7 +42,7 @@ export function selectionRows(
       ordinal: entries.length,
       kind,
       entryId,
-      spec: { rootId, path, size, modifiedAt },
+      selection: { rootId, path, size, modifiedAt },
       state:
         reason === "too_large"
           ? "failed"
@@ -52,12 +52,9 @@ export function selectionRows(
               ? "received"
               : "awaiting",
       reason,
-      storageUrl: null,
-      objectKey: null,
+      receipt: null,
       convertedKey: null,
-      receivedSize: null,
-      sha256: null,
-    };
+    } as ImportEntry;
     entries.push(entry);
     return entry;
   };
@@ -90,7 +87,7 @@ export function selectionRows(
     const entry = add("unreadable", item.rootId, item.path, -index - 1);
     entry.state = "skipped";
     entry.reason = "unreadable";
-    entry.spec.reasonParams = { readReason: item.reason ?? "unreadable" };
+    entry.selection.reasonParams = { readReason: item.reason ?? "unreadable" };
   }
   return { roots, entries };
 }

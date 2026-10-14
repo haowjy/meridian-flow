@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Keep verified file receipts separate from the picked selection and type organize placement.
+
 - Persist import receipts in bounded SQL batches and skip files set-wise.
 
 - Share import attention reasons and the changed-file upload header protocol.

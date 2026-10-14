@@ -72,10 +72,12 @@ describe.runIf(enabled)("durable upload", () => {
       counts: { files: 2, received: 2, receivedBytes: 10 },
     });
     const entry = (await repository.entries(input.importId)).find((e) => e.entryId === 0)!;
-    const stored = await objects.get(entry.objectKey!);
+    const stored = await objects.get(entry.receipt!.objectKey);
     expect(stored.ok).toBe(true);
     if (stored.ok)
-      expect(entry.sha256).toBe(createHash("sha256").update(stored.value.bytes).digest("hex"));
+      expect(entry.receipt!.sha256).toBe(
+        createHash("sha256").update(stored.value.bytes).digest("hex"),
+      );
     expect((await send(input.importId, 0, "changed retry")).entries[0].state).toBe("received");
   });
   it("keeps Stop terminal against an in-flight put and collects the losing object", async () => {
@@ -96,7 +98,7 @@ describe.runIf(enabled)("durable upload", () => {
     release();
     await receive;
     expect(await service().listOpen(userId)).toEqual([]);
-    expect((await repository.entries(input.importId)).every((e) => !e.objectKey)).toBe(true);
+    expect((await repository.entries(input.importId)).every((e) => !e.receipt)).toBe(true);
     await sweepImportObjects(repository, objects, { importId: input.importId });
     expect(await objects.list(`imports/${input.importId}/`)).toMatchObject({
       ok: true,
@@ -121,7 +123,22 @@ describe.runIf(enabled)("durable upload", () => {
     await repository.updateEntries(input.importId, [
       {
         id: entries[1].id,
-        patch: { receivedSize: IMPORT_ADMISSION.totalBytes - 5, objectKey: "fixture-existing" },
+        patch: {
+          receipt: {
+            objectKey: "fixture-existing",
+            storageUrl: "object://fixture",
+            receivedSize: IMPORT_ADMISSION.totalBytes - 5,
+            sha256: "fixture",
+            facts: {
+              kind: "note",
+              filetype: "markdown",
+              mimeType: "text/markdown",
+              name: "0",
+              extension: "",
+            },
+            aliases: [],
+          },
+        },
       },
     ]);
     await Promise.all([send(input.importId, 1), send(input.importId, 2)]);
@@ -160,7 +177,7 @@ describe.runIf(enabled)("durable upload", () => {
     ]);
     expect((await repository.entries(input.importId)).find((e) => e.entryId === 0)).toMatchObject({
       reason: "changed_after_pick",
-      spec: { fileKind: "note", aliases: ["Hero"] },
+      receipt: { facts: { kind: "note" }, aliases: ["Hero"] },
     });
     expect(
       (
@@ -227,7 +244,13 @@ describe.runIf(enabled)("durable upload", () => {
     await send(input.importId, 0);
     const entry = (await repository.entries(input.importId))[1];
     await repository.updateEntries(input.importId, [
-      { id: entry.id, patch: { state: "organized", spec: { ...entry.spec, fileKind: "binary" } } },
+      {
+        id: entry.id,
+        patch: {
+          state: "organized",
+          receipt: { ...entry.receipt!, facts: { ...entry.receipt!.facts, kind: "binary" } },
+        },
+      },
     ]);
     const then = new Date(Date.now() - 32 * 86400000);
     await repository.update(input.importId, {
@@ -239,9 +262,9 @@ describe.runIf(enabled)("durable upload", () => {
     await sweepImportObjects(repository, objects);
     expect(await repository.entries(input.importId)).toEqual([]);
     expect((await service().create(projectId, userId, input)).counts.organized).toBe(1);
-    expect((await objects.get(entry.objectKey as string)).ok).toBe(true);
+    expect((await objects.get(entry.receipt!.objectKey)).ok).toBe(true);
     await sweepImportObjects(repository, objects, { importId: input.importId });
-    expect((await objects.get(entry.objectKey as string)).ok).toBe(true);
+    expect((await objects.get(entry.receipt!.objectKey)).ok).toBe(true);
   });
   it("refuses Stop after reveal while catalog publication still reports organizing", async () => {
     const input = selection(1);
@@ -268,7 +291,11 @@ describe.runIf(enabled)("durable upload", () => {
       { id: entry.id, patch: { state: "prepared", convertedKey } },
     ]);
     await repository.update(input.importId, {
-      placement: { creationSetDigest: "fixture" },
+      placement: {
+        destinations: [{ area: "kb", folderId: null, uri: "kb://", fellBack: false }],
+        topLevelNames: {},
+        creationSetDigest: "fixture",
+      },
       placementGeneration: 1,
     });
     await repository.refreshCounts(input.importId);
@@ -278,7 +305,11 @@ describe.runIf(enabled)("durable upload", () => {
       organized: 0,
     });
     expect(await repository.read(input.importId)).toMatchObject({
-      placement: { creationSetDigest: "fixture" },
+      placement: {
+        destinations: [{ area: "kb", folderId: null, uri: "kb://", fellBack: false }],
+        topLevelNames: {},
+        creationSetDigest: "fixture",
+      },
       placementGeneration: 1,
     });
     await sweepImportObjects(repository, objects, { importId: input.importId });
