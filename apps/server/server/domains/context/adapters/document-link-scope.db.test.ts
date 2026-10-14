@@ -190,10 +190,6 @@ if (!RUN) {
           nodeId,
           nodeKind: "document" as const,
           created: true,
-          contextSourceId: SOURCE,
-          parentFolderId: null,
-          name: nodeId === DRAFTED ? "drafted" : "staged",
-          extension: "",
         })),
       );
       await db.insert(linkAheadRefs).values([
@@ -418,9 +414,9 @@ if (!RUN) {
       ];
       const chapter = await s.seedLive("chapter");
       await s.seedLive("notes");
-      // Atlas's draft made Kael first; Beacon's draft joined it at a place of its own.
+      // Atlas's draft made Kael first; Beacon's draft joined it (one row, one place).
       const kael = await s.seedHidden(atlas, "lore/kael");
-      await s.seedHidden(beacon, "places/kael", { join: kael });
+      await s.seedHidden(beacon, "lore/kael", { join: kael });
       const [atlasDraft, beaconDraft] = [await s.draftOf(atlas), await s.draftOf(beacon)];
       await s.draftOf(cove);
 
@@ -441,7 +437,7 @@ if (!RUN) {
       expect.soft(await named(atlas), "its own oldest draft").toEqual(atAtlas);
       expect
         .soft(await named(beacon), "the reader's own draft, where it has it")
-        .toEqual([true, beaconDraft.id, "manuscript://places/kael"]);
+        .toEqual([true, beaconDraft.id, "manuscript://lore/kael"]);
 
       // An ahead ref reads by address in the reader's view until a live document binds it:
       // a draft's hidden document there reads "in a draft" from every view.
