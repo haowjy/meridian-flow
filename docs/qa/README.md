@@ -91,7 +91,10 @@ somewhere outside the repository, then:
    here"). Pick an empty folder: a dialog says there is nothing to import.
 5. To see a failed file, make a send fail (block the import's file requests in
    the browser's network tools). The file's row shows the warning and its
-   document shows the notice with Retry.
+   document shows the notice with Retry. Reload the page with no document open:
+   the tree still shows the row's warning, because the coordinator reads every
+   open import's status. After a few hundred files finish, start a small import:
+   its rows appear at once (a finished import stops throttling the tree).
 
 ## Before you call it a defect
 

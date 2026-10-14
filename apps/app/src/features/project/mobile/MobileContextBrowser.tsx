@@ -267,7 +267,7 @@ function FolderListingBody({
     );
   }
 
-  const shown = imported.catalog ?? catalog;
+  const shown = imported ?? catalog;
   const children = shown.children(dir.entryId);
   const folders = children.filter((child): child is ContextDir => child.kind === "dir");
   const files = children.filter((child): child is ContextFile => child.kind === "file");

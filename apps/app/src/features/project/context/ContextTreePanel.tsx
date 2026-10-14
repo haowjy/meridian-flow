@@ -22,9 +22,7 @@ import {
   useImportsSnapshot,
   useOptionalImports,
 } from "@/features/import/ImportProvider";
-import { placementsOf } from "@/features/import/placements";
 import { canPickFolders } from "@/features/import/SelectionPicker";
-import { pseudoRowId } from "@/features/import/tree-projection";
 import { useImportedCatalog } from "@/features/import/use-imported-catalog";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
@@ -182,8 +180,7 @@ function SchemeSection({
   // lands inside.
   const { isComplete, isError, refetch } = catalogState;
   const imports = useOptionalImports();
-  const imported = useImportedCatalog(catalogState.catalog, scheme);
-  const catalog = imported.catalog;
+  const catalog = useImportedCatalog(catalogState.catalog, scheme);
   const folderIds = useMemo(() => {
     if (!catalog || !isComplete) return null;
     return treeFolderIds((parentId) =>
@@ -221,41 +218,42 @@ function SchemeSection({
     [catalog, setExpandedEntryIds],
   );
 
-  // A new import opens its area, its destination folder and each new top-level folder one level.
+  // A new import opens its area and its destination folder; its new top-level folders
+  // open one level as the run knows them (their ids are known from the pick).
   const importSnapshot = useImportsSnapshot(imports?.coordinator ?? null);
   const arrived = useRef(new Set<string>());
+  const opened = useRef(new Set<string>());
   useEffect(() => {
-    for (const state of importSnapshot.states) {
-      const local = state.local;
-      if (!local || arrived.current.has(state.importId)) continue;
-      const here = placementsOf(state).find((placement) => placement.scheme === scheme);
-      if (!here) continue;
-      arrived.current.add(state.importId);
-      setExpanded(true);
-      if (here.path !== "/") revealPath(here.path);
-      const roots = local.rows.filter((row) => row.kind === "dir" && row.relPath === "");
+    for (const { importId, target } of importSnapshot.imports) {
+      if (!target?.schemes.includes(scheme as never)) continue;
+      const first = !arrived.current.has(importId);
+      const fresh = target.rootIds.filter((id) => !opened.current.has(id));
+      if (!first && fresh.length === 0) continue;
+      arrived.current.add(importId);
+      for (const id of fresh) opened.current.add(id);
+      if (first) {
+        setExpanded(true);
+        if (
+          target.destination &&
+          target.destination.scheme === scheme &&
+          target.destination.path !== "/"
+        )
+          revealPath(target.destination.path);
+      }
       setExpandedEntryIds((current) => {
         const next = { ...current };
-        for (const row of roots) next[pseudoRowId(state.importId, row)] = true;
+        for (const id of fresh) next[id] = true;
+        const here = target.destination?.scheme === scheme ? target.destination : null;
         const destination =
-          here.folderId ?? (here.path !== "/" ? catalog?.findPath(here.path)?.entryId : undefined);
+          first && here
+            ? (here.folderId ??
+              (here.path !== "/" ? catalog?.findPath(here.path)?.entryId : undefined))
+            : undefined;
         if (destination) next[destination] = true;
         return next;
       });
     }
   }, [importSnapshot, scheme, setExpanded, revealPath, setExpandedEntryIds, catalog]);
-  // The plan's answer gives the new top-level folders real ids; they open one level too.
-  const opened = useRef(new Set<string>());
-  useEffect(() => {
-    for (const state of importSnapshot.states) {
-      for (const root of state.report?.roots ?? []) {
-        if (root.kind !== "folder" || !root.id || opened.current.has(root.id)) continue;
-        if (catalog?.normalized.entries.get(root.id)?.kind !== "folder") continue;
-        opened.current.add(root.id);
-        setExpandedEntryIds((current) => ({ ...current, [root.id as string]: true }));
-      }
-    }
-  }, [importSnapshot, catalog, setExpandedEntryIds]);
 
   useEffect(() => {
     if (!activeLocationPath) {

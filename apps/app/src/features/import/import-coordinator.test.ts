@@ -1,12 +1,13 @@
-import type { ImportStatus } from "@meridian/contracts";
+import type { ImportEntryStatus, ImportStatus, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ImportRequestError } from "@/client/api/imports-api";
 import type { ImportDestination } from "./destination";
 import { fakeImportServer } from "./fake-import-server";
-import { ImportCoordinator } from "./import-coordinator";
+import { type CatalogReader, type Clock, ImportCoordinator } from "./import-coordinator";
 import { displayOf } from "./import-store";
 import { buildManifest } from "./manifest";
 import type { Selection } from "./selection";
+import { withImportRows } from "./tree-projection";
 
 const announced = vi.hoisted(() => [] as string[]);
 vi.mock("@/client/stores/thread-store/announcements", () => ({
@@ -41,6 +42,12 @@ function vault(): Selection {
   };
 }
 
+async function until(done: () => boolean) {
+  for (let tick = 0; tick < 200 && !done(); tick += 1)
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  if (!done()) throw new Error("never happened");
+}
+
 async function settled(coordinator: ImportCoordinator, importId: string) {
   const store = coordinator.store(importId);
   for (let tick = 0; tick < 200; tick += 1) {
@@ -52,29 +59,37 @@ async function settled(coordinator: ImportCoordinator, importId: string) {
 }
 
 describe("ImportCoordinator.start", () => {
-  it("answers at once with the rows drawn, then plans and uploads in the background", async () => {
+  it("answers at once, draws rows with the plan's ids, then plans and uploads", async () => {
     const server = fakeImportServer();
     const coordinator = new ImportCoordinator("p", server.api);
     const importId = coordinator.start(vault(), destination);
 
-    const first = coordinator.store(importId).getSnapshot();
+    const store = coordinator.store(importId);
     expect(server.calls.plan).toBe(0);
-    expect(first.local?.rows.map((row) => [row.kind, row.parentPath, row.name])).toEqual(
+    expect(displayOf(store.getSnapshot())).toBe("preparing");
+    // The rows are replaced by the plan's answer, so catch them as they are drawn.
+    let rows: NonNullable<ReturnType<typeof store.getSnapshot>["local"]>["rows"] = [];
+    store.subscribe(() => {
+      const drawn = store.getSnapshot().local?.rows ?? [];
+      if (drawn.length) rows = drawn;
+    });
+    await settled(coordinator, importId);
+    expect(rows.length).toBeGreaterThan(0);
+    const root = rows.find((row) => row.name === "vault");
+    expect(rows.map((row) => [row.kind, row.name, row.parentId === root?.id])).toEqual(
       expect.arrayContaining([
-        ["dir", "/", "vault"],
-        ["dir", "/vault", "Empty"],
-        ["dir", "/vault", "Lore"],
-        ["file", "/vault", "Ch 1"],
-        ["file", "/vault/Lore", "Sects"],
+        ["dir", "vault", false],
+        ["dir", "Empty", true],
+        ["dir", "Lore", true],
+        ["file", "Ch 1", true],
       ]),
     );
-    expect(displayOf(first)).toBe("preparing");
 
-    const store = await settled(coordinator, importId);
     expect(server.calls.plan).toBe(1);
     expect(server.calls.send.flat().sort()).toEqual([0, 1, 2]);
-    expect(store.getSnapshot().report?.summary.state).toBe("finished");
-    expect(displayOf(store.getSnapshot())).toBe("finished");
+    // The plan's ids are the ones the rows were drawn with.
+    expect(server.entries.get(0)?.documentId).toBe(rows.find((row) => row.name === "Ch 1")?.id);
+    coordinator.dispose();
   });
 
   it("fails one file alone, shows needs-attention, and Retry lands it", async () => {
@@ -124,7 +139,7 @@ describe("ImportCoordinator.stop", () => {
     const importId = coordinator.start(vault(), destination);
     expect(await coordinator.stop(importId)).toBe("nothing-sent");
     expect(server.calls.finish).toBe(0);
-    expect(coordinator.store(importId).getSnapshot().local?.rows).toEqual([]);
+    expect(coordinator.view(importId)).toBeNull();
   });
 
   it("finishes with what landed and says Couldn't stop when the finish fails", async () => {
@@ -142,26 +157,6 @@ describe("ImportCoordinator.stop", () => {
     expect(await coordinator.stop(importId)).toBe("stopped");
     expect(displayOf(store.getSnapshot())).toBe("finished");
     expect(store.getSnapshot().report?.summary.counts.notImported).toBe(1);
-  });
-});
-
-describe("a clean finish", () => {
-  it("is dismissed for the writer only once the catalog has drawn every row it held", async () => {
-    const server = fakeImportServer();
-    const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
-    const store = await settled(coordinator, importId);
-    for (let tick = 0; tick < 200 && displayOf(store.getSnapshot()) !== "finished"; tick += 1)
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(displayOf(store.getSnapshot())).toBe("finished");
-    expect(server.calls.dismiss).toBe(0);
-
-    const keys = store.getSnapshot().local?.rows.map((row) => row.key) ?? [];
-    coordinator.handOff(importId, keys);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(server.calls.dismiss).toBe(1);
-    coordinator.dispose();
   });
 });
 
@@ -246,16 +241,13 @@ describe("ImportCoordinator.stop before anything was sent", () => {
     };
     const coordinator = new ImportCoordinator("p", server.api);
     const importId = coordinator.start(vault(), destination);
-    expect(coordinator.getSnapshot().ids).toContain(importId);
+    expect(coordinator.view(importId)).not.toBeNull();
 
     expect(await coordinator.stop(importId)).toBe("nothing-sent");
 
-    const store = coordinator.store(importId);
-    expect(coordinator.getSnapshot().ids).not.toContain(importId);
-    expect(displayOf(store.getSnapshot())).toBe("finished");
-    const stopWatching = store.watch("report");
-    await store.refresh();
-    stopWatching();
+    expect(coordinator.view(importId)).toBeNull();
+    expect(coordinator.getSnapshot().imports).toEqual([]);
+    await coordinator.refreshOpen();
     expect(reads).toBe(0);
     coordinator.dispose();
   });
@@ -299,9 +291,7 @@ describe("ImportCoordinator.stop while files are still being read", () => {
     expect(digest).toHaveBeenCalled();
     digest.mockRestore();
     expect(server.calls.plan).toBe(0);
-    const state = coordinator.store(importId).getSnapshot();
-    expect(state.local?.phase.kind).toBe("idle");
-    expect(displayOf(state)).toBe("finished");
+    expect(coordinator.view(importId)).toBeNull();
     coordinator.dispose();
   });
 });
@@ -389,6 +379,308 @@ describe("ImportCoordinator.continueImport", () => {
     await settled(coordinator, "crashed");
 
     expect(server.calls.send.flat().sort()).toEqual([lapsed, 2].sort());
+    coordinator.dispose();
+  });
+});
+
+function fakeClock(): Clock & { advance(ms: number): void } {
+  let current = 0;
+  let next = 0;
+  const timers = new Map<number, { at: number; run: () => void }>();
+  return {
+    now: () => current,
+    setTimeout: (run, ms) => {
+      timers.set(++next, { at: current + ms, run });
+      return next;
+    },
+    clearTimeout: (handle) => void timers.delete(handle as number),
+    advance(ms) {
+      const target = current + ms;
+      for (;;) {
+        const due = [...timers]
+          .filter(([, timer]) => timer.at <= target)
+          .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        current = due[1].at;
+        due[1].run();
+      }
+      current = target;
+    },
+  };
+}
+
+/** The catalog as the coordinator sees it: ids it holds now, and a way to say it changed. */
+function fakeCatalog(): CatalogReader & {
+  hold(...ids: string[]): void;
+  drop(...ids: string[]): void;
+} {
+  const held = new Set<string>();
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
+  return {
+    holds: (id) => held.has(id),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    hold: (...ids) => {
+      for (const id of ids) held.add(id);
+      notify();
+    },
+    drop: (...ids) => {
+      for (const id of ids) held.delete(id);
+      notify();
+    },
+  };
+}
+
+function binary(entryId: number, state: ImportEntryStatus["state"]): ImportEntryStatus {
+  return {
+    entryId,
+    rootId: 0,
+    path: `m${entryId}.png`,
+    filename: `m${entryId}.png`,
+    size: 1,
+    sha256: "a".repeat(64),
+    documentId: `m${entryId}`,
+    kind: "binary",
+    state,
+    uri: null,
+    parentId: "art",
+    scheme: "kb",
+    name: `m${entryId}`,
+    extension: "png",
+    reason: state === "failed" ? "upload_failed" : null,
+    exists: true,
+    wanted: state === "planned" || state === "failed",
+  };
+}
+
+/** A status another tab's import has on the server: folder `art` and the given images. */
+function elsewhere(
+  importId: string,
+  version: number,
+  entries: ImportEntryStatus[],
+  state: ImportStatus["state"] = "ready",
+): ImportStatus {
+  const arriving = entries.filter((e) => e.state === "planned" || e.state === "landing").length;
+  return {
+    importId,
+    state,
+    destination: { folderUri: "kb://", folderId: null },
+    counts: {
+      total: entries.length,
+      landed: entries.filter((e) => e.state === "landed").length,
+      failed: entries.filter((e) => e.state === "failed").length,
+      arriving,
+      deleted: 0,
+      notImported: 0,
+      skipped: 0,
+    },
+    lastActivityAt: "2000-01-01T00:00:00.000Z",
+    version: String(version),
+    dismissedAt: null,
+    roots: [{ rootId: 0, kind: "folder", name: "Art", id: "art", uri: null }],
+    folders: [{ id: "art", parentId: null, scheme: "kb", name: "Art", state: "landed" }],
+    entries,
+  };
+}
+
+/** A coordinator over a server whose open list and statuses the test scripts. */
+function scripted() {
+  const server = fakeImportServer();
+  const world = {
+    list: [] as ImportSummary[],
+    statuses: new Map<string, ImportStatus | "gone">(),
+  };
+  const read = async (_p: string, id: string) => {
+    const status = world.statuses.get(id);
+    if (!status || status === "gone")
+      throw new ImportRequestError(404, "import_not_found", undefined, "missing");
+    return status;
+  };
+  server.api.listOpen = async () => world.list;
+  server.api.status = read;
+  server.api.changes = read;
+  const catalog = fakeCatalog();
+  const clock = fakeClock();
+  const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
+  /** Make the server say `status` and let this tab take it in. */
+  const publish = async (status: ImportStatus) => {
+    world.statuses.set(status.importId, status);
+    world.list = status.state === "finished" ? [] : [status];
+    await coordinator.refreshOpen();
+    await coordinator.read(status.importId);
+  };
+  return { server, world, catalog, clock, coordinator, publish };
+}
+
+describe("ImportCoordinator acquisition", () => {
+  it("5: after a reload reads failures and indexes documents with no surface mounted", async () => {
+    const { coordinator, publish } = scripted();
+    await publish(elsewhere("imp", 1, [binary(0, "landing"), binary(1, "failed")]));
+
+    const view = coordinator.view("imp");
+    expect(view?.state.report?.entries.get(1)?.state).toBe("failed");
+    expect(coordinator.getSnapshot().documents.get("m1")).toEqual({ importId: "imp", entryId: 1 });
+    coordinator.dispose();
+  });
+
+  it("14: reads by id an import that left the list, and retires it once finished or gone", async () => {
+    const { coordinator, publish, world } = scripted();
+    await publish(elsewhere("imp", 1, [binary(0, "planned")]));
+    world.statuses.set("imp", elsewhere("imp", 2, [binary(0, "not_imported")], "finished"));
+    world.list = [];
+
+    await coordinator.refreshOpen();
+    await coordinator.read("imp");
+    expect(coordinator.view("imp")).toBeNull();
+
+    await publish(elsewhere("two", 1, [binary(0, "planned")]));
+    world.statuses.set("two", "gone");
+    world.list = [];
+    await coordinator.refreshOpen();
+    await coordinator.read("two", true);
+    expect(coordinator.view("two")).toBeNull();
+    coordinator.dispose();
+  });
+
+  it("stops throttling the tree once a big finished import retires", async () => {
+    const { coordinator, publish, world, catalog } = scripted();
+    const many = Array.from({ length: 600 }, (_, index) => binary(index, "planned"));
+    await publish(elsewhere("big", 1, many));
+    const small = elsewhere("small", 1, [binary(1000, "planned")]);
+    world.statuses.set("small", small);
+    world.list = [elsewhere("big", 1, many), small];
+    await coordinator.refreshOpen();
+    await coordinator.read("small");
+    // The big import holds the tree back, so the small one is not drawn yet.
+    expect(coordinator.getSnapshot().imports.map((item) => item.importId)).toEqual(["big"]);
+
+    catalog.hold("art", ...many.map((entry) => entry.documentId));
+    world.statuses.set(
+      "big",
+      elsewhere(
+        "big",
+        2,
+        many.map((e) => ({ ...e, state: "landed" as const })),
+        "finished",
+      ),
+    );
+    world.list = [small];
+    await coordinator.refreshOpen();
+    await coordinator.read("big", true);
+    expect(coordinator.getSnapshot().imports.map((item) => item.importId)).toEqual(["small"]);
+    coordinator.dispose();
+  });
+});
+
+describe("ImportCoordinator seen ids and bridges", () => {
+  it("4: bridges a drawn image that lands, then retires when the bridge closes", async () => {
+    const { coordinator, publish, catalog, clock } = scripted();
+    catalog.hold("art");
+    await publish(elsewhere("imp", 1, [binary(0, "planned")]));
+    await publish(elsewhere("imp", 2, [binary(0, "landed")], "finished"));
+
+    // Never seen in this catalog: kept drawn for the bridge, not forever.
+    expect([...(coordinator.view("imp")?.bridges ?? [])]).toEqual(["m0"]);
+    clock.advance(29_000);
+    expect(coordinator.view("imp")).not.toBeNull();
+    clock.advance(2000);
+    expect(coordinator.view("imp")).toBeNull();
+    coordinator.dispose();
+  });
+
+  it("13: retires at once when the catalog showed everything first and never moves again", async () => {
+    const { coordinator, publish, catalog } = scripted();
+    catalog.hold("art", "m0");
+    await publish(elsewhere("imp", 1, [binary(0, "planned")]));
+    await publish(elsewhere("imp", 2, [binary(0, "landed")], "finished"));
+
+    expect(coordinator.view("imp")).toBeNull();
+    coordinator.dispose();
+  });
+
+  it("13: keeps landed rows drawn until the catalog catches up, then retires", async () => {
+    const { coordinator, publish, catalog } = scripted();
+    await publish(elsewhere("imp", 1, [binary(0, "planned")]));
+    await publish(elsewhere("imp", 2, [binary(0, "landed")], "finished"));
+    expect(coordinator.view("imp")?.bridges.has("m0")).toBe(true);
+
+    catalog.hold("m0");
+    expect(coordinator.view("imp")).toBeNull();
+    coordinator.dispose();
+  });
+
+  it("3: never redraws a row the catalog created and lost before the plan answered", async () => {
+    const server = fakeImportServer();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const plan = server.api.plan;
+    server.api.plan = async (...args) => {
+      await gate;
+      return plan(...args);
+    };
+    const catalog = fakeCatalog();
+    const clock = fakeClock();
+    const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
+    const importId = coordinator.start(vault(), destination);
+    const store = coordinator.store(importId);
+    await until(() => (store.getSnapshot().local?.manifest ?? null) !== null);
+    const rows = store.getSnapshot().local?.rows ?? [];
+    const root = rows.find((row) => row.name === "vault")?.id as string;
+    const chapter = rows.find((row) => row.name === "Ch 1")?.id as string;
+
+    // Created, then deleted, all before the plan answers.
+    catalog.hold(root, chapter);
+    catalog.drop(root, chapter);
+    release();
+    await settled(coordinator, importId);
+
+    const view = coordinator.view(importId);
+    expect(view?.seen.has(root)).toBe(true);
+    expect(view?.bridges.has(root)).toBe(false);
+    expect(view?.bridges.has(chapter)).toBe(false);
+    const empty = {
+      normalized: { entries: new Map() },
+      root: { kind: "dir", entryId: "root", parentId: null, name: "KB", path: "/", uri: "" },
+      children: () => [],
+      findDocument: () => null,
+    } as never;
+    const names = withImportRows(empty, "kb", view ? [view] : [])
+      .children("root")
+      .map((node) => node.name);
+    expect(names).not.toContain("vault");
+
+    // The other rows are bridged until their bridges close; then the finished run retires.
+    expect(view?.bridges.size).toBeGreaterThan(0);
+    clock.advance(31_000);
+    expect(coordinator.view(importId)).toBeNull();
+    coordinator.dispose();
+  });
+
+  it("2: bridges the rows it drew when the plan answers before the catalog, until each is seen", async () => {
+    const server = fakeImportServer();
+    const catalog = fakeCatalog();
+    const clock = fakeClock();
+    const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
+    const importId = coordinator.start(vault(), destination);
+    const store = await settled(coordinator, importId);
+    const rows = store.getSnapshot().local?.rows ?? [];
+    const plan = [...(store.getSnapshot().report?.folders.keys() ?? [])];
+    const view = () => coordinator.view(importId);
+    expect(rows).toEqual([]);
+    expect(plan.length).toBeGreaterThan(0);
+    expect(view()?.bridges.size).toBeGreaterThan(0);
+
+    const bridged = [...(view()?.bridges ?? [])];
+    catalog.hold(...bridged);
+    expect(coordinator.view(importId)).toBeNull();
     coordinator.dispose();
   });
 });

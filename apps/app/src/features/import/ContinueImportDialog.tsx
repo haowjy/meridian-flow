@@ -83,8 +83,8 @@ export function ContinueImportDialog({
   );
   // The check needs every entry; read them as soon as the dialog opens.
   useEffect(() => {
-    if (!fullyRead(store.getSnapshot().report)) void store.refresh(true);
-  }, [store]);
+    if (!fullyRead(store.getSnapshot().report)) void coordinator.read(importId, true);
+  }, [store, coordinator, importId]);
 
   // A new selection is checked as soon as it has been read.
   useEffect(() => {
@@ -97,7 +97,7 @@ export function ContinueImportDialog({
     (async () => {
       try {
         // Fresh, whole: what the server wants now decides what Continue sends.
-        await store.refresh(true);
+        await coordinator.read(importId, true);
         const report = store.getSnapshot().report;
         if (!fullyRead(report)) throw new Error("report");
         const stored = { roots: report.roots, entries: [...report.entries.values()] };
@@ -123,7 +123,7 @@ export function ContinueImportDialog({
       }
     })();
     return () => control.abort();
-  }, [reader.state, store, importId, attempt]);
+  }, [reader.state, store, coordinator, importId, attempt]);
 
   const send = () => {
     if (step.kind !== "match") return;

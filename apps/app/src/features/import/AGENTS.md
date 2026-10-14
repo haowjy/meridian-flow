@@ -8,25 +8,36 @@ target. A selection that cannot start (empty, over a limit) is the only thing
 that stops to say why (`selection-limits.ts`). What an import admits (limits, omitted vs skipped paths)
 and the export marker parser come from `@meridian/contracts`; `limits.ts` holds
 only browser scheduling. There is no report page, route or
-status row; a clean finish leaves nothing and is dismissed for the writer once
-the catalog draws every row the tab held. A failed file keeps its row warning and
+status row; a clean finish leaves nothing: the coordinator retires the import
+once its bridges close. A failed file keeps its row warning and
 its in-document notice (`ImportDocumentNotice.tsx`) with Retry. No surface yet
 shows a running or interrupted import; the owner is deciding a single global
-import panel, which will read `ImportStore` and `display-state.ts` as they are.
+import panel, which will read `coordinator.view` and `display-state.ts` as they are.
 `StopImportDialog` waits for it. The server (`apps/server/server/domains/import`) owns
 planning, allocation, conversion and landing; this feature owns what the browser
 can do about it.
 
-- **Navigate first.** `ImportCoordinator.start` mints the id, draws the rows and
-  returns at once. Hashing, the plan and the uploads run in the background; a
-  failure is shown on the import, never by going back.
+- **Navigate first.** `ImportCoordinator.start` mints the id and returns at once.
+  Row ids, hashing, the plan and the uploads run in the background; a failure is
+  shown on the import, never by going back.
+- **One coordinator owns import state; surfaces only read.** It owns acquisition
+  (the open-list poll, one full read, `?since=` cuts, a by-id read when an import
+  leaves the list), the per-import set of node ids the catalog has held (`seen`,
+  filled from its own subscription to the narrow `CatalogReader` the provider
+  injects), the 30-second bridges that cover a row the tab drew until the catalog
+  shows it, the `documentId` index, and the retirement of every store (finished or
+  gone, no command in flight, no bridge open). No surface has to be mounted for a
+  failure to show or a run to end.
+- **Node ids are shared.** `importNodeId` (contracts) gives predicted rows
+  (`client-rows.ts`) the ids the server's plan gives the same nodes, so rows,
+  seen ids and expansion join by id from pick to landing.
 - **Pending rows are a projection**, not resource-replica intents.
-  `tree-projection.ts` layers an import's rows over a catalog view: rows the
-  server has not made yet come from the importing tab's selection, real rows gain
-  "arriving" and "failed" marks. The server is the only writer of these documents.
-- **One store per import** (`ImportStore`): the full read, `?since=` cuts and this
-  tab's own upload answers merge into one report; every surface reads it.
-  Polling runs only while something watches.
+  `tree-projection.ts` is a pure function of a catalog view and the coordinator
+  snapshot, following six rules (catalog row, seen, predicted, unlanded overlay,
+  bridge, nothing). It never writes back.
+- **One store per import** (`ImportStore`) is a passive cache: the full read,
+  `?since=` cuts and this tab's own upload answers merge into one report. It never
+  reads or polls.
 - **One display state** (`display-state.ts`) for every surface. Counts come from
   `effectiveCounts`: a file whose send failed here is failed, though the server
   still thinks it is planned.

@@ -6,6 +6,7 @@
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { IMPORT_SCHEMES } from "@meridian/contracts";
 import {
   createContext,
   type ReactNode,
@@ -17,6 +18,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { announce } from "@/client/stores/thread-store/announcements";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +33,8 @@ import {
 import type { DroppedItems } from "@/lib/dropped-items";
 import { ContinueImportDialog } from "./ContinueImportDialog";
 import type { ImportDestination } from "./destination";
-import { ImportCoordinator, type ImportsSnapshot } from "./import-coordinator";
+import { importApi } from "./import-api-port";
+import { type CatalogReader, ImportCoordinator, type ImportsSnapshot } from "./import-coordinator";
 import { readDropped } from "./read-dropped";
 import { readPicked } from "./read-picked";
 import { PickInputs } from "./SelectionPicker";
@@ -73,7 +76,11 @@ export function ImportProvider({
   projectId: string;
   children: ReactNode;
 }) {
-  const coordinator = useMemo(() => new ImportCoordinator(projectId), [projectId]);
+  const catalog = useCatalogReader(projectId);
+  const coordinator = useMemo(
+    () => new ImportCoordinator(projectId, importApi, catalog),
+    [projectId, catalog],
+  );
   const [request, setRequest] = useState<DialogRequest | null>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const filesInput = useRef<HTMLInputElement>(null);
@@ -188,6 +195,40 @@ function RefusedDialog({ message, onClose }: { message: string; onClose: () => v
   );
 }
 
+/**
+ * What the project's catalogs hold, for the coordinator: whether a node id is in
+ * any import area now, and a notification when the views change. The reader is
+ * stable for the project; the views it reads move.
+ */
+function useCatalogReader(projectId: string): CatalogReader {
+  const views = useContextCatalogViews(projectId, IMPORT_SCHEMES, {});
+  const latest = useRef(views);
+  const listeners = useRef(new Set<() => void>());
+  const reader = useMemo<CatalogReader>(
+    () => ({
+      holds: (id) =>
+        IMPORT_SCHEMES.some((scheme) => {
+          const catalog = latest.current[scheme]?.catalog;
+          return (
+            catalog != null &&
+            (catalog.findDocument(id) !== null ||
+              catalog.normalized.entries.get(id)?.kind === "folder")
+          );
+        }),
+      subscribe: (listener) => {
+        listeners.current.add(listener);
+        return () => listeners.current.delete(listener);
+      },
+    }),
+    [],
+  );
+  useEffect(() => {
+    latest.current = views;
+    for (const listener of [...listeners.current]) listener();
+  }, [views]);
+  return reader;
+}
+
 /** The imports to show rows for, newest first, with their current state. */
 export function useImportsSnapshot(coordinator: ImportCoordinator | null): ImportsSnapshot {
   return useSyncExternalStore(
@@ -197,6 +238,6 @@ export function useImportsSnapshot(coordinator: ImportCoordinator | null): Impor
   );
 }
 
-const EMPTY: ImportsSnapshot = { ids: [], states: [] };
+const EMPTY: ImportsSnapshot = { imports: [], documents: new Map() };
 const emptySnapshot = () => EMPTY;
 const noSubscribe = () => () => {};

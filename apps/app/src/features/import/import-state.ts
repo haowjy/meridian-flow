@@ -3,6 +3,7 @@ import type {
   ImportCounts,
   ImportEntryStatus,
   ImportFailureReason,
+  ImportFolderStatus,
   ImportManifest,
   ImportStatus,
   ImportSummary,
@@ -19,15 +20,8 @@ export type LocalRun = {
   phase: LocalPhase;
   destination: ImportDestination;
   roots: readonly ImportRootMeta[];
+  /** Predicted rows, drawn until the plan answers. */
   rows: readonly ClientRow[];
-  /**
-   * Keys of rows the tree has handed to the catalog (or that will never come).
-   * Kept, not recomputed: a handed-off row the writer later moves or deletes must
-   * not come back as an arriving row.
-   */
-  handedOff: ReadonlySet<string>;
-  /** Entries in the manifest. Known before the server answers. */
-  total: number;
   /** Null once this tab no longer holds the files (stopped, finished or gone). */
   held: ReadonlyMap<number, HeldFile> | null;
   /** The manifest this tab sent, for matching a later selection. */
@@ -41,6 +35,8 @@ export type LocalRun = {
 export type ReportData = {
   summary: ImportSummary;
   roots: ImportStatus["roots"];
+  /** The plan's folders, by id. */
+  folders: ReadonlyMap<string, ImportFolderStatus>;
   entries: ReadonlyMap<number, ImportEntryStatus>;
   /**
    * The version through which every entry change has been read: a full read, then
@@ -69,13 +65,6 @@ export type ImportState = {
   report: ReportData | null;
   local: LocalRun | null;
   stop: StopCommand;
-  /** First load of a full report. */
-  load: "idle" | "loading" | "error" | "missing";
-  /** A later refresh failed; what is shown is the last good read. */
-  refreshFailed: boolean;
-  /** Stop here was chosen and the finish answer is still pending. */
-  dismissing: boolean;
-  dismissFailed: boolean;
   /** Local clock when the server's `lastActivityAt` last changed in front of this tab. */
   activitySeenAt: number | null;
 };

@@ -1,4 +1,5 @@
-import type { ImportEntryStatus, ImportSummary } from "@meridian/contracts";
+/** The projection rules, keyed by node id: pure inputs, no coordinator. */
+import type { ImportEntryStatus, ImportFolderStatus, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import type {
   CatalogContextView,
@@ -6,331 +7,298 @@ import type {
   CatalogFile,
   CatalogNode,
 } from "@/client/query/context-catalog-projection";
-import { clientRowsFor } from "./client-rows";
-import type { ImportDestination } from "./destination";
+import type { ClientRow } from "./client-rows";
 import type { ImportState } from "./import-state";
-import type { Selection } from "./selection";
-import { withImportRows } from "./tree-projection";
+import { type ProjectedImport, withImportRows } from "./tree-projection";
 
-const destination: ImportDestination = {
-  scheme: "kb",
-  path: "/",
-  uri: "kb://",
-  name: "Knowledge Base",
-  folderId: null,
-};
+type Tree =
+  | { dir: string; name: string; kids: Tree[] }
+  | { doc: string; name: string; pending?: true };
+const dir = (id: string, name: string, kids: Tree[] = []): Tree => ({ dir: id, name, kids });
+const doc = (id: string, name: string, pending = false): Tree =>
+  pending ? { doc: id, name, pending: true } : { doc: id, name };
 
-function file(path: string, documentId: string, importPending = false): CatalogFile {
-  return {
-    kind: "file",
-    entryId: documentId,
-    parentId: "root",
-    documentId,
-    name: path.split("/").at(-1) ?? path,
-    path,
-    uri: `kb:/${path}`,
-    provisionalName: false,
-    hasProperties: false,
-    importPending,
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
+/** A catalog of nested folders and documents, as the tree would see it. */
+function catalogOf(...top: Tree[]): CatalogContextView {
+  const children = new Map<string, CatalogNode[]>();
+  const nodes = new Map<string, CatalogNode>();
+  const build = (parentId: string, items: Tree[]) => {
+    children.set(
+      parentId,
+      items.map((item): CatalogNode => {
+        if ("dir" in item) {
+          const node: CatalogDirectory = {
+            kind: "dir",
+            entryId: item.dir,
+            parentId,
+            name: item.name,
+            path: `/${item.name}`,
+            uri: "",
+          };
+          nodes.set(item.dir, node);
+          build(item.dir, item.kids);
+          return node;
+        }
+        const node: CatalogFile = {
+          kind: "file",
+          entryId: item.doc,
+          parentId,
+          documentId: item.doc,
+          name: item.name,
+          path: `/${item.name}`,
+          uri: "",
+          provisionalName: false,
+          hasProperties: false,
+          importPending: item.pending,
+          editable: true,
+          filetype: "markdown",
+          schemaType: "document",
+        };
+        nodes.set(item.doc, node);
+        return node;
+      }),
+    );
   };
-}
-
-/** A flat catalog: the root's children are given; folders carry their own. */
-function catalogOf(
-  root: CatalogNode[],
-  folders: Record<string, CatalogNode[]> = {},
-  folderEntries: Record<string, string[]> = {},
-): CatalogContextView {
-  const rootDir: CatalogDirectory = {
-    kind: "dir",
-    entryId: "root",
-    parentId: null,
-    name: "Knowledge Base",
-    path: "/",
-    uri: "kb://",
-  };
+  build("root", top);
   return {
     normalized: {
       entries: new Map(
-        Object.entries(folderEntries).map(([id, path]) => [id, { kind: "folder", path }]),
+        [...nodes].map(([id, node]) => [id, { kind: node.kind === "dir" ? "folder" : "file" }]),
       ),
     } as never,
-    root: rootDir,
-    children: (parentId) => (parentId === "root" ? root : (folders[parentId] ?? [])),
+    root: { kind: "dir", entryId: "root", parentId: null, name: "KB", path: "/", uri: "kb://" },
+    children: (parentId) => children.get(parentId) ?? [],
     files: () => [],
     findPath: () => null,
-    findDocument: () => null,
+    findDocument: (id) => {
+      const node = nodes.get(id);
+      return node?.kind === "file" ? node : null;
+    },
   };
 }
 
-const selection: Selection = {
-  leftOut: [],
-  roots: [
-    {
-      rootId: 0,
-      kind: "folder",
-      name: "vault",
-      files: [
-        { path: "Ch 1.md", file: new File(["a"], "Ch 1.md") },
-        { path: "Lore/Sects.md", file: new File(["b"], "Sects.md") },
-        { path: "map.png", file: new File(["c"], "map.png") },
-      ],
-      folders: ["Empty"],
-      unreadable: [],
-    },
-  ],
-};
-
-function stateWith(report?: { entries: ImportEntryStatus[]; rootUri: string }): ImportState {
-  const rows = clientRowsFor(selection, destination, (_rootId, path) =>
-    path === "Ch 1.md" ? 0 : path === "Lore/Sects.md" ? 1 : path === "map.png" ? 2 : undefined,
-  );
-  const summary = { importId: "i", state: "ready" } as ImportSummary;
-  return {
-    importId: "i",
-    report: report
-      ? {
-          summary,
-          roots: [{ rootId: 0, kind: "folder", name: "vault", id: "f", uri: report.rootUri }],
-          entries: new Map(report.entries.map((e) => [e.entryId, e])),
-          cursor: "1",
-        }
-      : null,
-    local: {
-      phase: { kind: "uploading" },
-      destination,
-      roots: [{ rootId: 0, kind: "folder", name: "vault" }],
-      rows,
-      handedOff: new Set(),
-      total: 3,
-      held: new Map(),
-      manifest: null,
-      failures: new Map(),
-      retrying: new Set(),
-    },
-    load: "idle",
-    refreshFailed: false,
-    dismissing: false,
-    dismissFailed: false,
-    activitySeenAt: null,
-    stop: "none",
-  };
+/** The drawn tree as text: `~` arriving, `!` failed, `*` drawn by the importing tab alone. */
+function drawn(view: CatalogContextView, parentId = "root", depth = 0): string[] {
+  return view.children(parentId).flatMap((node) => {
+    const mark = `${node.import?.client ? "*" : ""}${node.import?.arriving ? "~" : ""}${node.import?.failure ? "!" : ""}`;
+    const line = `${"  ".repeat(depth)}${node.name}${mark}`;
+    return node.kind === "dir" ? [line, ...drawn(view, node.entryId, depth + 1)] : [line];
+  });
 }
 
+const summary = { importId: "i", state: "ready" } as ImportSummary;
+const row = (
+  id: string,
+  parentId: string | null,
+  kind: "dir" | "file",
+  name: string,
+): ClientRow => ({
+  id,
+  parentId,
+  kind,
+  name,
+  scheme: "kb",
+  rootId: 0,
+  relPath: "",
+});
+const folder = (id: string, parentId: string | null, name: string): ImportFolderStatus => ({
+  id,
+  parentId,
+  scheme: "kb",
+  name,
+  state: "landed",
+});
 const entry = (
   entryId: number,
-  path: string,
-  state: ImportEntryStatus["state"],
-  uri: string,
-  documentId = `d${entryId}`,
+  id: string,
+  parentId: string | null,
+  patch: Partial<ImportEntryStatus> = {},
 ): ImportEntryStatus => ({
   entryId,
   rootId: 0,
-  path,
-  filename: path.split("/").at(-1) ?? path,
+  path: "",
+  filename: "",
   size: 1,
-  sha256: "x",
-  documentId,
-  kind: "note",
-  state,
-  uri,
-  name: path,
+  sha256: "",
+  documentId: id,
+  kind: "binary",
+  state: "planned",
+  uri: null,
+  parentId,
+  scheme: "kb",
+  name: `map${entryId}`,
+  extension: "png",
   reason: null,
   exists: true,
-  parentId: null,
-  scheme: "kb",
-  extension: "",
-  wanted: false,
+  wanted: true,
+  ...patch,
 });
 
+function importOf(parts: {
+  rows?: ClientRow[];
+  accepted?: { folders?: ImportFolderStatus[]; entries?: ImportEntryStatus[] };
+  held?: boolean;
+  seen?: string[];
+  bridges?: string[];
+}): ProjectedImport {
+  const state: ImportState = {
+    importId: "i",
+    report: parts.accepted
+      ? {
+          summary,
+          roots: [],
+          folders: new Map((parts.accepted.folders ?? []).map((f) => [f.id, f])),
+          entries: new Map((parts.accepted.entries ?? []).map((e) => [e.entryId, e])),
+          cursor: "1",
+        }
+      : null,
+    local:
+      parts.rows || parts.held
+        ? {
+            phase: { kind: "uploading" },
+            destination: { scheme: "kb", path: "/", uri: "kb://", name: "KB", folderId: null },
+            roots: [],
+            rows: parts.rows ?? [],
+            held: parts.held ? new Map() : null,
+            manifest: null,
+            failures: new Map(),
+            retrying: new Set(),
+          }
+        : null,
+    stop: "none",
+    activitySeenAt: null,
+  };
+  return {
+    importId: "i",
+    state,
+    seen: new Set(parts.seen),
+    bridges: new Set(parts.bridges),
+  };
+}
+
+const project = (catalog: CatalogContextView, ...imports: ProjectedImport[]) =>
+  drawn(withImportRows(catalog, "kb", imports));
+
 describe("withImportRows", () => {
-  it("draws every selected row among the folder's existing children before the plan answers", () => {
-    const existing = file("/Sects", "existing");
-    const view = withImportRows(catalogOf([existing]), "kb", [stateWith()]).view;
-    const top = view.children("root");
-    expect(top.map((n) => n.name)).toEqual(["vault", "Sects"]);
-    expect(top[0].kind === "dir" && top[0].import?.client).toBe(true);
-    const inside = view.children(top[0].entryId);
-    expect(inside.map((n) => [n.kind, n.name])).toEqual([
-      ["dir", "Empty"],
-      ["dir", "Lore"],
-      ["file", "Ch 1"],
-      ["file", "map.png"],
-    ]);
-    const lore = inside.find((n) => n.name === "Lore") as CatalogNode;
-    expect(view.children(lore.entryId).map((n) => n.name)).toEqual(["Sects"]);
+  const predicted = [
+    row("book", null, "dir", "Book"),
+    row("sub", "book", "dir", "Lore"),
+    row("ch", "sub", "file", "Ch 1"),
+  ];
+
+  it("1: shows the catalog's counted-up root once and attaches predicted children under it", () => {
+    const before = project(catalogOf(), importOf({ rows: predicted }));
+    expect(before).toEqual(["Book*~", "  Lore*~", "    Ch 1*~"]);
+
+    // The chunk publishes the root as "Book (2)": same id, so no second "Book".
+    const after = project(catalogOf(dir("book", "Book (2)")), importOf({ rows: predicted }));
+    expect(after).toEqual(["Book (2)~", "  Lore*~", "    Ch 1*~"]);
   });
 
-  it("takes the plan's names, hides rows the catalog now holds and keeps unlanded binaries muted", () => {
-    const real = catalogOf(
-      [
-        {
-          kind: "dir",
-          entryId: "f",
-          parentId: "root",
-          name: "vault (2)",
-          path: "/vault (2)",
-          uri: "kb://vault (2)/",
-        },
-      ],
-      {
-        f: [
-          file("/vault (2)/Ch 1", "d0", true),
-          {
-            kind: "dir",
-            entryId: "lore",
-            parentId: "f",
-            name: "Lore",
-            path: "/vault (2)/Lore",
-            uri: "",
-          },
-        ],
-        lore: [file("/vault (2)/Lore/Sects", "d1")],
-      },
-      { f: ["vault (2)"], lore: ["vault (2)", "Lore"] },
-    );
-    const { view } = withImportRows(real, "kb", [
-      stateWith({
-        rootUri: "kb://vault (2)/",
-        entries: [
-          entry(0, "Ch 1.md", "planned", "kb://vault (2)/Ch 1"),
-          entry(1, "Lore/Sects.md", "landed", "kb://vault (2)/Lore/Sects"),
-          { ...entry(2, "map.png", "planned", "kb://vault (2)/map.png"), kind: "binary" },
-        ],
-      }),
-    ]);
-    const top = view.children("root");
-    expect(top).toHaveLength(1);
-    expect(top[0].import?.arriving).toBe(true);
-    const inside = view.children("f");
-    expect(
-      inside.map((n) => [n.name, Boolean(n.import?.client), Boolean(n.import?.arriving)]),
-    ).toEqual([
-      ["Empty", true, true],
-      ["Lore", false, false],
-      ["Ch 1", false, true],
-      ["map.png", true, true],
-    ]);
-  });
-
-  it("marks a failed file and offers Retry only while this tab holds it", () => {
-    const real = catalogOf([file("/Ch 1", "d0", false)]);
-    const base = stateWith({
-      rootUri: "kb://vault/",
-      entries: [entry(0, "Ch 1.md", "failed", "kb://Ch 1")],
-    });
-    const { view } = withImportRows(real, "kb", [base]);
-    const failed = view.children("root").find((n) => n.name === "Ch 1");
-    expect(failed?.import?.failure).toMatchObject({ entryId: 0, canRetry: true });
-  });
-
-  describe("after the import finishes", () => {
-    const finishedWith = (entries: ImportEntryStatus[]): ImportState => {
-      const state = stateWith({ rootUri: "kb://vault/", entries });
-      return {
-        ...state,
-        report: state.report && {
-          ...state.report,
-          summary: { ...state.report.summary, state: "finished" },
-        },
-      };
+  it("2: keeps an accepted plan-time row only while its bridge is open", () => {
+    const accepted = {
+      folders: [folder("book", null, "Book")],
+      entries: [entry(0, "ch", "book", { kind: "note", name: "Ch 1", extension: "md" })],
     };
-    const landed = finishedWith([
-      entry(0, "Ch 1.md", "landed", "kb://vault/Ch 1"),
-      entry(1, "Lore/Sects.md", "landed", "kb://vault/Lore/Sects"),
-      { ...entry(2, "map.png", "landed", "kb://vault/map.png"), kind: "binary" },
+    expect(project(catalogOf(), importOf({ accepted, bridges: ["book", "ch"] }))).toEqual([
+      "Book*~",
+      "  Ch 1*~",
     ]);
-    const vault = (children: CatalogNode[], lore?: CatalogNode[]) =>
-      catalogOf(
-        [{ kind: "dir", entryId: "f", parentId: "root", name: "vault", path: "/vault", uri: "" }],
-        {
-          f: [
-            ...(lore
-              ? [
-                  {
-                    kind: "dir" as const,
-                    entryId: "lore",
-                    parentId: "f",
-                    name: "Lore",
-                    path: "/vault/Lore",
-                    uri: "",
-                  },
-                ]
-              : []),
-            ...children,
-          ],
-          lore: lore ?? [],
-        },
-        { f: ["vault"], lore: ["vault", "Lore"] },
-      );
-    const drawn = (view: CatalogContextView, parentId = "root"): string[] =>
-      view
-        .children(parentId)
-        .flatMap((node) => [
-          `${node.import?.client ? "client" : "real"} ${node.path}`,
-          ...(node.kind === "dir" ? drawn(view, node.entryId) : []),
-        ]);
+    // No bridge: this tab never drew them, so a late tab does not invent them.
+    expect(project(catalogOf(), importOf({ accepted }))).toEqual([]);
+    // The catalog caught up: its row, marked arriving while the text has not landed.
+    expect(
+      project(
+        catalogOf(dir("book", "Book", [doc("ch", "Ch 1", true)])),
+        importOf({ accepted, seen: ["book", "ch"] }),
+      ),
+    ).toEqual(["Book~", "  Ch 1~"]);
+  });
 
-    it("keeps every row while this browser's catalog has none of them", () => {
-      const { view, handedOff } = withImportRows(catalogOf([]), "kb", [landed]);
-      expect(drawn(view)).toEqual([
-        "client /vault",
-        "client /vault/Empty",
-        "client /vault/Lore",
-        "client /vault/Lore/Sects",
-        "client /vault/Ch 1",
-        "client /vault/map.png",
-      ]);
-      expect(handedOff.size).toBe(0);
-    });
+  it("3: never redraws an id the catalog held, whichever of status and catalog came first", () => {
+    const accepted = {
+      folders: [folder("book", null, "Book")],
+      entries: [entry(0, "ch", "book", { kind: "note", name: "Ch 1", extension: "md" })],
+    };
+    // Created and deleted before the plan answered: seen, no longer held.
+    expect(
+      project(catalogOf(), importOf({ rows: predicted, seen: ["book", "sub", "ch"] })),
+    ).toEqual([]);
+    expect(
+      project(catalogOf(), importOf({ accepted, seen: ["book", "ch"], bridges: ["book"] })),
+    ).toEqual([]);
+  });
 
-    it("hands off only the rows whose folder or document the catalog holds", () => {
-      const { view, handedOff } = withImportRows(vault([file("/vault/Ch 1", "d0")]), "kb", [
-        landed,
-      ]);
-      expect(drawn(view)).toEqual([
-        "real /vault",
-        "client /vault/Empty",
-        "client /vault/Lore",
-        "client /vault/Lore/Sects",
-        "real /vault/Ch 1",
-        "client /vault/map.png",
-      ]);
-      expect(handedOff.get("i")).toEqual(["0:", "0:Ch 1.md"]);
+  it("5: after a reload draws unlanded files muted under their folders and a failure on its row", () => {
+    const accepted = {
+      folders: [folder("art", null, "Art")],
+      entries: [
+        entry(0, "m0", "art", { state: "landing" }),
+        entry(1, "m1", "art", { state: "failed", reason: "upload_failed" }),
+        entry(2, "m2", "art", { state: "landed" }),
+      ],
+    };
+    const view = withImportRows(catalogOf(dir("art", "Art", [doc("m2", "map2.png")])), "kb", [
+      importOf({ accepted, seen: ["art", "m2"] }),
+    ]);
+    expect(drawn(view)).toEqual(["Art~", "  map0.png*~", "  map1.png*~!", "  map2.png"]);
+    const failed = view.children("art").find((node) => node.name === "map1.png");
+    expect(failed?.kind === "file" && failed.import?.failure).toMatchObject({
+      entryId: 1,
+      reason: "upload_failed",
+      canRetry: false,
     });
+  });
 
-    it("hands off the rest as their ids arrive", () => {
-      const catalog = vault(
-        [file("/vault/Ch 1", "d0"), file("/vault/map.png", "d2")],
-        [file("/vault/Lore/Sects", "d1")],
-      );
-      const { view, handedOff } = withImportRows(catalog, "kb", [landed]);
-      expect(drawn(view).filter((row) => row.startsWith("client"))).toEqual([
-        "client /vault/Empty",
-      ]);
-      expect(handedOff.get("i")).toHaveLength(5);
-    });
+  it("6: follows the folder the writer moved, by id", () => {
+    const accepted = {
+      folders: [folder("art", null, "Art")],
+      entries: [entry(0, "m0", "art")],
+    };
+    const moved = catalogOf(dir("other", "Other", [dir("art", "Art")]));
+    expect(project(moved, importOf({ accepted, seen: ["art"] }))).toEqual([
+      "Other",
+      "  Art~",
+      "    map0.png*~",
+    ]);
+  });
 
-    it("drops skipped, deleted and unmade rows at once, catalog or not", () => {
-      const state = finishedWith([
-        entry(0, "Ch 1.md", "skipped", "kb://vault/Ch 1"),
-        entry(1, "Lore/Sects.md", "deleted", "kb://vault/Lore/Sects"),
-        { ...entry(2, "map.png", "not_imported", "kb://vault/map.png"), exists: false },
-      ]);
-      const { view, handedOff } = withImportRows(catalogOf([]), "kb", [state]);
-      expect(drawn(view)).toEqual(["client /vault", "client /vault/Empty", "client /vault/Lore"]);
-      expect(handedOff.get("i")).toEqual(["0:Ch 1.md", "0:Lore/Sects.md", "0:map.png"]);
-    });
+  it("7: does not return a deleted placeholder or folder, nor draw files under the folder", () => {
+    const accepted = {
+      folders: [folder("art", null, "Art")],
+      entries: [
+        entry(0, "m0", "art"),
+        entry(1, "note", null, { kind: "note", name: "Ch 1", extension: "md" }),
+      ],
+    };
+    expect(project(catalogOf(), importOf({ accepted, seen: ["art", "note"] }))).toEqual([]);
+  });
 
-    it("never draws a handed-off row again, though the writer moved or deleted it", () => {
-      const local = landed.local;
-      if (!local) throw new Error("no local run");
-      const state = { ...landed, local: { ...local, handedOff: new Set(["0:Ch 1.md"]) } };
-      const { view } = withImportRows(catalogOf([]), "kb", [state]);
-      expect(drawn(view)).not.toContain("client /vault/Ch 1");
-    });
+  it("8: leaves a predicted row until the plan answers, and then nothing remains for it", () => {
+    expect(project(catalogOf(), importOf({ rows: [row("ch", null, "file", "Ch 1")] }))).toEqual([
+      "Ch 1*~",
+    ]);
+    const accepted = { entries: [] };
+    expect(
+      project(catalogOf(), importOf({ rows: [row("ch", null, "file", "Ch 1")], accepted })),
+    ).toEqual([]);
+  });
+
+  it("9: after acceptance the status's folder set is authoritative", () => {
+    // The prediction had `Bad/`; the plan holds no such folder, so no ghost is drawn.
+    const rows = [row("book", null, "dir", "Book"), row("bad", "book", "dir", "Bad")];
+    const accepted = { folders: [folder("book", null, "Book")] };
+    expect(project(catalogOf(), importOf({ rows, accepted, bridges: ["book"] }))).toEqual([
+      "Book*~",
+    ]);
+  });
+
+  it("offers Retry only while this tab holds the files", () => {
+    const accepted = {
+      entries: [entry(1, "m1", null, { state: "failed", reason: "upload_failed" })],
+    };
+    const held = withImportRows(catalogOf(), "kb", [importOf({ accepted, held: true })]);
+    const node = held.children("root")[0];
+    expect(node.kind === "file" && node.import?.failure?.canRetry).toBe(true);
   });
 });

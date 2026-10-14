@@ -1,232 +1,204 @@
 /**
- * Pending rows are a projection owned by the importing client, not intents in
- * the resource replica: this layers an import's rows over a catalog view. Real
- * rows gain "arriving" and "failed" marks; rows the server has not created yet
- * (every row before the plan answers; binaries and code until they land) are
- * drawn from the importing tab's selection.
+ * Import rows over a catalog view: a pure function of the catalog and the
+ * coordinator's snapshot, keyed by node id. It never writes back.
  *
- * Each client row hands off on its own: it is drawn until this browser's catalog
- * holds what it stands for, or the report says nothing will. A finished import
- * is not a handoff: the report and the catalog reach this tab independently.
+ * For each node an import knows (predicted before the plan answers, the status's
+ * plan nodes after), the rows are:
+ *  1. the catalog holds it: the catalog row, marked arriving or failed;
+ *  2. the coordinator has seen the catalog hold it: nothing (it moved out of view
+ *     or was deleted);
+ *  3. before acceptance: the predicted row under its parent id;
+ *  4. accepted, a code or binary file that has not landed: an overlay row under the
+ *     planned parent, with the allocated name;
+ *  5. accepted and materialized: an overlay only while a bridge is open;
+ *  6. otherwise nothing.
+ * An overlay whose parent is drawn nowhere is not drawn.
  */
-import { parseContextUri } from "@meridian/contracts/context-uri";
+
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { renderFilename } from "@meridian/contracts/protocol";
 import type {
   CatalogContextView,
   CatalogDirectory,
   CatalogFile,
   CatalogNode,
 } from "@/client/query/context-catalog-projection";
-import type { ClientRow } from "./client-rows";
-import { joinCatalogPath, parentCatalogPath } from "./destination";
 import { filenameForDisplay } from "./display-name";
 import { effectiveEntry, fullyRead, type ImportState } from "./import-state";
 
-export const CLIENT_ROW_PREFIX = "import:";
-
-/** The catalog path ("/Lore/Sects") of a context URI, or null when it is not one. */
-export function catalogPathOfUri(uri: string | null): string | null {
-  if (!uri) return null;
-  const parsed = parseContextUri(uri);
-  return parsed.ok ? `/${parsed.value.path}` : null;
-}
-
-type Placed = {
-  row: ClientRow;
+/** What the projection reads of one import: its state and the coordinator's evidence. */
+export type ProjectedImport = {
   importId: string;
-  /** The full report has been read: the plan has answered and its names are known. */
-  planned: boolean;
-  parentPath: string;
+  state: ImportState;
+  /** Node ids the catalog has held while this tab tracked the import. */
+  seen: ReadonlySet<string>;
+  /** Node ids materialized on the server that this tab drew and the catalog may not show yet. */
+  bridges: ReadonlySet<string>;
+};
+
+type Failure = NonNullable<NonNullable<CatalogFile["import"]>["failure"]>;
+
+/** One node an import knows, however it came to know it. */
+type Node = {
+  id: string;
+  parentId: string | null;
+  kind: "dir" | "file";
+  scheme: ProjectContextTreeScheme;
   name: string;
-  entryId: string;
-  /** The file's stored entry, when the server answered. */
-  entry?: ReturnType<typeof effectiveEntry>;
-  holdsFile: boolean;
+  /** The server's plan holds the node (the status was read). */
+  accepted: boolean;
+  /** Materialized in context at plan time, or landed: only a bridge draws it. */
+  materialized: boolean;
+  /** Text or file has not landed. */
+  arriving: boolean;
+  failure?: Failure;
+  seen: boolean;
+  bridged: boolean;
 };
 
-export function pseudoRowId(importId: string, row: ClientRow) {
-  return `${CLIENT_ROW_PREFIX}${importId}:${row.key}`;
-}
-
-/** Where each of an import's client rows lands now: the plan's names once it has answered. */
-function place(state: ImportState): Placed[] {
-  const local = state.local;
-  if (!local || local.rows.length === local.handedOff.size) return [];
+function nodesOf(item: ProjectedImport): Node[] {
+  const { state, seen, bridges } = item;
   const report = fullyRead(state.report) ? state.report : null;
-  const rootPath = new Map<number, string | null>();
-  for (const root of report?.roots ?? []) rootPath.set(root.rootId, catalogPathOfUri(root.uri));
-  return local.rows.flatMap<Placed>((row) => {
-    if (local.handedOff.has(row.key)) return [];
-    let parentPath = row.parentPath;
-    let name = row.name;
-    let entry: Placed["entry"];
-    if (report) {
-      const stored = row.entryId === undefined ? undefined : report.entries.get(row.entryId);
-      if (stored) {
-        entry = effectiveEntry(state, stored);
-        const path = catalogPathOfUri(entry.uri);
-        if (path) {
-          parentPath = parentCatalogPath(path);
-          name = filenameForDisplay(path.slice(path.lastIndexOf("/") + 1));
-        }
-      } else {
-        const base = rootPath.get(row.rootId);
-        if (base) {
-          if (row.relPath === "") {
-            parentPath = parentCatalogPath(base);
-            name = base.slice(base.lastIndexOf("/") + 1);
-          } else {
-            const slash = row.relPath.lastIndexOf("/");
-            parentPath = slash < 0 ? base : joinRel(base, row.relPath.slice(0, slash));
+  if (!report) {
+    return (state.local?.rows ?? []).map((row) => ({
+      id: row.id,
+      parentId: row.parentId,
+      kind: row.kind,
+      scheme: row.scheme,
+      name: row.name,
+      accepted: false,
+      materialized: false,
+      arriving: true,
+      seen: seen.has(row.id),
+      bridged: false,
+    }));
+  }
+  const nodes: Node[] = [];
+  for (const folder of report.folders.values()) {
+    if (folder.state === "deleted") continue;
+    nodes.push({
+      id: folder.id,
+      parentId: folder.parentId,
+      kind: "dir",
+      scheme: folder.scheme,
+      name: folder.name,
+      accepted: true,
+      materialized: true,
+      arriving: false,
+      seen: seen.has(folder.id),
+      bridged: bridges.has(folder.id),
+    });
+  }
+  const canRetry = state.local?.held != null;
+  for (const raw of report.entries.values()) {
+    const entry = effectiveEntry(state, raw);
+    if (entry.state === "skipped" || entry.state === "deleted" || entry.state === "not_imported")
+      continue;
+    const placeholder = entry.kind === "note" || entry.kind === "docx";
+    const unlanded = entry.state === "planned" || entry.state === "landing";
+    nodes.push({
+      id: entry.documentId,
+      parentId: entry.parentId,
+      kind: "file",
+      scheme: entry.scheme,
+      name: filenameForDisplay(renderFilename(entry.name, entry.extension)),
+      accepted: true,
+      materialized: placeholder || entry.state === "landed",
+      arriving: unlanded,
+      ...(entry.state === "failed"
+        ? {
+            failure: {
+              importId: item.importId,
+              entryId: entry.entryId,
+              reason: entry.reason,
+              canRetry,
+            },
           }
-        }
-      }
-    }
-    return {
-      row,
-      importId: state.importId,
-      planned: report !== null,
-      parentPath,
-      name,
-      entryId: pseudoRowId(state.importId, row),
-      entry,
-      holdsFile: local.held !== null,
-    };
-  });
+        : {}),
+      seen: seen.has(entry.documentId),
+      bridged: bridges.has(entry.documentId),
+    });
+  }
+  return nodes;
 }
 
-function joinRel(base: string, relative: string): string {
-  return relative.split("/").reduce(joinCatalogPath, base);
-}
-
-/** What this browser's catalog holds now: every document id and folder path. */
-type Held = { documents: ReadonlySet<string>; folders: ReadonlySet<string> };
-
-function heldBy(catalog: CatalogContextView): Held {
-  const documents = new Set<string>();
-  const folders = new Set<string>();
-  const walk = (parentId: string) => {
-    for (const node of catalog.children(parentId)) {
-      if (node.kind === "file") documents.add(node.documentId);
-      else {
-        folders.add(node.path);
-        walk(node.entryId);
-      }
-    }
-  };
-  walk(catalog.root.entryId);
-  return { documents, folders };
-}
-
-/**
- * The one handoff rule: a client row goes once the catalog holds its document
- * (wherever it has moved) or its folder, or once the report says no row will
- * come (skipped, deleted, left unmade, or never planned at all).
- */
-function handedOff(p: Placed, held: Held): boolean {
-  if (p.row.kind === "dir")
-    return p.planned && held.folders.has(joinCatalogPath(p.parentPath, p.name));
-  const entry = p.entry;
-  // The plan answered without this file (it could not be read): nothing will arrive.
-  if (!entry) return p.planned;
-  if (entry.state === "skipped" || entry.state === "deleted") return true;
-  if (!entry.exists && (entry.state === "landed" || entry.state === "not_imported")) return true;
-  return held.documents.has(entry.documentId);
-}
-
-export type ImportedCatalog = {
-  view: CatalogContextView;
-  /** Client rows, by import, that the catalog now draws or that will never come. */
-  handedOff: ReadonlyMap<string, readonly string[]>;
-};
-
-/** Layers every given import's rows over `catalog`; the view is unchanged when none touch it. */
+/** Layers every given import's nodes over `catalog`; the view is unchanged when none touch it. */
 export function withImportRows(
   catalog: CatalogContextView,
   scheme: ProjectContextTreeScheme,
-  imports: readonly ImportState[],
-): ImportedCatalog {
-  const candidates = imports.flatMap(place).filter((p) => p.row.scheme === scheme);
-  const held = candidates.length ? heldBy(catalog) : null;
-  const handed = new Map<string, string[]>();
-  const placed = candidates.filter((p) => {
-    if (!held || !handedOff(p, held)) return true;
-    const keys = handed.get(p.importId);
-    if (keys) keys.push(p.row.key);
-    else handed.set(p.importId, [p.row.key]);
-    return false;
-  });
-  const arrivingEntries = new Map<string, ImportRowMeta>();
-  const folders = new Set<string>();
-  for (const state of imports) {
-    for (const raw of state.report?.entries.values() ?? []) {
-      const entry = effectiveEntry(state, raw);
-      const arriving = entry.state === "planned" || entry.state === "landing";
-      const path = catalogPathOfUri(entry.uri);
-      if (arriving) {
-        arrivingEntries.set(entry.documentId, { importId: state.importId });
-        if (path && entry.uri?.startsWith(`${scheme}://`)) addAncestors(folders, path);
-      }
+  imports: readonly ProjectedImport[],
+): CatalogContextView {
+  const held = (id: string) =>
+    catalog.findDocument(id) !== null || catalog.normalized.entries.get(id)?.kind === "folder";
+  const nodes = new Map<string, Node & { importId: string }>();
+  for (const item of imports)
+    for (const node of nodesOf(item)) nodes.set(node.id, { ...node, importId: item.importId });
+
+  const drawn = new Map<string, boolean>();
+  const parentPresent = (parentId: string | null): boolean =>
+    parentId === null || held(parentId) || overlaid(parentId);
+  const overlaid = (id: string): boolean => {
+    const cached = drawn.get(id);
+    if (cached !== undefined) return cached;
+    drawn.set(id, false); // a cycle draws nothing
+    const node = nodes.get(id);
+    const wanted =
+      node !== undefined &&
+      node.scheme === scheme &&
+      !held(id) &&
+      !node.seen &&
+      (node.accepted ? (node.materialized ? node.bridged : true) : true) &&
+      parentPresent(node.parentId);
+    drawn.set(id, wanted);
+    return wanted;
+  };
+
+  // Folders holding arriving rows read as arriving, found through the plan's own parents.
+  const arrivingFolders = new Set<string>();
+  for (const node of nodes.values()) {
+    if (!node.arriving || !(held(node.id) || overlaid(node.id))) continue;
+    let up = node.parentId;
+    while (up && !arrivingFolders.has(up)) {
+      arrivingFolders.add(up);
+      up = nodes.get(up)?.parentId ?? null;
     }
   }
-  const failures = new Map<string, NonNullable<CatalogFile["import"]>["failure"]>();
-  for (const state of imports) {
-    for (const raw of state.report?.entries.values() ?? []) {
-      const entry = effectiveEntry(state, raw);
-      if (entry.state !== "failed") continue;
-      failures.set(entry.documentId, {
-        importId: state.importId,
-        entryId: entry.entryId,
-        reason: entry.reason,
-        canRetry: state.local?.held != null,
-      });
-    }
-  }
-  // Rows not yet in the catalog count as arriving inside their folders.
-  for (const p of placed) {
-    const settled = p.entry && p.entry.state !== "planned" && p.entry.state !== "landing";
-    if (!settled && p.row.kind === "file")
-      addAncestors(folders, joinCatalogPath(p.parentPath, p.name));
+
+  const byParent = new Map<string, Node[]>();
+  for (const node of nodes.values()) {
+    if (!overlaid(node.id)) continue;
+    const key = node.parentId ?? catalog.root.entryId;
+    const siblings = byParent.get(key);
+    if (siblings) siblings.push(node);
+    else byParent.set(key, [node]);
   }
 
-  if (placed.length === 0 && arrivingEntries.size === 0 && failures.size === 0)
-    return { view: catalog, handedOff: handed };
-
-  const byParent = new Map<string, Placed[]>();
-  for (const p of placed) byParent.set(p.parentPath, [...(byParent.get(p.parentPath) ?? []), p]);
-  const placedById = new Map(placed.map((p) => [p.entryId, p]));
-
-  const mark = (node: CatalogNode): CatalogNode => {
-    if (node.kind === "dir") {
-      return folders.has(node.path) ? { ...node, import: { arriving: true } } : node;
-    }
-    const failure = failures.get(node.documentId);
-    const arriving = arrivingEntries.has(node.documentId) || node.importPending === true;
-    if (!failure && !arriving) return node;
+  const marks = (node: CatalogNode): CatalogNode => {
+    const id = node.kind === "dir" ? node.entryId : node.documentId;
+    const known = nodes.get(id);
+    if (node.kind === "dir")
+      return arrivingFolders.has(id) ? { ...node, import: { arriving: true } } : node;
+    const arriving = known?.arriving === true || node.importPending === true;
+    if (!known?.failure && !arriving) return node;
     return {
       ...node,
-      import: { ...(arriving ? { arriving: true as const } : {}), ...(failure ? { failure } : {}) },
+      import: {
+        ...(arriving ? { arriving: true as const } : {}),
+        ...(known?.failure ? { failure: known.failure } : {}),
+      },
     };
   };
 
-  const clientNode = (p: Placed, parentId: string): CatalogNode => {
-    const path = joinCatalogPath(p.parentPath, p.name);
-    const failure =
-      p.entry?.state === "failed"
-        ? {
-            importId: p.importId,
-            entryId: p.entry.entryId,
-            reason: p.entry.reason,
-            canRetry: p.holdsFile,
-          }
-        : undefined;
-    if (p.row.kind === "dir") {
+  if (nodes.size === 0) return catalog;
+
+  const overlay = (node: Node, parentId: string): CatalogNode => {
+    if (node.kind === "dir") {
       const dir: CatalogDirectory = {
         kind: "dir",
-        entryId: p.entryId,
+        entryId: node.id,
         parentId,
-        name: p.name,
-        path,
+        name: node.name,
+        path: "",
         uri: "",
         import: { client: true, arriving: true },
       };
@@ -234,11 +206,11 @@ export function withImportRows(
     }
     const file: CatalogFile = {
       kind: "file",
-      entryId: p.entryId,
+      entryId: node.id,
       parentId,
-      documentId: p.entry?.documentId ?? p.entryId,
-      name: p.name,
-      path,
+      documentId: node.id,
+      name: node.name,
+      path: "",
       uri: "",
       provisionalName: false,
       hasProperties: false,
@@ -246,13 +218,17 @@ export function withImportRows(
       editable: false,
       disposition: "binary",
       fileType: "binary",
-      import: { client: true, arriving: true, ...(failure ? { failure } : {}) },
+      import: {
+        client: true,
+        arriving: true,
+        ...(node.failure ? { failure: node.failure } : {}),
+      },
     };
     return file;
   };
 
-  const sorted = (nodes: CatalogNode[]) =>
-    nodes.sort((a, b) =>
+  const sorted = (list: CatalogNode[]) =>
+    list.sort((a, b) =>
       a.kind !== b.kind ? (a.kind === "dir" ? -1 : 1) : a.name.localeCompare(b.name),
     );
 
@@ -260,33 +236,12 @@ export function withImportRows(
   const children = (parentId: string): readonly CatalogNode[] => {
     const cached = cache.get(parentId);
     if (cached) return cached;
-    const pseudo = placedById.get(parentId);
-    const parentPath = pseudo
-      ? joinCatalogPath(pseudo.parentPath, pseudo.name)
-      : parentId === catalog.root.entryId
-        ? "/"
-        : folderPathOf(catalog, parentId);
-    const real = pseudo ? [] : catalog.children(parentId);
-    const added = (byParent.get(parentPath) ?? []).map((p) => clientNode(p, parentId));
-    const result = added.length === 0 ? real.map(mark) : sorted([...real.map(mark), ...added]);
+    const real = nodes.has(parentId) && !held(parentId) ? [] : catalog.children(parentId);
+    const added = (byParent.get(parentId) ?? []).map((node) => overlay(node, parentId));
+    const result = added.length === 0 ? real.map(marks) : sorted([...real.map(marks), ...added]);
     cache.set(parentId, result);
     return result;
   };
 
-  return { view: { ...catalog, children }, handedOff: handed };
-}
-
-type ImportRowMeta = { importId: string };
-
-function addAncestors(into: Set<string>, path: string, includeSelf = false) {
-  let current = includeSelf ? path : parentCatalogPath(path);
-  while (current !== "/" && !into.has(current)) {
-    into.add(current);
-    current = parentCatalogPath(current);
-  }
-}
-
-function folderPathOf(catalog: CatalogContextView, folderId: string): string {
-  const entry = catalog.normalized.entries.get(folderId);
-  return entry?.kind === "folder" ? `/${entry.path.join("/")}` : "/";
+  return { ...catalog, children };
 }

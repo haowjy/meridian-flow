@@ -26,10 +26,6 @@ export type LocalPhase =
 /** A server that has not answered nor been heard from for this long is paused. */
 export const ACTIVITY_FRESH_MS = 60_000;
 
-export function processed(counts: ImportCounts): number {
-  return counts.landed + counts.failed + counts.deleted + counts.notImported;
-}
-
 export function deriveDisplayState(input: {
   summary: ImportSummary | null;
   counts: ImportCounts | null;
@@ -53,15 +49,4 @@ export function deriveDisplayState(input: {
   if (counts.failed > 0) return "needs-attention";
   // Every file is in; the server is about to finish.
   return "importing";
-}
-
-export const ACTIVE_STATES: readonly ImportDisplayState[] = [
-  "preparing",
-  "importing",
-  "importing-elsewhere",
-  "stopping",
-];
-
-export function isActive(state: ImportDisplayState): boolean {
-  return ACTIVE_STATES.includes(state);
 }

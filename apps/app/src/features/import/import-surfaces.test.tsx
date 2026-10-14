@@ -36,7 +36,6 @@ beforeAll(() => {
 
 let mounted: { root: Root; element: HTMLElement } | null = null;
 afterEach(async () => {
-  vi.useRealTimers();
   if (mounted) await act(async () => mounted?.root.unmount());
   mounted?.element.remove();
   mounted = null;
@@ -104,31 +103,27 @@ function report(overrides: Partial<ImportStatus> = {}): ImportStatus {
 describe("ImportDocumentNotice", () => {
   const tab = { kind: "editable", documentId: "doc-0", scheme: "kb" } as never;
 
-  it("keeps watching the import it found, and clears once the file lands elsewhere", async () => {
+  it("finds its import through the document index and clears once the file lands", async () => {
     const server = fakeImportServer();
-    const arriving = report();
+    const arriving = report({ lastActivityAt: new Date().toISOString() });
     server.api.listOpen = async () => [arriving];
-    let reads = 0;
-    server.api.changes = async () => {
-      reads += 1;
-      // The landing clears the catalog's pending flag too.
-      context.importPending = false;
-      return {
-        ...report({ entries: [entry(0, "landed")], version: "2", state: "finished" }),
-      };
-    };
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    server.api.status = async () => arriving;
+    server.api.changes = async () => ({
+      ...report({ entries: [entry(0, "landed")], version: "2", state: "finished" }),
+    });
     const coordinator = new ImportCoordinator("p", server.api);
     context.coordinator = coordinator;
     await coordinator.refreshOpen();
-    coordinator.store("import-1").installReport(arriving);
+    await coordinator.read("import-1");
     const element = await mount(<ImportDocumentNotice projectId="p" tab={tab} />);
     expect(element.textContent).toContain("This file is still importing.");
 
-    // The notice's next poll is due: run it, and the render it causes.
-    await act(() => vi.runOnlyPendingTimersAsync());
+    // The coordinator reads the landing; the notice only renders what it reports.
+    context.importPending = false;
+    await act(async () => {
+      await coordinator.read("import-1");
+    });
 
-    expect(reads).toBeGreaterThan(0);
     expect(element.textContent).toBe("");
   });
 
@@ -136,11 +131,11 @@ describe("ImportDocumentNotice", () => {
     const server = fakeImportServer();
     const quiet = report({ lastActivityAt: "2000-01-01T00:00:00.000Z" });
     server.api.listOpen = async () => [quiet];
-    server.api.changes = async () => ({ ...quiet, roots: [], entries: [] });
+    server.api.status = async () => quiet;
     const coordinator = new ImportCoordinator("p", server.api);
     context.coordinator = coordinator;
     await coordinator.refreshOpen();
-    coordinator.store("import-1").installReport(quiet);
+    await coordinator.read("import-1");
 
     const element = await mount(<ImportDocumentNotice projectId="p" tab={tab} />);
 
