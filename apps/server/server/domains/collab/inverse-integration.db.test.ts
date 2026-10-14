@@ -95,10 +95,6 @@ describe("inverse integration (postgres)", () => {
       nodeKind: "document",
       nodeId: documentId as never,
       created: true,
-      contextSourceId: SOURCE_ID as never,
-      parentFolderId: null,
-      name: "created",
-      extension: "",
     });
   }
 

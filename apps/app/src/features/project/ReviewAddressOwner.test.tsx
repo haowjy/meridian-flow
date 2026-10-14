@@ -266,7 +266,6 @@ describe("ReviewAddressOwner", () => {
           origin: "created",
           binary: false,
           wholeItem: true,
-          livePath: null,
           conflict: null,
           settling: false,
           tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },

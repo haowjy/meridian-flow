@@ -192,7 +192,7 @@ describe("reply save refusals (postgres)", () => {
       boundary: createDrizzleDraftWriteBoundary(db),
     });
   /** Marks `documentId` as created by `workId`'s active draft, making that draft if need be. */
-  async function claimCreate(documentId: string, name: string, workId: WorkId, threadId: string) {
+  async function claimCreate(documentId: string, workId: WorkId, threadId: string) {
     const draft = await draftsOf().ensureActiveForWrite({
       workId,
       projectId: PROJECT_ID as never,
@@ -204,10 +204,6 @@ describe("reply save refusals (postgres)", () => {
       nodeKind: "document",
       nodeId: documentId as never,
       created: true,
-      contextSourceId: SOURCE_ID as never,
-      parentFolderId: null,
-      name,
-      extension: "",
     });
   }
   /** A document the draft created and has not revealed: hidden, with its tree row. */
@@ -219,12 +215,12 @@ describe("reply save refusals (postgres)", () => {
       extension: "",
       hidden: true,
     });
-    await claimCreate(documentId, name, WORK_ID, THREAD_ID);
+    await claimCreate(documentId, WORK_ID, THREAD_ID);
   }
   /** Work B's draft claims the same hidden create, as two chats creating one path would. */
   async function shareHiddenCreate(fixture: Fixture) {
     await seedSecondWork(fixture);
-    await claimCreate(NEW_ID, "created", WORK_B_ID, THREAD_B_ID);
+    await claimCreate(NEW_ID, WORK_B_ID, THREAD_B_ID);
   }
   const NEW_ID = "00000000-0000-4000-8000-000000000830";
   const grantFor = (documentId: string, workId = WORK_ID, slug = "atomicity-work") => {
@@ -239,7 +235,7 @@ describe("reply save refusals (postgres)", () => {
   /** A reply that created `NEW_ID` in the draft and saved, then a second reply staging an edit on it. */
   async function createdThenStaged() {
     const base = await setup();
-    const { fixture, core } = base;
+    const { core } = base;
     await hiddenCreate(NEW_ID, "created");
     const first = await createResponse(db, 3);
     expect(

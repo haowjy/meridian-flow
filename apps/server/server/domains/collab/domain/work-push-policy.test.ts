@@ -102,7 +102,6 @@ function pendingItems(count: number): DraftReviewItem[] {
       binary: false,
       documentName: null,
       path: null,
-      livePath: null,
       conflict: null,
       deletedLive: false,
       tokens: { locationToken: "1", liveTextToken: null, branchGenerationToken: "1" },

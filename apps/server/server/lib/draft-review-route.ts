@@ -729,7 +729,6 @@ export function toWireItem(
     wholeItem: item.wholeItem,
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
-    livePath: item.livePath,
     conflict: item.conflict,
     tokens: item.tokens,
     settling: item.settling,
