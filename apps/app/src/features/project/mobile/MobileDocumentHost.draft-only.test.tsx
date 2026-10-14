@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-/** The phone hosts a pending new-document draft by its branch alone: no live room is acquired before Apply. */
+/** The phone hosts a pending draft by its branch alone (no live room before Apply), and every editable document through the shared host with the phone presentation. */
 
 import { act, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerContextTab } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { MobileDocumentHost } from "./MobileDocumentHost";
 
 // This host witness owns route/session binding; MobileDocumentReview's suite owns chrome.
@@ -31,8 +32,11 @@ const selection = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("@/features/editor/PassageNotice", () => ({ PassageNotice: () => null }));
+vi.mock("@/features/editor/WriterHandoffLossNotice", () => ({
+  WriterHandoffLossNotice: () => null,
+}));
 vi.mock("../context/use-live-document-binding", () => ({ useLiveDocumentBinding: live.binding }));
-vi.mock("../context/use-refused-edits-reopen", () => ({ useRefusedEditsReopen: () => null }));
 vi.mock("../context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => coordinator,
 }));
@@ -47,19 +51,22 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
     setActiveEditorDocumentId: vi.fn(),
   }),
 }));
-vi.mock("../context/ContextEditorMountHost", () => ({
-  ContextEditorMountHost: (props: {
-    trackedTabs: { documentId: string }[];
-    activeTabId: string | null;
+const hosted = vi.hoisted(() => ({ presentation: null as unknown }));
+vi.mock("../context/ContextDocumentHost", () => ({
+  ContextDocumentHost: (props: {
+    tab: { documentId: string };
     readOnly?: boolean;
-  }) => (
-    <div
-      data-mount-host
-      data-tabs={props.trackedTabs.map((tab) => tab.documentId).join(",")}
-      data-active={props.activeTabId ?? ""}
-      data-read-only={String(props.readOnly === true)}
-    />
-  ),
+    presentation?: unknown;
+  }) => {
+    hosted.presentation = props.presentation;
+    return (
+      <div
+        data-document-host
+        data-document={props.tab.documentId}
+        data-read-only={String(props.readOnly === true)}
+      />
+    );
+  },
 }));
 
 const draftTab: ServerContextTab = {
@@ -93,10 +100,10 @@ describe("MobileDocumentHost draft-only review", () => {
       />,
       async () => {
         await act(async () => undefined);
-        const host = document.querySelector("[data-mount-host]");
-        expect(host?.getAttribute("data-tabs")).toBe("document-draft");
-        expect(host?.getAttribute("data-active")).toBe("document-draft");
+        const host = document.querySelector("[data-document-host]");
+        expect(host?.getAttribute("data-document")).toBe("document-draft");
         expect(host?.getAttribute("data-read-only")).toBe("true");
+        expect(hosted.presentation).toBe(PHONE_DOCUMENT_PRESENTATION);
         expect(document.body.textContent).not.toContain("Couldn't open this document.");
         expect(live.binding).not.toHaveBeenCalled();
         expect(coordinator.bindRouteSelection).toHaveBeenCalledWith("project-a", 3, {
@@ -104,6 +111,36 @@ describe("MobileDocumentHost draft-only review", () => {
           documentId: "document-draft",
         });
         expect(coordinator.activate).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  it("hosts an ordinary editable document through the shared host, not a direct live binding", async () => {
+    // The shared session boundary is what resumes a stranded adoption and offers Retry.
+    live.binding.mockClear();
+    const { reviews: _drafted, ...ordinary } = draftTab;
+    await withReactRoot(
+      <MobileDocumentHost
+        projectId="project-a"
+        editorWorkId="work-a"
+        route={{
+          requested: true,
+          scheme: "manuscript",
+          path: "/new-chapter.md",
+          tab: ordinary,
+          catalogResolved: true,
+          addressState: "settled" as const,
+          isError: false,
+          isFetching: false,
+        }}
+      />,
+      async () => {
+        await act(async () => undefined);
+        const host = document.querySelector("[data-document-host]");
+        expect(host?.getAttribute("data-document")).toBe("document-draft");
+        expect(host?.getAttribute("data-read-only")).toBe("true");
+        expect(hosted.presentation).toBe(PHONE_DOCUMENT_PRESENTATION);
+        expect(live.binding).not.toHaveBeenCalled();
       },
     );
   });

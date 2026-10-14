@@ -107,8 +107,8 @@ Shared across both shells:
   `../ContextPaneController.tsx` owns ordinary view activation
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
   `ContextEditorMountHost.tsx` (the Editor's warm-set LRU), `ContextDocumentHost.tsx`
-  (one document's session and editor, rendered by the Editor's tabs and by the dock's
-  document alike), `context-tab-session.tsx` (the session boundary beneath it),
+  (one document's session and editor, rendered by the Editor's tabs, the dock's
+  document and the phone, which passes `document-presentation.ts`'s phone value), `context-tab-session.tsx` (the session boundary beneath it),
   `DocumentPaneChrome.tsx` (the strip above any open document), `DocumentIdentityBar.tsx` +
   `DocumentPath.tsx` (the path, whose crumbs open the drill-in menu and only navigate) +
   `IdentityPlacementField.tsx` (Choose a home for a document in Unfiled, and repair of its refused
