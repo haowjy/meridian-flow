@@ -57,7 +57,9 @@ const snapshot = (j: number, mode: Mode, ...queued: Queued[]): Event => ({
 const inbox = (seq: string, ...queued: Queued[]): Event => ({
   frame: { kind: "inbox", seq, pending: pending(...queued) },
 });
-const switched = (seq: string, mode: Mode): Event => ({ frame: { kind: "switched", seq, mode } });
+const switched = (seq: string, mode: Mode, controlId = "s1"): Event => ({
+  frame: { kind: "switched", seq, mode, controlId },
+});
 const choose = (id: string, mode: Mode, order: number): Event => ({ choose: id, mode, order });
 const answer = (id: string, j: number, mode: Mode, queued?: Queued): Event => ({
   answer: id,
@@ -178,10 +180,12 @@ const SCENARIOS: { name: string; steps: [Event, mode: Mode, rows: string[]][] }[
     ],
   },
   {
-    name: "B1 (rp1): the reply-end apply never shows the old mode between the divider and the inbox",
+    name: "B1 (rp1): the reply-end apply never shows the old mode, or the applied row, between the divider and the inbox",
     steps: [
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
-      [switched(at(2), "draft"), "draft", ["s1:queued"]],
+      // The apply removed the queued row and set the mode in one transaction: no frame
+      // shows the new mode beside the row that caused it.
+      [switched(at(2), "draft"), "draft", []],
       [inbox(at(2, 1)), "draft", []],
     ],
   },

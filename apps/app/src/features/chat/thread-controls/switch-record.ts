@@ -8,7 +8,8 @@
  *
  * - a snapshot is `{ head, thread.aiWriteMode, liveState.pending }`, read in one transaction;
  * - an `inbox.changed` frame at K is `{ ...current, version: K, items }`;
- * - a `write_mode.switched` frame at K is `{ ...current, version: K, mode }`;
+ * - a `write_mode.switched` frame at K is `{ ...current, version: K, mode }` without the row
+ *   of the control it applied, because the apply removed that row in the same transaction;
  * - a switch answer is its `seq`, `mode` and `pending`, over the current record's items
  *   with every write-mode control row replaced by that `pending`.
  *
@@ -37,7 +38,7 @@ export function recordFromSnapshot(snapshot: {
 
 export type SwitchFrame =
   | { kind: "inbox"; seq: string; pending: ThreadPendingInbox }
-  | { kind: "switched"; seq: string; mode: AiWriteMode };
+  | { kind: "switched"; seq: string; mode: AiWriteMode; controlId: string };
 
 export function recordFromFrame(
   current: RunStateRecord | null,
@@ -46,7 +47,12 @@ export function recordFromFrame(
   if (!current) return null;
   return frame.kind === "inbox"
     ? { ...current, version: frame.seq, items: frame.pending.items }
-    : { ...current, version: frame.seq, mode: frame.mode };
+    : {
+        ...current,
+        version: frame.seq,
+        mode: frame.mode,
+        items: current.items.filter((item) => item.id !== frame.controlId),
+      };
 }
 
 export type SwitchAnswerFacts = {
