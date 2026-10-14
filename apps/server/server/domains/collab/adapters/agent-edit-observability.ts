@@ -62,8 +62,9 @@ export function createDraftRebaseDiagnostics(eventSink?: EventSink): DraftRebase
 
 /**
  * The writer-admission side of the rebase's emitter: what late-peer recovery did with one update. Counts
- * only, never the writer's words. `edit_lost` for every update that touched text a rebase changed; the
- * typing written back as its own paragraph and the deletions dropped (log-only, D33) ride on it.
+ * only, never the writer's words. `stale_frame` once per writer frame that touched text a rebase
+ * rewrote, including a frame that changed nothing: `count` is what it touched, `written` the typing
+ * recovered as its own paragraph, `dropped` the deletions left log-only (D33); `dropped: 0` is a clean recovery.
  */
 export function createLateWriterEditsReporter(eventSink?: EventSink) {
   return ({ branchId, documentId, lost, written, dropped }: LateWriterEdits) => {
@@ -71,7 +72,7 @@ export function createLateWriterEditsReporter(eventSink?: EventSink) {
     emitEvent(eventSink, {
       level: "warn",
       source: "collab.draft_rebase",
-      name: "late_peer.edit_lost",
+      name: "late_peer.stale_frame",
       correlation: { documentId, branchId },
       payload: { count: lost, written, dropped },
     });

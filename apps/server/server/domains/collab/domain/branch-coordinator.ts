@@ -553,13 +553,7 @@ export function createBranchCoordinator(input: {
       fragmentName: PROSEMIRROR_FRAGMENT_NAME,
       clientId: DRAFT_SERVER_CLIENT_ID,
     });
-    // A deletion-only update that hit dead copies (a reconnect repeating tombstones) changes nothing: a
-    // late deletion is log-only (D33), never replayed against the rebased text.
-    if (bytesEqual(Y.encodeStateAsUpdate(currentDocument), Y.encodeStateAsUpdate(doc))) {
-      doc.destroy();
-      rememberLateTyping(snapshot.branchId, recovery.memory);
-      return false;
-    }
+    // Every stale frame is logged once, including one that changes nothing (D32): the event is the log.
     input.onLateWriterEdits?.({
       branchId: snapshot.branchId,
       documentId: snapshot.documentId,
@@ -567,6 +561,13 @@ export function createBranchCoordinator(input: {
       written: recovery.written.length,
       dropped: recovery.dropped,
     });
+    // A deletion-only update that hit dead copies (a reconnect repeating tombstones) changes nothing: a
+    // late deletion is log-only (D33), never replayed against the rebased text.
+    if (bytesEqual(Y.encodeStateAsUpdate(currentDocument), Y.encodeStateAsUpdate(doc))) {
+      doc.destroy();
+      rememberLateTyping(snapshot.branchId, recovery.memory);
+      return false;
+    }
     // One journal row: the recovered text is the writer's, so it travels with the writer's update.
     await persist(snapshot, doc, [
       {
