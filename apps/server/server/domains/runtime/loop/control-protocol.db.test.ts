@@ -1227,7 +1227,6 @@ else
       it("keeps an idle switch pending until a reply starts, then applies it as one complete switch turn", async () => {
         const gateway = scriptedGateway({ usage: lowUsage });
         const rig = await manualFixture({ gateway });
-        const leaf = (await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId;
         const queued = await switchMode(rig, "draft");
 
         // Nothing runs, so nothing applies: no turn, the chat keeps its mode, and
@@ -1240,13 +1239,8 @@ else
         expect(await threadMode(rig)).toBe("direct");
 
         const appended = vi.spyOn(rig.eventWriter, "appendEvent");
-        await rig.delivery.enqueue({
-          threadId: rig.threadId,
-          intent: "message",
-          provenance: { kind: "writer", actorId: rig.ids.user },
-          body: { kind: "text", text: "Write it." },
-          idempotencyKey: "after-idle-switch",
-        });
+        // Writer admission persists the message first; the switch applies behind it, before the reply.
+        const admitted = await rig.send(rig.threadId, "Write it.");
         await drainControls(rig);
         const turns = await settled(rig);
         const [turn] = await switchTurns(rig);
@@ -1254,7 +1248,7 @@ else
           role: "system",
           status: "complete",
           writeMode: "draft",
-          prevTurnId: leaf,
+          prevTurnId: admitted.userTurnId,
           metadata: {
             kind: "write_mode_switch",
             mode: "draft",
@@ -1264,19 +1258,27 @@ else
         expect((await rig.repos.blocks.listByTurn(turn?.id as never))[0]?.textContent).toContain(
           "The writer switched this chat to draft mode.",
         );
-        // The switch precedes the message it was queued ahead of, and its reply runs in the new mode.
-        const tail = turns.slice(turns.findIndex((entry) => entry.id === turn?.id));
-        expect(tail.map((entry) => entry.role)).toEqual(["system", "user", "assistant"]);
+        const tail = turns.slice(turns.findIndex((entry) => entry.id === admitted.userTurnId));
+        expect(tail.map((entry) => entry.role)).toEqual(["user", "system", "assistant"]);
         expect(tail[2]).toMatchObject({ writeMode: "draft" });
         expect(await threadMode(rig)).toBe("draft");
         expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
           "The writer switched this chat to draft mode.",
         );
         // The apply is a frame of its own, ahead of the inbox.changed that empties the queue.
-        const names = (await appendedFrames(appended)).flatMap((row) =>
-          row.frames.map((frame) => frame.name),
-        );
-        expect(names.indexOf("meridian.write_mode.switched")).toBeGreaterThan(-1);
+        const frames = (await appendedFrames(appended)).flatMap((row) => row.frames);
+        const names = frames.map((frame) => frame.name);
+        const switched = names.indexOf("meridian.write_mode.switched");
+        expect(switched).toBeGreaterThan(-1);
+        expect(names.lastIndexOf("meridian.inbox.changed")).toBeGreaterThan(switched);
+        expect(frames[switched]).toMatchObject({
+          value: {
+            threadId: rig.threadId,
+            mode: "draft",
+            controlId: queued.response.id,
+            turnId: turn?.id,
+          },
+        });
         expect(await rig.delivery.withdrawControl(rig.threadId, queued.response.id)).toMatchObject({
           outcome: "already_started",
         });
@@ -1773,9 +1775,12 @@ else
         });
         const turnsBefore = (await rig.repos.turns.listByThread(rig.threadId)).length;
 
-        await expect(
-          rig.orchestrator.prepare({ threadId: rig.threadId, drain: true }),
-        ).rejects.toMatchObject({ code: "credits_exhausted" });
+        // The production starter: the refusal comes before the switch applies.
+        const starter = createRunStarter(
+          { startDrain: (id) => rig.orchestrator.startDrain(id) },
+          rig.deps.eventSink,
+        );
+        await starter.start(rig.threadId);
 
         // The refusal reserves nothing: no turn, no lease, no execution, no switch.
         expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toEqual({
@@ -1788,10 +1793,9 @@ else
         expect(await switchTurns(rig)).toEqual([]);
 
         canStart.mockRestore();
-        const outcome = await drainControls(rig);
+        await starter.start(rig.threadId);
         const tail = (await settled(rig)).slice(turnsBefore);
 
-        expect(outcome.status).toBe("complete");
         const reply = tail.find((turn) => turn.role === "assistant");
         expect(reply).toMatchObject({ status: "complete" });
         expect(await switchTurns(rig)).toHaveLength(1);
@@ -1806,7 +1810,8 @@ else
         expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       });
 
-      it("keeps Retry available after a switch and chains the retry after it", async () => {
+      /** A chat whose latest reply failed, and a hook that runs while a start waits on the run claim. */
+      async function failedReplyRig() {
         const gateway = scriptedGateway({ usage: lowUsage });
         let fail = true;
         const stream = gateway.stream.bind(gateway);
@@ -1824,29 +1829,43 @@ else
           };
         };
         const rig = await manualFixture({ gateway });
-        await rig.delivery.enqueue({
-          threadId: rig.threadId,
-          intent: "message",
-          provenance: { kind: "writer", actorId: rig.ids.user },
-          body: { kind: "text", text: "Answer after the switch." },
-          idempotencyKey: "retry-after-switch",
-        });
+        await rig.send(rig.threadId, "Answer after the switch.");
         expect((await drainControls(rig)).status).toBe("error");
         await processDetachedWork.drain();
         const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
         if (!failed) throw new Error("Failed reply was not persisted");
-        await switchMode(rig, "draft");
         fail = false;
+        const start = rig.runClaim.startExecution.bind(rig.runClaim);
+        return {
+          gateway,
+          rig,
+          failed,
+          /** Runs `interleave` after Retry's eligibility reads, before its run-start boundary. */
+          whileClaiming(interleave: () => Promise<unknown>) {
+            rig.runClaim.startExecution = (threadId, executionId, settle) =>
+              start(threadId, executionId, async () => {
+                await settle();
+                await interleave();
+              });
+          },
+          retry: (replyTurnId: string) =>
+            rig.orchestrator.retryReply({
+              threadId: rig.threadId,
+              failedTurnId: failed.id as never,
+              replyTurnId: replyTurnId as never,
+            }),
+        };
+      }
+
+      it("applies a switch queued while Retry claims the chat and chains the retry after it", async () => {
+        const { gateway, rig, failed, whileClaiming, retry } = await failedReplyRig();
+        whileClaiming(() => switchMode(rig, "draft"));
 
         const replyTurnId = crypto.randomUUID();
-        const started = await rig.orchestrator.retryReply({
-          threadId: rig.threadId,
-          failedTurnId: failed.id as never,
-          replyTurnId: replyTurnId as never,
-        });
+        const started = await retry(replyTurnId);
         await processDetachedWork.drain();
 
-        // The Retry starts a reply, so the pending switch applies first.
+        // The Retry starts a reply, so the switch applies first, though it arrived after Retry's reads.
         const [switchTurn] = await switchTurns(rig);
         expect(switchTurn).toBeDefined();
         expect(started).toMatchObject({
@@ -1859,9 +1878,28 @@ else
           role: "assistant",
           status: "complete",
           prevTurnId: switchTurn?.id,
+          writeMode: "draft",
         });
         expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
           "The writer switched this chat to draft mode.",
+        );
+      });
+
+      it("refuses a Retry a newer message overtook and leaves the queued switch pending", async () => {
+        const { rig, whileClaiming, retry } = await failedReplyRig();
+        whileClaiming(async () => {
+          await rig.send(rig.threadId, "A newer message");
+          await switchMode(rig, "draft");
+        });
+
+        const replyTurnId = crypto.randomUUID();
+        await expect(retry(replyTurnId)).rejects.toMatchObject({ code: "reply_retry_unavailable" });
+
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(await threadMode(rig)).toBe("direct");
+        expect(await rig.repos.turns.findById(replyTurnId as never)).toBeNull();
+        expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.intent)).toContain(
+          "control",
         );
       });
     });

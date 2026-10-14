@@ -99,6 +99,8 @@ else
         invocationOverlay,
       );
 
+      // The real reader: a pending switch's mode, else the applied mode.
+      const runtime = createRuntimeHarness({ repos, eventWriter });
       const deps = {
         threads: repos.threads,
         threadWorks: repos.threadWorks,
@@ -118,8 +120,7 @@ else
         agentCatalog,
         agentRevisions: revisions,
         eventWriter,
-        effectiveWriteMode: async (id: string) =>
-          (await repos.threads.findById(id as never))?.aiWriteMode ?? "direct",
+        effectiveWriteMode: (id: string) => runtime.delivery.effectiveWriteMode(id as never),
       };
       const firstTurn = await repos.turns.create({
         threadId: source.id,
@@ -131,6 +132,7 @@ else
       return {
         source,
         deps,
+        runtime,
         agentCatalog,
         agent,
         selection,
@@ -182,10 +184,21 @@ else
       });
       const invoked = { packageRevisionId: "p", path: "skills/story-review", contentDigest: "d" };
       await revisions.recordInvokedSkill(fixture.source.id, "story-review", invoked);
+      // A pending switch is the writer's mode: the fork starts in it, the source stays applied.
+      await fixture.runtime.delivery.enqueueControl({
+        threadId: fixture.source.id as never,
+        actorId: ids.userId,
+        id: crypto.randomUUID(),
+        control: { kind: "write_mode", mode: "draft" },
+      });
 
       const { thread: fork } = await createFork(fixture.source, fixture.deps, {
         originTurnId: fixture.firstTurn.id,
       });
+      expect(fork.aiWriteMode).toBe("draft");
+      expect((await repos.threads.findById(fixture.source.id as never))?.aiWriteMode).toBe(
+        "direct",
+      );
       expect(fork.agentDefinitionRevisionId).toBe(fixture.selection.revision.id);
       const binding = await revisions.readThreadBinding(fork.id);
       expect(binding?.revision?.id).toBe(fixture.selection.revision.id);
