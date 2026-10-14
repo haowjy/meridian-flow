@@ -205,6 +205,21 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     const closed = await handleDiscardAllWorkDraftRequest(c.deps, { ...c.scope, request });
     expect(closed.body).toMatchObject({ status: "discarded" });
     expect(await handleDiscardAllWorkDraftRequest(c.deps, { ...c.scope, request })).toEqual(closed);
+
+    // A refused item Discard is recorded too: once a model write recreates the item, its
+    // resend still answers the stored gone and closes nothing (§1.4).
+    await c.s.model(c.ascension).edit("chapter.md", "Middle.", "Middle, again.");
+    const next = await c.item();
+    const discard = (body: { draftId: string; itemKey: string; commandId: string }) =>
+      handleDiscardWorkDraftRequest(c.deps, { ...c.scope, documentId: c.chapter, request: body });
+    await discard({ draftId: next.draftId, itemKey: next.itemKey, commandId: randomUUID() });
+    const gone = { draftId: next.draftId, itemKey: next.itemKey, commandId: randomUUID() };
+    const refused = await discard(gone);
+    expect(refused.body).toEqual({ status: "gone", draftId: next.draftId, itemKey: next.itemKey });
+    await c.s.model(c.ascension).edit("chapter.md", "Middle.", "Middle, thrice.");
+    expect(await c.s.items(c.ascension)).toHaveLength(1);
+    expect(await discard(gone)).toEqual(refused);
+    expect(await c.s.items(c.ascension)).toHaveLength(1);
   });
 
   it.each([
@@ -312,14 +327,19 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     expect(await c.s.view("live").text("chapter.md")).toContain("Finale, drafted.");
   });
 
-  it("6: a change live already reads is already_live, writes nothing, and a fresh click settles the rest", async () => {
+  it("6: a change live reads between catch-up and the lock cut is already_live, writes nothing live, and leaves review", async () => {
     const c = await twoChanges(start);
     const request = await c.click("first");
-    await c.s.writer.write("chapter.md", "Opening, drafted.\n\nMiddle.\n\nEnd.");
+    const remove = setCollabHook("applyItems.afterCatchUp", async () => {
+      remove();
+      await c.s.writer.write("chapter.md", "Opening, drafted.\n\nMiddle.\n\nEnd.");
+    });
     const answer = await c.applyChange(request);
     expect(answer.body).toMatchObject({ status: "already_live", hasChanges: true });
     expect(await c.s.batchStates()).toEqual(["completed"]);
     expect(await c.s.view("live").text("chapter.md")).not.toContain("End, drafted.");
+    // Live reading the draft's words must also consume the change: only the other remains.
+    expect((await c.frame()).groups).toHaveLength(1);
   });
 
   it("7: a planning exception is failed merge_failed: no content or tree effect commits, the item stays reviewable", async () => {

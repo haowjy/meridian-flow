@@ -43,7 +43,7 @@ import {
 import type { Drafts } from "../domain/drafts.js";
 import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
 import { discardDraftEditParts } from "./drizzle-document-edits.js";
-import { claimCommandWithinTx } from "./drizzle-draft-commands.js";
+import { claimCommandWithinTx, restateCommandWithinTx } from "./drizzle-draft-commands.js";
 
 type KernelDeps = {
   drafts: Pick<Drafts, "close">;
@@ -243,7 +243,17 @@ export function createDrizzleDraftDiscard(
           throw new DraftCommandExistsError(command.envelope.commandId);
         }
         await requireLockedActiveWorks(db, [workId as WorkId]);
-        if (!(await deps.drafts.lockActive(input.draftId))) return null;
+        if (!(await deps.drafts.lockActive(input.draftId))) {
+          // The claim already holds `discarded`; the draft closed first, so the command's
+          // terminal answer is `gone`, stored in this transaction.
+          if (command)
+            await restateCommandWithinTx(
+              currentDrizzleDb(db),
+              command.envelope.commandId,
+              command.gone,
+            );
+          return null;
+        }
         const items = input.selection.kind === "items" ? input.selection.items : null;
         const itemIds = items?.map((item) => item.documentId);
         const current = await activeBranches(input.draftId, itemIds);

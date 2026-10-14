@@ -4,7 +4,7 @@
  * Under the text branches' sorted leases the push catches each draft up to live's certified cut,
  * freezes what the writer asked for (a snapshot of the draft room), and, under the live document
  * locks, plans the merge against the lock cut. A plan stages as one content member of one settlement
- * batch beside the publication steps' payloads; `already_live`, `not_found` and `failed` stage no member
+ * batch beside the publication steps' payloads; `not_found` and `failed` stage no member, and `already_live` stages one with an empty live write
  * and ride in the payload the tree step answers the command from. Settlement (`branch-push-transition`)
  * replans each member against the live it publishes over and patches the draft's base in the same
  * transaction, so a live move since staging never refuses: the merge is recomputed.
@@ -293,6 +293,8 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
         input: freezeContentInput(member.request, fresh.state),
       });
     }
+    // Catch-up read; the lock cut is not yet taken: where a test lets live move between them.
+    await collabHook("applyItems.afterCatchUp");
     return { planned, decided };
   }
 
@@ -328,10 +330,14 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
               decided.push({ itemKey: member.itemKey, status: "failed", reason: "merge_failed" });
               continue;
             }
-            if (result.status !== "plan") {
+            if (result.status === "not_found") {
               decided.push({ itemKey: member.itemKey, status: result.status });
               continue;
             }
+            // A change live already reads still owes its branch a base write: it stages as an
+            // ordinary member whose live write is empty, and settlement's replan carries the
+            // base through the leased, projection-wrapped CAS (or publishes, if live moved on).
+            const pushUpdate = result.status === "plan" ? result.plan.pushUpdate : emptyUpdate();
             const idempotencyKey = contentIdempotencyKey(
               pushInput.command.commandId,
               branch.branchId,
@@ -340,7 +346,7 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
             const trail = await contentTrail({
               branch,
               lockCutUpdate,
-              pushUpdate: result.plan.pushUpdate,
+              pushUpdate,
               idempotencyKey,
               receiptId,
               documentTitle,
@@ -348,7 +354,7 @@ export function createBranchPushService(inputDeps: BranchPushServiceInput): Bran
             pushes.push({
               branch,
               input: member.input,
-              pushUpdate: result.plan.pushUpdate,
+              pushUpdate,
               idempotencyKey,
               receiptId,
               ...(pushInput.pushedByUserId ? { pushedByUserId: pushInput.pushedByUserId } : {}),
@@ -481,6 +487,16 @@ function assertActiveWorkDraftBranch(
     throw new MemberBranchClosedError(branchId);
   }
   return branch;
+}
+
+/** A Yjs update that changes nothing: the live write of a member live already reads. */
+function emptyUpdate(): Uint8Array {
+  const doc = createCollabYDoc({ gc: false });
+  try {
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {

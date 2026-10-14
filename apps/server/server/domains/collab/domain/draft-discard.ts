@@ -34,7 +34,7 @@ export interface DraftDiscard {
     selection: DiscardSelection;
     userId?: UserId;
     /** The writer's command, claimed `done` in the kernel's transaction with this result (§4.6). */
-    command?: { envelope: DraftCommandEnvelope; result: DraftCommandOutcome };
+    command?: CommandClaim;
   }): Promise<DiscardResult>;
 }
 
@@ -80,7 +80,7 @@ export interface DraftDiscardStore {
     workId: WorkId;
     kernel: DiscardKernelInput;
     leased: ReadonlySet<string>;
-    command?: { envelope: DraftCommandEnvelope; result: DraftCommandOutcome };
+    command?: CommandClaim;
   }): Promise<DiscardKernelResult | null>;
 }
 
@@ -97,7 +97,12 @@ export class DraftDiscardScopeChangedError extends Error {
 
 const ATTEMPTS = 4;
 
-type CommandClaim = { envelope: DraftCommandEnvelope; result: DraftCommandOutcome };
+/** `gone` restates the claim when the draft stopped being active under the kernel's lock. */
+type CommandClaim = {
+  envelope: DraftCommandEnvelope;
+  result: DraftCommandOutcome;
+  gone: DraftCommandOutcome;
+};
 
 export function createDraftDiscard(deps: {
   drafts: Pick<Drafts, "byIds">;

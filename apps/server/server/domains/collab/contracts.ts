@@ -329,6 +329,14 @@ export type DraftReviewApi = {
   /** The chat-name hint for one item (Q3): null when the item isn't addressable. */
   attribution(input: { workId: WorkId; itemKey: string }): Promise<DraftAttribution | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
+  /**
+   * Stores an authorized refusal decided before any effect as the command's terminal result,
+   * conflict-safe, and answers the winning stored result (§1.4): a resend never meets fresh state.
+   */
+  refuse(input: {
+    envelope: DraftCommandEnvelope;
+    result: DraftCommandOutcome;
+  }): Promise<CommandOutcome>;
   /** Apply draft for one item: the whole item, or what a snapshot of its room names. */
   applyItem(input: {
     workId: WorkId;

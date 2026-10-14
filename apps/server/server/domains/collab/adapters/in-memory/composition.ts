@@ -338,6 +338,9 @@ function createInMemoryDraftStub(): CollabDrafts {
       async lookupCommand() {
         return { kind: "none" };
       },
+      async refuse({ result }) {
+        return { kind: "result", result };
+      },
       applyItem: (input) => gone(input.item),
       applyAll: gone,
       applyChanges: (input) => gone(input.item),
