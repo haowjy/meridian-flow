@@ -15,9 +15,28 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
     case "draft_not_found":
     case "not_found":
       return msg`This draft is no longer here. It may have been applied or discarded elsewhere.`;
+    case "path_taken":
+      return msg`Another document is already at this name. Rename or remove it, then apply again.`;
+    case "rename_replaced":
+      return msg`This document was renamed to a name that is now in use. Check it, then apply again.`;
+    case "deleted_live":
+      return msg`This document was deleted from your project after the draft started. Check it, then apply again.`;
+    case "stale":
+      return msg`This document changed since you opened the review. The review now shows the latest, so look again before you apply.`;
+    case "whole_item":
+      return msg`This change only applies together with the rest of the document. Apply the whole document instead.`;
+    case "incomplete_class":
+      return msg`This change belongs with others. Select all of them and try again.`;
+    case "gone":
+      return msg`That change is no longer in the draft.`;
     default:
       return undefined;
   }
+}
+
+/** Holds and stale answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
+function answersAlone(serverCode: string | undefined): boolean {
+  return serverCode === "path_taken" || serverCode === "stale";
 }
 
 /**
@@ -30,8 +49,9 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 export function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
   const { i18n } = useLingui();
   const known = serverCode ? knownRefusal(serverCode) : undefined;
-  const reason = known ? i18n._(known) : serverReason;
-  if (!reason) return null;
+  const reason = known
+    ? i18n._(known)
+    : (serverReason ?? i18n._(msg`The server couldn't do that. Try again.`));
   return <> {/[.!?]$/.test(reason) ? reason : `${reason}.`}</>;
 }
 
@@ -46,7 +66,7 @@ export function ReviewMessageText({
     case "apply-refused":
       return (
         <>
-          <Trans>Couldn't apply this draft.</Trans>
+          {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}
           <RefusalReason serverCode={serverCode} serverReason={serverReason} />
         </>
       );
