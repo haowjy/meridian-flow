@@ -33,7 +33,7 @@ export function applyContextRemovalSearchUpdate({
       },
       // A relocation keeps the review the address carries, until ReviewAddressOwner (which knows
       // the document's identity) decides it no longer applies. A fallback opens another document,
-      // so the item names nothing there, whatever the draft list reads.
+      // so this address's item names nothing there; the command gives a draft-only tab its own.
       { replace: true, itemKey: relocated ? itemKey : undefined },
     );
   else if (next.screen === "work") goWorks();
