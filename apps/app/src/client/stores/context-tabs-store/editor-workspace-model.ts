@@ -29,6 +29,12 @@ export function tabContextOwner(owner: TabOwner): ContextOwner {
     : { workId: owner.workId ?? null };
 }
 
+/** One Work's draft-only presentation of a document: the draft item it shows and its tab-generation fence. */
+export type ReviewEntry = { itemKey: string; tabInstanceToken: string };
+
+/** Work id to that Work's entry; one entry per Work whose draft creates the document. */
+export type ReviewEntries = Record<string, ReviewEntry>;
+
 export type ContextTab =
   | ({
       tabInstanceId?: string;
@@ -38,11 +44,8 @@ export type ContextTab =
       path: string;
       name: string;
       draftOnly?: boolean;
-      /** Transient owner of a draft-synthesized review tab; never persisted. */
-      reviewWorkId?: string;
-      /** Transient exact draft and tab-generation fence for promoting or closing the review tab. */
-      reviewItemKey?: string;
-      tabInstanceToken?: string;
+      /** Per-Work draft-only entries of a hidden draft-created document; never persisted. */
+      reviews?: ReviewEntries;
       editable: true;
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
@@ -60,10 +63,7 @@ export type ContextTab =
       path: string;
       name: string;
       draftOnly?: boolean;
-      /** Transient owner of a draft-synthesized review tab; never persisted. */
-      reviewWorkId?: string;
-      reviewItemKey?: string;
-      tabInstanceToken?: string;
+      reviews?: ReviewEntries;
       editable: false;
       fileType: DocumentFileType;
       mimeType?: string;
@@ -84,8 +84,6 @@ export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" 
 export type ProjectTabsSlice = {
   tabs: ContextTab[];
   selectedTabIdByWork: Record<string, string>;
-  /** Transient review selection; durable selections retain document identity. */
-  selectedTabInstanceIdByWork?: Record<string, string>;
 };
 
 /**
@@ -105,7 +103,7 @@ export type EditorTabCandidate =
       workId?: string | null;
       rootThreadId?: string | null;
       draftOnly?: boolean;
-      reviewWorkId?: string;
+      reviews?: ReviewEntries;
     };
 
 /**
@@ -115,7 +113,7 @@ export type EditorTabCandidate =
  */
 export function isEditorTab(tab: EditorTabCandidate, workId: string | null): boolean {
   if (tab.kind === "new") return true;
-  if (tab.draftOnly && tab.reviewWorkId !== workId) return false;
+  if (tab.draftOnly && !(workId && tab.reviews?.[workId])) return false;
   if (!isEditorScheme(tab.scheme)) return false;
   if (tab.rootThreadId) return true;
   return !isWorkScopedProjectContextScheme(tab.scheme) || tab.workId === workId;
@@ -129,6 +127,22 @@ export function isEditorContextTab(tab: ContextTab): boolean {
   return tab.kind === "new" || isEditorScheme(tab.scheme);
 }
 
+/** The entry Work `workId` has on this tab, if its draft creates the document. */
+export function reviewEntryOf(
+  tab: ContextTab | EditorTabCandidate,
+  workId: string,
+): ReviewEntry | undefined {
+  return "reviews" in tab && tab.draftOnly ? tab.reviews?.[workId] : undefined;
+}
+
+/** The single Work address of a tab only one Work reviews (a dock occupant); undefined when ambiguous. */
+export function soleReview(tab: ContextTab): { workId: string; itemKey: string } | undefined {
+  if (tab.kind === "new" || !tab.draftOnly) return undefined;
+  const entries = Object.entries(tab.reviews ?? {});
+  const [only] = entries;
+  return entries.length === 1 && only ? { workId: only[0], itemKey: only[1].itemKey } : undefined;
+}
+
 /** A review item's semantic address (the item key names its document), separate from its mounted instance fence. */
 export type ReviewItemTabIdentity = {
   reviewWorkId: string;
@@ -138,9 +152,7 @@ export type ReviewItemTabIdentity = {
 export function matchesReviewItem(tab: ContextTab, identity: ReviewItemTabIdentity): boolean {
   return (
     tab.kind !== "new" &&
-    Boolean(tab.draftOnly) &&
-    tab.reviewWorkId === identity.reviewWorkId &&
-    tab.reviewItemKey === identity.reviewItemKey
+    reviewEntryOf(tab, identity.reviewWorkId)?.itemKey === identity.reviewItemKey
   );
 }
 
@@ -153,23 +165,18 @@ export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): bool
     (addressed.kind === "new" ||
       !addressed.draftOnly ||
       (tab.kind !== "new" &&
-        matchesReviewItem(tab, {
-          reviewWorkId: addressed.reviewWorkId ?? "",
-          reviewItemKey: addressed.reviewItemKey ?? "",
-        }) &&
-        tab.tabInstanceToken === addressed.tabInstanceToken))
+        Object.entries(addressed.reviews ?? {}).some(
+          ([workId, entry]) =>
+            tab.reviews?.[workId]?.itemKey === entry.itemKey &&
+            tab.reviews[workId]?.tabInstanceToken === entry.tabInstanceToken,
+        )))
   );
 }
 
-/** One Work's strip: its own overlays shadow only that Work's durable document. */
+/** One Work's strip: the one tab per document that this Work's Editor shows. */
 export function editorTabsForWork(
   tabs: readonly ContextTab[],
   workId: string | null,
 ): ContextTab[] {
-  const overlays = new Set(
-    tabs.filter((tab) => tab.draftOnly && isEditorTab(tab, workId)).map((tab) => tab.documentId),
-  );
-  return tabs.filter(
-    (tab) => isEditorTab(tab, workId) && (tab.draftOnly || !overlays.has(tab.documentId)),
-  );
+  return tabs.filter((tab) => isEditorTab(tab, workId));
 }

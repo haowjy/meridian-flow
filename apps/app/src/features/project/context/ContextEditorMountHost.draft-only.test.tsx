@@ -123,7 +123,11 @@ describe("ContextEditorMountHost draft-only review", () => {
       const hostedTab = (
         promoted
           ? tab
-          : { ...tab, draftOnly: true, reviewWorkId: "work-a", reviewItemKey: "draft-a" }
+          : {
+              ...tab,
+              draftOnly: true,
+              reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "token" } },
+            }
       ) as ComponentProps<typeof ContextEditorMountHost>["trackedTabs"][number];
       return (
         <PresentedDocumentContext.Provider value={presented}>

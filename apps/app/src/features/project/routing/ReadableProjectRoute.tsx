@@ -559,7 +559,8 @@ function ReadableProjectDestination({
             (result) => result.resolutions[0] ?? { kind: "failed" as const },
             () => ({ kind: "failed" as const }),
           ),
-        admitDraftReview: (installed) => contextRemoval.admitDraftReview(projectId, installed),
+        admitDraftReview: (installed, reviewWorkId) =>
+          contextRemoval.admitDraftReview(projectId, installed, reviewWorkId),
       }),
     [contextRemoval, projectId, user.userId],
   );

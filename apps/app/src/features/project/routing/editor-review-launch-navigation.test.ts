@@ -74,8 +74,7 @@ describe("review launch navigation", () => {
       filetype: "markdown" as const,
       schemaType: "document" as const,
       draftOnly: true,
-      reviewWorkId: workId,
-      reviewItemKey: "draft-1:doc-1",
+      reviews: { [workId]: { itemKey: "draft-1:doc-1", tabInstanceToken: "token" } },
       tabInstanceId: "tab-1",
     } as never;
     const result = await open(
