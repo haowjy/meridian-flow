@@ -150,8 +150,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                     continue;
                   const doc = new Y.Doc({ gc: false });
                   Y.applyUpdate(doc, branch.state);
-                  // A draft action always includes the locked, current live cut.
-                  Y.applyUpdate(doc, Y.encodeStateAsUpdate(live));
                   const [name] = branch.workId
                     ? await db()
                         .select({ slug: works.slug })
