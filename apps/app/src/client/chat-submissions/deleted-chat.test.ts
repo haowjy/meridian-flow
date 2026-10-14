@@ -81,12 +81,16 @@ function fixture() {
   target.prependSnapshots([snapshot("Existing writing")]);
   let visible = true;
   let left: boolean | undefined;
+  let forgotten = 0;
   const ports: DeletedChatPorts = {
     current: () => true,
     records: () => records,
     retire: (id) => {
       records = records.filter((row) => row.recordId !== id);
       return true;
+    },
+    forgetOrder: () => {
+      forgotten += 1;
     },
     draft: (_account, scope) => (scope.kind === "chat" ? source : target),
     surfaces: () => [
@@ -107,6 +111,7 @@ function fixture() {
     target,
     records: () => records,
     left: () => left,
+    forgotten: () => forgotten,
     hide: () => {
       visible = false;
     },
@@ -124,6 +129,7 @@ it("moves the shown failed row and box ahead of New chat with a reload-safe note
   expect(f.records()).toEqual([]);
   expect(f.source.initialDraft).toBeNull();
   expect(f.left()).toBe(true);
+  expect(f.forgotten()).toBe(1);
   await cleanDeletedChat("owner", "chat", "project", "deleted", f.ports);
   expect(f.target.notices).toHaveLength(1);
   const reloaded = f.reload();

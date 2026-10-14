@@ -74,13 +74,16 @@ was and the hook asks for a snapshot. Terminal evidence:
   request began after the entry's last observation and shows the id neither pending nor as a
   divider.
 - A cancel-out is evidence about its own id only. The answer carries no ids, so the switch the
-  server cancelled is predicted: the entry the journal held just before the answered one, of
-  the other mode, still `posted` or `queued`, is marked **cancel-predicted**. It is hidden from
+  server cancelled is predicted: the latest entry ordered before the answered one by what the
+  writer had seen (an earlier journal record, or a server entry at or below the answered record's
+  frontier, so another device's switch counts), of the other mode, still `posted` or `queued`,
+  is marked **cancel-predicted**. It is hidden from
   rows and the overlay and not terminal. Only a snapshot whose request began after the mark's
   watermark settles it: one that lists the id clears the mark, one that doesn't makes it `gone`.
   A socket inbox frame listing it, or an older snapshot, clears nothing: either can predate the
   cancel. An answer never touches
-  an entry the journal doesn't hold, so another device's newer switch survives a delayed answer.
+  an entry the journal doesn't hold, or one above the record's frontier, so another device's
+  newer switch survives a delayed answer.
 - **Watermark.** Every source that shows an entry raises its `observedAt` to the larger of the
   old value and the new reading: the journal, inbox and answer by the request counter at
   observation, a snapshot that lists it by its `request`. An absent snapshot proves absence
@@ -93,10 +96,14 @@ was and the hook asks for a snapshot. Terminal evidence:
   the missing-chat fallback, the ledger's fetch state) uses `useThreadSnapshotCache`, an
   observer-free cache subscription.
 - **Proof loop.** While the ledger holds an entry only a snapshot can settle (`proofNeed`),
-  `useProofLoop`, the chat's one owner, drives acquisitions from completion: an insufficient
-  success (request not above the bar) is followed at once by one fresh fetch, which qualifies;
-  an error is followed after 3 s, doubling to 30 s; offline and hidden pause it, and reconnect
-  or showing the page resumes it.
+  `useProofLoop`, the chat's one owner, asks for one fetch and waits for its outcome (an accepted
+  snapshot whose request began after the ask, or a new error), reading the host's accepted
+  snapshot and only the cache's `errorUpdatedAt`: a fetch settles in the cache before the host
+  delivers it, so a lagging delivery asks for nothing more. An accepted snapshot whose request
+  is not above the bar is followed by one fresh fetch, which qualifies. A terminal query error is
+  followed after 3 s, doubling to 30 s. The host's own unbounded 250 ms retry of a stale response
+  (on `main`; `isFetching` stays true) runs until the stream's floor is met and never reaches the
+  loop as an error. Offline and hidden pause the loop; reconnect or showing the page resumes it.
 
 Display derives from the ledger alone. Rows are every entry that is not `gone`, not
 cancel-predicted, not withdrawing, not retired, and not folded by a predicted switch back (a
@@ -105,10 +112,14 @@ switch back before its answer hides both rows, only against a predecessor still 
 `posted` show as sending, `queued` and not-yet-rendered `applied` as queued (so no frame lacks
 both the row and the divider). A failed row shows Retry; Withdraw shows unless the server may
 hold it (posted and not refused). Entries are ordered causally, as a merge of two chains: the
-journal's (`held` order) and the server's (transcript position, else inbox order). An entry on
-both anchors them together; a journal-only entry stays right after its journal predecessor.
-Lifecycle state never reorders either chain; only between entries no anchor relates does an
-applied one with no divider yet go before what the server still holds queued. The mode is the rendered snapshot's
+journal's (`(seq, id)`, the driver's drain order; `seq` is unique per chat and survives
+retirement) and the server's (transcript position, else inbox order). An entry on both anchors
+them together. A local switch records `after`, the server order its tab had seen when the writer
+chose it (highest divider position and inbox `seq`, `frontierOf`); the server entries at or below
+it come before it in every tab until the switch has its own server place. Lifecycle state never
+reorders either chain; only for a server entry above the frontier against a journal entry the
+server has not placed does an applied one go before what the server still holds queued (the
+server consumed it directly), and anything else the server holds goes first. The mode is the rendered snapshot's
 `thread.aiWriteMode` with each entry laid over it in that order, the last winning, until a
 snapshot holding the entry's divider has rendered. No client path writes a write mode into a
 cache: a snapshot may insert a project-list row with its mode but never rewrites an existing

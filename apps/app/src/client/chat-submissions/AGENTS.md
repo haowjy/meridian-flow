@@ -45,12 +45,15 @@ attempts and the shared recovery eligibility/status snapshot for every mounted p
 - Codec rejects wrong-version and foreign envelopes without throwing. Unreadable
   records and unavailable enumeration retain the last complete snapshot and never sweep rows.
 
-Every record carries `seq`: its place in the chat's order, the chat's largest `seq` plus
-one, allocated in the same synchronous step as the first write (`localStorage` has no await
-between the read and the write). Drain order and the refusal barrier sort by `seq`, then by
-record id; `createdAt` is display only. Two tabs appending in one tick can tie, and the id
-breaks that tie: the writer cannot have made an order between actions in the same
-millisecond. A rewrite keeps its `seq`. The schema is v3; older keys are not read.
+Every record carries `seq`: its place in the chat's order. It is unique and monotonic per chat
+and orders across retirement: it is one above the larger of the chat's durable counter
+(`meridian:chat-submission-seq:v1:<account>:<thread>` in `localStorage`) and the largest held
+`seq`, read and written with the counter in the same synchronous step as the first write
+(`localStorage` has no await between). A retired record's number is never reused. Drain order,
+the refusal barrier and the switch ledger sort by `seq`, then by record id; `createdAt` is
+display only. Two tabs appending in one tick can still tie, and the id breaks that tie: the
+writer cannot have made an order between actions in the same millisecond. A rewrite keeps its
+`seq`. The counter goes with the chat's records (`forgetOrder`, called by deleted-chat cleanup). The schema is v3; older keys are not read.
 
 A write-mode switch is a record too (`control: { kind: "write_mode", mode }`, empty
 message fields, `recordId` = its control id). The one driver posts it to the controls
@@ -63,11 +66,11 @@ record under the lock only when the server can't have it (never posted, or refus
 a posted unresolved one is kept (Retry only), and a record already gone is the
 server's to withdraw. It has no writer row: its queued row, Retry and Withdraw come
 from `useThreadControls`, and the server's answer reaches it through `onSwitchAnswered`
-before the record is retired. The owner exposes the chat's journal switches (`switches`: id, mode, `seq`, posted, refused,
-failed) and the answers (`onSwitchAnswered`); the switch ledger
+before the record is retired. A switch record also stores `control.after`, the server order the choosing tab had seen
+(`SwitchFrontier`), so every tab orders it after what the writer had seen. The owner exposes
+the chat's journal switches (`switches`: id, mode, `seq`, `after`, posted, refused, failed) and the answers (`onSwitchAnswered`); the switch ledger
 (`features/chat/thread-controls/switch-ledger.ts`) decides what the writer sees, including
-when a record has left storage. The ledger counts the order it first held each record in, because `seq` is allocated above the
-records still held and a retired record's number is reused. The owner keeps only the journal side: `seq`, `posted`, the
+when a record has left storage. The ledger orders the journal chain by `(seq, id)`, the driver's order. The owner keeps only the journal side: `seq`, `posted`, the
 posted-aware Withdraw, and the keyed "Couldn't switch" announcement (cleared on Retry and
 when the record leaves).
 

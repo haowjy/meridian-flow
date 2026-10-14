@@ -32,7 +32,12 @@ import {
 } from "./index";
 import { abortable } from "./lock";
 import type { UserTurnRecovery } from "./presentation";
-import { type ChatSubmission, compareSubmissions, type NewChatSubmission } from "./store";
+import {
+  type ChatSubmission,
+  compareSubmissions,
+  type NewChatSubmission,
+  type SwitchFrontier,
+} from "./store";
 import { threadAvailability } from "./thread-availability";
 
 type Row = {
@@ -58,6 +63,8 @@ export type JournalSwitch = {
   mode: AiWriteMode;
   /** The record's place in the chat's order. */
   seq: number;
+  /** The server order the choosing tab had seen, if it recorded one. */
+  after: SwitchFrontier | null;
   /** Marked posted before its first request left. */
   posted: boolean;
   /** The server refused it: nothing is held there, so Withdraw is local. */
@@ -374,7 +381,7 @@ export class ChatSubmissionOwner {
    * It carries the chat's creation inputs like a message does, so a switch made
    * while navigate-first creation is in flight waits behind it in the same order.
    */
-  submitSwitch = (id: string, mode: AiWriteMode): boolean => {
+  submitSwitch = (id: string, mode: AiWriteMode, after?: SwitchFrontier): boolean => {
     const { accountId, threadId, projectId, current } = this.options;
     if (!current()) return false;
     const entry: NewChatSubmission = {
@@ -387,7 +394,7 @@ export class ChatSubmissionOwner {
       blocks: [],
       references: [],
       activatedSkillSlugs: [],
-      control: { kind: "write_mode", mode },
+      control: { kind: "write_mode", mode, ...(after ? { after } : {}) },
       creation: this.entries().find((record) => record.creation)?.creation,
     };
     if (!recordChatSubmission(accountId, entry)) return false;
@@ -477,6 +484,7 @@ export class ChatSubmissionOwner {
       id: entry.recordId,
       mode: entry.control?.mode ?? "direct",
       seq: entry.seq,
+      after: entry.control?.after ?? null,
       posted: !!entry.posted,
       refused: entry.state === "rejected",
       failed: entry.state === "rejected" || failed.has(entry.recordId),
@@ -491,6 +499,8 @@ export class ChatSubmissionOwner {
           entry.id === other.id &&
           entry.mode === other.mode &&
           entry.seq === other.seq &&
+          entry.after?.position === other.after?.position &&
+          entry.after?.seq === other.after?.seq &&
           entry.posted === other.posted &&
           entry.refused === other.refused &&
           entry.failed === other.failed

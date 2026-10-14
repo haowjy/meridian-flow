@@ -86,6 +86,11 @@ export function retireChatSubmission(
   return browserJournal()?.retire(accountId, recordId, expectedEpoch) ?? false;
 }
 
+/** A deleted chat's `seq` counter goes with its records. */
+export function forgetChatSubmissionOrder(accountId: string, threadId: string): void {
+  browserJournal()?.forgetOrder(accountId, threadId);
+}
+
 /** In-tab writes and cross-tab storage changes share the same subscription. */
 export function subscribeChatSubmissions(listener: () => void): () => void {
   return browserJournal()?.subscribe(listener) ?? (() => undefined);

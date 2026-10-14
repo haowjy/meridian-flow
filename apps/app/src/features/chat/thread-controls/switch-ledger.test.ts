@@ -8,6 +8,7 @@
 import { expect, it } from "vitest";
 import {
   EMPTY_LEDGER,
+  frontierOf,
   type JournalRecord,
   type LedgerEvent,
   ledgerReducer,
@@ -22,6 +23,7 @@ const record = (id: string, mode: Mode, over: Partial<JournalRecord> = {}): Jour
   id,
   mode,
   seq: Number(id.slice(1)),
+  after: null,
   posted: false,
   refused: false,
   failed: false,
@@ -75,6 +77,11 @@ type Outcome = {
   heard?: { queued?: Mode[]; switched?: Mode[] };
   waiting?: boolean;
 };
+
+/** What a tab that has seen only the inbox's first switch records for a switch it then chooses. */
+const afterFirstSwitch = frontierOf(
+  [SETTLED, inbox(1, ["s1", "draft"])].reduce(ledgerReducer, EMPTY_LEDGER),
+);
 
 const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
   {
@@ -192,15 +199,15 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     expect: { rows: [], mode: "direct", heard: { queued: ["direct"] } },
   },
   {
-    // B1: s1's record was retired when the server answered it, so the journal gave the switch
-    // back the same `seq`. The cancel-out still hides s1, and neither a socket frame listing it
+    // B1: s1's record was retired when the server answered it. The cancel-out still hides s1
+    // (the journal's later record is ordered after it), and neither a socket frame listing it
     // nor a snapshot that began before the answer brings it back.
-    name: "hides the switch a cancel-out cancelled even when the journal reused its seq",
+    name: "hides the switch a cancel-out cancelled after its record was retired",
     events: [
       journal(1, record("s1", "draft", { posted: true })),
       inbox(2, ["s1", "draft"]),
       journal(3),
-      journal(4, record("s2", "direct", { seq: 1, posted: true })),
+      journal(4, record("s2", "direct", { posted: true })),
       answer("s2", "direct", "cancelled", 4),
       journal(5),
       inbox(5, ["s1", "draft"]),
@@ -290,6 +297,77 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
       journal(3, record("s1", "draft", { posted: true }), record("s2", "direct")),
     ],
     expect: { rows: ["s1:queued", "s2:sending"], mode: "direct" },
+  },
+  {
+    // F3: another device queued s1 and the writer saw it; s2 is chosen after, its answer says
+    // applied before s1's divider arrives. The frontier travelled with the record: s1 is before
+    // s2, whichever lifecycle state either shows, so the newer s2 wins the mode.
+    name: "a local switch applied after a remote one it had seen keeps the order the writer saw",
+    events: [
+      SETTLED,
+      inbox(1, ["s1", "draft"]),
+      journal(2, record("s2", "direct", { posted: true, after: afterFirstSwitch })),
+      answer("s2", "direct", "applied", 3),
+    ],
+    expect: { rows: ["s1:queued", "s2:queued"], mode: "direct", heard: { queued: ["draft"] } },
+  },
+  {
+    name: "the delayed dividers of a remote switch and a newer local one leave the newer mode",
+    events: [
+      SETTLED,
+      inbox(1, ["s1", "draft"]),
+      journal(2, record("s2", "direct", { posted: true, after: afterFirstSwitch })),
+      answer("s2", "direct", "applied", 3),
+      dividers(["s1", "draft"], ["s2", "direct"]),
+    ],
+    expect: {
+      rows: [],
+      mode: "direct",
+      heard: { queued: ["draft"], switched: ["draft", "direct"] },
+    },
+  },
+  {
+    // F4: two tabs appended in one instant and share a `seq`; the journal (and the driver)
+    // drain by id. The tab that first saw z still orders a before z once it sees both.
+    name: "orders records held together by seq and id, whichever the tab saw first",
+    events: [
+      journal(1, record("z", "direct", { seq: 1, posted: true })),
+      journal(
+        2,
+        record("a", "draft", { seq: 1, posted: true }),
+        record("z", "direct", { seq: 1, posted: true }),
+      ),
+      answer("a", "draft", "applied", 3),
+      answer("z", "direct", "applied", 3),
+    ],
+    expect: { rows: ["a:queued", "z:queued"], mode: "direct" },
+  },
+  {
+    // The second device: it saw another device's queued s1 (draft) and switched back to s2.
+    // The null answer cancelled s1, so a stale socket frame listing s1 brings no row back.
+    name: "a switch back over another device's queued switch stays hidden against a stale inbox frame",
+    events: [
+      SETTLED,
+      inbox(1, ["s1", "draft"]),
+      journal(2, record("s2", "direct", { posted: true, after: afterFirstSwitch })),
+      answer("s2", "direct", "cancelled", 3),
+      journal(4),
+      inbox(5, ["s1", "draft"]),
+    ],
+    expect: { rows: [], mode: "direct", heard: { queued: ["draft"] }, waiting: true },
+  },
+  {
+    // R1 on the second device: s3 was queued after s2 was chosen, so s2's cancel-out says
+    // nothing about it.
+    name: "a delayed cancel-out does not predict a remote switch above the record's frontier",
+    events: [
+      SETTLED,
+      journal(1, record("s2", "direct", { posted: true })),
+      inbox(2, ["s3", "draft"]),
+      answer("s2", "direct", "cancelled", 3),
+      journal(4),
+    ],
+    expect: { rows: ["s3:queued"], mode: "draft" },
   },
   {
     name: "a refused switch shows Retry and a local Withdraw, which settles it",

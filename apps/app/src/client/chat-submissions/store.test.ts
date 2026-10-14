@@ -161,12 +161,21 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
   });
   journal.record("account", entry);
   journal.record("account", { ...entry, submissionId: "reminted" });
-  expect(storage.length).toBe(1);
+  // One record, and the chat's seq counter.
+  expect(storage.length).toBe(2);
   expect(journal.get(entry.recordId)).toEqual({ ...entry, submissionId: "reminted" });
   // A new record takes the chat's next place in order; a rewrite keeps its own.
   journal.record("account", { ...entry, recordId: "later", submissionId: "later", seq: 99 });
   journal.record("account", { ...entry, submissionId: "again" });
   expect([entry.recordId, "later"].map((id) => journal.get(id)?.seq)).toEqual([1, 2]);
+  // A retired record's number is never reused, even when it was the largest held.
+  journal.retire("account", "later");
+  journal.record("account", { ...entry, recordId: "third", submissionId: "third" });
+  expect(journal.get("third")?.seq).toBe(3);
+  // The counter goes with the chat's other state.
+  journal.forgetOrder("account", entry.threadId);
+  journal.record("account", { ...entry, recordId: "fresh", submissionId: "fresh" });
+  expect(journal.get("fresh")?.seq).toBe(4);
 });
 
 it("notifies subscribers on writes, retirement and matching cross-tab storage changes", () => {
