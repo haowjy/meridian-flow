@@ -49,6 +49,7 @@ export type ContextDocumentHostProps = {
   shown?: boolean;
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
+  /** The Work's scope freezes this document (an archived Work); the room's access must agree. */
   readOnly?: boolean;
   presentation?: DocumentPresentation;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
@@ -89,6 +90,9 @@ export function ContextDocumentHost({
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft branch alone.
   const branchOnly = isDraftOnly(tab);
+  // `readOnly` is the Work's scope (archived freezes it); the presentation decides whether
+  // this view ever types. Only the first is compared with the room's access.
+  const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
     failed = false,
@@ -183,8 +187,8 @@ export function ContextDocumentHost({
                 // A warm editor is hidden, not gone. Its chrome portals to
                 // the body, where `hidden` on an ancestor means nothing.
                 active={active && shown}
-                editable={!readOnly}
-                showToolbar={!readOnly}
+                editable={editable}
+                showToolbar={editable}
                 detached={tab.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
