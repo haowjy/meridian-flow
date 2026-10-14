@@ -18,6 +18,8 @@ import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { readRunState } from "../domains/runtime/adapters/drizzle-run-state.js";
 
+const POOL_CLOSE_TIMEOUT_MS = 5_000;
+
 export type AuditedDatabase = { db: Database; close: () => Promise<void> };
 
 /**
@@ -45,13 +47,23 @@ export async function openAuditedDatabase(
   };
   const admin = postgres(urlFor("postgres"), { max: 1 });
   let db: Database | undefined;
+  // Cleanup must never hang a suite. Dropping the clone WITH (FORCE) ends its sessions first, so a
+  // query a test left in flight cannot hold the pool open. `db.close()` waits for pending queries
+  // with no limit, so it only gets a short window once the sessions are gone.
   const close = async () => {
     try {
-      await db?.close();
+      await admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`);
     } finally {
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await admin.unsafe(`DROP DATABASE IF EXISTS "${cloneName}" WITH (FORCE)`);
+        await Promise.race([
+          db?.close().catch(() => {}),
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, POOL_CLOSE_TIMEOUT_MS);
+          }),
+        ]);
       } finally {
+        clearTimeout(timer);
         await admin.end();
       }
     }
