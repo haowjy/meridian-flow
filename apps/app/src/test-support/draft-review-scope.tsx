@@ -8,6 +8,7 @@ import * as draftsApi from "@/client/api/drafts-api";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { ThreadStoreProvider } from "@/client/stores";
 import { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
@@ -268,7 +269,9 @@ export async function renderReviewScopes(
   current.queryClient = queryClient;
   const node = (
     <QueryClientProvider client={queryClient}>
-      {options.host ? options.host(<Scopes />) : <Scopes />}
+      <ThreadStoreProvider now={0}>
+        {options.host ? options.host(<Scopes />) : <Scopes />}
+      </ThreadStoreProvider>
     </QueryClientProvider>
   );
   try {

@@ -482,6 +482,15 @@ type CatalogViewResult = {
   refetch: () => void;
 };
 
+/** Only a lineage scope waits on its chat's creation; other scopes already exist on the server. */
+function catalogScopeReady(
+  scope: CatalogScope,
+  enabled: boolean,
+  lineagePending: boolean,
+): boolean {
+  return enabled && !(scope.kind === "lineage" && lineagePending);
+}
+
 /** Composite consumers share one observation and one query per distinct authority scope. */
 export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   projectId: string,
@@ -500,7 +509,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   const { workId, rootThreadId, uploadsWorkId } = options;
   // A first send's chat is not on the server yet; its lineage scope would answer 404.
   const lineagePending = useIsThreadPendingCreation(rootThreadId);
-  const enabled = (options.enabled ?? true) && !projectPending && !lineagePending;
+  const enabled = (options.enabled ?? true) && !projectPending;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
       aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
@@ -568,7 +577,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled,
+      enabled: catalogScopeReady(scope, enabled, lineagePending),
     })),
     combine,
   });
@@ -607,7 +616,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: enabled && !projectPending && !lineagePending,
+    enabled: catalogScopeReady(stableScope, enabled && !projectPending, lineagePending),
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(
