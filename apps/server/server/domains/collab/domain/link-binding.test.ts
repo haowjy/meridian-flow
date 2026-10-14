@@ -71,7 +71,6 @@ describe("planned link binding", () => {
     });
     const refs = walkLinkOccurrences(result.blocks).map(({ attrs }) => attrs.ref);
     expect(refs.slice(0, 2)).toEqual([`doc:${B}`, `doc:${B}`]);
-    expect(result.aheadRefs).toEqual([{ occurrence: 2, ref: refs[2] }]);
     expect(subject.registered).toEqual([refs[2]]);
   });
 
@@ -95,10 +94,6 @@ describe("planned link binding", () => {
     expect(refs[1]).not.toBe(`doc:${A}`);
     // A pending identity that is already live binds to itself.
     expect(refs[2]).toBe(`doc:${B}`);
-    expect(result.aheadRefs).toEqual([
-      { occurrence: 0, ref: refs[0] },
-      { occurrence: 1, ref: refs[1] },
-    ]);
     expect(subject.registered).toEqual([refs[0], refs[1]]);
   });
 
@@ -130,7 +125,6 @@ describe("planned link binding", () => {
     expect(occurrences[0]?.attrs.ref).toBe(`doc:${A}`);
     expect(occurrences[1]?.attrs.ref).toMatch(/^ahead:/);
     expect(occurrences[2]?.attrs.ref).toBe(`doc:${B}`);
-    expect(result.aheadRefs).toEqual([{ occurrence: 1, ref: occurrences[1]?.attrs.ref }]);
   });
 
   it("an invalid id binds nothing rather than falling back to the written occupant", async () => {

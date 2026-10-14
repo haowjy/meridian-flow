@@ -462,5 +462,9 @@ export const linkAheadRefs = pgTable(
       .on(table.projectId, table.scheme, table.workId, table.rootThreadId, sql`md5(${table.path})`)
       .where(sql`${table.settledDocumentId} IS NULL`),
     index("link_ahead_refs_settled_document").on(table.settledDocumentId),
+    // Arrival of a planned document finds the refs awaiting its id, wherever they were minted.
+    index("link_ahead_refs_awaited_document")
+      .on(table.awaitedDocumentId)
+      .where(sql`${table.awaitedDocumentId} IS NOT NULL AND ${table.settledDocumentId} IS NULL`),
   ],
 );

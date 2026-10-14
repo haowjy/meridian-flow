@@ -29,7 +29,6 @@ export interface ImportEntryPayload extends Omit<PlannedNode, "id" | "state"> {
   prependOnRetry: boolean;
   /** Last observed presence of the created document or folder at `uri`. */
   exists: boolean;
-  pendingRefs: { holderId: string; ref: string }[];
 }
 /** What import_entries columns own: identity, order, lifecycle, lease and sweep state. */
 export interface ImportEntryColumns {
@@ -49,7 +48,7 @@ export type ImportEntry = ImportEntryPayload & ImportEntryColumns;
 export type ImportEntryPayloadPatch = Partial<
   Pick<
     ImportEntryPayload,
-    "name" | "reason" | "reasonParams" | "prepared" | "prependOnRetry" | "exists" | "pendingRefs"
+    "name" | "reason" | "reasonParams" | "prepared" | "prependOnRetry" | "exists"
   >
 >;
 /** Mutable column fields. */

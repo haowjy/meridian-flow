@@ -32,8 +32,6 @@ export interface ImportTreeWriter {
   lockDocument(id: string): Promise<boolean>;
   create(parent: ImportParent, nodes: ImportEntry[]): Promise<void>;
   bind(entry: ImportEntry, write: ImportWrite): Promise<BoundWrite | null>;
-  /** Settle a ref awaiting this planned file to it, by ref id. */
-  settleAhead(ref: string, documentId: string): Promise<void>;
   /** These planned files will never land: links awaiting them become ordinary ahead links. */
   releaseAhead(documentIds: readonly string[]): Promise<void>;
   fill(

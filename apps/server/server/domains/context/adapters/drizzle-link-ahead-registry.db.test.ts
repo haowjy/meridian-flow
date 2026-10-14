@@ -12,7 +12,7 @@ import {
 } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { RegistrationInsideTransactionError } from "../ports/link-ahead-registry.js";
 import {
@@ -20,7 +20,7 @@ import {
   lockContextSources,
   lockNamespaceKeys,
 } from "./context-fs/document-locations.js";
-import { createDrizzleLinkAheadRegistry } from "./drizzle-link-ahead-registry.js";
+import { awaitedStripeKey, createDrizzleLinkAheadRegistry } from "./drizzle-link-ahead-registry.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const RUN =
@@ -37,6 +37,8 @@ if (!RUN) {
     const AHEAD = "00000000-0000-4000-8000-000000000b05";
     const NO_WORK = "00000000-0000-4000-8000-000000000b08";
     const DOCUMENT_2 = "00000000-0000-4000-8000-000000000b0a";
+    const OTHER_PROJECT = "00000000-0000-4000-8000-000000000b0c";
+    const OTHER_SOURCE = "00000000-0000-4000-8000-000000000b0d";
     const SOURCES = {
       manuscript: SOURCE,
       scratch: "00000000-0000-4000-8000-000000000b0b",
@@ -260,59 +262,165 @@ if (!RUN) {
       }
     }
 
-    it("settles by ref identity once, and reports arrival's existing target", async () => {
+    /** The ref spells AHEAD's address; the awaited document lands under another name. */
+    const awaiting = { ...registration, awaitedDocumentId: DOCUMENT as never };
+    // Joins the caller's transaction, so a rollback takes the document with it.
+    const landMoved = (db: Database = database, id = DOCUMENT) =>
+      currentDrizzleDb(db)
+        .insert(documents)
+        .values({ id, contextSourceId: SOURCE, name: "counted (2)", extension: "toml" });
+    /** The awaited document's real arrival: source key, insert at a counted-up name, settle. */
+    const awaitedArrival = (db: Database) =>
+      runInDrizzleTransaction(db, async () => {
+        await lockContextSources(db, [SOURCE]);
+        await landMoved(db);
+        return newRegistry(db).settleArrivals([DOCUMENT as never]);
+      });
+    const settledTo = async () =>
+      (await database.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, AHEAD)))[0];
+
+    /** Test: a registration and the arrival of the awaited id meet on its stripe, in either order. */
+    it("awaiting ref settles to a document landing at another address, registration before arrival and after", async () => {
+      // Arrival first, holding the stripe: registration queues, then finds the document live.
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const stripeTaken = notification("arrival stripe");
+      const arrival = stripeTaken.from(
+        runInDrizzleTransaction(arrivalConnection, async () => {
+          await lockContextSources(arrivalConnection, [SOURCE]);
+          await landMoved(arrivalConnection);
+          const settled = await newRegistry(arrivalConnection).settleArrivals([DOCUMENT as never]);
+          stripeTaken.notify();
+          await held;
+          return settled;
+        }),
+      );
+      try {
+        await stripeTaken.wait();
+        const registering = newRegistry(database).register([awaiting]);
+        await waitForWaiters(awaitedStripeKey(DOCUMENT), 1);
+        release();
+        const [arrivalSettled] = await Promise.all([arrival, registering]);
+        expect(arrivalSettled).toBe(0); // the row did not exist when the arrival settled
+        expect((await settledTo())?.settledDocumentId).toBe(DOCUMENT);
+      } finally {
+        release();
+        await arrival.catch(() => undefined);
+      }
+
+      // Registration first: a gate queues it, then the arrival, in a known order.
+      await seed();
+      let open!: () => void;
+      const gateHeld = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      const gateTaken = notification("stripe gate");
+      const gate = gateTaken.from(
+        runInDrizzleTransaction(gateConnection, async () => {
+          await currentDrizzleDb(gateConnection).execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${awaitedStripeKey(DOCUMENT)}, 0::bigint))`,
+          );
+          gateTaken.notify();
+          await gateHeld;
+        }),
+      );
+      let registering: Promise<void> | undefined;
+      let arriving: Promise<number> | undefined;
+      try {
+        await gateTaken.wait();
+        registering = newRegistry(database).register([awaiting]);
+        await waitForWaiters(awaitedStripeKey(DOCUMENT), 1);
+        arriving = awaitedArrival(arrivalConnection);
+        await waitForWaiters(awaitedStripeKey(DOCUMENT), 2);
+        open();
+        await registering;
+        expect(await arriving).toBe(1);
+        expect((await settledTo())?.settledDocumentId).toBe(DOCUMENT);
+      } finally {
+        open();
+        await Promise.allSettled([gate, registering, arriving]);
+      }
+    });
+
+    it("a foreign occupant at the awaited address never captures the link; the awaited document does", async () => {
+      await insertDocument(database, "manuscript", DOCUMENT_2); // squatting at the ref's address
       const registry = newRegistry(database);
-      await registry.register([registration]);
-      await insertDocument(database, "manuscript", DOCUMENT);
-      await database.update(documents).set({ name: "moved" }).where(eq(documents.id, DOCUMENT));
-      await insertDocument(database, "manuscript", DOCUMENT_2);
-      expect(await registry.settleRef(AHEAD, DOCUMENT as never)).toEqual({
-        settled: true,
-        documentId: DOCUMENT,
-      });
-      expect(await registry.settleRef(AHEAD, DOCUMENT_2 as never)).toEqual({
-        settled: false,
-        documentId: DOCUMENT,
-      });
-      const arrived = "00000000-0000-4000-8000-000000000b06";
-      await registry.register([{ ...registration, aheadId: arrived }]);
-      expect(await registry.settleRef(arrived, DOCUMENT as never)).toEqual({
-        settled: false,
-        documentId: DOCUMENT_2,
-      });
+      await registry.register([awaiting]);
+      expect((await settledTo())?.settledDocumentId).toBeNull();
       expect(
-        await registry.settleRef("00000000-0000-4000-8000-000000000b07", DOCUMENT as never),
-      ).toBeNull();
+        await runInDrizzleTransaction(database, () =>
+          registry.settleArrivals([DOCUMENT_2 as never]),
+        ),
+      ).toBe(0); // the occupant's own arrival: no capture
+      await landMoved();
+      expect(
+        await runInDrizzleTransaction(database, () => registry.settleArrivals([DOCUMENT as never])),
+      ).toBe(1);
+      expect((await settledTo())?.settledDocumentId).toBe(DOCUMENT);
+    });
+
+    it("an awaited document of another project never settles the link", async () => {
+      await database
+        .insert(projects)
+        .values({ id: OTHER_PROJECT, userId: USER, name: "Other", slug: "other-project" });
+      await database.insert(contextSources).values({
+        id: OTHER_SOURCE,
+        projectId: OTHER_PROJECT,
+        name: "Manuscript",
+        slug: "manuscript",
+      });
+      await database
+        .insert(documents)
+        .values({ id: DOCUMENT, contextSourceId: OTHER_SOURCE, name: "other", extension: "toml" });
+      const registry = newRegistry(database);
+      await registry.register([awaiting]);
+      expect(
+        await runInDrizzleTransaction(database, () => registry.settleArrivals([DOCUMENT as never])),
+      ).toBe(0);
+      expect((await settledTo())?.settledDocumentId).toBeNull();
+    });
+
+    it("a rolled-back arrival leaves the awaiting ref for the retry", async () => {
+      const registry = newRegistry(database);
+      await registry.register([awaiting]);
+      await expect(
+        runInDrizzleTransaction(database, async () => {
+          await landMoved(database);
+          expect(await registry.settleArrivals([DOCUMENT as never])).toBe(1);
+          throw new Error("rollback");
+        }),
+      ).rejects.toThrow("rollback");
+      expect(await settledTo()).toMatchObject({
+        settledDocumentId: null,
+        awaitedDocumentId: DOCUMENT,
+      });
+      await landMoved();
+      expect(
+        await runInDrizzleTransaction(database, () => registry.settleArrivals([DOCUMENT as never])),
+      ).toBe(1);
     });
 
     it.each(
-      (["identity", "arrival"] as const).flatMap((first) =>
+      (["arrival", "stop"] as const).flatMap((first) =>
         [false, true].map((rollback) => ({ first, rollback })),
       ),
-    )("identity versus arrival first=$first rollback=$rollback uses the committed CAS winner", async ({
+    )("concurrent Stop versus the awaited arrival first=$first rollback=$rollback keeps the committed winner", async ({
       first,
       rollback,
     }) => {
-      await insertDocument(database, "manuscript", DOCUMENT);
-      await database.update(documents).set({ name: "moved" }).where(eq(documents.id, DOCUMENT));
-      await newRegistry(database).register([registration]);
+      await newRegistry(database).register([awaiting]);
       let release!: () => void;
       const held = new Promise<void>((resolve) => {
         release = resolve;
       });
       const taken = notification("settlement row locked");
-      const identity = () => newRegistry(database).settleRef(AHEAD, DOCUMENT as never);
-      const arrival = () =>
-        runInDrizzleTransaction(arrivalConnection, async () => {
-          await lockContextSources(arrivalConnection, [SOURCE]);
-          await insertDocument(arrivalConnection, "manuscript", DOCUMENT_2);
-          return newRegistry(arrivalConnection).settleArrivals([DOCUMENT_2 as never]);
-        });
-      // Independent root transactions on distinct connections; the first keeps its row lock
-      // until the second is observed waiting on PostgreSQL, not just until its call returns.
+      const stop = () => newRegistry(database).releaseAwaiting([DOCUMENT as never]);
+      const arrival = () => awaitedArrival(arrivalConnection);
       const producer = taken.from(
-        runInDrizzleTransaction(first === "identity" ? database : arrivalConnection, async () => {
-          const result = first === "identity" ? await identity() : await arrival();
+        runInDrizzleTransaction(first === "stop" ? database : arrivalConnection, async () => {
+          const result = first === "stop" ? await stop() : await arrival();
           taken.notify();
           await held;
           if (rollback) throw new Error("rollback first settlement");
@@ -327,7 +435,8 @@ if (!RUN) {
       let competitor: Promise<unknown> | undefined;
       try {
         await taken.wait();
-        competitor = first === "identity" ? arrival() : identity();
+        // The competitor is the other operation; a second landing is a retry after the first.
+        competitor = first === "stop" ? arrival() : stop();
         for (let attempt = 0; ; attempt++) {
           const waiting = await gateConnection.execute<{ count: number }>(sql`
             SELECT count(*)::int AS count FROM pg_stat_activity
@@ -338,23 +447,18 @@ if (!RUN) {
           if (attempt >= WAIT_MS / 20) throw new Error("settlement did not contend on the row");
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
-        expect(await settledIds()).toEqual([null]);
+        expect(await settledTo()).toMatchObject({
+          settledDocumentId: null,
+          awaitedDocumentId: DOCUMENT,
+        });
         release();
-        const [, loser] = await Promise.all([ownedProducer, competitor]);
-        const winner = rollback
-          ? first === "identity"
-            ? DOCUMENT_2
-            : DOCUMENT
-          : first === "identity"
-            ? DOCUMENT
-            : DOCUMENT_2;
-        expect(await settledIds()).toEqual([winner]);
-        expect(loser).toEqual(
-          first === "identity" ? (rollback ? 1 : 0) : { settled: rollback, documentId: winner },
-        );
-        expect(await newRegistry(database).settleRef(AHEAD, DOCUMENT as never)).toEqual({
-          settled: false,
-          documentId: winner,
+        await Promise.all([ownedProducer, competitor]);
+        // The arrival wins only if it committed or Stop rolled back; a committed Stop frees the
+        // ref, and the moved arrival no longer matches it.
+        const arrivalWins = first === "arrival" ? !rollback : rollback;
+        expect(await settledTo()).toMatchObject({
+          settledDocumentId: arrivalWins ? DOCUMENT : null,
+          awaitedDocumentId: arrivalWins ? DOCUMENT : null,
         });
       } finally {
         release();
@@ -362,20 +466,24 @@ if (!RUN) {
       }
     });
 
-    it("identity settlement rolls back with its caller", async () => {
+    it("a late registration after Stop waits for its document, and a repeated Stop frees it", async () => {
       const registry = newRegistry(database);
-      await registry.register([registration]);
-      await insertDocument(database);
-      await expect(
-        runInDrizzleTransaction(database, async () => {
-          expect(await registry.settleRef(AHEAD, DOCUMENT as never)).toEqual({
-            settled: true,
-            documentId: DOCUMENT,
-          });
-          throw new Error("rollback");
-        }),
-      ).rejects.toThrow("rollback");
-      expect(await settledIds()).toEqual([null]);
+      await registry.register([awaiting]);
+      await registry.releaseAwaiting([DOCUMENT as never]);
+      await insertDocument(database, "manuscript", DOCUMENT_2); // occupant, after the first Stop
+      const late = "00000000-0000-4000-8000-000000000b09";
+      await registry.register([{ ...awaiting, aheadId: late }]);
+      const lateRow = async () =>
+        (await database.select().from(linkAheadRefs).where(eq(linkAheadRefs.aheadId, late)))[0];
+      expect(await lateRow()).toMatchObject({
+        settledDocumentId: null,
+        awaitedDocumentId: DOCUMENT,
+      });
+      expect(await registry.releaseAwaiting([DOCUMENT as never])).toBe(1);
+      expect(await lateRow()).toMatchObject({
+        settledDocumentId: DOCUMENT_2,
+        awaitedDocumentId: null,
+      });
     });
 
     it("manuscript namespace race settles exactly once in both orders", async () => {

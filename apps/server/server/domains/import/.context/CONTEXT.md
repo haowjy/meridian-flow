@@ -36,9 +36,7 @@ batches of 500.
 
 The isolated binder binds prose by existing placeholder id. Link-free code
 can bind to its planned id before its row exists; Context admits that bound
-write only when creation uses exactly that id. Recorded ahead refs and binary
-receipts serialize on the target entry row. Settlement is compare-and-set by
-ref id.
+write only when creation uses exactly that id.
 
 ## Wiki-style note conversion
 
@@ -68,8 +66,10 @@ Binaries and code have no row until they land. The binder receives them as
 pending ids: one already live binds to itself, otherwise it mints an ahead ref
 whose registry row persists the awaited id (`awaited_document_id`). No other
 document settles that row, whether it was at the address before registration
-or arrives after; only the target's landing settles it, by id, so a file at
-the address only makes the target count up. Finish (or Stop here) releases
+or arrives after; the registry settles it when the target arrives (or at
+registration, if the target is already live), wherever the target landed, so
+a file at the address only makes the target count up. Import keeps no mirror
+of the relation: it supplies awaited ids while binding and releases them. Finish (or Stop here) releases
 rows awaiting files that never landed; from then on they are ordinary ahead
 refs and settle at once to a document already at their address.
 
@@ -106,8 +106,7 @@ only the allocation seen at preparation.
 
 `import_entries` has one owner per field. Columns own identity, order, version,
 state, created, lease, storage, uri and sweep state; `spec` is the typed
-`ImportEntryPayload` (the planned node plus prepared, prependOnRetry, exists and
-pendingRefs). `ImportEntryPatch` is the only mutable surface, split into payload and
+`ImportEntryPayload` (the planned node plus prepared, prependOnRetry and exists). `ImportEntryPatch` is the only mutable surface, split into payload and
 column fields at the repository boundary; a column field is never written to `spec`.
 
 ## Reports and activity
