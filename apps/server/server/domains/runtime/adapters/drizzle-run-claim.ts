@@ -198,6 +198,11 @@ export function createDrizzleRunClaim(
       return toThreadStatus(row);
     },
 
+    async readOwned(lease) {
+      const [row] = await selectLiveLease().where(ownedRow(lease)).limit(1);
+      return row ? { cancelRequested: row.cancelRequested } : null;
+    },
+
     async readMany(threadIds) {
       if (threadIds.length === 0) return new Map<ThreadId, ThreadLeaseState>();
       const rows = await selectLiveLease().where(

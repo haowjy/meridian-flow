@@ -129,7 +129,11 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
-import { executeCompaction, recordCompactionSummary } from "./compaction-phase.js";
+import {
+  CompactionCancelledError,
+  executeCompaction,
+  recordCompactionSummary,
+} from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
@@ -2483,8 +2487,13 @@ async function executeLoop({
         // staged runtimes before surfacing cleanup failures, so a second failure
         // here should not hide the error that broke the response.
       }
-      const state = await deps.runClaim.read(input.threadId);
-      if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
+      // The execution's own row, whatever its expiry: Stop cancels an expired lease that is still held.
+      const owned = await deps.runClaim.readOwned(input.lease);
+      if (
+        input.signal?.aborted ||
+        err instanceof CompactionCancelledError ||
+        owned?.cancelRequested
+      ) {
         await exitRun(false, abortTerminal());
       } else if (currentTurnKind(currentTurn) === "compaction") {
         emitEvent(eventSink, {

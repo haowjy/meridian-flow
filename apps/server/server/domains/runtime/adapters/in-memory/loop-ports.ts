@@ -323,6 +323,13 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       return { kind: "awake", phase: row.phase, cancelRequested: row.cancelRequested };
     },
 
+    async readOwned(lease) {
+      const row = leases.get(lease.threadId);
+      return row?.executionId === lease.executionId
+        ? { cancelRequested: row.cancelRequested }
+        : null;
+    },
+
     async readMany(threadIds) {
       const states = new Map<ThreadId, ThreadLeaseState>();
       for (const threadId of threadIds) {
