@@ -691,6 +691,7 @@ export class ContextRemovalCoordinator {
       cause: "writer-close",
       documentIds: [documentId],
       tabInstanceId: tab.tabInstanceId,
+      ...this.closingReview(state, tab),
     });
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
@@ -733,6 +734,14 @@ export class ContextRemovalCoordinator {
     });
   }
 
+  /** Closing a draft-only tab drops the active Work's entry; another Work's review keeps the tab. */
+  private closingReview(
+    state: { activeWorkId: string | null },
+    tab: ContextTab,
+  ): { reviewWorkId?: string } {
+    return tab.draftOnly && state.activeWorkId ? { reviewWorkId: state.activeWorkId } : {};
+  }
+
   private commitWriterClose(
     projectId: string,
     addressed: ContextTab,
@@ -748,6 +757,7 @@ export class ContextRemovalCoordinator {
       cause: "writer-close",
       documentIds: [documentId],
       tabInstanceId: tab.tabInstanceId,
+      ...this.closingReview(state, tab),
     });
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, { ...transition.planning, repair });
@@ -1012,9 +1022,7 @@ export class ContextRemovalCoordinator {
 
     this.workspace.commit(projectId, {
       documentIds: plan.outcome.removed.map((tab) => tab.documentId),
-      ...(intent.cause === "draft-discard" && intent.reviewWorkId
-        ? { dropReviewOf: intent.reviewWorkId }
-        : {}),
+      ...(intent.reviewWorkId ? { dropReviewOf: intent.reviewWorkId } : {}),
       ...(state.activeWorkId
         ? {
             workspaceSelection: {
