@@ -206,7 +206,12 @@ export function projectResourceTab(
     return { kind: "projected", resourceHandle: record.resource.handle, tab: projected };
   }
   const projected = contextTabFromResource(projectId, record, placement);
+  // The projection re-describes the resource, not the open: the instance id is the open's own.
   return projected
-    ? { kind: "projected", resourceHandle: record.resource.handle, tab: projected }
+    ? {
+        kind: "projected",
+        resourceHandle: record.resource.handle,
+        tab: tab.tabInstanceId ? { ...projected, tabInstanceId: tab.tabInstanceId } : projected,
+      }
     : { kind: "removed" };
 }

@@ -72,7 +72,14 @@ vi.mock("@/components/app/PaintHold", () => ({
     work({ read: undefined }),
   usePaintCoverProjection: () => () => {},
 }));
-const resources = { acquireCatalog: vi.fn(), acquireCatalogAfter: vi.fn() };
+const resources = {
+  acquireCatalog: vi.fn(),
+  acquireCatalogAfter: vi.fn(),
+  observeProjection: (_project: string, next: (snapshot: unknown) => void) => {
+    next({ records: [], folders: [], catalogs: [] });
+    return () => {};
+  },
+};
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 let promote: ReturnType<typeof vi.spyOn>;
 let replica: ReturnType<typeof vi.spyOn>;
