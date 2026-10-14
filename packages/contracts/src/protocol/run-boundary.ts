@@ -22,6 +22,7 @@ import { type AiWriteMode, aiWriteModeSchema } from "../works/ai-write-mode.js";
 
 export const MESSAGES_DELIVERED_EVENT = "meridian.messages.delivered" as const;
 export const EXECUTION_ENDED_EVENT = "meridian.execution.ended" as const;
+export const WRITE_MODE_SWITCHED_EVENT = "meridian.write_mode.switched" as const;
 
 export type RunStartedMeta = {
   writeMode: AiWriteMode | null;
@@ -45,6 +46,20 @@ export type MessagesDeliveredValue = {
 
 /** `meridian.execution.ended`: the execution will do no further work and its turns are terminal. */
 export type ExecutionEndedValue = { executionId: string };
+
+/**
+ * `meridian.write_mode.switched`: a queued or idle switch applied. It carries
+ * the journal seq of the transition itself, so a client orders the new mode
+ * against every `meridian.inbox.changed` and answer `seq` on one clock.
+ */
+export type WriteModeSwitchedValue = {
+  threadId: string;
+  mode: AiWriteMode;
+  /** The control message that asked for the switch. */
+  controlId: string;
+  /** The complete `system` switch turn. */
+  turnId: string;
+};
 
 const runStartedMetaSchema = z.object({
   writeMode: aiWriteModeSchema.nullable().optional(),

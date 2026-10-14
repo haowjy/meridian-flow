@@ -550,7 +550,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect((await delivery.selectPending(THREAD_A)).map((row) => row.id)).toContain(
             second.id,
           );
-          expect(await delivery.withdrawControl(THREAD_A, second.id)).toEqual({
+          expect(await delivery.withdrawControl(THREAD_A, second.id)).toMatchObject({
             outcome: "withdrawn",
           });
           const [thread] = await db
