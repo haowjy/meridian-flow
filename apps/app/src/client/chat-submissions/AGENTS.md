@@ -66,7 +66,8 @@ from `useThreadControls`, and the server's answer reaches it through `onSwitchAn
 before the record is retired. The owner exposes the chat's journal switches (`switches`: id, mode, `seq`, posted, refused,
 failed) and the answers (`onSwitchAnswered`); the switch ledger
 (`features/chat/thread-controls/switch-ledger.ts`) decides what the writer sees, including
-when a record has left storage. The owner keeps only the journal side: `seq`, `posted`, the
+when a record has left storage. The ledger counts the order it first held each record in, because `seq` is allocated above the
+records still held and a retired record's number is reused. The owner keeps only the journal side: `seq`, `posted`, the
 posted-aware Withdraw, and the keyed "Couldn't switch" announcement (cleared on Retry and
 when the record leaves).
 

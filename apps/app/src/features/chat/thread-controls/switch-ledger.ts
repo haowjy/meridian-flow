@@ -45,8 +45,12 @@ export type LedgerState = "sending" | "posted" | "queued" | "applied" | "gone";
 export type LedgerEntry = {
   id: string;
   mode: AiWriteMode;
-  /** The journal's place in this tab's order; `null` for a switch only the server has shown. */
-  seq: number | null;
+  /**
+   * The order in which this tab's journal first held the entry, counted by the ledger, or
+   * `null` for a switch only the server has shown. A record's own `seq` is not it: the journal
+   * allocates `seq` above the records it still holds, so a retired record's number is reused.
+   */
+  held: number | null;
   /** The server's pending-inbox order, once an inbox or snapshot has listed it. */
   serverSeq: number | null;
   state: LedgerState;
@@ -76,6 +80,8 @@ export type LedgerEntry = {
 
 export type Ledger = {
   entries: readonly LedgerEntry[];
+  /** How many entries the journal has held so far: the next entry's `held`. */
+  heldCount: number;
   /** Control ids that a rendered divider names. A stale inbox frame cannot revive these. */
   named: ReadonlySet<string>;
   /** Rendered divider turn ids, with the mode each switched to. */
@@ -88,6 +94,7 @@ export type Ledger = {
 
 export const EMPTY_LEDGER: Ledger = {
   entries: [],
+  heldCount: 0,
   named: new Set(),
   dividers: new Map(),
   positions: new Map(),
@@ -97,6 +104,7 @@ export const EMPTY_LEDGER: Ledger = {
 export type JournalRecord = {
   id: string;
   mode: AiWriteMode;
+  /** The journal's order among the records it holds now; not comparable with a retired record's. */
   seq: number;
   posted: boolean;
   /** The server refused it: Withdraw is local. */
@@ -156,7 +164,8 @@ const byId = (a: LedgerEntry, b: LedgerEntry) => (a.id < b.id ? -1 : a.id > b.id
 /**
  * The chat's causal order, a merge of the two chains the sources give:
  *
- * - the journal chain: entries with a `seq`, in `seq` order (this tab's known happens-before);
+ * - the journal chain: entries this tab's journal has held, in the order it first held them
+ *   (this tab's known happens-before);
  * - the server chain: entries the server has placed (a divider's transcript position, else
  *   its inbox order).
  *
@@ -172,8 +181,8 @@ function causalOrder(
 ): LedgerEntry[] {
   const place = new Map(entries.map((entry) => [entry, serverPlace(entry, positions)] as const));
   const journal = entries
-    .filter((e) => e.seq !== null)
-    .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || byId(a, b));
+    .filter((e) => e.held !== null)
+    .sort((a, b) => (a.held ?? 0) - (b.held ?? 0) || byId(a, b));
   const server = entries
     .filter((e) => place.get(e))
     .sort((a, b) => {
@@ -228,7 +237,7 @@ function blank(id: string, mode: AiWriteMode, at: number, state: LedgerState): L
   return {
     id,
     mode,
-    seq: null,
+    held: null,
     serverSeq: null,
     state,
     failed: false,
@@ -288,8 +297,10 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
   switch (event.type) {
     case "journal": {
       let next = ledger;
+      let heldCount = ledger.heldCount;
       const held = new Set(event.records.map((record) => record.id));
-      for (const record of event.records) {
+      const inOrder = [...event.records].sort((a, b) => a.seq - b.seq || (a.id < b.id ? -1 : 1));
+      for (const record of inOrder) {
         const state: LedgerState = next.named.has(record.id)
           ? "applied"
           : record.posted
@@ -299,7 +310,7 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
           const advanced = advance(entry, state);
           return {
             ...advanced,
-            seq: record.seq,
+            held: advanced.held ?? heldCount++,
             inJournal: true,
             observedAt: raise(advanced, event.at),
             failed: RANK[advanced.state] <= RANK.posted && record.failed,
@@ -307,6 +318,7 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
           };
         });
       }
+      next = { ...next, heldCount };
       return mapEntries(next, (entry) =>
         entry.inJournal && !held.has(entry.id)
           ? {
@@ -353,12 +365,12 @@ function step(ledger: Ledger, event: LedgerEvent): Ledger {
       // this tab's journal ordered just before it, when that one is still held; the answer
       // never lists ids, so anything else stays until a snapshot says otherwise.
       const own = next.entries.find((entry) => entry.id === event.id);
-      if (own?.seq == null) return next;
-      const ownSeq = own.seq;
+      if (own?.held == null) return next;
+      const ownHeld = own.held;
       let before: LedgerEntry | null = null;
       for (const entry of next.entries) {
-        if (entry.seq === null || entry.seq >= ownSeq || entry.state === "gone") continue;
-        if (!before || entry.seq > (before.seq ?? 0)) before = entry;
+        if (entry.held === null || entry.held >= ownHeld || entry.state === "gone") continue;
+        if (!before || entry.held > (before.held ?? 0)) before = entry;
       }
       const target = before;
       if (

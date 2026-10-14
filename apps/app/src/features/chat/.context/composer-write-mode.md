@@ -51,7 +51,9 @@ running turn's own mode.
 
 The **switch ledger** (`thread-controls/switch-ledger.ts`, pure; `useSwitchLedger` is its
 hook) is the one owner of a switch on screen. Each tab keeps one per chat, keyed by control
-id; each entry carries its mode, its journal `seq` and a state that only moves forward:
+id; each entry carries its mode, the order its journal first held it in (`held`) and a state
+that only moves forward. The journal's own `seq` orders only the records it holds together: it
+allocates above them, so a retired record's number is reused, and the ledger counts instead:
 
 | State | Entered on |
 | --- | --- |
@@ -72,17 +74,24 @@ was and the hook asks for a snapshot. Terminal evidence:
   request began after the entry's last observation and shows the id neither pending nor as a
   divider.
 - A cancel-out is evidence about its own id only. The answer carries no ids, so the switch the
-  server cancelled is predicted: the journal entry ordered just before the answered one, of
+  server cancelled is predicted: the entry the journal held just before the answered one, of
   the other mode, still `posted` or `queued`, is marked **cancel-predicted**. It is hidden from
-  rows and the overlay and not terminal. A snapshot that began after the answer settles it: one
-  that lists the id clears the mark, one that doesn't makes it `gone`. An answer never touches
+  rows and the overlay and not terminal. Only a snapshot whose request began after the mark's
+  watermark settles it: one that lists the id clears the mark, one that doesn't makes it `gone`.
+  A socket inbox frame listing it, or an older snapshot, clears nothing: either can predate the
+  cancel. An answer never touches
   an entry the journal doesn't hold, so another device's newer switch survives a delayed answer.
 - **Watermark.** Every source that shows an entry raises its `observedAt` to the larger of the
   old value and the new reading: the journal, inbox and answer by the request counter at
   observation, a snapshot that lists it by its `request`. An absent snapshot proves absence
   only with `request > observedAt`. The counter (`snapshotRequestCount`) is read when a
-  fetch starts, and `threadSnapshotQueryOptions` stamps every fetch of the snapshot key, so no
-  producer (host, passive observer, invalidation) can return an unstamped result.
+  fetch starts, and `threadSnapshotQueryOptions` stamps every fetch of the snapshot key.
+- **One guarded observer.** `useThreadSnapshotSync` is the only observer of the snapshot key,
+  so its guarded options (identity, older than live changes) are the only ones Query keeps and a
+  rejected response never becomes cached data. The ledger reads only the snapshot the host
+  accepted (`ChatView`'s `snapshot` prop). Every other reader of the key (`useDisplayedThread`,
+  the missing-chat fallback, the ledger's fetch state) uses `useThreadSnapshotCache`, an
+  observer-free cache subscription.
 - **Proof loop.** While the ledger holds an entry only a snapshot can settle (`proofNeed`),
   `useProofLoop`, the chat's one owner, drives acquisitions from completion: an insufficient
   success (request not above the bar) is followed at once by one fresh fetch, which qualifies;
@@ -95,9 +104,11 @@ switch back before its answer hides both rows, only against a predecessor still 
 `posted` or `queued`: an `applied` one stays a row and the later switch shows). `sending` and
 `posted` show as sending, `queued` and not-yet-rendered `applied` as queued (so no frame lacks
 both the row and the divider). A failed row shows Retry; Withdraw shows unless the server may
-hold it (posted and not refused). Entries are ordered causally: those the server has applied
-(transcript order) first, then those it holds queued (inbox order), then those only this tab's
-journal knows (`seq` order), the id breaking a tie. The mode is the rendered snapshot's
+hold it (posted and not refused). Entries are ordered causally, as a merge of two chains: the
+journal's (`held` order) and the server's (transcript position, else inbox order). An entry on
+both anchors them together; a journal-only entry stays right after its journal predecessor.
+Lifecycle state never reorders either chain; only between entries no anchor relates does an
+applied one with no divider yet go before what the server still holds queued. The mode is the rendered snapshot's
 `thread.aiWriteMode` with each entry laid over it in that order, the last winning, until a
 snapshot holding the entry's divider has rendered. No client path writes a write mode into a
 cache: a snapshot may insert a project-list row with its mode but never rewrites an existing
