@@ -367,6 +367,39 @@ const SCENARIOS: {
     news: ["s3"],
   },
   {
+    name: "S1: with no snapshot, nothing from stamps or frames renders or is announced",
+    steps: [
+      // The journal still holds a stamped switch from before the reload; the socket replays
+      // the frames of switches the server already applied.
+      [{ stamp: 3, mode: "draft", queued: ["s1", "draft"] }, "direct", []],
+      [inbox(at(4), ["s1", "draft"]), "direct", []],
+      [switched(at(4, 1), "draft", "s1"), "direct", []],
+      [inbox(at(4, 2)), "direct", []],
+      // The retry loads: the snapshot is the first record, and what it holds is not news.
+      [snapshot(4, "draft"), "draft", []],
+    ],
+    retained: [],
+    news: [],
+  },
+  {
+    name: "S2: an instant switch back keeps the writer's last pick on screen through the first answer",
+    steps: [
+      [snapshot(1, "direct"), "direct", []],
+      [choose("s1", "draft", 1), "draft", ["s1:sending"]],
+      [choose("s2", "direct", 2), "direct", []],
+      // The first switch enqueues, applies on the idle chat and answers, while s2 waits behind it.
+      [inbox(at(2), ["s1", "draft"]), "direct", []],
+      [switched(at(2, 1), "draft", "s1"), "direct", ["s2:sending"]],
+      [inbox(at(2, 2)), "direct", ["s2:sending"]],
+      [answer("s1", 2, "draft"), "direct", ["s2:sending"]],
+      // Then s2 enqueues, applies and answers.
+      [inbox(at(3), ["s2", "direct"]), "direct", ["s2:queued"]],
+      [switched(at(3, 1), "direct", "s2"), "direct", []],
+      [answer("s2", 3, "direct"), "direct", []],
+    ],
+    retained: [],
+  },
+  {
     name: "a reload with a queued switch shows it queued, and its answer from the journal stamp retires nothing twice",
     steps: [
       [snapshot(4, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
