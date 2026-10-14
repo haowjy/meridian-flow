@@ -3,7 +3,7 @@
  * hidden contents where that draft placed them when the writer renames, moves or deletes
  * a live folder. A visible folder arriving at a hidden folder's path absorbs it; a delete
  * or a move out of the project splits hidden contents off into hidden twins at their old
- * paths. Change rows naming an absorbed or split folder follow it.
+ * paths.
  *
  * Every function runs in its caller's transaction, which holds the namespace locks of
  * every source involved; every draft tree write takes those too, so nothing a draft
