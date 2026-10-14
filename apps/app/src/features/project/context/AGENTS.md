@@ -63,20 +63,24 @@ Shared across both shells:
   resolve a destination (a folder by ID, or an area root with its authority),
   share the refusals (inside itself, already there, name taken) and place
   through the replica. Don't place entries anywhere else.
-- **Selection and dragging** (`entry-drag/`): VS Code's selection model. The
-  list that renders the rows owns one selection (`useEntrySelection`, handed to
-  rows through `EntrySelectionProvider`) and gives it to its drop routes (the
-  Files tree has one per area), so a drop can reselect what moved. Until the writer Ctrl/Cmd- or Shift-clicks, the
-  selection is just the open row; Escape returns to it. Dragging carries the
-  selection; a drop on a folder, an area header or any row inside an open folder
-  moves within one system (the project areas are one; each owner's Scratch is
-  its own), reselects, and offers Undo (`MoveNotice`, on the surface that took
-  the drop). A row drags only when its surface grants Move; a selection that
-  spans systems or holds an unmovable row moves nowhere. Desktop shell only.
-- **Drop dispatch** (`tree-drop/`): shared with import (#798). A target is a
-  catalog root plus an optional folder; a file row hands its drop to its folder.
-  Routes decide (`files`, `entries`); the scope counts hovered elements per
-  target, so a folder row and the rows inside it are one target, and the
+- **Selection and dragging** (`entry-drag/`): VS Code's selection model. One
+  list is one selection, one route for rows dropped on it and one drop scope
+  (`useEntryList` and `EntryList`; the Files tree is one list over its four
+  areas). Selection and drag carry identities (`EntryRef`, keyed `kind:id`),
+  never placement: `move-plan.ts` reads where each row sits from the replica's
+  placement when it plans, so a moved row stays selected and a peer's move is
+  seen. Until the writer Ctrl/Cmd- or Shift-clicks, the selection is just the
+  open row; Escape returns to it. Dragging carries the selection; a drop on a
+  folder, an area header or any row inside an open folder moves within one
+  system (the project areas are one; each owner's Scratch is its own),
+  reselects, and offers Undo (`MoveNotice`, in the `MoveNoticeHost` of the
+  surface that took the drop: the sidebar, or Work Files). A row drags only
+  when its surface grants Move; a selection that spans systems or holds an
+  unmovable row moves nowhere. Desktop shell only.
+- **Drop dispatch** (`tree-drop/`): import (#798) adds a desktop-files route
+  beside the rows route. A target is a catalog root plus an optional folder; a
+  file row hands its drop to its folder. The route decides; the scope counts
+  hovered elements per target, so a folder row and the rows inside it are one target, and the
   innermost target claims each event. `DropRegion` lights a target's whole
   extent; `DragHint` says what the drop will do or why it can't.
 
