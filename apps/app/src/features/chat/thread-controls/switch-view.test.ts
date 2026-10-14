@@ -17,10 +17,12 @@ import {
   receiveRecord,
 } from "@/client/run-state/run-state-view";
 import {
+  type Received,
   receiveFrame,
   recordFromAnswer,
   recordFromSnapshot,
   type SwitchFrame,
+  seedFrames,
 } from "./switch-record";
 
 type Mode = "draft" | "direct";
@@ -68,7 +70,7 @@ const answer = (id: string, j: number, mode: Mode, queued?: Queued): Event => ({
   queued,
 });
 
-function step(view: RunStateView, event: Event): RunStateView {
+function stepView(view: RunStateView, event: Event): RunStateView {
   if ("snapshot" in event)
     return receiveRecord(
       view,
@@ -78,7 +80,7 @@ function step(view: RunStateView, event: Event): RunStateView {
         liveState: { pending: pending(...(event.queued ?? [])) },
       }),
     );
-  if ("frame" in event) return receiveFrame(view, event.frame);
+  if ("frame" in event) return view; // frames go through `step`, which may hold them
   if ("choose" in event)
     return addIntent(view, {
       kind: "switch",
@@ -260,6 +262,14 @@ const SCENARIOS: { name: string; steps: [Event, mode: Mode, rows: string[]][] }[
     ],
   },
   {
+    name: "a frame that arrives before the first snapshot is applied when the snapshot is older",
+    steps: [
+      [inbox(at(2), ["s1", "draft"]), "direct", []],
+      [snapshot(1, "direct"), "draft", ["s1:queued"]],
+      [switched(at(3), "draft", "s1"), "draft", []],
+    ],
+  },
+  {
     name: "a reload with a queued switch shows it queued, and its answer from the journal stamp retires nothing twice",
     steps: [
       [snapshot(4, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
@@ -268,12 +278,18 @@ const SCENARIOS: { name: string; steps: [Event, mode: Mode, rows: string[]][] }[
   },
 ];
 
+/** The hook's state: the view, and the frames that came before its first record. */
+function step(state: Received, event: Event): Received {
+  if ("frame" in event) return receiveFrame(state, event.frame);
+  return seedFrames(stepView(state.view, event), state.early);
+}
+
 it("derives the switch rows and toolbar mode from server facts at one seq and unanswered intents", () => {
   for (const scenario of SCENARIOS) {
-    let view = EMPTY_VIEW;
+    let state: Received = { view: EMPTY_VIEW, early: [] };
     scenario.steps.forEach(([event, mode, rows], index) => {
-      view = step(view, event);
-      const shown = switchState(view, "direct");
+      state = step(state, event);
+      const shown = switchState(state.view, "direct");
       const label = `${scenario.name} (step ${index + 1})`;
       expect(shown.mode, label).toBe(mode);
       expect(
