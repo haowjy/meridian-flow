@@ -50,7 +50,7 @@ describe("draft tab settlement", () => {
     useContextTabsStore.getState().openTab("project-a", draftTab());
   });
 
-  it("promotes only the exact tab it was given and leaves a replacement overlay alone", async () => {
+  it("promotes only the exact tab instance it was given and leaves a reopened draft-only tab alone", async () => {
     const { coordinator } = rig();
     const applied = getContextTabs("project-a").tabs[0];
     if (applied?.kind !== "tracked") throw new Error("Expected tracked draft tab");
@@ -121,6 +121,12 @@ describe("draft tab settlement", () => {
 
     // Discard in A leaves B's entry and tab; A no longer shows it.
     coordinator.discardDraft("project-a", "work-a", "draft-a");
+    expect(inWork("work-a")).toEqual([]);
+    expect(inWork("work-b")).toEqual(["document-a"]);
+    // A writer's close in A drops A's entry the same way.
+    store.openTab("project-a", draftTab());
+    coordinator.changeWorkSelection("project-a", "work-a", null);
+    coordinator.writerClose("project-a", getContextTabs("project-a").tabs[0] as never);
     expect(inWork("work-a")).toEqual([]);
     expect(inWork("work-b")).toEqual(["document-a"]);
     // The last entry's Discard closes the tab.
