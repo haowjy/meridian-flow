@@ -16,7 +16,6 @@ const END_OF_USE = new Map([
     "domains/collab/adapters/drizzle-draft-discard.ts",
     "Discard kernel: draft_closed, document_discarded, edit_discarded",
   ],
-  ["domains/collab/adapters/drizzle-drafts.ts", "Drafts.close: the draft itself ends"],
   [
     "domains/collab/adapters/drizzle-branches.ts",
     "peer replacement, closed-upstream peers, retractCreate",
