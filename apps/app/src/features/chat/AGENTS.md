@@ -159,9 +159,8 @@ a withdrawal, a Stop) cover the gap until a record at or past their answer
 arrives. `ThreadRunController` only admits a send and recovers a lost admission;
 it follows nothing.
 
-Stop sits beside Send while a reply runs, so a writer can stop with a draft in
-the composer (the choice is `showStop`/`showSend` in the Composer; see its
-AGENTS.md). Stop (`useChatStop`) cancels the running reply and hands every waiting writer
+The composer has one button: Stop while a reply runs and the box is empty, Send
+once there is text (the owner's ruling, TL-MF-80; see the Composer's AGENTS.md). Stop (`useChatStop`) cancels the running reply and hands every waiting writer
 message back into the composer, in send order as one plain editable message with
 a blank line between them, above what is typed. The press is written to the
 tab's composer draft (`handBacks`) before it is sent, so a reload re-posts it;

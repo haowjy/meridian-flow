@@ -100,8 +100,8 @@ runs it with the rest of the draft, trimmed, as `instructions`; choosing it
 from the `/` menu runs it with none. Commands wait at the end of the queue: a
 running reply adopts queued messages at each tool boundary, and a new run takes
 waiting messages first; a command runs only when no message waits, oldest
-first, one per run. Stop (the Stop button beside Send, or Esc in an empty composer; with a
-draft, Esc leaves the run alone) only ends the turn; the same rule picks what
+first, one per run. Stop (the composer's Stop button, shown when the box is empty, or Esc then; with a
+draft the button is Send and Esc leaves the run alone) only ends the turn; the same rule picks what
 runs next. The client special-cases none of it and just shows the server's
 state.
 

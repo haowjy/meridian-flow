@@ -97,14 +97,14 @@ export type ComposerProps = {
   onStop?: () => void;
   /**
    * A run is active on this thread (a reply streaming, a compaction, a brief).
-   * Stop shows beside Send, whatever the composer holds; Escape in the empty composer
-   * presses it, and a send queues behind the run.
+   * With the box empty the one button is Stop, and Escape presses it. With text it is Send
+   * (spinning ring), and a send queues behind the run.
    */
   running?: boolean;
   /**
    * This tab's Stop request. Pending and stopping read Stopping and do nothing on a press;
    * failed says so beside the control and keeps it, even after the chat goes idle, so the
-   * retry stays reachable.
+   * retry stays reachable. All of it shows only while the box is empty; text shows Send.
    */
   stopStatus?: "idle" | "pending" | "stopping" | "failed";
   placeholder?: string;
@@ -508,13 +508,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     });
   }, [editor]);
 
-  // Where Stop shows: whenever a reply runs or this tab's Stop is pending, stopping or failed,
-  // beside Send, whatever the composer holds. Send shows whenever there is something to send.
-  const showStop = running || stopStatus !== "idle";
-  const showSend = hasContent || !showStop;
-  // Escape presses Stop only in the empty composer. With a draft it leaves the run and the
-  // draft alone for other Escape owners (menus, dialogs): ending a reply is not a side effect.
-  const escapeStops = showStop && !hasContent;
+  // One button, as on main: Stop while the box is empty and a reply runs or this tab's Stop is
+  // pending, stopping or failed; Send (with the running ring while a reply runs) once there is text.
+  // Escape is the Stop button: it stops only while Stop shows, so a draft is never a side effect.
+  const showStop = (running || stopStatus !== "idle") && !hasContent;
   const stopInProgress = stopStatus === "pending" || stopStatus === "stopping";
   const keyDown = (event: React.KeyboardEvent) => {
     if (
@@ -524,7 +521,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       )
     )
       return;
-    if (event.key === "Escape" && escapeStops && !stopInProgress) {
+    if (event.key === "Escape" && showStop && !stopInProgress) {
       event.preventDefault();
       onStop?.();
     }
@@ -628,7 +625,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               ) : null}
             </Button>
           ) : null}
-          {showSend ? (
+          {!showStop ? (
             <Button
               type="button"
               size="icon-sm"
@@ -639,7 +636,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               className={running ? "relative rounded-full" : "rounded-field"}
             >
               <ArrowUp className="size-4" />
-              {running && hasContent ? (
+              {running ? (
                 <span
                   aria-hidden="true"
                   className="pointer-events-none absolute -inset-1 rounded-full border-2 border-primary/30 border-t-primary motion-safe:animate-spin"
