@@ -119,6 +119,8 @@ export type ChatViewProps = {
    * is not in this conversation.
    */
   historySettled: boolean;
+  /** The first successful history load is in the transcript: the switch ledger seeds from it. */
+  historyLoaded: boolean;
   activateProjection: (after?: string) => boolean;
   /** A notice framed onto the composer's top edge; the composer stays usable under it. */
   composerStrip?: ReactNode;
@@ -135,6 +137,7 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotThreadUsage = null,
   historySettled,
+  historyLoaded,
   activateProjection,
   composerStrip,
   active = true,
@@ -260,7 +263,7 @@ export function ChatView({
       snapshotWriteMode ?? activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
     pending: pendingInbox,
     turns,
-    historySettled,
+    historyLoaded,
     journal: submissions.switches,
   });
   const controls = useThreadControls({
