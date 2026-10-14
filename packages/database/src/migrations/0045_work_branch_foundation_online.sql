@@ -145,6 +145,6 @@ CREATE TABLE IF NOT EXISTS "document_forwards" (
 	CONSTRAINT "document_forwards_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action
 );
 --> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "document_forwards_to" ON "document_forwards" USING btree ("to_document_id");
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_forwards_to" ON "document_forwards" USING btree ("to_document_id");
 --> statement-breakpoint
 RESET lock_timeout;
