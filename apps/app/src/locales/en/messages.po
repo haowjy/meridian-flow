@@ -313,6 +313,10 @@ msgstr "{name} ({skill})"
 msgid "{name} (in the trash)"
 msgstr "{name} (in the trash)"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "{name} can't be changed."
+msgstr "{name} can't be changed."
+
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{name} has {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
 msgstr "{name} has {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
@@ -2570,6 +2574,7 @@ msgstr "Live version"
 msgid "Live view"
 msgstr "Live view"
 
+#: src/features/draft-review/DraftImagePreview.tsx
 #: src/features/project/work/WorkFileGroup.tsx
 msgid "Loading"
 msgstr "Loading"
@@ -4110,8 +4115,56 @@ msgid "Text size"
 msgstr "Text size"
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change can't be made because the draft is archived."
+msgstr "That change can't be made because the draft is archived."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be redone because it is held for review."
+msgstr "That change can't be redone because it is held for review."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be redone because the text changed afterwards."
+msgstr "That change can't be redone because the text changed afterwards."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be redone because you discarded it."
+msgstr "That change can't be redone because you discarded it."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be redone because you undid it."
+msgstr "That change can't be redone because you undid it."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be redone here because it was already applied to your manuscript."
+msgstr "That change can't be redone here because it was already applied to your manuscript."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be redone here because the chat now writes somewhere else."
+msgstr "That change can't be redone here because the chat now writes somewhere else."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone because it is held for review."
+msgstr "That change can't be undone because it is held for review."
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because later edits depend on it."
 msgstr "That change can't be undone because later edits depend on it."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone because the text changed afterwards."
+msgstr "That change can't be undone because the text changed afterwards."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone because you discarded it."
+msgstr "That change can't be undone because you discarded it."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone here because it was already applied to your manuscript."
+msgstr "That change can't be undone here because it was already applied to your manuscript."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone here because the chat now writes somewhere else."
+msgstr "That change can't be undone here because the chat now writes somewhere else."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change couldn't be made in {name}."
@@ -4133,6 +4186,10 @@ msgstr "That chapter is no longer available, so this change can't be reversed."
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 msgid "That did not work."
 msgstr "That did not work."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "That document can't be changed."
+msgstr "That document can't be changed."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That document couldn't be found."
@@ -4209,6 +4266,10 @@ msgstr "The browser blocked the clipboard. Check this site's permissions."
 msgid "The change could not be confirmed. Try again."
 msgstr "The change could not be confirmed. Try again."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "The change didn't fit the current draft. The AI will read it again."
+msgstr "The change didn't fit the current draft. The AI will read it again."
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The document could not be created. Try again."
 msgstr "The document could not be created. Try again."
@@ -4249,6 +4310,10 @@ msgstr "The requested passage wasn't specific enough."
 msgid "the source chat"
 msgstr "the source chat"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+msgstr "The text it edited was undone, so the change wasn't kept. The AI will read it again."
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The Work did not change. Try again."
@@ -4261,6 +4326,18 @@ msgstr "Theme"
 #: src/core/editor/images/image-uploads.ts
 msgid "There is nowhere left to put that picture."
 msgstr "There is nowhere left to put that picture."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "There isn't enough left to redo."
+msgstr "There isn't enough left to redo."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "There isn't enough left to undo."
+msgstr "There isn't enough left to undo."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "There was nothing to revert."
+msgstr "There was nothing to revert."
 
 #: src/features/account/SettingsDialog.tsx
 msgid "These preferences follow your account wherever you sign in."
@@ -4829,6 +4906,10 @@ msgstr "Wait for this response to finish, then try again."
 msgid "Waiting for usage"
 msgstr "Waiting for usage"
 
+#: src/features/draft-review/DraftImagePreview.tsx
+msgid "Waiting for your review"
+msgstr "Waiting for your review"
+
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
 msgstr "We couldn’t confirm this purchase yet. Check your balance before trying again."
@@ -4972,6 +5053,18 @@ msgstr "you answered"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "You can retry when this chat is free."
 msgstr "You can retry when this chat is free."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded the text it edited, so the change wasn't kept. The AI will read it again."
+msgstr "You discarded the text it edited, so the change wasn't kept. The AI will read it again."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded this draft, so the change wasn't kept. The AI will read it again."
+msgstr "You discarded this draft, so the change wasn't kept. The AI will read it again."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "You discarded this new document, so the change wasn't kept. The AI will read it again."
+msgstr "You discarded this new document, so the change wasn't kept. The AI will read it again."
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "You have {count, plural, one {# pending change} other {# pending changes}} waiting for review. From now on, AI changes go live right away."
