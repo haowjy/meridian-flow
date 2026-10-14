@@ -59,6 +59,34 @@ transcript ancestry or stream order.
   own transaction, regardless of expiry: an execution on a snapshot turn that
   is not open has ended. The WS `subscribed` state does not carry it.
 
+## Run state: the record and its publication
+
+One `RunState` per chat (`packages/contracts/src/threads/run-state.ts`) says what the chat is doing:
+its waiting inbox (`items`), `sentThrough`, the open `execution`, the applied write `mode` and the
+usage `blocked` reason. It is a pure function of rows (`loop/run-state.ts`, read by
+`adapters/drizzle-run-state.ts`), never of the clock: the lease row counts whatever its expiry, and a
+turn must carry its execution id for the execution to show.
+
+- **Publication.** A transaction participant appends one `run_state.changed` journal row for every chat
+  marked changed, before the transaction commits, so a chat's last record follows its last input write.
+  Every adapter method that writes an input (inbox rows, the lease row, `threads.inbox_blocked_reason`,
+  and `applyDueSwitch`'s mode through `DeliveryStore.markRunStateChanged`) marks the chat, under the
+  chat's thread lock. A mark without the lock, or after the flush, throws. Savepoints fork the
+  participant's state and merge it back on release, so a rolled-back lock or mark disappears with it.
+  Work-context notices are not in the record and mark nothing. Releasing a lease row no turn carries
+  and that bound nothing changes nothing, so it marks nothing.
+- **Versions.** The stream frame `meridian.run_state` is the whole record; the hub stamps its own seq
+  (`journalSeq * 1000`) on it, live and on replay. The snapshot, the socket's `subscribed` state and
+  command answers read the record with the journal head (`journalSeq * 1000 + 999`).
+- **Answers.** Control and Retry answers carry `runState` from `answerRunState` under the thread
+  lock: if the transaction has an unpublished change it publishes first and answers with that record at
+  its stream version; otherwise it reads at the head, head last. The admission carries only
+  `runStateVersion` (the stream version of the record its own transaction published), stored in
+  `user_turn_admissions.run_state_version` so a replay answers the same value. Rows from before the
+  column answer `null`.
+- **Transitional.** `inbox.changed` and the old answer fields still ship beside the record until the
+  app moves onto it.
+
 ## Command selection and release wake
 
 `loop/next-inbox-work.ts` owns the pure `next(pending, at)` selector. A
