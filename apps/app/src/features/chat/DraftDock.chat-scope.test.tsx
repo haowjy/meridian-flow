@@ -88,20 +88,23 @@ const click = (name: string) =>
 /** Drain bounded query/UI scheduling under act; never advance a repeating refresh loop wholesale. */
 
 it.each([
-  { label: "Apply", expanded: false, streaming: true },
-  { label: "Discard", expanded: true, streaming: false },
-])("the strip's new document dispatches whole $label (expanded: $expanded, reply streaming: $streaming)", async ({
+  { label: "Apply", expanded: false, streaming: true, whole: false },
+  { label: "Discard", expanded: true, streaming: false, whole: true },
+])("the strip dispatches whole $label (new document: $whole, reply streaming: $streaming)", async ({
   label,
   expanded,
   streaming,
+  whole,
 }) => {
+  // A streaming reply changes the draft under every preview, so an edited document is
+  // commanded whole too: per-change tokens would refuse as stale.
   replyStreaming = streaming;
-  const file = { ...draft("new-scene", [pacing]), isNew: true, wholeItem: true };
+  const file = { ...draft("new-scene", [pacing]), isNew: whole, wholeItem: whole };
   fixture.network.listWorkDrafts.mockResolvedValue({ items: [file] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
     itemKey: file.itemKey,
-    item: { ...file, isNew: true, wholeItem: true },
+    item: { ...file, isNew: whole, wholeItem: whole },
     operations: [op("1", pacing), op("2", pacing)],
   });
   const request = label === "Apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
@@ -111,7 +114,7 @@ it.each([
   } as never);
   await fixture.render(
     async () => {
-      await settleReact(() => expect(text()).toContain("1 change"));
+      await settleReact(() => expect(text()).toContain(whole ? "1 change" : "2 changes"));
       expect(
         [...document.querySelectorAll("[data-draft-dock] button")].some(
           (button) => button.textContent === "Review",
@@ -275,11 +278,13 @@ it("all accepted batch targets disappear at the click and a refused target resto
       await click("Discard");
       expect(strip()).toBeNull();
       expect(fixture.network.discardDraft).toHaveBeenCalledTimes(2);
+      // A whole discard leaves the strip when the server's list no longer holds the item.
+      fixture.network.listWorkDrafts.mockResolvedValue({ items: [files[1]] });
       await act(async () => {
         confirm({ status: "discarded", itemKey: files[0]?.itemKey, itemClosed: false });
         refuse(new HttpResponseError("Refused", 500, null));
       });
-      await settleReact(() => expect(text()).toContain("1 change"));
+      await settleReact(() => expect(text()).toContain("Couldn't discard this draft"));
       expect(text()).toContain("chapter-b");
       expect(text()).not.toContain("chapter-a");
     },
