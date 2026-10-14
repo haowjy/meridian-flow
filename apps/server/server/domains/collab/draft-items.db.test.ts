@@ -90,13 +90,17 @@ describeDraftTreeDb("review items (postgres)", (start, db) => {
         request: { draftId: mine.draftId, itemKey: wrong, commandId: randomUUID() },
       });
       expect(discard.body).toMatchObject({ status: "gone" });
+      // The 404 carries the outcome JSON observation returns (§1.2).
       await expect(
         handleApplyWorkDraftRequest(deps, {
           ...scope,
           documentId: chapter,
           request: { draftId: mine.draftId, itemKey: wrong, commandId: randomUUID() },
         }),
-      ).rejects.toMatchObject({ statusCode: 404 });
+      ).resolves.toEqual({
+        httpStatus: 404,
+        body: { status: "gone", draftId: mine.draftId, itemKey: wrong },
+      });
     }
     // Nothing was done to the item the wrong keys named.
     expect((await s.items(work)).map((item) => item.itemKey)).toEqual([mine.itemKey]);
