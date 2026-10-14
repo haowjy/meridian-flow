@@ -3,7 +3,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import { getThreadSnapshot } from "@/client/api/threads-api";
+import { enqueueThreadControl, getThreadSnapshot } from "@/client/api/threads-api";
 import {
   bindChatSubmissions,
   type ChatSubmission,
@@ -29,6 +29,7 @@ import { ChatSubmissionOwner } from "./owner";
 vi.mock("@/client/api/threads-api", async (actual) => ({
   ...(await actual<typeof import("@/client/api/threads-api")>()),
   getThreadSnapshot: vi.fn(),
+  enqueueThreadControl: vi.fn(),
 }));
 
 let account = "account-1";
@@ -118,6 +119,19 @@ afterEach(async () => {
   cleanup = undefined;
   window.localStorage.clear();
   window.sessionStorage.clear();
+});
+
+it("posts a switch's control alone: the frontier it records stays local", async () => {
+  const post = vi
+    .mocked(enqueueThreadControl)
+    .mockResolvedValue({ id: "sw", pending: null, turnId: "turn" } as never);
+  const mounted = await mount(new ThreadRunScenario());
+  mounted.read().submitSwitch("sw", "draft", { position: 1, seq: 2 });
+  await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+  expect(post.mock.calls[0]?.[1]).toEqual({
+    id: "sw",
+    control: { kind: "write_mode", mode: "draft" },
+  });
 });
 
 it("Edit bridges an already-accepted submission rather than returning delivered words", async () => {

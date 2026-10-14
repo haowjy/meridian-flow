@@ -270,7 +270,11 @@ export class ChatSubmissionOwner {
         if (!entry.control) throw new Error("Control missing");
         return enqueueThreadControl(
           threadId,
-          { id: entry.submissionId, control: entry.control },
+          // `after` is the ledger's local ordering evidence; the route's body is the control alone.
+          {
+            id: entry.submissionId,
+            control: { kind: entry.control.kind, mode: entry.control.mode },
+          },
           { signal: requestSignal },
         );
       },
