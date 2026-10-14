@@ -5,7 +5,8 @@
  * Choosing a mode is the writer's whole action: no dialog. The caller owns what
  * the choice does (queue a switch, or remember it for the first send), so the
  * control shows a value and reports a choice. Draft carries the number of
- * documents waiting in the Work's draft, read from the shared draft-list query.
+ * documents waiting in the Work's draft, read from the shared draft-list query
+ * in either mode, so the menu's Draft option shows the count from Auto-apply too.
  */
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -30,16 +31,16 @@ export function useWriteModeToolbarControl({
   value: AiWriteMode;
   onChoose(mode: AiWriteMode): void;
 }): ComposerToolbarControl {
-  const waiting =
-    useWorkDrafts(projectId, workId, { enabled: value === "draft" }).files?.length ?? 0;
+  const waiting = useWorkDrafts(projectId, workId).files?.length ?? 0;
   const draftRef = useRef<HTMLButtonElement | null>(null);
   const directRef = useRef<HTMLButtonElement | null>(null);
   const draftLabel = waiting > 0 ? t`Draft (${waiting})` : t`Draft`;
   const localizedValue = value === "draft" ? draftLabel : t`Auto-apply`;
-  const spokenValue =
-    value === "draft" && waiting > 0
+  const spokenDraft =
+    waiting > 0
       ? plural(waiting, { one: "Draft, # document waiting", other: "Draft, # documents waiting" })
-      : localizedValue;
+      : draftLabel;
+  const spokenValue = value === "draft" ? spokenDraft : localizedValue;
   return {
     kind: "panel",
     id: "write-mode",
@@ -79,6 +80,7 @@ export function useWriteModeToolbarControl({
               ref={mode === "draft" ? draftRef : directRef}
               role="radio"
               aria-checked={value === mode}
+              aria-label={mode === "draft" ? spokenDraft : undefined}
               variant="ghost"
               className={dropdownRowVariants({ selected: value === mode })}
               onClick={() => {
