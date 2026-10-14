@@ -142,12 +142,6 @@ export async function createInDraft(
     draftId: input.draftId,
     documentId,
     ...(input.createdBy ? { createdBy: input.createdBy } : {}),
-    location: {
-      contextSourceId: slot.contextSourceId,
-      parentFolderId: slot.folderId,
-      name: slot.name,
-      extension: slot.extension,
-    },
   });
   if (input.node.kind === "tracked") await input.ensureDraftBranch(documentId);
   return Ok({ kind: "created", documentId, joined });

@@ -321,11 +321,6 @@ export function draftTreeWorldOver(
       await recordCreated(db, {
         draftId: draft.id,
         documentId,
-        location: {
-          contextSourceId: sourceId,
-          parentFolderId: walk.folderId,
-          ...splitFilename(filename),
-        },
       });
       return documentId;
     },
