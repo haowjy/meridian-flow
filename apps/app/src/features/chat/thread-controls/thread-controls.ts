@@ -18,11 +18,7 @@
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
  */
-import type {
-  ControlBody,
-  PendingInboxItem,
-  ThreadPendingInbox,
-} from "@meridian/contracts/threads";
+import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 

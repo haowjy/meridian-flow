@@ -128,8 +128,8 @@ export function useSwitchView(input: {
   useSingleHostWarning(threadId);
   const [{ view, news }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
   const [applied, setApplied] = useState<readonly Applied[]>([]);
-  const latest = useRef({ journal, projectId, replyRunning });
-  latest.current = { journal, projectId, replyRunning };
+  const latest = useRef({ journal, projectId });
+  latest.current = { journal, projectId };
   /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
   const seed = useRef<string | null>(null);
   /** Applied switches already announced: a replayed frame is not news twice. */
@@ -179,7 +179,7 @@ export function useSwitchView(input: {
     for (const entry of news) {
       if (entry.n <= announcedQueued.current) continue;
       announcedQueued.current = entry.n;
-      announce(controlStatusCopy(entry.control, "queued", latest.current.replyRunning));
+      announce(controlStatusCopy(entry.control, "queued", entry.waiting));
     }
   }, [news]);
 
