@@ -63,13 +63,16 @@ Shared across both shells:
   resolve a destination (a folder by ID, or an area root with its authority),
   share the refusals (inside itself, already there, name taken) and place
   through the replica. Don't place entries anywhere else.
-- **Selection and dragging** (`entry-drag/`): VS Code's selection model per list
-  (`EntrySelectionScope`: click selects and opens, Ctrl/Cmd adds from the open
-  row, Shift takes the on-screen range, Escape clears; one selected row is just
-  the open row's highlight). Dragging carries the selection; a drop on a folder,
-  an area header or any row inside an open folder moves within one system (the
-  project areas are one; each owner's Scratch is its own), reselects, and offers
-  Undo (`MoveNotice`). Desktop shell only.
+- **Selection and dragging** (`entry-drag/`): VS Code's selection model. The
+  list that renders the rows owns one selection (`useEntrySelection`, handed to
+  rows through `EntrySelectionProvider`) and its drop route, so a drop can
+  reselect what moved. Until the writer Ctrl/Cmd- or Shift-clicks, the
+  selection is just the open row; Escape returns to it. Dragging carries the
+  selection; a drop on a folder, an area header or any row inside an open folder
+  moves within one system (the project areas are one; each owner's Scratch is
+  its own), reselects, and offers Undo (`MoveNotice`, on the surface that took
+  the drop). A row drags only when its surface grants Move; a selection that
+  spans systems or holds an unmovable row moves nowhere. Desktop shell only.
 - **Drop dispatch** (`tree-drop/`): shared with import (#798). A target is a
   catalog root plus an optional folder; a file row hands its drop to its folder.
   Routes decide (`files`, `entries`); the scope counts hovered elements per

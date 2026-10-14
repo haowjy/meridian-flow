@@ -16,6 +16,7 @@ import {
   type MoveSubject,
   moveRefusal,
   placeEntry,
+  placementParent,
   resourceDestination,
 } from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
@@ -91,7 +92,7 @@ function OpenMovePicker({
 
   const subject: MoveSubject = {
     ...entry,
-    catalog: source.own.catalog,
+    catalogRootId: source.own.catalog?.root.entryId ?? null,
     parentId: (currentParentId && source.folderFor(currentParentId)?.entryId) ?? null,
   };
   const isForbidden = (destination: MoveDestination) =>
@@ -110,7 +111,7 @@ function OpenMovePicker({
     setPending(true);
     setError(null);
     try {
-      const location = resourceDestination(destination, name, works, noWork);
+      const location = resourceDestination(placementParent(destination), name, works, noWork);
       if (!location) throw new Error(unavailable);
       const operationId = await placeEntry(resources, projectId, entry, location);
       if (operationId) onMoved(operationId);

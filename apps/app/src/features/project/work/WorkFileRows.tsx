@@ -84,9 +84,10 @@ export function FolderRow({
   });
   const { catalog, workId } = management;
   const owner = useMemo(() => ({ workId }), [workId]);
+  const movable = interaction.actions.includes("move");
   const entry = useMemo(
-    () => selectableEntry(folder, "scratch", owner, catalog),
-    [folder, owner, catalog],
+    () => selectableEntry(folder, "scratch", owner, catalog.root, movable),
+    [folder, owner, catalog.root, movable],
   );
   const row = useEntryRow(entry, false);
   const drop = useTreeDropTarget(
@@ -184,9 +185,10 @@ export function ScratchFileRow({
     onRenameDone,
   });
   const owner = useMemo(() => ({ workId }), [workId]);
+  const movable = interaction.actions.includes("move");
   const entry = useMemo(
-    () => selectableEntry(file, "scratch", owner, catalog),
-    [file, owner, catalog],
+    () => selectableEntry(file, "scratch", owner, catalog.root, movable),
+    [file, owner, catalog.root, movable],
   );
   const row = useEntryRow(entry, docked);
   const drop = useTreeDropTarget(scratchDropTarget(catalog, parentFolder(catalog, file)));

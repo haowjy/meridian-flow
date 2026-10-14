@@ -186,9 +186,10 @@ function DirRow({
     { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
     { onSpring: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },
   );
+  const movable = interaction.actions.includes("move");
   const entry = useMemo(
-    () => selectableEntry(dir, env.scheme, env.owner, env.catalog),
-    [dir, env.scheme, env.owner, env.catalog],
+    () => selectableEntry(dir, env.scheme, env.owner, env.catalog.root, movable),
+    [dir, env.scheme, env.owner, env.catalog.root, movable],
   );
   const row = useEntryRow(entry, false);
   const toggle = () => {
@@ -284,9 +285,10 @@ function FileRow({
   });
   const select = () => env.onSelectFile(env.scheme, file);
   const active = env.scheme === env.activeScheme && file.path === env.activePath;
+  const movable = interaction.actions.includes("move");
   const entry = useMemo(
-    () => selectableEntry(file, env.scheme, env.owner, env.catalog),
-    [file, env.scheme, env.owner, env.catalog],
+    () => selectableEntry(file, env.scheme, env.owner, env.catalog.root, movable),
+    [file, env.scheme, env.owner, env.catalog.root, movable],
   );
   const row = useEntryRow(entry, active);
   if (interaction.renaming) {

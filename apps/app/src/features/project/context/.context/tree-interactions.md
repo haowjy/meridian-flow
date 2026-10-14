@@ -161,27 +161,41 @@ shared with dragging.
 
 ## Selecting and dragging rows
 
-The Files tree, the chat's Scratch and a Work's Files each wrap their rows in one
-`EntrySelectionScope`. A plain click selects the row and opens or toggles it as
-before; Ctrl/Cmd-click adds or removes (starting from the open row when the
-selection is one row, which may be stale); Shift-click selects the on-screen
-range from the last clicked row, read from the DOM (`data-entry-key`) so it always
-matches what is visible. The fill appears only when two or more rows are
-selected, so a lone selection never competes with the open row's highlight.
+The Files tree, the chat's Scratch and a Work's Files each own one selection
+(`useEntrySelection`) and pass it to their rows (`EntrySelectionProvider`) and to
+their drop route. A plain click opens or toggles the row as before and leaves no
+selection of its own: until the writer Ctrl/Cmd- or Shift-clicks, the selection
+is just the open row, shown by the open row's own highlight. Ctrl/Cmd-click
+starts an explicit selection from the open row and adds or removes rows;
+Shift-click selects the on-screen range from the last clicked row, read from the
+DOM (`data-entry-key`) so it always matches what is visible; Escape returns to
+the open row. Only explicit selections get the selection fill.
 
 Dragging a selected row carries the selection in screen order, minus rows inside
-a selected folder; dragging an unselected row selects and carries only it.
-`drag-session.ts` holds the drag (a browser hides drag data until the drop) and
-writes the entries' URIs and names to the transfer for anything outside the app.
+a selected folder; dragging an unselected row carries only it. A row drags only
+when its surface grants Move (an archived Work's Scratch doesn't), and a
+selection that spans systems or holds an unmovable row moves nowhere rather than
+silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
+data until the drop) and writes the entries' URIs and names to the transfer for
+anything outside the app.
 
 Each list has a `TreeDropScope` whose `entries` route (`use-entry-move-route.ts`)
 answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
-itself", "Act 2 already has chapter-2"), or nothing (the row is already there,
-or the drag comes from another system, which Move or Copy will handle). A drop
-moves every carried row through `move-entry.ts` at once, reselects them, opens
-the destination folder and shows "Moved chapter-3 to Act 2." with Undo at the
-foot of the sidebar (`MoveNotice`). Undo moves each row back to its previous
-parent; a failure names what didn't move.
+itself", "Act 2 already has chapter-2", including two selected rows with the
+same name), or nothing (the row is already there, the target is a
+navigation-only folder, or the drag comes from another system, which Move or
+Copy will handle). A drop moves every carried row through `move-entry.ts` at
+once, reselects them, opens the destination folder and shows "Moved chapter-3 to
+Act 2." with Undo on the surface that took the drop (`MoveNotice`: the sidebar
+foot, or under Work Files, which stays visible with the sidebar collapsed).
+
+Placement is optimistic, exactly as for Move…: each placement's operation is
+remembered, so the row's link-update note follows its receipt and a later server
+refusal lands on the row as its failure mark. A row the replica won't admit is
+named in the notice, and Undo still covers the rows that moved. Undo returns
+each row to its previous parent under its current name, skips a row that moved
+again since (the writer's newer choice), and reads the catalogs as they are
+when pressed, not as they were at the drop.
 
 Targets: a folder row is its folder; a file row hands its drop to its folder (or
 the area); an area header, and in Work Files the whole Scratch group, is the

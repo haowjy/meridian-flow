@@ -9,7 +9,12 @@ import { entrySystem, type SelectableEntry } from "./entry";
 
 export type EntryDrag = {
   entries: readonly SelectableEntry[];
-  system: string;
+  /**
+   * The one system every row belongs to, or null: a selection that spans
+   * systems, or holds a row without Move, moves nowhere (until Move or Copy
+   * across systems exists) rather than silently dropping some rows.
+   */
+  system: string | null;
 };
 
 let active: EntryDrag | null = null;
@@ -22,16 +27,17 @@ export function startEntryDrag(event: DragEvent, entries: readonly SelectableEnt
   const first = entries[0];
   if (!first) return;
   const system = entrySystem(first.scheme, first.owner);
-  // A selection that spans systems moves nowhere at once; drag only what shares the first row's.
-  const carried = entries.filter((entry) => entrySystem(entry.scheme, entry.owner) === system);
-  active = { entries: carried, system };
+  const one = entries.every(
+    (entry) => entry.movable && entrySystem(entry.scheme, entry.owner) === system,
+  );
+  active = { entries, system: one ? system : null };
   const transfer = event.dataTransfer;
   transfer.effectAllowed = "copyMove";
-  const uris = carried.map((entry) => entry.uri);
+  const uris = entries.map((entry) => entry.uri);
   transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(uris));
   transfer.setData("text/uri-list", uris.join("\r\n"));
-  transfer.setData("text/plain", carried.map((entry) => entry.name).join("\n"));
-  setPreview(transfer, carried);
+  transfer.setData("text/plain", entries.map((entry) => entry.name).join("\n"));
+  setPreview(transfer, entries);
   window.addEventListener("dragend", endEntryDrag, { once: true });
 }
 

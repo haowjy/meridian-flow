@@ -19,7 +19,11 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
-import { EntrySelectionScope } from "./entry-drag/selection";
+import {
+  type EntrySelection,
+  EntrySelectionProvider,
+  useEntrySelection,
+} from "./entry-drag/selection";
 import { useEntryMoveRoute } from "./entry-drag/use-entry-move-route";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
@@ -81,6 +85,7 @@ export function ContextTreePanel({
   }
   const schemes = EDITOR_CONTEXT_SCHEMES;
   const scroller = useRef<HTMLDivElement>(null);
+  const selection = useEntrySelection();
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
@@ -89,6 +94,7 @@ export function ContextTreePanel({
       editorWorkId={editorWorkId}
       scheme={scheme}
       catalogState={catalogs[scheme]}
+      selection={selection}
       activeScheme={activeScheme}
       activePath={activePath}
       onSelectFile={onSelectFile}
@@ -112,7 +118,9 @@ export function ContextTreePanel({
         onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
       >
-        <EntrySelectionScope>{schemes.map(renderScheme)}</EntrySelectionScope>
+        <EntrySelectionProvider selection={selection}>
+          {schemes.map(renderScheme)}
+        </EntrySelectionProvider>
       </div>
     </div>
   );
@@ -120,6 +128,7 @@ export function ContextTreePanel({
 
 function SchemeSection({
   catalogState,
+  selection,
   projectId,
   editorWorkId,
   scheme,
@@ -131,6 +140,8 @@ function SchemeSection({
   onCreateDone,
 }: {
   catalogState: ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
+  /** One selection across the tree's areas. */
+  selection: EntrySelection;
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
@@ -230,10 +241,16 @@ function SchemeSection({
     [setExpanded, setExpandedEntryIds],
   );
   const areas = useMemo(
-    () => (catalog ? [{ scheme, owner, catalog }] : []),
+    () => (catalog ? [{ scheme, owner, catalog, movable: true }] : []),
     [scheme, owner, catalog],
   );
-  const moveRoute = useEntryMoveRoute({ projectId, areas, onLanded });
+  const moveRoute = useEntryMoveRoute({
+    projectId,
+    areas,
+    selection,
+    surface: "sidebar",
+    onLanded,
+  });
   const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(

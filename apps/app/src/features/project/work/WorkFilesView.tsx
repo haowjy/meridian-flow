@@ -17,7 +17,8 @@ import type { AddressableWork } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "../context/ContextEntryActions";
-import { EntrySelectionScope } from "../context/entry-drag/selection";
+import { MoveNotice } from "../context/entry-drag/move-notice";
+import { EntrySelectionProvider, useEntrySelection } from "../context/entry-drag/selection";
 import { useEntryMoveRoute } from "../context/entry-drag/use-entry-move-route";
 import { DropRegion } from "../context/tree-drop/DropRegion";
 import {
@@ -130,9 +131,11 @@ export function WorkFilesView({
   const catalog = scratch.catalog;
   const owner = useMemo(() => ({ workId: work.id }), [work.id]);
   const areas = useMemo(
-    () => (catalog ? [{ scheme: "scratch" as const, owner, catalog }] : []),
-    [catalog, owner],
+    () =>
+      catalog ? [{ scheme: "scratch" as const, owner, catalog, movable: files.editable }] : [],
+    [catalog, owner, files.editable],
   );
+  const selection = useEntrySelection();
   const onLanded = useCallback(
     (target: TreeDropTarget) => {
       const folderId = target.folder?.entryId;
@@ -140,7 +143,13 @@ export function WorkFilesView({
     },
     [isExpanded, toggleEntry],
   );
-  const moveRoute = useEntryMoveRoute({ projectId, areas, onLanded });
+  const moveRoute = useEntryMoveRoute({
+    projectId,
+    areas,
+    selection,
+    surface: "work-files",
+    onLanded,
+  });
   const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   const matchesSearch = workFileSearch(search);
   const visible = [...scratchFolders, ...scratchFiles].filter((node) => matchesSearch(node.name));
@@ -199,7 +208,7 @@ export function WorkFilesView({
     <div className="min-w-0 [--row-rule-inset:--spacing(2)]">
       <WorkChanges projectId={projectId} work={work} matchesSearch={matchesSearch} />
       <TreeDropScope routes={routes}>
-        <EntrySelectionScope>
+        <EntrySelectionProvider selection={selection}>
           <ScratchDropGroup catalogRootId={catalog?.root.entryId ?? null}>
             <WorkFileGroup label={t`Scratch`}>
               {scratch.isError ? (
@@ -219,8 +228,9 @@ export function WorkFilesView({
               )}
             </WorkFileGroup>
           </ScratchDropGroup>
-        </EntrySelectionScope>
+        </EntrySelectionProvider>
       </TreeDropScope>
+      <MoveNotice surface="work-files" className="sticky bottom-2 mt-2" />
       <DeleteConfirmationDialog
         target={scratchDelete.target}
         isPending={scratchDelete.isPending}
