@@ -41,6 +41,11 @@ describe("hand-back composer content", () => {
     const chips = JSON.stringify(returned).match(/"authority":\{"kind":"lineage"[^}]*\}/g);
     expect(chips).toHaveLength(2);
     expect(JSON.stringify(returned)).toContain('"fileType":"png"');
+    // A manuscript document has no extension in its name: it is the default type, owned by the project.
+    expect(resolve({ documentId: "doc-m", uri: "manuscript://Chapter 1" as never })).toMatchObject({
+      fileType: "markdown",
+      authority: { kind: "project", projectId: "p1" },
+    });
     const foreign: UserMessageBlock[] = [
       {
         type: "reference",
