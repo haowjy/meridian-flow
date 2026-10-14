@@ -332,6 +332,10 @@ msgstr "{title} added to Favorites"
 msgid "{title} removed from Favorites"
 msgstr "{title} removed from Favorites"
 
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+msgid "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
+msgstr "{waiting, plural, one {Draft, # document waiting} other {Draft, # documents waiting}}"
+
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
 msgstr "{words, plural, one {# word removed} other {# words removed}}"
@@ -527,8 +531,8 @@ msgid "AI write mode"
 msgstr "AI write mode"
 
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
-msgid "AI write mode: {localizedValue}"
-msgstr "AI write mode: {localizedValue}"
+msgid "AI write mode: {spokenValue}"
+msgstr "AI write mode: {spokenValue}"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Align center"
@@ -1837,6 +1841,10 @@ msgstr "Download image"
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr "Draft"
+
+#: src/components/app/work-composer-controls/WriteModeControl.tsx
+msgid "Draft ({waiting})"
+msgstr "Draft ({waiting})"
 
 #: src/features/project/work/WorkScreen.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
