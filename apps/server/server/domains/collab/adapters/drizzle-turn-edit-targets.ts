@@ -3,8 +3,9 @@
  * documents the turn edited that are not tombstoned. Final address liveness stays with the lineage reader.
  */
 import type { Database } from "@meridian/database";
-import { documentEditParts, documentEdits, documents } from "@meridian/database";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { documentEditParts, documentEdits } from "@meridian/database";
+import { and, eq, inArray } from "drizzle-orm";
+import { documentNotDeletedSql } from "../../context/tree/tree-view-sql.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId } from "../domain/turn-live-lineage.js";
 
@@ -20,11 +21,10 @@ export async function readTurnEditTargets(
     })
     .from(documentEdits)
     .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
-    .innerJoin(documents, eq(documents.id, documentEdits.documentId))
     .where(
       and(
         // Lineage hides tombstoned documents, and a Discarded draft-created one has no storage left to lock.
-        isNull(documents.deletedAt),
+        documentNotDeletedSql(documentEdits.documentId),
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
         query.responseIdentity
