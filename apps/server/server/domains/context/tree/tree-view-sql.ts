@@ -438,20 +438,8 @@ function uuidList(ids: readonly string[]): SQL {
  */
 export function identityDocuments(view: TreeView) {
   const columns = getTableColumns(documents);
-  const located = new Set(["contextSourceId", "folderId", "name", "extension"]);
-  const fields = (inView: boolean) =>
-    sql.join(
-      Object.entries(columns).map(
-        ([key, column]) =>
-          sql`${sql.raw(`${inView && located.has(key) ? "shown" : "d"}.${column.name}`)} AS ${sql.identifier(column.name)}`,
-      ),
-      sql`, `,
-    );
-  const query = sql`SELECT ${fields(true)} FROM (${documentsQuery(view)}) shown
-    JOIN documents d ON d.id = shown.id
-    UNION ALL
-    SELECT ${fields(false)} FROM documents d
-    WHERE NOT d.hidden AND d.deleted_at IS NOT NULL`;
+  const query = sql`SELECT d.* FROM (${documentsQuery(view)}) shown JOIN documents d ON d.id = shown.id
+    UNION ALL SELECT d.* FROM documents d WHERE NOT d.hidden AND d.deleted_at IS NOT NULL`;
   return subquery(query, columns, "document_identities");
 }
 

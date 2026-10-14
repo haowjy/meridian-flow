@@ -38,6 +38,7 @@ import {
   touchedHashesForCoverage,
 } from "./branch-update-attribution.js";
 import { collabHook } from "./collab-test-hooks.js";
+import type { ReplyPin } from "./reply-save-fences.js";
 import type { ResponseCommitParticipant } from "./response-transaction.js";
 
 export type BranchConcurrentJournalWatermarks = {
@@ -61,7 +62,7 @@ export type BranchAgentEditDiagnostics = {
     writeId: string | null;
   }): void;
   mutationLessPendingEntry(payload: { documentId: string; origin: string }): void;
-  replyPinMismatch(payload: { documentId: DocumentId; threadId?: ThreadId; pin: unknown }): void;
+  replyPinMismatch(payload: { documentId: DocumentId; threadId?: ThreadId; pin: ReplyPin }): void;
 };
 
 export type AfterCommit = (callback: () => void | Promise<void>) => void;

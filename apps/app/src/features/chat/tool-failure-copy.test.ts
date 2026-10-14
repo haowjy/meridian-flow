@@ -37,6 +37,15 @@ it("says why a write failed, and gives every undo and redo refusal its own copy"
     documentToolFailureCopy(failed({ status: "invalid_write", rejected: "discarded_edit" })),
   ).toBe("You discarded the text it edited, so the change wasn't kept. The AI will read it again.");
 
+  const clash = "Two files in the draft share the path B3X. Review the draft to keep one.";
+  expect(documentToolFailureCopy(failed({ status: "ambiguous_path" }))).toBe(clash);
+  expect(
+    documentToolFailureCopy({
+      ...failed({ status: "ambiguous_path" }),
+      toolName: "read",
+    }),
+  ).toBe(clash);
+
   const statuses = [
     "cant_undo_applied",
     "cant_undo_discarded",

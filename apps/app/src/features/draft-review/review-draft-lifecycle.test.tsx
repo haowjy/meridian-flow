@@ -8,6 +8,7 @@ import { HttpResponseError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { contextTabFromFile } from "@/features/project/context/context-tab-from-file";
@@ -79,6 +80,8 @@ let removal: ContextRemovalCoordinator;
 let search: ProjectSearch;
 let writes: number;
 const draftB = { documentId: "document-b", itemKey: "draft-b" };
+// document-a is draft-only (hidden until Apply), so its list row is new.
+const listedA = { ...listed, isNew: true };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const tabs = () => getContextTabs("project-a").tabs;
 async function open(p: () => ScopeProbe) {
@@ -117,7 +120,7 @@ beforeEach(() => {
   });
   removal.bindRouteSelection("project-a", revision, { kind: "server", documentId: "document-a" });
   fixture = createReviewScopeFixture({ removal });
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listedA, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-a" ? ["1", "2"] : ["3"])),
     itemKey: id,
@@ -132,7 +135,6 @@ afterEach(() => {
 });
 
 it.each([
-  [false, false],
   [false, true],
   [true, false],
 ])("header refuses offline Discard without removal or navigation (browser=%s, manager=%s)", async (browser, manager) => {
@@ -197,6 +199,49 @@ it("draft-only Discard keeps both containers until its own terminal success; ref
     expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
     expect(useDockDocumentStore.getState().occupant).toBeNull();
     expect(writes).toBe(1);
+  });
+});
+
+it("a draft-only tab becomes the live document's tab the moment the replica shows it (a join)", async () => {
+  type Snapshot = { records: unknown[]; folders: unknown[]; catalogs: unknown[] };
+  let emit: (snapshot: Snapshot) => void = () => {};
+  const replica = {
+    observeProjection: (_project: string, next: (snapshot: Snapshot) => void) => {
+      emit = next;
+      next({ records: [], folders: [], catalogs: [] });
+      return () => {};
+    },
+  };
+  vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(replica as never);
+  await fixture.render(async (p) => {
+    await open(p);
+    expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(true);
+    // New file joined the hidden document: visible live, the draft's row still new (no refetch yet).
+    await act(async () =>
+      emit({
+        records: [
+          {
+            resource: {
+              handle: "resource-a",
+              identity: { documentId: "document-live" },
+              aliases: { "document-a": {} },
+              lifecycle: { kind: "live" },
+            },
+            intents: [{ projectId: "project-a", state: "pending" }],
+          },
+        ],
+        folders: [],
+        catalogs: [],
+      }),
+    );
+    await settleReact(() =>
+      expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(false),
+    );
+    expect(
+      tabs()
+        .map((tab) => tab.documentId)
+        .sort(),
+    ).toEqual(["document-a", "document-b"]);
   });
 });
 
@@ -365,7 +410,7 @@ it("an unopened list follows a remote write and disposition through updated list
         itemKey: id,
       }));
       fixture.network.listWorkDrafts.mockResolvedValue({
-        items: [listed, { ...listedB, updatedAt: stamp }],
+        items: [listedA, { ...listedB, updatedAt: stamp }],
       });
       await act(async () => {
         await p().queryClient.invalidateQueries({

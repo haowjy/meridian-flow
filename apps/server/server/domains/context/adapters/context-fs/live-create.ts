@@ -260,12 +260,7 @@ export class LiveCreate {
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
     const folderId = await this.deps.store.ensureFolderPath(target.dir);
-    const existing = await this.deps.store.findDocument(
-      LIVE_TREE,
-      folderId,
-      target.name,
-      target.extension,
-    );
+    const existing = await this.deps.store.findDocument(folderId, target.name, target.extension);
     if (existing) {
       return Err(
         existing.fileType !== null

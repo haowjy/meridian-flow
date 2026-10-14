@@ -28,7 +28,6 @@ import type {
   ContextDocumentStore,
   CreateBinaryDocumentInput,
   CreateDocumentInput,
-  UpsertBinaryDocumentInput,
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
@@ -287,14 +286,25 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return existing ? this.storeForSource(existing) : null;
   }
 
-  async findFolder(view: TreeView, parentId: string | null, name: string) {
-    return (await this.readableSourceStore())?.findFolder(view, parentId, name) ?? null;
+  async resolveDocumentAt(view: TreeView, path: string) {
+    return (
+      (await this.readableSourceStore())?.resolveDocumentAt(view, path) ?? {
+        kind: "not_found" as const,
+      }
+    );
   }
 
-  async findDocument(view: TreeView, folderId: string | null, name: string, extension: string) {
-    return (
-      (await this.readableSourceStore())?.findDocument(view, folderId, name, extension) ?? null
-    );
+  async resolveFolderAt(view: TreeView, path: string) {
+    const store = await this.readableSourceStore();
+    if (store) return store.resolveFolderAt(view, path);
+    // The source root always exists.
+    return path.split("/").every((segment) => segment === "")
+      ? { kind: "found" as const, node: null }
+      : { kind: "not_found" as const };
+  }
+
+  async findDocument(folderId: string | null, name: string, extension: string) {
+    return (await this.readableSourceStore())?.findDocument(folderId, name, extension) ?? null;
   }
 
   async findDocumentById(view: TreeView, documentId: string) {
@@ -304,14 +314,6 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   /** A forward is the project's, not this source's: it never waits on the source. */
   findForward(fromId: string, projectId: ProjectId) {
     return findForward(this.db, fromId, projectId);
-  }
-
-  async recordForward(input: { fromId: string; toId: string; projectId: ProjectId }) {
-    await recordForward(this.db, {
-      fromId: input.fromId as DocumentId,
-      toId: input.toId as DocumentId,
-      projectId: input.projectId,
-    });
   }
 
   async listHiddenNames(folderId: string | null) {
@@ -341,20 +343,12 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     );
   }
 
-  async createDocument(input: CreateDocumentInput) {
-    return this.mutate((store) => store.createDocument(input));
-  }
-
   async createDocumentRecordIfAbsent(input: CreateDocumentInput, claim?: LiveClaim) {
     return this.mutate((store) => store.createDocumentRecordIfAbsent(input, claim));
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput) {
     return this.mutate((store) => store.createBinaryDocument(input));
-  }
-
-  async upsertBinaryDocument(input: UpsertBinaryDocumentInput) {
-    return this.mutate((store) => store.upsertBinaryDocument(input));
   }
 
   async contextSourceId() {

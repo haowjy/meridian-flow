@@ -20,7 +20,11 @@ import {
 } from "./open-project-document";
 
 /** Shows the tab beside the chat under a claim; `cancelled` if a newer intent won. */
-export type OpenBesideChat = (tab: ServerContextTab, claim: number) => "opened" | "cancelled";
+export type OpenBesideChat = (
+  tab: ServerContextTab,
+  claim: number,
+  focus?: true,
+) => "opened" | "cancelled";
 
 export const BesideChatContext = createContext<OpenBesideChat | null>(null);
 
@@ -38,7 +42,7 @@ export function useOpenChatDocument(
     ({ claim, ...request }) => {
       if (request.disposition === "background" || !beside) return open(request);
       const attempt = claim ?? useDockDocumentStore.getState().claim();
-      return open({ ...request, beside: (tab) => beside(tab, attempt) });
+      return open({ ...request, beside: (tab, focus) => beside(tab, attempt, focus) });
     },
     [beside, open],
   );

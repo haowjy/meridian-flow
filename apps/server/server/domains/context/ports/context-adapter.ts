@@ -66,7 +66,7 @@ export type AdapterFault =
   | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "invalid_operation"; message?: string }
+  | { code: "invalid_operation"; message?: string; reason?: "ambiguous_path" }
   | {
       code: "context_unavailable";
       reason: "work_archived" | "work_deleted" | "work_missing";

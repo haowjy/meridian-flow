@@ -67,6 +67,8 @@ type SessionEditorProps = {
   surfaceOptions: EditorSurfaceOptions;
   /** An addressed construction receipt; null withdraws this editor's receipt. */
   onConstructed?: (editor: Editor | null) => void;
+  /** The tab instance this editor serves; it claims that instance's focus-on-open intent. */
+  focusKey?: string;
 };
 
 export function SessionEditor(props: SessionEditorProps) {
@@ -124,6 +126,7 @@ function ActiveSessionEditorView({
   surfaceOptions,
   session,
   onConstructed,
+  focusKey,
   snapshot,
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
@@ -322,15 +325,12 @@ function ActiveSessionEditorView({
   // (a dialog that stays open, a field) already holds focus.
   useEffect(() => {
     if (!editor || editor.isDestroyed || inReview || !active || !effectiveEditable) return;
-    const mine = (requestedId: string) =>
-      requestedId === documentId ||
-      (holder !== null && resourceForDocumentIdentity(records, requestedId) === holder);
-    if (!claimEditorFocus(mine)) return;
+    if (!claimEditorFocus(focusKey)) return;
     afterPaintRelease(() => {
       if (!editor.isDestroyed && focusIsFree())
         editor.commands.focus("start", { scrollIntoView: false });
     });
-  }, [afterPaintRelease, active, documentId, editor, effectiveEditable, holder, inReview, records]);
+  }, [afterPaintRelease, active, editor, effectiveEditable, focusKey, inReview]);
 
   useEffect(() => {
     if (!editor || inReview || held) return;

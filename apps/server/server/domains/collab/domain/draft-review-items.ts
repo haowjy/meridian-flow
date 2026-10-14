@@ -150,7 +150,7 @@ function toItem(
   creatorThreadId: string | undefined,
   settling: ReadonlySet<string>,
 ): DraftReviewItem {
-  const deletedLive = !node.hidden && node.live.deleted;
+  const deletedLive = !node.hidden && node.deleted;
   const isNew = node.origin === "created" && node.hidden;
   const writers = evidence?.agentThreadIds ?? [];
   const path = node.target.uri;
