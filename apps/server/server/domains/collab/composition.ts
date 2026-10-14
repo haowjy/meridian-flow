@@ -42,6 +42,7 @@ import {
 } from "./adapters/agent-edit-observability.js";
 import {
   SILENT_POST_DURABILITY_NOTICES,
+  SILENT_TURN_INVERSE_NOTICES,
   UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
 } from "./adapters/declared-stubs.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
@@ -134,6 +135,7 @@ import { createResponseWriteFinalizer } from "./domain/response-write-finalizer.
 import {
   createDocumentPresentationResolver,
   createPostDurabilityNoticeService,
+  createReversalNoticePort,
 } from "./domain/reversal-notices.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
@@ -199,7 +201,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       journal: persistence.journal,
       lifecycle: persistence.lifecycle,
     },
-    ...(deps.workProjectionMutation ? { workProjection: deps.workProjectionMutation } : {}),
+    workProjection: deps.workProjectionMutation,
     drafts: workDrafts,
   });
   const branchJournal = createDrizzleBranchJournalReadStore(deps.db);
@@ -487,6 +489,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
     flushLivePull: branchPulls.flushLivePull,
+    notices: deps.notices
+      ? createReversalNoticePort({
+          notices: deps.notices,
+          documentUriResolver,
+          diagnostics: noticeDiagnostics,
+        })
+      : SILENT_TURN_INVERSE_NOTICES,
+    workProjection: deps.workProjectionMutation,
   });
   const responseFinalizer = scopeResponseFinalizer(
     createResponseWriteFinalizer({
