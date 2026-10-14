@@ -14,7 +14,7 @@ after the drag ends. This recipe is not a current pass claim.
    bound to it; that Work's Scratch holding `research/Gate history`,
    `Bell timing` and `Scene notes` (`./mf doc put 'scratch://@<work>/...'`).
 3. Open the owned app origin in `agent-browser --session row-drag`, sign in at
-   `/dev-login`, and open `chapter-1` in the Editor.
+   `/dev-login`, and open `chapter-2` in the Editor.
 
 Tool notes: agent-browser clicks don't carry held modifier keys, so send
 selection gestures from the page:
