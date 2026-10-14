@@ -80,7 +80,13 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
         }
         return id;
       },
-      postControl: async () => ({ id: "control", pending: null, turnId: "switch-turn" }),
+      postControl: async () => ({
+        id: "control",
+        pending: null,
+        turnId: "switch-turn",
+        seq: "1",
+        mode: "direct",
+      }),
       controlAnswered: () => {},
       status: (entry, status) => {
         if (entry.control) return;
@@ -601,7 +607,7 @@ describe("write-mode switches in the journal", () => {
       const { owner } = r.mount({
         postControl: async () => {
           order.push(`switch after ${r.scenario.appendRequests.length} message(s)`);
-          return { id: "switch-1", pending: null, turnId: "switch-turn" };
+          return { id: "switch-1", pending: null, turnId: "switch-turn", seq: "1", mode: "direct" };
         },
       });
       await owner.drive("thread_1");
@@ -625,7 +631,7 @@ describe("write-mode switches in the journal", () => {
         postControl: async () => {
           if (lost) throw new HttpResponseError("busy", 503, null);
           if (refuse) throw new HttpResponseError("work_unavailable", 400, null);
-          return { id: "switch-1", pending: null, turnId: "switch-turn" };
+          return { id: "switch-1", pending: null, turnId: "switch-turn", seq: "1", mode: "direct" };
         },
       });
       await owner.drive("thread_1");

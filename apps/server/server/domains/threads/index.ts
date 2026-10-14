@@ -166,6 +166,7 @@ export {
 } from "./thread-access.js";
 export {
   createThreadEventHub,
+  cursorSeqForJournalHead,
   type SequencedEventInternal,
   type ThreadEventHub,
 } from "./thread-event-hub.js";
