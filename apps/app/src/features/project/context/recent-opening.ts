@@ -3,6 +3,7 @@ import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-
 import type { RecentAddress, RecentOpening } from "@/client/recents";
 import { readableRecentPath } from "@/client/recents";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 
 const EDITOR_SCHEMES = new Set<string>(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 
@@ -22,7 +23,7 @@ export function recentOpening(
     };
   }
   // A draft-only review is not a live document: live Recent never lists it.
-  if (tab.draftOnly || !EDITOR_SCHEMES.has(tab.scheme)) return null;
+  if (isDraftOnly(tab) || !EDITOR_SCHEMES.has(tab.scheme)) return null;
   const path = readableRecentPath(tab.path);
   if (!path) return null;
   const address: RecentAddress = {

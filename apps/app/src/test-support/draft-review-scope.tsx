@@ -254,7 +254,7 @@ export async function renderReviewScopes(
     current.third = third;
     return (
       <PresentedReviewScope value={presented}>
-        <DraftOnlySettlement projectId={options.projectId ?? "project-a"} />
+        <DraftOnlySettlement projectId={options.projectId ?? "project-a"} editorWorkId={work.id} />
         <DraftReviewBoundary value={presented}>
           <HeaderProbe />
         </DraftReviewBoundary>

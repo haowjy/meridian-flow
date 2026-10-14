@@ -329,8 +329,10 @@ read re-reads on the Work draft lists' signals: commands, catalog wakes, identit
 focus and reconnect.
 
 New-document drafts have server document/Yjs state but no live catalog
-membership. A synthesized `draftOnly` tab carries `reviewWorkId` and
-`reviewItemKey`; it is the document's one tab in the workspace and is not persisted.
+membership. A synthesized tab carries per-Work `reviews` entries (`{workId: {itemKey, tabInstanceToken}}`);
+the entries are the one draft-only fact (`isDraftOnly(tab)`), dropping the last closes the tab
+(`withoutReviewEntry` decides what a removal leaves, for planner and commit alike), and it is the
+document's one tab in the workspace, never persisted.
 Navigation consumes the
 row’s own `contextLocation`, without restricting its document scheme. Hosts acquire only its
 branch; phone `MobileDraftOnlyDocumentHost` delegates to `ContextEditorMountHost`.
@@ -344,7 +346,11 @@ review item yet is pending, and a gone draft is the lifecycle closing its tab.
 adapters. Both containers settle; Close is container-local. The Editor adapter
 delegates exact-instance removal, promotion and route repair to
 `ContextRemovalCoordinator`; the dock adapter settles its stored occupant without
-claiming a revision. Both adapters are bound to the account epoch; closed epochs
+claiming a revision. Dock admission (`dockDocument`) keeps only the selected review's entry, so
+the dock lists one presentation, Discard is that address alone, and becoming live is
+document-wide and keeps the dock's chosen review. Promotion happens once per document whichever
+Work's observer saw it; an Editor continuation reopens the review the container showed,
+and only while that address is still current. Both adapters are bound to the account epoch; closed epochs
 cannot enumerate or settle presentations. Hidden restore candidates are not lifecycle presentations:
 
 - Confirmed Apply promotes through `promoteAppliedDraft`, drops the marker and

@@ -9,6 +9,7 @@
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { ArchivedWorkNotice } from "../work/ArchivedWorkNotice";
@@ -62,7 +63,7 @@ export function DocumentPaneChrome({
           editorWorkId={identity.editorWorkId}
           tab={tab}
           readOnly={identity.readOnly}
-          onCloseDraftOnly={tab.kind !== "new" && tab.draftOnly ? () => onCloseTab(tab) : undefined}
+          onCloseDraftOnly={isDraftOnly(tab) ? () => onCloseTab(tab) : undefined}
           onCommitted={identity.onCommitted}
           onOpenExisting={identity.onOpenExisting}
         />
