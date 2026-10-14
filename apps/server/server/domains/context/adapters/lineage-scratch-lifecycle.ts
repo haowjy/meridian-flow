@@ -23,7 +23,12 @@ export function lineageHasLiveMember(rootThreadId: string | SQLWrapper) {
 export interface LineageScratchLifecycle {
   requireLive(projectId: string, rootThreadId: string): Promise<void>;
   ensureSource(projectId: string, rootThreadId: string): Promise<string>;
-  reconcile(threadIds: readonly string[]): Promise<void>;
+  /**
+   * Hides or restores the lineages of these threads. Restored content is settled once, after
+   * every namespace key, unless the caller passes `arrived`: then the ids are appended there
+   * and the caller settles the transaction's whole set in one call (stripe order).
+   */
+  reconcile(threadIds: readonly string[], arrived?: DocumentId[]): Promise<void>;
 }
 
 export function createDrizzleLineageScratchLifecycle(
@@ -83,9 +88,10 @@ export function createDrizzleLineageScratchLifecycle(
         if (!existing) throw new LineageScratchUnavailableError();
         return existing.id;
       }),
-    reconcile: (threadIds) =>
+    reconcile: (threadIds, arrived) =>
       runInDrizzleTransaction(db, async () => {
         if (!threadIds.length) return;
+        const restoredContent: DocumentId[] = [];
         const roots = await currentDrizzleDb(db)
           .select({ id: threads.rootThreadId, projectId: threads.projectId })
           .from(threads)
@@ -118,7 +124,7 @@ export function createDrizzleLineageScratchLifecycle(
           const restored = sources.filter(
             (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
           );
-          if (arrivals && restored.length) {
+          if ((arrived || arrivals) && restored.length) {
             const content = await currentDrizzleDb(db)
               .select({ id: documents.id })
               .from(documents)
@@ -131,12 +137,14 @@ export function createDrizzleLineageScratchLifecycle(
                   eq(documents.kind, "content"),
                 ),
               );
-            // The registry filters deleted documents/ancestors and only settles once.
-            // Reconciliation already holds the Scratch namespace in this transaction.
-            await arrivals.settle(content.map((document) => document.id as DocumentId));
+            restoredContent.push(...content.map((document) => document.id as DocumentId));
           }
           await catalog?.refreshSources(sources.map((source) => source.id));
         }
+        // The registry filters deleted documents/ancestors and only settles once. Every
+        // root's Scratch namespace is held by now; one call keeps the stripes sorted.
+        if (arrived) arrived.push(...restoredContent);
+        else if (arrivals && restoredContent.length) await arrivals.settle(restoredContent);
       }),
   };
 }

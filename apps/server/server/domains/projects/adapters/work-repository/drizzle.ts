@@ -382,8 +382,10 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             liveThreadIds: lockedTree.liveThreadIds,
             at: restoredAt,
           });
-          await lineageScratch.reconcile(lockedTree.threadIds);
-          if (arriving.length > 0) await deps.arrivals?.settle(arriving);
+          // One settle for the Work's documents and the lineages it restores: stripe order.
+          const arrived = [...arriving];
+          await lineageScratch.reconcile(lockedTree.threadIds, arrived);
+          if (arrived.length > 0) await deps.arrivals?.settle(arrived);
           await projectionMutation.publishWorks([row.id]);
           await deps.fileAccessChanges.publish({ workId: id });
           return { before: existing, after: mapWork(row), changed: true };

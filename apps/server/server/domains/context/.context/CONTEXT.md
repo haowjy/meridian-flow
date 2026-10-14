@@ -224,7 +224,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys then awaited-id stripes), `settleArrivals` (inside the arrival's locked transaction; takes the awaited-id stripes), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys then awaited-id stripes), `settleArrivals` (inside the arrival's locked transaction; takes the awaited-id stripes, once per transaction), `releaseAwaiting` (joins the caller: address namespace keys, then stripes, then rows), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
 | `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
 
@@ -306,7 +306,14 @@ when it is already live in the ref's project. Registration and arrival of an
 awaited id have no common address, so they meet on a fixed set of advisory
 stripes keyed by the awaited id: registration takes them after its namespace
 keys, `settleArrivals` takes them first, once the arrival holds every key it
-will take, so neither order can miss the other. Arrival hooks, each once against the operation's final tree:
+will take, so neither order can miss the other. One lock order per transaction:
+namespace keys, then stripes (one sorted phase: a transaction calls
+`settleArrivals` once with every arrival, so lineage `reconcile` can hand its
+restored ids to Work restore, and a later call below a held stripe throws),
+then registry rows. `releaseAwaiting` takes the released refs' address keys
+before its stripes and row updates, so an uncommitted foreign arrival at the
+address finishes first. An import's binding can register after Finish
+released; it releases its own pending ids when the terminal fence rejects it. Arrival hooks, each once against the operation's final tree:
 
 | Arrival | Where | Locks already held |
 |---|---|---|

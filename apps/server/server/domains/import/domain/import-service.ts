@@ -273,6 +273,17 @@ export function createImportService(deps: {
     await sweepFinished(id);
     return automatic ? undefined : status(id, projectId);
   }
+  /**
+   * Binding registers its refs in its own transaction, before the fenced commit. When Finish got
+   * in between, its release ran before those rows existed: release them here, so no awaited row
+   * outlives a finished import. Only a finished import: a ready one's Finish is still to come.
+   */
+  async function releaseStraggling(
+    fenced: { state: string } | null | undefined,
+    pending: ReadonlySet<string> | undefined,
+  ) {
+    if (fenced?.state === "finished" && pending?.size) await tree.releaseAhead([...pending]);
+  }
   /** Finish is already durable: its own cleanup can only be retried later, never fail it. */
   async function sweepFinished(id: string) {
     try {
@@ -366,6 +377,7 @@ export function createImportService(deps: {
     });
     if (!claimed) return await entryOutcome(id, projectId, entryId);
     const { record, entry, prepend } = claimed;
+    let pending: ReadonlySet<string> | undefined;
     const stopHeartbeat = heartbeat(id, entryId, () =>
       renewLease(projectId, id, entryId, entry.attemptId as string),
     );
@@ -409,7 +421,7 @@ export function createImportService(deps: {
       const targets = prepared?.converted.targets ?? new Map<number, string>();
       // Binaries and code land later. Bound by planned id, an unlanded one gets an
       // ahead ref settled to that id on arrival; its address is never resolved.
-      const pending = selection?.pending;
+      pending = selection?.pending;
       const bound =
         entry.kind === "binary"
           ? null
@@ -442,7 +454,7 @@ export function createImportService(deps: {
       }
       await retryMoved(async () => {
         const fenced = await repo.fence(id, projectId);
-        if (fenced?.state !== "ready") return;
+        if (fenced?.state !== "ready") return await releaseStraggling(fenced, pending);
         const parent = ["binary", "code"].includes(entry.kind)
           ? await tree.parent(
               entry.area && !entry.parentId
@@ -516,7 +528,7 @@ export function createImportService(deps: {
       });
       await repo.transaction(async () => {
         const fenced = await repo.fence(id, projectId);
-        if (fenced?.state !== "ready") return;
+        if (fenced?.state !== "ready") return await releaseStraggling(fenced, pending);
         const current = await repo.lockEntry(entry.id);
         if (current.attemptId === entry.attemptId && current.state === "landing")
           await repo.updateEntry(entry.id, {

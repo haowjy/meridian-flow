@@ -436,15 +436,16 @@ if (!RUN) {
       try {
         await taken.wait();
         // The competitor is the other operation; a second landing is a retry after the first.
+        // Both hold the address key and the awaited stripe, so it queues there before any row.
         competitor = first === "stop" ? arrival() : stop();
         for (let attempt = 0; ; attempt++) {
           const waiting = await gateConnection.execute<{ count: number }>(sql`
             SELECT count(*)::int AS count FROM pg_stat_activity
             WHERE datname = current_database() AND wait_event_type = 'Lock'
-              AND query ILIKE '%link_ahead_refs%'
+              AND (query ILIKE '%advisory%' OR query ILIKE '%link_ahead_refs%')
           `);
           if ((waiting[0]?.count ?? 0) > 0) break;
-          if (attempt >= WAIT_MS / 20) throw new Error("settlement did not contend on the row");
+          if (attempt >= WAIT_MS / 20) throw new Error("settlement did not contend on the locks");
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
         expect(await settledTo()).toMatchObject({
@@ -483,6 +484,67 @@ if (!RUN) {
       expect(await lateRow()).toMatchObject({
         settledDocumentId: DOCUMENT_2,
         awaitedDocumentId: null,
+      });
+    });
+
+    /**
+     * Test: release meets an uncommitted foreign arrival at the address. The arrival skipped the
+     * ref (it still awaits another id) and its document is invisible to the release until commit:
+     * release must queue on the address key, then see the document and settle the ref.
+     */
+    it("release queues behind a foreign arrival at the address and settles to it", async () => {
+      await newRegistry(database).register([
+        { ...registration, awaitedDocumentId: DOCUMENT_2 as never },
+      ]);
+      let proceed!: () => void;
+      const held = new Promise<void>((resolve) => {
+        proceed = resolve;
+      });
+      const inserted = notification("foreign arrival insert");
+      const arrival = inserted.from(
+        arrive("manuscript", DOCUMENT, async () => {
+          inserted.notify();
+          await held;
+        }),
+      );
+      let releasing: Promise<number> | undefined;
+      try {
+        await inserted.wait();
+        releasing = newRegistry(database).releaseAwaiting([DOCUMENT_2 as never]);
+        await waitForWaiters(arrivalKey("manuscript"), 1);
+        proceed();
+        expect(await arrival).toBe(0); // the ref still awaited DOCUMENT_2
+        expect(await releasing).toBe(1);
+        expect(await settledIds()).toEqual([DOCUMENT]);
+      } finally {
+        proceed();
+        await Promise.allSettled([arrival, releasing]);
+      }
+    });
+
+    /**
+     * Test: stripes are one sorted phase per transaction. Two arrivals in one transaction whose
+     * stripes sort 5 then 60, against a registration awaiting both: called in separate steps
+     * (60 first) they would close a cycle with the registration (5, then 60).
+     */
+    it("a transaction's stripes are taken once, sorted: a second call below the first throws", async () => {
+      const low = "00000000-0000-4000-8000-000000000005"; // stripe 5
+      const high = "00000000-0000-4000-8000-00000000003c"; // stripe 60
+      expect([low, high].map(awaitedStripeKey)).toEqual([
+        "link-ahead-awaited:5",
+        "link-ahead-awaited:60",
+      ]);
+      const registry = newRegistry(database);
+      await expect(
+        runInDrizzleTransaction(database, async () => {
+          await registry.settleArrivals([high as never]);
+          await registry.settleArrivals([low as never]);
+        }),
+      ).rejects.toThrow(/stripe .* taken after/);
+      // The union in one call is the supported shape, and a held key may be asked again.
+      await runInDrizzleTransaction(database, async () => {
+        await registry.settleArrivals([high as never, low as never]);
+        await registry.settleArrivals([high as never]);
       });
     });
 

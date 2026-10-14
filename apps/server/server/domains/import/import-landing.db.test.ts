@@ -1,6 +1,7 @@
 /** Import landing: receives, leases, Finish fencing, object cleanup and per-file failures. Barriers sit at public port boundaries. */
 
 import { IMPORT_ADMISSION } from "@meridian/contracts";
+import { linkAheadRefs } from "@meridian/database/schema";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ObjectStorePort } from "../storage/index.js";
 import { barrier, importDbEnabled, loose, useImportDb } from "./__test-support__/import-db.js";
@@ -104,6 +105,29 @@ describe.skipIf(!importDbEnabled)("import landing (postgres)", () => {
     expect((await upload).state).toBe("not_imported");
     expect((await ok(context().read("kb://Sects"))).content).toBe("");
     expect((await projectDocuments())[0].metadata).not.toHaveProperty("importPending");
+  });
+  it("Finish before a paused binding registers its refs leaves no awaited row and no holder write", async () => {
+    const selection = loose({
+        "Holder.md": "See ![[map.png]]",
+        "map.png": new Uint8Array([137, 80, 78, 71, 0, 1]),
+      }),
+      deps = ports(),
+      gate = barrier();
+    const bind = deps.tree.bind;
+    deps.tree.bind = async (...args) => {
+      await gate.pause(); // before the binder registers its awaiting refs
+      return bind(...args);
+    };
+    const service = createImportService(deps),
+      plan = await service.plan(projectId, userId, selection.manifest);
+    const upload = service.land(projectId, plan.importId, 0, selection.bytes[0]);
+    await gate.arrived;
+    expect((await service.finish(plan.importId, projectId))?.state).toBe("finished");
+    gate.release();
+    expect((await upload).state).toBe("not_imported");
+    expect((await ok(context().read("kb://Holder"))).content).toBe("");
+    const rows = await fx.db.select().from(linkAheadRefs);
+    expect(rows.filter((row) => row.awaitedDocumentId !== null)).toEqual([]);
   });
   it("an expired attempt is replaced and its late commit cannot write twice", async () => {
     const selection = loose({ "Lease.md": "Imported once" }),

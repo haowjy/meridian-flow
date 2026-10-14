@@ -71,7 +71,9 @@ registration, if the target is already live), wherever the target landed, so
 a file at the address only makes the target count up. Import keeps no mirror
 of the relation: it supplies awaited ids while binding and releases them. Finish (or Stop here) releases
 rows awaiting files that never landed; from then on they are ordinary ahead
-refs and settle at once to a document already at their address.
+refs and settle at once to a document already at their address. Binding registers in
+its own transaction before the fenced commit, so a landing that finds the import finished
+releases its pending ids too: no awaited row outlives a finished import.
 
 A single selected folder with a valid meridian-export.json routes Manuscript/,
 Knowledge Base/ and Unfiled/ to their area roots; planning chunks group by
