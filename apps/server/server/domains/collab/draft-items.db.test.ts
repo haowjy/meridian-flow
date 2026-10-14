@@ -10,7 +10,7 @@ import {
   handleApplyWorkDraftRequest,
   handleDiscardWorkDraftRequest,
   handleDocumentDraftHintsRequest,
-  handleWorkDraftPreviewRequest,
+  handleWorkDraftItemMetaRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
@@ -46,9 +46,8 @@ describeDraftTreeDb("review items (postgres)", (start) => {
         draftId: keptItem.draftId,
         itemKey: keptItem.itemKey,
         commandId: randomUUID(),
-        operationIds: ["1"],
-        liveRevisionToken: "x",
-        draftRevisionToken: "x",
+        changeIds: ["1"],
+        snapshot: "x",
       },
     });
     expect(perChange.body).toMatchObject({ status: "whole_item" });
@@ -77,15 +76,12 @@ describeDraftTreeDb("review items (postgres)", (start) => {
     const review = runtime.ports.documentSync.draftReview;
     for (const wrong of [mine.draftId, branch, theirs.itemKey]) {
       expect(await review.resolveItem({ workId: work.id, itemKey: wrong })).toBeNull();
-      expect(await review.preview({ workId: work.id, itemKey: wrong })).toMatchObject({
+      expect(await review.itemMeta({ workId: work.id, itemKey: wrong })).toMatchObject({
         status: "gone",
       });
-      const preview = await handleWorkDraftPreviewRequest(deps, {
-        ...scope,
-        documentId: chapter,
-        itemKey: wrong,
-      });
-      expect(preview.status).toBe("gone");
+      await expect(
+        handleWorkDraftItemMetaRequest(deps, { ...scope, documentId: chapter, itemKey: wrong }),
+      ).rejects.toMatchObject({ statusCode: 404 });
       const discard = await handleDiscardWorkDraftRequest(deps, {
         ...scope,
         documentId: chapter,

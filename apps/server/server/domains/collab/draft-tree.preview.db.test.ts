@@ -11,7 +11,7 @@ import {
   handleDiscardAllWorkDraftRequest,
   handleDiscardWorkDraftRequest,
   handleWorkDraftListRequest,
-  handleWorkDraftPreviewRequest,
+  handleWorkDraftItemMetaRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
 import { describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
@@ -35,15 +35,14 @@ describeDraftTreeDb("deleted-live review preview", (start, db) => {
         const row = review.items.find((item) => item.documentId === documentId);
         expect(row).toMatchObject({ contextLocation: { scheme, path }, isNew: isNewDocument });
         if (!row) throw new Error("Expected a review row");
-        const preview = await handleWorkDraftPreviewRequest(selectDraftRouteServices(runtime.app), {
+        const preview = await handleWorkDraftItemMetaRequest(selectDraftRouteServices(runtime.app), {
           projectId: s.project.id,
           userId: s.project.userId,
           workId: work.id,
           documentId,
           itemKey: row.itemKey,
         });
-        expect(preview.status).toBe("active");
-        expect(preview.status === "active" && preview.item.isNew).toBe(isNewDocument);
+        expect(preview).toMatchObject({ kind: "text", isNew: isNewDocument });
         expect(await s.view(work).text(`${prefix}${path.slice(1)}`)).toContain(text);
       }
     }
@@ -81,7 +80,7 @@ describeDraftTreeDb("deleted-live review preview", (start, db) => {
     });
     expect(await rows()).toEqual(deletedRows);
     for (const request of [
-      () => handleWorkDraftPreviewRequest(deps, documentInput),
+      () => handleWorkDraftItemMetaRequest(deps, documentInput),
       () => handleApplyWorkDraftRequest(deps, { ...input, documentId, request: body }),
       () => handleDiscardWorkDraftRequest(deps, { ...input, documentId, request: body }),
       () =>
@@ -110,8 +109,9 @@ describeDraftTreeDb("deleted-live review preview", (start, db) => {
     );
     expect(restored.deletedAt).toBeNull();
     expect((await handleWorkDraftListRequest(deps, input)).items).toEqual(listed.items);
-    const preview = await handleWorkDraftPreviewRequest(deps, documentInput);
-    expect(preview.status).toBe("active");
+    expect(await handleWorkDraftItemMetaRequest(deps, documentInput)).toMatchObject({
+      kind: "text",
+    });
     expect(await s.view(work).text("chapter.md")).toContain("Pending words.");
   });
 
@@ -135,15 +135,16 @@ describeDraftTreeDb("deleted-live review preview", (start, db) => {
       documentId,
       itemKey: item.itemKey,
     };
-    const preview = await handleWorkDraftPreviewRequest(deps, input);
-    expect(preview.status).toBe("active");
-    expect(JSON.stringify(preview.status === "active" ? preview.hunks : null)).toContain("Pending");
+    expect(await handleWorkDraftItemMetaRequest(deps, input)).toMatchObject({
+      kind: "text",
+      itemKey: item.itemKey,
+    });
     // Another Work's key names nothing here.
-    expect(
-      await handleWorkDraftPreviewRequest(deps, { ...input, itemKey: foreign.itemKey }),
-    ).toMatchObject({ status: "gone" });
+    await expect(
+      handleWorkDraftItemMetaRequest(deps, { ...input, itemKey: foreign.itemKey }),
+    ).rejects.toMatchObject({ statusCode: 404 });
     await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, work.id));
-    expect((await handleWorkDraftPreviewRequest(deps, input)).status).toBe("active");
+    expect(await handleWorkDraftItemMetaRequest(deps, input)).toMatchObject({ kind: "text" });
     await expect(
       handleApplyWorkDraftRequest(deps, {
         ...input,

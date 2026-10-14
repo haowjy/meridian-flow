@@ -21,7 +21,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/change-trail-postgres-harness.js";
-import { reviewDriver } from "./test-support/draft-review-requests.js";
+import { applyChangesWhere, discardChangeLocally, reviewDriver, reviewFrame } from "./test-support/draft-review-requests.js";
 import { draftBranchId, inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -552,8 +552,7 @@ it.each([
     await harness.commit(responseId);
     const branchId = await draftBranchId(db, ALPHA_ID);
     if (state === "partly applied") {
-      const preview = await review.activePreview(ALPHA_ID);
-      await review.applyChanges(ALPHA_ID, preview, [preview.operations[0].operationId]);
+      await applyChangesWhere(view, ALPHA_ID);
     } else {
       const [branch] = await db
         .select()

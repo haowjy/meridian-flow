@@ -1,7 +1,6 @@
 /**
- * Contract §4.4 DB cases for the writer's review commands through the route cores: per-change
- * Apply through the batch pipeline (staging is the consent boundary), crash recovery, and the
- * command record (resend, conflict, blocked).
+ * DB cases for the writer's review commands through the route cores: per-change Apply as a
+ * content member of one batch, crash recovery, and the command record (resend, conflict, blocked).
  */
 import { randomUUID } from "node:crypto";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
@@ -15,11 +14,11 @@ import {
   handleDiscardAllWorkDraftRequest,
   handleDiscardWorkDraftRequest,
   handleDraftCommandObservation,
-  handleWorkDraftPreviewRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
 import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
 import { type DraftTreeStart, describeDraftTreeDb } from "../../test-support/draft-tree-suite.js";
+import { reviewFrameOfState } from "../../test-support/review-frame.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { setCollabHook } from "./domain/collab-test-hooks.js";
 
@@ -37,50 +36,47 @@ async function twoChanges(start: DraftTreeStart) {
     if (!found) throw new Error("no chapter item");
     return found;
   };
-  const preview = async () => {
-    const { itemKey } = await item();
-    const body = await handleWorkDraftPreviewRequest(deps, {
-      ...scope,
-      documentId: chapter,
-      itemKey,
-    });
-    if (body.status !== "active") throw new Error(`no active preview: ${body.status}`);
-    return body;
+  /** The room the writer reviews: the item's change groups and the snapshot their ids belong to. */
+  const frame = async () => {
+    const { itemKey, draftId } = await item();
+    const { branchId } = await s.draftBranch(ascension, chapter);
+    const loaded = await runtime.ports.documentSync.loadHocuspocusBranchState(branchId);
+    if (!loaded) throw new Error("the item has no branch state");
+    return { draftId, itemKey, ...reviewFrameOfState(loaded.state) };
   };
-  /** The per-change Apply request a click on the first or last change sends from `from` (a preview). */
+  /** The `changes` Apply request a click on the first or last change sends from `from` (a frame). */
   const click = async (
     which: "first" | "last",
-    from?: Awaited<ReturnType<typeof preview>>,
+    from?: Awaited<ReturnType<typeof frame>>,
     commandId = randomUUID(),
   ) => {
-    const seen = from ?? (await preview());
-    const op = which === "first" ? seen.operations[0] : seen.operations.at(-1);
-    if (!op) throw new Error(`no ${which} change`);
+    const seen = from ?? (await frame());
+    const group = which === "first" ? seen.groups[0] : seen.groups.at(-1);
+    if (!group) throw new Error(`no ${which} change`);
     return {
       draftId: seen.draftId,
       itemKey: seen.itemKey,
       commandId,
-      operationIds: [op.operationId],
-      liveRevisionToken: seen.liveRevisionToken,
-      draftRevisionToken: seen.draftRevisionToken,
+      changeIds: [group.id],
+      snapshot: seen.snapshot,
     };
   };
   const applyChange = (request: Awaited<ReturnType<typeof click>>) =>
     handleApplyWorkDraftChangesRequest(deps, { ...scope, documentId: chapter, request });
-  return { runtime, s, ascension, chapter, deps, scope, item, preview, click, applyChange };
+  return { runtime, s, ascension, chapter, deps, scope, item, frame, click, applyChange };
 }
 
 describeDraftTreeDb("review commands (postgres)", (start, db) => {
-  it("1: per-change Apply is one batch per click; the last click resets the item and the draft stays active", async () => {
+  it("1: per-change Apply is one batch per click; the last click leaves the item with nothing to review and the draft active", async () => {
     const c = await twoChanges(start);
     const first = await c.applyChange(await c.click("first"));
-    expect(first.body).toMatchObject({ status: "applied", itemClosed: false });
+    expect(first.body).toMatchObject({ status: "applied", hasChanges: true });
     expect(await c.s.batchStates()).toEqual(["completed"]);
     const live = c.s.view("live");
     expect(await live.text("chapter.md")).toContain("Opening, drafted.");
     expect(await live.text("chapter.md")).not.toContain("End, drafted.");
     const last = await c.applyChange(await c.click("last"));
-    expect(last.body).toMatchObject({ status: "applied", itemClosed: true });
+    expect(last.body).toMatchObject({ status: "applied", hasChanges: false });
     expect(await c.s.batchStates()).toEqual(["completed", "completed"]);
     expect(await c.s.draftStatuses(c.ascension)).toEqual(["active"]);
     expect(await c.s.items(c.ascension)).toEqual([]);
@@ -89,8 +85,7 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
   it.each([
     "edit",
     "rename",
-    "delete",
-  ] as const)("2: a live %s between selection and staging refuses stale with nothing staged", async (change) => {
+  ] as const)("2: a live %s between selection and staging still applies the chosen change", async (change) => {
     const c = await twoChanges(start);
     const request = await c.click("first");
     const remove = setCollabHook("applyItems.beforeStaging", async () => {
@@ -98,10 +93,24 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
       if (change === "edit")
         await c.s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.");
       if (change === "rename") await c.s.writer.move("chapter.md", "chapter-2.md");
-      if (change === "delete") await c.s.writer.delete("chapter.md");
     });
     const answer = await c.applyChange(request);
-    expect(answer.body).toMatchObject({ status: "stale" });
+    expect(answer.body).toMatchObject({ status: "applied" });
+    const live = c.s.view("live");
+    expect(await live.text(change === "rename" ? "chapter-2.md" : "chapter.md")).toContain(
+      "Opening, drafted.",
+    );
+  });
+
+  it("2b: a live delete between selection and staging refuses whole_item with nothing staged", async () => {
+    const c = await twoChanges(start);
+    const request = await c.click("first");
+    const remove = setCollabHook("applyItems.beforeStaging", async () => {
+      remove();
+      await c.s.writer.delete("chapter.md");
+    });
+    const answer = await c.applyChange(request);
+    expect(answer.body).toMatchObject({ status: "whole_item" });
     expect(await c.s.batchStates()).toEqual([]);
   });
 
@@ -121,7 +130,7 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     expect(await live.text("chapter-2.md")).toContain("Opening, drafted.");
     expect((await c.applyChange(await c.click("last"))).body).toMatchObject({
       status: "applied",
-      itemClosed: true,
+      hasChanges: false,
     });
   });
 
@@ -142,8 +151,6 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     expect(await live.text("chapter.md")).toContain("Opening, drafted.");
     expect(await live.text("chapter.md")).toContain("Coda.");
     expect(await live.text("chapter.md")).not.toContain("End, drafted.");
-    const item = await c.item();
-    expect(item.branchGeneration).not.toBeNull();
     expect(await c.s.recover()).toBe(0);
   });
 
@@ -157,7 +164,7 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
 
     const concurrent = await c.click("last");
     const [a, b] = await Promise.all([c.applyChange(concurrent), c.applyChange(concurrent)]);
-    expect(a.body).toMatchObject({ status: "applied", itemClosed: true });
+    expect(a.body).toMatchObject({ status: "applied", hasChanges: false });
     expect(b).toEqual(a);
     expect(await c.s.batchStates()).toEqual(["completed", "completed"]);
   });
@@ -166,8 +173,7 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     const c = await twoChanges(start);
     const request = await c.click("first");
     await c.applyChange(request);
-    const other = await c.preview().catch(() => null);
-    const different = { ...request, operationIds: [...request.operationIds, "other"] };
+    const different = { ...request, changeIds: [...request.changeIds, "other"] };
     await expect(c.applyChange(different)).rejects.toMatchObject({ statusCode: 409 });
     await expect(
       handleApplyWorkDraftRequest(c.deps, {
@@ -180,17 +186,16 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
         },
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
-    void other;
   });
 
   it("12: a resend after the first command changed what validation sees returns the stored success", async () => {
     const c = await twoChanges(start);
-    // A per-change Apply that drains and resets the item: its resend finds no item.
+    // A per-change Apply that leaves the item with nothing to review: its resend finds no item.
     const one = await c.click("first");
     await c.applyChange(one);
     const last = await c.click("last");
     const drained = await c.applyChange(last);
-    expect(drained.body).toMatchObject({ status: "applied", itemClosed: true });
+    expect(drained.body).toMatchObject({ status: "applied", hasChanges: false });
     expect(await c.applyChange(last)).toEqual(drained);
 
     // Discard all closes the draft: its resend finds no draft.

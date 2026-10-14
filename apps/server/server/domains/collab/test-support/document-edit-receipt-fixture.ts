@@ -15,7 +15,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
-import { discardChangeLocally, reviewDriver, reviewFrame } from "./draft-review-requests.js";
+import { applyChangesWhere, discardChangeLocally } from "./draft-review-requests.js";
 
 type ReceiptFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 
@@ -152,19 +152,10 @@ export async function setupResponseDraft(
 /** Apply the change inserting `after` as a `changes` Apply, or discard it as the room does (locally). */
 export async function reviewChange(
   fixture: ReceiptFixture,
-  target: { workId: typeof WORK_ID; itemKey: string },
+  _target: unknown,
   after: string,
   apply = false,
 ) {
-  const documentId = ALPHA_ID;
-  if (!apply) return discardChangeLocally(fixture, documentId, after);
-  const frame = await reviewFrame(fixture, documentId);
-  const group = frame.groups.find((candidate) => candidate.excerpt.inserted.includes(after));
-  if (!group) throw new Error(`Missing ${after}: ${JSON.stringify(frame.groups)}`);
-  const outcome = await reviewDriver(fixture.collab.draftReview).applyChanges(
-    documentId,
-    [group.id],
-    frame.snapshot,
-  );
-  expect(outcome).toMatchObject({ status: "applied" });
+  if (!apply) return discardChangeLocally(fixture, ALPHA_ID, after);
+  expect(await applyChangesWhere(fixture, ALPHA_ID, after)).toMatchObject({ status: "applied" });
 }

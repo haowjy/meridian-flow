@@ -27,6 +27,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./change-trail-postgres-harness.js";
+import { reviewFrameOf } from "../../../test-support/review-frame.js";
 import { captureHistoricalBranchRow } from "./historical-branch-row.js";
 
 type Fixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
@@ -110,45 +111,47 @@ export function testEnvelope(input: {
 export async function reviewFrame(fixture: Fixture, documentId: string) {
   const { item } = await reviewDriver(fixture.collab.draftReview).resolved(documentId);
   if (!item.draftBranchId) throw new Error(`${documentId} has no text branch`);
-  return fixture.branchCoordinator.readBranch(item.draftBranchId, async (doc) => {
-    const schema = buildDocumentSchema();
-    const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
-    const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-    return {
-      snapshot: Buffer.from(Y.encodeSnapshot(Y.snapshot(doc))).toString("base64"),
-      groups: projectReview(diffBlocks(base, draft)).groups,
-    };
-  });
+  return fixture.branchCoordinator.readBranch(item.draftBranchId, async (doc) => reviewFrameOf(doc));
 }
 
 /**
  * The writer discards a change in the room: the draft returns to the base for the change
  * containing `excerpt` (what the client does locally; the server sees an ordinary writer edit).
  */
-export async function discardChangeLocally(fixture: Fixture, documentId: string, excerpt: string) {
+export async function discardChangeLocally(fixture: Fixture, documentId: string, excerpt?: string) {
   const { item } = await reviewDriver(fixture.collab.draftReview).resolved(documentId);
   if (!item.draftBranchId) throw new Error(`${documentId} has no text branch`);
   const schema = buildDocumentSchema();
-  await commitBranchEdit(
-    fixture,
-    item.draftBranchId,
-    { source: "writer", threadId: null },
-    (doc) => {
-      const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
-      const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-      const projection = projectReview(diffBlocks(base, draft));
-      const group = projection.groups.find((candidate) =>
-        candidate.excerpt.inserted.includes(excerpt),
-      );
-      if (!group) throw new Error(`No change inserts ${excerpt}`);
-      const next = applySpanPatches(
-        draft,
-        composeGroups(schema, projection, [group.id], "discard"),
-        "draft",
-      );
-      doc.transact(() => writeBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, next));
-    },
-  );
+  await commitBranchEdit(fixture, item.draftBranchId, { source: "writer", threadId: null }, (doc) => {
+    const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+    const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+    const projection = projectReview(diffBlocks(base, draft));
+    const groups =
+      excerpt === undefined
+        ? projection.groups
+        : projection.groups.filter((candidate) => candidate.excerpt.inserted.includes(excerpt));
+    if (groups.length === 0) throw new Error(`No change inserts ${excerpt}`);
+    const next = applySpanPatches(
+      draft,
+      composeGroups(schema, projection, groups.map((group) => group.id), "discard"),
+      "draft",
+    );
+    doc.transact(() => writeBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, next));
+  });
+}
+
+/**
+ * Apply the changes of an item whose inserted text includes `excerpt` (the first change when
+ * absent), as the room sends them: the ids and the snapshot of the frame the writer saw.
+ */
+export async function applyChangesWhere(fixture: Fixture, documentId: string, excerpt?: string) {
+  const frame = await reviewFrame(fixture, documentId);
+  const group =
+    excerpt === undefined
+      ? frame.groups[0]
+      : frame.groups.find((candidate) => candidate.excerpt.inserted.includes(excerpt));
+  if (!group) throw new Error(`No change inserts ${excerpt}: ${JSON.stringify(frame.groups)}`);
+  return reviewDriver(fixture.collab.draftReview).applyChanges(documentId, [group.id], frame.snapshot);
 }
 
 /**

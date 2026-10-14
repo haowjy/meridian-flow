@@ -40,7 +40,11 @@ import {
   responseContext,
   stageDraft,
 } from "./test-support/document-edit-receipt-fixture.js";
-import { commitBranchEdit, reviewDriver } from "./test-support/draft-review-requests.js";
+import {
+  commitBranchEdit,
+  discardChangeLocally,
+  reviewDriver,
+} from "./test-support/draft-review-requests.js";
 
 const DRAFT = "Write did not land: the user discarded this draft. Re-read and retry.";
 const EDIT = "Write did not land: the user discarded the text it edited. Re-read and retry.";
@@ -96,21 +100,14 @@ describe("reply save refusals (postgres)", () => {
     return { ...staged, responseId, context, core, review, write };
   }
 
-  it("1: independent staged writes survive a per-change Discard and land at generation +1", async () => {
+  it("1: independent staged writes survive the writer discarding another change in the room", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await write("gold", "silver", "w-gold")).toMatchObject({ phase: "staged" });
-    const preview = await review.activePreview(ALPHA_ID);
-    const azure = preview.operations.find((op) => op.afterExcerpt === "azure");
-    expect(
-      await review.discardChanges(ALPHA_ID, preview, [azure?.operationId as string]),
-    ).toMatchObject({
-      status: "discarded",
-    });
+    await discardChangeLocally(fixture, ALPHA_ID, "azure");
     const saved = await harness.commit(responseId);
     expect(saved).toMatchObject({ status: "committed", documents: [{ updateCount: 2 }] });
     expect(await fixture.draftMarkdown(branchId)).toBe("silver\n\nblue\n\nlime\n");
-    expect(await harness.branchGeneration(branchId)).toBe(2);
   });
 
   it("3: Discard all while staged refuses the save with one receipt per write and nothing live", async () => {
@@ -132,14 +129,11 @@ describe("reply save refusals (postgres)", () => {
     const { fixture, branchId, responseId, review, write, core, context } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await write("azure", "cyan", "w-azure")).toMatchObject({ phase: "staged" });
-    const first = await review.activePreview(ALPHA_ID);
-    const azure = first.operations.find((op) => op.afterExcerpt === "azure");
-    await review.discardChanges(ALPHA_ID, first, [azure?.operationId as string]);
+    await discardChangeLocally(fixture, ALPHA_ID, "azure");
     expect(
       await core.read({ file: "alpha.md", documentId: ALPHA_ID, tool_use_id: "read-2" }, context),
     ).toMatchObject({ status: "success" });
-    const second = await review.activePreview(ALPHA_ID);
-    await review.discardChanges(ALPHA_ID, second);
+    await discardChangeLocally(fixture, ALPHA_ID);
     const saved = await harness.commit(responseId);
     expect(refused(saved)).toEqual([[ALPHA_ID, EDIT]]);
     expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nblue\n\nlime\n");
