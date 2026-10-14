@@ -183,8 +183,10 @@ a selected folder; dragging an unselected row carries only it. A row drags only
 when its surface grants Move (an archived Work's Scratch doesn't), and a
 selection that spans systems or holds an unmovable row moves nowhere rather than
 silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
-data until the drop) and writes the entries' URIs and names to the transfer for
-anything outside the app.
+data until the drop). The transfer carries only Meridian's entries type, no
+`text/plain` or `text/uri-list` fallback: a surface that can't take rows yet
+(the composer, the editor, until mention drops land) ignores the drop instead of
+pasting names that look like a half-made link.
 
 Each list has a `TreeDropScope` (the Files tree one per area, all sharing the
 tree's selection) whose `entries` route (`use-entry-move-route.ts`)

@@ -45,7 +45,9 @@ browser reports no fine pointer, so rows render at touch height.
 6. Drag a row over its own folder: no light, no hint, no change.
 7. Drag a row into a folder that already holds that name: the hint reads
    "<folder> already has <name>", and releasing changes nothing.
-8. After every drag, check that no region stays lit
+8. Drag a row into the chat composer and into the open document: nothing is
+   inserted (mention drops aren't built yet; no stray names as text).
+9. After every drag, check that no region stays lit
    (`document.querySelectorAll('div[aria-hidden].-z-10').length === 0`).
 
 ## Scratch and Work Files

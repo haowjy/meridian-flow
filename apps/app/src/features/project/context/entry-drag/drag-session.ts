@@ -1,7 +1,8 @@
 /**
  * The rows being dragged right now. A browser hides a drag's data until the
- * drop, so targets decide from this record instead; the drag itself carries the
- * entries' URIs and names for anything outside the app.
+ * drop, so targets decide from this record instead. The drag carries only
+ * Meridian's own type: a surface that can't take rows yet (the composer, the
+ * editor) ignores the drop rather than pasting the names as stray text.
  */
 import type { DragEvent } from "react";
 import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
@@ -33,10 +34,7 @@ export function startEntryDrag(event: DragEvent, entries: readonly SelectableEnt
   active = { entries, system: one ? system : null };
   const transfer = event.dataTransfer;
   transfer.effectAllowed = "copyMove";
-  const uris = entries.map((entry) => entry.uri);
-  transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(uris));
-  transfer.setData("text/uri-list", uris.join("\r\n"));
-  transfer.setData("text/plain", entries.map((entry) => entry.name).join("\n"));
+  transfer.setData(MERIDIAN_ENTRIES_MIME, JSON.stringify(entries.map((entry) => entry.uri)));
   setPreview(transfer, entries);
   window.addEventListener("dragend", endEntryDrag, { once: true });
 }
