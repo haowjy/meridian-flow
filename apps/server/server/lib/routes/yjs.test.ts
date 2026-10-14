@@ -118,9 +118,6 @@ describe("Yjs branch handshake route guard", () => {
           write(input);
           return true;
         },
-        async resetBranchSnapshot() {
-          return true;
-        },
         async updateBranchSnapshot(input) {
           await pullBlocked;
           write(input);

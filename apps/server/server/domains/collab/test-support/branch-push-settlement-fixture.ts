@@ -89,6 +89,8 @@ export function claimProbeStore(db: Database, eventSink?: EventSink) {
     {} as never,
     undefined,
     eventSink,
+    { steps: [] },
+    {} as never,
   );
 }
 

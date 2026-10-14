@@ -1,8 +1,21 @@
-/** Snapshot-owned branch mutations and explicit preview-fenced request envelopes. */
+/** Snapshot-owned branch mutations and the writer's review commands, as a facade-level driver. */
 import { randomUUID } from "node:crypto";
+import {
+  applySpanPatches,
+  composeGroups,
+  diffBlocks,
+  projectReview,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
 import type { DraftCommandId, DraftId, UserId, WorkId } from "@meridian/contracts";
 import type { DraftCommandKind } from "@meridian/contracts/drafts";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  createCollabYDoc,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { DraftReviewApi } from "../contracts.js";
 import { commandDigest, type DraftCommandEnvelope } from "../domain/draft-commands.js";
@@ -90,47 +103,53 @@ export function testEnvelope(input: {
   };
 }
 
-/** The per-change selection a client sends after previewing, for the operations it clicked. */
-export function fencedSelection(
-  preview: {
-    liveRevisionToken: string;
-    draftRevisionToken: string;
-    operations: readonly {
-      operationId: string;
-      partKey?: string;
-      admissionToken: string;
-      closureClassId: string;
-    }[];
-  },
-  operationIds: string[],
-) {
-  const clicked = preview.operations.filter((op) => operationIds.includes(op.operationId));
-  return {
-    operationIds,
-    memberPartKeys: clicked.flatMap((op) => (op.partKey ? [op.partKey] : [])),
-    admissionTokens: [...new Set(clicked.map((op) => op.admissionToken))],
-    closureClassIds: [...new Set(clicked.map((op) => op.closureClassId))],
-    liveRevisionToken: preview.liveRevisionToken,
-    draftRevisionToken: preview.draftRevisionToken,
-  };
+/**
+ * What the writer's review room shows for an item right now: its change groups (the ids a
+ * `changes` Apply names) and the `snapshot` of the room those ids belong to.
+ */
+export async function reviewFrame(fixture: Fixture, documentId: string) {
+  const { item } = await reviewDriver(fixture.collab.draftReview).resolved(documentId);
+  if (!item.draftBranchId) throw new Error(`${documentId} has no text branch`);
+  return fixture.branchCoordinator.readBranch(item.draftBranchId, async (doc) => {
+    const schema = buildDocumentSchema();
+    const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+    const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+    return {
+      snapshot: Buffer.from(Y.encodeSnapshot(Y.snapshot(doc))).toString("base64"),
+      groups: projectReview(diffBlocks(base, draft)).groups,
+    };
+  });
 }
 
-export type ClickedChanges = {
-  documentId: string;
-  preview: ActivePreview;
-  operationIds: string[];
-};
-
-/** What a click on `operationIds` of a previewed item sends. */
-export function fencedRequest(
-  command: { documentId: string },
-  preview: ActivePreview,
-  operationIds: string[],
-): ClickedChanges {
-  return { documentId: command.documentId, preview, operationIds };
+/**
+ * The writer discards a change in the room: the draft returns to the base for the change
+ * containing `excerpt` (what the client does locally; the server sees an ordinary writer edit).
+ */
+export async function discardChangeLocally(fixture: Fixture, documentId: string, excerpt: string) {
+  const { item } = await reviewDriver(fixture.collab.draftReview).resolved(documentId);
+  if (!item.draftBranchId) throw new Error(`${documentId} has no text branch`);
+  const schema = buildDocumentSchema();
+  await commitBranchEdit(
+    fixture,
+    item.draftBranchId,
+    { source: "writer", threadId: null },
+    (doc) => {
+      const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+      const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+      const projection = projectReview(diffBlocks(base, draft));
+      const group = projection.groups.find((candidate) =>
+        candidate.excerpt.inserted.includes(excerpt),
+      );
+      if (!group) throw new Error(`No change inserts ${excerpt}`);
+      const next = applySpanPatches(
+        draft,
+        composeGroups(schema, projection, [group.id], "discard"),
+        "draft",
+      );
+      doc.transact(() => writeBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, next));
+    },
+  );
 }
-
-type ActivePreview = Extract<Awaited<ReturnType<DraftReviewApi["preview"]>>, { status: "active" }>;
 
 /**
  * The writer's review commands by document, each under a fresh command id, answering the
@@ -151,11 +170,9 @@ export function reviewDriver(
   }
   const driver = {
     resolved,
-    /** The wire-less shape of a click: the document, its preview and the operations chosen. */
-    applyRequest: (request: ClickedChanges) =>
-      driver.applyChanges(request.documentId, request.preview, request.operationIds),
-    discardRequest: (request: ClickedChanges) =>
-      driver.discardChanges(request.documentId, request.preview, request.operationIds),
+    async meta(documentId: string) {
+      return review.itemMeta({ workId, itemKey: (await resolved(documentId)).itemKey });
+    },
     async actorThreads(documentId: string) {
       const listed = await review.listItems({ workId });
       const item = listed.items.find((candidate) => candidate.documentId === documentId);
@@ -163,14 +180,6 @@ export function reviewDriver(
         threadId,
         title: listed.threadTitles.get(threadId) ?? null,
       }));
-    },
-    async preview(documentId: string) {
-      return review.preview({ workId, itemKey: (await resolved(documentId)).itemKey });
-    },
-    async activePreview(documentId: string): Promise<ActivePreview> {
-      const preview = await driver.preview(documentId);
-      if (preview.status !== "active") throw new Error(`No active review of ${documentId}`);
-      return preview;
     },
     async list() {
       return (await review.items({ workId })).items;
@@ -197,16 +206,17 @@ export function reviewDriver(
         }),
       );
     },
-    async applyChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
-      const { itemKey, draftId } = await resolved(documentId);
-      const ids = operationIds ?? preview.operations.map((op) => op.operationId);
+    /** Apply the named changes of one item, as projected in `snapshot`'s frame. */
+    async applyChanges(documentId: string, changeIds: string[], snapshot: string) {
+      const { item, draftId } = await resolved(documentId);
       return body(
         await review.applyChanges({
           workId,
-          itemKey,
+          item,
           userId,
           envelope: testEnvelope({ workId, kind: "apply_changes", draftId, userId }),
-          selection: { kind: "apply", ...fencedSelection(preview, ids) },
+          changeIds,
+          snapshot,
         }),
       );
     },
@@ -231,22 +241,12 @@ export function reviewDriver(
         await review.applyAll({
           workId,
           draftId,
-          items: items.map(({ itemKey }) => ({ itemKey })),
+          items: items.map((item) => ({
+            itemKey: item.itemKey,
+            locationToken: item.tokens.locationToken,
+          })),
           userId,
           envelope: testEnvelope({ workId, kind: "apply_items", draftId, userId }),
-        }),
-      );
-    },
-    async discardChanges(documentId: string, preview: ActivePreview, operationIds?: string[]) {
-      const { itemKey, draftId } = await resolved(documentId);
-      const ids = operationIds ?? preview.operations.map((op) => op.operationId);
-      return body(
-        await review.discardChanges({
-          workId,
-          itemKey,
-          userId,
-          envelope: testEnvelope({ workId, kind: "discard_changes", draftId, userId }),
-          selection: { kind: "discard", ...fencedSelection(preview, ids) },
         }),
       );
     },

@@ -6,7 +6,6 @@ import * as Y from "yjs";
 import {
   commitJournaledUpdate,
   commitSegmentRows,
-  resetBranchFromDoc,
 } from "../../test-support/branch-update-writes.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
@@ -365,71 +364,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       base.destroy();
     });
 
-    it("discard/reset marks old-generation rows discarded and unpushed counts join the active generation", async () => {
-      // Pending counts describe visible manuscript effect, not arbitrary Y.Text roots.
-      const { buildDocumentSchema, createCollabYDoc } = await import(
-        "@meridian/prosemirror-schema"
-      );
-      const model = yProsemirrorModel(buildDocumentSchema());
-      const codec = mdxCodec({ schema: buildDocumentSchema() });
-      const proseDoc = (text: string) => {
-        const doc = createCollabYDoc({ gc: false });
-        model.insertBlocks(toDocHandle(doc), null, codec.parse(text));
-        return doc;
-      };
-      const live = proseDoc("live base");
-      const work = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: live,
-      });
-      const resets: number[] = [];
-      const coordinator = createBranchCoordinator({
-        store,
-        onBranchReset: ({ generation }) => resets.push(generation),
-      });
-      const draft = proseDoc("draft row before discard");
-      const { createDrizzleJournal } = await import("../drizzle-journal.js");
-      await commitJournaledUpdate(coordinator, {
-        branchId: work.branchId,
-        updateData: Y.encodeStateAsUpdate(draft),
-        source: "agent",
-        threadId: THREAD_ID as never,
-        wId: await createDrizzleJournal(db).reserveWriteOrdinal(DOC_ID, THREAD_ID),
-      });
-      const pendingDrafts = createDrizzleWorkDraftPendingStore(db);
-      await expect(
-        pendingDrafts
-          .countPendingByWorkIds([WORK_ID as never])
-          .then((counts) => counts.get(WORK_ID as never) ?? 0),
-      ).resolves.toBe(1);
-
-      const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
-      const before = await store.getBranch(work.branchId);
-      await expect(
-        runInDrizzleTransaction(db, async () => {
-          await resetBranchFromDoc(coordinator, store, work.branchId, live);
-          expect(resets).toEqual([]);
-          throw new Error("abort composite discard");
-        }),
-      ).rejects.toThrow("abort composite discard");
-      expect(await store.getBranch(work.branchId)).toEqual(before);
-      expect(resets).toEqual([]);
-      await resetBranchFromDoc(coordinator, store, work.branchId, live);
-      expect(resets).toEqual([work.generation + 1]);
-
-      await expect(
-        pendingDrafts
-          .countPendingByWorkIds([WORK_ID as never])
-          .then((counts) => counts.get(WORK_ID as never) ?? 0),
-      ).resolves.toBe(0);
-      const rows = await db
-        .select({ generation: branchWriteJournal.generation, status: branchWriteJournal.status })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, work.branchId));
-      expect(rows).toEqual([{ generation: work.generation, status: "discarded" }]);
-    });
-
     it("keeps compacted live documents visible when seeding despite zero live update rows", async () => {
       const live = docWithText("compacted live chapter");
       const [checkpoint] = await db
@@ -710,40 +644,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           "and no branch row is added",
         )
         .toEqual(before);
-    });
-
-    it("G2 §6.1 corrupt recovery resets from live without decoding the corrupt snapshot", async () => {
-      await db.insert(documentBranches).values({
-        id: "branch_corrupt_preview_reset",
-        documentId: DOC_ID as never,
-        kind: "work_draft",
-        upstreamBranchId: null,
-        draftId: DRAFT_ID as never,
-        threadId: null,
-        status: "active",
-        state: Buffer.from([1, 2]),
-        stateVector: Buffer.from([0]),
-        schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
-      });
-      const coordinator = createBranchCoordinator({ store });
-
-      await expect(
-        resetBranchFromDoc(
-          coordinator,
-          store,
-          "branch_corrupt_preview_reset",
-          docWithText("live repair"),
-        ),
-      ).resolves.toBe(true);
-
-      const repaired = await store.resolveDraftBranch({
-        draftBranchId: "branch_corrupt_preview_reset",
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-      });
-      expect(repaired.branchId).toBe("branch_corrupt_preview_reset");
-      expect(repaired.generation).toBeGreaterThan(0);
-      expect(repaired.doc.getText("content").toString()).toBe("live repair");
     });
 
     it("G2 §6.1 entry connect failure is a typed branch-room miss, never live fallback", async () => {
