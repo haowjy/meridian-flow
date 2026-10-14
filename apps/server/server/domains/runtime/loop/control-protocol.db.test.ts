@@ -325,8 +325,9 @@ else
         originType: "fork",
         originTurnId: answer.id,
       });
-      const findTurn = rig.repos.turns.findById.bind(rig.repos.turns);
-      rig.repos.turns.findById = async (id) => (id === answer.id ? null : findTurn(id));
+      const graph = turnGraph(rig.repos.turns);
+      const findTurn = graph.findById.bind(graph);
+      graph.findById = async (id) => (id === answer.id ? null : findTurn(id));
 
       await expect(
         rig.delivery.enqueueControl({
