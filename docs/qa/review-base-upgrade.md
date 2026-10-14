@@ -41,4 +41,5 @@ Record the commit, date and the printed assertions in the active work directory.
 ## Last run
 
 2026-10-14, branch `feat/dbr-kf6` at `341b71486` on the renamed `0050` to `0053` chain: exit 0, **49 assertions
-passed** in 63 s, no `r4b_proof_*` database left on the server afterwards.
+passed** in 63 s, no `r4b_proof_*` database left on the server afterwards. **Provisional:** KF4 removes
+`document_branches.rebase_cuts` and regenerates `0048` to `0053`; the final proof is re-run in R5c after that merges.
