@@ -89,8 +89,9 @@ cleanup.
   planned/failed filter stranded crashed landings).
 - **Words are the app's.** The server sends codes (`reason-copy.ts`); every
   sentence is Lingui, none separates facts with `·`, `•`, `—` or `|`, none says
-  manifest, entry, plan, sniff, digest or the name of another app. The app shows
-  only failed and skipped files.
+  manifest, entry, plan, sniff, digest or the name of another app. The tree
+  shows failed files; skipped files have no surface until the progress popup
+  lands (its "Not imported" line, `ux-v2.md`).
 - **No ZIP reader, no `fflate`.** A ZIP is a file. Names the server would refuse
   (`:`, `?`, `*`) are left out and reported as unreadable instead of failing the
   whole import: the manifest's `unreadable` paths keep their source names, which
