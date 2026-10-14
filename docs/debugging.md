@@ -205,9 +205,12 @@ at its final snapshot; it does not attribute replies to messages.
 - Write tools emit `tool.completed` for the staged result, then `tool.settled`
   for the committed receipt, in both JSON and text. There is no `settled` flag.
   The staged result alone does not prove a committed write.
-- `send` follows a steer or a compaction split to the successor whose start
-  names the reply it continues, and a queued message waits for the start that
-  names it, so the result is the reply that answers the sent message.
+- `send` currently follows a steer or a compaction split with an interim rule:
+  reservation hints on a reply's start (the user turns it was reserved for) and
+  successor following within one execution, plus ancestry in recovery. It does
+  not bind to `Turn.delivery` or `messages.delivered`, so the result is the
+  reply the follower selected, not proof that this reply answered your message.
+  The binding is #768's second phase.
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
   turns carry `compactionMetadata` (trigger, control IDs, failure reason and
