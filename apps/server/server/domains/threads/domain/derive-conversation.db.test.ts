@@ -99,6 +99,8 @@ else
         invocationOverlay,
       );
 
+      // The real reader: a pending switch's mode, else the applied mode.
+      const runtime = createRuntimeHarness({ repos, eventWriter });
       const deps = {
         threads: repos.threads,
         threadWorks: repos.threadWorks,
@@ -118,6 +120,7 @@ else
         agentCatalog,
         agentRevisions: revisions,
         eventWriter,
+        effectiveWriteMode: (id: string) => runtime.delivery.effectiveWriteMode(id as never),
       };
       const firstTurn = await repos.turns.create({
         threadId: source.id,
@@ -129,6 +132,7 @@ else
       return {
         source,
         deps,
+        runtime,
         agentCatalog,
         agent,
         selection,
@@ -180,10 +184,21 @@ else
       });
       const invoked = { packageRevisionId: "p", path: "skills/story-review", contentDigest: "d" };
       await revisions.recordInvokedSkill(fixture.source.id, "story-review", invoked);
+      // A pending switch is the writer's mode: the fork starts in it, the source stays applied.
+      await fixture.runtime.delivery.enqueueControl({
+        threadId: fixture.source.id as never,
+        actorId: ids.userId,
+        id: crypto.randomUUID(),
+        control: { kind: "write_mode", mode: "draft" },
+      });
 
       const { thread: fork } = await createFork(fixture.source, fixture.deps, {
         originTurnId: fixture.firstTurn.id,
       });
+      expect(fork.aiWriteMode).toBe("draft");
+      expect((await repos.threads.findById(fixture.source.id as never))?.aiWriteMode).toBe(
+        "direct",
+      );
       expect(fork.agentDefinitionRevisionId).toBe(fixture.selection.revision.id);
       const binding = await revisions.readThreadBinding(fork.id);
       expect(binding?.revision?.id).toBe(fixture.selection.revision.id);
@@ -303,6 +318,7 @@ else
       ).resolves.toMatchObject({ thread: { id }, created: false });
 
       const otherSource = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Other source",
@@ -357,6 +373,7 @@ else
     it("returns the row when competing sources hit the same ID insert", async () => {
       const fixture = await setupSource();
       const otherSource = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Other source",
@@ -813,7 +830,11 @@ else
         async createDerivedPrimary(
           input: Parameters<typeof repos.threads.createDerivedPrimary>[0],
         ) {
-          racingLease = await racingRunClaim.startExecution(destinationId as never, "racing-wake");
+          racingLease = await racingRunClaim.startExecution(
+            destinationId as never,
+            "racing-wake",
+            async () => {},
+          );
           return fixture.deps.threads.createDerivedPrimary(input);
         },
       };
@@ -845,7 +866,11 @@ else
           { role: "system", status: "pending" },
         ]);
         expect(
-          await racingRunClaim.startExecution(result.thread.id, "after-create-wake"),
+          await racingRunClaim.startExecution(
+            result.thread.id,
+            "after-create-wake",
+            async () => {},
+          ),
         ).toBeNull();
       } finally {
         await transferredClaims[0]?.release();
@@ -931,6 +956,7 @@ else
         originTurnId: fixture.firstTurn.id,
       });
       const child = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         parentThreadId: fixture.source.id as never,

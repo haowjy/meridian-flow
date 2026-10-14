@@ -1,15 +1,15 @@
 /**
  * Optimistic writer commands: the local half of `/compact`, merged with the
- * server's pending inbox.
+ * server's pending inbox. (A write-mode switch is the switch ledger's.)
  *
- * Two pieces of local state, each small:
+ * Local state, each piece small:
  * - `sends`: commands this tab asked for that the server inbox has not listed
  *   yet. The writer sees one the moment they ask; a failed enqueue stays on
  *   the item with Retry (same id, so the server treats a retry as a no-op).
  *   Once the inbox lists the id the server owns it, and the send is dropped.
  * - `withdrawals`: Withdraw hides a row at once, whichever side owns it, and
  *   always asks the server. A withdrawal the server confirmed (withdrawn, or
- *   already started, whose compaction divider carries the state) keeps the id
+ *   already started, whose divider carries the state) keeps the id
  *   hidden against stale inbox frames. A 404 only drops the local send: the
  *   enqueue may still have been committing, and if the inbox lists the id
  *   later the row shows again, queued, so it never runs unseen. A failed
@@ -18,15 +18,13 @@
  * A command runs only when no message waits, so every queued command renders
  * after every queued message, at the end of the queue, oldest first.
  */
-import type {
-  ControlBody,
-  PendingInboxItem,
-  ThreadPendingInbox,
-} from "@meridian/contracts/threads";
+import type { ControlBody, ThreadPendingInbox } from "@meridian/contracts/threads";
+
+export type CompactControl = Extract<ControlBody, { kind: "compact" }>;
 
 export type LocalSend = {
   id: string;
-  control: ControlBody;
+  control: CompactControl;
   request: "sending" | "sent" | "failed" | "finished";
 };
 
@@ -40,18 +38,33 @@ export type LocalControls = {
 
 export const NO_LOCAL_CONTROLS: LocalControls = { sends: [], withdrawals: new Map() };
 
-export type QueuedControlStatus = "queued" | "failed" | "withdraw_failed";
+/** `sending`: the writer asked and the server has not answered. */
+export type QueuedControlStatus =
+  | "sending"
+  | "queued"
+  | "failed"
+  | "withdraw_failed"
+  /** A switch the server applied whose turn has not rendered yet: the notice, no Stop. */
+  | "applied";
 
 export type QueuedControl = {
   id: string;
   control: ControlBody;
   status: QueuedControlStatus;
+  /** A switch the server may hold and hasn't answered: Retry only, no local Withdraw. */
+  awaitingServer?: boolean;
+  /**
+   * A switch the server will not apply at the next run's start: a reply that already held
+   * the chat when it was made has to finish first. A switch made in an idle chat is not
+   * waiting, whatever starts after it. Only the words depend on it.
+   */
+  waiting?: boolean;
 };
 
 export type ControlAction =
-  | { type: "enqueue"; id: string; control: ControlBody }
+  | { type: "enqueue"; id: string; control: CompactControl }
   | { type: "retry"; id: string }
-  | { type: "enqueued"; id: string; pending: PendingInboxItem | null; turnId: string | null }
+  | { type: "enqueued"; id: string; queued: boolean }
   | { type: "enqueue_failed"; id: string }
   | { type: "withdraw"; id: string }
   | { type: "withdrawn"; id: string }
@@ -80,8 +93,8 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
     case "retry":
       return patchSend(action.id, "sending");
     case "enqueued":
-      // No pending row: it already ran (turn id) or was withdrawn earlier.
-      return patchSend(action.id, action.pending ? "sent" : "finished");
+      // Not queued: it already ran or was withdrawn earlier.
+      return patchSend(action.id, action.queued ? "sent" : "finished");
     case "enqueue_failed":
       return patchSend(action.id, "failed");
     case "withdraw":
@@ -102,26 +115,29 @@ export function controlsReducer(state: LocalControls, action: ControlAction): Lo
   }
 }
 
+export type MergeInput = {
+  local: LocalControls;
+  pending: ThreadPendingInbox;
+  /** Commands a divider already names. */
+  executedControlIds: ReadonlySet<string>;
+};
+
 /**
  * The commands the writer should see: server rows first (in inbox order),
  * then local ones the server has not listed yet.
  */
-export function mergeQueuedControls(input: {
-  local: LocalControls;
-  pending: ThreadPendingInbox;
-  /** Commands a compaction divider already names. */
-  executedControlIds: ReadonlySet<string>;
-}): QueuedControl[] {
+export function mergeQueuedControls(input: MergeInput): QueuedControl[] {
   const { local, pending, executedControlIds } = input;
   const result: QueuedControl[] = [];
   const listed = new Set<string>();
   for (const item of pending.items) {
-    if (item.intent !== "control" || !item.control) continue;
+    if (item.intent !== "control" || item.control?.kind !== "compact") continue;
     listed.add(item.id);
     // A withdrawal response is fresher than the inbox frame that follows it.
     const withdrawal = local.withdrawals.get(item.id);
-    if (!withdrawal) result.push({ id: item.id, control: item.control, status: "queued" });
-    else if (withdrawal === "failed") {
+    if (!withdrawal) {
+      result.push({ id: item.id, control: item.control, status: "queued" });
+    } else if (withdrawal === "failed") {
       result.push({ id: item.id, control: item.control, status: "withdraw_failed" });
     }
   }
@@ -133,7 +149,7 @@ export function mergeQueuedControls(input: {
     result.push({
       id: entry.id,
       control: entry.control,
-      status: withdrawal && status === "queued" ? "withdraw_failed" : status,
+      status: withdrawal && status !== "failed" ? "withdraw_failed" : status,
     });
   }
   return result;
@@ -143,7 +159,7 @@ function requestStatus(
   entry: LocalSend,
   executed: ReadonlySet<string>,
 ): QueuedControlStatus | null {
-  if (entry.request === "sending") return "queued";
+  if (entry.request === "sending") return "sending";
   if (entry.request === "failed") return "failed";
   if (entry.request === "finished" || executed.has(entry.id)) return null;
   // Accepted, and the inbox echo has not arrived yet.

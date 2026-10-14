@@ -2,6 +2,7 @@
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type {
   AgentRevisionBinding,
   AgentRevisionStore,
@@ -38,6 +39,8 @@ export interface ThreadAgentSwapDeps {
   agentCatalog: BoundAgentCatalog;
   agentRevisions: AgentRevisionStore;
   eventWriter: EventJournalWriter;
+  /** The mode the writer sees on the source chat: a derived chat starts in it. */
+  effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
 }
 
 export class SubagentDerivationError extends Error {
@@ -145,6 +148,7 @@ export async function handoffThreadAgent(
         userId: lockedSource.userId,
         projectId: lockedSource.projectId,
         workId,
+        aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
         source: owner,
         initialPromptBakeId: inheritedBake?.id ?? null,
         originType: "handoff",
@@ -227,6 +231,7 @@ export async function forkThreadAgent(
       userId: lockedSource.userId,
       projectId: lockedSource.projectId,
       workId: sourceWorkId,
+      aiWriteMode: await deps.effectiveWriteMode(lockedSource.id as ThreadId),
       source: lockedSource,
       originType: "fork",
       originTurnId: cutoff.turn.id as TurnId,

@@ -72,7 +72,6 @@ export function createWorkDraftFixture(db: Database) {
       createdByUserId: USER_ID,
       name: "Work",
       slug: "work",
-      aiWriteMode: "draft",
     });
     // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
     await db
@@ -101,6 +100,7 @@ export function createWorkDraftFixture(db: Database) {
       title: "Thread",
       kind: "primary",
       status: "idle",
+      aiWriteMode: "draft",
     });
     await db.insert(turns).values([
       {

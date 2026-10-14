@@ -38,7 +38,7 @@ unhiding either table. Location-only CAS tokens still fence moved identities.
 ## Revision queries and reads
 
 Runtime uses the context-owned `DocumentRevisions.current` port, never collab
-directly. Its adapter resolves the thread's current primary Work and write mode,
+directly. Its adapter resolves the thread's current primary Work and the chat's write mode,
 checks project-final availability, then delegates each
 document to collab's effective reader. A document a re-read would not find
 returns null, even when its Y.Doc remains loaded in Hocuspocus. Draft reads

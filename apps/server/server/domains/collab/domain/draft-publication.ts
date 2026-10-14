@@ -4,7 +4,7 @@
  * text. `applyItems` stages through `pushBranchesToLive` and maps per-item results; the
  * step itself (tokens, holds, vacate and install, arrivals, history, row drop, close) is `adapters/drizzle-draft-tree-step.ts`.
  * Every Apply caller goes through here: the per-document route, per-change Apply (its rows
- * chosen under the branch lease, §4.1), Apply all and D40's switch. Apply never closes the
+ * chosen under the branch lease, §4.1), and Apply all. Apply never closes the
  * draft (§2.4). A writer's command is claimed in the staging transaction and settled by the
  * tree step in completion (§4.6).
  */
@@ -44,7 +44,7 @@ export {
 
 /**
  * What the writer was shown of one item. A token absent (the legacy per-document Apply
- * without tokens, D40's confirmed count) is filled from the read `applyItems` makes, so
+ * without tokens) is filled from the read `applyItems` makes, so
  * what publishes is what that read saw; a selection with no tokens of its own that turns
  * out stale reads again once.
  */
@@ -55,10 +55,7 @@ export type ApplyItemRef = {
   branchGenerationToken?: string;
 };
 
-export type ApplySelection =
-  | { kind: "rendered"; items: readonly ApplyItemRef[] }
-  /** D40's switch: the writer confirmed a count; every item pending now. */
-  | { kind: "all_pending" };
+export type ApplySelection = { kind: "rendered"; items: readonly ApplyItemRef[] };
 
 /** Per-item and whole results are the wire's own types (`@meridian/contracts/drafts`). */
 export type ApplyItemResult = DraftApplyItemResult;
@@ -84,14 +81,6 @@ export class DuplicateApplyItemError extends Error {
   constructor(readonly itemKeys: readonly DraftItemKey[]) {
     super(`Each item can be applied once per request: ${itemKeys.join(", ")}`);
     this.name = "DuplicateApplyItemError";
-  }
-}
-
-/** D40's Apply of everything pending stayed stale after reading again: the switch waits. */
-export class DraftApplyStaleError extends Error {
-  constructor(readonly draftId: DraftId) {
-    super("The draft changed while it was being applied. Review it, then switch again.");
-    this.name = "DraftApplyStaleError";
   }
 }
 
@@ -233,23 +222,19 @@ export function createDraftPublication(deps: {
   return {
     async applyItems(input) {
       const { draftId } = input;
-      if (input.selection.kind === "rendered") {
-        const seen = new Set<string>();
-        const twice = input.selection.items
-          .map((ref) => ref.itemKey)
-          .filter((key) => seen.size === seen.add(key).size);
-        if (twice.length > 0) throw new DuplicateApplyItemError([...new Set(twice)]);
-      }
+      const seen = new Set<string>();
+      const twice = input.selection.items
+        .map((ref) => ref.itemKey)
+        .filter((key) => seen.size === seen.add(key).size);
+      if (twice.length > 0) throw new DuplicateApplyItemError([...new Set(twice)]);
       if (!(await activeDraft(draftId, input.workId))) return { status: "gone", draftId };
       const { selection } = input;
-      const tokenless =
-        selection.kind === "all_pending" ||
-        selection.items.every(
-          (ref) =>
-            ref.locationToken === undefined &&
-            ref.liveTextToken === undefined &&
-            ref.branchGenerationToken === undefined,
-        );
+      const tokenless = selection.items.every(
+        (ref) =>
+          ref.locationToken === undefined &&
+          ref.liveTextToken === undefined &&
+          ref.branchGenerationToken === undefined,
+      );
       return publish({
         draftId,
         ...(input.userId ? { userId: input.userId } : {}),
@@ -258,10 +243,7 @@ export function createDraftPublication(deps: {
         async plan() {
           const current = await deps.reviewItems.list(draftId);
           const byKey = new Map(current.map((item) => [item.itemKey, item]));
-          const refs: ApplyItemRef[] =
-            selection.kind === "all_pending"
-              ? current.map((item) => ({ itemKey: item.itemKey }))
-              : [...selection.items];
+          const refs = selection.items;
           // An item the writer saw that is no longer pending (applied, discarded) is stale.
           const missing = refs.filter((ref) => !byKey.has(ref.itemKey)).map((ref) => ref.itemKey);
           if (missing.length > 0) return { status: "stale", draftId, staleItemKeys: missing };

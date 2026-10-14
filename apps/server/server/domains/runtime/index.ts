@@ -93,6 +93,7 @@ export {
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,
+  ExecutionId,
   HeldRunClaim,
   InboxMessage,
   InboxReader,
@@ -100,7 +101,6 @@ export type {
   MessageBody,
   MessageDraft,
   RunClaim,
-  RunId,
   RunStarter,
   ThreadPhase,
   ThreadStatus,
@@ -127,6 +127,7 @@ export {
   isDrainRun,
   NoPendingWakeError,
   type PreparedRun,
+  ReplyRetryPendingError,
   ReplyRetryUnavailableError,
   type RunOutcome,
   type RunTurnInput,
@@ -154,6 +155,11 @@ export {
   renderWorkContext,
   type WorkContextReader,
 } from "./loop/work-context.js";
+export {
+  createWriteModeSwitchPort,
+  type WriteModeSwitchPort,
+  writeModeSwitchNotice,
+} from "./loop/write-mode-switch.js";
 export type { ConversationSummarizer, SummaryOutcome } from "./ports/conversation-summarizer.js";
 export type { HandoffBriefStopper } from "./ports/handoff-briefs.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";

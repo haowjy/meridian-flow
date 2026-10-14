@@ -29,6 +29,7 @@ import { ChatSubmissionOwner } from "./owner";
 vi.mock("@/client/api/threads-api", async (actual) => ({
   ...(await actual<typeof import("@/client/api/threads-api")>()),
   getThreadSnapshot: vi.fn(),
+  enqueueThreadControl: vi.fn(),
 }));
 
 let account = "account-1";
@@ -43,6 +44,7 @@ function entry(id = "one", text = "First rejected"): ChatSubmission {
     threadId: "thread_1",
     projectId: "project-1",
     createdAt: `2026-10-11T00:00:0${id === "one" ? 1 : 2}Z`,
+    seq: id === "one" ? 1 : 2,
     blocks: [...envelope.blocks],
     references: [...envelope.references],
     activatedSkillSlugs: [...envelope.activatedSkillSlugs],
@@ -65,6 +67,7 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
     queryClient: client,
     changed: () => {},
     failed: () => {},
+    failedSwitch: () => {},
     clear: () => {},
     focusComposer: focused,
     dissolveChat: dissolved,
@@ -82,6 +85,7 @@ async function mount(scenario: ThreadRunScenario, paused = false) {
   };
   return {
     read: () => owner,
+    client,
     dissolved,
     focused,
     dispose: () => {
@@ -155,12 +159,24 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   const creation = {
     title: "Opening",
     workId: null,
+    workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
     agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
   };
   recordChatSubmission(account, { ...entry(), creation });
   recordChatSubmission(account, { ...entry("two", "Second rejected"), creation });
+  // A switch queued behind the refused creation has no words; Edit takes it with the cohort.
+  recordChatSubmission(account, {
+    ...entry("mode", ""),
+    state: undefined,
+    blocks: [],
+    references: [],
+    text: "",
+    draft: undefined,
+    control: { kind: "write_mode", mode: "draft" },
+    creation,
+  });
   composerSessionDraft(account, { kind: "chat", id: "thread_1" }).prependSnapshots([
     serializeComposerDraft(plainComposerDoc("Third unsent")).draft,
   ]);
@@ -200,6 +216,7 @@ it("dissolves this pane without retiring a message recorded after the transfer r
   const creation = {
     title: "Opening",
     workId: null,
+    workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
     agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
@@ -246,6 +263,7 @@ it("a delayed observer of creation then acceptance loads the real destination, n
   const creation = {
     title: "Opening",
     workId: null,
+    workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
     agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
@@ -353,6 +371,7 @@ it("a chat send during creation hands off its chat draft even if projection thro
     creation: {
       title: "Opening",
       workId: null,
+      workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
       agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },
@@ -464,6 +483,7 @@ it.each([
     creation: {
       title: "Opening",
       workId: null,
+      workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
       agentSelection: { catalogEntryId: "general", definitionRevisionId: "rev" },

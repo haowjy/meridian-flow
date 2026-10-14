@@ -69,9 +69,9 @@ export interface DraftTreeWorld {
   drafts: Drafts;
   /** Every Work this world made, in order. */
   works(): readonly WorkId[];
-  /** A Work and its primary thread. */
+  /** A Work and its primary thread, which writes in `mode`. */
   work(name: string, mode: "draft" | "direct"): Promise<ScenarioWork>;
-  /** Another thread whose primary Work is `work`. */
+  /** Another thread whose primary Work is `work`, in that Work's mode. */
   thread(work: ScenarioWork): Promise<ScenarioWork>;
   /** The Work's active draft, made at the write boundary if absent. */
   draftOf(work: ScenarioWork): Promise<Draft>;
@@ -239,7 +239,7 @@ export function draftTreeWorldOver(
   }
 
   /** A thread with one assistant turn, primary in `workId`. */
-  async function insertThread(title: string, workId: WorkId) {
+  async function insertThread(title: string, workId: WorkId, mode: ScenarioWork["mode"]) {
     const threadId = randomUUID() as ThreadId;
     const turnId = randomUUID();
     await db.insert(threads).values({
@@ -248,6 +248,7 @@ export function draftTreeWorldOver(
       createdByUserId: userId,
       rootThreadId: threadId,
       title,
+      aiWriteMode: mode,
     });
     await db.insert(turns).values({
       id: turnId,
@@ -282,15 +283,16 @@ export function draftTreeWorldOver(
         .replace(/^-|-$/g, "");
       const [work] = await db
         .insert(works)
-        .values({ projectId, createdByUserId: userId, name, slug, aiWriteMode: mode })
+        .values({ projectId, createdByUserId: userId, name, slug, defaultAiWriteMode: mode })
         .returning({ id: works.id });
       if (!work) throw new Error(`Work ${name} was not inserted`);
-      const { threadId, turnId } = await insertThread(name, work.id);
+      // As a chat made with an explicit mode: it writes that way and seeds the Work's default.
+      const { threadId, turnId } = await insertThread(name, work.id, mode);
       madeWorks.push(work.id);
       return { id: work.id, slug, threadId, turnId, mode };
     },
     async thread(work) {
-      const { threadId, turnId } = await insertThread(`${work.slug} (second)`, work.id);
+      const { threadId, turnId } = await insertThread(`${work.slug} (second)`, work.id, work.mode);
       return { ...work, threadId, turnId };
     },
     draftOf,

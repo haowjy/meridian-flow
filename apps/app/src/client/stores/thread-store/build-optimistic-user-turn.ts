@@ -59,6 +59,9 @@ export function buildOptimisticUserTurn(input: {
         createdAt: timestamp,
       };
     }),
+    executionId: null,
+    reservedForUserTurnIds: [],
+    delivery: null,
     siblingIds: [],
     responses: [],
   };

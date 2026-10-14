@@ -166,7 +166,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           createdByUserId: USER_ID,
           name: "Rewrite",
           slug: "rewrite",
-          aiWriteMode: "draft",
         },
       ]);
       await db.insert(schema.contextSources).values([
@@ -197,6 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Thread",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: TURN_ID as never,
@@ -363,9 +363,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("leaves out a document whose Work is archived while the reply saves, and saves the rest", async () => {
       const collab = createTestCollab();
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD_ID));
       await seed(collab);
       const agentEdit = collab.agentEdit();
       for (const [file, documentId, content] of [
@@ -443,9 +443,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db, { eventSink: sink }),
       });
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD_ID));
       const MANUSCRIPT_ID = "00000000-0000-4000-8000-000000000a20";
       const ASSETS_ID = "00000000-0000-4000-8000-000000000a21";
       const ART_ID = "00000000-0000-4000-8000-000000000a22";
@@ -714,7 +714,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, workId));
     }
 
-    /** Work B in draft mode with its own scratch file, and a thread in it with a reply. */
+    /** Work B with its own scratch file, and a draft-mode thread in it with a reply. */
     async function addSecondWorkAndThread() {
       slugs.set(WORK_B_ID, "second");
       await db.insert(schema.works).values({
@@ -723,7 +723,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Second",
         slug: "second",
-        aiWriteMode: "draft",
       });
       await db.insert(schema.contextSources).values({
         id: SCRATCH_B_SOURCE_ID,
@@ -746,6 +745,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Thread B",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: TURN_B_ID as never,

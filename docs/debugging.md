@@ -99,10 +99,9 @@ prove your message was answered or the thread is idle.
   1 failed, 5 cancelled, 8 waiting on an interrupt (answer with
   `./mf thread respond`), 124 timeout. 2 is usage, 3 not found, 4 the stack is
   not running or dev login failed. Every wait is bounded by `--timeout`.
-  When a run splits across a compaction (for example overflow recovery), the
-  result can name the run's first turn with a null `finalText` instead of the
-  reply that answered: inspect the durable transcript with `./mf thread view`
-  ([#617](https://github.com/haowjy/meridian-flow/issues/617)).
+  The result is the reply that answers the sent message: a steer or a
+  compaction split follows the successor whose start names the reply it
+  continues, and a queued message waits for the start that names it.
 - `thread view` prints a failed compaction's typed outcome as
   `compaction failure: <reason> during <phase>`. With `--json`, compaction
   turns carry `compactionMetadata` (trigger, control IDs, failure reason and

@@ -10,16 +10,23 @@
  */
 
 import type { AgentSelection } from "@meridian/contracts/agents";
-import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
+import {
+  parseSeq,
+  type SubmittedReference,
+  type UserMessageBlock,
+} from "@meridian/contracts/protocol";
+import type { PendingInboxItem } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { browserRecord } from "@/client/storage/browser-record";
 import {
   type ComposerDraftSnapshot,
   parseRestorableComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { submissionLockName } from "./lock";
 
-export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 2;
-export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v2:";
+export const CHAT_SUBMISSIONS_SCHEMA_VERSION = 3;
+export const CHAT_SUBMISSIONS_STORAGE_PREFIX = "meridian:chat-submissions:v3:";
+/** Per-chat `seq` counters. Outside the record prefix, so enumerating records never sees them. */
+export const CHAT_SUBMISSION_SEQ_PREFIX = "meridian:chat-submission-seq:v1:";
 
 export type ChatSubmissionStorage = {
   getItem(key: string): string | null;
@@ -29,26 +36,81 @@ export type ChatSubmissionStorage = {
   key(index: number): string | null;
 };
 
+/**
+ * The server's answer to a switch, stamped on its record: the journal head `seq` the answer is
+ * labelled with, the chat's applied `mode`, and its queued switch, all read in one transaction.
+ * Every tab reads the stamp as a server fact. `at` (ms) lets the journal prune it.
+ */
+export type ControlAnswer = {
+  seq: string;
+  mode: AiWriteMode;
+  pending: PendingInboxItem | null;
+  at: number;
+};
+
+/** A stamped record stays this long, so a tab that was hidden when it was answered can read it. */
+export const ANSWER_GRACE_MS = 60_000;
+
 export type ChatSubmission = {
   recordId: string;
   submissionId: string;
   threadId: string;
   projectId: string | null;
   createdAt: string;
+  /**
+   * The record's place in its chat's order, allocated when the record is first appended: one
+   * above both the chat's durable counter and its largest held `seq`, so a retired record's
+   * number is never reused. Drain order, refusal barriers and the switch ledger sort by it,
+   * then by `recordId`; `createdAt` is display only.
+   */
+  seq: number;
   text: string;
   blocks: UserMessageBlock[];
   references: SubmittedReference[];
   activatedSkillSlugs: string[];
   state?: "rejected";
+  /**
+   * A write-mode switch, not a message. It is posted to the chat's controls route in
+   * `seq` order with the messages around it; `recordId` and `submissionId` are
+   * the control's own id, and the message fields are empty.
+   */
+  control?: { kind: "write_mode"; mode: AiWriteMode };
+  /**
+   * The server's answer to the control. The driver stamps it instead of deleting the record, so
+   * every tab, driving or not, reads one server fact; a stamped record is never posted again,
+   * and the journal prunes it at the first write after `ANSWER_GRACE_MS`.
+   */
+  answer?: ControlAnswer;
+  /**
+   * Set before the control's first POST. A control without it never reached the server,
+   * so the writer may withdraw it locally; with it, only the server's Withdraw is safe.
+   */
+  posted?: true;
   draft?: ComposerDraftSnapshot;
   creation?: {
     title: string;
     workId: string | null;
+    /** The Work's default when sent: the optimistic chat's mode when no choice was made. */
+    workAiWriteMode: AiWriteMode;
+    /** The writer's explicit choice, sent with the creation request. */
+    aiWriteMode?: AiWriteMode;
     agentSelection: AgentSelection;
     agentName: string;
     agentSlug: string;
   };
 };
+
+/** A record as callers build it: the journal allocates `seq` when the record is first appended. */
+export type NewChatSubmission = Omit<ChatSubmission, "seq"> & { seq?: number };
+
+/** The chat's durable order. Equal `seq` (two tabs appending in one tick) breaks on the id. */
+export function compareSubmissions(a: ChatSubmission, b: ChatSubmission): number {
+  return a.seq - b.seq || (a.recordId < b.recordId ? -1 : a.recordId > b.recordId ? 1 : 0);
+}
+
+export function chatSubmissionSeqKey(accountId: string, threadId: string): string {
+  return `${CHAT_SUBMISSION_SEQ_PREFIX}${accountId}:${threadId}`;
+}
 
 export function chatSubmissionStorageKey(accountId: string, recordId: string): string {
   return `${CHAT_SUBMISSIONS_STORAGE_PREFIX}${accountId}:${recordId}`;
@@ -60,6 +122,24 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function parseAnswer(value: unknown): ControlAnswer | undefined {
+  if (!isObject(value)) return undefined;
+  const { seq, mode, pending, at } = value;
+  if (
+    typeof seq !== "string" ||
+    parseSeq(seq) === null ||
+    !isAiWriteMode(mode) ||
+    (pending !== null && !isObject(pending)) ||
+    typeof at !== "number"
+  )
+    return undefined;
+  return { seq, mode, pending: pending as PendingInboxItem | null, at };
+}
+
+function isAiWriteMode(value: unknown): value is AiWriteMode {
+  return value === "direct" || value === "draft";
 }
 
 function isAgentSelection(value: unknown): value is AgentSelection {
@@ -81,13 +161,23 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     !value.threadId ||
     (value.projectId !== null && typeof value.projectId !== "string") ||
     typeof value.createdAt !== "string" ||
+    typeof value.seq !== "number" ||
+    !Number.isSafeInteger(value.seq) ||
     typeof value.text !== "string" ||
     !Array.isArray(value.blocks) ||
     !value.blocks.every(isObject) ||
     !Array.isArray(value.references) ||
     !value.references.every(isObject) ||
     !isStringArray(value.activatedSkillSlugs) ||
-    (value.state !== undefined && value.state !== "rejected")
+    (value.state !== undefined && value.state !== "rejected") ||
+    (value.posted !== undefined && value.posted !== true) ||
+    (value.answer !== undefined && !parseAnswer(value.answer))
+  )
+    return null;
+  const control = value.control;
+  if (
+    control !== undefined &&
+    (!isObject(control) || control.kind !== "write_mode" || !isAiWriteMode(control.mode))
   )
     return null;
   const creation = value.creation;
@@ -97,6 +187,8 @@ function parseSubmission(value: unknown): ChatSubmission | null {
       typeof value.projectId !== "string" ||
       typeof creation.title !== "string" ||
       (creation.workId !== null && typeof creation.workId !== "string") ||
+      !isAiWriteMode(creation.workAiWriteMode) ||
+      (creation.aiWriteMode !== undefined && !isAiWriteMode(creation.aiWriteMode)) ||
       !isAgentSelection(creation.agentSelection) ||
       typeof creation.agentName !== "string" ||
       typeof creation.agentSlug !== "string")
@@ -109,83 +201,18 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     threadId: value.threadId,
     projectId: value.projectId,
     createdAt: value.createdAt,
+    seq: value.seq,
     text: value.text,
     blocks: value.blocks as UserMessageBlock[],
     references: value.references as SubmittedReference[],
     activatedSkillSlugs: value.activatedSkillSlugs,
     ...(value.state === "rejected" ? { state: "rejected" } : {}),
+    ...(control ? { control: { kind: "write_mode", mode: control.mode as AiWriteMode } } : {}),
+    ...(value.answer ? { answer: parseAnswer(value.answer) } : {}),
+    ...(value.posted ? { posted: true as const } : {}),
     ...(draft ? { draft } : {}),
     ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
   };
-}
-
-/** Remove after the first production deploy shipping v2 has been live for a release. */
-function rewriteV1ChatSubmissions(
-  storage: ChatSubmissionStorage,
-  accountId: string,
-  completed: () => void,
-): Promise<void> {
-  const pending: Promise<unknown>[] = [];
-  const prefix = `meridian:chat-submissions:v1:${accountId}:`;
-  try {
-    const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index));
-    for (const key of keys) {
-      if (!key?.startsWith(prefix)) continue;
-      const old = browserRecord(
-        () => storage,
-        { key, version: 1, accountId },
-        (value) => {
-          if (!isObject(value) || !["first-send", "existing-thread"].includes(String(value.kind)))
-            return undefined;
-          return (
-            parseSubmission({
-              ...value,
-              recordId: value.submissionId,
-              creation:
-                value.kind === "first-send"
-                  ? {
-                      title: value.title,
-                      workId: value.workId,
-                      agentSelection: value.agentSelection,
-                      agentName: value.agentName,
-                      agentSlug: value.agentSlug,
-                    }
-                  : undefined,
-            }) ?? undefined
-          );
-        },
-      );
-      const entry = old.read();
-      if (!entry) continue;
-      const migrate = () => {
-        // Re-read under the same thread lock as every drive/remint/retire.
-        const current = old.read();
-        if (!current) return;
-        const target = browserRecord(
-          () => storage,
-          {
-            key: chatSubmissionStorageKey(accountId, current.recordId),
-            version: CHAT_SUBMISSIONS_SCHEMA_VERSION,
-            accountId,
-          },
-          (value) => parseSubmission(value) ?? undefined,
-        );
-        // Until deletion succeeds, the v2 copy is deliberately invisible to commands.
-        if (target.read() || target.write(current)) old.write(undefined);
-        completed();
-      };
-      if (typeof navigator !== "undefined" && navigator.locks) {
-        pending.push(
-          navigator.locks
-            .request(submissionLockName(accountId, entry.threadId), migrate)
-            .catch(reportError),
-        );
-      } else migrate();
-    }
-  } catch {
-    /* Preserve v1 when storage is unavailable. */
-  }
-  return Promise.all(pending).then(() => undefined);
 }
 
 export class DeviceChatSubmissionJournal {
@@ -201,11 +228,7 @@ export class DeviceChatSubmissionJournal {
   };
 
   notifyStorageChange(key: string | null): void {
-    if (
-      key === null ||
-      key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`) ||
-      key.startsWith(`meridian:chat-submissions:v1:${this.accountId}:`)
-    ) {
+    if (key === null || key.startsWith(`${CHAT_SUBMISSIONS_STORAGE_PREFIX}${this.accountId}:`)) {
       this.notify();
     }
   }
@@ -230,18 +253,14 @@ export class DeviceChatSubmissionJournal {
     return this.bindEpoch;
   }
 
-  setUser(accountId: string): Promise<void> {
-    if (this.state?.accountId === accountId) return Promise.resolve();
+  setUser(accountId: string): void {
+    if (this.state?.accountId === accountId) return;
     this.bindEpoch += 1;
     // Per-account storage keys mean another account's records are never read
     // or removed here; they remain for that account's next bind.
     this.state = { accountId };
     this.lastKnown = [];
-    const ready = rewriteV1ChatSubmissions(this.storage, accountId, () => {
-      if (this.accountId === accountId) this.notify();
-    });
     this.notify();
-    return ready;
   }
 
   entries(): ChatSubmission[] {
@@ -258,7 +277,6 @@ export class DeviceChatSubmissionJournal {
       for (let index = 0; index < this.storage.length; index += 1) {
         const key = this.storage.key(index);
         if (!key?.startsWith(prefix)) continue;
-        if (this.hasLegacy(accountId, key.slice(prefix.length))) continue;
         let failed = false;
         const parsed = this.recordFor(accountId, key, () => {
           failed = true;
@@ -277,7 +295,6 @@ export class DeviceChatSubmissionJournal {
     const accountId = this.state?.accountId;
     if (!accountId) return null;
     try {
-      if (this.hasLegacy(accountId, recordId)) return null;
       return (
         this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).read() ?? null
       );
@@ -286,23 +303,62 @@ export class DeviceChatSubmissionJournal {
     }
   }
 
-  record(accountId: string, entry: ChatSubmission): boolean {
+  /**
+   * Write a record. A new one gets the chat's next `seq`: the larger of the chat's durable
+   * counter and its largest held `seq`, plus one, with the counter raised in the same
+   * synchronous step (localStorage has no await between them); an existing one keeps its
+   * `seq`. Two tabs appending in the same tick can tie, and the id breaks that tie.
+   */
+  record(accountId: string, entry: NewChatSubmission): boolean {
     if (this.state?.accountId !== accountId) return false;
-    try {
-      if (this.hasLegacy(accountId, entry.recordId)) return false;
-    } catch {
-      return false;
-    }
-    const written = this.recordFor(
-      accountId,
-      chatSubmissionStorageKey(accountId, entry.recordId),
-    ).write(entry);
+    const stored = this.recordFor(accountId, chatSubmissionStorageKey(accountId, entry.recordId));
+    const existing = stored.read();
+    const seq = existing?.seq ?? this.nextSeq(accountId, entry.threadId);
+    const written = stored.write({ ...entry, seq });
+    if (written) this.pruneAnswered(accountId);
     if (written) this.notify();
     return written;
   }
 
-  private hasLegacy(accountId: string, recordId: string): boolean {
-    return this.storage.getItem(`meridian:chat-submissions:v1:${accountId}:${recordId}`) !== null;
+  /** Drop stamped records past their grace. A tab blind for that long learns from frames instead. */
+  private pruneAnswered(accountId: string): void {
+    const now = Date.now();
+    for (const other of this.entries())
+      if (other.answer && now - other.answer.at > ANSWER_GRACE_MS)
+        this.recordFor(accountId, chatSubmissionStorageKey(accountId, other.recordId)).write(
+          undefined,
+        );
+  }
+
+  private nextSeq(accountId: string, threadId: string): number {
+    const key = chatSubmissionSeqKey(accountId, threadId);
+    let counter = 0;
+    try {
+      const stored = Number(this.storage.getItem(key));
+      if (Number.isSafeInteger(stored) && stored > 0) counter = stored;
+    } catch {
+      /* An unreadable counter falls back to the held records. */
+    }
+    const held = this.entries()
+      .filter((other) => other.threadId === threadId)
+      .reduce((largest, other) => Math.max(largest, other.seq), 0);
+    const seq = Math.max(counter, held) + 1;
+    try {
+      this.storage.setItem(key, String(seq));
+    } catch {
+      /* Best effort: the held records still order this append. */
+    }
+    return seq;
+  }
+
+  /** Drop a deleted chat's counter with its other journal state. */
+  forgetOrder(accountId: string, threadId: string): void {
+    if (this.state?.accountId !== accountId) return;
+    try {
+      this.storage.removeItem(chatSubmissionSeqKey(accountId, threadId));
+    } catch {
+      /* Best effort. */
+    }
   }
 
   private recordFor(accountId: string, key: string, onError?: (error: unknown) => void) {
@@ -321,11 +377,6 @@ export class DeviceChatSubmissionJournal {
    */
   retire(accountId: string, recordId: string, expectedEpoch?: number): boolean {
     if (this.state?.accountId !== accountId) return false;
-    try {
-      if (this.hasLegacy(accountId, recordId)) return false;
-    } catch {
-      return false;
-    }
     if (expectedEpoch !== undefined && this.bindEpoch !== expectedEpoch) return false;
     const retired = this.recordFor(accountId, chatSubmissionStorageKey(accountId, recordId)).write(
       undefined,

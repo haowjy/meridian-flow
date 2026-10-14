@@ -3,7 +3,7 @@
 This page defines the Work-scoped composer write-mode and sizing contracts.
 
 The compact current-value write-mode trigger lives in the composer footer beside
-Agent and Work because write mode is a property of the conversation's Work, not
+Agent and Work because write mode is a property of the conversation, not
 workspace navigation. It opens the toolbar's write-mode page for the Draft and
 Auto-apply choices instead of spending persistent width on both choices.
 `ProjectView` resolves the displayed thread’s Work once at the project
@@ -38,48 +38,80 @@ that behavior through cache convergence and durable projection. Only the writer
 rebinds; the model's `work switch` never does
 ([rule](../../../../../server/server/domains/runtime/.context/tools.md#permissions)).
 
-The neutral `useSelectedWorkWriteModeToolbarControl` owns the selected-Work
-mutation and uses the active-draft count only to open confirmation quickly.
-Mode and pending changes are separate (D40): the mode decides where new AI
-writes go, and pending changes stay until the writer applies or discards them.
-Every Auto-apply selection first sends a request with no `pending` choice; the
-server-vended count of reviewable content branches is the number shown in the
-confirmation. It is not a raw journal-row or active branch count:
-manifest-membership bookkeeping does not represent prose waiting for review.
+The neutral `useWriteModeToolbarControl` shows a value and reports a choice:
+no dialog, no draft query. In an existing chat the value is the chat's mode
+(the snapshot's record, else `thread.effectiveAiWriteMode` from the project thread list: the
+queued switch's mode, else the applied `aiWriteMode`) with the switch view's intents laid over it
+(`useThreadControls().writeMode`), and a choice dispatches a `write_mode`
+control: a record in the chat's submission journal, posted in order with the
+messages around it. In the new-chat composer the value is the selected Work's
+`defaultAiWriteMode`, and `aiWriteMode` is sent with the first message only if
+the writer picked one there. Switching never touches drafts: the dock keeps
+showing pending changes in either mode, and its generating state reads the
+running turn's own mode.
 
-Moving Draft → Auto-apply with pending changes keeps Draft selected and opens
-the switch dialog. Its choices send `pending: "apply"` (apply the canonical
-pending set, including any manifest companion, then switch) or
-`pending: "keep"` (switch and leave the drafts for review in the dock); Cancel
-preserves the mode. Keep takes focus first. An archived Work's drafts are
-frozen, so its dialog offers only Switch (keep). A `work_archived` refusal during
-the switch turns the dialog into that archived variant. A failed Apply leaves
-Draft selected, and drafts it already pushed stay applied. Loading draft data
-never disables the Auto-apply choice; a nondismissible write-mode request
-temporarily disables page actions while the toolbar retains a focusable dialog
-fallback. The sidebar has no write-mode control.
+The **switch view** is the one owner of a switch on screen (`client/run-state/`, pure, importing
+only `@meridian/contracts`; `thread-controls/useSwitchView.ts` is its hook). Every server fact
+about a switch carries one clock, the thread's event `seq`, and the view is a function of those
+facts plus this device's unanswered intents. The mechanics live in the module headers:
+`switch-record.ts` (where a record comes from), `switch-reducer.ts` (the one reducer, and what is
+news), `run-state/run-state-view.ts` (records, intents, answers) and `run-state/fold-switches.ts`
+(the fold the toolbar and rows read). The constraints that shape callers:
+
+- The first record is always a snapshot. A frame, stamp or answer before it extends nothing, so a
+  failed first load shows no rows and announces nothing. `subscribed` is never a source.
+- Another tab's stamp answers a record this tab chose, so a hidden driving tab cannot strand the
+  choosing tab's row. An unanswered intent is laid over the record even if the record already
+  includes it; the answer's `seq` bounds the effect.
+- A row the server lists is `queued`; one only this device holds is `sending`; a failed or refused
+  one shows Retry and is left out of the fold.
+- One reducer decides what is news. A pending switch learned from a live frame or an answer after
+  the first record is announced once; a snapshot, a replayed frame and the apply are silent. A
+  failure stays with the journal owner's keyed announcement.
+- One view host per chat per tab. The desktop shell keeps a single `ChatSurface` and moves it
+  between the center and the dock; mobile has its own lifetime. A dev-only registry in
+  `useSwitchView` warns when a second view mounts for a chat.
+- Ordering within a chat belongs to the submission driver's per-chat lock, so a switch is posted
+  in order with the messages around it.
+
+**The notice.** `thread-controls/WriteModeNotice.tsx` is a quiet, one-line writer-action notice with
+an icon for the mode (no compaction mark, rule or icon). It is the pending switch at the
+transcript tail and the applied switch turn. A pending switch reads "Switched to …" while no reply
+holds the chat (it applies when the next run is admitted) and "Switch to … queued" while one does.
+"Holds the chat" is a server fact, never the client's running-reply flag: the row reads the record
+item's `deliveryState === "waiting"` (the server lists the switch behind a run that held the chat
+first), and the announcer reads the same fact. Only the unlisted `sending` row, which has no record
+item yet, falls back to the flag.
+Both carry **Stop**, not Withdraw, as do queued compactions; Stop cancels like a switch back, and
+the Work default follows the writer's latest choice, Stop included. The bridge row is the
+transcript layer's: an applied switch whose turn has not rendered shows the notice with no Stop,
+keyed by the `write_mode.switched` frame's turn, until that turn renders.
+
+No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
+mode but never rewrites an existing row's. Instead the control's POST, Stop's withdraw and a
+queued-switch transition in the pending inbox (`queuedSwitchKey` in `pending-inbox.ts`, so another
+tab's included) call `invalidateWriteModeReads` (thread and Works reads), and a `switched` frame
+invalidates the project thread data. The queue POST does not invalidate the chat feed.
+
+The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
+Work's draft list, in the trigger (while in Draft) and the menu option (in either mode); with none it reads "Draft".
 
 The dock projection is tri-state while its query loads: pending count and review
-availability are `null`, distinct from loaded zero/false. If a client fast path
-opens the confirmation before the authoritative response returns, the popover
-keeps the existing **Checking pending changes…** copy and disables actions that
-need the unresolved projection. Auto-apply remains selectable so its
-choice-less request can ask the server; loading client state must never imply
-that nothing is pending.
+availability are `null`, distinct from loaded zero/false; loading client state
+must never imply that nothing is pending.
 
 The shared Work picker and selected-Work write-mode presentation live in the
 neutral `components/app/work-composer-controls` boundary. The Chat landing and
 chat detail adapt that presentation to different commands: the landing edits
 prospective creation state, while chat detail can durably rebind an idle existing
-thread. The landing's selected Work is already durable, so its write-mode
-control reads and mutates that Work's real policy before thread creation; it does not invent a provisional mode. Draft
+thread. The landing's write-mode control edits prospective creation state. Draft
 review launch behavior is injected by each project-shell adapter rather than
 imported into the neutral controls.
 
-Each assistant turn durably records the Work write mode read when that turn is
+Each assistant turn durably records the chat's write mode read when that turn is
 created. Tool vocabulary and receipt interpretation use the turn's recorded
-mode, not the Work's current mutable policy, so a later mode switch cannot
-rewrite history after reload.
+mode, not the chat's current mode, so a later switch cannot rewrite history
+after reload.
 
 ### Composer placeholder and sizing contracts
 

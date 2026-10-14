@@ -1,6 +1,8 @@
 /** Atomic inbox transitions; journal publication is part of every committed mutation. */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Notice } from "../../notices/index.js";
 import type { WorkContextNotices } from "../../projects/index.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
@@ -16,7 +18,10 @@ export type DeliveryTransaction = {
   materializePrefix(): Promise<void>;
 };
 export type DeliveryProducer = Pick<RuntimeDelivery, "enqueue" | "withThreadLock">;
-export type ThreadControls = Pick<RuntimeDelivery, "enqueueControl" | "withdrawControl">;
+export type ThreadControls = Pick<
+  RuntimeDelivery,
+  "enqueueControl" | "withdrawControl" | "effectiveWriteMode"
+>;
 export type DeliveryBoundary<TCurrent = undefined> = Pick<
   Parameters<typeof drainInbox>[0],
   "knownTurnIds" | "expectedLeafTurnId" | "prepareAdoptedTurn"
@@ -25,6 +30,12 @@ export type DeliveryBoundary<TCurrent = undefined> = Pick<
   currentTurn: Turn;
   /** Use this client-minted id for the next assistant after a start-time compaction. */
   preferredSuccessorTurnId?: TurnId;
+  /**
+   * Messages the execution still carries for its first assistant: a Retry's
+   * failed-reply list through a start-time compaction. Those inbox rows are
+   * already acknowledged, so the inbox selection can't supply them.
+   */
+  carriedReservedForUserTurnIds?: readonly string[];
   signal?: AbortSignal;
   continueTask?: boolean;
   /**
@@ -69,17 +80,29 @@ export type DeliverySelectionFields = {
 export type DeliverySelection = DeliverySelectionFields & {
   next: InboxWorkSelection;
 };
-export type DeliveryBoundarySelection = DeliverySelectionFields;
+export type DeliveryBoundarySelection = DeliverySelectionFields & {
+  /** A message waits behind the queued write-mode switch: end the reply here. */
+  yieldReply: boolean;
+};
 export type AdoptedBatch<TCurrent = undefined> = {
   drain: InboxDrain;
   next: Turn;
   split: boolean;
+  /**
+   * The execution ended in this commit: a placeholder with nothing left, or a
+   * compaction successor whose preparation failed (`next` is that failed turn).
+   */
   terminal?: boolean;
   completed?: Turn;
   compaction?: Extract<CompactionDecision, { kind: "compact" }>;
   preparationFailure?: unknown;
   preparedCurrent?: TCurrent;
   context?: import("./turn-context-assembly.js").AssembledNextTurnContext;
+  /**
+   * The reply ends at this request boundary for a queued switch. An assistant
+   * exits through a success close; a placeholder comes back `terminal`.
+   */
+  yielded?: boolean;
 };
 export interface RuntimeDelivery
   extends WorkContextNotices,
@@ -100,12 +123,33 @@ export interface RuntimeDelivery
     threadId: ThreadId,
     controlId: string,
   ): Promise<import("@meridian/contracts/threads").WithdrawThreadControlResponse>;
+  /** The mode the writer sees: a pending switch's, else the chat's applied mode. */
+  effectiveWriteMode(threadId: ThreadId): Promise<AiWriteMode>;
+  /** Whether a message waits behind the queued switch, so the next request boundary ends the reply. */
+  yieldsAtBoundary(threadId: ThreadId): Promise<boolean>;
   /** Reclassify expired leases after recovery or a backstop release. */
   refreshPending(threadId: ThreadId): Promise<void>;
-  /** Under an exclusive session claim, repair atomically, release only an empty receipt, then publish status. */
-  settleStaleExecution<T>(threadId: ThreadId, repair: () => Promise<T>): Promise<T>;
-  /** Settle any previous primary assistant before a new run selects context. */
-  repairOrphanedTurns(lease: Lease): Promise<void>;
+  /**
+   * Under a newly acquired claim, before anything else the holder does: repair
+   * every orphaned turn (primary and child-report paths), then end the stale
+   * lease row's execution (journal `execution.ended` when a turn carries it) and
+   * delete the row in one transaction. A no-op on a settled thread.
+   */
+  settleStaleExecution<T = void>(
+    threadId: ThreadId,
+    /**
+     * A sweep lane's own repair, under an exclusive session claim: only the
+     * turns it names settle, and the row is released (its end journaled) only
+     * when the repair retired its receipt or the receipt was already empty.
+     */
+    repair?: () => Promise<T>,
+  ): Promise<T | void>;
+  /**
+   * The run owner's cleanup: unlock only when the row is gone, end the
+   * execution when every turn it reserved is terminal, else abandon it for
+   * `settleStaleExecution`.
+   */
+  releaseExecution(lease: Lease): Promise<"released" | "ended" | "abandoned">;
   /** Retire only the adopted inbox receipt owned by a crash-finalized reply. */
   retireOrphanedReply(threadId: ThreadId, turnId: TurnId): Promise<void>;
   /** Clear a crash-finalized non-reply selector without acknowledging its messages. */
@@ -119,7 +163,10 @@ export interface RuntimeDelivery
   /** Initial assistant setup and exact receipt commit before model execution. */
   adoptBatch<T>(
     lease: Lease,
-    /** Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation. */
+    /**
+     * Pure preparation; writes belong in `persist`. Null retires stale controls without a reservation.
+     * A queued write-mode switch that is due has already applied: the selection never offers it.
+     */
     prepare: (selection: DeliverySelection) => Promise<{
       value: T;
       completedControlIds?: string[];
@@ -133,9 +180,22 @@ export interface RuntimeDelivery
     } | null>,
     options?: {
       signal?: AbortSignal;
+      /**
+       * The failed reply a Retry re-answers. A Retry starts a reply by itself,
+       * so a queued switch is due at its run start; once any switch has landed,
+       * looking past trailing switch turns must still reach this reply, else
+       * the Retry is refused (a newer message or another Retry moved the leaf).
+       */
+      retryOf?: TurnId;
     },
   ): Promise<T>;
-  ackWithResponse<T>(lease: Lease, ids: string[], persist: () => Promise<T>): Promise<T>;
+  /** Persists a response and delivers `ids` by `byTurn`, the assistant it answers them with. */
+  ackWithResponse<T>(
+    lease: Lease,
+    ids: string[],
+    byTurn: Pick<Turn, "id" | "position">,
+    persist: () => Promise<T>,
+  ): Promise<T>;
   splitAndContinue<TCurrent = undefined>(
     input: DeliveryBoundary<TCurrent>,
   ): Promise<AdoptedBatch<TCurrent>>;
@@ -143,6 +203,12 @@ export interface RuntimeDelivery
     lease: Lease;
     turnId: TurnId;
     cause: TerminalCause;
+    /**
+     * The run's local abort (a parent's cancel, shutdown) as a terminal cause,
+     * or null. The lease never records it, so close rereads it under the lock
+     * beside the durable cancel flag.
+     */
+    localCancellation?: () => TerminalCause | null;
     settleSummaryResponses?: () => Promise<void>;
     continueWith?: DeliveryBoundary;
   }): Promise<

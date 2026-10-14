@@ -1,13 +1,16 @@
 /**
  * Production-composed model tools in a Work: scratch stays live while drafted
  * writes name the draft (D9, D19), read, search and ls follow the version the
- * writes change (D41), and copies of text and binary files (D24).
+ * writes change (D41), copies of text and binary files (D24), and a chat's
+ * write-mode switch against real repositories (D62).
  */
 
 import { splitHashline } from "@meridian/agent-edit";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
+import { processDetachedWork } from "../domains/runtime/detached-work.js";
+import type { ToolCall } from "../test-support/composed-runtime.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -58,7 +61,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Rewrite",
         slug: "rewrite",
-        aiWriteMode: "draft",
       });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
@@ -83,6 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         title: "Draft-mode tools",
         kind: "primary",
         status: "idle",
+        aiWriteMode: "draft",
       });
       await db.insert(schema.turns).values({
         id: THREAD.turnId,
@@ -175,7 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(text(listedLive)).not.toContain("lore");
     });
 
-    // D40: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
+    // D62: auto-apply writes live, but an explicit `draft` still reads what the Work kept.
     it("reads a kept draft when asked for draft in auto-apply, and live otherwise", async () => {
       const script = await startWithChapter("Writer live content.");
       const first = await script.begin();
@@ -188,9 +191,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await first.save();
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD.threadId));
 
       const { call } = await script.begin();
       const kept = await call("read", { path: CHAPTER, version: "draft" });
@@ -209,8 +212,142 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(noDraft.result).toMatchObject({ read: { version: "live" } });
     });
 
+    describe("write-mode switch (D62)", () => {
+      const SIBLING = {
+        threadId: "00000000-0000-4000-8000-000000000e15",
+        turnId: "00000000-0000-4000-8000-000000000e16",
+      };
+      const switchTo = (
+        runtime: Awaited<ReturnType<typeof runtimes.compose>>,
+        mode: "direct" | "draft",
+      ) =>
+        runtime.app.delivery.enqueueControl({
+          threadId: THREAD.threadId,
+          actorId: USER_ID,
+          id: crypto.randomUUID(),
+          control: { kind: "write_mode", mode },
+        });
+      const switchTurns = async () =>
+        (
+          await db.select().from(schema.turns).where(eq(schema.turns.threadId, THREAD.threadId))
+        ).filter(
+          (turn) => (turn.metadata as { kind?: string } | null)?.kind === "write_mode_switch",
+        );
+      const modeOf = async (threadId: string) =>
+        (
+          await db
+            .select({ mode: schema.threads.aiWriteMode })
+            .from(schema.threads)
+            .where(eq(schema.threads.id, threadId))
+        )[0]?.mode;
+      const create = (call: ToolCall, name: string) =>
+        call("write", { command: "create", path: `manuscript://${name}.md`, content: name });
+
+      beforeEach(async () => {
+        // A switch turn chains after the chat's active leaf.
+        await db
+          .update(schema.threads)
+          .set({ activeLeafTurnId: THREAD.turnId })
+          .where(eq(schema.threads.id, THREAD.threadId));
+      });
+
+      it("keeps a reply's mode past a mid-reply switch, which stays pending after the reply", async () => {
+        const script = await startWithChapter("Writer live content.");
+        const { runtime } = script;
+        const lease = await runtime.ports.runClaim.startExecution(
+          THREAD.threadId as never,
+          crypto.randomUUID() as never,
+          async () => {},
+        );
+        if (!lease) throw new Error("Expected the reply's run claim");
+        const reply = await script.begin();
+        expect((await create(reply.call, "before")).result).toMatchObject({
+          destination: "draft",
+        });
+
+        const queued = await switchTo(runtime, "direct");
+        expect(queued.response).toMatchObject({
+          pending: { control: { kind: "write_mode", mode: "direct" } },
+          turnId: null,
+        });
+        expect((await create(reply.call, "after")).result).toMatchObject({
+          destination: "draft",
+        });
+        await reply.save();
+        expect(await switchTurns()).toEqual([]);
+
+        // The release wake has nothing to run, so the switch stays pending and the chat keeps its mode.
+        await runtime.ports.runClaim.release(lease);
+        await runtime.app.runStarter.start(THREAD.threadId as never);
+        await processDetachedWork.drain();
+        expect(await switchTurns()).toEqual([]);
+        expect(await modeOf(THREAD.threadId)).toBe("draft");
+
+        const next = await script.begin();
+        expect((await create(next.call, "next")).result).toMatchObject({ destination: "draft" });
+      });
+
+      it("moves the Work default when the writer switches, leaving the chat and a sibling chat in their mode", async () => {
+        await db
+          .update(schema.works)
+          .set({ defaultAiWriteMode: "draft" })
+          .where(eq(schema.works.id, WORK_ID));
+        await db.insert(schema.threads).values({
+          rootThreadId: SIBLING.threadId,
+          id: SIBLING.threadId,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          title: "Sibling",
+          kind: "primary",
+          status: "idle",
+          aiWriteMode: "draft",
+        });
+        await db.insert(schema.turns).values({
+          id: SIBLING.turnId,
+          threadId: SIBLING.threadId,
+          position: 1,
+          role: "assistant",
+          origin: "assistant",
+          status: "complete",
+        });
+        await db.insert(schema.threadWorks).values({
+          threadId: SIBLING.threadId,
+          workId: WORK_ID,
+          projectId: PROJECT_ID,
+          isPrimary: true,
+        });
+        const script = await startWithChapter("Writer live content.");
+        const { runtime } = script;
+        await bindEditAgent(runtime, THREAD.threadId);
+        const [before] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+
+        const switched = await switchTo(runtime, "direct");
+        expect(switched.response).toMatchObject({
+          pending: { control: { kind: "write_mode", mode: "direct" } },
+          turnId: null,
+          mode: "draft",
+        });
+        expect(await switchTurns()).toEqual([]);
+        expect(await modeOf(THREAD.threadId)).toBe("draft");
+        // The Work's default follows the writer's choice at once, so a new chat starts in it.
+        const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+        expect(after?.defaultAiWriteMode).toBe("direct");
+        expect(after?.entityRevision).toBe((before?.entityRevision ?? 0n) + 1n);
+        // Stopping the pending switch is the writer's latest choice too.
+        await runtime.app.delivery.withdrawControl(THREAD.threadId as never, switched.response.id);
+        const [stopped] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+        expect(stopped?.defaultAiWriteMode).toBe("draft");
+
+        expect(await modeOf(SIBLING.threadId)).toBe("draft");
+        const sibling = await runtimes.script(runtime, SIBLING).begin();
+        expect((await create(sibling.call, "sibling")).result).toMatchObject({
+          destination: "draft",
+        });
+      });
+    });
+
     // D31: a create or copy would make its file in the archived Work's frozen draft.
-    it("refuses a create or copy into an archived draft-mode Work with D31's copy", async () => {
+    it("refuses a draft-mode chat's create or copy into its archived Work with D31's copy", async () => {
       const script = await startWithChapter("Writer live content.");
       await db
         .update(schema.works)
@@ -218,7 +355,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.works.id, WORK_ID));
       const { call } = await script.begin();
       const frozen =
-        'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch @rewrite to auto-apply.';
+        'Work @rewrite is archived, so its draft is frozen and this change wasn\'t made. Unarchive it with `work({"command":"unarchive","work":"rewrite"})`, or ask the user to switch this chat to auto-apply.';
 
       for (const args of [
         { command: "create", path: "manuscript://new", content: "Never lands." },
@@ -258,9 +395,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rolls a copy back with its reply", async () => {
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD.threadId));
       const script = await startWithChapter("Writer live content.");
       const { call, responseId } = await script.begin();
 
@@ -404,9 +541,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("stages nothing for a write that leaves the chapter unchanged", async () => {
       await db
-        .update(schema.works)
+        .update(schema.threads)
         .set({ aiWriteMode: "direct" })
-        .where(eq(schema.works.id, WORK_ID));
+        .where(eq(schema.threads.id, THREAD.threadId));
       const script = await startWithChapter("Writer live content.");
       const { call } = await script.begin();
 

@@ -47,7 +47,6 @@ function receiptState(work: Work): WorkBindingState {
     workId: work.id,
     name: work.name,
     slug: work.slug,
-    aiWriteMode: work.aiWriteMode,
     goal: work.goal,
     status: work.status,
     archived: work.archivedAt !== null,
