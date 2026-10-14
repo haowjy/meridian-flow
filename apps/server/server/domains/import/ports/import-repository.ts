@@ -89,7 +89,16 @@ export interface ImportRepository {
   insert(record: ImportRecord, entries: ImportEntry[]): Promise<void>;
   update(id: string, patch: ImportPatch): Promise<void>;
   entries(id: string): Promise<ImportEntry[]>;
-  updateEntries(patches: { id: string; patch: ImportEntryPatch }[]): Promise<void>;
+  updateEntries(
+    importId: string,
+    patches: { id: string; patch: ImportEntryPatch }[],
+  ): Promise<void>;
+  transitionEntries(
+    importId: string,
+    from: ImportEntryState[],
+    patch: Pick<ImportEntryPatch, "state" | "reason">,
+    ids?: string[],
+  ): Promise<void>;
   skipEntries(id: string, states: ImportEntryState[], reason: ImportEntryReason): Promise<void>;
   refreshCounts(id: string): Promise<ImportCounts>;
   hasAwaiting(id: string): Promise<boolean>;

@@ -4,7 +4,12 @@ import type { Database } from "@meridian/database";
 import { importEntries, imports, projects } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
+import type {
+  ImportEntry,
+  ImportEntryPatch,
+  ImportRecord,
+  ImportRepository,
+} from "../ports/import-repository.js";
 
 export function createDrizzleImportRepository(db: Database): ImportRepository {
   const tx = () => currentDrizzleDb(db);
@@ -50,9 +55,61 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         .where(eq(importEntries.importId, id))
         .orderBy(importEntries.ordinal)) as ImportEntry[];
     },
-    async updateEntries(patches) {
-      for (const { id, patch } of patches)
-        await tx().update(importEntries).set(patch).where(eq(importEntries.id, id));
+    async updateEntries(importId, patches) {
+      // Presence flags distinguish omitted fields from explicit NULL. Each values column is typed,
+      // including all-NULL batches; chunking bounds bind parameters, not transaction concurrency.
+      const columns = [
+        ["spec", "spec", "jsonb"],
+        ["state", "state", "text"],
+        ["reason", "reason", "text"],
+        ["storageUrl", "storage_url", "text"],
+        ["objectKey", "object_key", "text"],
+        ["convertedKey", "converted_key", "text"],
+        ["receivedSize", "received_size", "bigint"],
+        ["sha256", "sha256", "text"],
+      ] as const satisfies readonly (readonly [keyof ImportEntryPatch, string, string])[];
+      const names = columns.flatMap(([, name]) => [
+        sql.identifier(`has_${name}`),
+        sql.identifier(name),
+      ]);
+      for (let offset = 0; offset < patches.length; offset += 500) {
+        const rows = patches
+          .slice(offset, offset + 500)
+          .map(
+            ({ id, patch }) =>
+              sql`(${sql.join(
+                [
+                  sql`${id}::uuid`,
+                  ...columns.flatMap(([key, , type]) => [
+                    sql`${patch[key] !== undefined}::boolean`,
+                    sql`${key === "spec" && patch.spec !== undefined ? JSON.stringify(patch.spec) : (patch[key] ?? null)}::${sql.raw(type)}`,
+                  ]),
+                ],
+                sql`, `,
+              )})`,
+          );
+        const assignments = columns.map(([, name]) => {
+          const column = sql.identifier(name);
+          return sql`${column} = CASE WHEN v.${sql.identifier(`has_${name}`)} THEN v.${column} ELSE e.${column} END`;
+        });
+        await tx().execute(sql`
+          UPDATE import_entries AS e SET ${sql.join(assignments, sql`, `)}
+          FROM (VALUES ${sql.join(rows, sql`, `)}) AS v(id, ${sql.join(names, sql`, `)})
+          WHERE e.import_id = ${importId}::uuid AND e.id = v.id
+        `);
+      }
+    },
+    async transitionEntries(importId, from, patch, ids) {
+      await tx()
+        .update(importEntries)
+        .set(patch)
+        .where(
+          and(
+            eq(importEntries.importId, importId),
+            inArray(importEntries.state, from),
+            ids === undefined ? undefined : inArray(importEntries.id, ids),
+          ),
+        );
     },
     async skipEntries(id, states, reason) {
       await tx()

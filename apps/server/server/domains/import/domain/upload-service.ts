@@ -10,7 +10,12 @@ import {
 import { splitFrontmatter } from "@meridian/markup/wikilinks";
 import { frontmatterAliases } from "../../context/index.js";
 import type { ObjectStorePort } from "../../storage/index.js";
-import type { ImportEntry, ImportRecord, ImportRepository } from "../ports/import-repository.js";
+import type {
+  ImportEntry,
+  ImportEntryPatch,
+  ImportRecord,
+  ImportRepository,
+} from "../ports/import-repository.js";
 import type { ImportDestination } from "../ports/import-tree-writer.js";
 import type { OrganizeWake } from "../ports/organize-wake.js";
 import { classify } from "./classify.js";
@@ -203,6 +208,7 @@ export function createImportUploadService(deps: {
             const now = await repo.now();
             const live = new Map((await repo.entries(id)).map((e) => [e.id, e]));
             let receivedBytes = current.counts.receivedBytes;
+            const patches: { id: string; patch: ImportEntryPatch }[] = [];
             for (const part of parts) {
               const entry = entries.get(part.entryId) as ImportEntry;
               if (live.get(entry.id)?.state !== "awaiting") continue;
@@ -212,31 +218,28 @@ export function createImportUploadService(deps: {
                 part.bytes.byteLength > IMPORT_ADMISSION.fileBytes ||
                 receivedBytes + part.bytes.byteLength > IMPORT_ADMISSION.totalBytes
               ) {
-                await repo.updateEntries([
-                  { id: entry.id, patch: { state: "failed", reason: "too_large" } },
-                ]);
+                patches.push({ id: entry.id, patch: { state: "failed", reason: "too_large" } });
               } else if (
                 receipt &&
                 now.getTime() - stagingKeyTime(receipt.key) < IMPORT_LIMITS.receiptAgeMs
               ) {
                 receivedBytes += part.bytes.byteLength;
                 const { kind: fileKind, ...facts } = receipt.facts;
-                await repo.updateEntries([
-                  {
-                    id: entry.id,
-                    patch: {
-                      state: "received",
-                      reason: part.changedAfterPick ? "changed_after_pick" : null,
-                      objectKey: receipt.key,
-                      storageUrl: receipt.storageUrl,
-                      receivedSize: part.bytes.byteLength,
-                      sha256: receipt.sha256,
-                      spec: { ...entry.spec, ...facts, fileKind, aliases: receipt.aliases },
-                    },
+                patches.push({
+                  id: entry.id,
+                  patch: {
+                    state: "received",
+                    reason: part.changedAfterPick ? "changed_after_pick" : null,
+                    objectKey: receipt.key,
+                    storageUrl: receipt.storageUrl,
+                    receivedSize: part.bytes.byteLength,
+                    sha256: receipt.sha256,
+                    spec: { ...entry.spec, ...facts, fileKind, aliases: receipt.aliases },
                   },
-                ]);
+                });
               }
             }
+            await repo.updateEntries(id, patches);
             await complete(current);
           });
           const result = await after(id, projectId);
@@ -276,14 +279,13 @@ export function createImportUploadService(deps: {
         );
         for (const item of input.entries)
           if (!entries.has(item.entryId)) throw new ImportError(404, "entry_not_found");
-        await repo.updateEntries(
-          input.entries.flatMap((item) => {
-            const entry = entries.get(item.entryId) as ImportEntry;
-            return entry.state === "awaiting"
-              ? [{ id: entry.id, patch: { state: "skipped" as const, reason: item.reason } }]
-              : [];
-          }),
-        );
+        for (const reason of ["unreadable", "not_found"] as const) {
+          const ids = input.entries
+            .filter((item) => item.reason === reason)
+            .map((item) => (entries.get(item.entryId) as ImportEntry).id);
+          if (ids.length)
+            await repo.transitionEntries(id, ["awaiting"], { state: "skipped", reason }, ids);
+        }
         await complete(record);
       });
       return after(id, projectId);

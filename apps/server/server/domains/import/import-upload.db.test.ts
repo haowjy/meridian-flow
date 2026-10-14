@@ -118,7 +118,7 @@ describe.runIf(enabled)("durable upload", () => {
     });
     // Refresh aggregates actual persisted receipt sizes, not the test's synthetic header.
     const entries = await repository.entries(input.importId);
-    await repository.updateEntries([
+    await repository.updateEntries(input.importId, [
       {
         id: entries[1].id,
         patch: { receivedSize: IMPORT_ADMISSION.totalBytes - 5, objectKey: "fixture-existing" },
@@ -226,7 +226,7 @@ describe.runIf(enabled)("durable upload", () => {
     }
     await send(input.importId, 0);
     const entry = (await repository.entries(input.importId))[1];
-    await repository.updateEntries([
+    await repository.updateEntries(input.importId, [
       { id: entry.id, patch: { state: "organized", spec: { ...entry.spec, fileKind: "binary" } } },
     ]);
     const then = new Date(Date.now() - 32 * 86400000);
@@ -264,7 +264,9 @@ describe.runIf(enabled)("durable upload", () => {
     const entry = (await repository.entries(input.importId)).find((row) => row.entryId === 0)!;
     const convertedKey = `imports/${input.importId}/0/00000000-0000-7000-8000-000000000000.md`;
     await objects.put(convertedKey, Buffer.from("converted"), "text/markdown");
-    await repository.updateEntries([{ id: entry.id, patch: { state: "prepared", convertedKey } }]);
+    await repository.updateEntries(input.importId, [
+      { id: entry.id, patch: { state: "prepared", convertedKey } },
+    ]);
     await repository.update(input.importId, {
       placement: { creationSetDigest: "fixture" },
       placementGeneration: 1,
