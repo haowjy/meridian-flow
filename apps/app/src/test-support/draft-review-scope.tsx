@@ -52,7 +52,6 @@ export const listed = {
   isNew: false,
   binary: false,
   wholeItem: false,
-  livePath: null,
   conflict: null,
   tokens: {
     locationToken: "location-1",

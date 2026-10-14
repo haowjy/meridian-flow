@@ -190,3 +190,16 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
     and on the second device (three runs each). Reload with a queued switch: the first sampled
     frame after load already shows the row and the queued mode (read from the journal stamp),
     nothing is announced as queued, and the apply announces "Switched to …" once.
+13. First seed with newer frames: reload a chat mid-reply while a second device queues a switch (delay
+    `**/snapshot*` with `agent-browser network route` so the frame lands before the snapshot). The
+    reloaded page shows the queued row and the queued mode once the snapshot lands, and a snapshot
+    that lists a switch it learned only from the fetch announces nothing.
+14. A failed first load: apply several switches in a chat, abort `**/snapshot*` with
+    `agent-browser network route`, and hard-reload. The chat shows its load failure with no
+    "Switch to … queued" rows and no "Switched to …" announcement, and the toolbar shows the
+    thread's mode. Remove the route and press Retry: the dividers load and nothing is left over.
+15. An applied switch whose HTTP answer is lost: on device 1 wrap `window.fetch` so a `POST **/controls`
+    resolves 12 seconds late (the route tool can't delay), choose the other mode on an idle chat, then
+    switch back on device 2 before the response lands. Device 1 settles on the original mode with no row, before
+    and after its delayed response. A Withdraw on a quiet chat also leaves its row gone and stays gone
+    without a reload.

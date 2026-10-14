@@ -648,6 +648,17 @@ export function useContextCatalogWake(
   const queryClient = useQueryClient();
   const resources = useOptionalAccountResourceReplica();
   const transport = useOptionalThreadTransport();
+  // A create that joined a draft's document now is that document, so its draft list is
+  // stale: the writer sees the draft's review at once, not at the next reload or hint.
+  useEffect(
+    () =>
+      projectId
+        ? resources?.onIdentityChanged((changed) => {
+            if (changed === projectId) invalidateDraftReads(queryClient, projectId);
+          })
+        : undefined,
+    [projectId, queryClient, resources],
+  );
   useEffect(
     () =>
       projectId
@@ -670,6 +681,25 @@ export function useContextCatalogWake(
         : undefined,
     [onColdWorkHint, projectId, queryClient, resources, transport],
   );
+}
+
+/** Every draft read of the project: each Work's list and each document's hints. */
+function invalidateDraftReads(queryClient: QueryClient, projectId: string): void {
+  void queryClient.invalidateQueries(allWorkDraftsOf(projectId));
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+  });
+}
+
+/** Every mounted draft list of the project, whatever Work it belongs to. */
+function allWorkDraftsOf(projectId: string) {
+  return {
+    predicate: ({ queryKey }: { queryKey: readonly unknown[] }) =>
+      queryKey[0] === "projects" &&
+      queryKey[1] === projectId &&
+      queryKey[2] === "works" &&
+      queryKey[4] === "drafts",
+  };
 }
 
 /** The newest installed catalog revision each scope's hints have already re-read draft lists for. */
@@ -720,14 +750,11 @@ export function pullContextCatalogOnHint(
       void queryClient.invalidateQueries(
         requestedScope.kind === "work"
           ? { queryKey: projectQueryKeys.workDrafts(projectId, requestedScope.workId) }
-          : {
-              predicate: ({ queryKey }) =>
-                queryKey[0] === "projects" &&
-                queryKey[1] === projectId &&
-                queryKey[2] === "works" &&
-                queryKey[4] === "drafts",
-            },
+          : allWorkDraftsOf(projectId),
       );
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
+      });
     })
     .catch(() => undefined);
 }

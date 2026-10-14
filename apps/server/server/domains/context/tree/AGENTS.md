@@ -1,7 +1,9 @@
 # domains/context/tree
 
-The visibility owner. A draft's new document or folder is a hidden live row: in no
-live view, and an ordinary node at the draft's location in that draft's view. This
+The visibility owner. A draft's new document or folder is a real row, hidden because it
+is only a draft: in no live view, and an ordinary node at the row's own location in that
+draft's view. The row is the document's only location (`draft_tree_changes` carries
+identity and attribution); a live create or rename of it is an ordinary live write. This
 module decides what each view shows, spells where nodes are, and owns the hidden-node
 lifecycle (create, reveal, end of use, repair). Files and contracts:
 [.context/CONTEXT.md](.context/CONTEXT.md).

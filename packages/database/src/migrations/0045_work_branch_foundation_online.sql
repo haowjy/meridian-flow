@@ -6,11 +6,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_markdown_projections_fts" ON "
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_markdown_projections_trgm" ON "document_markdown_projections" USING gin ("markdown" gin_trgm_ops);
 --> statement-breakpoint
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "draft_tree_changes_location" ON "draft_tree_changes" USING btree ("context_source_id","parent_folder_id","name","extension") WHERE "draft_tree_changes"."context_source_id" IS NOT NULL;
---> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "draft_tree_changes_node" ON "draft_tree_changes" USING btree ("node_kind","node_id");
---> statement-breakpoint
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "draft_tree_changes_parent" ON "draft_tree_changes" USING btree ("parent_folder_id") WHERE "draft_tree_changes"."parent_folder_id" IS NOT NULL;
 --> statement-breakpoint
 CREATE INDEX CONCURRENTLY IF NOT EXISTS "drafts_active_origin_work" ON "drafts" USING btree ("origin_work_id","created_at") WHERE "drafts"."status" = 'active';
 --> statement-breakpoint
@@ -49,10 +45,6 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_branches_active_work_draft_by_
 ALTER TABLE "document_markdown_projections" VALIDATE CONSTRAINT "document_markdown_projections_document_id_documents_id_fk";
 --> statement-breakpoint
 ALTER TABLE "draft_tree_changes" VALIDATE CONSTRAINT "draft_tree_changes_draft_id_drafts_id_fk";
---> statement-breakpoint
-ALTER TABLE "draft_tree_changes" VALIDATE CONSTRAINT "draft_tree_changes_context_source_id_context_sources_id_fk";
---> statement-breakpoint
-ALTER TABLE "draft_tree_changes" VALIDATE CONSTRAINT "draft_tree_changes_parent_folder_id_folders_id_fk";
 --> statement-breakpoint
 ALTER TABLE "drafts" VALIDATE CONSTRAINT "drafts_project_id_projects_id_fk";
 --> statement-breakpoint
@@ -142,5 +134,17 @@ ALTER TABLE "branch_push_settlement_outbox"
 ALTER TABLE "document_branches"
   DROP COLUMN IF EXISTS "work_id", -- migration-lint: skip DROP_COLUMN (0042 keyed every branch by its Work's draft)
   DROP COLUMN IF EXISTS "deleted_by_work_id"; -- migration-lint: skip DROP_COLUMN (0042 reopened the branches a Work delete closed)
+--> statement-breakpoint
+-- A device's create id that joined a draft's document (additive: a new table and its index).
+CREATE TABLE IF NOT EXISTS "document_forwards" (
+	"from_document_id" uuid PRIMARY KEY NOT NULL,
+	"to_document_id" uuid NOT NULL,
+	"project_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "document_forwards_to_document_id_documents_id_fk" FOREIGN KEY ("to_document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "document_forwards_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action
+);
+--> statement-breakpoint
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "document_forwards_to" ON "document_forwards" USING btree ("to_document_id");
 --> statement-breakpoint
 RESET lock_timeout;

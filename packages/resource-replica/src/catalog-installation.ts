@@ -10,6 +10,7 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { newerCanonicalObservation } from "./canonical-observation";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
+import { joinReservation } from "./resource-join";
 import { installCanonicalRefresh } from "./resource-namespace";
 import {
   ownerOf,
@@ -282,6 +283,33 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
   return { expectedRevision: null, next: { resource, intents: [] } } satisfies ResourceWrite;
 }
 
+function joinedReservation(
+  records: readonly ResourceRecord[],
+  current: ReadonlyMap<string, ResourceRecord>,
+  entry: CatalogFileEntry,
+  observed: {
+    location: ResourceLocation;
+    parent: ParentRef;
+    classification: CatalogFileClassification;
+  },
+): ResourceWrite | null {
+  for (const id of entry.joinedFrom ?? []) {
+    const reservation = current.get(id);
+    if (!reservation || !records.includes(reservation)) continue;
+    const write = joinReservation({
+      record: reservation,
+      target: {
+        documentId: entry.entryId,
+        observationVersion: entry.observationVersion,
+        ...observed,
+      },
+      settledAt: Date.now(),
+    });
+    if (write) return write;
+  }
+  return null;
+}
+
 /** Plan one atomic checkpoint/resource installation. Scope disappearance never deletes a resource. */
 export function planCatalogInstallation(input: {
   projectId: string;
@@ -314,6 +342,18 @@ export function planCatalogInstallation(input: {
         observationVersion: entry.observationVersion,
       });
       if (write) resources.push(write);
+      continue;
+    }
+    // A device's create that joined this document: the reservation follows it instead of a
+    // second record being discovered beside it.
+    const joined = joinedReservation(input.records, index.current, entry, {
+      location,
+      parent: catalogEntryParent(entry, location),
+      classification: classificationFor(entry),
+    });
+    if (joined) {
+      resources.push(joined);
+      index.current.set(entry.entryId, joined.next);
       continue;
     }
     // Resource aliases are obsolete local identities. The server document still

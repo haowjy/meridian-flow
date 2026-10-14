@@ -62,6 +62,20 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
     expect.soft((await s.review(ascension)).items, "rows reviewable").toHaveLength(1);
   });
 
+  it("an item Apply refused as stale names its own item, the shape the client accepts", async () => {
+    const { s, ascension, chapter } = await draftedChapter(start);
+    const remove = setCollabHook("applyItems.beforeStaging", async () => {
+      remove();
+      await s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.");
+    });
+    const [answer] = await s.apply(ascension, [chapter]);
+    const { itemKey } = itemFor(await s.items(ascension), chapter);
+    expect(answer).toMatchObject({
+      httpStatus: 409,
+      body: { status: "stale", draftId: expect.any(String), itemKey },
+    });
+  });
+
   it("completes a staged batch a live change raced, or that recovery found changed (5b relaxed)", async () => {
     const { s, ascension, chapter, vector } = await draftedChapter(start);
     // Staging is the consent boundary: a rename between staging and completion merges.

@@ -12,7 +12,7 @@
  * running compaction divider through the turn cancel route, and announces each
  * state change the writer caused.
  *
- * A write-mode switch is the switch ledger's (`useSwitchView`): its rows,
+ * A write-mode switch is the switch view's (`useSwitchView`): its rows,
  * Retry, Withdraw and the chat's mode come from there and are listed after the
  * compaction rows.
  */
@@ -39,7 +39,7 @@ import type { SwitchView } from "./useSwitchView";
 export type ThreadControls = {
   queued: readonly QueuedControl[];
   stoppingTurnIds: ReadonlySet<string>;
-  /** The chat's mode as the writer should see it: the ledger's switches laid over the snapshot's. */
+  /** The chat's mode as the writer should see it: the switch view's fold over the server's record. */
   writeMode: AiWriteMode;
   enqueue: (control: CompactControl) => string;
   /** Switch the chat's write mode; the row shows at once and the journal posts it in order. */

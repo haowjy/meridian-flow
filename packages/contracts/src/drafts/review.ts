@@ -15,10 +15,7 @@ import type { DraftCommandId, DraftId, DraftItemKey } from "../ids.js";
 export const DraftCommandIdSchema = z.string().uuid();
 
 /** Why an item cannot be applied as-is: another live change collided with it. */
-export type DraftItemConflict =
-  | { code: "path_taken"; path: string }
-  | { code: "rename_replaced"; livePath: string }
-  | { code: "deleted_live" };
+export type DraftItemConflict = { code: "path_taken"; path: string } | { code: "deleted_live" };
 
 /** Freshness evidence a client echoes back on an item command. */
 export type DraftItemTokens = {
@@ -52,8 +49,6 @@ export interface ThreadDraftListItem {
   documentName: string | null;
   /** The document URI's scheme and leading-slash path in the draft's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
-  /** The live URI when it differs from `contextLocation` (revealed, then moved live). */
-  livePath: string | null;
   conflict: DraftItemConflict | null;
   tokens: DraftItemTokens;
   /** True while a staged batch holds the item: progress only, never a settlement signal. */
@@ -61,6 +56,24 @@ export interface ThreadDraftListItem {
   /** Chats with pending agent writes in this item, latest first. Candidates: a chat's writes may be overwritten. */
   actorThreads: { threadId: string; title: string | null }[];
   updatedAt: string;
+}
+
+/**
+ * One active draft with changes to a document, for the hint on an open document. A draft is
+ * named by its own `label`; `originWorkId` is where it came from, which today's review
+ * address still needs and a draft without a Work will not have.
+ */
+export interface DocumentDraftHint {
+  draftId: DraftId;
+  /** The draft's review identity for the document, as in the list. */
+  itemKey: DraftItemKey;
+  /** How the draft is named to the writer; null when it has no name (the client words that). */
+  label: string | null;
+  originWorkId: string | null;
+}
+
+export interface DocumentDraftHintsResponse {
+  items: DocumentDraftHint[];
 }
 
 export interface ThreadDraftListResponse {
@@ -236,9 +249,7 @@ export const DRAFT_COMMAND_UNKNOWN_CODE = "unknown_command";
 
 /** Why a drafted item stays in review after Apply (5a). */
 export type DraftHeldReason = { code: "path_taken"; path: string };
-export type DraftApplyNote =
-  | { code: "rename_replaced"; replacedPath: string; path: string }
-  | { code: "restored"; path: string };
+export type DraftApplyNote = { code: "restored"; path: string };
 export type DraftApplyItemResult =
   | { itemKey: DraftItemKey; status: "applied"; notes: DraftApplyNote[] }
   | { itemKey: DraftItemKey; status: "held"; reason: DraftHeldReason };

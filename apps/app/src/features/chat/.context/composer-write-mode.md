@@ -59,21 +59,34 @@ facts plus this device's unanswered intents:
   `receiveRecord` replaces the current record only if `compareSeq` says the new one is newer.
   Nothing else compares versions.
 - **Where a record comes from** (`thread-controls/switch-record.ts`, which design A's server record
-  replaces): the accepted snapshot (`nextSeq - 1` as version, `thread.aiWriteMode`,
-  `liveState.pending.items`, read in one transaction); an `inbox.changed` frame at K
-  (`{ ...current, version: K, items }`); a `write_mode.switched` frame at K
-  (`{ ...current, version: K, mode }`); and a switch's answer, which carries `seq`, `mode` and
-  `pending` (the current items with every write-mode control row replaced by `pending`). A frame
-  before the first snapshot has no record to extend and is ignored; `subscribed` is never a source.
+  replaces; `switch-reducer.ts` is the one reducer every fact goes through): the accepted snapshot
+  (`nextSeq - 1` as version, `thread.aiWriteMode`, `liveState.pending.items`, read in one
+  transaction); an `inbox.changed` frame at K (`{ ...current, version: K, items }`); a
+  `write_mode.switched` frame at K (`{ ...current, version: K, mode }` without the row of the
+  control it applied, because the apply removed that row in the same transaction); and a switch's or
+  a withdrawal's answer, which carries `seq`, `mode` and `pending` (the current items with every
+  write-mode control row replaced by `pending`). The first record is always a snapshot: a frame
+  before it is held (a newer inbox frame replaces held ones), then applied in order once the
+  snapshot lands, because subscribe-then-fetch makes a snapshot older than frames already received a
+  normal race. A stamp or answer before the snapshot extends nothing: it is evidence for its intent
+  (and makes no row if this tab never chose it), so a failed first load shows no rows and announces
+  nothing. `subscribed` is never a source.
 - **Intents.** A `switch` intent is a journal record the writer chose; a `withdraw` intent is a
   Withdraw in flight. An intent with an `answer` leaves once the record's version is at or after it;
   an unanswered one leaves only by `dropIntent` (the journal record vanished unstamped, a refusal
   withdrawn, a Withdraw the server never had). Another tab's stamp (below) answers a record this tab
-  chose, so a hidden driving tab cannot strand the choosing tab's row.
+  chose, so a hidden driving tab cannot strand the choosing tab's row. A `write_mode.switched` frame
+  is also its control's answer (the apply it reports is that control's effect, at the frame's seq),
+  and a withdrawal's answer brings `pending` and `mode` like an enqueue answer's, so a quiet chat's
+  record reaches it. The view keeps `answers` (`kind:id` to version, at most 32, lowest evicted)
+  beside the intents: an answer that arrives before its intent, or an intent the journal adds again
+  after it left, still meets its answer. A switch keeps its answer through retirement; `dropIntent`
+  forgets it, and the hook drops a switch intent once its journal entry is gone.
 - **The fold** (`fold-switches.ts`, a selector): starting from the record's applied mode and its
   queued switch, the switch intents in `(order, id)` order apply the server's enqueue rule (a switch
   to the mode the chat is heading to changes nothing; the other mode withdraws the queued one). The
-  toolbar shows the mode the chat is heading to. A row the server lists is `queued`; one only this
+  toolbar shows the mode the chat is heading to. `switchState(view)` is null before the first
+  record; the hook's adapter (`switchDisplay`) folds over the thread row's mode instead. A row the server lists is `queued`; one only this
   device holds is `sending` (Retry only if posted and not refused); a failed or refused one shows
   Retry and is left out of the fold. An unanswered intent is laid over the record even if the record
   already includes it: the effect is bounded by the answer, which brings the state at its `seq`.
@@ -90,9 +103,10 @@ between the center and the dock, so a chat has one mounted `ChatView` and one vi
 own lifetime. A dev-only registry in `useSwitchView` warns when a second view mounts for a chat that
 already has one.
 
-One hook speaks it: "Switch to … queued" when a switch the server lists is newly above the first
-record's version, "Switched to …" for a `switched` frame above it. The first record, a replay and a
-snapshot are never news. A failure stays with the journal owner's keyed announcement, cleared on
+One reducer decides what is news, where a record is taken: "Switch to … queued" when a live inbox
+frame or an answer, taken after the first record, lists a queued switch not seen before, and
+"Switched to …" for a `switched` frame above the first record's version, once per applied turn.
+The first record, a replayed frame and a snapshot, however much newer, are never news. A failure stays with the journal owner's keyed announcement, cleared on
 Retry and when the record is withdrawn.
 
 The dock projection is tri-state while its query loads: pending count and review

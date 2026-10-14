@@ -20,7 +20,7 @@ import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts"
 import type { Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { contextSources, documents, folders } from "@meridian/database/schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import { renderFilename } from "../context/paths.js";
@@ -221,10 +221,6 @@ export async function prepareMoves(
       (folder) => nodes.get(folder)?.to != null && !nodes.get(folder)?.hidden,
     ),
     leaves: (folder) => nodes.get(folder)?.to != null,
-    splits: (folder) => {
-      const node = nodes.get(folder);
-      return node !== undefined && (selected.get(node.owner)?.splitsHidden ?? false);
-    },
   });
   return Ok({ moves, nodes, split });
 }
@@ -400,14 +396,6 @@ async function carrySource(db: Database, prepared: PreparedMoves, move: Prepared
       .update(folders)
       .set({ contextSourceId: target, updatedAt: now })
       .where(inArray(folders.id, batch));
-    if (!move.splitsHidden) {
-      await tx.execute(sql`
-        UPDATE draft_tree_changes SET context_source_id = ${target}::uuid, updated_at = NOW()
-        WHERE parent_folder_id IN (${sql.join(
-          batch.map((id) => sql`${id}::uuid`),
-          sql`, `,
-        )})`);
-    }
   }
   for (let offset = 0; offset < documentIds.length; offset += 500) {
     await tx

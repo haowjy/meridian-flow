@@ -861,7 +861,11 @@ else
       await rig.send(rig.threadId, "B behind withdrawn compact");
       const appended = vi.spyOn(rig.eventWriter, "appendEvent");
       const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
-      expect(answer.outcome).toBe("withdrawn");
+      expect(answer).toMatchObject({
+        outcome: "withdrawn",
+        pending: null,
+        mode: (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode,
+      });
       // The answer's clock reaches the withdrawal's own inbox.changed frame.
       const [withdrawal] = (await appendedFrames(appended)).filter((row) =>
         row.frames.some((frame) => frame.name === "meridian.inbox.changed"),

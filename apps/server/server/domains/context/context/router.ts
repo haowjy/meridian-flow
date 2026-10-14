@@ -31,6 +31,7 @@ import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type {
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
+  ContextCreateUntitledDocumentOptions,
   ContextCreateUntitledDocumentResult,
   ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
@@ -61,6 +62,8 @@ export interface ContextSourceBinding {
 
 export interface ContextPortRouterDeps {
   resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
+  /** The document a device's create id was forwarded to (a join), within this project. */
+  resolveForward?: (documentId: string) => Promise<string | null>;
   resolveLineageSource?: (ref: string) => Promise<ContextSourceBinding | null>;
   rootForThreadRef?: (ref: string) => Promise<import("../scratch-owner.js").ScratchLineage | null>;
   listLineages?: () => Promise<import("../scratch-owner.js").ScratchLineage[]>;
@@ -251,6 +254,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
    */
   async function locateDocument(
     documentId: string,
+    locateOptions?: { includeDeleted?: boolean },
   ): Promise<Result<{ location: SourceLocation; path: string } | null, ContextError>> {
     const locations: SourceLocation[] = [];
     const locationKeys = new Set<string>();
@@ -290,7 +294,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     for (const location of locations) {
       const locationUri = uriFor(location.scheme, "", location.authority);
       const found = await callAdapter(locationUri, () =>
-        location.adapter.locateDocument(documentId),
+        location.adapter.locateDocument(documentId, locateOptions),
       );
       if (!found.ok) return found;
       if (found.value) return Ok({ location, path: found.value.path });
@@ -306,6 +310,76 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     }
     return bindings;
   }
+  /** The joined document at its current address, or null when no location of this port holds it. */
+  async function joinedAnswer(
+    documentId: string,
+  ): Promise<
+    Result<Extract<ContextCreateUntitledDocumentResult, { status: "joined" }> | null, ContextError>
+  > {
+    const located = await locateDocument(documentId, { includeDeleted: true });
+    if (!located.ok) return located;
+    if (!located.value) return Ok(null);
+    const { location, path } = located.value;
+    return Ok({
+      status: "joined",
+      documentId,
+      scheme: location.scheme,
+      path,
+      name: path.split("/").at(-1) ?? "",
+      ...(location.workScopeId ? { workId: location.workScopeId } : {}),
+    });
+  }
+
+  /**
+   * Where a create lands: the destination's parent named by identity (a folder's current
+   * address, or a scheme root) under the missing-folder suffix, and the typed leaf. The
+   * caller's authority over the resolved address is rechecked here.
+   */
+  async function untitledTarget(
+    homeUri: string,
+    home: MutationDispatch,
+    options: ContextCreateUntitledDocumentOptions,
+  ): Promise<
+    Result<
+      {
+        resolved: MutationDispatch;
+        folderPath: string;
+        name?: string;
+        expectFolderId?: string;
+      },
+      ContextError
+    >
+  > {
+    const destination = options.destination;
+    if (!destination) return Ok({ resolved: home, folderPath: home.path });
+    const { parent, name } = destination;
+    const joinUri = (base: string, segments: readonly string[]) =>
+      segments.length === 0 ? base : [base.replace(/\/$/, ""), ...segments].join("/");
+    let dirUri: string;
+    if (parent.kind === "folder") {
+      const folderUri = await deps.resolveDestinationFolder?.(parent.folderId);
+      if (!folderUri) return Err({ code: "destination_missing", uri: homeUri });
+      dirUri = joinUri(folderUri, parent.createFolders ?? []);
+    } else {
+      dirUri = joinUri(homeUri, parent.createFolders ?? []);
+    }
+    if (options.authorizeDestination && !(await options.authorizeDestination(dirUri))) {
+      return Err({ code: "permission_denied", uri: dirUri });
+    }
+    const resolved = await resolveMutation(dirUri);
+    if (!resolved.ok) {
+      return Err({ code: "destination_missing", uri: homeUri });
+    }
+    return Ok({
+      resolved: resolved.value,
+      folderPath: resolved.value.path,
+      name,
+      ...(parent.kind === "folder" && !parent.createFolders?.length
+        ? { expectFolderId: parent.folderId }
+        : {}),
+    });
+  }
+
   const treeMover = new ContextTreeMover(
     deps.commandTransaction,
     deps.operationReceipts,
@@ -563,11 +637,19 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       options,
     ): Promise<Result<ContextCreateUntitledDocumentResult, ContextError>> {
       // Untitled allocation is a writer creation seam, not an AI note operation.
-      const r = await resolveMutation(homeUri);
-      if (!r.ok) return r;
-      const { adapter, path, canonical } = r.value;
-      const creation = r.value.requireCreation("intake");
-      if (!creation.ok) return creation;
+      const home = await resolveMutation(homeUri);
+      if (!home.ok) return home;
+      const homeCreation = home.value.requireCreation("intake");
+      if (!homeCreation.ok) return homeCreation;
+
+      // A create that joined answers from its forward first, under the target's authorization.
+      const forwardedTo = await deps.resolveForward?.(options.documentId);
+      if (forwardedTo) {
+        const joined = await joinedAnswer(forwardedTo);
+        if (!joined.ok || joined.value) {
+          return joined.ok ? Ok(joined.value as ContextCreateUntitledDocumentResult) : joined;
+        }
+      }
 
       const located = await locateDocument(options.documentId);
       if (!located.ok) return located;
@@ -575,7 +657,10 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         const { location, path: foundPath } = located.value;
         const locationUri = uriFor(location.scheme, "", location.authority);
         const finalized = await callAdapter(locationUri, () =>
-          location.adapter.createUntitledDocument(foundPath, options),
+          location.adapter.createUntitledDocument(foundPath, {
+            documentId: options.documentId,
+            origin: options.origin,
+          }),
         );
         if (!finalized.ok) return finalized;
         return Ok({
@@ -588,27 +673,53 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         });
       }
 
-      const entryCreation = r.value.requireCreation("entry");
-      if (!entryCreation.ok) return entryCreation;
-      const created = await callAdapter(canonical, () =>
-        adapter.createUntitledDocument(path, options),
-      );
-      if (!created.ok) return created;
-      return created.value.status === "created"
-        ? Ok({
-            status: "created",
-            documentId: created.value.documentId,
-            path: created.value.path,
-            name: created.value.name,
-          })
-        : Ok({
-            status: "already-materialized",
-            documentId: created.value.documentId,
-            scheme: r.value.scheme,
-            path: created.value.path,
-            name: created.value.name,
-            ...(r.value.workScopeId ? { workId: r.value.workScopeId } : {}),
-          });
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const target = await untitledTarget(homeUri, home.value, options);
+        if (!target.ok) return target;
+        const { resolved, folderPath, name, expectFolderId } = target.value;
+        const entryCreation = resolved.requireCreation("entry");
+        if (!entryCreation.ok) return entryCreation;
+        const created = await callAdapter(resolved.canonical, () =>
+          resolved.adapter.createUntitledDocument(folderPath, {
+            documentId: options.documentId,
+            origin: options.origin,
+            ...(name !== undefined ? { name } : {}),
+            ...(expectFolderId ? { expectFolderId } : {}),
+          }),
+        );
+        if (!created.ok) {
+          // The destination folder moved since it was named: name it again.
+          if (created.error.code === "stale_target" && expectFolderId) continue;
+          return created;
+        }
+        const address = {
+          scheme: resolved.scheme,
+          path: created.value.path,
+          name: created.value.name,
+          ...(resolved.workScopeId ? { workId: resolved.workScopeId } : {}),
+        };
+        switch (created.value.status) {
+          case "created":
+            return Ok({ status: "created", documentId: created.value.documentId, ...address });
+          case "already-exists":
+            return Ok({
+              status: "already-materialized",
+              documentId: created.value.documentId,
+              ...address,
+            });
+          case "joined": {
+            if (created.value.name) {
+              return Ok({ status: "joined", documentId: created.value.documentId, ...address });
+            }
+            const joined = await joinedAnswer(created.value.documentId);
+            if (!joined.ok) return joined;
+            return joined.value
+              ? Ok(joined.value)
+              : Ok({ status: "joined", documentId: created.value.documentId, ...address });
+          }
+        }
+      }
+      return Err({ code: "conflict", uri: homeUri });
     },
 
     async locate(documentId) {
