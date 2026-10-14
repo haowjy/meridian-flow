@@ -121,7 +121,12 @@ export function createThreadControls(deps: {
           throw new ThreadControlError(404, "control_not_found");
         let outcome: WithdrawThreadControlResponse["outcome"] = "withdrawn";
         if (await deps.findControlTurn(threadId, controlId)) outcome = "already_started";
-        else if (!row.deliveredAt) await deps.acknowledge(threadId, [controlId]);
+        else if (!row.deliveredAt) {
+          await deps.acknowledge(threadId, [controlId]);
+          // Withdrawing a pending switch is the writer's latest choice: the chat's own mode.
+          if (row.body.kind === "write_mode")
+            await deps.setWorkDefault(threadId, await deps.threadWriteMode(threadId));
+        }
         // The ack's frame is appended inline above, so the queue and mode read here are the
         // switch state after the withdrawal; `seq` is read last, at or past that frame.
         const pending = (await deps.pending(threadId)).items.find(isQueuedSwitch) ?? null;
