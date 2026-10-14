@@ -29,7 +29,9 @@ export function WriteModeNotice({
     <div
       data-write-mode-notice
       data-write-mode={mode}
-      className="flex min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
+      // Tall as a Stop button's line, so the pending notice, the applied bridge and the
+      // switch turn that replaces them are one height: nothing below moves.
+      className="flex min-h-[calc(var(--text-meta--line-height)+0.5rem+var(--chat-space-block)*2)] min-w-0 flex-wrap items-center gap-x-[var(--chat-space-block)] gap-y-[var(--chat-space-inline)] py-[var(--chat-space-block)]"
     >
       <span className="flex min-w-0 items-center gap-[var(--chat-space-block)]">
         <Icon aria-hidden className="size-3.5 shrink-0 text-ink-subtle" />

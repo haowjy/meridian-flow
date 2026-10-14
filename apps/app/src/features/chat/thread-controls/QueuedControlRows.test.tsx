@@ -68,3 +68,9 @@ it("shows an applied switch awaiting its turn with no Stop", async () => {
   expect(host.textContent).toContain("Switched to draft mode");
   expect(host.querySelector("button")).toBeNull();
 });
+
+it("shows Stop from the first frame, disabled while the switch's post is unanswered", async () => {
+  const host = await render([{ ...draftSwitch, status: "sending", awaitingServer: true }], false);
+  const stop = host.querySelector<HTMLButtonElement>("[aria-label='Stop switch to draft mode']");
+  expect(stop?.disabled).toBe(true);
+});
