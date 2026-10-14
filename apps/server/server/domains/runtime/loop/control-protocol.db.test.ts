@@ -14,7 +14,6 @@ import {
 import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
 import { readRunStateAtHead } from "../adapters/drizzle-run-state.js";
-import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import {
