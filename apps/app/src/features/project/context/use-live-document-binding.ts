@@ -52,7 +52,12 @@ export function useLiveDocumentBinding({
           documentId,
           signal: abort.signal,
         });
-        if (opened.kind !== "opened") throw new Error("Document is not available");
+        if (opened.kind !== "opened")
+          throw new Error(
+            opened.kind === "unavailable"
+              ? `Document is not available (${opened.reason})`
+              : "Document is not available",
+          );
         const candidate = await opened.admission.bind(bindingOwner);
         if (abort.signal.aborted) {
           candidate.release();
@@ -65,8 +70,10 @@ export function useLiveDocumentBinding({
           generation: candidate.generation,
           session: candidate.session,
         });
-      } catch {
-        if (!abort.signal.aborted) setState({ kind: "failed", documentId });
+      } catch (error) {
+        if (abort.signal.aborted) return;
+        reportError(error);
+        setState({ kind: "failed", documentId });
       }
     })();
     return () => {
