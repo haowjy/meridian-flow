@@ -113,12 +113,13 @@ describe("planned link binding", () => {
       targets: new Map([[0, PLANNED]]),
       planned: new Set([PLANNED]),
     });
-    expect(result.holder).toEqual({ kind: "document", documentId: NEW_HOLDER });
-    const refs = walkLinkOccurrences(result.blocks).map(({ attrs }) => attrs.ref);
+    expect(result.content.holder).toEqual({ kind: "document", documentId: NEW_HOLDER });
+    const refs = walkLinkOccurrences(result.content.blocks).map(({ attrs }) => attrs.ref);
     expect(refs[0]).toBe(`doc:${PLANNED}`);
     expect(refs[1]).toBe(`doc:${A}`);
     expect(refs[2]).toMatch(/^ahead:/);
-    expect(subject.registered).toEqual([refs[2]]);
+    expect(subject.registered).toEqual([]);
+    expect(result.aheadMints.map((mint) => mint.ref)).toEqual([refs[2]]);
   });
 
   it("adjacent occurrences sharing a written href keep their own identities", async () => {

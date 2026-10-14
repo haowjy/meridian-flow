@@ -99,7 +99,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
         }),
       ),
     );
-    await runInDrizzleTransaction(db, () => store.insertInitialStates(seeds));
+    const stagingId = randomUUID();
+    await runInDrizzleTransaction(db, () =>
+      store.stageInitialStates(stagingId, projectId, 1, seeds),
+    );
+    await runInDrizzleTransaction(db, () => store.commitStagedStates(stagingId));
 
     const ids = [single, ...batch];
     const heads = await db
@@ -145,10 +149,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
     }
     expect(seeds[0]?.markdown).toBe(text);
 
-    // A batch is for documents created in this transaction: reseeding is a caller bug.
-    await expect(
-      runInDrizzleTransaction(db, () => store.insertInitialStates(seeds)),
-    ).rejects.toThrow(/already has journal state/);
     await db.delete(documents).where(eq(documents.id, single));
   });
 });

@@ -64,11 +64,14 @@ export function createInMemoryInitialDocumentSeeds(journal: InMemoryJournal): In
       await journal.seedInitialDocument(documentId, state);
       return true;
     },
-    async insertInitialStates(initial) {
-      for (const { documentId, state } of initial) {
-        if (!(await seeds.seedInitialDocument(documentId, state)))
-          throw new Error(`Document ${documentId} already has journal state`);
-      }
+    async stageInitialStates() {
+      throw new Error("Staged creation requires Postgres");
+    },
+    async commitStagedStates() {
+      throw new Error("Staged creation requires Postgres");
+    },
+    async discardStagedStates() {
+      throw new Error("Staged creation requires Postgres");
     },
   };
   return seeds;
@@ -188,8 +191,11 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       prepareSeed: runtime.markdownDocuments.prepareSeed,
-      announceSeeds: runtime.markdownDocuments.announceSeeds,
-      insertInitialStates: initialDocumentSeeds.insertInitialStates,
+      stageInitialStates: initialDocumentSeeds.stageInitialStates,
+      async commitStagedStates(id) {
+        await initialDocumentSeeds.commitStagedStates(id);
+      },
+      discardStagedStates: initialDocumentSeeds.discardStagedStates,
       writeDocument: runtime.markdownDocuments.writeDocument,
       fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
       prependBlocks: runtime.markdownDocuments.prependBlocks,

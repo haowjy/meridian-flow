@@ -597,3 +597,15 @@ existing per-result failure path. Whole Discard does not roll the reply back: it
 peer retirement drops only that thread's staged writes on the discarded draft's
 peer, and the reply's other documents still commit.
 No settlement deferral or second retirement state machine exists.
+
+## Private initial states
+
+Import prepares seeds before any write transaction, including the encoded state,
+state vector, canonical Markdown and sequence-zero attribution manifest.
+Planned Markdown returns its ordinary ahead mints without registering them.
+Context stages these alongside its private nodes, tagged with a placement
+generation; no live reader queries staging. The reveal inserts new authority
+heads, checkpoints joined to those heads, and their checkpoint/vector pointers
+set-wise, then deletes the stage. Existing heads fail rather than being adopted.
+The composition runs seed derivation after commit, eight at a time, without
+opening or recovering rooms. Singleton seeds retain their existing lifecycle.

@@ -140,7 +140,9 @@ export interface ImportLinkBinder {
    * resolution, live or not: a ref is authority, and resolves the moment that
    * document's row exists. Any other target resolves as `bindMarkdown` does.
    */
-  bindPlannedMarkdown(input: PlannedMarkdownInput): Promise<BoundWrite>;
+  bindPlannedMarkdown(
+    input: PlannedMarkdownInput,
+  ): Promise<{ content: BoundWrite; aheadMints: AheadMint[] }>;
 }
 export type PlannedMarkdownInput = Pick<ImportBindInput, "markdown" | "targets" | "hrefs"> & {
   holder: { documentId: DocumentId; uri: string; projectId: string; filetype: string | null };
@@ -165,7 +167,8 @@ export type ImportBindInput = Omit<BindMarkdownInput, "against"> & {
   planned?: ReadonlySet<DocumentId>;
 };
 /** What the shared binder takes: `plannedHolderId` is the id a not yet existing holder will have. */
-type BindInput = BindMarkdownInput & ImportBindInput & { plannedHolderId?: DocumentId };
+type BindInput = BindMarkdownInput &
+  ImportBindInput & { plannedHolderId?: DocumentId; aheadMints?: AheadMint[] };
 
 export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
   return binderFor(deps);
@@ -179,9 +182,16 @@ export function createImportLinkBinder(deps: ImportLinkBinderDeps): ImportLinkBi
   const binder = binderFor(deps, true);
   return {
     ...binder,
-    bindPlannedMarkdown({ holder, ...rest }) {
+    async bindPlannedMarkdown({ holder, ...rest }) {
       const { documentId, ...address } = holder;
-      return binder.bindMarkdown({ ...rest, holder: address, plannedHolderId: documentId });
+      const aheadMints: AheadMint[] = [];
+      const content = await binder.bindMarkdown({
+        ...rest,
+        holder: address,
+        plannedHolderId: documentId,
+        aheadMints,
+      });
+      return { content, aheadMints };
     },
     bindPlannedCode(documentId, filetype, text) {
       const classification = classifyFiletype(filetype);
@@ -348,7 +358,8 @@ function binderFor(
     const keptRefs = new Set(walkLinkOccurrences(nodes).map(({ attrs }) => attrs.ref));
     const minted = assigned.minted.filter(({ ref }) => keptRefs.has(ref));
     const awaiting = pendingMints.filter(({ ref }) => keptRefs.has(ref));
-    if (minted.length + awaiting.length > 0)
+    if (input.aheadMints) input.aheadMints.push(...minted);
+    else if (minted.length + awaiting.length > 0)
       await deps.registrar.register([
         ...aheadRegistrations(minted),
         ...awaiting.map(({ awaitedDocumentId, ...mint }) => ({

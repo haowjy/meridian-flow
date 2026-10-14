@@ -558,8 +558,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       prepareSeed: runtime.markdownDocuments.prepareSeed,
-      announceSeeds: runtime.markdownDocuments.announceSeeds,
-      insertInitialStates: persistence.lifecycle.insertInitialStates,
+      stageInitialStates: persistence.lifecycle.stageInitialStates,
+      async commitStagedStates(stagingId) {
+        const seeds = await persistence.lifecycle.commitStagedStates(stagingId);
+        deferUntilDrizzleCommit(() => runtime.markdownDocuments.announceSeeds(seeds));
+      },
+      discardStagedStates: persistence.lifecycle.discardStagedStates,
       writeDocument: runtime.markdownDocuments.writeDocument,
       fillEmptyDocument: runtime.markdownDocuments.fillEmptyDocument,
       prependBlocks: runtime.markdownDocuments.prependBlocks,
