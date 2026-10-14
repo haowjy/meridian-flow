@@ -1,6 +1,5 @@
 /** Row-anchored folder placement using the same project tree as document paths. */
 import { t } from "@lingui/core/macro";
-import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ResourceDestination } from "@meridian/resource-replica";
 import { FolderInput } from "lucide-react";
@@ -10,10 +9,15 @@ import type { TabOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
 import { useAccountResourceReplica } from "./account-feature-context";
-import { moveEntryName, validateContextEntryName } from "./context-entry-name";
+import { moveEntryName } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
-import { destinationOwner } from "./identity-location";
-import { isFolderWithin } from "./menu-tree";
+import {
+  type MoveDestination,
+  type MoveSubject,
+  moveRefusal,
+  placeEntry,
+  resourceDestination,
+} from "./move-entry";
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-catalog-menu-source";
 
@@ -85,59 +89,31 @@ function OpenMovePicker({
     : null;
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
-  const isForbidden = (folder: NonNullable<ReturnType<typeof source.folderFor>>) =>
-    entry.kind === "folder" &&
-    folder.catalog === source.own.catalog &&
-    isFolderWithin(folder.path, entry.path);
+  const subject: MoveSubject = {
+    ...entry,
+    catalog: source.own.catalog,
+    parentId: (currentParentId && source.folderFor(currentParentId)?.entryId) ?? null,
+  };
+  const isForbidden = (destination: MoveDestination) =>
+    moveRefusal(subject, destination, name)?.kind === "inside-itself";
 
   async function move(trail: readonly DrillNode[]) {
     const folder = trail.at(-1);
     const destination = folder && source.folderFor(folder.id);
-    if (!destination || isForbidden(destination) || folder.id === currentParentId || pending)
-      return;
-    const collision = validateContextEntryName(
-      name,
-      destination.catalog.children(destination.entryId),
-      entry.kind,
-      entry.name,
-    );
-    if (collision?.level === "error") {
-      setError(collision.message);
+    if (!destination || pending) return;
+    const refusal = moveRefusal(subject, destination, name);
+    if (refusal?.kind === "name-taken") {
+      setError(refusal.message);
       return;
     }
+    if (refusal) return;
     setPending(true);
     setError(null);
     try {
-      const parsed = parseContextUri(destination.catalog.root.uri);
-      const targetOwner: TabOwner =
-        destination.owner.rootThreadId && parsed.ok && parsed.value.authority.kind === "lineage"
-          ? {
-              rootThreadId: destination.owner.rootThreadId,
-              rootThreadRef: parsed.value.authority.rootThreadRef,
-            }
-          : { workId: destination.owner.workId ?? undefined };
-      const authority = destinationOwner(
-        { scheme: destination.scheme, ...targetOwner },
-        works,
-        noWork,
-      );
-      if (!authority) throw new Error(unavailable);
-      const location: ResourceDestination = {
-        parent:
-          destination.entryId === destination.catalog.root.entryId
-            ? { kind: "root", scheme: destination.scheme, owner: authority }
-            : { kind: "folder", folderId: destination.entryId },
-        name,
-      };
-      const result =
-        entry.kind === "folder"
-          ? await resources.setFolderLocation(projectId, entry.id, location)
-          : await (async () => {
-              const key = await resources.keyForDocument(projectId, entry.id);
-              if (!key) throw new Error(unavailable);
-              return resources.setLocation(projectId, key, location);
-            })();
-      if (result.operationId) onMoved(result.operationId);
+      const location = resourceDestination(destination, name, works, noWork);
+      if (!location) throw new Error(unavailable);
+      const operationId = await placeEntry(resources, projectId, entry, location);
+      if (operationId) onMoved(operationId);
       onOpenChange(false);
     } catch {
       setError(unavailable);
