@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { ThreadStoreProvider, useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
@@ -19,6 +19,13 @@ import {
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
+
+// bindChatSubmissions starts an unawaited deleted-chat sweep behind a dynamic import; let it
+// settle inside its own test so it never rejects into the next one.
+afterEach(async () => {
+  await vi.dynamicImportSettled();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
 
 it("holds only the lineage catalog read while its chat is pending creation", async () => {
   window.localStorage.clear();
