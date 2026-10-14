@@ -85,19 +85,6 @@ export function createDrizzleRuntimeDelivery(
       if (rows.length > 0) markRunStateChanged(threadId);
       return rows.length > 0;
     },
-    async cancelThreadReceipt(threadId, turnId) {
-      const rows = await db_()
-        .update(schema.threadRunLeases)
-        .set({ cancelRequested: true })
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, threadId),
-            eq(schema.threadRunLeases.turnId, turnId),
-          ),
-        )
-        .returning({ turnId: schema.threadRunLeases.turnId });
-      return rows.length > 0;
-    },
     async lockThreadReceipt(threadId) {
       const [row] = await db_()
         .select({

@@ -29,37 +29,29 @@ transcript ancestry or stream order.
   `RUN_STARTED.rawEvent` repeats `{ writeMode, executionId,
   reservedForUserTurnIds, position }`. The reserved-for list is a hint, never
   proof; `position` (`Turn.position`) orders an execution's turns.
-- **Delivery.** Every acknowledgement goes through the adapter's one `ack`:
-  message rows it actually transitions record `delivered_by_turn_id` with
-  `delivered_at` and journal one `messages.delivered { byTurnId,
-  byTurnPosition, executionId, userTurnIds }`. Deliverers: response persistence (`ackWithResponse`, the
-  current assistant), a failed or cancelled assistant's close, a terminal
-  placeholder, a failed successor, assistant orphan repair. A child run's
-  pre-reservation abort delivers with no turn. Controls and notices record
-  none. A yield, a cancelled compaction and a compaction's orphan repair do not
-  acknowledge, so a later execution takes the messages on. Delivery is the only
-  "my message is done" fact; the snapshot joins it onto user turns
-  (`Turn.delivery`).
-- **End.** `endExecution` replaces every in-transaction release: it deletes the
-  row and journals `execution.ended` only when some turn carries the
-  execution, so an execution that reserved nothing is never observable. Every
-  live landing of an execution's last terminal turn ends it in that commit: a
-  close, a terminal placeholder or yield, and a compaction successor whose
-  preparation failed (`commitAdoption` returns it `terminal`, so the run exits
-  without a second landing). The
-  run owner's cleanup calls `releaseExecution`: unlock only when the row is
-  gone, end when every reserved turn is terminal, otherwise **abandon**
-  (expire the row now, unlock, journal nothing). Ending, abandoning and stale
-  settlement live in `adapters/execution-settlement.ts`; delivery keeps selection,
-  preparation, switches, reservation, hand-back and Stop. `settleStaleExecution` runs
-  under a newly acquired claim before anything else (inside `startExecution`
-  before the new row is inserted, and in `materializeIdle`
-  and the repair lane, which also scans expired lease rows): repairs commit
-  first, then the end append and the row delete are one transaction. The end
-  is decided from turns carrying the id, never from the row's receipt arrays,
-  which repair clears. The snapshot reads `liveState.openExecutionId` inside its
-  own transaction, regardless of expiry: an execution on a snapshot turn that
-  is not open has ended. The WS `subscribed` state does not carry it.
+- **Delivery.** Every acknowledgement goes through the adapter's one `ack`: message rows it actually
+  transitions record `delivered_by_turn_id` with `delivered_at`, and the inbox write marks the chat so
+  its transaction publishes the run-state record. Deliverers: response persistence (`ackWithResponse`,
+  the current assistant), a failed or cancelled assistant's close, a terminal placeholder, a failed
+  successor, assistant orphan repair. A child run's pre-reservation abort delivers with no turn.
+  Controls and notices record none. A yield, a cancelled compaction and a compaction's orphan repair do
+  not acknowledge, so a later execution takes the messages on. Delivery is the only "my message is
+  done" fact; the snapshot joins it onto user turns (`Turn.delivery`).
+- **End.** One operation ends an execution: `RunClaim.release` deletes the lease row and, in that same
+  transaction, marks the chat so the closed `RunState` record (`execution: null`) is published with
+  the turn write that ended it. No separate end event exists; clients read the end as the record whose
+  `execution` is null. Every live landing of an execution's last terminal turn ends it in that commit:
+  a close, a terminal placeholder or yield, and a compaction successor whose preparation failed
+  (`commitAdoption` returns it `terminal`, so the run exits without a second landing). The run owner's
+  cleanup calls `releaseExecution`: unlock only when the row is gone, end when every reserved turn is
+  terminal, otherwise **abandon** (expire the row now, unlock, publish nothing). Ending, abandoning
+  and stale settlement live in `adapters/execution-settlement.ts`; delivery keeps selection,
+  preparation, switches, reservation, hand-back and Stop. `settleStaleExecution` runs under a newly
+  acquired claim before anything else (inside `startExecution` before the new row is inserted, and in
+  `materializeIdle` and the repair lane, which also scans expired lease rows): repairs commit first,
+  then the lease deletion and its record publication are one transaction. Whether an execution is
+  open is `runState.execution`, a function of rows (the lease row counts whatever its expiry, and a
+  turn must carry its execution id); the snapshot and the WS `subscribed` state both carry the record.
 
 ## Run state: the record and its publication
 
@@ -72,7 +64,7 @@ turn must carry its execution id for the execution to show.
 - **Publication.** A transaction participant appends one `run_state.changed` journal row for every chat
   marked changed, before the transaction commits, so a chat's last record follows its last input write.
   Every adapter method that writes an input (inbox rows, the lease row, `threads.inbox_blocked_reason`,
-  and `applyDueSwitch`'s mode through `DeliveryStore.markRunStateChanged`) marks the chat, under the
+  and a due switch's mode (applied inside the run's reservation transaction) through `DeliveryStore.markRunStateChanged`) marks the chat, under the
   chat's thread lock. A mark without the lock, or after the flush, throws. Savepoints fork the
   participant's state and merge it back on release, so a rolled-back lock or mark disappears with it.
   Work-context notices are not in the record and mark nothing. Releasing a lease row no turn carries
@@ -86,8 +78,6 @@ turn must carry its execution id for the execution to show.
   `runStateVersion` (the stream version of the record its own transaction published), stored in
   `user_turn_admissions.run_state_version` so a replay answers the same value. Rows from before the
   column answer `null`.
-- **Transitional.** `inbox.changed` and the old answer fields still ship beside the record until the
-  app moves onto it. A hand-back also appends `inbox.changed`.
 
 ## Stop and hand-back
 

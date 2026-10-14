@@ -106,5 +106,34 @@ describe("run identity", () => {
     expect(start).toMatchObject({
       rawEvent: { writeMode: null, executionId: null, reservedForUserTurnIds: [], position: null },
     });
+    // Risk: a stateful projector reusing the first segment's identity. A split reply's second
+    // segment names its own run, execution, reservation and position.
+    const second = {
+      id: "b",
+      position: 4,
+      threadId: "thread-1",
+      role: "assistant",
+      blocks: [],
+      writeMode: "direct",
+      executionId: "e1",
+      reservedForUserTurnIds: ["m2"],
+    } as never;
+    projector.project({
+      type: "turn.completed",
+      turn: { id: "old", threadId: "thread-1", role: "assistant", blocks: [] } as never,
+    });
+    expect(projector.project({ type: "turn.created", turn: second })).toEqual([
+      {
+        type: EventType.RUN_STARTED,
+        threadId: "thread-1",
+        runId: "b",
+        rawEvent: {
+          writeMode: "direct",
+          executionId: "e1",
+          reservedForUserTurnIds: ["m2"],
+          position: 4,
+        },
+      },
+    ]);
   });
 });

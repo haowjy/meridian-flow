@@ -554,7 +554,7 @@ export function createDeliveryAdapter(
           }),
           { afterEvents: () => recordShown(currentTurn.id) },
         );
-        await ack(threadId, drain.ackIds, deliveredBy(lease, currentTurn));
+        await ack(threadId, drain.ackIds, deliveredBy(currentTurn));
         drain.ackIds = [];
         await endExecution(lease);
         next = completed;
@@ -641,7 +641,7 @@ export function createDeliveryAdapter(
         },
       });
       next = completion.turn;
-      await ack(threadId, drain.ackIds, deliveredBy(lease, next));
+      await ack(threadId, drain.ackIds, deliveredBy(next));
       // The failed successor is the execution's last turn: it ends in this
       // commit, and the run exits on the terminal disposition, not a throw.
       await endExecution(lease);
