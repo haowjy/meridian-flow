@@ -32,8 +32,10 @@ contract the project shell relies on.
 Chat: `{ projectId, screen, screenWorkId, tab, review }`. `useDockDocument(screen, projectId)` returns
 it only for its own screen and project.
 While it is set, `DockShell` covers the occupant (mounted, inert) with
-`DockDocumentView` and `DockHeader` shows a Close document button then the
-the navigable document path and chips (`DockDocumentIdentity`) on the left, with one document-actions menu (Open in Editor, Close document, Collapse dock) on the right. This reserves room for review even at the 280px minimum dock width. The body omits the identity bar; painted review controls share the header identity row. Opening a second one
+`DockDocumentView` and `DockHeader` shows the document's identity row (see the
+[dock instructions](../AGENTS.md)). A failed Open in Editor shows "This view couldn't open." in a line under the
+header, which the button is described by. The body omits the identity bar; painted review controls share the
+header identity row. Opening a second one
 replaces the first. `clearDocumentOn` on its screen clears it, so revealing
 the chat returns to the chat. Closing returns to the panel's own view underneath: Recent on Chat.
 `ProjectView` calls `syncOccupantScope(projectId, screen, workId)`: an occupant is dropped

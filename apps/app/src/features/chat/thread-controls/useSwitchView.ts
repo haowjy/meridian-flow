@@ -9,7 +9,7 @@
  * for a switch; a failure stays with the journal owner's keyed announcement), and marks the
  * Works and project thread lists stale when a switch applies.
  *
- * The bridge row, an applied switch whose divider has not rendered yet, is derived here from the
+ * The bridge row, an applied switch whose switch turn has not rendered yet, is derived here from the
  * slice's applied facts and the dividers the transcript shows: it leaves with its divider, and
  * once the divider has shown the slice retires the bridge for good. What
  * has been spoken is the slice's too, so a remount repeats no announcement.
@@ -31,12 +31,7 @@ import { invalidateProjectThreadData } from "@/client/query/project-invalidation
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { switchDisplay } from "@/client/run-state/run-state-slice";
 import { announce, announceError, useRunStateSlice, useThreadActions } from "@/client/stores";
-import {
-  controlAlreadyStartedCopy,
-  controlStatusCopy,
-  controlWithdrawnCopy,
-  writeModeSwitchedCopy,
-} from "./control-copy";
+import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import type { QueuedControl } from "./thread-controls";
 
 /** What the chat's submission journal offers the view: its switches, stamped once answered. */
@@ -88,15 +83,17 @@ export function useSwitchView(input: {
   writeMode: AiWriteMode;
   turns: readonly Turn[];
   journal: SwitchJournal;
+  /** A reply or compaction holds the chat: a pending switch waits for it, and says so. */
+  replyRunning: boolean;
 }): SwitchView {
-  const { threadId, projectId, turns, journal } = input;
+  const { threadId, projectId, turns, journal, replyRunning } = input;
   const queryClient = useQueryClient();
   const actions = useThreadActions();
   const { dispatchRunState: dispatch } = actions;
   const { view, news, applied, spoken, retired } = useRunStateSlice(threadId);
   useSingleHostWarning(threadId);
-  const latest = useRef({ journal, projectId });
-  latest.current = { journal, projectId };
+  const latest = useRef({ journal, projectId, replyRunning });
+  latest.current = { journal, projectId, replyRunning };
 
   useLayoutEffect(
     () => dispatch(threadId, { type: "journal", switches: journal.pending }),
@@ -109,11 +106,11 @@ export function useSwitchView(input: {
     const queued = news.filter((entry) => entry.n > spoken.queued);
     const appliedNow = applied.filter((entry) => entry.n > spoken.applied);
     if (queued.length === 0 && appliedNow.length === 0) return;
-    for (const entry of queued) announce(controlStatusCopy(entry.control, "queued"));
-    for (const entry of appliedNow) {
-      announce(writeModeSwitchedCopy(entry.mode));
+    for (const entry of queued)
+      announce(controlStatusCopy(entry.control, "queued", latest.current.replyRunning));
+    // An applied switch is silent: it was spoken when it became pending.
+    if (appliedNow.length > 0)
       void invalidateProjectThreadData(queryClient, latest.current.projectId);
-    }
     dispatch(threadId, {
       type: "spoken",
       queued: news.at(-1)?.n ?? 0,
@@ -143,7 +140,7 @@ export function useSwitchView(input: {
           const answer = await withdrawThreadControl(threadId, id);
           const { outcome } = answer;
           dispatch(threadId, { type: "withdrawn", id, runState: answer.runState });
-          if (outcome === "withdrawn") announce(controlWithdrawnCopy(row.control));
+          if (outcome === "withdrawn") announce(controlStoppedCopy(row.control));
           // The divider shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
           revalidate();
@@ -152,7 +149,7 @@ export function useSwitchView(input: {
           if (httpErrorStatus(error) === 404)
             return dispatch(threadId, { type: "dropWithdraw", id });
           dispatch(threadId, { type: "withdraw", id, failed: true });
-          announceError(t`Couldn't withdraw. Try again.`);
+          announceError(t`Couldn't stop. Try again.`);
         }
       };
       // A switch the journal holds that the server can't have (never posted, or refused):
@@ -161,7 +158,7 @@ export function useSwitchView(input: {
       void latest.current.journal.withdraw(id).then((result) => {
         if (result === "admitted") return onServer();
         dispatch(threadId, { type: "dropWithdraw", id });
-        if (result === "removed") announce(controlWithdrawnCopy(row.control));
+        if (result === "removed") announce(controlStoppedCopy(row.control));
       });
     },
     [dispatch, revalidate, threadId],
@@ -199,7 +196,7 @@ export function useSwitchView(input: {
       .map((entry) => ({
         id: entry.controlId,
         control: { kind: "write_mode" as const, mode: entry.mode },
-        status: "queued" as const,
+        status: "applied" as const,
       }));
     return [...own, ...bridge];
   }, [folded.rows, applied, dividerIds, retired]);

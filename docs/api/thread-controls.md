@@ -1,8 +1,11 @@
 # Thread control API
 
 Both routes authenticate the writer and require ownership of the thread.
-Controls are durable inbox commands, not chat text. The supported kind is `compact`; handoff Stop and Retry act on handoff seed turns
-through the [handoff API](thread-handoff.md), not through controls.
+Controls are durable inbox commands, not chat text. The kinds are `compact` and
+`write_mode` (the chat's write-mode switch). Handoff Stop and Retry act on
+handoff seed turns through the [handoff API](thread-handoff.md), not through
+controls. Scheduling (when a control runs, applies or yields) is owned by the
+[runtime controls context](../../apps/server/server/domains/runtime/.context/controls.md).
 
 ## Enqueue
 
@@ -10,24 +13,37 @@ through the [handoff API](thread-handoff.md), not through controls.
 
 ```json
 { "id": "client-minted-uuid", "control": { "kind": "compact", "instructions": "Preserve the villain’s promises." } }
+{ "id": "client-minted-uuid", "control": { "kind": "write_mode", "mode": "draft" } }
 ```
 
 Returns 201 for a new row or 200 for an existing id:
 
 ```ts
-{ id: string; pending: PendingInboxItem | null; turnId: string | null }
+{
+  id: string;
+  queued: boolean;              // this control is still pending
+  pending: PendingInboxItem | null; // the chat's queued switch, not necessarily this request's row
+  turnId: string | null;
+  seq: string;                  // journal head at the read
+  mode: "draft" | "direct";     // the chat's applied write mode
+}
 ```
 
-Instructions are trimmed, limited like writer-message text, and an empty value is omitted. A queued row carries its full control body in `pending.control`. Once executed, its
-turn carries `metadata.controlMessageId`. Completed controls return their turn
-id. A withdrawn row returns both `pending` and `turnId` null. Its key stays
-retired: retrying enqueue never schedules a withdrawn or completed control.
+`queued`, `pending`, `mode` and `seq` are read in one transaction under the
+thread lock after the write, `seq` last
+([switch clock](../../packages/contracts/src/threads/README.md#switch-clock)).
 
-Commands wait until the message queue is empty. At a reply boundary, every
-pending non-command row is adopted, including rows after a command. At run
-start, every non-command row runs when any message is waiting; otherwise the
-oldest command runs alone. Stop only ends the current turn, so release applies
-the same message-first rule. A command is acknowledged by the commit that starts it.
+Compact instructions are trimmed, limited like writer-message text, and an
+empty value is omitted. A queued row carries its full control body in
+`pending.control`. Once executed, its turn carries `metadata.controlMessageId`
+and the answer returns that turn id.
+
+A write-mode switch stays `queued` with `turnId` null until a run is admitted,
+in an idle chat as in a running one; it applies at that run's start (see the
+runtime context). A switch back, or a Withdraw, cancels it: `queued` false and
+`turnId` null. A replay after application returns the switch turn's id. A
+withdrawn row keeps its key retired: retrying enqueue never schedules a
+withdrawn or completed control.
 
 `/compact` requires at least one completed assistant reply in the effective
 transcript, including inherited fork history; otherwise enqueue returns 409
@@ -37,18 +53,18 @@ consecutive commands and short histories.
 
 Invalid bodies return 400 (`invalid_control`). An id belonging to an ordinary
 message, another control kind, or a row in another thread returns 409
-(`control_id_conflict`).
+(`control_id_conflict`); so does replaying an id with a different body.
 
 ## Withdraw
 
 `POST /api/threads/:threadId/controls/:controlId/withdraw`, no body.
 
 ```ts
-{ outcome: "withdrawn" | "already_started", pending: PendingInboxItem | null, mode: "draft" | "direct", seq: string }
+{ outcome: "withdrawn" | "already_started", queued: boolean, pending: PendingInboxItem | null, mode: "draft" | "direct", seq: string }
 ```
 
-`pending`, `mode` and `seq` are the chat's queued write-mode switch, applied mode and journal head, read under the
-thread lock after the acknowledgment (`seq` last), like the enqueue answer's.
+`queued` is false after either outcome. `pending`, `mode` and `seq` mean what
+they do in the enqueue answer, read after the acknowledgment.
 
 Withdrawal acknowledges a command that has not started. If its C already records the command id, withdrawal returns `already_started` and does not stop
 the run. Replaying withdrawal of a withdrawn row still returns `withdrawn`.

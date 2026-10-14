@@ -296,6 +296,7 @@ export function ChatView({
       snapshotWriteMode ?? activeThread?.aiWriteMode ?? activeWork?.defaultAiWriteMode ?? "direct",
     turns,
     journal: submissions.switches,
+    replyRunning: running,
   });
   const controls = useThreadControls({
     threadId,
@@ -304,9 +305,6 @@ export function ChatView({
     switches,
   });
   useControlTurnAnnouncements(turns);
-  // The snapshot revalidates as a compaction reserves and settles, so its live
-  // state is fresher here than the subscription seed.
-  const liveStatus = snapshotLiveState?.status ?? activity.status;
   const { enqueue: enqueueControl } = controls;
   // `/compact` is always the command. A chat with nothing to summarize yet is
   // refused by the server, and that refusal shows on the command's own row.
@@ -534,7 +532,7 @@ export function ChatView({
                     chatStop={chatStop}
                     brief={brief}
                     replyRetry={replyRetry}
-                    busy={liveStatus.kind === "awake" || running}
+                    busy={running}
                     inherited={inheritedView}
                     onRetryInherited={inherited.failed ? inherited.retry : null}
                     threadUsage={snapshotThreadUsage}

@@ -222,7 +222,7 @@ else
       return carried > 0 && rows.length === 0;
     }
 
-    it("row 3: a message waiting after a yield and an applied switch is handed back, and no reply starts", async () => {
+    it("row 3: a message waiting after a yield and a pending switch is handed back, and no reply starts", async () => {
       const toolUse = {
         content: [
           {
@@ -259,8 +259,7 @@ else
         await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "first reply" })
       ).execute();
       await processDetachedWork.drain();
-      // E1 ended at the yield; the wake has not run. The switch applies, then the press arrives.
-      expect(await rig.delivery.applyDueSwitches(rig.threadId as never)).toBe(true);
+      // E1 ended at the yield; the wake has not run. The switch waits for a run, then the press arrives.
       expect((await rowOf(rig, m2)).deliveredAt).toBeNull();
 
       const response = await press(rig, { seenThrough: await seqOf(rig, m2) });
@@ -268,10 +267,14 @@ else
       expect(text(response)).toEqual(["M2 behind the switch"]);
       expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
       const turns = await rig.repos.turns.listByThread(rig.threadId);
+      // No run started, so the switch is still pending and the mode unchanged.
       expect(
         turns.some((turn) => (turn.metadata as { kind?: string })?.kind === "write_mode_switch"),
-      ).toBe(true);
-      expect(response.runState.mode).toBe("draft");
+      ).toBe(false);
+      expect(response.runState.mode).not.toBe("draft");
+      expect(response.runState.items.map((item) => item.control)).toEqual([
+        { kind: "write_mode", mode: "draft" },
+      ]);
       // No reply B: the wake finds nothing.
       await rig.orchestrator.startDrain(rig.threadId as never);
       await processDetachedWork.drain();
@@ -984,7 +987,6 @@ else
       await handBack(rig, crypto.randomUUID(), ids([run.userTurnId]));
       // The next run builds its context over the pin and answers M2 without it.
       rig.setThreshold(100000);
-      expect(await rig.delivery.applyDueSwitches(rig.threadId as never)).toBe(true);
       const next = await startDrain(rig);
       expect(await next.done).toMatchObject({ status: "complete" });
       await processDetachedWork.drain();

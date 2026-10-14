@@ -91,43 +91,6 @@ describe("run identity", () => {
     expect(projectOrchestratorEvents(SIMPLE_TEXT_TURN_ORCHESTRATOR)).toEqual(SIMPLE_TEXT_TURN_AGUI);
   });
 
-  it("names each split reply's execution and reservation", () => {
-    const projector = createOrchestratorEventProjector();
-    const turn = (id: string, position: number, reservedForUserTurnIds: string[]) =>
-      ({
-        id,
-        position,
-        threadId: "thread-1",
-        role: "assistant",
-        blocks: [],
-        writeMode: "direct",
-        executionId: "e1",
-        reservedForUserTurnIds,
-      }) as never;
-    projector.project({ type: "turn.created", turn: turn("a", 2, ["m1"]) });
-    const finish = projector.project({ type: "turn.completed", turn: turn("a", 2, ["m1"]) });
-    const start = projector.project({ type: "turn.created", turn: turn("b", 4, ["m2"]) });
-
-    expect(finish.find((event) => event.type === EventType.RUN_FINISHED)).toEqual({
-      type: EventType.RUN_FINISHED,
-      threadId: "thread-1",
-      runId: "a",
-    });
-    expect(start).toEqual([
-      {
-        type: EventType.RUN_STARTED,
-        threadId: "thread-1",
-        runId: "b",
-        rawEvent: {
-          writeMode: "direct",
-          executionId: "e1",
-          reservedForUserTurnIds: ["m2"],
-          position: 4,
-        },
-      },
-    ]);
-  });
-
   it("reads a reply journaled before run identity as unknown", () => {
     const projector = createOrchestratorEventProjector();
     const [start] = projector.project({

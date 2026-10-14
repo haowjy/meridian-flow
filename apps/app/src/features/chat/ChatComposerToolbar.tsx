@@ -23,6 +23,8 @@ export function ChatComposerToolbar({
 }) {
   const agent = useComposerAgentToolbarControl({ mode: "readonly", name: agentName });
   const writeModeControl = useWriteModeToolbarControl({
+    projectId,
+    workId: work.id,
     value: writeMode,
     onChoose: onWriteModeChange,
   });

@@ -217,6 +217,8 @@ describe("RunSession", () => {
       "execution.failed",
       "terminal_fallback.failed",
     ]);
+    // The release's wake is detached; with no switch step ahead of it, it races this read.
+    await f.backgroundTasks.drain();
     expect(f.runtime.getRunningTurn(f.thread.id)).toBeNull();
     // Unlocked and asleep, but the execution is still open: its turn never went terminal.
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
@@ -225,8 +227,6 @@ describe("RunSession", () => {
 
     f.deps.repos.blocks.listByThread = listBlocks;
     f.deps.repos.transaction = transaction;
-    // The release's wake is detached work; let it settle so it does not race the start below for the claim.
-    await f.backgroundTasks.drain();
     await (await f.prepare()).execute();
     expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
     expect(await f.deps.runClaim.readOpenExecutionId(f.thread.id)).toBeNull();

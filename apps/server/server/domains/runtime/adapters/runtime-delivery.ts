@@ -20,7 +20,7 @@ import { type InboxWorkSelection, next, prefixRows } from "../loop/next-inbox-wo
 import { persistAndAppendEvents, persistAndAppendTurnStartEvents } from "../loop/persistence.js";
 import type { InboxMessage, MessageDraft, RunClaim, RunStarter } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
-import { NoPendingWakeError } from "../loop/run-turn-port.js";
+import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -39,7 +39,11 @@ import {
   type StopFacts,
 } from "../loop/stop-rule.js";
 import { createThreadControls } from "../loop/thread-controls.js";
-import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
+import {
+  pastTrailingSwitches,
+  type WriteModeSwitchPort,
+  writeModeSwitchTurn,
+} from "../loop/write-mode-switch.js";
 import type { HandBackStore, StoredHandBack } from "./delivery-ports.js";
 import { createExecutionSettlement, type ExecutionSettlementDeps } from "./execution-settlement.js";
 
@@ -75,6 +79,7 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start",
+    retry?: boolean,
   ): Promise<SelectedDelivery<DeliverySelection>>;
   async function selectForPreparation(
     threadId: ThreadId,
@@ -83,12 +88,13 @@ export function createDeliveryAdapter(
   async function selectForPreparation(
     threadId: ThreadId,
     at: "run_start" | "boundary" | "prefix",
+    retry = false,
   ): Promise<SelectedDelivery<DeliverySelection | DeliveryBoundarySelection>> {
     const { pendingBatch, boundIds, eligible } = await eligiblePending(threadId);
     // Materialization puts every waiting non-command row into the graph in seq
     // order; it is not a request boundary, so a queued switch never yields it.
     const nextWork: InboxWorkSelection =
-      at === "prefix" ? prefixRows(eligible) : next(eligible, at);
+      at === "prefix" ? prefixRows(eligible) : next(eligible, at, retry);
     const control = at === "run_start" && nextWork.kind === "control" ? nextWork.control : null;
     const rows = nextWork.kind === "batch" || nextWork.kind === "control" ? nextWork.rows : [];
     const selectedIds = new Set([...rows.map((row) => row.id), ...(control ? [control.id] : [])]);
@@ -144,7 +150,8 @@ export function createDeliveryAdapter(
     TResult,
   >(input: {
     threadId: ThreadId;
-    select: () => Promise<SelectedDelivery<TSelection>>;
+    /** `lockHeld`: the thread lock is already taken (the last, locked attempt). */
+    select: (lockHeld: boolean) => Promise<SelectedDelivery<TSelection>>;
     signal?: AbortSignal;
     validate?: () => Promise<void>;
     prepare: (
@@ -165,7 +172,7 @@ export function createDeliveryAdapter(
         const lockedPreparation = attempt === PREPARATION_ATTEMPTS - 1;
         if (lockedPreparation) {
           return threadLock.withThreadLock(input.threadId, async () => {
-            const selected = await input.select();
+            const selected = await input.select(true);
             input.signal?.throwIfAborted();
             const prepared = await input.prepare(selected.selection, selected.work);
             input.signal?.throwIfAborted();
@@ -174,7 +181,7 @@ export function createDeliveryAdapter(
           });
         }
 
-        const selected = await input.select();
+        const selected = await input.select(false);
         input.signal?.throwIfAborted();
         const prepared = await input.prepare(selected.selection, selected.work);
         input.signal?.throwIfAborted();
@@ -262,27 +269,50 @@ export function createDeliveryAdapter(
       : ("delivered" as const);
   }
   /**
-   * Applies the chat's due write-mode switches while no reply holds it. Each
-   * switch is one transaction: the chat's mode, its Work's default (thread
-   * then Work), the switch turn at the active leaf, and the control's ack. No
-   * model call and no lease: a reply never sees its mode change.
+   * The admitted run-start boundary's switch rule. Under the run's claim and
+   * after the start refusals, the queued write-mode switch applies in one
+   * transaction (the chat's mode, the switch turn at the active leaf, the
+   * control's ack) when `next` says a run follows it, or a Retry runs. A
+   * switch queued while setup was in flight is found by the retry loop in
+   * `prepareAndCommit`, whose commit validates this very selection. An
+   * optimistic preparation attempt can commit the switch before its reservation;
+   * a discarded attempt leaves the switch applied.
    */
-  async function applyDueSwitches(threadId: ThreadId) {
-    const ran = await deps.runClaim.withExclusiveThread(threadId, async () => {
-      await settleStaleExecution(threadId);
-      while (await threadLock.withThreadLock(threadId, () => applyDueSwitch(threadId))) {}
-      return true;
-    });
-    return ran === true;
+  async function selectRunStart(
+    threadId: ThreadId,
+    retryOf: TurnId | undefined,
+    lockHeld: boolean,
+  ) {
+    for (;;) {
+      const apply = () => applyDueSwitch(threadId, retryOf);
+      if (lockHeld) await apply();
+      else await threadLock.withThreadLock(threadId, apply);
+      const selected = await selectForPreparation(threadId, "run_start", !!retryOf);
+      if (selected.selection.next.kind === "switch") continue;
+      await assertRetryLeaf(threadId, selected.selection.activeLeafTurnId, retryOf);
+      return selected;
+    }
   }
-  async function applyDueSwitch(threadId: ThreadId): Promise<boolean> {
-    const selected = next(await inbox.selectPending(threadId), "run_start");
+  /**
+   * Retry's compare-and-swap: only switch turns may trail the failed reply. A
+   * newer message or another Retry moved the leaf, so the Retry is refused.
+   */
+  async function assertRetryLeaf(threadId: ThreadId, leaf: TurnId | null, retryOf?: TurnId) {
+    if (!retryOf) return;
+    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
+    const past = leafTurn ? await pastTrailingSwitches(deps.repos.turns, leafTurn) : null;
+    if (past?.id !== retryOf) throw new ReplyRetryUnavailableError(threadId);
+  }
+  async function applyDueSwitch(threadId: ThreadId, retryOf?: TurnId): Promise<boolean> {
+    const selected = next(await inbox.selectPending(threadId), "run_start", !!retryOf);
     if (selected.kind !== "switch") return false;
+    const control = selected.control;
     const thread = await deps.repos.threads.findById(threadId);
     if (!thread) return false;
-    const { control } = selected;
     const mode = control.body.mode;
     const leaf = thread.activeLeafTurnId as TurnId | null;
+    // A refused Retry leaves the switch pending.
+    await assertRetryLeaf(threadId, leaf, retryOf);
     const leafTurn = leaf ? await turnGraph(deps.repos.turns).findById(leaf) : null;
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const { turn, block } = writeModeSwitchTurn({
@@ -296,7 +326,6 @@ export function createDeliveryAdapter(
     await persistAndAppendTurnStartEvents(deps, threadId, leaf, async () => {
       await deps.repos.threads.setAiWriteMode(threadId, mode);
       inbox.markRunStateChanged(threadId);
-      if (thread.workId) await deps.writeModeSwitch.setWorkDefault(thread.workId as WorkId, mode);
       return {
         result: undefined,
         events: [
@@ -780,8 +809,7 @@ export function createDeliveryAdapter(
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
       enqueue,
-      // The control route applies an idle switch itself; a reply's release
-      // wake reaches one the reply kept from it.
+      // A switch never wakes the chat: it waits for the run something else starts.
       enqueueWithoutWake: inbox.enqueue,
       async enqueueSettled(draft, cancelledIds) {
         const message = await inbox.enqueue(draft);
@@ -793,8 +821,11 @@ export function createDeliveryAdapter(
         if (!thread) throw new Error(`Thread not found: ${threadId}`);
         return thread.aiWriteMode;
       },
-      applyDueSwitches,
-      replyHolds: async (id) => (await deps.runClaim.holder(id)) !== null,
+      async setWorkDefault(threadId, mode) {
+        const thread = await deps.repos.threads.findById(threadId);
+        if (thread?.workId)
+          await deps.writeModeSwitch.setWorkDefault(thread.workId as WorkId, mode);
+      },
       findControlTurn: (id, controlId) => deps.repos.turns.findByControlId(id, controlId),
       answerRunState: inbox.answerRunState,
       acknowledge: (id, controlIds) => ack(id, controlIds),
@@ -809,7 +840,6 @@ export function createDeliveryAdapter(
       }
     },
     materializeIdle,
-    applyDueSwitches,
     async yieldsAtBoundary(threadId) {
       return next((await eligiblePending(threadId)).eligible, "boundary").kind === "yield";
     },
@@ -890,7 +920,7 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
-        select: () => selectForPreparation(lease.threadId, "run_start"),
+        select: (lockHeld) => selectRunStart(lease.threadId, options?.retryOf, lockHeld),
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)

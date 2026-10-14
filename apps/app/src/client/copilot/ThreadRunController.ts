@@ -81,7 +81,6 @@ export class ThreadRunController {
   private disposed = false;
   private activationGeneration = 0;
 
-  private leaseTail: Promise<void> = Promise.resolve();
   private recoverySessions = new Set<object>();
   private unsubscribeInterruptResponseError: (() => void) | null = null;
   private unsubscribeSocketGenerationClosed: (() => void) | null = null;
@@ -168,61 +167,41 @@ export class ThreadRunController {
     const signal = AbortSignal.any([this.accountSignal, options.signal]);
     const current = () => fence() && !signal.aborted;
     if (!current()) return outcome("abandoned");
-    const previous = this.leaseTail;
-    let release!: () => void;
-    const completed = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.leaseTail = previous.then(() => completed);
+    let result: Awaited<ReturnType<AppendUserMessageFn>>;
     try {
-      await abortable(previous, signal);
-    } catch {
-      release();
-      return outcome("abandoned");
-    }
-    if (!current()) {
-      release();
-      return outcome("abandoned");
-    }
-    try {
-      let result: Awaited<ReturnType<AppendUserMessageFn>>;
-      try {
-        result = await abortable(
-          this.appendUserMessageFn({
-            data: {
-              threadId,
-              submissionId: envelope.submissionId,
-              text: envelope.text,
-              blocks: envelope.blocks,
-              references: envelope.references,
-              activatedSkillSlugs: envelope.activatedSkillSlugs,
-            },
-            signal,
-          }),
+      result = await abortable(
+        this.appendUserMessageFn({
+          data: {
+            threadId,
+            submissionId: envelope.submissionId,
+            text: envelope.text,
+            blocks: envelope.blocks,
+            references: envelope.references,
+            activatedSkillSlugs: envelope.activatedSkillSlugs,
+          },
           signal,
-        );
-      } catch (error) {
-        if (!current()) return outcome("abandoned");
-        const availability = threadAvailability(error, this.accountId);
-        if (availability === "deleted" || availability === "project-deleted")
-          return outcome(availability);
-        if (classifyWriteFailure(error) === "rejected") {
-          return outcome("rejected");
-        }
-        return outcome("ambiguous");
-      }
-      if (!current()) return outcome("abandoned");
-      this.actions.acknowledgeUserTurn(
-        threadId,
-        options.optimisticUserTurnId,
-        result.userTurnId,
-        result.snapshotFloorNextSeq,
+        }),
+        signal,
       );
-      this.attachAcceptedRun(threadId, result);
-      return outcome("accepted");
-    } finally {
-      release();
+    } catch (error) {
+      if (!current()) return outcome("abandoned");
+      const availability = threadAvailability(error, this.accountId);
+      if (availability === "deleted" || availability === "project-deleted")
+        return outcome(availability);
+      if (classifyWriteFailure(error) === "rejected") {
+        return outcome("rejected");
+      }
+      return outcome("ambiguous");
     }
+    if (!current()) return outcome("abandoned");
+    this.actions.acknowledgeUserTurn(
+      threadId,
+      options.optimisticUserTurnId,
+      result.userTurnId,
+      result.snapshotFloorNextSeq,
+    );
+    this.attachAcceptedRun(threadId, result);
+    return outcome("accepted");
   }
 
   /** Reconcile a durable journal entry. */
