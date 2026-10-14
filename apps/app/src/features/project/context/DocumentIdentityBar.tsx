@@ -46,6 +46,8 @@ export type DocumentIdentityBarProps = {
   leading?: ReactNode;
   /** Header only: pinned to the first line's right edge, whether or not the controls wrap (the dock's Collapse). */
   trailing?: ReactNode;
+  /** Header only: a persistent line under the row (the dock's failed Open in Editor). */
+  notice?: ReactNode;
   onCloseDraftOnly?: () => void;
   onCommitted: (
     documentId: string,
@@ -63,6 +65,7 @@ export function DocumentIdentityBar({
   variant = "band",
   leading,
   trailing,
+  notice,
   onCommitted,
   onOpenExisting,
   onCloseDraftOnly,
@@ -161,7 +164,7 @@ export function DocumentIdentityBar({
           variant === "header"
             ? "min-h-10 gap-y-0.5 py-1 pl-2"
             : ["gap-y-0.5 px-4 py-[3px]", IDENTITY_BAR_BAND_CLASS],
-          trailing && "pr-12",
+          trailing && "pr-12 [@media(pointer:coarse)]:pr-14",
           // The row grows so every control can own a 44px target (document-identity-row.css).
           "[@media(pointer:coarse)]:min-h-11",
         )}
@@ -234,13 +237,15 @@ export function DocumentIdentityBar({
             />
           </div>
         </div>
-        {controls}
+        {/* Before the controls in DOM order: Tab follows the first line, then the second. */}
         {trailing ? (
           <div className="absolute top-0 right-2 flex h-10 items-center gap-0.5 [@media(pointer:coarse)]:h-11">
             {trailing}
           </div>
         ) : null}
+        {controls}
       </div>
+      {notice}
       {reviewItemKey ? (
         <DraftReviewFailureNotices
           documentId={tab.documentId}
