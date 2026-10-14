@@ -60,6 +60,7 @@ else
       scriptedGateway({ usage: lowUsage, pauseAt });
 
     /** The press a tab sends from the record it holds: the current one, unless a field is overridden. */
+    /** `remote` presses through the delivery port: the holder gets no local abort, as on another server. */
     async function press(
       rig: Rig,
       override: Partial<{
@@ -68,9 +69,10 @@ else
         seenExecutionId: string | null;
         mine: string[];
       }> = {},
+      remote = false,
     ): Promise<StopResponse> {
       const state = await readRunStateAtHead(db, rig.threadId as never);
-      return rig.orchestrator.stop(rig.threadId as never, {
+      return (remote ? rig.delivery : rig.orchestrator).stop(rig.threadId as never, {
         requestId: crypto.randomUUID(),
         seenThrough: state.sentThrough,
         seenExecutionId: state.execution?.executionId ?? null,
@@ -441,10 +443,10 @@ else
       expect(reply).not.toBe(run.executionTurnId);
     });
 
-    it("row 14: a start-time compaction's message is handed back, out of the receipt, and nothing answers it", async () => {
-      const held = heldSummarizer();
+    it("row 14: a Stop from another server hands a start-time compaction's message back before it summarizes", async () => {
+      const summarizer = scriptedSummarizer();
       const rig = await fixture({
-        summarizer: held.summarizer,
+        summarizer,
         gateway: scriptedGateway({ usage: lowUsage }),
         holdWakes: true,
       });
@@ -452,19 +454,19 @@ else
       expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
         role: "compaction",
       });
-      const done = run.execute();
-      await held.started;
       expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([run.userTurnId]);
 
-      const response = await press(rig, { seenThrough: await seqOf(rig, run.userTurnId) });
+      // The press commits after the reservation and before execute(): the run holds M1 in its
+      // prepared history and has no local abort.
+      const response = await press(rig, { seenThrough: await seqOf(rig, run.userTurnId) }, true);
       expect(response.cancelledExecutionId).toBe(run.executionId);
       expect(response.handedBack.map(({ userTurnId }) => userTurnId)).toEqual([run.userTurnId]);
       expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([]);
-      held.release();
-      expect(await done).toMatchObject({ status: "cancelled" });
+      expect(await run.execute()).toMatchObject({ status: "cancelled" });
       await processDetachedWork.drain();
+      expect(summarizer.calls).toHaveLength(0);
       const row = await rowOf(rig, run.userTurnId);
-      expect(row.handedBackBy).toBe(response.handedBack.length ? row.handedBackBy : null);
+      expect(row.handedBackBy).not.toBeNull();
       expect(row.by).toBeNull();
       await rig.orchestrator.startDrain(rig.threadId as never);
       await processDetachedWork.drain();
