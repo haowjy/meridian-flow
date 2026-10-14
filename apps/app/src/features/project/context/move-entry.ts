@@ -3,7 +3,6 @@
  * destination here, refuse for the same reasons, and place through the replica
  * by folder ID.
  */
-import { t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ResourceDestination } from "@meridian/resource-replica";
@@ -64,13 +63,6 @@ export function moveRefusal(
     subject.name,
   );
   return collision?.level === "error" ? { kind: "name-taken", message: collision.message } : null;
-}
-
-/** What a refused drop or pick says, or null when it should stay quiet. */
-export function moveRefusalLabel(refusal: MoveRefusal): string | null {
-  if (refusal.kind === "inside-itself") return t`Can't go inside itself`;
-  if (refusal.kind === "name-taken") return refusal.message;
-  return null;
 }
 
 /** The replica's destination: a folder by ID, or an area's root with its owning authority. */

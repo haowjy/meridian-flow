@@ -14,13 +14,12 @@ export const contextTreeRowGrowClassName =
  * fills cannot drift apart. Hover is inactive-only: the active row keeps its
  * stronger fill.
  */
-export function contextTreeFileRowClassName(active: boolean): string {
+export function contextTreeFileRowClassName(active: boolean, selected = false): string {
   return cn(
-    "group mx-2 flex items-center rounded-md pr-1 text-sm",
+    "group mx-2 flex items-center rounded-md pr-1 text-sm text-foreground",
     contextTreeRowGrowClassName,
-    active
-      ? "bg-sidebar-accent font-medium text-foreground"
-      : "text-foreground hover:bg-sidebar-accent/50",
+    active && "font-medium",
+    active || selected ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50",
   );
 }
 
@@ -28,3 +27,7 @@ export const contextTreeOverflowTriggerClassName =
   "opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 [@media(hover:none)]:size-11 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:size-11 [@media(pointer:coarse)]:opacity-100";
 
 export const mobileContextTreeOverflowTriggerClassName = "size-11 opacity-100";
+
+/** The lit target of a drag: an area header, or a folder with everything shown inside it. */
+export const contextTreeDropTargetClassName =
+  "bg-sidebar-accent ring-1 ring-border-focus ring-inset";

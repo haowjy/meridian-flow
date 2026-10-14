@@ -19,8 +19,18 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
+import { EntrySelectionScope } from "./entry-drag/selection";
+import { useEntryMoveRoute } from "./entry-drag/use-entry-move-route";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
+import { DropRegion } from "./tree-drop/DropRegion";
+import {
+  dragEdgeScroll,
+  type TreeDropRoutes,
+  TreeDropScope,
+  type TreeDropTarget,
+  useTreeDropTarget,
+} from "./tree-drop/tree-drop";
 import { treeFolderIds } from "./tree-expansion-state";
 import { useTreeExpansion } from "./use-tree-expansion";
 
@@ -71,6 +81,7 @@ export function ContextTreePanel({
     throw new Error("ContextTreePanel requires creation controls");
   }
   const schemes = EDITOR_CONTEXT_SCHEMES;
+  const scroller = useRef<HTMLDivElement>(null);
   const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
   const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
@@ -96,8 +107,13 @@ export function ContextTreePanel({
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* The destination rows own the sidebar's single rule. Explorer panes
           stay on one uninterrupted rail material beneath it. */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2">
-        {schemes.map(renderScheme)}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a drag is a pointer shortcut; every drop has a menu path (Move… on the row). */}
+      <div
+        ref={scroller}
+        onDragOver={(event) => dragEdgeScroll(scroller.current, event)}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-2"
+      >
+        <EntrySelectionScope>{schemes.map(renderScheme)}</EntrySelectionScope>
       </div>
     </div>
   );
@@ -205,13 +221,24 @@ function SchemeSection({
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
+  const owner = useMemo(() => ({ workId: editorWorkId }), [editorWorkId]);
+  const onLanded = useCallback(
+    (target: TreeDropTarget) => {
+      setExpanded(true);
+      const folderId = target.folder?.entryId;
+      if (folderId) setExpandedEntryIds((current) => ({ ...current, [folderId]: true }));
+    },
+    [setExpanded, setExpandedEntryIds],
+  );
+  const moveRoute = useEntryMoveRoute({ projectId, scheme, owner, catalog, onLanded });
+  const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   const deleteConfirm = useDeleteConfirmation({ projectId });
   const env = useMemo<TreeEnv | null>(
     () =>
       catalog
         ? ({
             projectId,
-            owner: { workId: editorWorkId },
+            owner,
             scheme,
             capabilities: [
               "rename",
@@ -237,7 +264,7 @@ function SchemeSection({
         : null,
     [
       projectId,
-      editorWorkId,
+      owner,
       scheme,
       activeScheme,
       activePath,
@@ -257,12 +284,13 @@ function SchemeSection({
     setExpanded(next);
   };
 
-  const header = (
+  const header = (dropProps: React.HTMLAttributes<HTMLElement>) => (
     <RailPaneHeader
       label={schemeLabel(scheme)}
       icon={schemeIcon(scheme)}
       expanded={expanded}
       onExpandedChange={handleExpandedChange}
+      dropProps={dropProps}
       actions={
         schemeAllowsCreation(scheme) ? (
           <>
@@ -283,34 +311,67 @@ function SchemeSection({
   );
 
   return (
-    <section>
-      {header}
-      {expanded && catalog && env ? (
-        <TreeEnvProvider value={env}>
-          <div>
-            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
-            {/* "No context files yet." is a claim about the tree, so it waits
+    <TreeDropScope routes={routes}>
+      <section>
+        <AreaDropRegion
+          scheme={scheme}
+          onSpring={() => !expanded && setExpanded(true)}
+          header={header}
+        >
+          {expanded && catalog && env ? (
+            <TreeEnvProvider value={env}>
+              <div>
+                <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
+                {/* "No context files yet." is a claim about the tree, so it waits
                 for a RESOLVED tree. While the query is in flight with nothing
                 cached the pane body stays blank (no spinner) — prefetch at
                 mount makes that window nearly unhittable. */}
-            {isError ? (
-              <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-            ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
-              <EmptyHint depth={1}>
-                <Trans>No context files yet.</Trans>
-              </EmptyHint>
-            ) : null}
-          </div>
-        </TreeEnvProvider>
-      ) : null}
-      <DeleteConfirmationDialog
-        target={deleteConfirm.target}
-        isPending={deleteConfirm.isPending}
-        error={deleteConfirm.error}
-        onCancel={deleteConfirm.cancel}
-        onConfirm={deleteConfirm.confirm}
-      />
-    </section>
+                {isError ? (
+                  <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
+                ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
+                  <EmptyHint depth={1}>
+                    <Trans>No context files yet.</Trans>
+                  </EmptyHint>
+                ) : null}
+              </div>
+            </TreeEnvProvider>
+          ) : null}
+        </AreaDropRegion>
+        <DeleteConfirmationDialog
+          target={deleteConfirm.target}
+          isPending={deleteConfirm.isPending}
+          error={deleteConfirm.error}
+          onCancel={deleteConfirm.cancel}
+          onConfirm={deleteConfirm.confirm}
+        />
+      </section>
+    </TreeDropScope>
+  );
+}
+
+/**
+ * An area as one drop target: its header and its whole list light together, and
+ * a drop anywhere on them files at the area's top level. Hovering a collapsed
+ * area's header opens it.
+ */
+function AreaDropRegion({
+  scheme,
+  onSpring,
+  header,
+  children,
+}: {
+  scheme: ProjectContextTreeScheme;
+  onSpring: () => void;
+  header: (dropProps: React.HTMLAttributes<HTMLElement>) => React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const target = useMemo<TreeDropTarget>(() => ({ scheme, folder: null }), [scheme]);
+  const drop = useTreeDropTarget(target, { onSpring });
+  return (
+    <DropRegion state={drop.dropState}>
+      {header(drop.dropProps)}
+      {children}
+    </DropRegion>
   );
 }
 
