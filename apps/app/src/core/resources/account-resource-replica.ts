@@ -713,13 +713,18 @@ export class AccountResourceReplica {
   }
 
   /**
-   * Which stored document ids now answer to which current id: a join followed (this or another
-   * tab, from the answer or the catalog entry) or a create reminted. Replays what is already
-   * known on subscription. What the server knows about the document, such as a draft over it,
-   * may have been out of reach until now.
+   * A stored document id that now answers to another current id: a join followed (this or
+   * another tab, from the answer or the catalog entry) or a create reminted. Live changes only.
+   * What the server knows about the document, such as a draft over it, may have been out of
+   * reach until now.
    */
   onIdentityChanged(listener: (change: ResourceIdentityChange) => void): () => void {
     return this.identities.subscribe(listener);
+  }
+
+  /** Every account projection, current at subscription and again on each change. */
+  onProjection(listener: (records: readonly ResourceRecord[]) => void): () => void {
+    return this.identities.subscribeProjection(listener);
   }
 
   private async continueTerminal(
