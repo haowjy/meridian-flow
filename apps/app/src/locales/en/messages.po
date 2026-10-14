@@ -2815,8 +2815,8 @@ msgstr "Moved {0} to {destinationName}."
 
 #. placeholder {0}: folder ?? ""
 #: src/features/project/context/LinkUpdateNote.tsx
-msgid "Moved to {0}"
-msgstr "Moved to {0}"
+#~ msgid "Moved to {0}"
+#~ msgstr "Moved to {0}"
 
 #: src/features/chat/UserTurn.tsx
 #~ msgid "Moved to composer."

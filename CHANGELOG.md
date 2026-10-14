@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Select several rows in the Files tree, the chat's Scratch and a Work's Files (Ctrl or Cmd-click, Shift-click for a range) and drag them onto a folder, an area header, or any row inside an open folder to move them there at once, with Undo. A folder can't be dropped inside itself, and a name already taken there is refused with the reason beside the pointer.
+- Moving a row no longer adds "Moved to <folder>" under it; the row only notes links it updated.
 
 - Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
 

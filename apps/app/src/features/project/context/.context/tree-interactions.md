@@ -133,8 +133,8 @@ appears in every mounted surface. Observation starts at admission and ends on
 positive terminal evidence or the receipt's deadline (settlement plus four
 seconds), independently of row mounts. Missing cached records are not terminal
 evidence. Each operation announces once through the app's polite region.
-Picker moves with zero updated links show "Moved to <folder>" after successful
-settlement, with the same lifetime and announcement. Refused moves show nothing.
+A move that updated no links shows nothing: the writer just did it and can see
+where the row went (owner, 2026-10-14). Refused moves show nothing.
 Refused row moves retain the journal destination in the catalog projection. Comparing that destination with the projected parent and owner distinguishes them from name-only refusals: the failure mark stays on the row, and reopening Move shows the failed destination with retry guidance, never an automatic rename field. Retry validation and submission use the retained
 destination name, including a cancelled rename/move chain; fresh moves use the
 entry's current name. Work Files uses the same picker and repair decision.
