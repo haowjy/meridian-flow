@@ -14,7 +14,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
+import { splitFrontmatter } from "@meridian/markup/wikilinks";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach } from "vitest";
 import { composeAppServices, createProductionAppPorts } from "../../../lib/compose.js";
@@ -92,8 +92,7 @@ export function loose(files: Record<string, string | Uint8Array>): {
         size: value.length,
         sha256: createHash("sha256").update(value).digest("hex"),
         sniff: Buffer.from(value.subarray(0, 512)).toString("base64"),
-        frontmatter: splitObsidianFrontmatter(Buffer.from(value).toString("utf8")).frontmatter
-          ?.text,
+        frontmatter: splitFrontmatter(Buffer.from(value).toString("utf8")).frontmatter?.text,
       })),
     },
     bytes,
@@ -131,7 +130,7 @@ export function vault(name: string) {
           size: bytes.length,
           sha256: createHash("sha256").update(bytes).digest("hex"),
           sniff: bytes.subarray(0, 512).toString("base64"),
-          frontmatter: splitObsidianFrontmatter(bytes.toString("utf8")).frontmatter?.text,
+          frontmatter: splitFrontmatter(bytes.toString("utf8")).frontmatter?.text,
         });
       }
     }

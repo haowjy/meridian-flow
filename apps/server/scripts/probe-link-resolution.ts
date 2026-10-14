@@ -11,7 +11,7 @@ import {
   createLinkIndex,
   type ImportLinkCandidate,
 } from "../server/domains/import/domain/link-index.js";
-import { convertObsidianNote } from "../server/domains/import/domain/obsidian-note.js";
+import { convertNote } from "../server/domains/import/domain/note-conversion.js";
 
 const candidate = (path: string, aliases: string[], uri: string): ImportLinkCandidate => ({
   id: path,
@@ -49,7 +49,7 @@ const text = Array.from({ length: 2_000 }, (_, index) =>
         : `[[Missing ${index}]]`,
 ).join(" ");
 const [converted, linksMs] = timed(() =>
-  convertObsidianNote(text, {
+  convertNote(text, {
     source: pool[0],
     index: createLinkIndex(pool, existing),
     attachmentFolder: "",

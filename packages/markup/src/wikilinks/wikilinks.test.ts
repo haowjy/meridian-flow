@@ -1,10 +1,10 @@
-/** Fixture and boundary contracts for the shared Obsidian syntax scanner. */
+/** Fixture and boundary contracts for the shared wiki-style Markdown scanner. */
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { markdownParser } from "../markdown-parse.js";
-import { locate, rankWikilinkMatches, scanObsidian, splitObsidianFrontmatter } from "./index.js";
+import { locate, rankWikilinkMatches, scanWikilinks, splitFrontmatter } from "./index.js";
 
 const fixture = (name: string) =>
   readFileSync(new URL(`./fixtures/${name}.md`, import.meta.url), "utf8");
@@ -12,7 +12,7 @@ const fixture = (name: string) =>
 describe("fixture vault", () => {
   it("recognizes Chapter 1 without rewriting its text", () => {
     const input = fixture("Chapter 1 - The Gate");
-    const { source, findings } = scanObsidian(input);
+    const { source, findings } = scanWikilinks(input);
     expect(source).toBe(input);
     const frontmatter = findings.find((finding) => finding.kind === "frontmatter");
     expect(frontmatter?.text).toBe(
@@ -68,7 +68,7 @@ describe("fixture vault", () => {
   });
 
   it("recognizes Ch 2's note embed and ordinary Markdown links", () => {
-    const { findings } = scanObsidian(fixture("Ch 2"));
+    const { findings } = scanWikilinks(fixture("Ch 2"));
     expect(
       findings.filter((finding) => finding.kind === "wikilink" && !finding.embed),
     ).toHaveLength(2);
@@ -90,7 +90,7 @@ describe("syntax boundaries", () => {
   it("scans a prose projection without reinterpreting Markdown code or frontmatter", () => {
     const input =
       "---\n[[Front]]\n---\n\n    [[Indented]] `[[Ticks]]` %% [[Hidden]] %% [[Visible]]";
-    const { source, findings } = scanObsidian(input, { context: "prose" });
+    const { source, findings } = scanWikilinks(input, { context: "prose" });
     expect(source).toBe(input);
     expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
       { linkpath: "Front" },
@@ -104,7 +104,7 @@ describe("syntax boundaries", () => {
     "[[A]]",
     "[[A#Heading|#label]]",
   ])("reports a highlight containing a wikilink without counting link target syntax: %s", (link) => {
-    const { findings } = scanObsidian(`==text ${link} text==`);
+    const { findings } = scanWikilinks(`==text ${link} text==`);
     expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
       { linkpath: "A" },
     ]);
@@ -117,7 +117,7 @@ describe("syntax boundaries", () => {
   it("preserves literal table continuations in comments while normalizing real tables", () => {
     const comment = "%%\n| a |\n| - |\n| first\\\nsecond |\n%%";
     const real = "| a |\n| - |\n| first\\\nsecond |";
-    const { source, findings } = scanObsidian(`${comment}\n\n${real}\n\n[[A]]`);
+    const { source, findings } = scanWikilinks(`${comment}\n\n${real}\n\n[[A]]`);
     const found = findings.find((finding) => finding.kind === "comment");
     expect(source.slice(found?.from, found?.to)).toBe(comment);
     expect(source).toContain("first<br/>second");
@@ -129,7 +129,7 @@ describe("syntax boundaries", () => {
     "%% secret %%",
     "<!-- secret -->",
   ])("keeps prose following inline comment %s", (comment) => {
-    const { findings } = scanObsidian(`${comment} [[Visible]] #tag ==highlight==`);
+    const { findings } = scanWikilinks(`${comment} [[Visible]] #tag ==highlight==`);
     expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
       { linkpath: "Visible" },
     ]);
@@ -140,7 +140,7 @@ describe("syntax boundaries", () => {
   });
 
   it("does not let a fence inside a comment hide later comment delimiters", () => {
-    const { findings } = scanObsidian("%%\n```\n%%\n\n%% [[hidden]] %%\n\n[[real]]");
+    const { findings } = scanWikilinks("%%\n```\n%%\n\n%% [[hidden]] %%\n\n[[real]]");
     expect(findings.filter((finding) => finding.kind === "comment")).toHaveLength(2);
     expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
       { linkpath: "real" },
@@ -150,7 +150,7 @@ describe("syntax boundaries", () => {
   it("never links or counts special syntax inside code and comments", () => {
     const input =
       "`[[span]] #tag ==no== %% code %%`\n\n~~~md\n[[fence]]\n<!-- code -->\n~~~\n\n%% [[inline]] %%\n\n%%\n[[block]]\n%%\n\n<!-- [[html]] -->\n\n[[real]]";
-    const { findings } = scanObsidian(input);
+    const { findings } = scanWikilinks(input);
     expect(findings.filter((finding) => finding.kind === "wikilink")).toMatchObject([
       { linkpath: "real" },
     ]);
@@ -162,7 +162,7 @@ describe("syntax boundaries", () => {
 
   it("keeps escaped aliases in table cells and the mdast table intact", () => {
     const input = "| Who |\n| --- |\n| [[Lin Feng\\|Lin]] |";
-    const result = scanObsidian(input);
+    const result = scanWikilinks(input);
     expect(result.source).toBe(input);
     expect(result.findings).toMatchObject([
       { kind: "wikilink", linkpath: "Lin Feng", label: "Lin" },
@@ -174,7 +174,7 @@ describe("syntax boundaries", () => {
 
   it("reports sizes only on embeds and preserves local heading/block targets", () => {
     expect(
-      scanObsidian("![[map.png|300]] ![[map.png|300x200]] [[A|300]] [[#Heading]] [[#^block]]")
+      scanWikilinks("![[map.png|300]] ![[map.png|300x200]] [[A|300]] [[#Heading]] [[#^block]]")
         .findings,
     ).toMatchObject([
       { embed: true, size: { width: 300, height: null }, label: null },
@@ -186,18 +186,20 @@ describe("syntax boundaries", () => {
   });
 
   it("reports escapes even when unclosed, but ignores escaped links and code", () => {
-    expect(scanObsidian("\\[[A]] \\[\\[B]] \\[[ `\\[[C]]` [[D]]").findings).toMatchObject([
+    expect(scanWikilinks("\\[[A]] \\[\\[B]] \\[[ `\\[[C]]` [[D]]").findings).toMatchObject([
       { kind: "escape", literal: "[[" },
       { kind: "escape", literal: "[[" },
       { kind: "escape", literal: "[[" },
       { kind: "wikilink", linkpath: "D" },
     ]);
-    expect(scanObsidian("\\\\[[A]]").findings).toMatchObject([{ kind: "wikilink", linkpath: "A" }]);
+    expect(scanWikilinks("\\\\[[A]]").findings).toMatchObject([
+      { kind: "wikilink", linkpath: "A" },
+    ]);
   });
 
   it("does not find tags in headings, URLs, destinations, code, or wikilinks", () => {
     expect(
-      scanObsidian(
+      scanWikilinks(
         "# Heading\nhttps://example.com/#url [x](https://x/#dest) `#code` [[A#Heading]] #real #nested/tag #123",
       ).findings.filter((finding) => finding.kind === "tag"),
     ).toMatchObject([{ tag: "real" }, { tag: "nested/tag" }]);
@@ -205,7 +207,7 @@ describe("syntax boundaries", () => {
 
   it("uses preprocessed-source offsets after continued table rows", () => {
     const input = "| A |\n| --- |\n| first\\\nsecond |\n\n[[After]]";
-    const { source, findings } = scanObsidian(input);
+    const { source, findings } = scanWikilinks(input);
     expect(source).toContain("first<br/>second");
     const link = findings.find((finding) => finding.kind === "wikilink");
     expect(link?.from).toBe(source.indexOf("[[After]]"));
@@ -214,7 +216,7 @@ describe("syntax boundaries", () => {
 
   it("keeps already-parsed paste text and its offsets without repeating ingress", () => {
     const text = "| A |\n| --- |\n| first\\\nsecond |\n\n[[After]]";
-    const { source, findings } = scanObsidian(text, { preprocessed: true });
+    const { source, findings } = scanWikilinks(text, { preprocessed: true });
     expect(source).toBe(text);
     expect(findings.find((finding) => finding.kind === "wikilink")?.from).toBe(
       text.indexOf("[[After]]"),
@@ -222,14 +224,14 @@ describe("syntax boundaries", () => {
   });
 
   it("reports unclosed comments through EOF without leaking their links", () => {
-    expect(scanObsidian("%% [[hidden]]").findings).toEqual([
-      { kind: "comment", syntax: "obsidian", from: 0, to: 13 },
+    expect(scanWikilinks("%% [[hidden]]").findings).toEqual([
+      { kind: "comment", syntax: "percent", from: 0, to: 13 },
     ]);
-    expect(scanObsidian("<!-- [[hidden]]").findings).toHaveLength(1);
+    expect(scanWikilinks("<!-- [[hidden]]").findings).toHaveLength(1);
   });
 
   it("reports callout folding and footnote definitions with continuation text", () => {
-    const { source, findings } = scanObsidian(
+    const { source, findings } = scanWikilinks(
       "> [!tip]- Title\n> Body\n\nText[^x].\n\n[^x]: First\n    second\n",
     );
     expect(findings.find((finding) => finding.kind === "callout")).toMatchObject({
@@ -245,16 +247,16 @@ describe("syntax boundaries", () => {
 describe("raw frontmatter", () => {
   it("preserves BOM, CRLF, invalid YAML and exact body bytes", () => {
     const raw = "\uFEFF---\r\nbroken: [\r\n---\r\nBody\r\n";
-    expect(splitObsidianFrontmatter(raw)).toEqual({
+    expect(splitFrontmatter(raw)).toEqual({
       frontmatter: { kind: "frontmatter", from: 0, to: raw.indexOf("Body"), text: "broken: [\r\n" },
       body: "Body\r\n",
     });
-    expect(splitObsidianFrontmatter("---\n---").frontmatter?.text).toBe("");
+    expect(splitFrontmatter("---\n---").frontmatter?.text).toBe("");
   });
 
   it("requires a leading, closed delimiter block", () => {
     for (const input of ["---\nnot closed", "text\n---\na: b\n---\n", "---", " ---\na: b\n---\n"])
-      expect(splitObsidianFrontmatter(input)).toEqual({ frontmatter: null, body: input });
+      expect(splitFrontmatter(input)).toEqual({ frontmatter: null, body: input });
   });
 });
 
@@ -262,7 +264,7 @@ describe("Markdown link destinations", () => {
   it("spans only each destination, through nested pictures, code-span labels and angle brackets", () => {
     const source =
       '[![cover](map.png)](Note.md) [`x](x`](<A B.md> "t") [ref][n] [](Empty.md)\n\n[n]: R.md\n';
-    const destinations = scanObsidian(source)
+    const destinations = scanWikilinks(source)
       .findings.filter((finding) => finding.kind === "markdownLink")
       .map((finding) =>
         finding.kind === "markdownLink" && finding.destination

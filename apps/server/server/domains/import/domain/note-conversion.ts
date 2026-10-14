@@ -1,8 +1,8 @@
-/** Pure Obsidian note conversion; identity assignments travel separately from written addresses. */
+/** Pure wiki-style note conversion; identity assignments travel separately from written addresses. */
 import type { ImportFinding, StoredDocumentProperties } from "@meridian/contracts";
 import { formatMarkdownLink, mdxCodec } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
-import { scanObsidian, storedName } from "@meridian/markup/obsidian";
+import { scanWikilinks, storedName } from "@meridian/markup/wikilinks";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { readFrontmatter } from "../../context/index.js";
 import {
@@ -13,7 +13,7 @@ import {
 } from "./link-index.js";
 
 const codec = mdxCodec({ schema: buildDocumentSchema() });
-export interface ConvertedObsidianNote {
+export interface ConvertedNote {
   /** The note as written, with converted destinations at their addresses; for reading only. */
   markdown: string;
   properties: StoredDocumentProperties | null;
@@ -40,7 +40,7 @@ interface Written {
   /** `#heading` kept after the target's address. */
   fragment: string;
 }
-export function convertObsidianNote(
+export function convertNote(
   text: string,
   options: {
     source: ImportLinkCandidate;
@@ -48,8 +48,8 @@ export function convertObsidianNote(
     attachmentFolder: string;
     aheadFolder: string;
   },
-): ConvertedObsidianNote {
-  const scan = scanObsidian(text);
+): ConvertedNote {
+  const scan = scanWikilinks(text);
   const frontmatter = scan.findings.find((finding) => finding.kind === "frontmatter");
   const properties: StoredDocumentProperties | null = frontmatter
     ? { format: "yaml", text: frontmatter.text }
@@ -200,7 +200,7 @@ export function convertObsidianNote(
   });
   // The bare destination as formatMarkdownLink spells it, angle brackets included.
   const spell = (href: string) => formatMarkdownLink("", href).slice(3, -1);
-  const note: ConvertedObsidianNote = {
+  const note: ConvertedNote = {
     markdown: "",
     properties,
     aliases: parsed?.readable ? parsed.aliases : [],

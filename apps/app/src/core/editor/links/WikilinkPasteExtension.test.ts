@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A pasted Obsidian note's `[[Name]]` arrives as standard links through the
+ * A pasted wiki-style note's `[[Name]]` arrives as standard links through the
  * Editor's real paste path, whichever door the clipboard text takes: Markdown
  * with structure, or plain prose.
  */

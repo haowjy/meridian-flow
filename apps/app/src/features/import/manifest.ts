@@ -3,7 +3,7 @@
  * bytes and frontmatter. Hashing happens here, after Import, never in the dialog.
  */
 import type { ImportManifest, ImportUnreadableReason } from "@meridian/contracts";
-import { splitObsidianFrontmatter } from "@meridian/markup/obsidian/frontmatter";
+import { splitFrontmatter } from "@meridian/markup/frontmatter";
 import { IMPORT_FILE_LIMITS } from "./limits";
 import { type Selection, unreadableReason } from "./selection";
 
@@ -59,7 +59,7 @@ async function describeFile(
     sniff: base64(bytes.subarray(0, IMPORT_FILE_LIMITS.sniffBytes)),
   };
   if (PROSE_EXTENSIONS.test(path || file.name)) {
-    const frontmatter = splitObsidianFrontmatter(new TextDecoder().decode(bytes)).frontmatter;
+    const frontmatter = splitFrontmatter(new TextDecoder().decode(bytes)).frontmatter;
     if (frontmatter) entry.frontmatter = frontmatter.text;
   }
   return entry;

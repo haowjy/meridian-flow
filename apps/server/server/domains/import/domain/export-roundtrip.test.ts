@@ -3,7 +3,7 @@ import { createHolderLinkScope } from "@meridian/markup/links";
 import { describe, expect, it } from "vitest";
 import { ExportLinkScope } from "../../collab/domain/export-link-scope.js";
 import { createLinkIndex, type ImportLinkCandidate } from "./link-index.js";
-import { convertObsidianNote } from "./obsidian-note.js";
+import { convertNote } from "./note-conversion.js";
 
 // Link refs carry document ids, which are UUIDs.
 const [HOLDER, ENCODED, SPACED, PERCENT] = [1, 2, 3, 4].map(
@@ -54,7 +54,7 @@ function exported(target: ImportLinkCandidate): string {
 describe("export then import", () => {
   it.each(targets)("binds a cross-area link to $path again", (target) => {
     const href = exported(target);
-    const converted = convertObsidianNote(`[target](${href})`, {
+    const converted = convertNote(`[target](${href})`, {
       source: holder,
       index: createLinkIndex([holder, ...targets], []),
       attachmentFolder: "",
@@ -63,8 +63,8 @@ describe("export then import", () => {
     expect([...converted.targets.values()]).toEqual([target.id]);
   });
 
-  it("reads a wikilink's percent literally, as Obsidian does", () => {
-    const converted = convertObsidianNote("[[a%20b]] [[a b]]", {
+  it("reads a wikilink's percent literally, as note apps do", () => {
+    const converted = convertNote("[[a%20b]] [[a b]]", {
       source: holder,
       index: createLinkIndex([holder, ...targets], []),
       attachmentFolder: "",

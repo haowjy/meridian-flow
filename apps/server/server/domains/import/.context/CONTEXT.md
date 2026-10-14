@@ -35,7 +35,7 @@ write only when creation uses exactly that id. Recorded ahead refs and binary
 receipts serialize on the target entry row. Settlement is compare-and-set by
 ref id.
 
-## Obsidian conversion
+## Wiki-style note conversion
 
 Conversion runs per landing note, outside transactions, over a link index built
 once per note: selected paths, basenames and aliases, then the project's
@@ -73,7 +73,7 @@ documents, and marks unfinished entries not imported. There is no Remove,
 Restore, staging tree, ZIP extraction or automatic model sort in this domain.
 
 The API probe is pnpm exec tsx apps/server/scripts/probe-import.mjs PROJECT URI
-PATH... [--files]. It builds a manifest with the shared Obsidian frontmatter
+PATH... [--files]. It builds a manifest with the shared frontmatter
 splitter and uses ./mf api for every request.
 
 The performance probe is pnpm probe:db

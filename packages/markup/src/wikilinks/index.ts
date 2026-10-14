@@ -1,22 +1,18 @@
-/** Pure Obsidian findings over the codec's positioned, preprocessed Markdown source. */
+/** Pure wiki-style Markdown findings over the codec's positioned, preprocessed Markdown source. */
 
 import type { Processor } from "unified";
+import { type Frontmatter, type SourceRange, splitFrontmatter } from "../frontmatter.js";
 import { normalizeGfmTableHardBreaks } from "../markdown/table-ingress.js";
 import { markdownParser } from "../markdown-parse.js";
-import {
-  type ObsidianFrontmatter,
-  type ObsidianRange,
-  splitObsidianFrontmatter,
-} from "./frontmatter.js";
 
 export type {
-  ObsidianFrontmatter,
-  ObsidianFrontmatterSplit,
-  ObsidianRange,
-} from "./frontmatter.js";
-export { splitObsidianFrontmatter } from "./frontmatter.js";
+  Frontmatter,
+  FrontmatterSplit,
+  SourceRange,
+} from "../frontmatter.js";
+export { splitFrontmatter } from "../frontmatter.js";
 
-export type ObsidianWikilink = ObsidianRange & {
+export type WikilinkFinding = SourceRange & {
   kind: "wikilink";
   embed: boolean;
   linkpath: string;
@@ -25,34 +21,34 @@ export type ObsidianWikilink = ObsidianRange & {
   label: string | null;
   size: { width: number; height: number | null } | null;
 };
-export type ObsidianFinding =
-  | ObsidianFrontmatter
-  | ObsidianWikilink
-  | (ObsidianRange & { kind: "escape"; literal: "[[" })
-  | (ObsidianRange & { kind: "comment"; syntax: "obsidian" | "html" })
-  | (ObsidianRange & { kind: "callout"; calloutType: string; fold: "+" | "-" | null })
-  | (ObsidianRange & { kind: "highlight"; text: string })
-  | (ObsidianRange & { kind: "tag"; tag: string })
-  | (ObsidianRange & { kind: "footnoteReference" | "footnoteDefinition"; identifier: string })
-  | (ObsidianRange & {
+export type WikilinkSyntaxFinding =
+  | Frontmatter
+  | WikilinkFinding
+  | (SourceRange & { kind: "escape"; literal: "[[" })
+  | (SourceRange & { kind: "comment"; syntax: "percent" | "html" })
+  | (SourceRange & { kind: "callout"; calloutType: string; fold: "+" | "-" | null })
+  | (SourceRange & { kind: "highlight"; text: string })
+  | (SourceRange & { kind: "tag"; tag: string })
+  | (SourceRange & { kind: "footnoteReference" | "footnoteDefinition"; identifier: string })
+  | (SourceRange & {
       kind: "markdownLink";
       url: string;
       image: boolean;
       /** The written destination, angle brackets included; absent for `[x]()`. */
-      destination: ObsidianRange | null;
+      destination: SourceRange | null;
     });
 
-export type ObsidianScanOptions = {
+export type WikilinkScanOptions = {
   /** Prose projections use their host's node/mark semantics, not Markdown block or code syntax. */
   context?: "markdown" | "prose";
   /** Skip ingress for already-parsed source; findings index the supplied text. */
   preprocessed?: boolean;
 };
 
-export type ObsidianScan = {
+export type WikilinkScan = {
   /** Offsets are UTF-16 indices into this source, not necessarily the input before preprocessing. */
   source: string;
-  findings: ObsidianFinding[];
+  findings: WikilinkSyntaxFinding[];
 };
 
 type SyntaxNode = {
@@ -61,7 +57,7 @@ type SyntaxNode = {
   children?: SyntaxNode[];
   identifier?: string;
   url?: string;
-  data?: { destination?: ObsidianRange };
+  data?: { destination?: SourceRange };
 };
 
 /**
@@ -89,7 +85,7 @@ function destinationSpans(this: Processor): void {
 
 const parser = markdownParser([destinationSpans]);
 
-function range(node: SyntaxNode): ObsidianRange | null {
+function range(node: SyntaxNode): SourceRange | null {
   const from = node.position?.start.offset;
   const to = node.position?.end.offset;
   return from === undefined || to === undefined ? null : { from, to };
@@ -100,7 +96,7 @@ function walk(node: SyntaxNode, visit: (node: SyntaxNode) => void): void {
   for (const child of node.children ?? []) walk(child, visit);
 }
 
-function overlaps(span: ObsidianRange, ranges: readonly ObsidianRange[]): boolean {
+function overlaps(span: SourceRange, ranges: readonly SourceRange[]): boolean {
   return ranges.some((other) => span.from < other.to && span.to > other.from);
 }
 
@@ -110,7 +106,7 @@ function escaped(source: string, at: number): boolean {
   return slashes % 2 === 1;
 }
 
-function mask(source: string, ranges: readonly ObsidianRange[]): string {
+function mask(source: string, ranges: readonly SourceRange[]): string {
   let cursor = 0;
   let result = "";
   for (const span of [...ranges].sort((a, b) => a.from - b.from)) {
@@ -123,17 +119,17 @@ function mask(source: string, ranges: readonly ObsidianRange[]): string {
   return result + source.slice(cursor);
 }
 
-type Comment = Extract<ObsidianFinding, { kind: "comment" }>;
+type Comment = Extract<WikilinkSyntaxFinding, { kind: "comment" }>;
 
 /** Earlier opaque comments take precedence over any Markdown syntax in their contents. */
 function discoverComments(
   source: string,
-  excluded: readonly ObsidianRange[],
+  excluded: readonly SourceRange[],
   prose = false,
 ): Comment[] {
   const hidden = [...excluded];
   const comments: Comment[] = [];
-  let code: ObsidianRange[] | null = null;
+  let code: SourceRange[] | null = null;
   for (const match of source.matchAll(/%%|<!--/g)) {
     const from = match.index;
     const opener = { from, to: from + match[0].length };
@@ -146,8 +142,8 @@ function discoverComments(
       });
     }
     if (overlaps(opener, code ?? [])) continue;
-    const syntax = match[0] === "%%" ? "obsidian" : "html";
-    const delimiter = syntax === "obsidian" ? "%%" : "-->";
+    const syntax = match[0] === "%%" ? "percent" : "html";
+    const delimiter = syntax === "percent" ? "%%" : "-->";
     const end = source.indexOf(delimiter, opener.to);
     const comment: Comment = {
       kind: "comment",
@@ -164,13 +160,13 @@ function discoverComments(
 }
 
 /** Reports syntax only: it never resolves targets, validates YAML, or rewrites prose. */
-export function scanObsidian(sourceText: string, options: ObsidianScanOptions = {}): ObsidianScan {
+export function scanWikilinks(sourceText: string, options: WikilinkScanOptions = {}): WikilinkScan {
   // Split raw YAML first: table-looking properties must never enter the table preprocessor.
   const prose = options.context === "prose";
   let source = sourceText;
   if (!options.preprocessed && !prose) {
-    const rawFrontmatter = splitObsidianFrontmatter(sourceText).frontmatter;
-    const protectedRanges: ObsidianRange[] = rawFrontmatter ? [rawFrontmatter] : [];
+    const rawFrontmatter = splitFrontmatter(sourceText).frontmatter;
+    const protectedRanges: SourceRange[] = rawFrontmatter ? [rawFrontmatter] : [];
     protectedRanges.push(...discoverComments(sourceText, protectedRanges));
     let cursor = 0;
     source = "";
@@ -181,16 +177,16 @@ export function scanObsidian(sourceText: string, options: ObsidianScanOptions = 
     }
     source += normalizeGfmTableHardBreaks(sourceText.slice(cursor));
   }
-  const frontmatter = prose ? null : splitObsidianFrontmatter(source).frontmatter;
-  const findings: ObsidianFinding[] = frontmatter ? [frontmatter] : [];
-  const hidden: ObsidianRange[] = frontmatter ? [frontmatter] : [];
+  const frontmatter = prose ? null : splitFrontmatter(source).frontmatter;
+  const findings: WikilinkSyntaxFinding[] = frontmatter ? [frontmatter] : [];
+  const hidden: SourceRange[] = frontmatter ? [frontmatter] : [];
   const comments = discoverComments(source, hidden, prose);
   findings.push(...comments);
   hidden.push(...comments);
 
   // Comments may contain Markdown fences themselves. Mask them before the authoritative parse.
   const blocked = [...hidden];
-  const quotes: ObsidianRange[] = [];
+  const quotes: SourceRange[] = [];
   if (!prose)
     walk(parser.parse(mask(source, hidden)) as SyntaxNode, (node) => {
       const span = range(node);

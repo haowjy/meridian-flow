@@ -88,7 +88,7 @@ Two harness races have produced false defects. Rule them out first.
    `apps/server/server/domains/export/domain/project-export.test.ts`. It
    verifies default and opt-in vaults and an in-flight move. The default
    marker counts excluded Scratch/Uploads links; opt-in links resolve to
-   actual entries. Open the exported project folder in Obsidian for visual
+   actual entries. Open the exported project folder in a note app for visual
    review (not part of the automated check).
 5. In the project title menu, choose Export project. Both switches begin off.
    A quiet preview loads beneath the switches, updates after a debounce and

@@ -96,7 +96,7 @@ export interface MarkupPlugin {
 }
 
 export interface BuildOptions {
-  /** Obsidian folder export only; ordinary and model output remain escaped. */
+  /** Folder export only; ordinary and model output remain escaped. */
   export?: boolean;
   requireSchemaBlockCoverage?: boolean;
   requiredBlockNames?: readonly string[];

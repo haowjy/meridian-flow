@@ -13,9 +13,9 @@ files move while it streams.
   currently supplies one binary's bytes at a time; never gather project bytes.
 - Ordinary/model serialization must never use the export codec. The explicit
   collab export read door receives an export scope over the frozen map.
-- The export codec writes Obsidian-shaped literals verbatim (wikilinks and
+- The export codec writes wiki-style literals verbatim (wikilinks and
   embeds, callout markers, footnote references and definitions) so a vault
-  reopens in Obsidian; everything else that could form a link stays escaped.
+  reopens in a note app; everything else that could form a link stays escaped.
   Reparsing an export must find exactly the document's links.
 - The visible `meridian-export.json` marker carries `formatVersion`, `areas`,
   `works`, and the count of internal link occurrences excluded from the vault.

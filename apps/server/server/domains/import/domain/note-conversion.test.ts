@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { walkLinkOccurrences } from "@meridian/markup/links";
-import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
+import { splitFrontmatter } from "@meridian/markup/wikilinks";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { parseDocumentProperties } from "../../context/document-properties.js";
 import { MAX_PROPERTIES_TEXT_LENGTH } from "../../context/frontmatter.js";
 import { createLinkIndex, type ImportLinkCandidate, obsidianSettings } from "./link-index.js";
-import { convertObsidianNote } from "./obsidian-note.js";
+import { convertNote } from "./note-conversion.js";
 
-const root = new URL("../__fixtures__/obsidian-vault/", import.meta.url).pathname;
+const root = new URL("../__fixtures__/notes-folder/", import.meta.url).pathname;
 function candidate(
   path: string,
   aliases: string[] = [],
@@ -57,7 +57,7 @@ function convert(
   pool = selected,
   existing: ImportLinkCandidate[] = [],
 ) {
-  return convertObsidianNote(text, {
+  return convertNote(text, {
     source,
     index: createLinkIndex(pool, existing),
     attachmentFolder: "attachments",
@@ -69,11 +69,11 @@ function links(markdown: string) {
   return walkLinkOccurrences(codec.parse(markdown).blocks);
 }
 
-describe("Obsidian conversion", () => {
+describe("note conversion", () => {
   it("removes frontmatter verbatim, extracts aliases, binds all Chapter 1 occurrences including its image", () => {
     const text = readFileSync(join(root, paths[0]), "utf8");
     const converted = convert(text);
-    expect(converted.properties?.text).toBe(splitObsidianFrontmatter(text).frontmatter?.text);
+    expect(converted.properties?.text).toBe(splitFrontmatter(text).frontmatter?.text);
     expect(converted.aliases).toEqual(["Gate Opening", "First Chapter"]);
     expect(converted.markdown.trimStart()).toMatch(/^# Chapter 1: The Gate/);
     expect(links(converted.markdown).map((link) => [link.label, link.attrs.href])).toEqual([

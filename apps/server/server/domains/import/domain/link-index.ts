@@ -1,4 +1,4 @@
-/** Pure selection-first Obsidian resolution and the shared project fallback ranking. */
+/** Pure selection-first wikilink resolution and the shared project fallback ranking. */
 import type { ImportManifest, ImportSettingsProblem } from "@meridian/contracts";
 import {
   type Located,
@@ -7,7 +7,7 @@ import {
   storedName,
   wantedPath,
   wikilinkMatches,
-} from "@meridian/markup/obsidian";
+} from "@meridian/markup/wikilinks";
 import { codePointOrder } from "./plan.js";
 
 export interface ImportLinkCandidate {
@@ -43,7 +43,7 @@ export function normalizedPath(value: string): string {
   return parts.join("/");
 }
 /**
- * A folder root's Obsidian settings, or the defaults with why: the browser sent
+ * A folder root's Obsidian settings folder (`.obsidian/app.json`), or the defaults with why: the browser sent
  * none it could read (`appJsonUnread`), or what it sent is not a JSON object.
  */
 export function obsidianSettings(root: ImportManifest["roots"][number] | undefined): {

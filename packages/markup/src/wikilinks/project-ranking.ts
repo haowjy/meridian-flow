@@ -16,7 +16,7 @@ const AREA_ORDER = ["manuscript", "kb", "unfiled", "user", "scratch"];
 
 /**
  * Which candidate a target names, of those whose path ends with it. The
- * project has several areas where Obsidian has one vault, and Obsidian's last
+ * project has several areas where a note app has one folder, and its last
  * step is index order, so ours is fixed. `holder` is the document the paste
  * lands in, or null when it has no address yet.
  *

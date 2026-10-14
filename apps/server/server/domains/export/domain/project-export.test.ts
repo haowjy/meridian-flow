@@ -3,8 +3,8 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import { type CatalogDocument, documentRef } from "@meridian/contracts";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
+import { splitFrontmatter } from "@meridian/markup/frontmatter";
 import { createHolderLinkScope, walkLinkOccurrences } from "@meridian/markup/links";
-import { splitObsidianFrontmatter } from "@meridian/markup/obsidian/frontmatter";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
@@ -238,7 +238,7 @@ async function entries(stream: AsyncIterable<unknown>) {
 function checkRelativeLinks(files: Record<string, Uint8Array>) {
   for (const [path, bytes] of Object.entries(files)) {
     if (!path.endsWith(".md")) continue;
-    const blocks = ordinary.parse(splitObsidianFrontmatter(strFromU8(bytes)).body).blocks;
+    const blocks = ordinary.parse(splitFrontmatter(strFromU8(bytes)).body).blocks;
     for (const {
       attrs: { href },
     } of walkLinkOccurrences(blocks)) {
@@ -334,9 +334,9 @@ describe("project exports", () => {
     );
     const files = await entries(await service.download("project", "account", "Serial", options));
     const text = strFromU8(files["Serial/Manuscript/Chapter.md"]!);
-    const outside = walkLinkOccurrences(
-      ordinary.parse(splitObsidianFrontmatter(text).body).blocks,
-    ).filter((link) => /^(scratch|uploads):/.test(link.attrs.href));
+    const outside = walkLinkOccurrences(ordinary.parse(splitFrontmatter(text).body).blocks).filter(
+      (link) => /^(scratch|uploads):/.test(link.attrs.href),
+    );
     expect(outside).toHaveLength(3);
     expect(JSON.parse(strFromU8(files["Serial/meridian-export.json"]!)).excludedLinks).toBe(
       outside.length,
@@ -362,7 +362,7 @@ describe("project exports", () => {
     expect(text).toContain("\n\\[!note] outside a quote\n");
     expect(text).toContain("\n[^1]: The ledger outlives the sect.\n");
     expect(ordinary.serialize(blocks, UNSCOPED_DOCUMENT_LINKS)).not.toContain("[[Not a link]]");
-    const parsed = ordinary.parse(splitObsidianFrontmatter(text).body).blocks;
+    const parsed = ordinary.parse(splitFrontmatter(text).body).blocks;
     const labels = (nodes: typeof blocks) =>
       walkLinkOccurrences(nodes)
         .filter((link) => link.kind === "link")

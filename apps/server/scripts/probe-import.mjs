@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { splitObsidianFrontmatter } from "@meridian/markup/obsidian";
+import { splitFrontmatter } from "@meridian/markup/wikilinks";
 
 const [projectId, folderUri, ...args] = process.argv.slice(2);
 const loose = args.includes("--files"),
@@ -75,7 +75,7 @@ function add(source, path, rootId) {
     entryId = manifest.entries.length;
   const sniff = bytes.subarray(0, 512).toString("base64"),
     sha256 = createHash("sha256").update(bytes).digest("hex");
-  const frontmatter = splitObsidianFrontmatter(bytes.toString("utf8")).frontmatter;
+  const frontmatter = splitFrontmatter(bytes.toString("utf8")).frontmatter;
   manifest.entries.push({
     entryId,
     rootId,

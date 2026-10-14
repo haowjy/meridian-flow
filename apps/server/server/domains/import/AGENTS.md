@@ -1,7 +1,7 @@
 # Import
 
 A selected folder creates a new tree. Loose files land beside existing children.
-This domain owns durable selection identity, allocation, Obsidian conversion and
+This domain owns durable selection identity, allocation, wiki-style note conversion and
 landing receipts, not context storage or Yjs admission. Only Markdown notes are
 converted; plain-text and code files land as written.
 

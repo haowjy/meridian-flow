@@ -43,7 +43,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     return { links, states: response.answers.map((answer) => answer.state) };
   }
   it("converts the main fixture by identity: properties, aliases, links, findings, reverse order and an area move", async () => {
-    const { source, selection } = vault("obsidian-vault");
+    const { source, selection } = vault("notes-folder");
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     // Holders before their targets, and the PNG last: every link is written before it exists.
@@ -63,13 +63,13 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
         ).state,
       ).toBe("landed");
     const read = async (uri: string) => (await ok(context().read(uri))).content;
-    const chapter1 = await read("kb://obsidian-vault/Chapters/Chapter 1 - The Gate");
+    const chapter1 = await read("kb://notes-folder/Chapters/Chapter 1 - The Gate");
     expect(chapter1.startsWith("# Chapter 1: The Gate\n")).toBe(true);
     for (const link of [
       "[the protagonist](<../Characters/Lin Feng>)",
       "[Cultivation Realms > Foundation](<../Lore/Cultivation Realms#Foundation>)",
       "[Sects](../Lore/Sects)",
-      "![map.png](kb://obsidian-vault/attachments/map.png)",
+      "![map.png](kb://notes-folder/attachments/map.png)",
       "words [Cultivation Realms](<../Lore/Cultivation Realms>).",
       // Kept-literal syntax stays visible text.
       "%% This reveal belongs in chapter twenty. %%",
@@ -78,7 +78,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "[^debt]",
     ])
       expect(chapter1).toContain(link);
-    const ch2 = await read("kb://obsidian-vault/Chapters/Ch 2");
+    const ch2 = await read("kb://notes-folder/Chapters/Ch 2");
     for (const link of [
       "Previously: [Chapter 1 - The Gate](<Chapter 1 - The Gate>).",
       "[the sect register](../Lore/Sects)",
@@ -87,10 +87,10 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "[Lin](<../Characters/Lin Feng>)",
     ])
       expect(ch2).toContain(link);
-    expect(await read("kb://obsidian-vault/Chapters/Chapter 4 - The Ledger")).toContain(
+    expect(await read("kb://notes-folder/Chapters/Chapter 4 - The Ledger")).toContain(
       "[Magic System](<../Lore/Magic System>) and [magic system](<../Lore/magic system>)",
     );
-    const lore = await read("kb://obsidian-vault/Lore/Lore");
+    const lore = await read("kb://notes-folder/Lore/Lore");
     expect(lore).toContain("[Cultivation Realms](<Cultivation Realms>)");
     expect(lore).toContain("[Sects](Sects)");
     expect(lore).not.toContain("aliases:");
@@ -122,17 +122,17 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       expect.arrayContaining(["hidden_notes", "note_embed_to_link"]),
     );
     // Moving the chapters across areas keeps every link; refs, not addresses, decide.
-    await ok(context().move("kb://obsidian-vault/Chapters/", "manuscript://Chapters/"));
+    await ok(context().move("kb://notes-folder/Chapters/", "manuscript://Chapters/"));
     expect(await read("manuscript://Chapters/Ch 2")).toContain(
-      "[the sect register](kb://obsidian-vault/Lore/Sects)",
+      "[the sect register](kb://notes-folder/Lore/Sects)",
     );
     expect(await read("manuscript://Chapters/Chapter 1 - The Gate")).toContain(
-      "![map.png](kb://obsidian-vault/attachments/map.png)",
+      "![map.png](kb://notes-folder/attachments/map.png)",
     );
     for (const [holder, path] of [
       ["manuscript://Chapters/Chapter 1 - The Gate", "Chapters/Chapter 1 - The Gate.md"],
       ["manuscript://Chapters/Ch 2", "Chapters/Ch 2.md"],
-      ["kb://obsidian-vault/Lore/Lore", "Lore.md"],
+      ["kb://notes-folder/Lore/Lore", "Lore.md"],
     ] as const) {
       const resolved = await resolveStoredRefs(holder, byPath(path).documentId);
       expect(resolved.links.length).toBeGreaterThan(0);
@@ -140,7 +140,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     }
   });
   it("converts the edge vault: aliases, ahead links, literal code and comments, ties, skips and D16/D17", async () => {
-    const { selection } = vault("obsidian-vault-edge");
+    const { selection } = vault("notes-folder-edge");
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     for (const entry of plan.entries.filter((entry) => entry.state === "planned"))
@@ -161,7 +161,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       return entry;
     };
     const read = async (uri: string) => (await ok(context().read(uri))).content;
-    const edge = await read("kb://obsidian-vault-edge/Edge");
+    const edge = await read("kb://notes-folder-edge/Edge");
     for (const text of [
       "[World Bible](World)",
       "[Crane](<Characters/Lin Feng>)",
@@ -172,7 +172,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       // Literal text: the projection escapes the brackets, the stored text is unchanged.
       "%% \\[\\[Little Crane]] a hidden note %%",
       '<a href="Characters/Lin Feng">Crane</a>',
-      "![map.png](kb://obsidian-vault-edge/attachments/map.png)",
+      "![map.png](kb://notes-folder-edge/attachments/map.png)",
     ])
       expect(edge).toContain(text);
     const edgeFindings = byPath("Edge.md").findings;
@@ -181,34 +181,32 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
         { code: "hidden_notes", params: { count: 1 } },
         {
           code: "link_via_alias",
-          params: { text: "World Bible", path: "kb://obsidian-vault-edge/World" },
+          params: { text: "World Bible", path: "kb://notes-folder-edge/World" },
         },
         {
           code: "link_via_alias",
-          params: { text: "Little Crane", path: "kb://obsidian-vault-edge/Characters/Lin Feng" },
+          params: { text: "Little Crane", path: "kb://notes-folder-edge/Characters/Lin Feng" },
         },
         {
           code: "link_unresolved",
-          params: { text: "Chapter 9", folder: "kb://obsidian-vault-edge/" },
+          params: { text: "Chapter 9", folder: "kb://notes-folder-edge/" },
         },
         {
           code: "link_ambiguous",
           params: {
             text: "Budget",
             count: 2,
-            path: "kb://obsidian-vault-edge/A/Budget",
-            candidates: ["kb://obsidian-vault-edge/A/Budget", "kb://obsidian-vault-edge/B/Budget"],
+            path: "kb://notes-folder-edge/A/Budget",
+            candidates: ["kb://notes-folder-edge/A/Budget", "kb://notes-folder-edge/B/Budget"],
           },
         },
         { code: "image_size_dropped", params: { name: "map.png", size: "300" } },
       ]),
     );
     // Same-folder note wins over the equally short tie.
-    expect(await read("kb://obsidian-vault-edge/A/Holder")).toContain("[Budget](Budget)");
+    expect(await read("kb://notes-folder-edge/A/Holder")).toContain("[Budget](Budget)");
     // Unreadable frontmatter is stored verbatim, reported and absent from the prose.
-    expect((await read("kb://obsidian-vault-edge/Broken")).trim()).toBe(
-      "Body without frontmatter.",
-    );
+    expect((await read("kb://notes-folder-edge/Broken")).trim()).toBe("Body without frontmatter.");
     expect(byPath("Broken.md").findings).toContainEqual({
       code: "properties_unreadable",
       params: {},
@@ -225,11 +223,11 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       expect.objectContaining({ state: "skipped" }),
     ]);
     // D16: the note counts up beside the folder spelled like it.
-    expect(byPath("Lore.markdown").uri).toBe("kb://obsidian-vault-edge/Lore (2)");
+    expect(byPath("Lore.markdown").uri).toBe("kb://notes-folder-edge/Lore (2)");
     // D17: a PDF under a prose name lands with its registered extension.
     expect(byPath("scan.txt")).toMatchObject({
       kind: "binary",
-      uri: "kb://obsidian-vault-edge/scan.pdf",
+      uri: "kb://notes-folder-edge/scan.pdf",
     });
     expect(byPath("scan.txt").findings.map((finding) => finding.code)).toContain(
       "binary_extension",
@@ -573,7 +571,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
         metadata: { aliases: ["World Bible"] },
       }),
     );
-    const chapters = new URL("./__fixtures__/obsidian-vault/Chapters/", import.meta.url).pathname;
+    const chapters = new URL("./__fixtures__/notes-folder/Chapters/", import.meta.url).pathname;
     const files = (extra: Record<string, string> = {}) => {
       const selection = loose({
         "Chapter 1 - The Gate.md": readFileSync(join(chapters, "Chapter 1 - The Gate.md")),

@@ -1,17 +1,17 @@
 /**
  * Pasted `[[Name]]` becomes a standard link (D15). Writers bring notes over
- * from Obsidian, whose links would otherwise arrive as dead brackets. Only
+ * from note apps, whose links would otherwise arrive as dead brackets. Only
  * paste converts: a typed `[[`, what the AI writes, and text already stored
  * stay text.
  *
- * Obsidian's syntax: `[[target]]`, `[[target|label]]`, `[[target#Heading]]`,
+ * Wiki-style syntax: `[[target]]`, `[[target|label]]`, `[[target#Heading]]`,
  * `[[target#^block]]`, with folders in the target (`Arc 1/Kael`) and `.md`
  * implied when it names no extension. `![[…]]` is an embed and stays text
  * (there is no transclusion); `\[[` is escaped and stays the literal
  * brackets; code is never touched. Which pastes convert at all is the
  * policy's (`WikilinkPasteExtension`).
  *
- * A target resolves as Obsidian's does, with a fixed order where Obsidian's
+ * A target resolves as note apps do, with a fixed order where theirs
  * last step is "the first one it finds" (`rankWikilinkMatches`). A match is
  * assigned its document's id (`doc:`), spelled with its full address; one that
  * names no document becomes the same dashed link the `@` menu's link-ahead row
@@ -29,13 +29,13 @@ import {
 import {
   type Located,
   locate,
-  type ObsidianFinding,
   rankWikilinkMatches,
-  scanObsidian,
+  scanWikilinks,
   storedName,
+  type WikilinkSyntaxFinding,
   type WikilinkTarget,
   wantedPath,
-} from "@meridian/markup/obsidian";
+} from "@meridian/markup/wikilinks";
 import { Fragment, type MarkType, type Node as PMNode, type Schema, Slice } from "@tiptap/pm/model";
 
 import type { AssignedLink, LinkAssignmentDocument } from "./link-assignment";
@@ -46,7 +46,7 @@ type WikilinkOccurrence = {
   target: WikilinkTarget;
   /** `#Heading` or `#^block`, kept on the destination; empty when none. */
   suffix: string;
-  /** The alias, or the name without `.md`, as Obsidian shows it. */
+  /** The alias, or the name without `.md`, as note apps show it. */
   label: string;
 };
 
@@ -60,11 +60,11 @@ export type WikilinkPasteCatalog = {
   linkAhead: (name: string, folders: readonly string[]) => { uri: string } | null;
 };
 
-type PastedWikilink = WikilinkOccurrence | Extract<ObsidianFinding, { kind: "escape" }>;
+type PastedWikilink = WikilinkOccurrence | Extract<WikilinkSyntaxFinding, { kind: "escape" }>;
 
 /** App resolution keeps its own filename/display policy; syntax belongs to markup. */
 function pastedWikilinks(text: string): PastedWikilink[] {
-  return scanObsidian(text, { context: "prose" }).findings.flatMap<PastedWikilink>((finding) => {
+  return scanWikilinks(text, { context: "prose" }).findings.flatMap<PastedWikilink>((finding) => {
     if (finding.kind === "escape") return [finding];
     if (finding.kind !== "wikilink" || finding.embed) return [];
     const segments = finding.linkpath.split("/").map((segment) => segment.trim());

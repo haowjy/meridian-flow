@@ -1,18 +1,18 @@
 /** Raw-text frontmatter splitting for browser manifests, without loading the codec. */
 
-export type ObsidianRange = { from: number; to: number };
-export type ObsidianFrontmatter = ObsidianRange & {
+export type SourceRange = { from: number; to: number };
+export type Frontmatter = SourceRange & {
   kind: "frontmatter";
   /** YAML between delimiters, including its original line endings. */
   text: string;
 };
-export type ObsidianFrontmatterSplit = {
-  frontmatter: ObsidianFrontmatter | null;
+export type FrontmatterSplit = {
+  frontmatter: Frontmatter | null;
   body: string;
 };
 
 /** Only a closed, leading --- block is frontmatter; YAML validity is not a syntax concern. */
-export function splitObsidianFrontmatter(source: string): ObsidianFrontmatterSplit {
+export function splitFrontmatter(source: string): FrontmatterSplit {
   const opening = /^(?:\uFEFF)?---[ \t]*\r?\n/.exec(source);
   if (!opening) return { frontmatter: null, body: source };
   const closing = /^---[ \t]*(?:\r?\n|$)/gm;

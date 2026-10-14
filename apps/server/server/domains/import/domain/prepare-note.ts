@@ -4,7 +4,7 @@ import { frontmatterAliases } from "../../context/index.js";
 import type { ImportEntry, ImportRecord } from "../ports/import-repository.js";
 import type { ImportTreeWriter } from "../ports/import-tree-writer.js";
 import { createLinkIndex, type ImportLinkCandidate, obsidianSettings } from "./link-index.js";
-import { convertObsidianNote } from "./obsidian-note.js";
+import { convertNote } from "./note-conversion.js";
 export async function prepareImportedNote(
   tree: ImportTreeWriter,
   record: ImportRecord,
@@ -14,7 +14,7 @@ export async function prepareImportedNote(
 ) {
   const root = record.manifest.roots.find((root) => root.rootId === entry.rootId);
   const settings = obsidianSettings(root);
-  // Obsidian syntax lives only in Markdown; plain-text files such as `.toml` land unchanged.
+  // Wiki-style syntax lives only in Markdown; plain-text files such as `.toml` land unchanged.
   if (entry.kind !== "note" || entry.filetype !== "markdown")
     return { converted: null, settings, root };
   const roots = new Map(record.manifest.roots.map((root) => [root.rootId, root]));
@@ -58,7 +58,7 @@ export async function prepareImportedNote(
       ? (holder?.path.split("/").slice(0, -1).join("/") ?? "")
       : settings.attachmentFolderPath;
   const converted = holder
-    ? convertObsidianNote(text, {
+    ? convertNote(text, {
         source: holder,
         index: createLinkIndex(candidates, existing),
         attachmentFolder,

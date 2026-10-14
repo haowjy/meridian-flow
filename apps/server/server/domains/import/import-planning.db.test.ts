@@ -22,7 +22,7 @@ describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
     ({ projectId, userId } = fx.current());
   });
   it("plans and lands the real fixture, preserves case, moves folder notes, keeps DOCX undecorated and replays receipts", async () => {
-    const { source, selection } = vault("obsidian-vault");
+    const { source, selection } = vault("notes-folder");
     const service = createImportService(ports()),
       plan = await service.plan(projectId, userId, selection.manifest);
     expect(plan.state).toBe("ready");
@@ -49,10 +49,10 @@ describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
     expect(report.state).toBe("finished");
     expect(await projectDocuments()).toHaveLength(14);
     expect(
-      (await ok(context().read("kb://obsidian-vault/Chapters/Chapter 5 - Foundation"))).content,
+      (await ok(context().read("kb://notes-folder/Chapters/Chapter 5 - Foundation"))).content,
     ).not.toMatch(/^#/);
     expect(report.entries.find((entry) => entry.filename === "Lore.md")?.uri).toBe(
-      "kb://obsidian-vault/Lore/Lore",
+      "kb://notes-folder/Lore/Lore",
     );
     expect(
       report.entries
