@@ -6,6 +6,8 @@
  * `meridian.run_state` frame go into the chat's run-state slice as whole records, and the
  * `write_mode.switched` frame answers its intent there. Every other stream event is applied to
  * the transcript store by the turn it names, with append-only deltas coalesced per frame.
+ * The stream carries a record but not another client's user turn, so a record that names a
+ * waiting writer message the transcript lacks revalidates once (debounced with the other refreshes).
  * Durable block events and hand-backs apply at their own seq. After a snapshot that shows work
  * in progress, the subscription rewinds to the snapshot's cursor, so the reply it joins
  * streams from where the snapshot ends.
@@ -27,6 +29,7 @@ import {
   isDurableBlockEvent,
   isWellFormedDurableBlockEvent,
   receiveRecord,
+  unheldWriterMessages,
 } from "@meridian/thread-client";
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
@@ -109,11 +112,28 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
     let joined = false;
     const current = (expected: number) =>
       mounted && !accountSignal.aborted && generation === expected;
-    const refresh = (expected: number) => {
-      if (!current(expected) || timer) return;
+    /** A pending refresh that must run whatever the transcript holds. */
+    let unconditional = false;
+    /**
+     * Whether the newest record names a writer message the transcript lacks. The stream carries
+     * the record but not another client's user turn, so only a snapshot brings it. Asked when the
+     * timer fires, so this device's own message, acknowledged meanwhile, is no gap.
+     */
+    const hasGap = () => {
+      const record = actions.runState(threadId).record;
+      if (!record) return false;
+      const held = new Set((actions.turns(threadId) ?? []).map((turn) => turn.id));
+      return unheldWriterMessages(record, (id) => held.has(id)).length > 0;
+    };
+    const refresh = (expected: number, onlyIfGap = false) => {
+      if (!current(expected)) return;
+      if (!onlyIfGap) unconditional = true;
+      if (timer) return;
       timer = setTimeout(() => {
         timer = null;
-        if (current(expected)) refreshQuery();
+        const run = unconditional || hasGap();
+        unconditional = false;
+        if (current(expected) && run) refreshQuery();
       }, 250);
     };
     // One frame boundary for the stream: append-only deltas coalesce into a single store
@@ -153,6 +173,8 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 // A cancelled compaction ends with no RUN_FINISHED, and a divider reserves or
                 // settles with the execution: a record whose execution changed revalidates.
                 if (noteRecord(runState)) refresh(expected);
+                // Another client's waiting message: its turn is not on the stream.
+                else refresh(expected, true);
               }
               return;
             }
@@ -199,6 +221,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
             if (!current(expected)) return;
             actions.dispatchRunState(threadId, { type: "snapshot", runState: state.runState });
             noteRecord(state.runState);
+            refresh(expected, true);
           },
           onError: (failure) => {
             if (!current(expected)) return;
