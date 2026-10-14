@@ -195,7 +195,7 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     };
     expect(snapshot).toEqual({
       live: "Opening, drafted.\n\nCentre.\n\nEnd.\n",
-      draft: ["Opening, drafted.", "Centre.", "quickly ", "End, drafted."],
+      draft: ["Opening, drafted.", "Centre.", "quickly", "End, drafted."],
       base: ["Opening, drafted.", "Centre.", "End."],
       remaining: 1,
     });
