@@ -1,16 +1,13 @@
 /**
- * useWorkDrafts — reviewable AI draft list for one Work, and the Work's AI
- * write mode, whose change re-reads those drafts.
+ * useWorkDrafts — reviewable AI draft list for one Work.
  *
  * Projects one catalog-labelled file per active document draft, in stable order.
  */
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
-import type { UpdateWorkWriteModeRequest } from "@meridian/contracts/protocol";
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import { listWorkDrafts } from "@/client/api/drafts-api";
-import { updateWorkWriteMode } from "@/client/api/projects-api";
 import {
   readDraftsAfterCommands,
   shareDraftObservation,
@@ -19,10 +16,8 @@ import {
 import { projectDraftList } from "./draft-projection";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
-import { threadQueryKeys } from "./thread-query-keys";
 import { useContextCatalogViews } from "./useContextCatalog";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
-import { repairWorksSnapshot } from "./works-projection-acquisition";
 
 export type ThreadDraftsStatus = ListQueryStatus<ThreadDraftListItem> & {
   /** Raw query rows for generation evidence and command fences. */
@@ -125,33 +120,4 @@ export function useWorkDrafts(
     files,
     fileForDocument,
   };
-}
-
-export function useUpdateWorkWriteMode(projectId: string, workId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: UpdateWorkWriteModeRequest) => {
-      if (!workId) throw new Error("Cannot update write mode before a work is loaded");
-      return updateWorkWriteMode(projectId, workId, input);
-    },
-    onSuccess: async (result) => {
-      if (!workId) return;
-      invalidateWorkPushQueries(queryClient, projectId, workId);
-      if (result.status !== "updated") return;
-      await repairWorksSnapshot(queryClient, projectId);
-    },
-  });
-}
-
-function invalidateWorkPushQueries(
-  queryClient: QueryClient,
-  projectId: string,
-  workId: string,
-): void {
-  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.workDrafts(projectId, workId) });
-  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.threads(projectId) });
-  void queryClient.invalidateQueries({ queryKey: threadQueryKeys.all });
-  void queryClient.invalidateQueries({
-    queryKey: ["projects", projectId, "works", workId, "documents"],
-  });
 }

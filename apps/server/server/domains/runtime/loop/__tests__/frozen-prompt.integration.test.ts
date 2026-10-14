@@ -62,6 +62,7 @@ async function fixture(
   const project = await projects.create({ userId: "user-1", title: "Serial" });
   const noWork = await works.ensureNoWork(project.id);
   const thread = await repos.threads.create({
+    aiWriteMode: "direct",
     id: threadId,
     userId: "user-1",
     projectId: project.id,
@@ -103,6 +104,7 @@ async function fixture(
     agentCatalog,
     eventWriter: rig.deps.eventWriter,
     workContextNotices: rig.delivery,
+    effectiveWriteMode: (id) => rig.delivery.effectiveWriteMode(id),
     handoffBriefs: {
       async hold() {
         return {
@@ -479,6 +481,7 @@ describe("frozen prompt provider requests", () => {
     const first = await rig.run();
     expect(rig.requests).toHaveLength(2);
     const child = await rig.repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: rig.thread.userId,
       projectId: rig.thread.projectId,
       parentThreadId: rig.thread.id,
@@ -631,6 +634,7 @@ describe("frozen prompt provider requests", () => {
       status: "complete",
     });
     const child = await rig.repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: rig.thread.userId,
       projectId: rig.thread.projectId,
       parentThreadId: rig.thread.id,

@@ -319,15 +319,15 @@ describe("reply save refusals (postgres)", () => {
     );
   });
 
-  it("11: Apply all while staged drains the draft, which stays active, and the write lands in it even once the Work writes direct", async () => {
+  it("11: Apply all while staged drains the draft, which stays active, and the write lands in it even once the chat writes direct", async () => {
     const { fixture, branchId, responseId, review, write } = await setup();
     expect(await write("green", "lime", "w-green")).toMatchObject({ phase: "staged" });
     expect(await review.applyAll()).toMatchObject({ status: "completed" });
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("gold\n\nazure\n\ngreen\n");
     await db
-      .update(schema.works)
+      .update(schema.threads)
       .set({ aiWriteMode: "direct" })
-      .where(eq(schema.works.id, WORK_ID));
+      .where(eq(schema.threads.id, THREAD_ID as never));
     expect(refused(await harness.commit(responseId))).toEqual([]);
     expect(await fixture.draftMarkdown(branchId)).toBe("gold\n\nazure\n\nlime\n");
     expect((await fixture.collab.draftReview.items({ workId: WORK_ID })).draftId).not.toBeNull();

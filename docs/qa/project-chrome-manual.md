@@ -74,6 +74,12 @@ row list, which a document read cannot see.)
     stays and **no failure appears**.
 20. Force admission to fail. The screen **stays on Editor**, the dock stays, and
     **Retry clears the failure**.
+    - The dock header has no `…` "Document actions" menu: **Open in Editor** is a
+      direct button, and **Collapse** is pinned to the right with the review controls
+      wrapping or shrinking beside it.
+    - When Open in Editor fails, "This view couldn't open." shows as **a line under
+      the header**, tied to the button, and Collapse comes before the review controls
+      in tab order.
 21. Issue a new dock intent while a tab install is in flight. The newer intent wins
     and the tab still installs.
 22. Navigate same-screen after a source rail action. The feedback **expires**;
@@ -82,6 +88,15 @@ row list, which a document read cannot see.)
     permanently**.
 24. Park an occupant for another project, and separately for Work. Neither receives
     the document; a parked Chat occupant is left alone.
+
+## Write mode
+
+Work has no Work-level write-mode control and no "Apply it now or keep them for
+review?" confirmation; each chat owns its write mode.
+
+31. Open a Work page. It **shows no write-mode control**. Open a chat in it: the
+    composer has a **Draft or Auto-apply menu** showing "Draft (N)" while N changes
+    wait for review. Switching one chat's mode leaves the others as they were.
 
 ## Rename feedback and hand-off
 

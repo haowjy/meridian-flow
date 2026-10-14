@@ -42,6 +42,7 @@ else
 
     it("roots an organic primary at itself", async () => {
       const created = await repos.threads.create({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         title: "Organic root",
@@ -51,6 +52,7 @@ else
 
     it("persists a fork in the source's lineage and a handoff in its own", async () => {
       const subagent = await repos.threads.createSubagent({
+        aiWriteMode: "direct",
         userId: ids.userId,
         projectId: ids.projectId,
         workId: ids.noWorkId,
@@ -66,6 +68,7 @@ else
         status: "complete",
       });
       const { thread: fork } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,
@@ -80,6 +83,7 @@ else
 
       // A handoff keeps the sibling provenance but starts its own lineage (and so its own Scratch).
       const { thread: handoff } = await repos.threads.createDerivedPrimary({
+        aiWriteMode: "direct",
         id: crypto.randomUUID() as never,
         userId: ids.userId,
         projectId: ids.projectId,

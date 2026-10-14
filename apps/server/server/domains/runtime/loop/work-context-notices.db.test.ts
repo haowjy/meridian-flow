@@ -225,7 +225,11 @@ else
 
     it("materializes at a held run boundary, ordered with messages, and excludes Work IDs from response ack", async () => {
       const notices = delivery();
-      const lease = await runClaim.startExecution(ids.threadId, crypto.randomUUID());
+      const lease = await runClaim.startExecution(
+        ids.threadId,
+        crypto.randomUUID(),
+        async () => {},
+      );
       if (!lease) throw new Error("Missing lease");
       const assistant = createLocalTurn({
         threadId: ids.threadId,

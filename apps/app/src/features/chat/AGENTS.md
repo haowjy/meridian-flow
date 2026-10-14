@@ -41,7 +41,7 @@ the draft, then retires the journal record. A received transfer shows no old Sen
 commands, and reload finishes retirement without prepending again.
 Never-created chat Edit returns all its messages and unsent writing to New chat
 in the same pane. Lifecycle transfers publish a new editor mount; typing does
-not. `useThreadRunResume` only attaches snapshot-based active runs.
+not.
 Pending upload bytes do not persist. Successfully uploaded reference atoms do.
 
 ## Mental model
@@ -127,6 +127,28 @@ causal position. Its execution UUID is internal correlation to the matching
 invocation card; copy comes from structured handle/outcome metadata, never
 notice-text parsing. Keep this visibility rule aligned with
 `threads/domain/visible-conversation-policy.ts`.
+
+The run controller (`client/copilot/ThreadRunController.ts`) follows a chat by
+the pure rule in `client/copilot/run-follow.ts`, from server-decided run identity
+facts (a turn's execution, position and the messages it was reserved for, a
+message's deliverer, an execution's end), never by transcript ancestry or
+timers. Those facts are write-once, so what binds, when the chat settles and
+which turn Stop targets (the running execution's highest `Turn.position`) do not
+depend on the order a tab learns them. Two inputs are ordered by seq instead:
+the pending projection (an older one is ignored) and the stream cursor that
+routes un-addressed deltas (a snapshot older than the stream's last start or
+end merges its facts but does not move it). A writer message in the chat's
+pending inbox, or just admitted by this tab, is owed until delivered, so every
+tab keeps Stop while one is undelivered. A Stop waiting for work lands only on
+an execution that takes on or delivers a message owed at the press, and never
+on one that serves a message owed after the press; later sends don't retire
+it, so separate press-time work is still stopped. Retry stand-ins reconcile by
+their request's execution or `metadata.retryReplyId`, read from the same facts
+(`useRunFacts`, reactive to the controller).
+`useThreadRunResume` attaches the snapshot's open execution only while settled.
+The composer shows Stop while a reply streams, a placeholder is pending, or the
+controller is unsettled, except while owed messages wait on an account that
+can't start a turn (`useOwedMessagesBlocked`).
 
 The mounted snapshot-sync hook, not the run controller, owns addressed
 `meridian.block.upserted` projection for the whole

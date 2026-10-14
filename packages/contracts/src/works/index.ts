@@ -1,6 +1,7 @@
-export type AiWriteMode = "direct" | "draft";
+export { type AiWriteMode, aiWriteModeSchema, effectiveAiWriteMode } from "./ai-write-mode.js";
 
 import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
+import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
 import type { WorkSlug } from "./work-slug.js";
 
@@ -16,7 +17,8 @@ export interface Work {
   /** AI-owned one-to-three-word progress summary. */
   status: string | null;
   archivedAt: string | null;
-  aiWriteMode: AiWriteMode;
+  /** What a new chat in this Work starts with. A chat owns its own mode afterwards. */
+  defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
   /** Server count of unpushed branch-write rows across this Work's branches; never derive from visible rows. */
@@ -96,7 +98,6 @@ export type WorkContextUpdateStatus = "delivered" | "pending" | "not_required";
 export type WorkBindingState = WorkReceiptState & {
   workId: WorkId;
   slug: WorkSlug | null;
-  aiWriteMode: AiWriteMode;
 };
 
 /** Authoritative result shared by writer and model Work-rebind adapters. */

@@ -80,6 +80,7 @@ export function createThreadRuntimeService(deps: {
     readMany: (threadIds: readonly ThreadId[]) => deps.statusReader.readMany(threadIds),
     /** The lease's bound running turn, exposed so snapshot reads share one truth. */
     readRunningTurnId: (threadId: ThreadId) => deps.statusReader.readRunningTurnId(threadId),
+    readOpenExecutionId: (threadId: ThreadId) => deps.statusReader.readOpenExecutionId(threadId),
     /** The undelivered inbox read, exposed so snapshot reads share one projection. */
     readPending: (threadId: ThreadId) => deps.readPending(threadId),
     async journalEvents(threadId: ThreadId) {

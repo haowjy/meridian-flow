@@ -63,7 +63,11 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
     },
     boundThreads: () => [sourceId],
   });
-  const source = await rig.repos.threads.create({ userId: "writer", projectId: "project" });
+  const source = await rig.repos.threads.create({
+    aiWriteMode: "direct",
+    userId: "writer",
+    projectId: "project",
+  });
   sourceId = source.id;
   await rig.repos.threads.bakeInitialPrompt(source.id, {
     composedSystemPrompt: "Frozen source prompt",
@@ -176,6 +180,7 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
     status: "partial",
   });
   const destination = await rig.repos.threads.create({
+    aiWriteMode: "direct",
     userId: source.userId,
     projectId: source.projectId,
   });

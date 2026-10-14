@@ -182,6 +182,7 @@ async function setup(
           status: "complete",
         });
         return rig.repos.threads.createSubagent({
+          aiWriteMode: "direct",
           userId: USER_ID,
           projectId: rig.project.id,
           parentThreadId: rig.thread.id,
@@ -218,7 +219,7 @@ describe("inbox drain", () => {
       origin: "system",
       status: "pending",
     });
-    const lease = await runClaim.startExecution(threadId, "failed-summary");
+    const lease = await runClaim.startExecution(threadId, "failed-summary", async () => {});
     if (!lease) throw new Error("Expected compaction lease");
     await runClaim.bindTurn(lease, placeholder.id, [adopted.id], "compaction");
 
@@ -686,6 +687,7 @@ describe("drain-only start", () => {
       prevTurnId: null,
     });
     const child = await repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: thread.userId,
       projectId: thread.projectId,
       parentThreadId: thread.id,

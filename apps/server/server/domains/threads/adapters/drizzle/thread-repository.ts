@@ -13,6 +13,7 @@ import type {
   ThreadLifecycleStatus,
 } from "@meridian/contracts/threads";
 import { formatThreadRef } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
@@ -61,10 +62,23 @@ const agentName = sql<string | null>`(
   WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
 )`;
 
+// The chat's queued mode switch, read with the row (the oldest undelivered `write_mode` control).
+const pendingWriteMode = sql<AiWriteMode | null>`(
+  SELECT ${schema.threadInboxMessages.body}->>'mode'
+  FROM ${schema.threadInboxMessages}
+  WHERE ${schema.threadInboxMessages.threadId} = ${schema.threads}.${sql.identifier("id")}
+    AND ${schema.threadInboxMessages.deliveredAt} IS NULL
+    AND ${schema.threadInboxMessages.intent} = 'control'
+    AND ${schema.threadInboxMessages.body}->>'kind' = 'write_mode'
+  ORDER BY ${schema.threadInboxMessages.seq}
+  LIMIT 1
+)`;
+
 const threadColumns = {
   ...getTableColumns(schema.threads),
   agentDefinitionRevisionId,
   agentName,
+  pendingWriteMode,
 };
 
 type ThreadListRow = typeof schema.threads.$inferSelect & {
@@ -138,7 +152,10 @@ export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
 
 async function insertThreadRow(
   db: DrizzleDatabase,
-  values: Omit<typeof schema.threads.$inferInsert, "ref" | "kind"> & { kind: ThreadKind },
+  values: Omit<typeof schema.threads.$inferInsert, "ref" | "kind" | "aiWriteMode"> & {
+    kind: ThreadKind;
+    aiWriteMode: AiWriteMode;
+  },
   options: { ignoreIdConflict?: boolean } = {},
 ) {
   return runInDrizzleTransaction(db, async () => {
@@ -176,6 +193,7 @@ export function createDrizzleThreadRepository(
         projectId: input.projectId as ProjectId,
         createdByUserId: input.userId as string,
         kind: normalized.kind,
+        aiWriteMode: input.aiWriteMode,
         title: normalized.title,
         parentThreadId: normalized.parentThreadId,
         rootThreadId: threadId,
@@ -193,6 +211,7 @@ export function createDrizzleThreadRepository(
         projectId: thread.projectId as ProjectId,
         createdByUserId: thread.userId,
         kind: thread.kind,
+        aiWriteMode: thread.aiWriteMode,
         title: thread.title ?? "",
         initialPromptBakeId: thread.initialPromptBakeId ?? null,
         parentThreadId: thread.parentThreadId,
@@ -215,6 +234,7 @@ export function createDrizzleThreadRepository(
           projectId: thread.projectId as ProjectId,
           createdByUserId: thread.userId,
           kind: "primary",
+          aiWriteMode: thread.aiWriteMode,
           title: thread.title ?? "",
           initialPromptBakeId: thread.initialPromptBakeId ?? null,
           parentThreadId: thread.parentThreadId,
@@ -519,6 +539,14 @@ export function createDrizzleThreadRepository(
         .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
+    },
+    async setAiWriteMode(id, mode) {
+      const rows = await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({ aiWriteMode: mode, updatedAt: new Date() })
+        .where(eq(schema.threads.id, id))
+        .returning({ id: schema.threads.id });
+      if (rows.length === 0) throw new Error(`Thread not found: ${id}`);
     },
     async bakeInitialPrompt(
       id,

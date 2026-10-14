@@ -9,14 +9,13 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
-/** A Work as the handler returns it. Write mode and pending changes use the writer's words. */
+/** A Work as the handler returns it. Pending changes use the writer's words. */
 export interface ModelWork {
   slug: string | null;
   name: string;
   goal: string | null;
   status: string | null;
   archivedAt: string | null;
-  writes: "draft mode" | "auto-apply";
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
@@ -103,8 +102,7 @@ function renderShow(result: WorkShowResult, verbose: boolean): string {
 
 /**
  * One Work: slug, name, status, then the goal cut to `goalLength` (0 omits it),
- * write mode only when it's draft mode, pending changes only when there are
- * some, and archived. `verbose` adds a line of dates.
+ * pending changes only when there are some, and archived. `verbose` adds a line of dates.
  */
 function workLines(work: ModelWork, verbose: boolean, goalLength: number): string {
   const name = work.status ? `${work.name} (${work.status})` : work.name;
@@ -112,7 +110,6 @@ function workLines(work: ModelWork, verbose: boolean, goalLength: number): strin
     workRef(work),
     name,
     goalLength > 0 && work.goal ? clip(work.goal, goalLength) : undefined,
-    work.writes === "draft mode" ? "draft mode" : undefined,
     work.pendingChangeCount ? pending(work.pendingChangeCount) : undefined,
     work.archivedAt ? "(archived)" : undefined,
   ].filter((fact) => fact !== undefined);

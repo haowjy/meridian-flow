@@ -9,7 +9,7 @@ import {
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -70,7 +70,7 @@ function mapWork(row: WorkRow): Work {
     goal: row.goal,
     status: row.status,
     archivedAt: row.archivedAt?.toISOString() ?? null,
-    aiWriteMode: row.aiWriteMode as AiWriteMode,
+    defaultAiWriteMode: row.defaultAiWriteMode,
     entityRevision: String(row.entityRevision),
     lastActivityAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -240,7 +240,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
             name: NO_WORK_NAME,
             slug: null,
             isNoWork: true,
-            aiWriteMode: "direct",
+            defaultAiWriteMode: "direct",
           })
           .returning();
         if (!row) throw new Error("Failed to create No Work");
@@ -399,6 +399,20 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         }
         throw cause;
       }
+    },
+    async setDefaultAiWriteMode(id: WorkId, mode: AiWriteMode): Promise<void> {
+      await runInDrizzleTransaction(db, async () => {
+        const [changed] = await currentDrizzleDb(db)
+          .update(works)
+          .set({
+            defaultAiWriteMode: mode,
+            entityRevision: sql`${works.entityRevision} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(works.id, id), ne(works.defaultAiWriteMode, mode)))
+          .returning({ id: works.id });
+        if (changed) await projectionMutation.publishWorks([id]);
+      });
     },
     async touch(id: WorkId): Promise<void> {
       const activeDb = currentDrizzleDb(db);

@@ -6,6 +6,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type SpawnResult } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
+import type { AiWriteMode } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -49,7 +50,11 @@ function stubOrchestrator(
   let counter = 0;
   return {
     async prepare(input) {
-      const lease = await authority.startExecution(input.threadId, crypto.randomUUID());
+      const lease = await authority.startExecution(
+        input.threadId,
+        crypto.randomUUID(),
+        async () => {},
+      );
       if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
       counter += 1;
       const assistantTurnId = `assistant-turn-${counter}` as TurnId;
@@ -94,7 +99,7 @@ function stubOrchestrator(
       return {
         userTurnId: userTurn.id,
         executionTurnId: assistantTurnId,
-        runId: assistantTurnId,
+        executionId: assistantTurnId,
         resumeAfterSeq: "0",
         snapshotFloorNextSeq: "1",
         execute: async () => {
@@ -129,6 +134,7 @@ async function fixture(
     eventWriter?: EventJournalWriter;
     realRuntime?: boolean;
     gateway?: ReturnType<typeof scriptedGateway>;
+    parentAiWriteMode?: AiWriteMode;
   } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
@@ -191,7 +197,11 @@ async function fixture(
   const parentRevision = parentInstalled.definitions[0];
   if (!parentRevision) throw new Error("Missing parent revision");
 
-  const parent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const parent = await repos.threads.create({
+    aiWriteMode: options.parentAiWriteMode ?? "direct",
+    userId: "user-1",
+    projectId: "project-1",
+  });
   const namedTargets = [
     { name: "critic", definitionRevisionId: critic.id },
     { name: "hidden", definitionRevisionId: hidden.id },
@@ -401,6 +411,24 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(allowed.status).toBe("completed");
   });
 
+  it("starts the child in its parent chat's mode", async () => {
+    const { coordinator, parent, journal, repos } = await fixture({ parentAiWriteMode: "draft" });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    const childId = journal.find((event) => event.type === "agent.spawn")?.childThreadId;
+    expect((await repos.threads.findById(childId as ThreadId))?.aiWriteMode).toBe("draft");
+  });
+
   it("refuses a rostered target that is not model-invocable", async () => {
     const { coordinator, parent } = await fixture();
     const result = await coordinator.runChild(
@@ -423,6 +451,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
   it("refuses a named child with a tool its parent lacks until the spawn denies it", async () => {
     const { coordinator, revisions, repos, critic, journal } = await fixture();
     const restrictedParent = await repos.threads.create({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: "project-1",
     });
@@ -492,7 +521,11 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(loweredBinding?.configuration.permission).toBe("read");
 
     const spawnsBefore = journal.filter((event) => event.type === "agent.spawn").length;
-    const readParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    const readParent = await repos.threads.create({
+      aiWriteMode: "direct",
+      userId: "user-1",
+      projectId: "project-1",
+    });
     const parentBinding = await revisions.readThreadBinding(parent.id);
     if (!parentBinding) throw new Error("Missing parent binding");
     await revisions.bindThread(
