@@ -11,11 +11,15 @@ only browser scheduling. There is no report page, route or
 status row; a clean finish leaves nothing: the coordinator retires the import
 once its bridges close. A failed file keeps its row warning and
 its in-document notice (`ImportDocumentNotice.tsx`) with Retry. The tree and the
-phone listing show only the run's own marks (`ImportRunMark`): a spinner while the
-selection is read, and a not-started warning. No surface yet shows sending
-progress, an interrupted import or Stop here: the owner is deciding where one
-global progress popup goes. It will read `coordinator.view` and
-`display-state.ts` as they are. `StopImportDialog` waits for it. The server (`apps/server/server/domains/import`) owns
+phone listing show the run's own marks (`ImportRunMark`): a spinner while the
+selection is read, a quiet spinner while files are sent (menu: Stop import), and
+warnings for an import that didn't start (Try again, Discard), one the server wants
+files for that this tab doesn't hold (Continue import…, Stop here) and one with
+failed files (Retry failed files when this tab holds them, else Continue import…;
+Stop here). Each menu opens with the state's sentence (`runSentence`). `run-mark.ts`
+derives the kind from `display-state.ts`; Stop opens `StopImportDialog` through the
+provider's `openStop` and runs the coordinator's `stop`. A future progress popup
+reads the same `ImportRunInfo`. The server (`apps/server/server/domains/import`) owns
 planning, allocation, conversion and landing; this feature owns what the browser
 can do about it.
 
@@ -31,7 +35,7 @@ cleanup.
   plan and the uploads run in the background; a failure is shown on the import,
   never by going back.
 - **A refused or lost plan is `not-started` with its code.** `targetOf`
-  (`placements.ts`) is the one contract for where an import and its marks show: the
+  (`placements.ts`, from the predicted rows until the status is read in full, then from the status) is the one contract for where an import and its marks show: the
   predicted root folder rows, else the destination folder, else each routed area's
   header (`anchors`). The tree and the phone listing render `ImportRunMark` from
   it, and its menu offers Try again (same id, same manifest) and Discard (local
