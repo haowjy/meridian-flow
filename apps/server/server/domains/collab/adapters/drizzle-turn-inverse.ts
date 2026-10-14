@@ -47,8 +47,9 @@ type Dependencies = {
   resolveDocumentUri(documentId: string): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   flushLivePull(documentId: DocumentId): Promise<void>;
-  notices?: import("../domain/reversal-notices.js").TurnInverseNoticePort;
-  workProjection?: WorkProjectionMutation;
+  notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
+  /** Revert, rollback and mark-blocking change pending membership, so they publish through it. */
+  workProjection: Pick<WorkProjectionMutation, "mutatePendingBranches">;
 };
 export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
@@ -179,14 +180,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     },
     async markBlocking(branchIds) {
       if (!branchIds.length) return;
-      const mark = async () => {
+      await input.workProjection.mutatePendingBranches(branchIds, async () => {
         await db()
           .update(documentBranches)
           .set({ blocking: true })
           .where(inArray(documentBranches.id, branchIds));
-      };
-      if (input.workProjection) await input.workProjection.mutatePendingBranches(branchIds, mark);
-      else await mark();
+      });
     },
     describePart(document, part) {
       const doc =
@@ -394,7 +393,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               await input.flushLivePull(document.documentId);
             }
             if (kind !== "rollback" && kind !== "revert" && !query.model && query.turnId)
-              await input.notices?.record({
+              await input.notices.record({
                 docId: document.documentId,
                 threadId: query.threadId,
                 direction: kind,
@@ -407,9 +406,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
       };
       const branchIds = plans.flatMap((plan) => (plan.branchId ? [plan.branchId] : []));
-      if (branchIds.length && input.workProjection)
-        await input.workProjection.mutatePendingBranches(branchIds, mutate);
-      else await mutate();
+      await input.workProjection.mutatePendingBranches(branchIds, mutate);
       return handles;
     },
   };
