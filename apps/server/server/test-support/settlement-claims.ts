@@ -23,11 +23,3 @@ export function expirePendingSettlementClaims(db: Database) {
       ),
     );
 }
-
-/** Brings every pending batch's retry backoff due now, as if its wait had passed. */
-export function makePendingSettlementsDue(db: Database) {
-  return currentDrizzleDb(db)
-    .update(branchPushSettlementBatches)
-    .set({ availableAt: sql`clock_timestamp() - interval '1 second'` })
-    .where(eq(branchPushSettlementBatches.state, "pending"));
-}
