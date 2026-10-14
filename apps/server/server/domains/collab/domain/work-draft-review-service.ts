@@ -30,6 +30,7 @@ import type { DraftReviewIdentity } from "./draft-review-identity.js";
 import type { DraftReviewItem, DraftReviewItems } from "./draft-review-items.js";
 import type { Drafts } from "./drafts.js";
 import type { ReadReviewCut } from "./ports/review-cut.js";
+import type { WorkDraftPendingStore } from "./ports/work-draft-pending-store.js";
 import { deriveReviewCut, selectReviewCut } from "./review-cut.js";
 
 export type DraftReviewDiagnostics = {
@@ -48,6 +49,7 @@ export function createWorkDraftReviewService(input: {
   readReviewCut: ReadReviewCut;
   model: YProsemirrorDocumentModel;
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
+  pending: Pick<WorkDraftPendingStore, "listDraftsChangingDocument">;
 }): CollabDrafts {
   async function workItems(
     workId: WorkId,
@@ -309,6 +311,7 @@ export function createWorkDraftReviewService(input: {
         ]);
         return { draftId, items: rendered, threadTitles };
       },
+      draftsChangingDocument: (command) => input.pending.listDraftsChangingDocument(command),
       items: (command) => workItems(command.workId),
       resolveItem: (command) => input.identity.resolveReviewItem(command),
       resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),
