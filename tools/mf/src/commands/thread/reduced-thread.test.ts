@@ -44,7 +44,18 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
     ["text", 0],
   ]);
   const view = viewSnapshot(
-    { liveState: { pending: { items: [] } } } as unknown as ThreadSnapshotResponse,
+    {
+      liveState: {
+        runState: {
+          version: "9999",
+          items: [],
+          sentThrough: 0,
+          execution: null,
+          mode: "direct",
+          blocked: null,
+        },
+      },
+    } as unknown as ThreadSnapshotResponse,
     reduced.turns(),
   );
   const items = view.items.get(turnId)?.items.map((item) => item.kind);

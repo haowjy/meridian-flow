@@ -175,23 +175,43 @@ function createFake() {
     for (const socket of sockets) if (socket.readyState === 1) socket.send(JSON.stringify(frame));
   };
 
-  const currentLiveState = () => {
-    const runningTurnId = !snapshotPolicy.running
+  const runningTurn = () =>
+    !snapshotPolicy.running
       ? null
       : (turns
           .slice()
           .reverse()
           .find((turn) => ["streaming", "waiting_interrupt"].includes(turn.status))?.id ?? null);
+
+  /** The chat's whole run-state record, as the server publishes it. */
+  const runStateRecord = (version: string, items: unknown[], blocked: boolean) => {
+    const turn = runningTurn();
+    return {
+      version,
+      items,
+      sentThrough: 0,
+      execution: turn ? { executionId: `exec-${turn}`, currentTurnId: turn } : null,
+      mode: "direct",
+      blocked: blocked ? { reason: "credits_exhausted" } : null,
+    };
+  };
+
+  const publishRunState = (items: unknown[], blocked: boolean) =>
+    publish({
+      type: "CUSTOM",
+      name: "meridian.run_state",
+      value: runStateRecord(nextSeq(), items, blocked),
+    } as AGUIEvent);
+
+  const currentLiveState = () => {
+    const runningTurnId = runningTurn();
     return {
       ...liveState(String(journal.length), pendingItems),
       pending: {
         items: pendingItems,
         ...(blockedForUsage ? { blocked: { reason: "credits_exhausted" } } : {}),
       },
-      runState: {
-        ...liveState(String(journal.length), pendingItems).runState,
-        blocked: blockedForUsage ? { reason: "credits_exhausted" } : null,
-      },
+      runState: runStateRecord(String(journal.length), pendingItems, blockedForUsage),
       runningTurnId,
       status:
         runningTurnId || leaseReleasePending || snapshotPolicy.awake
@@ -538,6 +558,7 @@ function createFake() {
           threadId: THREAD_ID,
           userTurnId,
           steersTurnId: first.id,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -608,6 +629,7 @@ function createFake() {
           threadId: THREAD_ID,
           userTurnId,
           steersTurnId: runningTurnId,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -673,6 +695,7 @@ function createFake() {
           threadId: THREAD_ID,
           userTurnId,
           steersTurnId: runningTurnId,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -748,6 +771,7 @@ function createFake() {
           threadId: THREAD_ID,
           userTurnId,
           steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -817,6 +841,7 @@ function createFake() {
           threadId: THREAD_ID,
           userTurnId,
           steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -842,18 +867,10 @@ function createFake() {
           summary: body.text,
           enqueuedAt: "2026-01-02T00:00:00.000Z",
         };
-        publish({
-          type: "CUSTOM",
-          name: "meridian.inbox.changed",
-          value: { items: [item], blocked: { reason: "credits_exhausted" } },
-        } as AGUIEvent);
+        publishRunState([item], true);
         blockedForUsage = false;
         pendingItems.splice(0, pendingItems.length);
-        publish({
-          type: "CUSTOM",
-          name: "meridian.inbox.changed",
-          value: { items: [] },
-        } as AGUIEvent);
+        publishRunState([], false);
         turns.push({
           id: replyId,
           role: "assistant",
@@ -869,6 +886,7 @@ function createFake() {
           threadId: THREAD_ID,
           userTurnId,
           steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -888,16 +906,13 @@ function createFake() {
         });
         setTimeout(() => {
           blockedForUsage = true;
-          publish({
-            type: "CUSTOM",
-            name: "meridian.inbox.changed",
-            value: { items: pendingItems, blocked: { reason: "credits_exhausted" } },
-          } as AGUIEvent);
+          publishRunState(pendingItems, true);
         }, 50);
         return send(202, {
           threadId: THREAD_ID,
           userTurnId,
           steersTurnId: null,
+          runStateVersion: null,
           resumeAfterSeq,
           snapshotFloorNextSeq: resumeAfterSeq,
           status: "accepted",
@@ -911,6 +926,7 @@ function createFake() {
         submissionId: body.submissionId,
         userTurnId: `turn-u${runCounter}`,
         steersTurnId: null,
+        runStateVersion: null,
         resumeAfterSeq,
         snapshotFloorNextSeq: resumeAfterSeq,
         status: "accepted",

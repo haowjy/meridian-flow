@@ -1,5 +1,6 @@
 import {
   apiThreadSnapshotPath,
+  RUN_STATE_EVENT,
   type ThreadLiveState,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
@@ -14,6 +15,7 @@ import {
 import { type LiveViewReport, ReducedThread } from "./reduced-thread";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { type Claim, classifyDeadline, finishResult, terminalResult } from "./result";
+import { currentTurnId, recordIsIdle } from "./run-state";
 import { followThread } from "./stream";
 
 export const threadTailCommand: CommandSpec = {
@@ -27,7 +29,7 @@ export const threadTailCommand: CommandSpec = {
     "until-idle": {
       type: "boolean",
       description:
-        "Confirm no running turn or awake lease and no pending writer message (already idle returns immediately)",
+        "Confirm no open execution or awake lease and no pending writer message (already idle returns immediately)",
     },
     timeout: { type: "string", description: "Stop after this long (default 10m)" },
     full: { type: "boolean", description: "Do not truncate tool payloads" },
@@ -64,7 +66,8 @@ export const threadTailCommand: CommandSpec = {
       const initial = since === undefined || untilIdle ? await readSnapshot() : null;
       if (initial) reduced.hydrate(initial);
       since ??= initial?.liveState.resumeAfterSeq ?? "0";
-      if (initial?.liveState.runningTurnId) turnIds.add(initial.liveState.runningTurnId);
+      const initialTurn = initial ? currentTurnId(initial.liveState.runState) : null;
+      if (initialTurn) turnIds.add(initialTurn);
       if (untilIdle && initial && isIdle(initial.liveState))
         return finishResult(ctx.out, tailResult(threadId, initial, new Set()));
       const result = await followThread({
@@ -85,13 +88,14 @@ export const threadTailCommand: CommandSpec = {
               event.type === "execution.ended" ||
               event.type === "turn.failed" ||
               (event.type === "event" &&
-                ["meridian.thread.status", "meridian.inbox.changed"].includes(event.name)))
+                ["meridian.thread.status", RUN_STATE_EVENT].includes(event.name)))
           );
         },
         ...(untilIdle
           ? {
               shouldStopState(state) {
-                if (state.runningTurnId) turnIds.add(state.runningTurnId);
+                const turn = currentTurnId(state.runState);
+                if (turn) turnIds.add(turn);
                 return isIdle(state);
               },
               async confirmStop(observed: readonly string[]) {
@@ -137,14 +141,9 @@ export const threadTailCommand: CommandSpec = {
   },
 };
 
+/** Asleep, with no open execution and no writer message in the record (`isBusy` on a view with no intents). */
 function isIdle(state: ThreadLiveState): boolean {
-  return (
-    state.runningTurnId === null &&
-    state.status.kind === "asleep" &&
-    !state.pending.items.some(
-      (item) => item.intent === "message" && item.provenance.kind === "writer",
-    )
-  );
+  return state.status.kind === "asleep" && recordIsIdle(state);
 }
 
 /** Known terminal outcomes survive gaps; missing replay cannot prove completion. */

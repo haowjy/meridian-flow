@@ -18,8 +18,8 @@ import {
 import {
   type DeliveryEvent,
   type FoldDigest,
-  queuedWriterTurnIds,
   type RowIdentity,
+  switchState,
   type TranscriptView,
   type TurnStats,
   type ViewItem,
@@ -27,9 +27,11 @@ import {
   viewTranscript,
   type WorkReceipt,
   type WriterReferenceOccurrence,
+  waitingWriterMessages,
   workReceipt,
 } from "@meridian/thread-client";
 import { oneLine, truncate } from "../../core/output";
+import { currentTurnId, viewOfLive } from "./run-state";
 import { asRecord, liveStatusLabel } from "./transcript";
 
 export const CHAT_VIEW_VERSION = 2;
@@ -47,7 +49,7 @@ export type ChatViewInputs = {
   opening: "none";
   /** No live children are known, so a reply is never held open for background subagents. */
   liveActivity: "none";
-  queued: "snapshot pending inbox";
+  queued: "snapshot run state";
   /** The browser fetches each child's report for its card; the snapshot has none, so no card here carries one. */
   backgroundReports: "not fetched";
   /** The browser fetches a reply's change trails; none are carried. */
@@ -160,7 +162,15 @@ export type ChatViewEnvelope = {
     turnCount: number;
     totalCostUsd: string;
   };
-  live: { status: string; runningTurnId: string | null; pending: number; actionRequired: boolean };
+  live: {
+    status: string;
+    runningTurnId: string | null;
+    pending: number;
+    /** The chat's applied write mode, and the mode of a switch still queued behind the reply. */
+    mode: string;
+    switchQueued: string | null;
+    actionRequired: boolean;
+  };
   inputs: ChatViewInputs;
   rows: ChatRow[];
   showing: number;
@@ -174,7 +184,7 @@ export function viewSnapshot(snapshot: Pick<ThreadSnapshotResponse, "liveState">
   return viewTranscript({
     turns,
     activity: { awaitingSubagents: false },
-    queued: queuedWriterTurnIds(snapshot.liveState.pending),
+    queued: new Set(waitingWriterMessages(viewOfLive(snapshot.liveState)).map((item) => item.id)),
   });
 }
 
@@ -188,6 +198,13 @@ export function selectRows(
     : [...rows];
   const last = options.full || options.turnId ? matched.length : (options.last ?? 20);
   return { rows: matched.slice(-last), total: matched.length };
+}
+
+/** The mode line: the applied mode, and a queued switch's mode, from the shared switch fold. */
+function switchLine(live: ThreadSnapshotResponse["liveState"]) {
+  const folded = switchState(viewOfLive(live));
+  const queued = folded?.rows.find((row) => row.status === "queued");
+  return { mode: folded?.mode ?? live.runState.mode, switchQueued: queued?.mode ?? null };
 }
 
 export function projectChatView(
@@ -212,8 +229,9 @@ export function projectChatView(
     },
     live: {
       status: liveStatusLabel(snapshot),
-      runningTurnId: snapshot.liveState.runningTurnId,
-      pending: snapshot.liveState.pending.items.length,
+      runningTurnId: currentTurnId(snapshot.liveState.runState),
+      pending: snapshot.liveState.runState.items.length,
+      ...switchLine(snapshot.liveState),
       actionRequired: snapshot.actionRequired,
     },
     inputs: {
@@ -223,7 +241,7 @@ export function projectChatView(
       standIns: "none",
       opening: "none",
       liveActivity: "none",
-      queued: "snapshot pending inbox",
+      queued: "snapshot run state",
       backgroundReports: "not fetched",
       changeTrails: "not fetched",
     },
@@ -508,7 +526,7 @@ export function renderChatView(view: ChatViewEnvelope): string {
   const lines = [
     `thread ${thread.id}${thread.ref ? ` (${thread.ref})` : ""}: ${thread.title ?? "(untitled)"}`,
     `  project ${thread.projectId}  work ${thread.workId ?? "(none)"}  agent ${thread.agentName ?? "?"}`,
-    `  live ${live.status}${live.runningTurnId ? ` running ${live.runningTurnId}` : ""}  pending ${live.pending}${live.actionRequired ? "  ACTION REQUIRED" : ""}  cost $${thread.totalCostUsd}`,
+    `  live ${live.status}${live.runningTurnId ? ` running ${live.runningTurnId}` : ""}  pending ${live.pending}  mode ${live.mode}${live.switchQueued ? ` (switching to ${live.switchQueued})` : ""}${live.actionRequired ? "  ACTION REQUIRED" : ""}  cost $${thread.totalCostUsd}`,
     `  chatView ${view.chatView}  rows: showing ${view.showing} of ${view.total}${view.showing < view.total ? " (--full or --turn for more)" : ""}`,
     `  inputs: turns from ${inputs.turns}; inherited history ${inputs.inherited}; local records ${inputs.localRecords}, stand-ins ${inputs.standIns}, live activity ${inputs.liveActivity}; queued from ${inputs.queued}; background reports ${inputs.backgroundReports}, change trails ${inputs.changeTrails}`,
   ];

@@ -64,7 +64,7 @@ const snapshot = (): ThreadSnapshotResponse => ({
   nextSeq: "1",
   ancestors: [],
 });
-const message: ThreadSnapshotResponse["liveState"]["pending"]["items"][number] = {
+const message: ThreadSnapshotResponse["liveState"]["runState"]["items"][number] = {
   id: "writer-message",
   seq: 1,
   intent: "message",
@@ -77,9 +77,9 @@ const message: ThreadSnapshotResponse["liveState"]["pending"]["items"][number] =
 describe("classifyDeadline", () => {
   it("running takes precedence over owed and awake and offers cancellation", () => {
     const state = snapshot();
-    state.liveState.runningTurnId = "running-turn";
+    state.liveState.runState.execution = { executionId: "e1", currentTurnId: "running-turn" };
     state.liveState.status = { kind: "awake", phase: "generating", cancelRequested: false };
-    state.liveState.pending.items = [message];
+    state.liveState.runState.items = [message];
     expect(classifyDeadline(state, THREAD_ID)).toEqual({
       reason: "running",
       stillRunning: { turnId: "running-turn", status: "unknown" },
@@ -94,7 +94,7 @@ describe("classifyDeadline", () => {
   it("owed requires a pending writer message and takes precedence over awake", () => {
     const state = snapshot();
     state.liveState.status = { kind: "awake", phase: "generating", cancelRequested: false };
-    state.liveState.pending.items = [message];
+    state.liveState.runState.items = [message];
     expect(classifyDeadline(state, THREAD_ID)).toMatchObject({
       reason: "owed",
       stillRunning: null,

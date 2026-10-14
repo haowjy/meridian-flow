@@ -11,7 +11,7 @@ import {
   type ThreadAvailableSkillsResponse,
   type ThreadSnapshotResponse,
 } from "@meridian/contracts/protocol";
-import type { Turn } from "@meridian/contracts/threads";
+import type { RunState, Turn } from "@meridian/contracts/threads";
 import { buildMessageDoc, imageCapable, serializeMessageDoc } from "@meridian/thread-client";
 import { CliError, usageError } from "../../core/cli-error";
 import {
@@ -41,6 +41,7 @@ import {
   terminalResult,
   timeoutReport,
 } from "./result";
+import { AdmittedMessage, runStateOfEvent } from "./run-state";
 import { followThread } from "./stream";
 import { createThreadClient } from "./transport";
 
@@ -228,11 +229,10 @@ async function followToOutcome(
   let interrupt: SendFields["interrupt"];
   // A usage block is proven only for this send's own accepted message: its
   // inbox id is the admitted user turn id.
-  const blockedOutcome = (
-    pending: ThreadSnapshotResponse["liveState"]["pending"],
-  ): SendOutcome | null =>
-    pending.blocked?.reason === "credits_exhausted" &&
-    pending.items.some((item) => item.id === admitted.userTurnId)
+  const message = new AdmittedMessage(admitted.userTurnId, admitted.runStateVersion);
+  const blockedOutcome = (runState: RunState): SendOutcome | null => {
+    message.take(runState);
+    return message.blockedForUsage()
       ? terminalResult(
           "thread.send",
           { outcome: "failed", reason: "credits_exhausted" },
@@ -245,6 +245,7 @@ async function followToOutcome(
           },
         )
       : null;
+  };
   let blocked: SendOutcome | null = null;
   // Our reply finished; until its execution ends, the next start is its successor
   // (one claim per thread: another execution can start only after that end).
@@ -253,7 +254,7 @@ async function followToOutcome(
   // The shared reducer follows the same events the log prints, from admission's
   // cursor. There is deliberately no snapshot read here: this send's turns are
   // built from their own events, and a read would sit outside the deadline. A
-  // usage block arrives as a replayed `meridian.inbox.changed` event, which
+  // usage block arrives as a replayed `meridian.run_state` frame, which
   // `shouldStop` below reconciles with the durable snapshot.
   const reduced = new ReducedThread(threadId);
   const transport = createThreadClient(session);
@@ -272,11 +273,9 @@ async function followToOutcome(
         textStream: "err",
         reduced,
         shouldStop(event: CliEvent) {
-          if (event.type === "event" && event.name === "meridian.inbox.changed") {
-            const pending = event.value as
-              | ThreadSnapshotResponse["liveState"]["pending"]
-              | undefined;
-            if (pending) blocked = blockedOutcome(pending);
+          if (event.type === "event") {
+            const runState = runStateOfEvent(event);
+            if (runState) blocked = blockedOutcome(runState);
             if (blocked) return true;
           }
           if (event.type === "turn.started") {
@@ -323,7 +322,7 @@ async function followToOutcome(
           "GET",
           apiThreadSnapshotPath(threadId),
         );
-        blocked = blockedOutcome(snapshot.liveState.pending);
+        blocked = blockedOutcome(snapshot.liveState.runState);
         if (blocked) return blocked;
         const answer = replyReaching(snapshot.turns, admitted.userTurnId);
         if (answer) {
@@ -349,7 +348,8 @@ async function followToOutcome(
         if (["complete", "cancelled", "error"].includes(answer.status)) break;
         continue;
       }
-      if (snapshot.liveState.pending.items.some((item) => item.id === admitted.userTurnId)) {
+      message.take(snapshot.liveState.runState);
+      if (message.owed()) {
         ourTurn = null;
         continue;
       }
@@ -379,7 +379,7 @@ async function followToOutcome(
     "GET",
     apiThreadSnapshotPath(threadId),
   );
-  blocked = blockedOutcome(snapshot.liveState.pending);
+  blocked = blockedOutcome(snapshot.liveState.runState);
   if (blocked) return blocked;
   const turn = snapshot.turns.find((candidate) => candidate.id === ourTurn);
   const liveView = reduced.compare(snapshot, ourTurn ? [ourTurn] : [], truncated);
@@ -397,10 +397,7 @@ async function followToOutcome(
           : { outcome: "unproven", reason: "unconfirmed" };
   // Writer admission reuses the user turn id as the inbox id. A finished
   // steered run cannot prove this send while that same message remains pending.
-  if (
-    claim.outcome === "complete" &&
-    snapshot.liveState.pending.items.some((item) => item.id === admitted.userTurnId)
-  ) {
+  if (claim.outcome === "complete" && message.owed()) {
     return terminalResult(
       "thread.send",
       { outcome: "unproven", reason: "owed" },

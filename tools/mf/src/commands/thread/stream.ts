@@ -7,6 +7,7 @@ import type { Output } from "../../core/output";
 import type { Session } from "../../core/session";
 import { type CliEvent, RunEventMapper, renderEventLine } from "./events-map";
 import type { ReducedThread } from "./reduced-thread";
+import { currentTurnId, runStateOfEvent } from "./run-state";
 import { createThreadClient, subscribeThread } from "./transport";
 
 export type FollowResult = {
@@ -55,9 +56,9 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
 
   const emit = (event: CliEvent): boolean => {
     if ("turnId" in event) turnIds.add(event.turnId);
-    if (event.type === "event" && event.name === "meridian.thread.status") {
-      const runningTurnId = (event.value as { runningTurnId?: unknown } | undefined)?.runningTurnId;
-      if (typeof runningTurnId === "string") turnIds.add(runningTurnId);
+    if (event.type === "event") {
+      const turn = runStateOfEvent(event);
+      if (turn?.execution?.currentTurnId) turnIds.add(turn.execution.currentTurnId);
     }
     const shown = options.present
       ? options.present(event)
@@ -84,11 +85,13 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
     for (;;) {
       const message = await subscription.next(options.deadlineAt);
       switch (message.type) {
-        case "live":
+        case "live": {
           state = message.state;
-          if (state.runningTurnId) turnIds.add(state.runningTurnId);
+          const turn = currentTurnId(state.runState);
+          if (turn) turnIds.add(turn);
           if (options.catchupOnly || options.shouldStopState?.(state)) stopRequested = true;
           break;
+        }
         case "event": {
           options.reduced?.apply(message.event.event);
           const stop = consume(message.event.seq, message.event);
