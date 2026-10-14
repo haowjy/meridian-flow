@@ -6,7 +6,7 @@
 
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
 import { and, eq } from "drizzle-orm";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { turnGraph } from "../../threads/ports/turn-graph.js";
@@ -22,7 +22,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
   describe.skip("stop protocol", () => {});
 else
   describe("stop protocol", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -30,15 +29,15 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { processDetachedWork } = await import("../detached-work.js");
     assertThrowawayDatabaseForRunDbTests(url);
-    const db = createDb(url, { max: 8 });
+    const { assertPublicationHooks, openAuditedDatabase } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    // Publication pins run in a database this suite owns and drops.
+    const audited = await openAuditedDatabase(url, { max: 8 });
+    const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
-    afterAll(async () => {
-      await removePublicationAudit(db);
-      await db.close();
-    });
-    const { assertPublicationHooks, installPublicationAudit, removePublicationAudit } =
-      await import("../../../test-support/run-state-publication.js");
-    beforeAll(() => installPublicationAudit(db));
+    afterAll(() => audited.close());
+    // Publication pins: no input write without a record, and the last record equals the rows.
     afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
@@ -416,9 +415,17 @@ else
         handedBack: [],
         answered: [m2],
       });
-      expect((await leaseRow(rig))?.adoptedMessageIds).toHaveLength(3);
+      const adopted = (await leaseRow(rig))?.adoptedMessageIds ?? [];
+      expect(adopted).toHaveLength(3);
       expect((await leaseRow(rig))?.cancelRequested).toBe(false);
-      await finish(rig, done);
+      // The alternative: the watermark covers the whole adopted batch, so E2 is cancelled and answers all three.
+      const covering = await press(rig, { seenThrough: await seqOf(rig, adopted[2] as string) });
+      expect(covering).toMatchObject({ handedBack: [], answered: expect.arrayContaining(adopted) });
+      expect(covering.cancelledExecutionId).not.toBeNull();
+      expect((await leaseRow(rig))?.cancelRequested).toBe(true);
+      gateway.release(1);
+      expect(await done).toMatchObject({ status: "cancelled" });
+      await processDetachedWork.drain();
       expect((await rowOf(rig, m2)).by).not.toBeNull();
     });
 
@@ -511,9 +518,24 @@ else
         .set({ expiresAt: new Date(Date.now() - 60_000) })
         .where(eq(schema.threadRunLeases.threadId, rig.threadId));
 
-      const response = await press(rig);
+      // From another server: the holder gets no local abort and can only see the durable flag.
+      const response = await press(rig, {}, true);
       expect(response.cancelledExecutionId).toBe(run.executionId);
       expect((await leaseRow(rig))?.cancelRequested).toBe(true);
+      expect((await rig.runClaim.read(rig.threadId as never)).kind).not.toBe("awake");
+      // The holder is alive: it renews after the expiry and reads the flag the press set.
+      const held = await leaseRow(rig);
+      expect(
+        await rig.runClaim.renew({
+          threadId: rig.threadId as never,
+          executionId: run.executionId as never,
+          holderId: held?.holderId as never,
+        }),
+      ).toBe(true);
+      expect(await rig.runClaim.read(rig.threadId as never)).toMatchObject({
+        kind: "awake",
+        cancelRequested: true,
+      });
       gateway.release(1);
       expect(await done).toMatchObject({ status: "cancelled" });
     });
@@ -540,18 +562,36 @@ else
     });
 
     it("row 31: Stop then a crash in a compaction leaves the message out of the chat for the next claim", async () => {
-      const rig = await rigWith();
-      const m1 = (await rig.send(rig.threadId, "M1")).userTurnId;
-      const dead = await deadExecution(rig, "compaction", [m1]);
-
-      const response = await press(rig, {
-        seenThrough: await seqOf(rig, m1),
-        seenExecutionId: null,
+      const rig = await fixture({
+        summarizer: scriptedSummarizer(),
+        gateway: scriptedGateway({ usage: lowUsage }),
+        holdWakes: true,
       });
-      expect(response.cancelledExecutionId).toBe(dead.executionId);
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "M1" });
+      const m1 = run.userTurnId;
+      expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+        role: "compaction",
+      });
+
+      // The press lands on the live holder; then the holder dies before it closes.
+      const response = await press(
+        rig,
+        { seenThrough: await seqOf(rig, m1), seenExecutionId: null },
+        true,
+      );
+      expect(response.cancelledExecutionId).toBe(run.executionId);
       expect(text(response)).toEqual(["M1"]);
       expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([]);
+      const held = await leaseRow(rig);
+      await rig.runClaim.abandon({
+        threadId: rig.threadId as never,
+        executionId: run.executionId as never,
+        holderId: held?.holderId as never,
+      });
       await repair(rig);
+      // The dead run's in-process handle must go before the next claim can start.
+      await run.execute();
+      await processDetachedWork.drain();
       expect((await rowOf(rig, m1)).by).toBeNull();
       await rig.orchestrator.startDrain(rig.threadId as never);
       await processDetachedWork.drain();
@@ -594,18 +634,44 @@ else
 
     it("row 34: the x that loses the claim to the wake's adoption answers its message and hands nothing back", async () => {
       const gateway = pausedGateway();
-      const rig = await rigWith({ gateway });
+      let rig: Rig;
+      let armed = false;
+      let injecting = false;
+      let peeks = 0;
+      const lockedAttempt = gate();
+      // As in row 9: two stale preparations, then the final locked attempt, which holds the thread
+      // lock while the x queues behind it.
+      const notices = {
+        async peek() {
+          if (!armed || injecting) return [];
+          peeks += 1;
+          if (peeks <= 2) {
+            injecting = true;
+            await rig.send(rig.threadId, `M${peeks + 2}`);
+            injecting = false;
+          } else if (peeks === 3) {
+            lockedAttempt.open();
+            await new Promise((resolve) => setTimeout(resolve, 300));
+          }
+          return [];
+        },
+        async consume() {},
+      };
+      rig = await rigWith({ gateway, notices: notices as never });
       const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
-      const m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
+      armed = true;
       const { done } = await startDrain(rig);
-      await gateway.untilGatewayBoundary(1);
+      await lockedAttempt.promise;
 
       const response = await handBack(rig, crypto.randomUUID(), ids([m2]));
+      await gateway.untilGatewayBoundary(1);
       expect(response).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
+      const adopted = (await leaseRow(rig))?.adoptedMessageIds ?? [];
+      expect(adopted).toHaveLength(3);
       await finish(rig, done);
       const reply = (await rowOf(rig, m2)).by;
       expect(reply).not.toBeNull();
-      expect((await rowOf(rig, m3)).by).toBe(reply);
+      for (const id of adopted) expect((await rowOf(rig, id)).by).toBe(reply);
       expect(await journalTypes(rig, "messages.handed_back")).toEqual([]);
     });
 

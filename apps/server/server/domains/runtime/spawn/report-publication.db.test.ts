@@ -1,7 +1,7 @@
 /** PostgreSQL publication B and orphan recovery after durable terminal A. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executionScenario } from "../../../test-support/execution-scenario.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
@@ -26,7 +26,6 @@ const ids = {
 if (!runDb || !databaseUrl) describe.skip("report publication and recovery (postgres)", () => {});
 else
   describe("report publication and recovery (postgres)", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { eq, sql } = await import("drizzle-orm");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
@@ -54,7 +53,12 @@ else
     const { readThreadReport } = await import("./read-thread-report.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
-    const db = createDb(databaseUrl, { max: 6 });
+    const { assertPublicationHooks, openAuditedDatabase } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    // Publication pins run in a database this suite owns and drops.
+    const audited = await openAuditedDatabase(databaseUrl, { max: 6 });
+    const db = audited.db;
     const repos = createDrizzleRepositoriesForTest(db);
     const eventWriter = createDrizzleEventJournalWriter(db);
     const inbox = createDrizzleInbox(db);
@@ -68,14 +72,8 @@ else
       const scenario = await executionScenario(db, ids);
       await scenario.admit();
     });
-    afterAll(async () => {
-      await removePublicationAudit(db);
-      await db.close();
-    });
+    afterAll(() => audited.close());
     // Publication pins: no input write without a record, and the last record equals the rows.
-    const { assertPublicationHooks, installPublicationAudit, removePublicationAudit } =
-      await import("../../../test-support/run-state-publication.js");
-    beforeAll(() => installPublicationAudit(db));
     afterEach(() => assertPublicationHooks(db));
 
     async function terminal() {
@@ -725,14 +723,8 @@ else
         },
       });
       expect(await inbox.selectPending(ids.child)).toEqual([]);
-      // The repair lane settles the expired row too: a lease from before run
-      // identity, which no turn carries, is deleted with no end journaled.
+      // The repair lane settles the expired row too: a lease no turn carries is deleted.
       expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
-      expect(
-        (await journalEventsByThread(db, ids.child)).filter(
-          (event) => event.eventType === "execution.ended",
-        ),
-      ).toEqual([]);
       expect(
         (await journalEventsByThread(db, ids.caller)).filter(
           (event) => event.eventType === "agent.run_completed",

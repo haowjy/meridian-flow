@@ -84,25 +84,13 @@ export function createDrizzleHandBacks(db: DrizzleDatabase): HandBackStore {
       if (scope.kind === "ids") {
         where = and(writer, scope.ids.length > 0 ? inArray(inbox.id, [...scope.ids]) : sql`FALSE`);
       } else {
-        // The rows the record could show (waiting), the ones the open execution answered, and the
-        // press's own messages. Handed-back rows count only inside the window the writer's record
-        // could still show: above the last message a reply answered.
-        const [answeredFloor] = await db_()
-          .select({ seq: sql<number | null>`max(${inbox.seq})` })
-          .from(inbox)
-          .where(
-            and(
-              writer,
-              sql`${inbox.deliveredByTurnId} IS NOT NULL`,
-              sql`${inbox.seq} <= ${scope.seenThrough}`,
-            ),
-          );
-        const floor = Number(answeredFloor?.seq ?? 0);
+        // The rows the record could show (waiting), the ones the open execution answered, the
+        // press's own messages, and every row at or below the watermark another request handed back.
         const mine = scope.mine.length > 0 ? inArray(inbox.id, [...scope.mine]) : sql`FALSE`;
         where = and(
           writer,
           sql`(${inbox.deliveredAt} IS NULL OR ${byExecution} OR ${mine}
-            OR (${inbox.handedBackBy} IS NOT NULL AND ${inbox.seq} <= ${scope.seenThrough} AND ${inbox.seq} > ${floor}))`,
+            OR (${inbox.handedBackBy} IS NOT NULL AND ${inbox.seq} <= ${scope.seenThrough}))`,
         );
       }
       const executionTurns = new Set(executionTurnIds);
