@@ -50,7 +50,6 @@ const snapshot = (
 ): LedgerEvent => ({
   type: "snapshot",
   request,
-  at: request,
   pending: pending.map(([id, mode], serverSeq) => ({ id, mode, serverSeq })),
   dividers: named.map((controlId) => ({ controlId })),
 });
@@ -145,6 +144,18 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     name: "is settled by a fresh snapshot that shows it neither pending nor as a divider",
     events: [journal(5, record("s1", "draft", { posted: true })), journal(6), snapshot(7, [])],
     expect: { rows: [], mode: "direct", waiting: false },
+  },
+  {
+    // Watermark: a snapshot that listed the entry is a live reading at its request, so an older
+    // fetch that landed afterwards and doesn't list it proves nothing.
+    name: "an older snapshot that does not list it cannot undo a newer snapshot that did",
+    events: [
+      journal(2, record("s1", "draft", { posted: true })),
+      journal(2),
+      snapshot(5, [["s1", "draft"]]),
+      snapshot(3, []),
+    ],
+    expect: { rows: ["s1:queued"], mode: "draft" },
   },
   {
     name: "a fresh snapshot that lists it pending keeps the row and moves it to queued",

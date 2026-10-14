@@ -126,7 +126,6 @@ export function useSwitchLedger(input: {
     if (!data) return;
     dispatch({
       type: "snapshot",
-      at: snapshotRequestCount(),
       request: data.requestSeq ?? 0,
       pending: data.liveState.pending.items.flatMap((item) =>
         item.intent === "control" && item.control?.kind === "write_mode"
