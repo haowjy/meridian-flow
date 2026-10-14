@@ -29,11 +29,6 @@ Delete an entry when it ships.
   until the finished report is installed, before the global import panel reads
   it. Evidence: `evidence/d1-fix/run2-timeline.txt`.
 
-- **A big drop shows nothing while it is read.** Dropped folders are walked
-  after the drop (`read-dropped.ts`) and the import starts when the walk ends;
-  a very large tree gives no sign meanwhile. Follow-up: draw the target's
-  pending state from the first entry the walk reads.
-
 - **A document deleted through the API took about 11 s to leave the tree.**
   `./mf doc rm` on imported `Lore/Sects` cleared from the sidebar ~11 s later
   (D1 re-check run 4b). This may be pre-existing catalog wake latency rather

@@ -446,7 +446,7 @@ function MobileFileRow({
   onOpen: () => void;
   onRequestDelete: (target: DeleteTarget) => void;
 }) {
-  const importRow = useImportRowActions(file.import?.failure);
+  const importRow = useImportRowActions(file.import);
   const interaction = useEntryInteraction({
     projectId,
     node: file,
@@ -540,7 +540,7 @@ function MobileNameRow({
 function MobileClientRow({ node }: { node: ContextDir | ContextFile }) {
   const Icon = node.kind === "dir" ? Folder : fileKindIcon(node.name);
   const failure = node.import?.failure;
-  const retry = useImportRowActions(failure);
+  const retry = useImportRowActions(node.import);
   return (
     <li
       aria-disabled

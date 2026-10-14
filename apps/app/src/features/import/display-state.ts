@@ -6,6 +6,7 @@ import type { ImportCounts, ImportRefusalCode, ImportSummary } from "@meridian/c
 import type { StopCommand } from "./import-state";
 
 export type ImportDisplayState =
+  | "reading"
   | "preparing"
   | "importing"
   | "importing-elsewhere"
@@ -18,6 +19,8 @@ export type ImportDisplayState =
 
 /** What this tab is doing for the import. */
 export type LocalPhase =
+  /** The selection is still being read; `count` files so far. */
+  | { kind: "reading"; count: number }
   | { kind: "preparing" }
   | { kind: "uploading" }
   | { kind: "idle" }
@@ -41,6 +44,7 @@ export function deriveDisplayState(input: {
   if (stop === "stopped") return "finished";
   if (stop === "failed") return "couldnt-stop";
   if (local?.kind === "not-started") return "didnt-start";
+  if (local?.kind === "reading") return "reading";
   if (local?.kind === "preparing" || !summary || !counts) return "preparing";
   if (counts.arriving > 0) {
     if (local?.kind === "uploading") return "importing";

@@ -1,6 +1,7 @@
 import type { ImportEntryStatus, ImportStatus, ImportSummary } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { ImportRequestError } from "@/client/api/imports-api";
+import type { ClientRow } from "./client-rows";
 import type { ImportDestination } from "./destination";
 import { fakeImportServer } from "./fake-import-server";
 import { type CatalogReader, type Clock, ImportCoordinator } from "./import-coordinator";
@@ -58,18 +59,34 @@ async function settled(coordinator: ImportCoordinator, importId: string) {
   throw new Error("import never settled");
 }
 
-describe("ImportCoordinator.start", () => {
+/** Begin an import whose selection is already read; rows are drawn once the read settles. */
+function start(coordinator: ImportCoordinator, selection: Selection): string {
+  const importId = coordinator.begin(destination, async () => selection);
+  if (!importId) throw new Error("coordinator refused begin");
+  return importId;
+}
+
+describe("ImportCoordinator.begin", () => {
   it("answers at once, draws rows with the plan's ids, then plans and uploads", async () => {
     const server = fakeImportServer();
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
 
     const store = coordinator.store(importId);
     expect(server.calls.plan).toBe(0);
-    expect(displayOf(store.getSnapshot())).toBe("preparing");
-    // The rows are drawn before `start` returns, and the plan's answer replaces them.
-    const rows = store.getSnapshot().local?.rows ?? [];
+    expect(displayOf(store.getSnapshot())).toBe("reading");
+    // The rows are drawn before the plan is sent, and the plan's answer replaces them.
+    let rows: readonly ClientRow[] = [];
+    let drawnWhile: string | null = null;
+    store.subscribe(() => {
+      const local = store.getSnapshot().local;
+      if (rows.length === 0 && local && local.rows.length > 0) {
+        rows = local.rows;
+        drawnWhile = displayOf(store.getSnapshot());
+      }
+    });
     await settled(coordinator, importId);
+    expect(drawnWhile).toBe("preparing");
     expect(rows.length).toBeGreaterThan(0);
     const root = rows.find((row) => row.name === "vault");
     expect(rows.map((row) => [row.kind, row.name, row.parentId === root?.id])).toEqual(
@@ -91,7 +108,7 @@ describe("ImportCoordinator.start", () => {
   it("fails one file alone, shows needs-attention, and Retry lands it", async () => {
     const server = fakeImportServer({ failSend: (entryId) => entryId === 1 });
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     const store = await settled(coordinator, importId);
 
     const state = store.getSnapshot();
@@ -108,23 +125,108 @@ describe("ImportCoordinator.start", () => {
     expect(store.getSnapshot().local?.failures.size).toBe(0);
   });
 
-  it("shows didn't-start when the plan is refused, and tries again with the same id", async () => {
+  it("16: a refused plan warns on the root, Try again replays the same id and manifest, Discard is local", async () => {
     const server = fakeImportServer();
+    const sent: [string, unknown][] = [];
     let refuse = true;
     const plan = server.api.plan;
-    server.api.plan = async (...args) => {
+    server.api.plan = async (projectId, manifest) => {
+      sent.push([manifest.importId, structuredClone(manifest)]);
       if (refuse) throw new ImportRequestError(413, "too_many_files", { limit: 10000 }, "refused");
-      return plan(...args);
+      return plan(projectId, manifest);
     };
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     const store = await settled(coordinator, importId);
     expect(displayOf(store.getSnapshot())).toBe("didnt-start");
+    expect(store.getSnapshot().local?.phase).toEqual({
+      kind: "not-started",
+      code: "too_many_files",
+    });
 
     refuse = false;
     coordinator.tryAgain(importId);
     await settled(coordinator, importId);
     expect(displayOf(store.getSnapshot())).toBe("finished");
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual(sent[0]);
+
+    // A fresh refusal, then Discard: nothing is sent to the server and the run is gone.
+    refuse = true;
+    const second = start(coordinator, vault());
+    await settled(coordinator, second);
+    await coordinator.discard(second);
+    expect(server.calls.finish).toBe(0);
+    expect(coordinator.view(second)).toBeNull();
+    coordinator.dispose();
+  });
+
+  it("16: a lost plan response is answered by the stored plan, and Discard calls finish", async () => {
+    const server = fakeImportServer();
+    let lose = true;
+    const plan = server.api.plan;
+    server.api.plan = async (projectId, manifest) => {
+      const answer = await plan(projectId, manifest);
+      if (lose) throw new ImportRequestError(0, null, undefined, "no answer");
+      return answer;
+    };
+    const coordinator = new ImportCoordinator("p", server.api);
+    const importId = start(coordinator, vault());
+    const store = await settled(coordinator, importId);
+    expect(store.getSnapshot().local?.phase).toEqual({ kind: "not-started", code: null });
+
+    lose = false;
+    coordinator.tryAgain(importId);
+    await settled(coordinator, importId);
+    expect(displayOf(store.getSnapshot())).toBe("finished");
+
+    lose = true;
+    const second = start(coordinator, vault());
+    await settled(coordinator, second);
+    await coordinator.discard(second);
+    expect(server.calls.finish).toBe(1);
+    expect(coordinator.view(second)).toBeNull();
+    coordinator.dispose();
+  });
+
+  it("shows the destination as reading until the read answers, and abandons an empty read", async () => {
+    const server = fakeImportServer();
+    const coordinator = new ImportCoordinator("p", server.api);
+    let finishRead!: (selection: Selection | null) => void;
+    const importId = coordinator.begin(
+      destination,
+      () => new Promise<Selection | null>((resolve) => (finishRead = resolve)),
+    );
+    if (!importId) throw new Error("refused");
+    const store = coordinator.store(importId);
+    expect(displayOf(store.getSnapshot())).toBe("reading");
+    expect(coordinator.isWorking()).toBe(true);
+    finishRead(null);
+    await until(() => coordinator.view(importId) === null);
+    expect(server.calls.plan).toBe(0);
+    expect(coordinator.isWorking()).toBe(false);
+    coordinator.dispose();
+  });
+
+  it("17: unmounting while a big drop is read leaves no store, no run and no request", async () => {
+    const server = fakeImportServer();
+    const coordinator = new ImportCoordinator("p", server.api);
+    let signal!: AbortSignal;
+    let finishRead!: (selection: Selection | null) => void;
+    const importId = coordinator.begin(destination, (options) => {
+      signal = options.signal;
+      return new Promise<Selection | null>((resolve) => (finishRead = resolve));
+    });
+    expect(importId).not.toBeNull();
+    coordinator.dispose();
+    expect(signal.aborted).toBe(true);
+    finishRead(vault());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(coordinator.getSnapshot().imports).toEqual([]);
+    expect(coordinator.isWorking()).toBe(false);
+    expect(server.calls.plan + server.calls.finish + server.calls.send.length).toBe(0);
+    // A disposed coordinator refuses to begin.
+    expect(coordinator.begin(destination, async () => vault())).toBeNull();
   });
 });
 
@@ -132,7 +234,7 @@ describe("ImportCoordinator.stop", () => {
   it("ends locally when nothing was sent", async () => {
     const server = fakeImportServer();
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     expect(await coordinator.stop(importId)).toBe("nothing-sent");
     expect(server.calls.finish).toBe(0);
     expect(coordinator.view(importId)).toBeNull();
@@ -141,7 +243,7 @@ describe("ImportCoordinator.stop", () => {
   it("finishes with what landed and says Couldn't stop when the finish fails", async () => {
     const server = fakeImportServer({ failSend: (entryId) => entryId === 1 });
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     const store = await settled(coordinator, importId);
     const finish = server.api.finish;
     server.api.finish = async () => {
@@ -214,7 +316,7 @@ describe("ImportCoordinator.stop on an import this tab does not hold", () => {
     announced.length = 0;
     const server = fakeImportServer({ failSend: (entryId) => entryId === 1 });
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     await settled(coordinator, importId);
     server.api.finish = async () => {
       throw new ImportRequestError(0, null, undefined, "offline");
@@ -235,7 +337,7 @@ describe("ImportCoordinator.stop before anything was sent", () => {
       throw new ImportRequestError(404, "import_not_found", undefined, "missing");
     };
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     expect(coordinator.view(importId)).not.toBeNull();
 
     expect(await coordinator.stop(importId)).toBe("nothing-sent");
@@ -259,26 +361,24 @@ describe("ImportCoordinator.stop while files are still being read", () => {
       new Promise((resolve) => {
         release = () => resolve(bytes);
       });
-    const importId = coordinator.start(
-      {
-        leftOut: [],
-        roots: [
-          {
-            rootId: 0,
-            kind: "file",
-            name: "Chapter.md",
-            files: [{ path: "", file: chapter }],
-            folders: [],
-            unreadable: [],
-          },
-        ],
-      },
-      destination,
-    );
+    const importId = start(coordinator, {
+      leftOut: [],
+      roots: [
+        {
+          rootId: 0,
+          kind: "file",
+          name: "Chapter.md",
+          files: [{ path: "", file: chapter }],
+          folders: [],
+          unreadable: [],
+        },
+      ],
+    });
     // An immediate digest leaves only promise continuations after the read, so one
     // macrotask turn runs everything the released read would ever do.
     const digest = vi.spyOn(crypto.subtle, "digest").mockResolvedValue(new ArrayBuffer(32));
 
+    await until(() => coordinator.store(importId).getSnapshot().local?.phase.kind === "preparing");
     expect(await coordinator.stop(importId)).toBe("nothing-sent");
     release();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -314,7 +414,7 @@ describe("ImportCoordinator.retry", () => {
   it("shares one import's request budget, and Stop cancels every send", async () => {
     const server = fakeImportServer({ failSend: () => true });
     const coordinator = new ImportCoordinator("p", server.api);
-    const importId = coordinator.start(sixFiles(), destination);
+    const importId = start(coordinator, sixFiles());
     await settled(coordinator, importId);
     const sends: { entryIds: number[]; signal: AbortSignal }[] = [];
     let open = 0;
@@ -678,7 +778,7 @@ describe("ImportCoordinator seen ids and bridges", () => {
     const catalog = fakeCatalog();
     const clock = fakeClock();
     const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     const store = coordinator.store(importId);
     await until(() => (store.getSnapshot().local?.manifest ?? null) !== null);
     const rows = store.getSnapshot().local?.rows ?? [];
@@ -718,7 +818,7 @@ describe("ImportCoordinator seen ids and bridges", () => {
     const catalog = fakeCatalog();
     const clock = fakeClock();
     const coordinator = new ImportCoordinator("p", server.api, catalog, clock);
-    const importId = coordinator.start(vault(), destination);
+    const importId = start(coordinator, vault());
     const store = await settled(coordinator, importId);
     const rows = store.getSnapshot().local?.rows ?? [];
     const plan = [...(store.getSnapshot().report?.folders.keys() ?? [])];

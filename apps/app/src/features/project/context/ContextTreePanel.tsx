@@ -7,7 +7,10 @@ import {
 } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus, ImportIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import type {
+  CatalogFile as ContextFile,
+  ImportRowInfo,
+} from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
@@ -33,6 +36,7 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
+import { ImportRunMark } from "./ImportRunMark";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 import {
@@ -376,6 +380,7 @@ function SchemeSection({
       onExpandedChange={handleExpandedChange}
       onOpenExpanded={() => setExpanded(true)}
       onRequestCreate={requestCreate}
+      importInfo={catalog?.root.import}
       onImport={
         importable
           ? (kind) => {
@@ -428,6 +433,7 @@ function AreaHeader({
   onExpandedChange,
   onOpenExpanded,
   onRequestCreate,
+  importInfo,
   onImport,
 }: {
   scheme: ProjectContextTreeScheme;
@@ -435,6 +441,8 @@ function AreaHeader({
   onExpandedChange: (expanded: boolean) => void;
   onOpenExpanded: () => void;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
+  /** What an import's own run shows on the area root: reading, or didn't start. */
+  importInfo?: ImportRowInfo;
   /** Present where the area takes imports: opens the OS picker for a folder or files. */
   onImport?: (kind: PickKind) => void;
 }) {
@@ -461,6 +469,7 @@ function AreaHeader({
       dropProps={drop.dropProps}
       dropState={drop.dropState}
       dropLabel={<Trans>Import here</Trans>}
+      status={<ImportRunMark info={importInfo} />}
       actions={
         schemeAllowsCreation(scheme) ? (
           <>

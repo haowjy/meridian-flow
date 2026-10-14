@@ -8,12 +8,10 @@ import { EMPTY_SELECTION, type Selection } from "./selection";
 export type ReaderState =
   | { status: "empty" }
   | { status: "reading"; name: string; count: number }
-  | { status: "ready"; selection: Selection; origin: "pick" | "drop" };
+  | { status: "ready"; selection: Selection };
 
-export function useSelectionReader(initial?: DroppedItems) {
-  const [state, setState] = useState<ReaderState>(
-    initial ? { status: "reading", name: "", count: 0 } : { status: "empty" },
-  );
+export function useSelectionReader() {
+  const [state, setState] = useState<ReaderState>({ status: "empty" });
   const current = useRef<AbortController | null>(null);
 
   const begin = useCallback(() => {
@@ -37,7 +35,7 @@ export function useSelectionReader(initial?: DroppedItems) {
           if (!controller.signal.aborted) setState({ status: "reading", name, count });
         },
       });
-      if (!controller.signal.aborted) setState({ status: "ready", selection, origin: "drop" });
+      if (!controller.signal.aborted) setState({ status: "ready", selection });
     },
     [begin],
   );
@@ -51,7 +49,7 @@ export function useSelectionReader(initial?: DroppedItems) {
         count: files.length,
       });
       const selection = files.length > 0 ? await readPicked(files) : EMPTY_SELECTION;
-      if (!controller.signal.aborted) setState({ status: "ready", selection, origin: "pick" });
+      if (!controller.signal.aborted) setState({ status: "ready", selection });
     },
     [begin],
   );
@@ -61,10 +59,7 @@ export function useSelectionReader(initial?: DroppedItems) {
     setState({ status: "empty" });
   }, []);
 
-  useEffect(() => {
-    if (initial) void drop(initial);
-    return () => current.current?.abort();
-  }, [initial, drop]);
+  useEffect(() => () => current.current?.abort(), []);
 
   return { state, drop, pick, reset };
 }

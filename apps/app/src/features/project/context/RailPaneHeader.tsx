@@ -13,6 +13,7 @@ export function RailPaneHeader({
   title,
   expanded,
   onExpandedChange,
+  status,
   actions,
   dropProps,
   dropState = "idle",
@@ -29,6 +30,8 @@ export function RailPaneHeader({
   expanded: boolean;
   /** Click toggles; ArrowLeft/ArrowRight force collapse/expand. */
   onExpandedChange: (expanded: boolean) => void;
+  /** Always visible at the right edge, before the actions: an import's spinner or warning. */
+  status?: React.ReactNode;
   /** Hover-revealed `PaneHeaderActionButton`s; hidden while collapsed. */
   actions?: React.ReactNode;
   /** Drop handlers when the header is a drop target (the tree's areas). */
@@ -85,6 +88,7 @@ export function RailPaneHeader({
       {dropState === "over" && dropLabel ? (
         <span className="mr-2 shrink-0 text-caption text-ink-muted">{dropLabel}</span>
       ) : null}
+      {status}
       {actions && dropState !== "over" ? (
         <span className="mr-2 flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 has-[[data-state=open]]:opacity-100">
           {actions}

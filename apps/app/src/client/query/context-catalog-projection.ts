@@ -1,5 +1,5 @@
 /** Flat UI projection types over the replica-owned normalized catalog. */
-import type { ImportEntryReason } from "@meridian/contracts";
+import type { ImportEntryReason, ImportRefusalCode } from "@meridian/contracts";
 import type {
   DocumentFileType,
   Filetype,
@@ -13,6 +13,10 @@ export type ImportRowInfo = {
   client?: true;
   /** Text (or the file) has not landed yet. */
   arriving?: true;
+  /** An import into this folder is still reading what the writer chose. */
+  reading?: true;
+  /** The plan was refused or lost; this row carries the import's warning, Try again and Discard. */
+  notStarted?: { importId: string; code: ImportRefusalCode | null };
   failure?: {
     importId: string;
     entryId: number;
