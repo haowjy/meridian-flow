@@ -48,7 +48,7 @@ export type MessagesDeliveredValue = {
 export type ExecutionEndedValue = { executionId: string };
 
 /**
- * `meridian.write_mode.switched`: a queued or idle switch applied. It carries
+ * `meridian.write_mode.switched`: a pending switch applied, right before a reply started. It carries
  * the journal seq of the transition itself, so a client orders the new mode
  * against every `meridian.inbox.changed` and answer `seq` on one clock.
  */

@@ -105,6 +105,7 @@ export function createInMemoryInbox(): DeliveryStore {
             .filter(
               (message) =>
                 (message.intent === "message" || message.intent === "control") &&
+                message.body.kind !== "write_mode" &&
                 message.deliveredAt === null,
             )
             .map((message) => message.threadId),

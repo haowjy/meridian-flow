@@ -82,7 +82,7 @@ runtime shapes, and observability records.
   database checks (inbox body and the `ai_write_mode` columns in
   `schema/agent-threads.ts` and `schema/content.ts`, then regenerate) and the
   projections that pick kinds by name (runtime `pending-inbox.ts`, the app's
-  `features/chat/compaction/thread-controls.ts`). A missing kind fails its
+  `features/chat/thread-controls/thread-controls.ts`). A missing kind fails its
   enqueue or drops that queued item from the tray.
 - Run identity (which execution reserved a turn, which turn delivered a
   message, when an execution ended) has one reader, `protocol/run-boundary.ts`,

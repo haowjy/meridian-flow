@@ -22,7 +22,13 @@ type PanelToggleButtonProps = {
 
 export function PanelToggleButton({ icon: Icon, label, onClick }: PanelToggleButtonProps) {
   return (
-    <IconButton size="sm" aria-label={label} title={label} onClick={onClick}>
+    <IconButton
+      size="sm"
+      className="[@media(pointer:coarse)]:size-11"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
       <Icon className="size-4" aria-hidden />
     </IconButton>
   );

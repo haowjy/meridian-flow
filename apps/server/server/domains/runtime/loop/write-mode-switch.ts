@@ -1,6 +1,6 @@
 /**
  * The applied write-mode switch: its model-facing notice and the Work-side
- * collaborators `applyDueSwitches` needs. The switch turn owns no document
+ * collaborators the switch commands need. The switch turn owns no document
  * edits, so it has no change trail, receipt or undo candidate.
  */
 import type { AgentPermission } from "@meridian/contracts/agents";
@@ -13,7 +13,12 @@ import {
   workLifecycleState,
 } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
-import { type ThreadWorksRepository, writeModeSwitchMetadata } from "../../threads/index.js";
+import {
+  isWriteModeSwitchTurn,
+  type ThreadWorksRepository,
+  type TurnRepository,
+  writeModeSwitchMetadata,
+} from "../../threads/index.js";
 import { contentForBlockInput } from "./block-helpers.js";
 import { createLocalTurn } from "./local-turn.js";
 import { mayChangeWorks } from "./permissions/action-policy.js";
@@ -22,7 +27,7 @@ import { describeWriteMode } from "./work-context.js";
 export interface WriteModeSwitchPort {
   /** The notice body for the chat's new mode, rendered against its bound Work. */
   renderNotice(threadId: ThreadId, mode: AiWriteMode): Promise<string>;
-  /** Decision 3: an applied switch becomes the Work's default for new chats. */
+  /** Decision 3: the writer's latest choice becomes the Work's default for new chats. */
   setWorkDefault(workId: WorkId, mode: AiWriteMode): Promise<void>;
 }
 
@@ -97,4 +102,15 @@ export function writeModeSwitchTurn(input: {
     status: "complete",
   });
   return { turn, block };
+}
+
+/** The turn behind any trailing switch turns: a switch applied after a failed reply must not take Retry away. */
+export async function pastTrailingSwitches(
+  turns: Pick<TurnRepository, "findById">,
+  turn: Turn,
+): Promise<Turn | null> {
+  let current: Turn | null = turn;
+  while (current && isWriteModeSwitchTurn(current) && current.prevTurnId)
+    current = await turns.findById(current.prevTurnId as TurnId);
+  return current;
 }
