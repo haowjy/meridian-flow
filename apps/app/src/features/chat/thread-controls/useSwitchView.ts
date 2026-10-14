@@ -42,11 +42,14 @@ import { httpErrorStatus } from "@/client/api/http-client";
 import { withdrawThreadControl } from "@/client/api/threads-api";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
-import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
+import {
+  invalidateProjectThreadData,
+  invalidateWriteModeReads,
+} from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
 import { announce, announceError, useIsThreadPendingCreation } from "@/client/stores";
-import { pendingInboxFromEvent } from "../pending-inbox";
+import { pendingInboxFromEvent, queuedSwitchKey } from "../pending-inbox";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from "./control-copy";
 import { switchDisplay } from "./switch-record";
 import { INITIAL_SWITCH_STATE, reduceSwitch } from "./switch-reducer";
@@ -128,8 +131,9 @@ export function useSwitchView(input: {
   useSingleHostWarning(threadId);
   const [{ view, news }, dispatch] = useReducer(reduceSwitch, INITIAL_SWITCH_STATE);
   const [applied, setApplied] = useState<readonly Applied[]>([]);
-  const latest = useRef({ journal, projectId, replyRunning });
-  latest.current = { journal, projectId, replyRunning };
+  const latest = useRef({ journal, projectId });
+  latest.current = { journal, projectId };
+  const queuedKey = useRef("");
   /** The first record's version: what it holds is not news, and neither is a frame at or below it. */
   const seed = useRef<string | null>(null);
   /** Applied switches already announced: a replayed frame is not news twice. */
@@ -153,8 +157,15 @@ export function useSwitchView(input: {
         if ("threadId" in event && event.threadId !== threadId) return;
         if (seq == null || parseSeq(seq) === null) return;
         const inbox = pendingInboxFromEvent(event);
-        if (inbox)
+        if (inbox) {
+          // Another tab's queue, cancel or withdrawal changes the Work default and list mode.
+          const key = queuedSwitchKey(inbox);
+          if (key !== queuedKey.current) {
+            queuedKey.current = key;
+            void invalidateWriteModeReads(queryClient, latest.current.projectId);
+          }
           return dispatch({ type: "frame", frame: { kind: "inbox", seq, pending: inbox } });
+        }
         const switched = switchedFrom(event);
         if (!switched) return;
         dispatch({
@@ -179,7 +190,7 @@ export function useSwitchView(input: {
     for (const entry of news) {
       if (entry.n <= announcedQueued.current) continue;
       announcedQueued.current = entry.n;
-      announce(controlStatusCopy(entry.control, "queued", latest.current.replyRunning));
+      announce(controlStatusCopy(entry.control, "queued", entry.waiting));
     }
   }, [news]);
 
@@ -208,6 +219,8 @@ export function useSwitchView(input: {
           if (outcome === "withdrawn") announce(controlStoppedCopy(row.control));
           // The switch turn shows a started one.
           if (outcome === "already_started") announce(controlAlreadyStartedCopy(row.control));
+          // Stop restores the Work default.
+          void invalidateWriteModeReads(queryClient, latest.current.projectId);
           revalidate();
         } catch (error) {
           // The server never had it: nothing to withdraw.
@@ -225,7 +238,7 @@ export function useSwitchView(input: {
         if (result === "removed") announce(controlStoppedCopy(row.control));
       });
     },
-    [revalidate, threadId],
+    [queryClient, revalidate, threadId],
   );
 
   const dividerIds = useMemo(
@@ -242,12 +255,18 @@ export function useSwitchView(input: {
   }, [dividerIds, applied]);
   const folded = useMemo(() => switchDisplay(view, input.writeMode), [view, input.writeMode]);
   const rows = useMemo<QueuedControl[]>(() => {
-    const own = folded.rows.map((row) => ({
-      id: row.id,
-      control: { kind: "write_mode" as const, mode: row.mode },
-      status: row.status,
-      ...(row.awaitingServer ? { awaitingServer: true } : {}),
-    }));
+    // The server says whether a run it already started leaves a switch behind. Before it
+    // has listed the switch, a running reply is the only thing that could.
+    const own = folded.rows.map((row) => {
+      const item = view.record?.items.find((known) => known.id === row.id);
+      return {
+        id: row.id,
+        control: { kind: "write_mode" as const, mode: row.mode },
+        status: row.status,
+        waiting: item ? item.deliveryState === "waiting" : replyRunning,
+        ...(row.awaitingServer ? { awaitingServer: true } : {}),
+      };
+    });
     const bridge = applied
       .filter(
         (entry) => !dividerIds.has(entry.turnId) && !own.some((row) => row.id === entry.controlId),
@@ -258,7 +277,7 @@ export function useSwitchView(input: {
         status: "applied" as const,
       }));
     return [...own, ...bridge];
-  }, [folded.rows, applied, dividerIds]);
+  }, [folded.rows, applied, dividerIds, view.record, replyRunning]);
 
   return { rows, writeMode: folded.mode, switchWriteMode, retry, withdraw };
 }

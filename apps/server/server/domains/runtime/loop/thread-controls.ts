@@ -11,7 +11,7 @@ import type {
   Turn,
   WithdrawThreadControlResponse,
 } from "@meridian/contracts/threads";
-import type { AiWriteMode } from "@meridian/contracts/works";
+import { type AiWriteMode, effectiveAiWriteMode } from "@meridian/contracts/works";
 import { queuedWriteModeSwitch } from "./next-inbox-work.js";
 import type { InboxMessage, MessageDraft } from "./ports.js";
 import type { ThreadControls } from "./runtime-delivery.js";
@@ -119,7 +119,7 @@ export function createThreadControls(deps: {
     },
     async effectiveWriteMode(threadId) {
       const queued = queuedWriteModeSwitch(await deps.selectPending(threadId));
-      return queued?.body.mode ?? (await deps.threadWriteMode(threadId));
+      return effectiveAiWriteMode(await deps.threadWriteMode(threadId), queued?.body.mode ?? null);
     },
     withdrawControl: (threadId, controlId) =>
       deps.withThreadLock(threadId, async () => {
