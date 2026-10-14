@@ -302,12 +302,6 @@ export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): R
       row.messageIds = [];
       return true;
     },
-    async cancelThreadReceipt(threadId, turnId) {
-      const row = leases.get(threadId);
-      if (!row || row.turnId !== turnId) return false;
-      row.cancelRequested = true;
-      return true;
-    },
     async lockThreadReceipt(threadId) {
       const row = leases.get(threadId);
       return row

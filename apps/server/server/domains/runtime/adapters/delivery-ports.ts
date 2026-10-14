@@ -70,7 +70,6 @@ export interface HandBackStore {
 }
 
 export interface DeliveryLeaseStore {
-  cancelThreadReceipt(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   /** The thread's lease row and its receipt, locked, regardless of holder and expiry. */
   lockThreadReceipt(
     threadId: ThreadId,

@@ -92,7 +92,8 @@ controlMessageId }`) whose text block is the model's `<system_update>` notice,
 acknowledge the control and publish the run-state record (which carries the new
 mode), then the reservation. All of it commits together or none of it does, so a
 start that is aborted, cancelled or refused after it selected the switch leaves S
-pending. No model call and no lease.
+pending. No model call, and no separate transaction: application runs inside the leased
+reservation transaction, under the run's claim.
 
 Preparation (references, images, skills, the compaction decision) reads storage,
 and the history it builds must include the switch turn and the new mode. A start

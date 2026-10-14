@@ -88,8 +88,10 @@ const later = (a: string | null | undefined, b: string | null | undefined) =>
   a == null ? (b ?? null) : b == null ? a : compareSeq(a, b) >= 0 ? a : b;
 
 /**
- * Record an answer, keeping the later of two. Evidence is never evicted: the view is per chat,
- * so it stays small, and dropping an old answer would let the journal rebuild bring its intent back.
+ * Record an answer, keeping the later of two. Evidence is never evicted, because dropping an
+ * old answer would let the journal rebuild bring its intent back. The bound is the number of
+ * distinct answered switches seen during the store's lifetime (not pending controls, journal
+ * retention or transcript length); a reload, which recreates the store, resets it.
  */
 function withAnswer(
   answers: ReadonlyMap<string, string>,

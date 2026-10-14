@@ -20,11 +20,8 @@ import type { Lease, RunClaim } from "../loop/ports.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
 import type { DeliveryLeaseStore, DeliveryStore } from "./delivery-ports.js";
 
-/** The turn current when an execution acknowledges messages, and its execution. */
-export type Deliverer = {
-  turn: { id: string; position: number | null };
-  executionId: string | null;
-};
+/** The turn current when an execution acknowledges messages; acknowledgement records its id. */
+export type Deliverer = { turn: Pick<Turn, "id"> };
 
 export type ExecutionSettlementDeps = PersistenceDeps & {
   repos: import("../../threads/index.js").ThreadRepositories;
@@ -41,10 +38,7 @@ export type ExecutionSettlementDeps = PersistenceDeps & {
 export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
   const { inbox, leaseStore, threadLock } = deps;
 
-  const deliveredBy = (lease: Lease, turn: Pick<Turn, "id" | "position">): Deliverer => ({
-    turn,
-    executionId: lease.executionId,
-  });
+  const deliveredBy = (turn: Pick<Turn, "id">): Deliverer => ({ turn });
 
   /** A usage block clears the moment no message or control waits behind it. */
   async function clearBlockWhenIdle(threadId: ThreadId) {
@@ -81,7 +75,7 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
   /** A failed or cancelled assistant delivers its messages: they are never taken on again. */
   async function acknowledgeFailedReply(lease: Lease, turn: Turn, messageIds: readonly string[]) {
     if (turn.role === "assistant" && (turn.status === "cancelled" || turn.status === "error"))
-      await ack(lease.threadId, messageIds, deliveredBy(lease, turn));
+      await ack(lease.threadId, messageIds, deliveredBy(turn));
   }
 
   /**
@@ -136,7 +130,7 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
       if (ids.length > 0) {
         if (!(await leaseStore.clearReceipt(lease, ids)))
           throw new Error("Cannot ack after losing live run lease");
-        await ack(lease.threadId, [...ids], deliveredBy(lease, byTurn));
+        await ack(lease.threadId, [...ids], deliveredBy(byTurn));
       }
       return result;
     });
@@ -153,11 +147,7 @@ export function createExecutionSettlement(deps: ExecutionSettlementDeps) {
   const retireOrphanedReply = async (threadId: ThreadId, turnId: TurnId) => {
     const ids = await clearOrphanedTurn(threadId, turnId);
     if (!ids) return;
-    const orphan = await deps.repos.turns.findById(turnId);
-    await ack(threadId, ids, {
-      turn: { id: turnId, position: orphan?.position ?? null },
-      executionId: orphan?.executionId ?? null,
-    });
+    await ack(threadId, ids, deliveredBy({ id: turnId }));
   };
   /** A dead compaction's or seed's receipt clears and leaves its unanswered messages pending. */
   const clearOrphanedReceipt = async (threadId: ThreadId, turnId: TurnId) => {
