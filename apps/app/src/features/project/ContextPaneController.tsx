@@ -1,4 +1,5 @@
 /** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
+
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import {
   contextOwner,
@@ -17,6 +18,7 @@ import {
   useContextTabsActions,
   useContextTabsStore,
 } from "@/client/stores";
+import { requestEditorFocus } from "@/features/editor/focus-on-open";
 import {
   useAccountResourceProjection,
   useAccountResourceReplica,
@@ -404,6 +406,7 @@ export function ContextViewerSurfaceController({
         try {
           if (isCurrent?.() === false) return;
           const documentId = reservation.content.handle.documentId;
+          requestEditorFocus(documentId);
           const result = await onOpenContextTarget(
             { scheme: "unfiled", path: "", workId: routeWorkId, documentId },
             {
