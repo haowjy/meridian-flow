@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Keep an unanswered import start available to retry when the open list is empty.
 - Keep imports running across projects in an activity card. Resume uploads, discard with Stop, and show only a pending root until the whole import appears.
 
 - Refuse Stop after an import reveals, while its catalog publication finishes.

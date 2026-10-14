@@ -8,20 +8,34 @@ routed exports have no pending rows. Documents are born complete.
 `ImportsProvider` at the authenticated root owns one account-lifetime coordinator;
 project `ImportProvider` owns only pick/drop doors. Navigation never stops an
 upload. File handles are private and ephemeral. The open list is server truth;
-BroadcastChannel only nudges refresh. Continue reads fresh detail, matches only
-awaiting entries by root/path and size/modified time, and explicitly asks before
-skipping missing files. The browser never hashes or sniffs file contents.
+BroadcastChannel only nudges refresh. Continue reads fresh detail, pairs only
+awaiting entries by root name, kind and path. Size and modified time only break
+ties between duplicate candidates; differences still send, marked changed in
+`X-Import-Changed-Entries`. Missing files stay awaiting until the writer chooses
+"Import without them". The browser never hashes or sniffs file contents.
 
-`ImportToasts` owns the writer-facing state and inline confirmation. Stop in any
+The browser mints the import id before reading; every create replay uses that id.
+Creation knowledge (`local`, `uncertain`, `created`), not the toast phase, decides
+what dismissal can do. Only an import no create could have committed closes
+locally. Later refusals and an empty open list cannot erase an unanswered start;
+Stop replays uncertain create before cancelling. Response revisions and upload
+attempts fence late answers; polling never overwrites an in-flight command or
+clears its error. Catalog/receipt progress cannot regress on an old response.
+
+`toast-presentation.ts` owns the state table; `ImportToasts` renders its controls. Stop in any
 phase before reveal discards everything; a reveal winning the race reports that
 it finished. Failed organize offers Try again or Stop, never partial import.
-A clean completion acknowledges only after six visible seconds. Local refusals
+`import_finished` clears confirmation and records the lost Stop race before any
+optional detail read. Stop stays hidden, and Adding counts organized as well as
+prepared files until the server says finished. A clean completion acknowledges
+only after six visible seconds. Local refusals
 close locally; durable terminal acknowledgements apply across tabs.
 
 `pending-roots.ts` is the five-rule projection. Catalog identity wins; historical
 `root.created` is not liveness. The coordinator remembers observed roots across
-phone navigation. Pending roots have no URI or document capabilities: activating
+account-lifetime navigation. The 30-second catalog bridge starts when it learns
+creation, not when a tree remounts. Pending roots have no URI or document capabilities: activating
 one reveals its toast, never opens an editor. No import state enters the replica.
 
 Copy goes through Lingui and `reason-copy.ts`; server codes are not sentences.
-See [deferred browser coverage](.context/TODO.md) and the [runtime recipe](../../../../../docs/qa/README.md).
+See [deferred browser coverage](.context/TODO.md) and the [runtime recipe](../../../../../docs/qa/README.md#import).

@@ -235,6 +235,7 @@ function AuthenticatedProviderTree({
                       <DebugOverlay />
                     </Suspense>
                   ) : null}
+                  {/* Keep development controls out of the activity card and phone top bar. */}
                   {ReactQueryDevtools && phone === false ? (
                     <Suspense fallback={null}>
                       <ReactQueryDevtools buttonPosition="top-right" initialIsOpen={false} />

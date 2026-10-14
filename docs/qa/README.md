@@ -97,8 +97,8 @@ worktree's API origin and inspect the rendered detail/open-list responses:
 6. Drive Folder/Files on desktop and a 393×852 touch phone in both themes.
    Reading appears immediately. Only the pending folder root appears in the
    tree/Files listing; tapping it opens the activity card. On phone the activity
-   bar must not cover the first row. On desktop the card fits the rail and does
-   not collide with the development tools button.
+   bar must not cover the first row. On desktop the card fits the rail above its account/navigation footer; View
+   projects remains clickable. Devtools is top-right on desktop and absent on phone.
 7. Pause upload by reloading before all bytes arrive. After 60 seconds Continue
    asks for the original folder. Repick with one changed file and one missing
    file: only awaiting files send, the changed file is marked, and the missing
@@ -108,11 +108,21 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    reveal. Cancelling that confirmation resumes the same activity.
 8. Until the organize lane is available, exercise Waiting, ready counts, Adding,
    Didn't finish (Try again and Stop), and Done through the app's fake import API.
+   On a project route after reload, run
+   `agent-browser --session <name> eval --stdin < apps/app/scripts/probe-import-states.js`.
+   Use `window.importStory.adding()`, `.revealed()`, `.failed()` and `.done()`
+   through browser eval to advance it. `.failNextDetail()` exercises read failure
+   after a lost Stop; `.reset()` restores real requests. This is fake evidence,
+   never proof of real organizing or catalog publication.
    Keep Adding through the revealed-but-unpublished interval. A lost Stop race
    says it finished before it could stop and waits for finished. Record fake
    evidence separately from real-server evidence. Clean Done acknowledges only
    after six visible seconds; needs-a-look results stay until dismissed.
-9. Once organize is available, verify atomic reveal and complete documents with
+9. Fail the first create transport, then return an empty open list. Retry and
+   Stop must remain available with held files. Restore transport and Retry:
+   the same import id succeeds. A later 4xx must not turn an earlier unanswered
+   create into a locally dismissible refusal.
+10. Once organize is available, verify atomic reveal and complete documents with
    the notes-folder fixture under
    `apps/server/server/domains/import/__fixtures__/`, including properties and links.
 

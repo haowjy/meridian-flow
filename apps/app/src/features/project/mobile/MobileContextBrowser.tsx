@@ -299,37 +299,35 @@ function FolderListingBody({
   ];
 
   return (
-    <>
-      <ul className="flex flex-col">
-        {listing.map((row) => {
-          if (row.origin === "import") return <MobilePendingRow key={row.id} row={row} />;
-          const { node } = row;
-          return node.kind === "dir" ? (
-            <MobileFolderRow
-              key={node.entryId}
-              dir={node}
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              scheme={scheme}
-              siblings={siblings}
-              onDrill={() => onSelectContextFolder(node.path)}
-              onRequestDelete={onRequestDelete}
-            />
-          ) : (
-            <MobileFileRow
-              key={node.entryId}
-              file={node}
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              scheme={scheme}
-              siblings={siblings}
-              onOpen={() => openFile(node)}
-              onRequestDelete={onRequestDelete}
-            />
-          );
-        })}
-      </ul>
-    </>
+    <ul className="flex flex-col">
+      {listing.map((row) => {
+        if (row.origin === "import") return <MobilePendingRow key={row.id} row={row} />;
+        const { node } = row;
+        return node.kind === "dir" ? (
+          <MobileFolderRow
+            key={node.entryId}
+            dir={node}
+            projectId={projectId}
+            editorWorkId={editorWorkId}
+            scheme={scheme}
+            siblings={siblings}
+            onDrill={() => onSelectContextFolder(node.path)}
+            onRequestDelete={onRequestDelete}
+          />
+        ) : (
+          <MobileFileRow
+            key={node.entryId}
+            file={node}
+            projectId={projectId}
+            editorWorkId={editorWorkId}
+            scheme={scheme}
+            siblings={siblings}
+            onOpen={() => openFile(node)}
+            onRequestDelete={onRequestDelete}
+          />
+        );
+      })}
+    </ul>
   );
 }
 

@@ -52,7 +52,7 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   must outlive their caller, stack per entity, or share one failure across
   surfaces, keep them in an explicit per-domain record store (as Work commands
   do in `client/query/work-command-store.ts`), never in the mutation cache.
-- `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
+- `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot → toast registry → account-keyed imports); do not gate providers by pathname.
 - Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).
 
 - Account display settings and working-set sync have one account-lifetime owner

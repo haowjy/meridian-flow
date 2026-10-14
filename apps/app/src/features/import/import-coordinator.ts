@@ -171,6 +171,7 @@ export class ImportCoordinator {
       for (const [id, record] of this.records) {
         if (
           ids.has(id) ||
+          record.creation !== "created" ||
           record.revision !== revisions.get(id) ||
           record.view.local.phase === "reading" ||
           record.view.local.phase === "creating" ||

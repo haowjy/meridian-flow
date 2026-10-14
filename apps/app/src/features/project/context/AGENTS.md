@@ -64,7 +64,7 @@ Shared across both shells:
   Refused moves reopen at their retained destination when it still resolves, otherwise
   at the current parent with the refusal message. Uploads omits generic Delete.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
-  whitespace warning.
+  whitespace warning. Only catalog siblings reserve names; pending import roots do not.
 
 ## Rules
 

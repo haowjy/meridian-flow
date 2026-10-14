@@ -3,6 +3,7 @@
  * Exact app routes run in TanStack Start; server route families are proxied to
  * `apps/server`. Rules are ordered so an exact app route may live inside a
  * server-owned family without broadening app ownership to sibling routes.
+ * New server API families must be listed here; unlisted paths stay with the app in dev.
  */
 
 export type ApiRouteOwner = "app" | "server";
