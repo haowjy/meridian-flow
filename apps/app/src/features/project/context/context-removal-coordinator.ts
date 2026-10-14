@@ -23,6 +23,7 @@ import {
   type ServerContextTab,
 } from "@/client/stores";
 import {
+  followRouteIdentity,
   type ReconcileContextRoutesInput,
   readRecentRoutes,
   reconcileContextRoutes,
@@ -960,6 +961,13 @@ export class ContextRemovalCoordinator {
     const state = this.projects.get(projectId);
     if (!state || !tab.draftOnly || !tab.reviewWorkId) return;
     state.terminalRemovals.delete(locatorKey(routeTargetForTab(tab, tab.reviewWorkId)));
+  }
+
+  /** A joined document's old id is only an alias: recent routes follow the id the server knows. */
+  followResourceIdentity(projectId: string, fromDocumentId: string, toDocumentId: string): void {
+    const routes = this.workingSet.readRecentRoutes(projectId);
+    const followed = followRouteIdentity(routes, fromDocumentId, toDocumentId);
+    if (followed !== routes) this.workingSet.replaceRecentRoutes(projectId, followed);
   }
 
   /** Promote a server-applied draft-only overlay into the durable workspace. */

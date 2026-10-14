@@ -115,7 +115,7 @@ describe("DraftReviewProvider remote settlement", () => {
     });
     if (!tab) throw new Error("Draft tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
-    fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+    fixture.network.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
     // An observation joined from before the Apply would say the document is absent.
     resources.acquireCatalog.mockResolvedValue({ entries: new Map() });
     resources.acquireCatalogAfter.mockResolvedValue({

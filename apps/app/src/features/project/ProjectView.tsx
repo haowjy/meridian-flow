@@ -74,6 +74,7 @@ import { ProjectContextRemovalController } from "./context/ProjectContextRemoval
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
+import { useFollowJoinedIdentities } from "./context/use-follow-joined-identities";
 import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
@@ -218,6 +219,7 @@ export function ProjectView(props: ProjectViewProps) {
     [availability, props.projectId],
   );
   useContextCatalogWake(props.projectId, repairColdWork);
+  useFollowJoinedIdentities(props.projectId);
   useEffect(() => {
     const lease = availability.attachProject(props.projectId);
     const reportWatches = () => {

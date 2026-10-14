@@ -988,6 +988,15 @@ then the phone 390x844 with touch emulation.
 5. **No regression.** New file at a free name, and at a name a visible document holds (the
    second takes the free name, `Chapter 2 (2)`).
 
+6. **A draft-only tab open before the join.** Open the draft's `Chapter 2` first (the chat's "Edited"
+   line, the composer strip, or the Work page's Changes to review), then New file `Chapter 2` from the
+   sidebar. Repeat with that tab open but another tab selected, and reload afterwards. PASS: no "Couldn't
+   open this draft." card; the open tab becomes the document's ordinary tab with the draft's review over it
+   (the view the chip's Draft choice gives; an unselected tab simply becomes ordinary). The card still shows
+   for a hand-typed address whose draft is gone. Wrap `fetch` in an init script and log the bodies of
+   `working-set`, `context/availability` and `recent-documents`: none answers 400 or 404, and neither
+   `meridian:working-set` nor `meridian:account-recents` keeps the device's minted id.
+
 With no `?work=` the document shows the draft hint instead of the Live chip (see the next section).
 
 Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
