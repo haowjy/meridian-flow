@@ -150,7 +150,7 @@ function importOf(parts: {
 }): ProjectedImport {
   const state: ImportState = {
     importId: "i",
-    report: parts.accepted
+    status: parts.accepted
       ? {
           summary,
           roots: [],

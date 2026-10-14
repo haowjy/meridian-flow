@@ -95,8 +95,8 @@ function nodesOf(item: ProjectedImport): Nodes {
 
 function buildNodes(item: ProjectedImport): Node[] {
   const { state, seen, bridges } = item;
-  const report = fullyRead(state.report) ? state.report : null;
-  if (!report) {
+  const status = fullyRead(state.status) ? state.status : null;
+  if (!status) {
     return (state.local?.rows ?? []).map((row) => ({
       id: row.id,
       parentId: row.parentId,
@@ -112,7 +112,7 @@ function buildNodes(item: ProjectedImport): Node[] {
     }));
   }
   const nodes: Node[] = [];
-  for (const folder of report.folders.values()) {
+  for (const folder of status.folders.values()) {
     if (folder.state === "deleted") continue;
     nodes.push({
       id: folder.id,
@@ -128,7 +128,7 @@ function buildNodes(item: ProjectedImport): Node[] {
     });
   }
   const canRetry = state.local?.held != null;
-  for (const raw of report.entries.values()) {
+  for (const raw of status.entries.values()) {
     const entry = effectiveEntry(state, raw);
     if (entry.state === "skipped" || entry.state === "deleted" || entry.state === "not_imported")
       continue;

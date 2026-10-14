@@ -81,7 +81,7 @@ function EntryNotice({
 }) {
   const { coordinator, openContinue } = useImports();
   const view = useImport(importId);
-  const raw = view?.state.report?.entries.get(entryId);
+  const raw = view?.state.status?.entries.get(entryId);
   if (!view || !raw) return null;
   const { state, display } = view;
   const entry = effectiveEntry(state, raw);

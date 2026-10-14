@@ -76,7 +76,7 @@ cleanup.
   own view. It never writes back.
 - **One store per import** (`ImportStore`) is a passive cache: the full read,
   `?since=` cuts and this tab's own upload answers merge into one import status
-  (`ImportStatus`; the store's fields still say `report`). It never reads or polls.
+  (`ImportStatus`, held as `state.status`). It never reads or polls.
 - **One display state** (`display-state.ts`) for every surface. Counts come from
   `effectiveCounts`: a file whose send failed here is failed, though the server
   still thinks it is planned.

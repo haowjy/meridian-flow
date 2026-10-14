@@ -1,4 +1,4 @@
-/** Folder/file import manifests and durable per-entry reports. */
+/** Folder/file import manifests and the status the server reports for each import. */
 export interface ImportManifest {
   importId: string;
   destination: { folderUri: string };
@@ -98,7 +98,7 @@ export interface ImportEntryStatus {
   reasonParams?: { readReason: ImportUnreadableReason };
   /**
    * The server takes this file's bytes now: planned, failed, or a landing whose
-   * claim lapsed (its process died). Read at report time; senders trust it alone.
+   * claim lapsed (its process died). Read with the status; senders trust it alone.
    */
   wanted: boolean;
 }

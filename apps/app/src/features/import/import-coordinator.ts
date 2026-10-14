@@ -121,7 +121,7 @@ export class ImportCoordinator {
     const big = [...this.records.values()].some((record) => {
       const state = record.store.getSnapshot();
       return (
-        (state.report?.entries.size ?? 0) > BIG_IMPORT ||
+        (state.status?.entries.size ?? 0) > BIG_IMPORT ||
         (state.local?.rows.length ?? 0) > BIG_IMPORT
       );
     });
@@ -154,8 +154,8 @@ export class ImportCoordinator {
     for (const record of this.records.values()) {
       const state = record.store.getSnapshot();
       // Stopped before the server heard of it: nothing is left to show a row for.
-      const endedHere = state.stop === "stopped" && !state.report;
-      if ((state.local || state.report) && !endedHere) live.push(record);
+      const endedHere = state.stop === "stopped" && !state.status;
+      if ((state.local || state.status) && !endedHere) live.push(record);
     }
     live.sort(
       (a, b) =>
@@ -168,7 +168,7 @@ export class ImportCoordinator {
   /** Rebuilt only when some import's entries or the set of imports moved. */
   private documentIndex(imports: readonly ProjectedImport[]): ReadonlyMap<string, DocumentEntry> {
     const seen = new Map<string, unknown>();
-    for (const item of imports) seen.set(item.importId, item.state.report?.entries);
+    for (const item of imports) seen.set(item.importId, item.state.status?.entries);
     const same =
       seen.size === this.indexed.size &&
       [...seen].every(([id, entries]) => this.indexed.get(id) === entries);
@@ -176,7 +176,7 @@ export class ImportCoordinator {
     this.indexed = seen;
     const documents = new Map<string, DocumentEntry>();
     for (const item of imports)
-      for (const entry of item.state.report?.entries.values() ?? [])
+      for (const entry of item.state.status?.entries.values() ?? [])
         documents.set(entry.documentId, { importId: item.importId, entryId: entry.entryId });
     return documents;
   }
@@ -275,14 +275,14 @@ export class ImportCoordinator {
    * Rows this tab drew that the status materialized are bridged before the store
    * changes, since a store retires as soon as it is over.
    */
-  private installFull(record: ImportRecord, status: ImportStatus) {
-    const { report, local } = record.store.getSnapshot();
-    this.absorb(record, status, report?.entries);
-    if (!fullyRead(report) && local?.rows.length) {
+  private installFull(record: ImportRecord, incoming: ImportStatus) {
+    const { status: current, local } = record.store.getSnapshot();
+    this.absorb(record, incoming, current?.entries);
+    if (!fullyRead(current) && local?.rows.length) {
       const materialized = new Set<string>();
-      for (const folder of status.folders)
+      for (const folder of incoming.folders)
         if (folder.state !== "deleted") materialized.add(folder.id);
-      for (const entry of status.entries)
+      for (const entry of incoming.entries)
         if (entry.kind === "note" || entry.kind === "docx" || entry.state === "landed")
           if (entry.state !== "skipped" && entry.state !== "deleted")
             materialized.add(entry.documentId);
@@ -290,7 +290,7 @@ export class ImportCoordinator {
         local.rows.filter((row) => materialized.has(row.id)).map((row) => row.id),
       );
     }
-    record.store.installReport(status);
+    record.store.installStatus(incoming);
   }
 
   /** The plan answered: the status replaces the prediction. */
@@ -439,7 +439,7 @@ export class ImportCoordinator {
     const record = this.recordOf(importId);
     const { store } = record;
     const before = store.getSnapshot();
-    const summary = before.report?.summary;
+    const summary = before.status?.summary;
     if (!summary) return false;
     const run = this.runFor(record);
     store.update((state) => ({
@@ -448,7 +448,7 @@ export class ImportCoordinator {
       local: {
         phase: { kind: "idle" },
         destination: state.local?.destination ?? destinationFromSummary(summary),
-        roots: state.report?.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })) ?? [],
+        roots: state.status?.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })) ?? [],
         rows: [],
         held: new Map(held),
         manifest: null,
@@ -540,11 +540,11 @@ export class ImportCoordinator {
   private send(record: ImportRecord, run: Run, only?: ReadonlySet<number>) {
     if (retired(run)) return;
     const { store } = record;
-    const { local, report } = store.getSnapshot();
-    if (!local?.held || !report) return;
+    const { local, status } = store.getSnapshot();
+    if (!local?.held || !status) return;
     const files: HeldFile[] = [];
     const missing: number[] = [];
-    for (const entry of report.entries.values()) {
+    for (const entry of status.entries.values()) {
       if (only && !only.has(entry.entryId)) continue;
       if (!entry.wanted) continue;
       const file = local.held.get(entry.entryId);
@@ -608,7 +608,7 @@ export class ImportCoordinator {
       outcome.kind === "answered" ? [outcome.entry] : [],
     );
     if (answered.length) {
-      this.absorb(record, { folders: [], entries: answered }, store.getSnapshot().report?.entries);
+      this.absorb(record, { folders: [], entries: answered }, store.getSnapshot().status?.entries);
       store.mergeEntries(answered);
     }
     store.setLocal((local) => {
@@ -635,11 +635,11 @@ export class ImportCoordinator {
   async retry(importId: string, entryIds?: readonly number[]) {
     const record = this.recordOf(importId);
     const { store } = record;
-    const { local, report } = store.getSnapshot();
-    if (!local?.held || !report) return;
+    const { local, status } = store.getSnapshot();
+    if (!local?.held || !status) return;
     const wanted = new Set(
       entryIds ??
-        [...report.entries.values()]
+        [...status.entries.values()]
           .filter((entry) => entry.state === "failed" || local.failures.has(entry.entryId))
           .map((entry) => entry.entryId),
     );
@@ -687,8 +687,8 @@ export class ImportCoordinator {
     const epoch = this.epoch;
     record.endRun();
     const planning = record.plan;
-    const { report } = store.getSnapshot();
-    if (!report && !planning) {
+    const { status } = store.getSnapshot();
+    if (!status && !planning) {
       // Nothing was ever sent: the import ends here, its rows and its status row go.
       this.endLocally(record);
       return "nothing-sent" as const;
@@ -756,12 +756,12 @@ export class ImportCoordinator {
   private async readNow(record: ImportRecord, full: boolean, epoch: number): Promise<boolean> {
     if (!this.live(record, epoch)) return false;
     const { store } = record;
-    const report = store.getSnapshot().report;
+    const status = store.getSnapshot().status;
     try {
-      if (fullyRead(report) && !full) {
-        const changes = await this.api.changes(this.projectId, record.importId, report.cursor);
+      if (fullyRead(status) && !full) {
+        const changes = await this.api.changes(this.projectId, record.importId, status.cursor);
         if (!this.live(record, epoch)) return false;
-        this.absorb(record, changes, store.getSnapshot().report?.entries);
+        this.absorb(record, changes, store.getSnapshot().status?.entries);
         store.applyChanges(changes);
       } else {
         const status = await this.api.status(this.projectId, record.importId);
@@ -797,14 +797,14 @@ export class ImportCoordinator {
       listed.add(summary.importId);
       const record = this.recordOf(summary.importId);
       record.store.seedSummary(summary);
-      const report = record.store.getSnapshot().report;
-      if (!fullyRead(report)) void this.readOf(record, true);
-      else if (compareVersions(summary.version, report.cursor) > 0) void this.readOf(record, false);
+      const status = record.store.getSnapshot().status;
+      if (!fullyRead(status)) void this.readOf(record, true);
+      else if (compareVersions(summary.version, status.cursor) > 0) void this.readOf(record, false);
     }
     // Another tab finished or stopped it: the list stops saying so, only the import can.
     for (const [importId, record] of this.records) {
-      const report = record.store.getSnapshot().report;
-      if (listed.has(importId) || !report || report.summary.state === "finished") continue;
+      const status = record.store.getSnapshot().status;
+      if (listed.has(importId) || !status || status.summary.state === "finished") continue;
       if (record.missing) continue;
       void this.readOf(record, true);
     }
@@ -835,7 +835,7 @@ export class ImportCoordinator {
       await this.refreshOpen();
       if (this.disposed || generation !== this.watching) return;
       const active = [...this.records.values()].some((record) => {
-        const summary = record.store.getSnapshot().report?.summary;
+        const summary = record.store.getSnapshot().status?.summary;
         return summary !== undefined && summary.state !== "finished" && summary.counts.arriving > 0;
       });
       this.openTimer = this.clock.setTimeout(tick, active ? POLL_ACTIVE_MS : POLL_IDLE_MS);
@@ -855,7 +855,7 @@ export class ImportCoordinator {
   private maybeRetire(record: ImportRecord, publish = true): boolean {
     if (this.records.get(record.importId) !== record) return false;
     const state = record.store.getSnapshot();
-    const over = state.report?.summary.state === "finished" || record.missing;
+    const over = state.status?.summary.state === "finished" || record.missing;
     if (!over || record.plan || state.stop === "stopping") return false;
     const phase = state.local?.phase.kind;
     if (phase === "reading" || phase === "preparing" || phase === "uploading") return false;

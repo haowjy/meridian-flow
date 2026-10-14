@@ -78,12 +78,12 @@ export function ContinueImportDialog({
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const names = namesSentence(
     state.local?.roots.map((root) => root.name) ??
-      state.report?.roots.map((root) => root.name) ??
+      state.status?.roots.map((root) => root.name) ??
       [],
   );
   // The check needs every entry; read them as soon as the dialog opens.
   useEffect(() => {
-    if (!fullyRead(store.getSnapshot().report)) void coordinator.read(importId, true);
+    if (!fullyRead(store.getSnapshot().status)) void coordinator.read(importId, true);
   }, [store, coordinator, importId]);
 
   // A new selection is checked as soon as it has been read.
@@ -97,10 +97,10 @@ export function ContinueImportDialog({
     (async () => {
       try {
         // Fresh, whole: what the server wants now decides what Continue sends.
-        if (!(await coordinator.read(importId, true))) throw new Error("report");
-        const report = store.getSnapshot().report;
-        if (!fullyRead(report)) throw new Error("report");
-        const stored = { roots: report.roots, entries: [...report.entries.values()] };
+        if (!(await coordinator.read(importId, true))) throw new Error("status");
+        const status = store.getSnapshot().status;
+        if (!fullyRead(status)) throw new Error("status");
+        const stored = { roots: status.roots, entries: [...status.entries.values()] };
         const structural = compareStructure(stored, selection);
         if (structural) return setStep({ kind: "mismatch", difference: structural });
         const files = selection.roots.reduce((sum, root) => sum + root.files.length, 0);
@@ -108,7 +108,7 @@ export function ContinueImportDialog({
         setStep({ kind: "checking", percent: 0, files });
         const built = await buildManifest(selection, {
           importId,
-          destinationUri: report.summary.destination.folderUri,
+          destinationUri: status.summary.destination.folderUri,
           signal: control.signal,
           onHashed: (bytes) =>
             setStep({ kind: "checking", percent: total ? (bytes / total) * 100 : 100, files }),

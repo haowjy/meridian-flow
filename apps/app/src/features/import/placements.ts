@@ -84,16 +84,16 @@ export function targetOf(state: ImportState): ImportTarget | null {
       anchors: anchorsOf(local.destination, [local.destination.scheme]),
     };
   }
-  const report = state.report;
-  if (!report) return null;
-  const destination = destinationFromSummary(report.summary);
-  const rootIds = fullyRead(report)
-    ? report.roots.flatMap((root) => (root.kind === "folder" && root.id ? [root.id] : []))
+  const status = state.status;
+  if (!status) return null;
+  const destination = destinationFromSummary(status.summary);
+  const rootIds = fullyRead(status)
+    ? status.roots.flatMap((root) => (root.kind === "folder" && root.id ? [root.id] : []))
     : [];
-  if (fullyRead(report) && report.roots.length === 1 && report.roots[0].id === null) {
+  if (fullyRead(status) && status.roots.length === 1 && status.roots[0].id === null) {
     const schemes = new Set<ImportScheme>();
-    for (const folder of report.folders.values()) schemes.add(folder.scheme);
-    for (const entry of report.entries.values()) schemes.add(entry.scheme);
+    for (const folder of status.folders.values()) schemes.add(folder.scheme);
+    for (const entry of status.entries.values()) schemes.add(entry.scheme);
     if (schemes.size > 0)
       return {
         schemes: [...schemes],

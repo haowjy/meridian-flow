@@ -17,7 +17,7 @@ export function announceMilestones(store: ImportStore) {
     switch (next) {
       case "finished": {
         const stopped =
-          state.stop === "stopped" || (state.report?.summary.counts.notImported ?? 0) > 0;
+          state.stop === "stopped" || (state.status?.summary.counts.notImported ?? 0) > 0;
         announce(stopped ? t`Import stopped.` : t`Import finished.`);
         break;
       }
