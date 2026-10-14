@@ -53,8 +53,7 @@ without resolution or prose conversion. Paste retains its app-side ranking
 and display policy. Its whole-slice text projection uses `{ context: "prose" }`: no
 ingress,
 frontmatter or Markdown AST interpretation; the host supplies code/link semantics.
-Comments still span formatting and paragraph boundaries. `{ preprocessed: true }`
-remains available for Markdown source whose ingress has already run.
+Comments still span formatting and paragraph boundaries.
 
 `splitFrontmatter(text)` also ships alone at
 `@meridian/markup/frontmatter`, without parser or codec imports.
