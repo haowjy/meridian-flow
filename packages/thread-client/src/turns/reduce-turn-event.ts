@@ -12,6 +12,7 @@ import {
   MESSAGES_DELIVERED_EVENT,
   MESSAGES_HANDED_BACK_EVENT,
   RUN_STATE_EVENT,
+  readMessagesHandedBack,
   readRunStartedMeta,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
@@ -69,6 +70,11 @@ export type TurnStore = {
     status: Turn["status"],
     patch?: Partial<Pick<Turn, "completedAt" | "error" | "finishReason">>,
   ): void;
+  /**
+   * Removes turns that left the conversation (handed-back messages) and keeps a tombstone at
+   * `seq`, so a snapshot read before the removal cannot bring them back.
+   */
+  removeTurns(threadId: string, ids: readonly string[], seq: string): void;
   bumpEventsApplied(threadId: string): number;
   settleInterruptResponse(identity: {
     threadId: string;
@@ -114,7 +120,8 @@ function parseCustomBlockUpsertPayload(value: unknown): CustomBlockUpsertPayload
 }
 
 export type TurnReducer = {
-  applyEvent(threadId: string, event: AGUIEvent): void;
+  /** `seq` is the event's stream seq; the frames that remove turns need it for their tombstones. */
+  applyEvent(threadId: string, event: AGUIEvent, seq?: string): void;
   /** False means the owned vocabulary was malformed or not for this thread. */
   applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
   clearPendingInterruptPatchesForThread(threadId: string): void;
@@ -655,7 +662,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
   }
 
   /** Applies one live AG-UI event to the unified thread store. */
-  function applyEvent(threadId: string, event: AGUIEvent): void {
+  function applyEvent(threadId: string, event: AGUIEvent, seq?: string): void {
     if (eventH(event) && event.threadId !== threadId) return;
 
     if (isDurableBlockEvent(event)) {
@@ -1080,6 +1087,13 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         // source durably, and its value holds the child's whole prompt.
         if (event.name === "meridian.subagent.activity" || event.name === "meridian.agent.spawn")
           return;
+        // Waiting messages that left the chat: the turns go, and a tombstone at this frame's
+        // seq keeps an older snapshot from bringing them back.
+        if (event.name === MESSAGES_HANDED_BACK_EVENT) {
+          const handedBack = readMessagesHandedBack(event.value);
+          if (handedBack) store.removeTurns(threadId, handedBack.userTurnIds, seq ?? "0");
+          return;
+        }
         // Durable custom projections are consumed by live listeners — the
         // useThreadDurableProjections trail/Work-binding listener and the
         // pending-inbox projection (usePendingInbox) — so they are not transcript
@@ -1096,8 +1110,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
           event.name === MESSAGES_DELIVERED_EVENT ||
           event.name === EXECUTION_ENDED_EVENT ||
           event.name === WRITE_MODE_SWITCHED_EVENT ||
-          event.name === RUN_STATE_EVENT ||
-          event.name === MESSAGES_HANDED_BACK_EVENT
+          event.name === RUN_STATE_EVENT
         ) {
           return;
         }

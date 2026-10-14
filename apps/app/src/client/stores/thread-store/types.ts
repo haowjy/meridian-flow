@@ -67,7 +67,9 @@ export type ThreadStoreActions = {
   pruneStaleAssistantTurns(threadId: string): void;
   bumpEventsApplied(threadId: string): number;
   /** Reduce one live stream event through this store's turn reducer. */
-  applyTurnEvent(threadId: string, event: AGUIEvent): void;
+  applyTurnEvent(threadId: string, event: AGUIEvent, seq?: string): void;
+  /** Remove turns that left the conversation, keeping a tombstone at `seq` (see `removeTurnsIn`). */
+  removeTurns(threadId: string, ids: readonly string[], seq: string): void;
   /** Reduce one durable block event; false when it is malformed or for another thread. */
   applyDurableBlockEvent(threadId: string, event: AGUIEvent): boolean;
   /** Admit a durable block wire sequence, independent of run cursor rewinds. */

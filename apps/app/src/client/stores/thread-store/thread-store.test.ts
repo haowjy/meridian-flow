@@ -86,3 +86,23 @@ it("a thread upsert inserts a new list row with its mode but never rewrites an e
   cache.upsertThread({ ...(thread as object), aiWriteMode: "draft" } as never);
   expect(client.getQueryData<{ aiWriteMode: string }[]>(key)?.[0]?.aiWriteMode).toBe("direct");
 });
+
+it("drops an optimistic row whose admission answer names a message another tab handed back", () => {
+  // Risk: a delayed admission answer bringing back a message that already left the chat.
+  const store = setup();
+  const actions = store.getState();
+  const row = actions.appendUserTurn("thread-1", [{ type: "text", text: "Steer" }]);
+  actions.removeTurns("thread-1", ["turn-server-1"], "7000");
+  actions.acknowledgeUserTurn("thread-1", row.id, "turn-server-1", "6001");
+  expect(actions.turns("thread-1")).toEqual([]);
+  // A snapshot read before the removal does not bring it back either.
+  actions.applyThreadSnapshot(
+    { id: "thread-1", projectId: "project-1" } as never,
+    [{ id: "turn-server-1", role: "user", blocks: [] } as never],
+    {
+      nextSeq: "6500",
+      lifecycle: { actionRequired: false, runningTurnId: null },
+    },
+  );
+  expect(store.getState().turns("thread-1")).toEqual([]);
+});
