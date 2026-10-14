@@ -455,8 +455,8 @@ export class ChatSubmissionOwner {
     const found = records.filter((entry) => entry.control).sort(compareSubmissions);
     const failed = this.model.failedSwitches;
     for (const id of failed) {
-      if (found.some((entry) => entry.recordId === id)) continue;
-      // Withdrawn or retired: its "Couldn't switch" announcement ends with it.
+      if (found.some((entry) => entry.recordId === id && !entry.answer)) continue;
+      // Withdrawn, answered by another tab, or retired: its "Couldn't switch" announcement ends.
       failed.delete(id);
       this.options.clear(id);
     }
