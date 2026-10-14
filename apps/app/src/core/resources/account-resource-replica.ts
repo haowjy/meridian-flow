@@ -359,7 +359,15 @@ export class AccountResourceReplica {
     const resolved = await lookupProjectContextAvailability(projectId, [session.documentId]);
     const available = resolved.resolutions[0];
     if (available?.kind !== "available" || available.documentId !== session.documentId) return;
-    await this.installProjectRegistryOwnership(projectId, key, available.generation, session);
+    const incarnation = this.runtime.liveIncarnation.incarnationOf(session);
+    if (!incarnation) return;
+    await this.installProjectRegistryOwnership(
+      projectId,
+      key,
+      available.generation,
+      incarnation,
+      session,
+    );
   }
 
   async keyForDocument(projectId: string, documentId: string): Promise<ResourceKey | null> {
@@ -416,6 +424,9 @@ export class AccountResourceReplica {
     const databaseName = session.persistenceName;
     if (!key || !databaseName || session.documentId !== documentId) return;
     this.requireOpen();
+    // The cache belongs to the room's incarnation, which can be older than `generation`.
+    const incarnation = this.runtime.liveIncarnation.incarnationOf(session);
+    if (!incarnation) return;
     const captureId = encodeURIComponent(key.handle);
     const priorCapture = this.serverSessionCaptures.get(captureId);
     let finishCapture!: () => void;
@@ -442,7 +453,7 @@ export class AccountResourceReplica {
           documentId,
           databaseName,
           schema: collabSchemaKeyTag(),
-          generation,
+          generation: incarnation,
           transitionId: crypto.randomUUID(),
         }),
       );
@@ -451,13 +462,13 @@ export class AccountResourceReplica {
         !captured ||
         captured.resource.identity.documentId !== documentId ||
         captured.resource.lifecycle.kind !== "acknowledged" ||
-        captured.resource.lifecycle.availabilityGeneration !== generation ||
+        captured.resource.lifecycle.availabilityGeneration !== incarnation ||
         captured.resource.content.kind !== "exact" ||
         captured.resource.content.databaseName !== databaseName
       )
         return;
       this.reconciler.schedule(key);
-      await this.installProjectRegistryOwnership(projectId, key, generation, session);
+      await this.installProjectRegistryOwnership(projectId, key, generation, incarnation, session);
     } finally {
       if (this.serverSessionCaptures.get(captureId) === captureTail)
         this.serverSessionCaptures.delete(captureId);
@@ -468,23 +479,28 @@ export class AccountResourceReplica {
   private async installProjectRegistryOwnership(
     projectId: string,
     key: ResourceKey,
-    generation: string,
+    admission: string,
+    incarnation: string,
     session: DocumentSession,
   ): Promise<void> {
     const databaseName = session.persistenceName;
     if (!databaseName) throw new Error("Registry session has no exact persistence");
-    const lease = await this.runtime.registry.admit(projectId, session.documentId, generation);
+    const lease = await this.runtime.registry.admit(projectId, session.documentId, admission);
     const owner = `resource-acquisition:${key.handle}:${crypto.randomUUID()}`;
     this.runtime.registry.retain(owner, [lease]);
     const retained = this.runtime.registry.get(lease);
-    if (retained !== session || retained.persistenceName !== databaseName) {
+    if (
+      retained !== session ||
+      retained.persistenceName !== databaseName ||
+      this.runtime.liveIncarnation.incarnationOf(retained) !== incarnation
+    ) {
       this.runtime.registry.release(owner);
       throw new Error("Resource ownership did not retain the opened server session");
     }
     let released = false;
     const ownership = {
       lease,
-      persistenceGeneration: generation,
+      persistenceGeneration: incarnation,
       exactDatabaseName: databaseName,
       release: () => {
         if (released) return;
