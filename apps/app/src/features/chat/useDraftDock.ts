@@ -16,7 +16,7 @@ import {
   isDraftImagePath,
 } from "@/features/draft-review/DraftImagePreview";
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { type ReviewChange, targetOfChanges } from "@/features/draft-review/review-changes";
+import type { ReviewChange } from "@/features/draft-review/review-changes";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
@@ -96,7 +96,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     (mode: "apply" | "discard") => {
       const items = actionableFiles.map((file) => ({
         draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-        target: targetOfChanges(file.actionable),
+        target: { kind: "draft" } as const,
       }));
       if (items.length === 0) return;
       // The runner hides every file's selection at the click and returns each as
