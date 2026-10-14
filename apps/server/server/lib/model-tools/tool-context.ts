@@ -101,8 +101,6 @@ export type ResolvedDocumentAddress = DocumentAddress & { uri: string; created?:
 export type ResolvedModelContextPort = {
   resolution: ThreadContextResolution;
   port: ContextPort;
-  /** The same thread's port with every write live, whatever the Work's mode. */
-  livePort: () => ContextPort;
 };
 
 /** One tool call's resolved ground: the thread's Work, its context port, and who acts. */
@@ -186,8 +184,6 @@ export async function resolveContextPort(
       responseId,
       ...(version ? { version } : {}),
     }),
-    livePort: () =>
-      contextPortForThread(deps.contextPorts, resolution, { responseId, liveWrites: true }),
   };
 }
 

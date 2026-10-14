@@ -23,7 +23,7 @@ export type ReviewChangeItem = {
 /** Presentation data can be shared without focus or command authority. */
 export type DraftChangesData = {
   documentId: string | null;
-  draftId: string | null;
+  itemKey: string | null;
   /** `error`: the draft's preview could not be read. Never read it as "no changes". */
   status: "idle" | "loading" | "error" | "ready" | "gone";
   items: readonly ReviewChangeItem[];
@@ -58,7 +58,7 @@ export function isWholeDocumentChange(
   );
 }
 
-type DraftRef = { projectId: string; workId: string; documentId: string; draftId: string };
+type DraftRef = { projectId: string; workId: string; documentId: string; itemKey: string };
 
 export type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 

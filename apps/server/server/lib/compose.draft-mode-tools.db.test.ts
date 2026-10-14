@@ -25,6 +25,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
+    const { draftTreeScenario } = await import("../test-support/draft-tree-scenario.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -107,9 +108,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdown,
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD.threadId,
-      });
-      await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
-        projectId: PROJECT_ID,
       });
       return runtimes.script(runtime, THREAD);
     }
@@ -285,6 +283,125 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(content.ok ? content.value.trim() : "").toBe("");
     });
 
+    // §12.5, O-11: a rolled-back reply retracts its draft create, unless another thread in
+    // the Work already committed text to it.
+    it("retracts a rolled-back reply's draft create unless another thread committed text to it (C-4)", async () => {
+      const runtime = await runtimes.compose();
+      const scenario = await draftTreeScenario(db, { runtime, runtimes });
+      const work = await scenario.work("Retracting", "draft");
+      const documentIdOf = (result: { metadata?: unknown }) => {
+        const documentId = (result.metadata as { documentId?: unknown } | undefined)?.documentId;
+        if (typeof documentId !== "string") throw new Error("the create reported no documentId");
+        return documentId;
+      };
+      const rowOf = async (id: string) => {
+        const [found] = await db
+          .select({ hidden: schema.documents.hidden, deletedAt: schema.documents.deletedAt })
+          .from(schema.documents)
+          .where(eq(schema.documents.id, id));
+        return found;
+      };
+      const usesOf = (id: string) =>
+        db
+          .select({ draftId: schema.draftTreeChanges.draftId })
+          .from(schema.draftTreeChanges)
+          .where(eq(schema.draftTreeChanges.nodeId, id));
+
+      const alone = await scenario.model(work).reply();
+      const aloneId = documentIdOf(
+        await alone.call("write", {
+          command: "create",
+          path: "manuscript://lore/alone.md",
+          content: "Never kept.",
+        }),
+      );
+      await alone.rollback();
+      expect.soft(await rowOf(aloneId), "retracted: tombstoned").toMatchObject({
+        hidden: true,
+        deletedAt: expect.any(Date),
+      });
+      expect.soft(await usesOf(aloneId), "retracted: no use left").toEqual([]);
+      expect
+        .soft(
+          await db
+            .select({ id: schema.documentBranches.id })
+            .from(schema.documentBranches)
+            .where(eq(schema.documentBranches.documentId, aloneId)),
+          "retracted: its empty branches gone",
+        )
+        .toEqual([]);
+
+      const other = await scenario.thread(work);
+      const first = await scenario.model(work).reply();
+      const sharedId = documentIdOf(
+        await first.call("write", {
+          command: "create",
+          path: "manuscript://lore/shared.md",
+          content: "The first thread's text.",
+        }),
+      );
+      const second = await scenario.model(other).reply();
+      await second.call("read", { path: "manuscript://lore/shared.md" });
+      const inserted = await second.call("write", {
+        command: "insert",
+        path: "manuscript://lore/shared.md",
+        content: "The second thread's line.",
+      });
+      expect.soft(inserted.isError ?? false, "the other thread writes").toBe(false);
+      await second.save();
+      await first.rollback();
+      expect.soft(await rowOf(sharedId), "stands: still hidden and live").toMatchObject({
+        hidden: true,
+        deletedAt: null,
+      });
+      expect.soft(await usesOf(sharedId), "stands: the draft keeps it").toHaveLength(1);
+      const read = await scenario.view(other).read("lore/shared.md");
+      expect
+        .soft(read.ok && read.value.content, "stands: the other thread's text")
+        .toContain("The second thread's line.");
+
+      // Two Works share one hidden identity: retracting A's create retires only A's peers.
+      const workA = await scenario.work("Retracting A", "draft");
+      const workB = await scenario.work("Surviving B", "draft");
+      const replyA = await scenario.model(workA).reply();
+      const twoWorkId = documentIdOf(
+        await replyA.call("write", {
+          command: "create",
+          path: "manuscript://lore/two-works.md",
+          content: "A's text, never kept.",
+        }),
+      );
+      const replyB = await scenario.model(workB).reply();
+      const joined = await replyB.call("write", {
+        command: "create",
+        path: "manuscript://lore/two-works.md",
+        content: "B's unsaved contribution.",
+      });
+      expect.soft(documentIdOf(joined), "B joins A's hidden identity").toBe(twoWorkId);
+      const bPeer = async () => {
+        const [peer] = await db
+          .select({ status: schema.documentBranches.status })
+          .from(schema.documentBranches)
+          .where(eq(schema.documentBranches.threadId, workB.threadId));
+        return peer?.status;
+      };
+      expect.soft(await bPeer(), "B's peer before A retracts").toBe("active");
+      await replyA.rollback();
+      expect.soft(await bPeer(), "B's peer survives A's retraction").toBe("active");
+      const saved = (await replyB.save()) as { receipts?: readonly unknown[] };
+      expect
+        .soft(saved.receipts ?? [], "B's overlapping reply commits with a receipt")
+        .toHaveLength(1);
+      expect.soft(await rowOf(twoWorkId), "B keeps the identity").toMatchObject({
+        hidden: true,
+        deletedAt: null,
+      });
+      const readB = await scenario.view(workB).read("lore/two-works.md");
+      expect
+        .soft(readB.ok && readB.value.content, "B's saved text")
+        .toContain("B's unsaved contribution.");
+    });
+
     it("stages nothing for a write that leaves the chapter unchanged", async () => {
       await db
         .update(schema.works)
@@ -307,8 +424,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    // D24: a binary copy duplicates the stored object and lands live, even in a draft Work.
-    it("copies a binary file live as a new stored object", async () => {
+    // D24 with 12b-Q2: a binary copy duplicates the stored object; in a draft-mode Work it
+    // is the draft's own hidden row, never shared and not live.
+    it("copies a binary file into the draft as its own hidden row and stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(
@@ -342,12 +460,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { ...THREAD, agentSlug: null },
       );
 
-      expect(copied.result).toMatchObject({ status: "success", destination: "live" });
+      expect(copied.result).toMatchObject({
+        status: "success",
+        destination: "draft",
+        draftWork: "rewrite",
+      });
       const [copy] = await db
         .select()
         .from(schema.documents)
         .where(eq(schema.documents.name, "scan-copy"));
+      expect(copy?.hidden).toBe(true);
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
+      const created = await db
+        .select({ draftId: schema.draftTreeChanges.draftId })
+        .from(schema.draftTreeChanges)
+        .where(eq(schema.draftTreeChanges.nodeId, copy?.id ?? ""));
+      expect(created).toHaveLength(1);
+      await expect(
+        runtime.ports.contextPorts
+          .forProject(PROJECT_ID, USER_ID, new Map())
+          .stat("kb://scan-copy.pdf"),
+      ).resolves.toMatchObject({ ok: false, error: { code: "not_found" } });
       const key = copy?.storageUrl?.replace("object://meridian/", "") ?? "";
       const stored = await runtime.ports.objectStore.get(key);
       expect(stored.ok && [...stored.value.bytes]).toEqual([...bytes]);

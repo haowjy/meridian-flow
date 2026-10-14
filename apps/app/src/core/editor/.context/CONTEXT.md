@@ -83,7 +83,7 @@ lifetime.
   generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
   review is a session identity change and must remount the TipTap editor because
   Collaboration binds to a concrete Y.Doc/fragment at construction. The `review`
-  mount identity requires both `draftId` and `roomName`;
+  mount identity requires both `itemKey` and `roomName`;
   `EditorView` resolves this identity before handing it to `SessionEditor`.
 - `mounted-editor.ts` is the editor-lifetime boundary, and the split it draws is
   the contract:

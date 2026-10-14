@@ -1,12 +1,17 @@
-/** Permanently removes expired Works, then best-effort removes their object-store blobs. */
+/**
+ * Permanently removes expired Works, then best-effort removes their object-store blobs.
+ * A purged Work's drafts are disposed of first through collab's locked Discard kernel
+ * (contract §2.6, F10): their branches leased before the transaction, then, after the
+ * deleted/cutoff proof, every hidden document they created tombstoned and released.
+ */
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import { workPurgeCutoff } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
-  documentBranches,
   documents,
+  drafts,
   eventJournal,
   projectResults,
   promptBakes,
@@ -19,7 +24,12 @@ import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
-import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
+import {
+  createObjectRelease,
+  type ObjectStorePort,
+  objectStoreKeyFromStorageUrl,
+} from "../../storage/index.js";
+import type { WorkDraftDisposal } from "../ports/work-draft-disposal.js";
 
 const WORK_PURGE_BATCH_LIMIT = 100;
 
@@ -27,36 +37,35 @@ export function createDrizzleWorkPurger(deps: {
   db: Database;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
+  drafts: WorkDraftDisposal;
   now?: () => Date;
 }) {
   const now = deps.now ?? (() => new Date());
-
-  async function deleteObjects(keys: readonly string[]): Promise<void> {
-    for (const key of new Set(keys)) {
-      try {
-        const result = await deps.objectStore.delete(key);
-        if (!result.ok && result.error.code !== "not_found") {
-          emitEvent(deps.eventSink, {
-            level: "warn",
-            source: "projects.work-purge",
-            name: "object_delete.failed",
-            payload: { key, error: result.error },
-          });
-        }
-      } catch (cause) {
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "projects.work-purge",
-          name: "object_delete.failed",
-          payload: { key, error: cause instanceof Error ? cause.message : String(cause) },
-        });
-      }
-    }
-  }
+  const objects = createObjectRelease({
+    objectStore: deps.objectStore,
+    onFailure(key, error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "projects.work-purge",
+        name: "object_delete.failed",
+        payload: { key, error },
+      });
+    },
+  });
 
   async function purge(
     workId: WorkId,
     cutoff: Date,
+  ): Promise<{ purged: boolean; objectKeys: string[] }> {
+    return deps.drafts.withDisposal(workId, (disposeDrafts) =>
+      purgeLocked(workId, cutoff, disposeDrafts),
+    );
+  }
+
+  async function purgeLocked(
+    workId: WorkId,
+    cutoff: Date,
+    disposeDrafts: () => Promise<{ releasedObjects: readonly string[] }>,
   ): Promise<{ purged: boolean; objectKeys: string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
@@ -134,15 +143,22 @@ export function createDrizzleWorkPurger(deps: {
             ),
           ),
       ]);
+      // F10: the Work's drafts end through the Discard kernel, after this proof and before
+      // their rows go, so nothing they created stays live and their storage is released.
+      const disposed = await disposeDrafts();
       const objectKeys = [
         ...uploads.map(({ objectKey }) => objectKey),
         ...[...results, ...binaries].flatMap(({ storageUrl }) => {
           const key = storageUrl ? objectStoreKeyFromStorageUrl(storageUrl) : null;
           return key ? [key] : [];
         }),
+        ...disposed.releasedObjects.flatMap((storageUrl) => {
+          const key = objectStoreKeyFromStorageUrl(storageUrl);
+          return key ? [key] : [];
+        }),
       ];
 
-      // Results and journal history restrict conversation deletion; branches restrict Work deletion.
+      // Results and journal history restrict conversation deletion.
       await activeDb.delete(projectResults).where(eq(projectResults.deletedByWorkId, workId));
       if (lockedTree.threadIds.length > 0) {
         await activeDb
@@ -157,7 +173,8 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.delete(turns).where(inArray(turns.threadId, lockedTree.threadIds));
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
       }
-      await activeDb.delete(documentBranches).where(eq(documentBranches.workId, workId));
+      // The disposed drafts' rows go with the Work; their closed branches cascade.
+      await activeDb.delete(drafts).where(eq(drafts.originWorkId, workId));
       const deleted = await activeDb
         .delete(works)
         .where(and(eq(works.id, workId), lte(works.deletedAt, cutoff)))
@@ -200,7 +217,7 @@ export function createDrizzleWorkPurger(deps: {
           const result = await purge(candidate.id, cutoff);
           if (!result.purged) continue;
           count += 1;
-          await deleteObjects(result.objectKeys);
+          await objects.keys(result.objectKeys);
         }
       }
       return count;

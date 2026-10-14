@@ -35,27 +35,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkRepository, deleteWorkTransition } = await import(
       "../../../projects/index.js"
     );
-    const { createFixtureBranchStore } = await import(
-      "../../../collab/test-support/fixture-branch-store.js"
+    const { createDrizzleBranchStore } = await import(
+      "../../../collab/adapters/drizzle-branches.js"
     );
+    const { createDrizzleDraftStore } = await import("../../../collab/adapters/drizzle-drafts.js");
     const { createDrizzleWorkDraftPendingStore } = await import(
       "../../../collab/adapters/drizzle-branch-push.js"
     );
-    const { createWorkDraftPending } = await import("../../../collab/domain/work-draft-pending.js");
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
     const threads = createDrizzleRepositoriesForTest(db);
-    const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
+    const draftPending = createDrizzleWorkDraftPendingStore(db);
     const works = createDrizzleProjectWorkRepository({
       lineageScratch: createDrizzleLineageScratchLifecycle(db),
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
     });
-    const branches = createFixtureBranchStore(db, undefined);
+    const branches = createDrizzleBranchStore(db, { drafts: createDrizzleDraftStore(db) });
 
     beforeEach(async () => {
       await resetThreadWorkRaceFixture(db);

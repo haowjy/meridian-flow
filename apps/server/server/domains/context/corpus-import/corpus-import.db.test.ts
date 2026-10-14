@@ -32,7 +32,7 @@ else
         db,
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
-        manifestMembership: collab,
+        drafts: collab.drafts,
         catalogMutations: catalog,
       });
       const service = createCorpusImportService({
@@ -120,7 +120,7 @@ else
           db,
           links: createTestDocumentLinkScopes(db),
           documentSync: collab,
-          manifestMembership: collab,
+          drafts: collab.drafts,
           catalogMutations: catalog,
         });
         const service = createCorpusImportService({

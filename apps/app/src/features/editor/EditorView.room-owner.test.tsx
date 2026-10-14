@@ -60,8 +60,8 @@ vi.mock("./useInlineReviewSync", () => ({
   useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
     useEffect(() => {
       if (supplyMarks && options.editor)
-        options.onInlineModelAvailable?.("preview-1", options.documentId, options.draftId);
-    }, [options.editor, options.documentId, options.draftId, options.onInlineModelAvailable]);
+        options.onInlineModelAvailable?.("preview-1", options.documentId, options.itemKey);
+    }, [options.editor, options.documentId, options.itemKey, options.onInlineModelAvailable]);
   },
 }));
 
@@ -145,7 +145,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetDraftCommandRecords();
   review = null;
-  mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  mocks.listWorkDrafts.mockResolvedValue({ items: [listed] });
 });
 
 afterEach(() => {
@@ -173,7 +173,7 @@ async function run(run: (client: QueryClient, room: string) => Promise<void>, en
     </QueryClientProvider>,
     async () => {
       if (enter) {
-        await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+        await act(async () => review?.controller.enterInlineReview(documentId, draftA.itemKey));
         await settleReact(() => expect(surfaces()).toEqual(["review"]));
       } else if (!draftOnly) await settleReact(() => expect(mounted()).toBeTruthy());
       await run(client, room);
@@ -210,12 +210,12 @@ it.each([
       );
       mocks.getDraftPreview.mockResolvedValue({
         ...previewOf("3"),
-        draftGeneration: 2,
+        branchGeneration: 2,
         reviewRoomName: room,
       });
-      mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+      mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
       await act(async () =>
-        read.resolve({ ...previewOf("3"), draftGeneration: 2, reviewRoomName: room }),
+        read.resolve({ ...previewOf("3"), branchGeneration: 2, reviewRoomName: room }),
       );
     } else {
       await act(async () =>
@@ -243,7 +243,7 @@ it.each([
 
 it("draft-only has no live fallback, including closed completion and terminal failure", async () => {
   draftOnly = true;
-  mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, isNewDocument: true }] });
+  mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
   await run(async (_client, room) => {
     const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
     mocks.applyDraftChanges.mockReturnValue(answer.promise);
@@ -254,10 +254,10 @@ it("draft-only has no live fallback, including closed completion and terminal fa
     expect(surfaces()).toEqual(["review"]);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf(),
-      draftGeneration: 2,
+      branchGeneration: 2,
       reviewRoomName: branchRoomName("review-owner", 2),
     });
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
+    mocks.listWorkDrafts.mockResolvedValue({ items: [] });
     await act(async () => {
       answer.resolve(applied(true));
       await done;
@@ -267,7 +267,7 @@ it("draft-only has no live fallback, including closed completion and terminal fa
     expect(document.querySelector("[data-review-state]")?.textContent).toBe("Finished");
     await act(async () => transportStatus.get(room)?.({ kind: "unauthorized", reason: "missing" }));
     expect(document.querySelector('[data-editor-surface="live"]')).toBeNull();
-    expect(review?.controller.inlineReview?.draftId).toBe(draftA.draftId);
+    expect(review?.controller.inlineReview?.itemKey).toBe(draftA.itemKey);
   });
 });
 
@@ -303,7 +303,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     // The refused Discard left the change in the draft: the writer's view has it again.
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.draftId),
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
         { ...previewOf("2"), reviewRoomName: room },
       ),
     );
@@ -315,7 +315,7 @@ it("pending Discard is inert warm live, refusal restores review, and confirmed A
     expect(surfaces()).toEqual(["review"]);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf(),
-      draftGeneration: 2,
+      branchGeneration: 2,
       reviewRoomName: room,
     });
     await act(async () => {
@@ -346,11 +346,11 @@ it("a retired rebuild answer cannot replace a later review", async () => {
     const nextRoom = branchRoomName("later-review", 1);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf("9"),
-      draftId: "draft-b",
+      itemKey: "draft-b",
       reviewRoomName: nextRoom,
     });
-    const rows = [{ ...listed, draftId: "draft-b" }];
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: rows });
+    const rows = [{ ...listed, itemKey: "draft-b" }];
+    mocks.listWorkDrafts.mockResolvedValue({ items: rows });
     await act(async () => {
       client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), rows);
       review?.controller.enterInlineReview(documentId, "draft-b");
@@ -360,7 +360,7 @@ it("a retired rebuild answer cannot replace a later review", async () => {
     const currentEditor = mounted();
     await act(async () => release.resolve());
     await settleReact(() => expect(old?.getSnapshot().status).toBe("destroyed"));
-    expect(review?.controller.inlineReview?.draftId).toBe("draft-b");
+    expect(review?.controller.inlineReview?.itemKey).toBe("draft-b");
     expect(review?.roomOwner.session?.roomKey).toBe(nextRoom);
     expect(mounted()).toBe(currentEditor);
     expect(review?.roomOwner.inputEligible).toBe(true);
@@ -372,7 +372,7 @@ it("entering review holds the live frame until review paints", async () => {
     await act(async () => mounted().commands.insertContent("Last painted live."));
     const sync = deferredReviewAnswer<void>();
     syncs.set(room, sync);
-    await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+    await act(async () => review?.controller.enterInlineReview(documentId, draftA.itemKey));
     expect(document.querySelector("[data-paint-hold]")?.textContent).toContain(
       "Last painted live.",
     );
@@ -383,14 +383,10 @@ it("entering review holds the live frame until review paints", async () => {
   }, false);
 });
 
-it("a draft-only tab without a review is terminal, not an empty pending editor", async () => {
+it("a draft-only tab whose route has no review item yet is pending, never the gone-draft card", async () => {
   draftOnly = true;
   await run(async () => {
-    expect(document.body.textContent).toContain("Couldn't open this draft.");
-    expect(document.querySelector("[data-paint-hold]")).toBeNull();
-    expect(
-      [...document.querySelectorAll("button")].some((node) => node.textContent === "Close"),
-    ).toBe(true);
+    expect(document.body.textContent).not.toContain("Couldn't open");
   }, false);
 });
 
@@ -420,14 +416,14 @@ it("an incoming proposal holds the painted chrome across the room observation pr
     syncs.set(room, sync);
     mocks.getDraftPreview.mockResolvedValue({
       ...previewOf("3"),
-      draftGeneration: 2,
+      branchGeneration: 2,
       reviewRoomName: room,
     });
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+    mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.draftId),
-        { ...previewOf("3"), draftGeneration: 2, reviewRoomName: room },
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
+        { ...previewOf("3"), branchGeneration: 2, reviewRoomName: room },
       ),
     );
     await settleReact(() => expect(document.querySelector("[data-paint-hold]")).not.toBeNull());
@@ -441,11 +437,11 @@ it("an incoming proposal holds the painted chrome across the room observation pr
     await settleReact(() => expect(document.querySelector("[data-paint-hold]")).toBeNull());
     await act(async () =>
       client.setQueryData(
-        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.draftId),
-        { ...previewOf(), draftGeneration: 3, reviewRoomName: room },
+        projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, draftA.itemKey),
+        { ...previewOf(), branchGeneration: 3, reviewRoomName: room },
       ),
     );
-    expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
+    expect(review?.controller.inlineReview?.branchGeneration).toBe(2);
     expect(document.querySelector("[data-paint-hold]")).toBeNull();
     await settleReact(() =>
       expect(document.querySelector("[data-review-state]")?.textContent).toBe("No listed changes"),
@@ -456,7 +452,7 @@ it("an incoming proposal holds the painted chrome across the room observation pr
 it("schema-stale is terminal before marks or the marks wait", async () => {
   supplyMarks = false;
   await run(async (_client, room) => {
-    await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+    await act(async () => review?.controller.enterInlineReview(documentId, draftA.itemKey));
     await settleReact(() => expect(review?.roomOwner.session).not.toBeNull());
     expect(surfaces()).toEqual([]);
     await act(async () =>
@@ -475,15 +471,13 @@ it("schema-stale is terminal before marks or the marks wait", async () => {
 });
 
 it("offers addressed whole Discard when a corrupt draft cannot open", async () => {
-  await run(async (client) => {
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [] });
-    client.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), []);
+  await run(async (_client) => {
     mocks.getDraftPreview.mockResolvedValue({
       status: "corrupt",
-      draftId: draftA.draftId,
-      draftGeneration: 1,
+      itemKey: draftA.itemKey,
+      branchGeneration: 1,
     });
-    await act(async () => review?.controller.enterInlineReview(documentId, draftA.draftId));
+    await act(async () => review?.controller.enterInlineReview(documentId, draftA.itemKey));
     const discardButton = () =>
       [...document.querySelectorAll<HTMLButtonElement>("button")].find(
         (button) => button.textContent === "Discard draft",
@@ -493,10 +487,12 @@ it("offers addressed whole Discard when a corrupt draft cannot open", async () =
     mocks.discardDraft.mockReturnValue(answer.promise);
     await act(async () => discardButton()?.click());
     expect(mocks.discardDraft).toHaveBeenCalledWith("project-a", "work-a", documentId, {
-      draftId: draftA.draftId,
+      commandId: expect.any(String),
+      draftId: expect.any(String),
+      itemKey: draftA.itemKey,
     });
     expect(discardButton()?.disabled).toBe(true);
-    mocks.getDraftPreview.mockResolvedValue({ ...previewOf(), draftGeneration: 2 });
+    mocks.getDraftPreview.mockResolvedValue({ ...previewOf(), branchGeneration: 2 });
     await act(async () => answer.resolve(discarded(true)));
     await settleReact(() => expect(review?.controller.inlineReview).toBeNull());
     expect(mocks.discardDraft).toHaveBeenCalledTimes(1);

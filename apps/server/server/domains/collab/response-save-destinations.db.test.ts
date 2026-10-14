@@ -12,6 +12,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
+import { createDrizzleContextCatalog } from "../context/adapters/context-catalog.js";
 import {
   type AgentChain,
   createDrizzleFileFacts,
@@ -135,6 +136,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
         threadContext: {
           requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
         },

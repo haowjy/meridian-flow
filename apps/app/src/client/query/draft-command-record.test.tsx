@@ -22,8 +22,8 @@ import {
 import { projectDraftList } from "./draft-projection";
 
 const scope = { projectId: "project-a", workId: "work-a" };
-const draft = { ...scope, documentId: "doc-a", draftId: "draft-a" };
-const listed = [{ documentId: "doc-a", draftId: "draft-a" }];
+const draft = { ...scope, documentId: "doc-a", itemKey: "draft-a" };
+const listed = [{ documentId: "doc-a", itemKey: "draft-a" }];
 
 let held: ReturnType<typeof useDraftCommandRecords> = {};
 function Capture() {
@@ -45,7 +45,7 @@ describe("draft command records", () => {
 
   it("retains raw list evidence and generation-addressed Apply intent after overlapping reads", async () => {
     await run(async () => {
-      const rows = [{ ...listed[0], draftGeneration: 5 }];
+      const rows = [{ ...listed[0], branchGeneration: 5 }];
       const earlier = deferred<typeof rows>();
       const later = deferred<typeof rows>();
       const read = readDraftsAfterCommands(scope, () => earlier.promise);
@@ -53,7 +53,7 @@ describe("draft command records", () => {
       const visible = (observed: typeof rows) =>
         projectDraftList(observed, scope, currentChangeCommandRecords());
       await act(async () =>
-        beginDraftCommand(draft, { target: "all", mode: "apply", draftGeneration: 5 }),
+        beginDraftCommand(draft, { target: "all", mode: "apply", branchGeneration: 5 }),
       );
       expect(visible(rows)).toEqual([]);
       await act(async () => confirmDraftCommand(draft));
@@ -68,11 +68,11 @@ describe("draft command records", () => {
       expect(shareDraftObservation(rows, fresh)).toBe(fresh);
       expect(visible(fresh)).toEqual(fresh);
       expect(visible(rows)).toEqual([]);
-      const successor = [{ ...rows[0], draftGeneration: 6 }];
+      const successor = [{ ...rows[0], branchGeneration: 6 }];
       expect(visible(successor)).toEqual(successor);
       // A later failure, observation omission or release cannot erase the older intent.
       await act(async () => {
-        beginDraftCommand(draft, { target: "all", mode: "apply", draftGeneration: 6 });
+        beginDraftCommand(draft, { target: "all", mode: "apply", branchGeneration: 6 });
         failDraftCommand(draft, { code: "apply-offline" });
       });
       await act(async () => {
@@ -99,12 +99,12 @@ describe("draft command records", () => {
         beginDraftCommand(draft, {
           ...closing,
           target: "selection",
-          draftGeneration: 1,
+          branchGeneration: 1,
           completesDraft: true,
         });
         answerDraftCommandClosed(draft, { documentName: "Chapter 13" });
       });
-      expect(pendingChangeCommand(held, draft)?.draftClosed).toEqual({
+      expect(pendingChangeCommand(held, draft)?.itemClosed).toEqual({
         documentName: "Chapter 13",
       });
       await act(async () => releaseDraftCommand(draft));

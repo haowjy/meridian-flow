@@ -36,6 +36,7 @@ import {
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
+import { collabHook } from "../domain/collab-test-hooks.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
@@ -55,8 +56,8 @@ import {
   findDocumentAuthorityHead,
 } from "./drizzle-document-authority-head.js";
 import { captureReceiptRows, recordDocumentEdit } from "./drizzle-document-edits.js";
-import { joinAdmissionWithinTx } from "./drizzle-pending-settlement.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
+import { joinAdmissionWithinTx } from "./drizzle-settlement-admission.js";
 
 type JournalDb = Pick<
   Database,
@@ -854,6 +855,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           current.generation !== captured.generation
         )
           return;
+        await collabHook("checkpoint.afterAuthorityRead");
         await payload.validateInputs();
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;

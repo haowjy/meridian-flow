@@ -56,7 +56,7 @@ never directly in the visible slot. The pure `dockDocumentFitsScope` predicate
 fences both scope sync and restored installation. Scratch notes must also match
 their resource-owning Work after validation; project manuscripts need no Work owner. `ProjectView` supplies `_workspaceHydrated` (the Editor signal)
 to the dock-owned `useDockDocumentRestoration` hook; `restoreDockDocument` then
-reads the review Work’s draft list first. A new-document draft rebuilds its overlay
+reads the review Work’s draft list first. A new-document draft rebuilds its tab
 from that row without consulting the live catalog. A missing draft row drops review
 and validates live identity (remote Apply restores live, Discard restores nothing).
 A rejected drafts read leaves the candidate hidden. Otherwise it waits for the

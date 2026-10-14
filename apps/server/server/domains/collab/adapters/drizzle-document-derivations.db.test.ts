@@ -6,6 +6,7 @@ import {
   contextSources,
   documentDerivations,
   documentLinks,
+  documentMarkdownProjections,
   documents,
   documentYjsCheckpoints,
   folders,
@@ -19,12 +20,11 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
-import { recordDocumentMove } from "../../context/adapters/context-fs/document-locations.js";
-import { createDrizzleLinkAheadRegistry } from "../../context/adapters/drizzle-link-ahead-registry.js";
 import {
   createDocumentLastAddress,
   createDocumentUriResolver,
 } from "../../context/document-uri-resolver.js";
+import { bumpLocationVersions, recordLocationHistory } from "../../context/tree/node-locations.js";
 import { createCheckpointService } from "../checkpoints.js";
 import { createDocumentDerivationService } from "../domain/document-derivations.js";
 import {
@@ -33,6 +33,7 @@ import {
   RetiredDocumentHandleError,
 } from "../domain/document-handle.js";
 import { createHocuspocusPersistenceService } from "../hocuspocus-persistence.js";
+import { createTestLinkAheadRegistry } from "../test-support/document-link-scopes.js";
 import { createDrizzleAuthorityGenerationReplacement } from "./drizzle-authority-generation-replacement.js";
 import {
   ensureAndReadDocumentAuthorityHead,
@@ -85,8 +86,10 @@ describe("durable document derivations", () => {
       id: documentId,
       contextSourceId: sourceId,
       name: "chapter",
-      markdownProjection: "last good",
     });
+    await db
+      .insert(documentMarkdownProjections)
+      .values({ documentId: documentId, markdown: "last good" });
     await persistence.lifecycle.ensureDocument(documentId);
   });
   afterAll(async () => {
@@ -110,8 +113,11 @@ describe("durable document derivations", () => {
     return cut;
   }
   async function projection() {
-    const [row] = await db.select().from(documents).where(eq(documents.id, documentId));
-    return row?.markdownProjection;
+    const [row] = await db
+      .select()
+      .from(documentMarkdownProjections)
+      .where(eq(documentMarkdownProjections.documentId, documentId));
+    return row?.markdown;
   }
 
   it.each([
@@ -487,14 +493,11 @@ describe("durable document derivations", () => {
     const preMove = await store.capture(documentId);
     if (!preMove) throw new Error("Missing location cut");
     await runInDrizzleTransaction(db, async () => {
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter", kind: "file" }],
-        "/chapter",
-        "/renamed",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/renamed" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,
@@ -556,14 +559,11 @@ describe("durable document derivations", () => {
         .update(documents)
         .set({ folderId })
         .where(eq(documents.id, documentId));
-      await recordDocumentMove(
-        db,
-        sourceId,
-        sourceId,
-        [{ id: documentId, path: "/chapter", kind: "file" }],
-        "/chapter",
-        "/moved/chapter",
-      );
+      await recordLocationHistory(db, {
+        vacated: [{ contextSourceId: sourceId, path: "/chapter", documentId }],
+        claimed: [{ contextSourceId: sourceId, path: "/moved/chapter" }],
+      });
+      await bumpLocationVersions(db, { documentIds: [documentId] });
     });
     expect(await store.certify(preMove, { markdown: "wrong folder", links: [] }, new Date())).toBe(
       false,
@@ -792,7 +792,7 @@ describe("durable document derivations", () => {
   });
 
   it("the sweep registers a client-minted ahead ref whose registration failed after certification", async () => {
-    const real = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+    const real = createTestLinkAheadRegistry(db);
     let failRegistration = true;
     const aheadStore = createDrizzleDocumentDerivationStore(db, createDocumentLastAddress(db), {
       registry: {

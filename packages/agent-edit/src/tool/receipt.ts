@@ -6,7 +6,7 @@ import type { StagedWriteRejectionReason } from "../ports/document-coordinator.j
 import type { CommandLinks } from "./command-links.js";
 import { type CopySummary, copyEdgeLines } from "./copy-receipt.js";
 import type { InternalWriteResult } from "./internal-result.js";
-import { modelResult } from "./model-result.js";
+import { modelResult, type WriteRejection } from "./model-result.js";
 import type { DestructiveSweepReport } from "./mutation-commit.js";
 import { type ApplySuccessResponseInput, formatApplySuccess } from "./response-format.js";
 import type { DocumentCommandName, ResponseCommitDocumentResult } from "./types.js";
@@ -115,6 +115,7 @@ export function renderSettledReceipts(
         status: "invalid_write",
         model: {
           message: `Write did not land: ${rejectedWriteExplanation(edit.rejectionReason)}. Re-read and retry.`,
+          rejected: writeRejection(edit.rejectionReason),
         },
       }),
     ),
@@ -137,9 +138,29 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
 }
 
 /** A refusal explains host evidence, not a guess from item visibility. */
+function writeRejection(reason?: StagedWriteRejectionReason): WriteRejection {
+  switch (reason) {
+    case "discard":
+      return "discarded_edit";
+    case "discarded_draft":
+    case "discarded_document":
+    case "discarded_edit":
+    case "inverse":
+      return reason;
+    default:
+      return "integration";
+  }
+}
+
 export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): string {
   switch (reason) {
     case "discard":
+      return "the user discarded the text it edited";
+    case "discarded_draft":
+      return "the user discarded this draft";
+    case "discarded_document":
+      return "the user discarded this new document";
+    case "discarded_edit":
       return "the user discarded the text it edited";
     case "inverse":
       return "an inverse removed the text it edited";

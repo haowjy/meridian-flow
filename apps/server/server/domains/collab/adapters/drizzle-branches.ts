@@ -1,28 +1,21 @@
-import { refreshDraftEffect } from "./drizzle-draft-effect.js";
-/** Drizzle persistence adapter for shadow branch peers and manifest peers. */
+/** Drizzle persistence adapter for shadow branch peers. */
 
 import { randomUUID } from "node:crypto";
 import {
   captureEditParts,
-  type DocumentCoordinator,
   type DocumentLifecycle,
-  effectiveYjsUpdate,
   type UpdateJournal,
-  yjsUpdateFromState,
 } from "@meridian/agent-edit/integration";
+import type { DraftId } from "@meridian/contracts";
 import { isContextUriScheme } from "@meridian/contracts/context-uri";
-import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branchWriteJournal,
-  contentDocumentPredicate,
-  contextSources,
   documentBranches,
-  documents,
   documentYjsHeads,
   documentYjsUpdates,
   threadWorks,
-  works,
 } from "@meridian/database/schema";
 import {
   COLLAB_SCHEMA_VERSION,
@@ -31,69 +24,71 @@ import {
   packCollabSchemaVersion,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
+  isInDrizzleTransaction,
   runInDrizzleTransaction,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
 import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
-import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
+import {
+  branchDraftWork,
+  draftBranchWorks,
+  runWithActiveWorkDrafts,
+} from "../../../shared/work-draft-lifecycle.js";
+import {
+  draftMayHold,
+  loadDocumentOwner,
+  loadDraftHolder,
+} from "../../context/tree/draft-ownership.js";
 import { isDrafted } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   type AppendBranchJournalInput,
   assertReadableBranch,
-  BranchCasConflictError,
   type BranchSnapshot,
+  BranchStaleUpdateError,
   type CommitBranchMutationInput,
   type PersistBranchInput,
   type ResetBranchSnapshotInput,
 } from "../domain/branch-coordinator.js";
-import {
-  assertBranchLeaseCovers,
-  type BranchCriticalSections,
-  createBranchCriticalSections,
-} from "../domain/branch-critical-sections.js";
 import { branchJournalRevision } from "../domain/branch-push-contracts.js";
 import {
   BranchCorruptError,
   BranchNotFoundError,
   type BranchState,
 } from "../domain/branch-resolver.js";
-import { sync } from "../domain/branch-sync.js";
-import {
-  admitFreshAuthorship,
-  replicateFrozenIdentity,
-} from "../domain/document-mutation-policy.js";
-import type { RetiredBranch } from "../domain/peer-retirement.js";
+import { replicateFrozenIdentity } from "../domain/document-mutation-policy.js";
+import type { Drafts } from "../domain/drafts.js";
+import type { PeerRetirementCause, RetiredBranch } from "../domain/peer-retirement.js";
 import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
 import {
   captureReceiptRows,
   recordDocumentEdit,
   settleDraftGeneration,
 } from "./drizzle-document-edits.js";
+import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 
 export type DrizzleBranchStore = ApplicationBranchStore;
 
 export function createDrizzleBranchStore(
   db: Database,
-  live:
-    | {
-        journal: UpdateJournal;
-        lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
-        coordinator: DocumentCoordinator;
-      }
-    | undefined,
-  criticalSections: BranchCriticalSections = createBranchCriticalSections(),
-  workProjection?: WorkProjectionMutation,
+  deps: {
+    live?: {
+      journal: UpdateJournal;
+      lifecycle: Pick<DocumentLifecycle, "ensureDocument">;
+    };
+    workProjection?: WorkProjectionMutation;
+    /** A peer ensure relies on its draft staying active; a thread finds its Work's draft. */
+    drafts: Pick<Drafts, "shareActive" | "activeForWork">;
+  },
 ): DrizzleBranchStore {
-  const maxCasRetries = 3;
+  const { live, workProjection, drafts } = deps;
   const mutatePending = <T>(branchIds: readonly string[], operation: () => Promise<T>) =>
     workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   async function findPrimaryWork(threadId: ThreadId): Promise<WorkId> {
@@ -128,15 +123,15 @@ export function createDrizzleBranchStore(
     )`;
   }
 
-  async function activeWorkDraft(
+  async function activeDraftBranch(
     documentId: DocumentId,
-    workId: WorkId,
+    draftId: DraftId,
   ): Promise<BranchSnapshot | null> {
     const [row] = await selectBranch(currentDrizzleDb(db))
       .where(
         and(
           eq(documentBranches.documentId, documentId),
-          eq(documentBranches.workId, workId),
+          eq(documentBranches.draftId, draftId),
           eq(documentBranches.kind, "work_draft"),
           eq(documentBranches.status, "active"),
         ),
@@ -160,12 +155,14 @@ export function createDrizzleBranchStore(
       })
       .returning();
     if (!row) throw new Error("Failed to create document branch");
+    const [mapped] = await draftBranchWorks(db, [row.id]);
     return mapBranch({
       branchId: row.id,
       documentId: row.documentId,
       kind: row.kind,
       upstreamBranchId: row.upstreamBranchId,
-      workId: row.workId,
+      draftId: row.draftId,
+      workId: mapped?.workId ?? null,
       threadId: row.threadId,
       status: row.status,
       generation: row.generation,
@@ -217,193 +214,215 @@ export function createDrizzleBranchStore(
     return row ? unpackCollabSchemaVersion(row.schemaVersion) : COLLAB_SCHEMA_VERSION;
   }
 
-  async function persistLiveManifestUpdate(
-    documentId: DocumentId,
-    validationDoc: Y.Doc,
-    update: Uint8Array,
-  ): Promise<void> {
-    if (!live) {
-      throw new Error("DrizzleBranchStore manifest persistence requires the collab live journal");
-    }
-    await admitFreshAuthorship(
-      {
-        readMutationTarget: () => ({ documentId, generation: 0n, doc: validationDoc }),
-        admitImmediate: async ({ update: admittedUpdate }) => {
-          const sequence = await live.journal.append(documentId, admittedUpdate, {
-            origin: "system",
-            seq: 0,
-          });
-          const publish = () => live.coordinator.recover(documentId);
-          if (!deferUntilDrizzleCommit(publish)) await publish();
-          return { sequence: BigInt(sequence), joined: 0 };
-        },
-      },
-      { source: { kind: "seed", policy: "agent" }, update },
-    );
-  }
-
-  async function mutateLiveManifestDocument(
-    documentId: DocumentId,
-    mutate: (doc: Y.Doc) => Promise<void> | void,
-  ): Promise<void> {
-    if (!live) {
-      throw new Error("DrizzleBranchStore manifest mutations require the collab live lifecycle");
-    }
-    await runInDrizzleTransaction(db, async () => {
-      await lockDocumentMutation(currentDrizzleDb(db), documentId);
-      // The DB mutation lock serializes every journal admission, including
-      // updates from warm rooms on this or another replica. Reconstructing only
-      // from durable state avoids opening an empty room that Hocuspocus could
-      // checkpoint at the newly admitted sequence before the transaction commits.
-      const persistedLiveDocument = await ensureLiveManifestDocument(documentId);
-      const validationDoc = createCollabYDoc({ gc: false });
-      try {
-        const beforeState = Y.encodeStateAsUpdate(persistedLiveDocument);
-        Y.applyUpdate(validationDoc, beforeState);
-        const before = Y.encodeStateVector(persistedLiveDocument);
-        await mutate(persistedLiveDocument);
-        const update = Y.encodeStateAsUpdate(persistedLiveDocument, before);
-        if (updateChangesState(beforeState, update)) {
-          await persistLiveManifestUpdate(documentId, validationDoc, update);
-        }
-      } finally {
-        persistedLiveDocument.destroy();
-        validationDoc.destroy();
-      }
-    });
-  }
-
-  async function ensureLiveManifestDocument(documentId: DocumentId): Promise<Y.Doc> {
-    if (!live) {
-      throw new Error("DrizzleBranchStore manifest reads require the collab live lifecycle");
-    }
-    await live.lifecycle.ensureDocument(documentId);
-    const snapshot = await live.journal.read(documentId);
-    const doc = createCollabYDoc({ gc: false });
-    if (snapshot.checkpoint) Y.applyUpdate(doc, snapshot.checkpoint);
-    for (const update of snapshot.updates) Y.applyUpdate(doc, update.update);
-    return doc;
-  }
-
-  async function reconcileLiveManifest(
-    documentId: DocumentId,
-    projectId: ProjectId,
-    excludeDocumentIds: ReadonlySet<DocumentId> = new Set(),
-  ): Promise<void> {
-    await mutateLiveManifestDocument(documentId, async (doc) => {
-      const map = doc.getMap<{ present: true }>("documents");
-      for (const row of await listProjectContentDocumentIds(projectId)) {
-        if (!excludeDocumentIds.has(row) && !map.has(row)) map.set(row, { present: true });
-      }
-    });
-  }
-
-  async function reconcileProjectManifest(projectId: ProjectId): Promise<void> {
-    const { documentId, doc } = await loadProjectManifest({ projectId });
-    doc.destroy();
-    await reconcileLiveManifest(documentId, projectId, await draftSeedExclusions(projectId));
-  }
-
-  async function ensureWorkDraftBranch(input: {
+  async function ensureDraftBranch(input: {
     documentId: DocumentId;
-    workId: WorkId;
+    draftId: DraftId;
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
-    const existing = await activeWorkDraft(input.documentId, input.workId);
+    const existing = await activeDraftBranch(input.documentId, input.draftId);
     if (existing) return existing;
-    await assertDraftableUnderWork(input.documentId, input.workId);
+    // The insert's own transaction holds D active (§2.1): a closed draft gains no branch.
+    if (!(await drafts.shareActive(input.draftId))) {
+      throw new BranchStaleUpdateError(`draft:${input.draftId}`);
+    }
+    await assertDraftableInDraft(input.documentId, input.draftId);
     const seed = await replicatedSnapshotFrom(input.liveDoc);
-    return insertBranch({
-      id: `branch_${randomUUID()}`,
-      documentId: input.documentId,
-      kind: "work_draft",
-      upstreamBranchId: null,
-      workId: input.workId,
-      threadId: null,
-      status: "active",
-      ...seed,
-      schemaVersion: await liveSchemaVersion(input.documentId),
-    });
+    // A draft create's ensure and a thread peer's racing root ensure get one branch.
+    const [inserted] = await currentDrizzleDb(db)
+      .insert(documentBranches)
+      .values({
+        id: `branch_${randomUUID()}`,
+        documentId: input.documentId,
+        kind: "work_draft",
+        upstreamBranchId: null,
+        draftId: input.draftId,
+        threadId: null,
+        status: "active",
+        ...seed,
+        schemaVersion: packCollabSchemaVersion(await liveSchemaVersion(input.documentId)),
+      })
+      .onConflictDoNothing()
+      .returning({ id: documentBranches.id });
+    const branch = await activeDraftBranch(input.documentId, input.draftId);
+    if (!branch) {
+      throw new Error(
+        `Draft branch for ${input.documentId} ${inserted ? "vanished" : "was not inserted"}`,
+      );
+    }
+    return branch;
   }
 
   /**
-   * Callers route scratch and uploads live (D9), and pick a Work of the document's own
-   * project; reaching here otherwise is a routing or authorization bug. Every Work draft
-   * is created here, so no entry point can pair a document with another project's Work.
+   * §12.5, O-11: a contribution is any journal row of the branch's current generation that
+   * isn't discarded (pending, pushed, or awaiting a rollback); then the create stands.
    */
-  async function assertDraftableUnderWork(documentId: DocumentId, workId: WorkId): Promise<void> {
-    const sourceWork = alias(works, "source_work");
-    const [row] = await currentDrizzleDb(db)
+  async function retractCreatedDraftBranch(input: {
+    documentId: DocumentId;
+    draftId: DraftId;
+  }): Promise<
+    | { outcome: "stands" }
+    | { outcome: "retracted"; deleted: readonly { branchId: string; threadId: ThreadId | null }[] }
+  > {
+    const tx = currentDrizzleDb(db);
+    const drafted = await tx
       .select({
-        scheme: contextSources.slug,
-        projectId: sql<
-          string | null
-        >`coalesce(${contextSources.projectId}, ${sourceWork.projectId})`,
+        id: documentBranches.id,
+        generation: documentBranches.generation,
+        threadId: documentBranches.threadId,
       })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .leftJoin(sourceWork, eq(sourceWork.id, contextSources.workId))
-      .where(eq(documents.id, documentId))
-      .limit(1);
-    if (row && isContextUriScheme(row.scheme) && !isDrafted(row.scheme)) {
-      throw new Error(`Document ${documentId} is in ${row.scheme}://, which is never drafted`);
+      .from(documentBranches)
+      .where(
+        and(
+          eq(documentBranches.documentId, input.documentId),
+          eq(documentBranches.kind, "work_draft"),
+          eq(documentBranches.status, "active"),
+          eq(documentBranches.draftId, input.draftId),
+        ),
+      );
+    const peers =
+      drafted.length === 0
+        ? []
+        : await tx
+            .select({
+              id: documentBranches.id,
+              generation: documentBranches.generation,
+              threadId: documentBranches.threadId,
+            })
+            .from(documentBranches)
+            .where(
+              inArray(
+                documentBranches.upstreamBranchId,
+                drafted.map((branch) => branch.id),
+              ),
+            );
+    const branches = [...peers, ...drafted];
+    for (const branch of branches) {
+      const [contribution] = await tx
+        .select({ id: branchWriteJournal.id })
+        .from(branchWriteJournal)
+        .where(
+          and(
+            eq(branchWriteJournal.branchId, branch.id),
+            eq(branchWriteJournal.generation, branch.generation),
+            sql`${branchWriteJournal.status} <> 'discarded'`,
+          ),
+        )
+        .limit(1);
+      if (contribution) return { outcome: "stands" };
     }
-    const [work] = await currentDrizzleDb(db)
-      .select({ projectId: works.projectId })
-      .from(works)
-      .where(eq(works.id, workId))
-      .limit(1);
-    if (!row || !work || row.projectId !== work.projectId) {
-      throw new Error(`Work ${workId} cannot draft document ${documentId} outside its project`);
+    if (branches.length > 0) {
+      await tx.delete(documentBranches).where(
+        inArray(
+          documentBranches.id,
+          branches.map((branch) => branch.id),
+        ),
+      );
+    }
+    return {
+      outcome: "retracted",
+      deleted: branches.map((branch) => ({
+        branchId: branch.id,
+        threadId: (branch.threadId as ThreadId | null) ?? null,
+      })),
+    };
+  }
+
+  /** §6.2 step 5: seeded from the document's durable live state, read in this transaction. */
+  async function ensureCreatedDraftBranch(input: {
+    documentId: DocumentId;
+    draftId: DraftId;
+  }): Promise<void> {
+    if (!live) throw new Error("A draft create's branch needs the collab live journal");
+    await live.lifecycle.ensureDocument(input.documentId);
+    const snapshot = await live.journal.read(input.documentId);
+    const liveDoc = createCollabYDoc({ gc: false });
+    try {
+      if (snapshot.checkpoint) Y.applyUpdate(liveDoc, snapshot.checkpoint);
+      for (const update of snapshot.updates) Y.applyUpdate(liveDoc, update.update);
+      await ensureDraftBranch({ ...input, liveDoc });
+    } finally {
+      liveDoc.destroy();
     }
   }
 
+  /**
+   * Callers route scratch and uploads live (D9), and pick a draft that may hold the
+   * document (`draftMayHold`); reaching here otherwise is a routing or authorization bug.
+   * Every draft branch is created here, so no entry point can pair a document with a
+   * draft that may not hold it.
+   */
+  async function assertDraftableInDraft(documentId: DocumentId, draftId: DraftId): Promise<void> {
+    const tx = currentDrizzleDb(db);
+    const owner = await loadDocumentOwner(tx, documentId);
+    if (owner && isContextUriScheme(owner.scheme) && !isDrafted(owner.scheme)) {
+      throw new Error(`Document ${documentId} is in ${owner.scheme}://, which is never drafted`);
+    }
+    const holder = await loadDraftHolder(tx, draftId);
+    if (!owner || !holder || !draftMayHold(holder, owner)) {
+      throw new Error(`Draft ${draftId} may not hold document ${documentId}`);
+    }
+  }
+
+  /**
+   * The thread's peer in the given draft (contract §2.5): never ensures a draft. The draft
+   * is held `FOR SHARE` while the branches are made, so a close either waits for this to
+   * commit or has already closed it (then the peer is stale). Locks no Work row.
+   */
   async function ensureThreadPeerBranch(input: {
     documentId: DocumentId;
     threadId: ThreadId;
+    draftId: DraftId;
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
+    const ensurePeer = async (): Promise<BranchSnapshot> => {
+      if (!(await drafts.shareActive(input.draftId))) {
+        throw new BranchStaleUpdateError(`draft:${input.draftId}`);
+      }
+      const existing = await findActiveThreadPeer(input.documentId, input.threadId);
+      if (existing?.draftId === input.draftId) return existing;
+      if (existing) {
+        await currentDrizzleDb(db)
+          .update(documentBranches)
+          .set({ status: "closed", updatedAt: new Date() })
+          .where(
+            and(eq(documentBranches.id, existing.branchId), eq(documentBranches.status, "active")),
+          );
+      }
+      const workDraft = await ensureDraftBranch({
+        documentId: input.documentId,
+        draftId: input.draftId,
+        liveDoc: input.liveDoc,
+      });
+      const upstreamDoc = materializeBranch(workDraft, input.threadId);
+      try {
+        return await insertBranch({
+          id: `branch_${randomUUID()}`,
+          documentId: input.documentId,
+          kind: "thread_peer",
+          upstreamBranchId: workDraft.branchId,
+          draftId: input.draftId,
+          threadId: input.threadId,
+          status: "active",
+          ...(await replicatedSnapshotFrom(upstreamDoc)),
+          schemaVersion: workDraft.schemaVersion,
+        });
+      } finally {
+        upstreamDoc.destroy();
+      }
+    };
+    // Alone, the root transaction takes the thread lock itself: one connection, never a
+    // lock-holding connection waiting for a second one from a drained pool.
+    if (!isInDrizzleTransaction()) {
+      return runInRootDrizzleTransaction(db, async () => {
+        await lockThreadForMutation(db, input.threadId);
+        return ensurePeer();
+      });
+    }
     return runInDrizzleTransaction(db, async () => {
       await lockThreadForMutation(db, input.threadId);
       // Keep authority stable with the caller's thread lock. The branch writes
       // commit independently; reacquiring this row in the root would self-deadlock.
-      return runInRootDrizzleTransaction(db, async () => {
-        const workId = await findPrimaryWork(input.threadId);
-        const existing = await findActiveThreadPeer(input.documentId, input.threadId);
-        if (existing?.workId === workId) return existing;
-        if (existing) {
-          await currentDrizzleDb(db)
-            .update(documentBranches)
-            .set({ status: "closed", updatedAt: new Date() })
-            .where(
-              and(
-                eq(documentBranches.id, existing.branchId),
-                eq(documentBranches.status, "active"),
-              ),
-            );
-        }
-        const workDraft = await ensureWorkDraftBranch({
-          documentId: input.documentId,
-          workId,
-          liveDoc: input.liveDoc,
-        });
-        const upstreamDoc = materializeBranch(workDraft, input.threadId);
-        try {
-          return await insertBranch({
-            id: `branch_${randomUUID()}`,
-            documentId: input.documentId,
-            kind: "thread_peer",
-            upstreamBranchId: workDraft.branchId,
-            workId,
-            threadId: input.threadId,
-            status: "active",
-            ...(await replicatedSnapshotFrom(upstreamDoc)),
-            schemaVersion: workDraft.schemaVersion,
-          });
-        } finally {
-          upstreamDoc.destroy();
-        }
-      });
+      return runInRootDrizzleTransaction(db, ensurePeer);
     });
   }
 
@@ -426,6 +445,7 @@ export function createDrizzleBranchStore(
 
   async function closeThreadPeersOf(
     upstreamBranchIds: readonly string[],
+    cause: PeerRetirementCause,
   ): Promise<RetiredBranch[]> {
     if (upstreamBranchIds.length === 0) return [];
     const closed = await currentDrizzleDb(db)
@@ -443,205 +463,26 @@ export function createDrizzleBranchStore(
         documentId: documentBranches.documentId,
         threadId: documentBranches.threadId,
       });
-    return closed.map((branch) => ({
-      branchId: branch.branchId,
-      documentId: branch.documentId as DocumentId,
-      threadId: branch.threadId as ThreadId | null,
-    }));
-  }
-
-  async function projectForDocument(documentId: DocumentId): Promise<ProjectId | null> {
-    const [row] = await currentDrizzleDb(db)
-      .select({
-        projectId: sql<ProjectId | null>`coalesce(${contextSources.projectId}, ${works.projectId})`,
-      })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .leftJoin(works, eq(contextSources.workId, works.id))
-      .where(eq(documents.id, documentId))
-      .limit(1);
-    return (row?.projectId as ProjectId | null | undefined) ?? null;
-  }
-
-  function ensureProjectManifest(input: {
-    projectId: ProjectId;
-    contextSourceId?: string;
-  }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
-    return runInRootDrizzleTransaction(db, () => loadProjectManifest(input));
-  }
-
-  // Live bootstrap joins its caller: the project/source may not be committed yet.
-  // Branch readers use ensureProjectManifest so root peer FKs see durable identity.
-  async function loadProjectManifest(input: {
-    projectId: ProjectId;
-    contextSourceId?: string;
-  }): Promise<{ documentId: DocumentId; doc: Y.Doc }> {
-    const txDb = currentDrizzleDb(db);
-    const [existing] = await txDb
-      .select({ id: documents.id })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .where(
-        and(
-          eq(contextSources.projectId, input.projectId),
-          eq(documents.kind, "manifest"),
-          isNull(documents.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing?.id) {
-      return {
-        documentId: existing.id as DocumentId,
-        doc: await ensureLiveManifestDocument(existing.id as DocumentId),
-      };
-    }
-    const documentId = await createManifestIdentity(input.projectId, input.contextSourceId);
-    return {
-      documentId,
-      doc: await ensureLiveManifestDocument(documentId),
-    };
-  }
-
-  async function createManifestIdentity(
-    projectId: ProjectId,
-    explicitContextSourceId?: string,
-  ): Promise<DocumentId> {
-    const txDb = currentDrizzleDb(db);
-    const contextSourceId = explicitContextSourceId ?? (await findProjectContextSource(projectId));
-    const [created] = await txDb
-      .insert(documents)
-      .values({
-        id: randomUUID() as DocumentId,
-        contextSourceId,
-        kind: "manifest",
-        name: ".manifest",
-        extension: "json",
-        fileType: "json",
-        markdownProjection: "",
-      })
-      .onConflictDoNothing({
-        target: documents.contextSourceId,
-        where: sql`${documents.deletedAt} IS NULL AND ${documents.kind} = 'manifest'`,
-      })
-      .returning({ id: documents.id });
-    if (created) return created.id;
-
-    const [raced] = await txDb
-      .select({ id: documents.id })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.contextSourceId, contextSourceId),
-          eq(documents.kind, "manifest"),
-          isNull(documents.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!raced) throw new Error("Failed to create project manifest identity document");
-    return raced.id;
-  }
-
-  async function findProjectContextSource(projectId: ProjectId): Promise<string> {
-    const [row] = await currentDrizzleDb(db)
-      .select({ id: contextSources.id })
-      .from(contextSources)
-      .where(and(eq(contextSources.projectId, projectId), isNull(contextSources.deletedAt)))
-      .orderBy(sql`${contextSources.isPrimary} DESC`, contextSources.createdAt)
-      .limit(1);
-    if (!row) throw new Error(`Project ${projectId} has no context source for a manifest identity`);
-    return row.id;
-  }
-
-  async function listProjectContentDocumentIds(projectId: ProjectId): Promise<DocumentId[]> {
-    const txDb = currentDrizzleDb(db);
-    const pendingMembershipRows = await txDb
-      .select({ documentId: sql<string>`${branchWriteJournal.updateMeta}->>'documentId'` })
-      .from(branchWriteJournal)
-      .where(
-        and(
-          eq(branchWriteJournal.status, "active"),
-          sql`${branchWriteJournal.updateMeta}->>'kind' = 'manifest_membership'`,
-          sql`${branchWriteJournal.updateMeta}->>'present' = 'true'`,
-        ),
-      );
-    const pendingMembershipDocumentIds = new Set(
-      pendingMembershipRows.map((row) => row.documentId).filter(Boolean),
+    return closed.flatMap((branch) =>
+      branch.threadId
+        ? [
+            {
+              branchId: branch.branchId,
+              documentId: branch.documentId as DocumentId,
+              threadId: branch.threadId as ThreadId,
+              cause,
+            },
+          ]
+        : [],
     );
-    const rows = await txDb
-      .select({ id: documents.id })
-      .from(documents)
-      .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
-      .leftJoin(works, eq(contextSources.workId, works.id))
-      .where(
-        and(
-          sql`coalesce(${contextSources.projectId}, ${works.projectId}) = ${projectId}`,
-          contentDocumentPredicate(),
-          isNull(documents.deletedAt),
-        ),
-      );
-    return rows
-      .map((row) => row.id as DocumentId)
-      .filter((documentId) => !pendingMembershipDocumentIds.has(documentId));
   }
 
-  async function draftSeedExclusions(
-    projectId: ProjectId,
-    excludeDocumentId?: DocumentId,
-  ): Promise<Set<DocumentId>> {
-    const excluded = new Set<DocumentId>(excludeDocumentId ? [excludeDocumentId] : []);
-    const rows = await currentDrizzleDb(db)
-      .select({ documentId: documentBranches.documentId })
-      .from(documentBranches)
-      .innerJoin(documents, eq(documents.id, documentBranches.documentId))
-      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-      .leftJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
-      .leftJoin(documentYjsUpdates, eq(documentYjsUpdates.documentId, documents.id))
-      .where(
-        and(
-          eq(contextSources.projectId, projectId),
-          eq(documentBranches.kind, "work_draft"),
-          eq(documentBranches.status, "active"),
-          isNull(documentBranches.threadId),
-          isNull(documentYjsUpdates.documentId),
-          sql`(${documentYjsHeads.documentId} IS NULL OR ${documentYjsHeads.latestUpdateSeq} = 0)`,
-        ),
-      );
-    for (const row of rows) excluded.add(row.documentId);
-    return excluded;
-  }
-
-  async function resolveManifestMembership(input: {
-    projectId: ProjectId;
-    workId?: WorkId | null;
-    threadId?: ThreadId | null;
-  }): Promise<{ documentId: DocumentId; members: string[] }> {
-    const manifest =
-      input.threadId || input.workId
-        ? await ensureProjectManifest({ projectId: input.projectId })
-        : await loadProjectManifest({ projectId: input.projectId });
-    let doc = manifest.doc;
-    if (input.threadId) {
-      const peer = await ensureThreadPeerBranch({
-        documentId: manifest.documentId,
-        threadId: input.threadId,
-        liveDoc: manifest.doc,
-      });
-      doc = materializeBranch(peer, input.threadId);
-    } else if (input.workId) {
-      const work = await ensureWorkDraftBranch({
-        documentId: manifest.documentId,
-        workId: input.workId,
-        liveDoc: manifest.doc,
-      });
-      doc = materializeBranch(work, "" as ThreadId);
-    }
-    try {
-      const present = [...doc.getMap<{ present: true }>("documents").keys()].sort();
-      return { documentId: manifest.documentId, members: present };
-    } finally {
-      if (doc !== manifest.doc) doc.destroy();
-      manifest.doc.destroy();
-    }
+  async function getBranchSnapshot(branchId: string): Promise<BranchSnapshot> {
+    const [row] = await selectBranch(currentDrizzleDb(db))
+      .where(eq(documentBranches.id, branchId))
+      .limit(1);
+    if (!row) throw new Error(`Branch ${branchId} does not exist`);
+    return mapBranch(row);
   }
 
   async function updateBranchSnapshot(input: PersistBranchInput): Promise<boolean> {
@@ -665,261 +506,6 @@ export function createDrizzleBranchStore(
       .returning({ id: documentBranches.id });
     if (row) await refreshDraftEffect(currentDrizzleDb(db), input.branchId, input.liveCut);
     return Boolean(row);
-  }
-
-  async function mutateThreadManifest(
-    documentId: DocumentId,
-    present: boolean,
-    view: { projectId: ProjectId; threadId: ThreadId },
-  ): Promise<void> {
-    const manifest = await ensureProjectManifest({ projectId: view.projectId });
-    try {
-      const peer = await ensureThreadPeerBranch({
-        documentId: manifest.documentId,
-        threadId: view.threadId,
-        liveDoc: manifest.doc,
-      });
-      const workDraftBranchId = peer.upstreamBranchId;
-      if (!workDraftBranchId) {
-        throw new Error(`Manifest thread peer ${peer.branchId} has no work-draft upstream`);
-      }
-      return await criticalSections.withBranches([peer.branchId, workDraftBranchId], () =>
-        retryManifestMembershipMutation({
-          documentId,
-          present,
-          threadId: view.threadId,
-          peerBranchId: peer.branchId,
-          workDraftBranchId,
-        }),
-      );
-    } finally {
-      manifest.doc.destroy();
-    }
-  }
-
-  async function persistManifestMembership(
-    branch: BranchSnapshot,
-    doc: Y.Doc,
-    updateData: Uint8Array,
-    documentId: DocumentId,
-    present: boolean,
-  ): Promise<boolean> {
-    const updated = await updateBranchSnapshot({
-      branchId: branch.branchId,
-      expectedGeneration: branch.generation,
-      expectedStateVector: branch.stateVector,
-      expectedState: branch.state,
-      state: Y.encodeStateAsUpdate(doc),
-      stateVector: Y.encodeStateVector(doc),
-    });
-    if (!updated) return false;
-    await currentDrizzleDb(db)
-      .insert(branchWriteJournal)
-      .values({
-        branchId: branch.branchId,
-        generation: branch.generation,
-        updateData: Buffer.from(updateData),
-        draftBaseUpdateSeq: draftBaseForBranch(branch.branchId),
-        source: "agent",
-        updateMeta: {
-          kind: "manifest_membership",
-          present,
-          documentId,
-        },
-      });
-    return true;
-  }
-
-  async function mutateWorkManifest(
-    documentId: DocumentId,
-    present: boolean,
-    view: { projectId: ProjectId; workId: WorkId },
-  ): Promise<void> {
-    const manifest = await ensureProjectManifest({ projectId: view.projectId });
-    try {
-      const work = await ensureWorkDraftBranch({
-        documentId: manifest.documentId,
-        workId: view.workId,
-        liveDoc: manifest.doc,
-      });
-      return await criticalSections.withBranches([work.branchId], async () => {
-        for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-          const branch = await getBranchSnapshot(work.branchId);
-          const doc = materializeBranch(branch, "" as ThreadId);
-          try {
-            const map = doc.getMap<{ present: true }>("documents");
-            if (present ? map.has(documentId) : !map.has(documentId)) return;
-            const before = Y.encodeStateVector(doc);
-            if (present) map.set(documentId, { present: true });
-            else map.delete(documentId);
-            const updateData = Y.encodeStateAsUpdate(doc, before);
-            const persisted = await runWithActiveWorkDrafts(
-              db,
-              { workIds: [view.workId] },
-              async () => {
-                return persistManifestMembership(branch, doc, updateData, documentId, present);
-              },
-            );
-            if (persisted) return;
-          } finally {
-            doc.destroy();
-          }
-        }
-        throw new Error(
-          `Manifest membership write for ${documentId} exhausted ${maxCasRetries} CAS retries`,
-        );
-      });
-    } finally {
-      manifest.doc.destroy();
-    }
-  }
-
-  async function retryManifestMembershipMutation(input: {
-    documentId: DocumentId;
-    present: boolean;
-    threadId: ThreadId;
-    peerBranchId: string;
-    workDraftBranchId: string;
-  }): Promise<void> {
-    for (let attempt = 0; attempt <= maxCasRetries; attempt += 1) {
-      if (await commitManifestMembershipMutation(input)) return;
-    }
-    throw new Error(
-      `Manifest membership write for ${input.documentId} exhausted ${maxCasRetries} CAS retries`,
-    );
-  }
-
-  async function commitManifestMembershipMutation(input: {
-    documentId: DocumentId;
-    present: boolean;
-    threadId: ThreadId;
-    peerBranchId: string;
-    workDraftBranchId: string;
-  }): Promise<boolean> {
-    const peer = await getBranchSnapshot(input.peerBranchId);
-    const work = await getBranchSnapshot(input.workDraftBranchId);
-    const peerDoc = materializeBranch(peer, input.threadId);
-    const workDoc = materializeBranch(work, input.threadId);
-    try {
-      const map = peerDoc.getMap<{ present: true }>("documents");
-      if (input.present) {
-        if (map.has(input.documentId)) return true;
-        map.set(input.documentId, { present: true });
-      } else {
-        if (!map.has(input.documentId)) return true;
-        map.delete(input.documentId);
-      }
-
-      const updateData = sync(peerDoc, workDoc);
-      const peerState = Y.encodeStateAsUpdate(peerDoc);
-      const peerStateVector = Y.encodeStateVector(peerDoc);
-      const workState = Y.encodeStateAsUpdate(workDoc);
-      const workStateVector = Y.encodeStateVector(workDoc);
-
-      // runInDrizzleTransaction joins ambient transactions. Do not wrap the
-      // agent write path in a larger app-level transaction unless floor ordering
-      // is re-audited: branch journal ids must commit while this mutex is held.
-      return await runWithActiveWorkDrafts(
-        db,
-        { branchIds: [input.workDraftBranchId] },
-        async () => {
-          const peerPersisted = await updateBranchSnapshot({
-            branchId: peer.branchId,
-            expectedGeneration: peer.generation,
-            expectedStateVector: peer.stateVector,
-            expectedState: peer.state,
-            state: peerState,
-            stateVector: peerStateVector,
-          });
-          if (!peerPersisted) throw new BranchMutationRollback();
-
-          const workPersisted = await updateBranchSnapshot({
-            branchId: work.branchId,
-            expectedGeneration: work.generation,
-            expectedStateVector: work.stateVector,
-            expectedState: work.state,
-            state: workState,
-            stateVector: workStateVector,
-          });
-          if (!workPersisted) throw new BranchMutationRollback();
-
-          await currentDrizzleDb(db)
-            .insert(branchWriteJournal)
-            .values({
-              branchId: work.branchId,
-              generation: work.generation,
-              updateData: Buffer.from(updateData),
-              draftBaseUpdateSeq: draftBaseForBranch(work.branchId),
-              source: "agent",
-              threadId: input.threadId,
-              updateMeta: {
-                kind: "manifest_membership",
-                present: input.present,
-                documentId: input.documentId,
-              },
-            });
-          return true;
-        },
-      ).catch((cause) => {
-        if (cause instanceof BranchMutationRollback) return false;
-        throw cause;
-      });
-    } finally {
-      peerDoc.destroy();
-      workDoc.destroy();
-    }
-  }
-
-  async function getBranchSnapshot(branchId: string): Promise<BranchSnapshot> {
-    const [row] = await selectBranch(currentDrizzleDb(db))
-      .where(eq(documentBranches.id, branchId))
-      .limit(1);
-    if (!row) throw new Error(`Branch ${branchId} does not exist`);
-    return mapBranch(row);
-  }
-
-  async function mutateLiveManifest(documentId: DocumentId, present: boolean): Promise<void> {
-    const projectId = await projectForDocument(documentId);
-    if (!projectId) return;
-    const { documentId: manifestDocumentId, doc } = await loadProjectManifest({ projectId });
-    doc.destroy();
-    await mutateLiveManifestDocument(manifestDocumentId, (manifestDoc) => {
-      const map = manifestDoc.getMap<{ present: true }>("documents");
-      if (present && !map.has(documentId)) map.set(documentId, { present: true });
-      else if (!present && map.has(documentId)) map.delete(documentId);
-    });
-  }
-
-  /**
-   * A cross-project move: the documents leave `from`'s live manifest and join `to`'s, in the
-   * caller's transaction. Both manifest holders lock in id order first, so opposite transfers
-   * cannot wait on each other.
-   */
-  async function transferLiveManifestMembership(
-    documentIds: readonly DocumentId[],
-    projects: { from: ProjectId; to: ProjectId },
-  ): Promise<void> {
-    if (documentIds.length === 0 || projects.from === projects.to) return;
-    await runInDrizzleTransaction(db, async () => {
-      const manifests = [];
-      for (const projectId of [projects.from, projects.to]) {
-        const manifest = await loadProjectManifest({ projectId });
-        manifest.doc.destroy();
-        manifests.push(manifest.documentId);
-      }
-      for (const manifestId of [...manifests].sort()) {
-        await lockDocumentMutation(currentDrizzleDb(db), manifestId);
-      }
-      const [fromManifest, toManifest] = manifests as [DocumentId, DocumentId];
-      await mutateLiveManifestDocument(fromManifest, (doc) => {
-        const map = doc.getMap<{ present: true }>("documents");
-        for (const id of documentIds) if (map.has(id)) map.delete(id);
-      });
-      await mutateLiveManifestDocument(toManifest, (doc) => {
-        const map = doc.getMap<{ present: true }>("documents");
-        for (const id of documentIds) if (!map.has(id)) map.set(id, { present: true });
-      });
-    });
   }
 
   return {
@@ -986,33 +572,31 @@ export function createDrizzleBranchStore(
             }
           }
           if (journals.length) {
-            {
-              const rows = await currentDrizzleDb(db)
-                .insert(branchWriteJournal)
-                .values(
-                  journals.map((journal) => ({
-                    branchId: journal.branchId,
-                    generation: journal.generation,
-                    updateData: Buffer.from(journal.updateData),
-                    draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
-                    source: journal.source,
-                    wId: journal.wId ?? null,
-                    toolCallId: journal.toolCallId ?? null,
-                    threadId: journal.threadId ?? null,
-                    turnId: journal.turnId ?? null,
-                    actorUserId: journal.actorUserId ?? null,
-                    updateMeta: journal.updateMeta ?? null,
-                  })),
-                )
-                .returning({ id: branchWriteJournal.id });
-              const branch = await getBranchSnapshot(input.branchId);
-              const doc = createCollabYDoc({ gc: false });
-              Y.applyUpdate(doc, input.expectedState);
-              try {
-                await captureBranchEdits(currentDrizzleDb(db), branch, doc, journals, rows);
-              } finally {
-                doc.destroy();
-              }
+            const rows = await currentDrizzleDb(db)
+              .insert(branchWriteJournal)
+              .values(
+                journals.map((journal) => ({
+                  branchId: journal.branchId,
+                  generation: journal.generation,
+                  updateData: Buffer.from(journal.updateData),
+                  draftBaseUpdateSeq: draftBaseForBranch(journal.branchId),
+                  source: journal.source,
+                  wId: journal.wId ?? null,
+                  toolCallId: journal.toolCallId ?? null,
+                  threadId: journal.threadId ?? null,
+                  turnId: journal.turnId ?? null,
+                  actorUserId: journal.actorUserId ?? null,
+                  updateMeta: journal.updateMeta ?? null,
+                })),
+              )
+              .returning({ id: branchWriteJournal.id });
+            const branch = await getBranchSnapshot(input.branchId);
+            const doc = createCollabYDoc({ gc: false });
+            Y.applyUpdate(doc, input.expectedState);
+            try {
+              await captureBranchEdits(currentDrizzleDb(db), branch, doc, journals, rows);
+            } finally {
+              doc.destroy();
             }
           }
           return true;
@@ -1120,7 +704,8 @@ export function createDrizzleBranchStore(
           throw new BranchNotFoundError(documentId, threadId);
         throw cause;
       }
-      const row = await activeWorkDraft(documentId, workId);
+      const draft = await drafts.activeForWork(workId);
+      const row = draft ? await activeDraftBranch(documentId, draft.id) : null;
       if (!row) throw new BranchNotFoundError(documentId, threadId);
       return {
         branchId: row.branchId,
@@ -1129,12 +714,24 @@ export function createDrizzleBranchStore(
       };
     },
 
-    async resolveWorkDraftBranchForWork(input): Promise<BranchState> {
-      const row = await ensureWorkDraftBranch(input);
+    async resolveDraftBranch(input): Promise<BranchState> {
+      const [row] = await selectBranch(currentDrizzleDb(db))
+        .where(
+          and(
+            eq(documentBranches.id, input.draftBranchId),
+            eq(documentBranches.documentId, input.documentId),
+            eq(documentBranches.draftId, input.draftId),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+          ),
+        )
+        .limit(1);
+      if (!row) throw new BranchNotFoundError(input.documentId, "" as ThreadId);
+      const branch = mapBranch(row);
       return {
-        branchId: row.branchId,
-        doc: materializeBranch(row, "" as ThreadId),
-        generation: row.generation,
+        branchId: branch.branchId,
+        doc: materializeBranch(branch, "" as ThreadId),
+        generation: branch.generation,
       };
     },
 
@@ -1152,80 +749,25 @@ export function createDrizzleBranchStore(
       return rows.map((row) => row.id);
     },
 
-    ensureWorkDraftBranch(input) {
-      return runInDrizzleTransaction(db, () => ensureWorkDraftBranch(input));
+    async listActiveDraftBranchIds(draftId) {
+      const rows = await currentDrizzleDb(db)
+        .select({ id: documentBranches.id })
+        .from(documentBranches)
+        .where(and(eq(documentBranches.draftId, draftId), eq(documentBranches.status, "active")));
+      return rows.map((row) => row.id);
     },
+
+    ensureDraftBranch(input) {
+      return runInDrizzleTransaction(db, () => ensureDraftBranch(input));
+    },
+
+    ensureCreatedDraftBranch,
+    retractCreatedDraftBranch,
+    closeThreadPeersOf,
 
     ensureThreadPeerBranch(input) {
       return ensureThreadPeerBranch(input);
     },
-
-    closeThreadPeersOf,
-
-    ensureProjectManifest(input) {
-      return ensureProjectManifest(input);
-    },
-
-    reconcileProjectManifest,
-
-    resolveManifestMembership,
-    transferLiveManifestMembership,
-    recordManifestDocumentCreated: (documentId, view) =>
-      view?.threadId
-        ? mutateThreadManifest(documentId, true, {
-            projectId: view.projectId,
-            threadId: view.threadId,
-          })
-        : view?.workId
-          ? mutateWorkManifest(documentId, true, {
-              projectId: view.projectId,
-              workId: view.workId,
-            })
-          : mutateLiveManifest(documentId, true),
-    async removeWorkManifestEntryForDraftDiscard(command) {
-      assertBranchLeaseCovers(command.lease, command.manifestBranchId);
-      return mutatePending([command.manifestBranchId], async () => {
-        const branch = await getBranchSnapshot(command.manifestBranchId);
-        if (
-          branch.kind !== "work_draft" ||
-          branch.status !== "active" ||
-          branch.workId !== command.workId ||
-          branch.documentId !== command.manifestDocumentId
-        )
-          throw new Error("Draft discard manifest owner changed");
-        const doc = materializeBranch(branch, "" as ThreadId);
-        try {
-          const map = doc.getMap<{ present: true }>("documents");
-          if (!map.has(command.documentId)) return;
-          const before = Y.encodeStateVector(doc);
-          map.delete(command.documentId);
-          if (
-            !(await persistManifestMembership(
-              branch,
-              doc,
-              Y.encodeStateAsUpdate(doc, before),
-              command.documentId,
-              false,
-            ))
-          )
-            throw new BranchCasConflictError(branch.branchId);
-        } finally {
-          doc.destroy();
-        }
-      });
-    },
-    recordManifestDocumentDeleted: (documentId, view) =>
-      view?.threadId
-        ? mutateThreadManifest(documentId, false, {
-            projectId: view.projectId,
-            threadId: view.threadId,
-          })
-        : view?.workId
-          ? mutateWorkManifest(documentId, false, {
-              projectId: view.projectId,
-              workId: view.workId,
-            })
-          : mutateLiveManifest(documentId, false),
   };
 }
 
@@ -1240,6 +782,7 @@ class NoPrimaryWorkError extends Error {
 
 type BranchSelectRow = Awaited<ReturnType<ReturnType<typeof selectBranch>["limit"]>>[number];
 
+/** A branch row with its Work derived through its draft (contract §2.4). */
 function selectBranch(db: DrizzleDb) {
   return db
     .select({
@@ -1247,7 +790,8 @@ function selectBranch(db: DrizzleDb) {
       documentId: documentBranches.documentId,
       kind: documentBranches.kind,
       upstreamBranchId: documentBranches.upstreamBranchId,
-      workId: documentBranches.workId,
+      draftId: documentBranches.draftId,
+      workId: branchDraftWork.workId,
       threadId: documentBranches.threadId,
       status: documentBranches.status,
       generation: documentBranches.generation,
@@ -1257,7 +801,8 @@ function selectBranch(db: DrizzleDb) {
       liveCut: documentBranches.liveCut,
       schemaVersion: documentBranches.schemaVersion,
     })
-    .from(documentBranches);
+    .from(documentBranches)
+    .innerJoin(branchDraftWork.drafts, branchDraftWork.on);
 }
 
 function mapBranch(row: BranchSelectRow): BranchSnapshot {
@@ -1266,7 +811,8 @@ function mapBranch(row: BranchSelectRow): BranchSnapshot {
     documentId: row.documentId,
     kind: row.kind,
     upstreamBranchId: row.upstreamBranchId,
-    workId: row.workId,
+    draftId: row.draftId,
+    workId: (row.workId as WorkId | null) ?? null,
     threadId: row.threadId,
     status: row.status,
     generation: row.generation,
@@ -1292,15 +838,6 @@ function materializeBranch(row: BranchSnapshot, threadId: ThreadId): Y.Doc {
       threadId,
       cause,
     });
-  }
-}
-
-function updateChangesState(state: Uint8Array, update: Uint8Array): boolean {
-  const doc = yjsUpdateFromState(state);
-  try {
-    return Boolean(effectiveYjsUpdate(doc, update));
-  } finally {
-    doc.destroy();
   }
 }
 
@@ -1331,11 +868,6 @@ async function captureBranchEdits(
     })),
   );
   for (const [i, journal] of journals.entries()) {
-    const meta =
-      journal.updateMeta && typeof journal.updateMeta === "object"
-        ? (journal.updateMeta as Record<string, unknown>)
-        : {};
-    if (meta.kind === "manifest_membership") continue;
     const key = journal.documentEditKey ?? `${journal.threadId}:${journal.wId ?? rows[i].id}`;
     const group = groups.get(key) ?? { journal, receipts: [] };
     group.receipts.push(captured[i]);

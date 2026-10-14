@@ -1,14 +1,44 @@
 # Collab — branch model and durable records
 
+## Vocabulary
+
+Five names that look alike and are not. Code, docs and wire types keep them apart.
+
+| Name | Is | Owner | Crosses the wire as |
+|---|---|---|---|
+| **draft** | The Work's one active draft (`drafts` row). Closes only on Discard all and purge; Apply never closes it. | the Work-draft lifecycle (`shared/work-draft-lifecycle.ts`) | `draftId` |
+| **branch** | One document's text Y.Doc of a draft (`document_branches`, kind `work_draft`, keyed `(documentId, draftId)`) plus the thread peers that fork from it. Same id across resets; its generation moves up. | the branch store and peer pool | never; only `branchGeneration` and the opaque `reviewRoomName` |
+| **item** | One document's reviewable change in the draft, with or without a branch (an empty create, a created image). | `domain/draft-review-identity.ts` (the one module that maps item to branch) | `itemKey` = `${draftId}:${documentId}` |
+| **command** | One writer action: item or per-change Apply or Discard, Apply all, Discard all. Idempotent under its `commandId`. | the review service and command records | `commandId` |
+| **presented address** | What the writer is looking at: `{ workId, itemKey, changeId? }` (URL `item=` and `change=`, dock persistence). Names no branch. | the client | the API review selector `reviewWorkId` + `itemKey` |
+
+```text
+Work 1──1 active draft 1──* item ──0..1── branch 1──* thread peer
+                              │                  │
+                              │                  └ room: branchRoomName(branchId, generation)
+                              └ presented address (workId, itemKey) ─ command (commandId)
+```
+
+An item with no branch still resolves, lists and applies. The server resolves
+every `itemKey` through the identity module; no function takes a bare string
+that may be a draft id, a branch id or an item key.
+
 ## Branch model
 
 Branches are real Y.Docs. A thread peer starts from the Work draft, receives live
 pulls by CRDT sync, and stages agent writes. The Work draft is the writer review
 branch. There is at most one active Work-draft branch per
-`(documentId, workId)`; every thread peer for that document and Work shares it
-as upstream. Pushing computes a Yjs update from branch to live, records push
+`(documentId, draftId)`; every thread peer for that document and draft shares it
+as upstream and carries the same `draft_id`. A branch's Work is its draft's
+origin Work, read only through `draftBranchWorks`/`branchDraftWork`
+(`shared/work-draft-lifecycle.ts`); a draft with no origin Work is frozen. Pushing computes a Yjs update from branch to live, records push
 lineage, marks source journal rows reviewed, and resets/advances branch
 generation where needed.
+
+Draft HTTP routes (including write-mode changes that can Apply) share
+`requireDraftWorkAccess`: a deleted Work is 404 `Draft not found` before any
+draft read or mutation. Archived Works still permit review reads. The client
+draft-list query treats 404 as empty so a post-delete catalog wake is silent.
 
 Work draft capture, redo, Apply and Discard require an active Work under the
 shared lifecycle row lock before durable mutation, and take the row through
@@ -17,9 +47,20 @@ shared lifecycle row lock before durable mutation, and take the row through
 drafts are frozen: captured evidence stays, and nothing writes, applies or
 discards them until unarchive. Replaying
 an already committed push returns its durable receipt without reauthorizing a
-new write. Draft-only Discard removes only that document’s manifest entry and
-resets its content branch in one Work-locked transaction. Branch reset
-notifications publish after commit; rolled-back resets never advance a room.
+new write. Discard is one kernel (`domain/draft-discard.ts`,
+`adapters/drizzle-draft-discard.ts`): leases first (every branch of the draft for
+Discard all; an item's branches and live document otherwise), then one transaction
+locking the Work (active), the draft, the namespaces and the documents. An item's
+text resets from live; Discard all closes the draft and every branch instead. Either
+ends the draft's use of what it created, tombstoning and releasing what no draft
+uses. Work purge runs the same kernel after its own lifecycle proof. The kernel
+reports exactly the branches it closed (an item's reset branch's peers) or deleted (a
+tombstone's), and `domain/peer-retirement.ts` retires those rooms and (document,
+thread) states after commit; the review preview's corrupt-branch reset does the same
+for the reset branch's peers. No flow retires "every thread" on a document: agent-edit
+offers `invalidateThreadDocument(doc, thread)` and `evictThread(thread)` only, so another
+Work's staged reply on a shared document survives. Branch reset notifications publish
+after commit; rolled-back resets never advance a room.
 
 A durable thread peer has no unpublished authored state: reply finalization saves
 its edits into the shared Work draft atomically. Before a new call, a pull tests
@@ -30,14 +71,29 @@ previous reply's runtime replica before rebuilding from the pulled peer. Calls
 already holding a staged document keep that response's private edits.
 
 Thread-peer resolution is primary-Work-aware. After conversation reassignment,
-the old peer is no longer resolvable; provisioning closes it and seeds a new
-peer from the new primary Work draft while holding the conversation row lock.
+the old peer is no longer resolvable; a pull in the new Work's draft closes it
+and seeds a new peer while holding the conversation row lock. Peers are made
+only by pulls in an existing draft: a reply's save resolves exactly the peer
+each document was pinned to (`InteractionContext.branchId`), under the leases
+the pool took before the save's transaction, and refuses that document stale
+when the pin no longer holds (closed peer, reset or closed draft branch, closed
+draft). Closing a draft closes both kinds of its branches. The fencing lifecycle
+(pins, the save's leases, confirmation under its locks) is
+`domain/reply-save-fences.ts`; the pool (`domain/thread-peer-core-pool.ts`)
+routes and keeps reply records, and `thread-peer-composition.ts` assembles it.
 
 The review list therefore emits one active item per document and folds all
 contributing journal rows into that item. `actorThreads` lists candidate chats;
-`draftId` is the only application and wire identity. `createWorkDraftReviewService()` resolves it to the physical Work
-branch and keeps that branch identity inside the domain; `reviewRoomName`
-remains an opaque transport address.
+`itemKey` is the application and wire identity of an item. The identity module
+resolves it to the physical Work branch and keeps that branch identity inside
+the domain; `reviewRoomName` remains an opaque transport address.
+
+Writer commands are server commands, one `commandId` each. Apply (item,
+per-change, all) never closes the draft; the draft stays open after the last
+item applies. Apply all and Discard all are one command each over the Work's
+whole draft, not a client loop. A per-change command on an item that is only a
+whole-document change (a new document) refuses `whole_item`. A resend of a used
+`commandId` returns the recorded result, so a lost response cannot apply twice.
 
 Propagation is sync-only. Cold attribution uses persisted branch journal rows
 and live journal metadata; memory-only runtime maps are never an attribution
@@ -136,42 +192,21 @@ text equality is never continuity evidence.
 Restoration length is validated independently at both the certification and the
 writer boundary; neither check assumes the other ran.
 
-## Live manifest membership
+## Pending publication
 
-The project manifest's `documents` Y.Map is the membership authority used by the
-live-room gate. Ordinary `resolveManifestMembership` calls never reconcile or
-append membership history. `reconcileProjectManifest` is the additive-only, cross-replica-serialized
-self-heal command: it seeds missing active database content rows, but never
-rewrites an existing key or removes an entry. The WebSocket gate invokes it once
-after a membership miss. Manifest write-intent paths do not run this broad SQL
-reconciliation; draft-scoped creation (`workId` or `threadId`) must not allow
-unstaged document rows to enter live membership. Creation and deletion flow
-through `recordManifestDocument{Created,Deleted}`, with SQL
-soft-delete committed before the deletion notification. Preserve every no-op guard:
-setting an equal Y.Map value still creates Yjs history. See
-[KB: Manifest Membership Port](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/collab/manifest/manifest-membership-port.md)
-for the cross-domain port decision and self-healing rationale.
+The `WorkDraftPendingStore` port (Drizzle adapter in `adapters/drizzle-branch-push.ts`)
+owns the pending Work-draft predicate used by review lists, counts, and
+Auto-apply confirmation: current-generation reviewable rows, one joined query
+that projects only `turnId`. Counts are distinct pending documents per Work: the
+active draft's branches with reviewable rows plus its change rows (a created
+document is pending with no text yet), never raw journal-row totals. The review
+list (`domain/draft-review-items.ts`) is the draft's tree state merged with those
+branches; Apply is `domain/draft-publication.ts`.
 
-Manifest membership rows are branch bookkeeping, not writer-reviewable prose.
-`domain/work-draft-pending.ts` owns the pending Work-draft predicate used by
-review lists, counts, and Auto-apply confirmation: it requires current-generation
-reviewable rows loaded through the `WorkDraftPendingStore` seam and excludes
-`manifest_membership` rows. Its Drizzle adapter loads all evidence in one joined
-query and projects only the classification fields (`turnId` and `updateMeta`);
-ordinary counts and lists must not read full Yjs payloads. Counts are reviewable
-content branches (one per document), never raw journal-row totals. The authority
-still associates an excluded manifest entry with its content draft so confirmed
-Auto-apply publishes new-document content and live membership atomically. A
-reusable manifest Work-draft branch may remain `active` after its content
-companions settle; that status alone is not pending-review evidence.
-
-`domain/document-creation.ts` owns tracked-document materialization
-transactions. Context and bootstrap supply the row, initial-content, and
-manifest operations; the aggregate commits them together. Repair uses the same
-boundary so a row cannot become visible before its Yjs authority is usable.
-Initial-content and live-manifest recovery publish to warm Hocuspocus rooms only
-after the enclosing Drizzle transaction commits. Work/thread manifest mutations
-persist their branch state inside that transaction; they never push live (D59).
+`domain/document-creation.ts` owns tracked-document materialization transactions.
+Context and bootstrap supply the row and initial content. They commit together;
+warm-room publication follows the enclosing transaction's commit. Tree presence
+comes from context's tree views, never a Yjs manifest.
 
 ## Durable records
 

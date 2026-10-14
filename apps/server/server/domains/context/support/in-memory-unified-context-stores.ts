@@ -87,7 +87,10 @@ function projectionFromStore(
 ): { markdown: string; filetype: Filetype } | null {
   const doc = findInMemoryContextDocumentsById(registry.backing, [documentId])[0];
   if (!doc) return null;
-  return { markdown: doc.markdown, filetype: doc.filetype ?? "markdown" };
+  return {
+    markdown: registry.backing.projections.get(documentId) ?? "",
+    filetype: doc.filetype ?? "markdown",
+  };
 }
 
 /** Resolve markdown projection for a document id across all in-memory context stores. */

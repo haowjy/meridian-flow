@@ -95,9 +95,30 @@ export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
 export type ProjectContextTreeScheme = ContextUriScheme;
 
+/**
+ * Where the writer's create lands, the same identity-based address a move carries. The
+ * server joins a draft's hidden document waiting there; omitted, the create is nameless
+ * and lands in `folderPath` as `Untitled N`.
+ */
+export type CreateUntitledDestination = {
+  parent: ContextDestinationParent;
+  /** The leaf filename as the writer typed it. */
+  name: string;
+};
+
 export type CreateUntitledContextDocumentRequest = {
   documentId: string;
   folderPath?: string;
+  destination?: CreateUntitledDestination;
+};
+
+/** A document's current canonical address. */
+export type ContextDocumentAddress = {
+  scheme: ProjectContextTreeScheme;
+  path: string;
+  name: string;
+  /** Present only when the canonical location is Work-scoped. */
+  workId?: string | null;
 };
 
 export type CreateUntitledContextDocumentResponse = {
@@ -110,6 +131,16 @@ export type CreateUntitledContextDocumentResponse = {
   workId?: string | null;
 };
 
+/**
+ * The create became an existing document: a draft's hidden one at the destination.
+ * `documentId` is the joined document, not the submitted id, which now forwards to it.
+ */
+export type CreateUntitledContextDocumentJoined = {
+  status: "joined";
+  documentId: string;
+  address: ContextDocumentAddress;
+};
+
 /** Creation uses the same conflict payload for files and folders, including HTTP 409. */
 export type CreateContextEntryResult =
   | { status: "created"; documentId?: string; uri?: string }
@@ -118,6 +149,14 @@ export type CreateContextEntryResult =
 export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
   | { status: "conflict" };
+
+/**
+ * Everything the create endpoint can answer. A client that sends a `destination` must
+ * handle `joined`; one that doesn't never receives it.
+ */
+export type CreateUntitledContextDocumentAnswer =
+  | CreateUntitledContextDocumentResult
+  | CreateUntitledContextDocumentJoined;
 
 /** Exact identities committed by one successful context-tree deletion. */
 export type DeleteContextEntryResult = {
@@ -464,6 +503,7 @@ export type UpdateWorkWriteModeRequest = {
 };
 
 export type UpdateWorkWriteModeResponse =
+  | import("../drafts/review.js").DraftApplyPending
   | { aiWriteMode: AiWriteMode; status: "updated" }
   | {
       aiWriteMode: AiWriteMode;

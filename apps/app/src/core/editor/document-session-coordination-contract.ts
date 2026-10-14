@@ -124,11 +124,13 @@ export interface DocumentSessionCrossContextCoordination {
       exactDatabaseName: string;
     }
   >;
+  /** `deletionVersion` is the exact-ID deletion's namespace version, held by the terminal. */
   revokeDocument(
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     commandId: AvailabilityCommandId,
+    deletionVersion: string | null,
   ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }>;
   revokeAccess(
     projectId: ProjectId,

@@ -3,12 +3,6 @@ import {
   parseDocumentFilename,
   renderFilename as renderDocumentFilename,
 } from "@meridian/contracts/protocol";
-import {
-  DOCUMENT_KINDS,
-  type DocumentKind,
-  isContentDocumentKind,
-} from "@meridian/database/schema";
-
 /**
  * In-memory ContextFS persistence for tests and lightweight composition.
  * It provides both the per-source ContextDocumentStore CRUD surface and the
@@ -18,7 +12,6 @@ import {
  */
 
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { EventSink } from "../../../observability/index.js";
 import { renderFilename, splitPath } from "../../context/paths.js";
 import {
   type ContextDocument,
@@ -27,7 +20,7 @@ import {
   type ContextFolder,
   type CreateBinaryDocumentInput,
   type CreateDocumentInput,
-  type UpsertBinaryDocumentInput,
+  type LiveDocumentCreation,
 } from "../../ports/context-document-store.js";
 import {
   CONTEXT_ROOT_DIRECTORY_ID,
@@ -40,11 +33,8 @@ import {
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
-import {
-  type ContextDocumentMembershipObserver,
-  createMembershipCommandId,
-  dispatchMembershipEvents,
-} from "./membership-event-dispatcher.js";
+import type { LiveCreateCandidate } from "../../tree/hidden-node-types.js";
+import type { PathResolution, TreeView } from "../../tree/tree-view.js";
 
 type FolderRow = ContextFolder & {
   contextSourceId: string;
@@ -54,13 +44,15 @@ type FolderRow = ContextFolder & {
 type DocumentRow = ContextDocument & {
   contextSourceId: string;
   deletedAt: string | null;
-  kind: DocumentKind;
 };
 
 export interface InMemoryContextDocumentStoreBacking {
   previousLocations: Map<string, string>;
+  /** Joined-create forwards, `from → to`. */
+  forwards: Map<string, string>;
   folders: Map<string, FolderRow>;
   documents: Map<string, DocumentRow>;
+  projections: Map<string, string>;
   clock: { value: number };
   availabilityGeneration: { value: bigint };
 }
@@ -73,8 +65,10 @@ export interface InMemoryContextDocumentStoreOptions {
 export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocumentStoreBacking {
   return {
     previousLocations: new Map(),
+    forwards: new Map(),
     folders: new Map(),
     documents: new Map(),
+    projections: new Map(),
     clock: { value: 0 },
     availabilityGeneration: { value: 0n },
   };
@@ -86,13 +80,8 @@ export function findInMemoryContextDocumentsById(
 ): ContextDocument[] {
   return documentIds.flatMap((id) => {
     const row = backing.documents.get(id);
-    if (!row || !isContentDocumentKind(row.kind) || row.deletedAt !== null) return [];
-    const {
-      contextSourceId: _contextSourceId,
-      deletedAt: _deletedAt,
-      kind: _kind,
-      ...document
-    } = row;
+    if (!row || row.deletedAt !== null) return [];
+    const { contextSourceId: _contextSourceId, deletedAt: _deletedAt, ...document } = row;
     return [{ ...document }];
   });
 }
@@ -117,7 +106,6 @@ function hasOppositeEntry(
           row.contextSourceId === sourceId &&
           row.folderId === parentId &&
           renderFilename(row.name, row.extension) === folderDocumentName(filename) &&
-          isContentDocumentKind(row.kind) &&
           row.deletedAt === null,
       );
 }
@@ -150,9 +138,7 @@ function claimLocation(
 
 function memoryFileLocations(backing: InMemoryContextDocumentStoreBacking, sourceId: string) {
   return [...backing.documents.values()]
-    .filter(
-      (row) => row.contextSourceId === sourceId && row.deletedAt === null && row.kind === "content",
-    )
+    .filter((row) => row.contextSourceId === sourceId && row.deletedAt === null)
     .map((row) => ({
       id: row.id,
       path: locationPath(
@@ -209,7 +195,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   private publicDocument(doc: DocumentRow): ContextDocument {
-    const { contextSourceId: _contextSourceId, deletedAt: _deletedAt, kind: _kind, ...out } = doc;
+    const { contextSourceId: _contextSourceId, deletedAt: _deletedAt, ...out } = doc;
     return { ...out };
   }
 
@@ -221,8 +207,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.sourceId;
   }
 
-  async recordDocumentMembership(_documentId: string): Promise<void> {}
-
   async transaction<T>(operation: () => Promise<T>): Promise<T> {
     const foldersSnapshot = new Map(
       [...this.backing.folders].map(([id, row]) => [id, { ...row }] as const),
@@ -231,6 +215,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       [...this.backing.documents].map(([id, row]) => [id, { ...row }] as const),
     );
     const previousLocationsSnapshot = new Map(this.backing.previousLocations);
+    const projectionsSnapshot = new Map(this.backing.projections);
     const clockSnapshot = this.backing.clock.value;
     try {
       return await operation();
@@ -240,13 +225,36 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       this.backing.documents.clear();
       for (const entry of documentsSnapshot) this.backing.documents.set(...entry);
       this.backing.previousLocations = previousLocationsSnapshot;
+      this.backing.projections = projectionsSnapshot;
       this.backing.clock.value = clockSnapshot;
       throw error;
     }
   }
 
-  async findFolder(parentId: string | null, name: string): Promise<ContextFolder | null> {
-    return this.findFolderRecord(parentId, name);
+  async resolveFolderAt(
+    _view: TreeView,
+    path: string,
+  ): Promise<PathResolution<ContextFolder | null>> {
+    let folder: ContextFolder | null = null;
+    for (const name of treePathSegments(path)) {
+      folder = this.findFolderRecord(folder?.id ?? null, name);
+      if (!folder) return { kind: "not_found" };
+    }
+    return { kind: "found", node: folder };
+  }
+
+  async resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>> {
+    const { dir, filename } = splitPath(normalizeTreePath(path));
+    const parsed = parseDocumentFilename(filename);
+    if (!parsed.ok) return { kind: "not_found" };
+    const folder = await this.resolveFolderAt(view, dir.join("/"));
+    if (folder.kind !== "found") return { kind: "not_found" };
+    const document = this.findDocumentRecord(
+      folder.node?.id ?? null,
+      parsed.value.name,
+      parsed.value.extension,
+    );
+    return document ? { kind: "found", node: document } : { kind: "not_found" };
   }
 
   private findFolderRecord(parentId: string | null, name: string): ContextFolder | null {
@@ -263,7 +271,13 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return null;
   }
 
-  async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
+  async ensureFolderPath(dir: readonly string[]): Promise<string | null> {
+    let parentId: string | null = null;
+    for (const name of dir) parentId = (await this.createFolder(parentId, name)).id;
+    return parentId;
+  }
+
+  private async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
     if (hasOppositeEntry(this.backing, this.sourceId, parentId, name, "folder"))
       throw new ContextEntryConflictError("file");
     const existing = this.findFolderRecord(parentId, name);
@@ -297,7 +311,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === this.sourceId &&
-        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId &&
         doc.name === name &&
@@ -309,51 +322,9 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return null;
   }
 
-  async createDocument(input: CreateDocumentInput): Promise<ContextDocument> {
-    if (
-      hasOppositeEntry(
-        this.backing,
-        this.sourceId,
-        input.folderId,
-        renderFilename(input.name, input.extension),
-        "file",
-      )
-    )
-      throw new ContextEntryConflictError("folder");
-    const existing = this.findDocumentRecord(input.folderId, input.name, input.extension);
-    if (existing && existing.fileType !== null) {
-      throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
-    }
-    const sizeBytes = Buffer.byteLength(input.markdown, "utf8");
-    if (existing) throw new ContextEntryConflictError("file");
-    const doc: DocumentRow = {
-      id: input.id ?? crypto.randomUUID(),
-      contextSourceId: this.sourceId,
-      kind: DOCUMENT_KINDS.content,
-      folderId: input.folderId,
-      name: input.name,
-      extension: input.extension,
-      markdown: input.markdown,
-      fileType: null,
-      filetype: input.filetype,
-      storageUrl: null,
-      mimeType: null,
-      sizeBytes,
-      updatedAt: this.nextTimestamp(),
-      provisionalName: input.provisionalName ?? false,
-      deletedAt: null,
-    };
-    this.backing.documents.set(doc.id, doc);
-    claimLocation(
-      this.backing,
-      doc.contextSourceId,
-      doc.folderId,
-      doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
-    );
-    return this.publicDocument(doc);
-  }
-
-  async createDocumentRecordIfAbsent(input: CreateDocumentInput): Promise<ContextDocument | null> {
+  async createDocumentRecordIfAbsent(
+    input: CreateDocumentInput,
+  ): Promise<LiveDocumentCreation | null> {
     if (
       hasOppositeEntry(
         this.backing,
@@ -368,7 +339,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     for (const row of this.backing.documents.values()) {
       if (
         row.contextSourceId === this.sourceId &&
-        isContentDocumentKind(row.kind) &&
         row.deletedAt === null &&
         row.folderId === input.folderId &&
         row.name === input.name &&
@@ -381,11 +351,9 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
-      kind: DOCUMENT_KINDS.content,
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
-      markdown: input.markdown,
       fileType: null,
       filetype: input.filetype,
       storageUrl: null,
@@ -396,18 +364,43 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    this.backing.projections.set(doc.id, input.markdown);
     claimLocation(
       this.backing,
       doc.contextSourceId,
       doc.folderId,
       doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
     );
-    return this.publicDocument(doc);
+    return { document: this.publicDocument(doc), revealed: false };
   }
 
-  async findDocumentById(documentId: string) {
+  async findForward(fromId: string): Promise<string | null> {
+    return this.backing.forwards.get(fromId) ?? null;
+  }
+
+  async listHiddenNames(): Promise<string[]> {
+    // In memory nothing is ever hidden: drafts and the tree view are Postgres's.
+    return [];
+  }
+
+  async findDocumentLastLocation(documentId: string) {
     const row = this.backing.documents.get(documentId);
-    if (!row) return null;
+    if (!row || row.contextSourceId !== this.sourceId) return null;
+    const located = await this.findDocumentById({ kind: "live" }, documentId);
+    return {
+      path: located?.path ?? renderFilename(row.name, row.extension),
+      name: renderFilename(row.name, row.extension),
+      deleted: row.deletedAt !== null,
+    };
+  }
+
+  async findLiveCreateCandidate(): Promise<LiveCreateCandidate> {
+    return { kind: "none" };
+  }
+
+  async findDocumentById(_view: TreeView, documentId: string) {
+    const row = this.backing.documents.get(documentId);
+    if (!row || row.deletedAt !== null) return null;
     const segments: string[] = [];
     let folderId = row.folderId;
     while (folderId) {
@@ -421,7 +414,6 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       contextSourceId: row.contextSourceId,
       document: this.publicDocument(row),
       path: segments.join("/"),
-      active: row.deletedAt === null && isContentDocumentKind(row.kind),
     };
   }
 
@@ -445,11 +437,9 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const doc: DocumentRow = {
       id: input.id ?? crypto.randomUUID(),
       contextSourceId: this.sourceId,
-      kind: DOCUMENT_KINDS.content,
       folderId: input.folderId,
       name: input.name,
       extension: input.extension,
-      markdown: "",
       fileType: input.fileType,
       filetype: null,
       storageUrl: input.storageUrl,
@@ -469,38 +459,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return this.publicDocument(doc);
   }
 
-  async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
-    if (
-      hasOppositeEntry(
-        this.backing,
-        this.sourceId,
-        input.folderId,
-        renderFilename(input.name, input.extension),
-        "file",
-      )
-    )
-      throw new ContextEntryConflictError("folder");
-    const existing = this.findDocumentRecord(input.folderId, input.name, input.extension);
-    if (existing) {
-      const row = this.backing.documents.get(existing.id);
-      if (!row) throw new Error(`Document row disappeared: ${existing.id}`);
-      const updated: DocumentRow = {
-        ...row,
-        markdown: "",
-        fileType: input.fileType,
-        filetype: null,
-        storageUrl: input.storageUrl,
-        mimeType: input.mimeType,
-        sizeBytes: input.sizeBytes,
-        updatedAt: this.nextTimestamp(),
-      };
-      this.backing.documents.set(updated.id, updated);
-      return this.publicDocument(updated);
-    }
-    return this.createBinaryDocument(input);
+  async readProjections(ids: string[]): Promise<Map<string, string>> {
+    return new Map(
+      ids.flatMap((id) => {
+        const markdown = this.backing.projections.get(id);
+        return markdown === undefined ? [] : [[id, markdown] as const];
+      }),
+    );
   }
 
-  async listFolders(parentId: string | null): Promise<ContextFolder[]> {
+  async listFolders(_view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const out: ContextFolder[] = [];
     for (const folder of this.backing.folders.values()) {
       if (
@@ -514,12 +482,11 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return out.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async listDocuments(folderId: string | null): Promise<ContextDocument[]> {
+  async listDocuments(_view: TreeView, folderId: string | null): Promise<ContextDocument[]> {
     const out: ContextDocument[] = [];
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === this.sourceId &&
-        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId
       ) {
@@ -574,14 +541,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   private mutationTail: Promise<void> = Promise.resolve();
   private mutatorTouchedBacking = false;
 
-  constructor(
-    private readonly backing: InMemoryContextDocumentStoreBacking,
-    private readonly membershipObserver?: Pick<
-      ContextDocumentMembershipObserver,
-      "documentDeleted"
-    >,
-    private readonly eventSink?: EventSink,
-  ) {}
+  constructor(private readonly backing: InMemoryContextDocumentStoreBacking) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
   setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
@@ -730,7 +690,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
-        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId === folderId &&
         doc.name === name &&
@@ -813,7 +772,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const doc of this.backing.documents.values()) {
       if (
         doc.contextSourceId === sourceId &&
-        isContentDocumentKind(doc.kind) &&
         doc.deletedAt === null &&
         doc.folderId !== null &&
         subtree.has(doc.folderId)
@@ -1035,7 +993,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       if (token.kind === "file") {
         await this.runBeforeDestructiveWrite();
         const doc = this.backing.documents.get(token.nodeId);
-        if (!doc || !isContentDocumentKind(doc.kind) || doc.deletedAt !== null) {
+        if (!doc || doc.deletedAt !== null) {
           return Err({ code: "stale_source" });
         }
         doc.deletedAt = now;
@@ -1078,20 +1036,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         availabilityGeneration: String(this.backing.availabilityGeneration.value),
       });
     });
-    if (result.ok && this.membershipObserver) {
-      await dispatchMembershipEvents({
-        observer: {
-          documentCreated: () => undefined,
-          documentDeleted: (documentId) => this.membershipObserver?.documentDeleted(documentId),
-        },
-        events: result.value.deletedDocumentIds.map((documentId) => ({
-          method: "documentDeleted" as const,
-          documentId,
-        })),
-        commandId: createMembershipCommandId(),
-        eventSink: this.eventSink,
-      });
-    }
     return result;
   }
 }

@@ -44,18 +44,18 @@ export function useReviewRoomOwner({
   const registry = useLiveDocumentSessionRegistry();
   const owner = useRef(`review-room:${++ownerSequence}`);
   const documentId = review?.documentId ?? "";
-  const draftId = review?.draftId ?? "";
-  const generation = review?.draftGeneration;
+  const itemKey = review?.itemKey ?? "";
+  const generation = review?.branchGeneration;
   const roomName = review?.roomName ?? null;
-  const draft = { projectId, workId, documentId, draftId, draftGeneration: generation };
-  const key = JSON.stringify([projectId, workId, documentId, draftId, generation, roomName]);
+  const draft = { projectId, workId, documentId, itemKey, branchGeneration: generation };
+  const key = JSON.stringify([projectId, workId, documentId, itemKey, generation, roomName]);
   const horizon = useRef({ key, queryClient, registry });
   horizon.current = { key, queryClient, registry };
   const { data: rows } = useQuery({ ...workDraftsQueryOptions(projectId, workId), enabled: false });
   const { data: preview } = useQuery({ ...draftPreviewQueryOptions(draft), enabled: false });
   const records = useChangeCommandRecords();
   const [entryAnswered, setEntryAnswered] = useState<string | null>(null);
-  const target = JSON.stringify([projectId, workId, documentId, draftId]);
+  const target = JSON.stringify([projectId, workId, documentId, itemKey]);
   const writerScope = useRef({ target, queryClient, registry });
   if (
     writerScope.current.target !== target ||
@@ -75,15 +75,15 @@ export function useReviewRoomOwner({
   const kind = useRef({ target, queryClient, draftOnly });
   if (kind.current.target !== target || kind.current.queryClient !== queryClient)
     kind.current = { target, queryClient, draftOnly };
-  const row = rows?.find((row) => row.draftId === draftId && row.documentId === documentId);
+  const row = rows?.find((row) => row.itemKey === itemKey && row.documentId === documentId);
   // List omission after a close must not erase the draft-only destination's intent.
-  if (draftOnly || row) kind.current.draftOnly = draftOnly || row?.isNewDocument === true;
+  if (draftOnly || row) kind.current.draftOnly = draftOnly || row?.isNew === true;
   // Only a resolved live presentation of this exact review proves promotion.
   // A pending or nonmatching address says nothing about its remaining overlay.
   const promoted =
     presented?.documentId === documentId &&
     presented.review?.workId === workId &&
-    presented.review.draftId === draftId &&
+    presented.review.itemKey === itemKey &&
     !presented.draftOnly;
   if (promoted) kind.current.draftOnly = false;
   const selected = useRef({ review, pendingWriterGeneration });
@@ -93,11 +93,11 @@ export function useReviewRoomOwner({
     dispatch({
       type: "reviewAbsent",
       documentId,
-      draftId,
+      itemKey,
       terminal,
-      draftGeneration: absenceGeneration,
+      branchGeneration: absenceGeneration,
       draftOnly: kind.current.draftOnly,
-      evidence: generation === null ? null : { draftGeneration: generation, proposal: true },
+      evidence: generation === null ? null : { branchGeneration: generation, proposal: true },
     });
   };
   const [binding, setBinding] = useState<{
@@ -110,7 +110,7 @@ export function useReviewRoomOwner({
   // One adapter weighs both caches together; list silence never precedes the
   // newer preview observation in this dispatch batch.
   useLayoutEffect(() => {
-    if (!documentId || !draftId) return;
+    if (!documentId || !itemKey) return;
     const claim = draftClaim(queryClient, draft);
     const observations = reviewRoomObservations(
       rows,
@@ -134,7 +134,7 @@ export function useReviewRoomOwner({
       !disposing
     ) {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+        queryKey: projectQueryKeys.workDraftPreview(projectId, workId, documentId, itemKey),
       });
     }
   }, [
@@ -149,7 +149,7 @@ export function useReviewRoomOwner({
     projectId,
     workId,
     documentId,
-    draftId,
+    itemKey,
     generation,
     review?.completion,
     disposing,
@@ -159,7 +159,7 @@ export function useReviewRoomOwner({
 
   const wanted = Boolean(review && !roomName && !review.roomError);
   useEffect(() => {
-    if (!wanted || !documentId || !draftId) return;
+    if (!wanted || !documentId || !itemKey) return;
     let owned = true;
     const current = () =>
       owned &&
@@ -180,26 +180,26 @@ export function useReviewRoomOwner({
       if (!current()) return;
       const shown = selected.current.review;
       if (
-        answer.draftGeneration !== undefined &&
-        shown?.draftGeneration !== undefined &&
-        answer.draftGeneration < shown.draftGeneration
+        answer.branchGeneration !== undefined &&
+        shown?.branchGeneration !== undefined &&
+        answer.branchGeneration < shown.branchGeneration
       )
         answer = await read();
       if (!current()) return;
       setEntryAnswered(target);
-      if (answer.status === "corrupt") dispatch({ type: "roomFailed", documentId, draftId });
+      if (answer.status === "corrupt") dispatch({ type: "roomFailed", documentId, itemKey });
       if (answer.status === "active") {
         const records = currentChangeCommandRecords();
         const visible = projectDraft(
           answer,
           intentKeys(records, draft),
-          wholeDraftDisposition(records, draft, answer.draftGeneration, answer) !== null,
+          wholeDraftDisposition(records, draft, answer.branchGeneration, answer) !== null,
         ).preview;
         dispatch({
           type: "generationObserved",
           documentId,
-          draftId,
-          draftGeneration: answer.draftGeneration,
+          itemKey,
+          branchGeneration: answer.branchGeneration,
           proposal: visible.status === "active" && reviewChangesOfPreview(visible).length > 0,
           claim: draftClaim(queryClient, draft),
           roomName: answer.reviewRoomName,
@@ -208,7 +208,7 @@ export function useReviewRoomOwner({
     })().catch(() => {
       if (!current()) return;
       setEntryAnswered(target);
-      dispatch({ type: "roomFailed", documentId, draftId });
+      dispatch({ type: "roomFailed", documentId, itemKey });
     });
     return () => {
       owned = false;
@@ -216,7 +216,7 @@ export function useReviewRoomOwner({
   }, [wanted, target, key, queryClient, registry, dispatch]);
 
   useEffect(() => {
-    if (!roomName || !documentId || !draftId) {
+    if (!roomName || !documentId || !itemKey) {
       setBinding((prior) =>
         prior.session === null && prior.key === key ? prior : { session: null, key },
       );
@@ -230,7 +230,7 @@ export function useReviewRoomOwner({
       horizon.current.registry === registry;
     const unavailable = () => {
       if (!current()) return;
-      dispatch({ type: "roomStale", documentId, draftId, roomName });
+      dispatch({ type: "roomStale", documentId, itemKey, roomName });
       observeAbsence(true);
     };
     let rebuilding = false;
@@ -270,7 +270,7 @@ export function useReviewRoomOwner({
             case "superseded":
               rebuilding = true;
               setBinding({ session: null, key });
-              dispatch({ type: "roomStale", documentId, draftId, roomName });
+              dispatch({ type: "roomStale", documentId, itemKey, roomName });
               return;
             case "rebuild":
             case "refused":
@@ -334,14 +334,14 @@ export function useReviewRoomOwner({
 export function reviewRoomObservations(
   rows: import("@meridian/contracts/drafts").ThreadDraftListItem[] | undefined,
   preview: DraftPreviewRead | undefined,
-  draft: { documentId: string; draftId: string },
+  draft: { documentId: string; itemKey: string },
   pendingWriterGeneration: number | null = null,
   draftOnly = false,
   intents?: { scope: { projectId: string; workId: string }; records: ChangeCommandRecords },
 ): DraftReviewAction[] {
   const actions: DraftReviewAction[] = [];
   const row = rows?.find(
-    (row) => row.draftId === draft.draftId && row.documentId === draft.documentId,
+    (row) => row.itemKey === draft.itemKey && row.documentId === draft.documentId,
   );
   const visibleRows =
     intents && rows ? projectDraftList(rows, intents.scope, intents.records) : rows;
@@ -353,22 +353,22 @@ export function reviewRoomObservations(
           wholeDraftDisposition(
             intents.records,
             { ...intents.scope, ...draft },
-            preview.draftGeneration,
+            preview.branchGeneration,
             preview,
           ) !== null,
         ).preview
       : preview;
-  if (row)
+  if (row && row.branchGeneration !== null)
     actions.push({
       type: "generationObserved",
       ...draft,
-      draftGeneration: row.draftGeneration,
+      branchGeneration: row.branchGeneration,
       proposal: visibleRows?.includes(row) === true,
     });
   const evidence =
     preview?.status === "active"
       ? {
-          draftGeneration: preview.draftGeneration,
+          branchGeneration: preview.branchGeneration,
           proposal:
             visiblePreview?.status === "active" &&
             reviewChangesOfPreview(visiblePreview).length > 0,
@@ -378,8 +378,8 @@ export function reviewRoomObservations(
   // Delivery is changes evidence, not a listed proposal that adopts a generation.
   const changesEvidence =
     pendingWriterGeneration !== null &&
-    (!evidence?.proposal || pendingWriterGeneration > evidence.draftGeneration)
-      ? { draftGeneration: pendingWriterGeneration, proposal: true }
+    (!evidence?.proposal || pendingWriterGeneration > evidence.branchGeneration)
+      ? { branchGeneration: pendingWriterGeneration, proposal: true }
       : evidence;
   // A draft-only address belongs to lifecycle until catalog settlement. List
   // omission and an empty active/reset preview cannot close or fail it.
@@ -387,7 +387,7 @@ export function reviewRoomObservations(
     actions.push({
       type: "reviewAbsent",
       ...draft,
-      draftGeneration: preview?.draftGeneration,
+      branchGeneration: preview?.branchGeneration,
       evidence: changesEvidence,
       draftOnly,
     });

@@ -230,7 +230,11 @@ describe("response committer", () => {
           ...context,
           responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
           turnId: `turn-${file}`,
-          interactionContext: { mode: "threadPeer", branchGeneration: 1 },
+          interactionContext: {
+            mode: "threadPeer",
+            branchGeneration: 1,
+            peerBranchId: "branch-peer",
+          },
         },
       );
     }
@@ -473,6 +477,53 @@ describe("response committer", () => {
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Beta."]);
+  });
+});
+
+describe("reasoned refusal of staged writes", () => {
+  const peerContext = (responseId: string, peerBranchId: string, turn: string) => ({
+    ...context,
+    turnId: turn,
+    responseIdentity: { providerResponseId: responseId, editScopeId: responseId },
+    interactionContext: { mode: "threadPeer" as const, branchGeneration: 1, peerBranchId },
+  });
+  const receiptTexts = (
+    result: Awaited<ReturnType<ReturnType<typeof harness>["core"]["commitResponse"]>>,
+  ) =>
+    result.documents.flatMap((document) =>
+      document.receipts.map((receipt) => JSON.stringify(receipt)),
+    );
+
+  it("rolls a staged thread-peer reply back without any coordinator call (U5)", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-rollback";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      peerContext(responseId, "peer-1", "turn-1"),
+    );
+    const withDocument = vi.spyOn(ctx.coordinator, "withDocument");
+
+    await ctx.core.rollbackResponse(responseId);
+
+    expect(withDocument).not.toHaveBeenCalled();
+    expect(ctx.core.hasResponseDocument(responseId, "chapter.md")).toBe(false);
+  });
+
+  it("a reply whose every document was refused still receipts each write", async () => {
+    const ctx = harness({ "chapter.md": "Alpha." });
+    const responseId = "response-all-refused";
+    await ctx.core.read({ file: "chapter.md" }, context);
+    await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "One." },
+      peerContext(responseId, "peer-1", "turn-1"),
+    );
+    ctx.core.refuseStaged(responseId, "chapter.md", "discarded_document");
+
+    const saved = await ctx.core.commitResponse(responseId);
+    expect(saved).toMatchObject({ status: "committed", updateCount: 0 });
+    expect(receiptTexts(saved).join()).toContain("the user discarded this new document");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha."]);
   });
 });
 

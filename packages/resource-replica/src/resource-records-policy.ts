@@ -1,4 +1,5 @@
 /** Journal invariants shared by storage adapters; attempts are immutable once submitted. */
+import { newerCanonicalObservation } from "./canonical-observation";
 import { validateNamespaceJournal } from "./namespace-journal-policy";
 import type { ResourceRecord } from "./resource-records";
 
@@ -13,8 +14,30 @@ export function validateResourceRecordUpdate(
     throw new Error("Invalid resource revision");
   if (previous && previous.resource.handle !== resource.handle)
     throw new Error("Resource identity mismatch");
-  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal")
-    throw new Error("Terminal resources cannot be revived");
+  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal") {
+    // Only a strictly newer server observation of the document as present supersedes deletion,
+    // and never under an outstanding purge of the deleted lineage's content.
+    const deletionVersion = previous.resource.lifecycle.deletionVersion;
+    const restored =
+      resource.lifecycle.kind === "acknowledged" &&
+      resource.canonical !== null &&
+      resource.observationVersion !== undefined &&
+      deletionVersion !== undefined &&
+      newerCanonicalObservation(resource.observationVersion, deletionVersion) &&
+      !previous.resource.obligations.cleanup &&
+      resource.identity.documentId === previous.resource.identity.documentId &&
+      resource.identity.revision === previous.resource.identity.revision &&
+      resource.content.kind === "unacquired" &&
+      resource.revivedFrom?.generation === previous.resource.lifecycle.generation &&
+      resource.revivedFrom.transitionId === previous.resource.lifecycle.transitionId;
+    if (!restored) throw new Error("Terminal resources revive only from newer server observations");
+  }
+  if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind === "terminal") {
+    const held = previous.resource.lifecycle.deletionVersion;
+    const kept = resource.lifecycle.deletionVersion;
+    if (held !== undefined && (kept === undefined || newerCanonicalObservation(held, kept)))
+      throw new Error("A terminal resource cannot lose its deletion version");
+  }
   const nextInitializationReserved =
     resource.content.kind === "exact" && resource.content.initialization === "reserved";
   const previousInitializationReserved =
@@ -86,17 +109,31 @@ export function validateResourceRecordUpdate(
   )
     throw new Error("Session adoption witness does not match the resource");
   if (adoption && previous && !previous.resource.obligations.sessionAdoption) {
+    // A join re-identified the reservation in this write: its create, submitted under the old id,
+    // is the witness whether the answer or the catalog entry came first.
     const source = next.intents.find(
       (intent) =>
         intent.projectId === adoption.projectId &&
-        intent.identityRevision === adoption.identityRevision &&
-        intent.attempts.some(
-          (attempt) =>
-            attempt.attemptId === adoption.transitionId &&
-            attempt.request.kind === "create" &&
+        intent.attempts.some((attempt) => {
+          if (attempt.attemptId !== adoption.transitionId || attempt.request.kind !== "create")
+            return false;
+          const joined =
+            resource.aliases[attempt.request.body.documentId]?.introducedAtIdentityRevision ===
+            adoption.identityRevision;
+          if (joined)
+            return (
+              attempt.outcome === undefined ||
+              (attempt.outcome.kind === "create" &&
+                attempt.outcome.result.status === "joined" &&
+                attempt.outcome.result.documentId === adoption.documentId)
+            );
+          return (
+            intent.identityRevision === adoption.identityRevision &&
             attempt.outcome?.kind === "create" &&
-            attempt.outcome.result.status !== "conflict",
-        ),
+            attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.status !== "joined"
+          );
+        }),
     );
     const previousContent = previous?.resource.content;
     const sameAcknowledgedCache =

@@ -23,6 +23,25 @@ export type AheadRecoveryPage = { after?: string; limit: number };
  */
 export type AheadRecoveryProgress = { registered: number; next: string | null };
 
+/**
+ * The registry refuses a ref for good (F20): its id is malformed, its address can never
+ * name a document (`UnresolvableAddressError`), or the id is already registered for
+ * another address. Retrying never helps; anything else a registration throws
+ * (connection, timeout, lock) may. Extends `RangeError`: the input is outside what the
+ * registry accepts.
+ */
+export class UnregistrableAheadRefError extends RangeError {
+  constructor(
+    readonly aheadId: string,
+    readonly address: string,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "UnregistrableAheadRefError";
+  }
+}
+
 /** Raised when registration would open a root transaction under a caller's transaction (§6.1). */
 export class RegistrationInsideTransactionError extends Error {
   constructor() {
@@ -33,9 +52,14 @@ export class RegistrationInsideTransactionError extends Error {
 
 export interface LinkAheadRegistry {
   /**
-   * Independent root transaction. Takes the targets' namespace keys sorted (no Work or holder
-   * lock), inserts idempotently by id (re-registering an id for another address throws), then
-   * settles any row whose address already holds a live document.
+   * Throws `UnregistrableAheadRefError` for a ref it refuses for good (the whole batch
+   * rolls back; register refs one by one to keep the rest). Independent root transaction. Shares each named draft (`FOR SHARE`, before any namespace
+   * key; a closed draft skips its part), takes the targets' namespace keys sorted (no Work or
+   * holder lock), inserts idempotently by id (re-registering an id for another address
+   * throws), then settles any row whose address already holds a live document. With a
+   * `draftId` it is idempotent per (ahead id, draft), not per row: a ref with no live
+   * settlement whose address holds exactly one document in that draft's view is settled
+   * there, whether or not the id was registered before.
    */
   register(registrations: readonly AheadRegistration[]): Promise<void>;
   /**

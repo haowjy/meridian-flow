@@ -5,13 +5,15 @@
  * path can have outdated. The document's identity decides, in the order the route owners read
  * it: its workspace tab (kept current by renames and moves, and only an optimization), the
  * address that names it, a draft-only document's own draft admission, the live catalog, and
- * last the server's exact identity lookup. A cached locator is never the answer by itself:
+ * last the server's exact identity lookup (not for a launch carrying a review selector, which
+ * navigates at once with its known path). A cached locator is never the answer by itself:
  * when identity cannot be resolved the launch fails rather than navigating to whatever
  * document holds the old path.
  */
 import type { ProjectContextIdentityResolution } from "@meridian/contracts/protocol";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly, reviewEntryOf } from "@/client/stores";
 import { parseContextUri } from "@/lib/context-uri";
 import { routeTargetForTab } from "../context/context-removal-planner";
 import { canonicalDocumentPath } from "./local-document-address";
@@ -30,6 +32,12 @@ export async function resolveLaunchLocator(input: {
   /** The prepared review tab is a pending new-document draft: the draft list is its admission. */
   draftOnly: boolean;
   catalog: Pick<CatalogContextView, "findDocument"> | null;
+  /**
+   * The launch carries a review selector (`{workId, itemKey}`): destination admission binds the
+   * server's document and canonicalizes the path, so a miss here never waits on, or fails by, a
+   * live-identity lookup.
+   */
+  selected: boolean;
   lookup: LaunchIdentityLookup;
 }): Promise<ContextRouteRequest> {
   const { requested } = input;
@@ -39,7 +47,8 @@ export async function resolveLaunchLocator(input: {
     (candidate) =>
       candidate.kind !== "new" &&
       candidate.documentId === documentId &&
-      (!candidate.draftOnly || candidate.reviewWorkId === requested.workId),
+      (!isDraftOnly(candidate) ||
+        Boolean(requested.workId && reviewEntryOf(candidate, requested.workId))),
   );
   if (tab && tab.kind !== "new" && requested.workId) {
     return { ...routeTargetForTab(tab, requested.workId), documentId };
@@ -60,6 +69,7 @@ export async function resolveLaunchLocator(input: {
   const live = input.catalog?.findDocument(documentId);
   const cached = live ? locate(live.uri) : null;
   if (cached) return { ...requested, ...cached };
+  if (input.selected) return requested;
   const resolution = await input.lookup(documentId);
   const location = resolution.kind === "available" ? locate(resolution.entry.uri) : null;
   if (!location) throw new Error("The reviewed document could not be located");

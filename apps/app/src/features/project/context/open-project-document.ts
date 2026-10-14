@@ -204,7 +204,9 @@ export type OpenProjectDocumentRequest = {
    * documents beside the writer's place (the Chat screen's dock) takes it, so
    * the open finishes without leaving. `cancelled` means a newer intent won.
    */
-  beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+  beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
+  /** A document the writer just made: its editor takes the caret once live. */
+  focus?: true;
   /** Abandons the open when the caller that asked for it is gone. */
   signal?: AbortSignal;
 };
@@ -285,7 +287,14 @@ export class ProjectDocumentNavigationAdapter {
 
   async open(
     projectId: string,
-    { documentId, workId, disposition = "current", beside, signal }: OpenProjectDocumentRequest,
+    {
+      documentId,
+      workId,
+      disposition = "current",
+      beside,
+      focus,
+      signal,
+    }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
     const navigationIsCurrent =
       disposition === "current" ? this.dependencies.captureNavigation?.() : undefined;
@@ -330,6 +339,7 @@ export class ProjectDocumentNavigationAdapter {
             rootThreadId: resolved.rootThreadId,
             disposition,
             beside,
+            focus,
             isCurrent,
             canCommit,
           });
@@ -405,6 +415,7 @@ export class ProjectDocumentNavigationAdapter {
         rootThreadId,
         disposition,
         beside,
+        focus,
         isCurrent,
         canCommit,
       });
@@ -425,7 +436,8 @@ export class ProjectDocumentNavigationAdapter {
     /** A chat's Scratch is held by its lineage; the route keeps the Editor's own Work. */
     rootThreadId?: string;
     disposition: "current" | "background";
-    beside?: (tab: ServerContextTab) => "opened" | "cancelled";
+    beside?: (tab: ServerContextTab, focus?: true) => "opened" | "cancelled";
+    focus?: true;
     isCurrent: () => boolean;
     canCommit: () => boolean;
   }): Promise<"applied" | "cancelled" | "failed"> {
@@ -454,7 +466,7 @@ export class ProjectDocumentNavigationAdapter {
         besideTab = null;
       }
       if (besideTab) {
-        const placed = input.beside(besideTab);
+        const placed = input.beside(besideTab, input.focus);
         this.current = null;
         return placed === "opened" ? "applied" : "cancelled";
       }
@@ -471,7 +483,12 @@ export class ProjectDocumentNavigationAdapter {
           ...(input.rootThreadId ? { rootThreadId: input.rootThreadId } : {}),
           documentId: input.file.documentId,
         },
-        { tab, isCurrent: input.isCurrent, canCommit: input.canCommit },
+        {
+          tab,
+          ...(input.focus ? { focus: true as const } : {}),
+          isCurrent: input.isCurrent,
+          canCommit: input.canCommit,
+        },
       );
       return settlement.kind === "failed"
         ? "failed"

@@ -4,7 +4,8 @@
  * decides from; `verbose` adds dates. Ids never reach the text, and
  * `historySummary` reads the typed value.
  */
-import type { ParsedContextUri } from "@meridian/contracts/context-uri";
+
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -28,7 +29,7 @@ export interface WorkShowResult {
   recentThreads: { title: string | null; updatedAt: string | Date; status: string }[];
   drafts: {
     documentName: string | null;
-    contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
+    contextLocation: ThreadDraftListItem["contextLocation"];
     createdDocument?: boolean;
   }[];
 }

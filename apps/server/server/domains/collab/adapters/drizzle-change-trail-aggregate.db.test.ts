@@ -199,7 +199,7 @@ describe("change trail aggregate projections (postgres)", () => {
       trails: [trail([{ ...initial, afterTextAtReceipt: "restored|after restart" }])],
       documentTitles: titles,
       settlementRefinement: {
-        pushId,
+        pushIds: [pushId],
         currentVersion: true,
       },
     });
@@ -207,7 +207,7 @@ describe("change trail aggregate projections (postgres)", () => {
       trails: [trail([{ ...initial, afterTextAtReceipt: "updated|fourth projection" }])],
       documentTitles: titles,
       settlementRefinement: {
-        pushId,
+        pushIds: [pushId],
         currentVersion: true,
       },
     });

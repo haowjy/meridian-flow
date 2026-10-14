@@ -32,6 +32,8 @@ type EditorMountBase = {
   bindingKey?: string;
   /** Asset image rendering resolves `asset:` refs against the owning project. */
   projectId?: string;
+  /** The Work the viewer is in; a draft-only picture is signed through it. */
+  viewingWorkId?: string;
   schemaType: YjsTrackedSchemaType;
   /** CollaborationCaret is an extension, so toggling peers needs a new editor. */
   collaborationDecorations: boolean;
@@ -52,7 +54,7 @@ export type EditorMountIdentity =
       surface: "review";
       /** Generation-fenced branch review room from the preview DTO. */
       roomName: string;
-      draftId: string;
+      itemKey: string;
       workId: string;
     });
 
@@ -78,9 +80,9 @@ export function editorRoomKey(identity: EditorMountIdentity): string {
 
 /** React key that owns the editor's lifetime. Equal keys keep the instance. */
 export function editorMountKey(identity: EditorMountIdentity): string {
-  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
+  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingWorkId ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
   return identity.surface === "review"
-    ? `review|${identity.roomName}|${identity.draftId}|${shared}`
+    ? `review|${identity.roomName}|${identity.itemKey}|${shared}`
     : `live|${shared}`;
 }
 
@@ -149,7 +151,7 @@ export function useMountedEditor({
       // this session may be the one in front.
       presence: caretGate.presence,
       schemaType: identity.schemaType,
-      assetRenderContext: { projectId: identity.projectId },
+      assetRenderContext: { projectId: identity.projectId, workId: identity.viewingWorkId },
       showCollaborationDecorations: identity.collaborationDecorations,
       enableDraftInlineReview: identity.surface === "review",
       markerStore: identity.surface === "review" ? undefined : session.markerStore,

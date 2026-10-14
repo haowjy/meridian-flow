@@ -11,6 +11,7 @@ export type AgentEditResultCommand = DocumentCommandName | "unknown";
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
+  | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
@@ -73,6 +74,14 @@ export interface AgentEditConcurrentRun {
   tombstones: Array<{ hash: string; body: string }>;
 }
 
+/** A staged write the host refused: the writer discarded what it edited, or it could not integrate. */
+export type WriteRejection =
+  | "discarded_draft"
+  | "discarded_document"
+  | "discarded_edit"
+  | "inverse"
+  | "integration";
+
 export interface AgentEditModelPayload {
   /** The document path the command read or changed, as the caller named it. */
   path?: string;
@@ -81,6 +90,8 @@ export interface AgentEditModelPayload {
   /** The drafted Work's slug, `/` for No Work; present only when `destination` is `draft`. */
   draftWork?: string;
   message?: string;
+  /** Why an `invalid_write` write was rejected after it was staged, when the host knows. */
+  rejected?: WriteRejection;
   /** Why a `permission_denied` result was refused (file-access §9). */
   reason?: PermissionDeniedReason;
   write?: {
@@ -187,6 +198,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "success":
     case "not_found":
     case "ambiguous_match":
+    case "ambiguous_path":
     case "invalid_write":
     case "document_not_found":
     case "partial_failure":

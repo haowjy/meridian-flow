@@ -43,11 +43,13 @@ export interface LiveDocumentSessionAuthority {
     documentId: DocumentId,
     generation: AvailabilityGeneration,
   ): Promise<LiveDocumentSessionLease>;
+  /** `deletionVersion` is the namespace version that proved the deletion, kept by the terminal. */
   revokeDocument(
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     commandId: AvailabilityCommandId,
+    deletionVersion: string | null,
   ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }>;
   revokeAccess(
     projectId: ProjectId,

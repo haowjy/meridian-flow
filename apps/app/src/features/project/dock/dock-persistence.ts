@@ -45,8 +45,8 @@ export function readDockSnapshot(
           (!isRecord(review) ||
             typeof review.workId !== "string" ||
             !review.workId ||
-            typeof review.draftId !== "string" ||
-            !review.draftId ||
+            typeof review.itemKey !== "string" ||
+            !review.itemKey ||
             (review.changeId !== undefined &&
               (typeof review.changeId !== "string" || !review.changeId)))
         )
@@ -65,7 +65,7 @@ export function readDockSnapshot(
                     ? null
                     : {
                         workId: review.workId as string,
-                        draftId: review.draftId as string,
+                        itemKey: review.itemKey as string,
                         ...(typeof review.changeId === "string"
                           ? { changeId: review.changeId }
                           : {}),
@@ -85,7 +85,13 @@ export function writeDockSnapshot(storage: () => DockStorage | null, snapshot: D
     () => undefined,
   ).write({
     occupant: snapshot.occupant
-      ? { ...snapshot.occupant, tab: durableContextTab(snapshot.occupant.tab) }
+      ? {
+          projectId: snapshot.occupant.projectId,
+          screen: snapshot.occupant.screen,
+          screenWorkId: snapshot.occupant.screenWorkId,
+          review: snapshot.occupant.review,
+          tab: durableContextTab(snapshot.occupant.tab),
+        }
       : null,
   });
 }

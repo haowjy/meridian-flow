@@ -78,9 +78,7 @@ export function useDesktopProjectController<
           ? presented.review
           : dockDocument?.tab.documentId === tab?.documentId
             ? (dockDocument?.review ?? null)
-            : tab?.kind === "tracked" && tab.draftOnly && tab.reviewWorkId && tab.reviewDraftId
-              ? { workId: tab.reviewWorkId, draftId: tab.reviewDraftId }
-              : null,
+            : null,
       claim: store.claim,
       isCurrent: store.isCurrent,
       transfer: (to, document, claim, review) => {
@@ -178,8 +176,6 @@ export function useDesktopEditorPresentation<
     }),
     tabs: workspace.tabs,
     selectedTabId: workspace.selectedTabIdByWork[presentation.mounted?.editorWorkId ?? ""],
-    selectedTabInstanceId:
-      workspace.selectedTabInstanceIdByWork?.[presentation.mounted?.editorWorkId ?? ""],
     selection: removal.selection,
   });
   const resource = resolved.tab

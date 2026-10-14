@@ -12,6 +12,7 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
+import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
 import {
   createAllowAllFileAccess,
@@ -75,6 +76,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       const hocuspocus = new Hocuspocus({
         yDocOptions: { gc: false, gcFilter: () => true },
@@ -91,7 +93,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        manifestMembership: collab,
+        drafts: collab.drafts,
       });
       const routeDeps = {
         contextPorts,
@@ -126,6 +128,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await deleteDrizzleRows(db, [
         schema.branchPushOutboxUpdates,
         schema.branchPushSettlementOutbox,
+        schema.branchPushSettlementBatches,
         schema.changeTrailDeliveryOutbox,
         schema.changeTrailDocumentDetails,
         schema.changeTrailDocumentOccurrences,

@@ -321,11 +321,20 @@ for remote settlement across the Works represented by draft-only Editor tabs
 and the dock document.
 An explicit latest-wins route handoff carries review launches into
 the matching Editor. A matching committed Editor may claim immediately; other
-destinations claim after navigation. Claims require Work, manuscript path,
-mounted document, and draft membership to agree. The document address persists
-the draft identity, so reload restores through the same handoff; stale identities
-are removed by replacing the current entry. The owner survives phone view
-unmounts.
+destinations claim after navigation. Claims require Work, document identity,
+mounted document, and draft membership to agree. Review addresses bind the
+Work and item immediately, with server admission supplying document identity.
+The draft list loads in parallel for labels and whole-item classification, never admission; a colliding live catalog entry never substitutes for that identity. The document address persists
+the item identity. Dock reload asks the selector before any list or catalog restoration,
+keeps failed/unavailable selectors on their destination, and never infers Live from an omitted row. Unknown or refused
+selectors stay on their unavailable/error destination; only owned Exit or deliberate
+navigation out of review consumes them. Route admission also gates owner restoration. The owner survives phone view
+unmounts. Exit consumes only the owned container, Work and item: known document identity
+decides, with the last confirmed scheme/path as fallback while identity is
+unresolved. Pending rename guesses never replace that confirmed locator. Missing draft
+metadata stays unresolved without claiming or repairing ownership; an explicit Work or item
+switch still yields immediately. Selector-hosted reviews do not acquire a live room while
+metadata is unresolved. Leaving review reacquires live through normal session admission.
 
 A chat has one current Work binding. The new-chat Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
@@ -517,7 +526,7 @@ overlays. The first segment after `/p/<project>` is always a screen.
 /p/<id>/works/new                        create dialog
 /p/<id>/works/<workId>[?view=files]      Work page
 /p/<id>/editor[?work=<workId>]           Editor, nothing open
-/p/<id>/editor/<scheme>/<path>[?work=…&draft=<draftId>]  document, optionally in review
+/p/<id>/editor/<scheme>/<path>[?work=…&item=<itemKey>]  document, optionally in review
 /p/<id>/editor/browse[/<scheme>/<path>]  folder
 ?settings=<section> on any screen
 ```
@@ -537,7 +546,7 @@ repairs an identity `?work`. Slugs and
 are invalid, with no alias. An invalid address keeps its URL and shows the
 unavailable state over the center column on desktop and phone.
 `repairAddress` rewrites the current entry in place to its canonical path.
-`?draft=` belongs only to a document destination. It names a pending draft in
+`?item=` belongs only to a document destination. It names a pending draft in
 the addressed Work and document, never a separate document. A review address
 is self-describing: the draft belongs to exactly one Work, so a No Work review
 states `?work=` (empty) instead of leaving it to history state or to whichever
@@ -546,7 +555,7 @@ same draft after any Work selection. A live No Work document keeps its clean URL
 review launch pushes history; a launch on the current document replaces the
 entry (`replaceIfSameDocument`). Same document means the same scheme, path, and
 Work: the same path under another Work is a different destination. The review address owner replaces the current
-entry when it adds or removes `?draft=`, so Back does not toggle review.
+entry when it adds or removes `?item=`, so Back does not toggle review.
 
 A route finds its document in one order on desktop and phone
 (`context/route-document-owner.ts`, with `resolveWorkspaceRoute`): the bound
@@ -557,7 +566,7 @@ its document the same way (`routing/launch-locator.ts`: tab, address, draft-only
 admission, live catalog, then the server's identity lookup) and fails rather than
 navigating to a cached path. `gateLiveView` reports `pending`, `failed` or
 `ready`; a failed catalog or draft-list read ends the wait with the route
-boundary's error and Retry (address and `?draft=` kept), and the phone host
+boundary's error and Retry (address and `?item=` kept), and the phone host
 treats a failed address as neither pending nor settled, so it never rejects the route.
 A launch that fails records `review-failed` on the draft's command record, so the
 row or chip the writer clicked shows it ([draft review](../../draft-review/.context/draft-review.md)).
@@ -567,7 +576,7 @@ open keeps the review: once the address has resolved, identity decides whether
 it still names the reviewed document, and while it resolves a different path is
 `pending`, not a different document (`ReviewAddressOwner`). A committed
 rename or move through the identity bar or the tree replaces the current entry
-with the new path in the same history entry, and `?draft=` is never dropped on
+with the new path in the same history entry, and `?item=` is never dropped on
 the way. The removal coordinator's route repair carries the address's review, a
 review launch on the current document never moves the address, and replacing an
 entry with its own URL writes no history. Draft rows (composer strip, the Work
@@ -644,7 +653,9 @@ A cold different-project transition replaces the old shell with an inert
 boundary. Same-Work pending Editor navigation retains the usable document and
 its identity chrome; recovery and unavailable/error destinations mask it.
 The route publishes authorized tab metadata, while the document host owns
-live-session binding. See [Editor document lifecycle](editor-document-lifecycle.md)
+live-session binding. A server live-address admission proves live membership
+without waiting for the browser catalog. Review-view admissions carry separate
+provenance and still need live-membership or pending-create evidence. See [Editor document lifecycle](editor-document-lifecycle.md)
 for entry paths, publication ordering, retention, and failure behavior.
 Writer Close commits through accepted navigation; forced availability repair
 remains an identity and revision guarded CAS over the current address projection.

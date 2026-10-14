@@ -3,8 +3,8 @@ import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documentBranches,
   documents,
+  drafts,
   projects,
   threads,
   threadWorks,
@@ -12,21 +12,18 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { and, eq } from "drizzle-orm";
 import * as Y from "yjs";
 import {
   DOCUMENT_RUNTIME_RESET_TABLES,
   deleteDrizzleRows,
 } from "../../../test-support/drizzle-reset.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-
+import { createDrizzleContextCatalog } from "../../context/adapters/context-catalog.js";
 import { createAllowAllFileAccess } from "../../file-policy/index.js";
 import { UNSUPPORTED_AHEAD_REFS } from "../adapters/in-memory/static-document-link-scopes.js";
 import { createCollabDomain } from "../composition.js";
-import {
-  createTestDocumentLinkScopes,
-  lateBoundManifestMembership,
-} from "./document-link-scopes.js";
+import { applyDraftDocument } from "./apply-draft-document.js";
+import { createTestDocumentLinkScopes } from "./document-link-scopes.js";
 
 export const USER_ID = "00000000-0000-4000-8000-000000000701";
 export const PROJECT_ID = "00000000-0000-4000-8000-000000000702";
@@ -44,17 +41,16 @@ export const DRAFT_DESTINATION = { kind: "draft", workId: WORK_ID, workSlug: "wo
 export function createWorkDraftFixture(db: Database) {
   const hocuspocus = fakeHocuspocus();
   const collabs: Array<{ dispose(): void }> = [];
-  /** Without `links`, scopes read the created domain's own manifests, as production does. */
+  /** Without custom links, use the real tree-backed scope, as production does. */
   const createTestCollab = (links?: ReturnType<typeof createTestDocumentLinkScopes>) => {
-    const manifest = lateBoundManifestMembership();
     const collab = createCollabDomain({
-      links: links ?? createTestDocumentLinkScopes(db, { membership: manifest.membership }),
+      links: links ?? createTestDocumentLinkScopes(db),
       aheadRefs: UNSUPPORTED_AHEAD_REFS,
       fileAccess: createAllowAllFileAccess(),
       db,
       workProjectionMutation: createTestWorkProjectionMutation(db),
+      catalogMutations: createDrizzleContextCatalog(db),
     });
-    manifest.bind(collab);
     collabs.push(collab);
     return collab;
   };
@@ -78,6 +74,10 @@ export function createWorkDraftFixture(db: Database) {
       slug: "work",
       aiWriteMode: "draft",
     });
+    // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
+    await db
+      .insert(drafts)
+      .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
     await db.insert(contextSources).values({
       id: SOURCE_ID,
       projectId: PROJECT_ID,
@@ -139,31 +139,23 @@ export function createWorkDraftFixture(db: Database) {
     collab: ReturnType<typeof createTestCollab>,
     documentId: string,
   ): Promise<void> {
-    const [draft] = await db
-      .select({ id: documentBranches.id })
-      .from(documentBranches)
-      .where(
-        and(
-          eq(documentBranches.documentId, documentId as never),
-          eq(documentBranches.kind, "work_draft"),
-          eq(documentBranches.status, "active"),
-        ),
-      );
-    if (!draft) throw new Error(`missing Work draft for ${documentId}`);
-    await collab.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID as never });
+    await applyDraftDocument(collab.draftReview, {
+      workId: WORK_ID as never,
+      documentId: documentId as never,
+      userId: USER_ID as never,
+    });
   }
 
   async function currentDraftId(
     collab: ReturnType<typeof createTestCollab>,
     documentId: string,
   ): Promise<string> {
-    const drafts = await collab.draftReview.list({
-      projectId: PROJECT_ID as never,
+    const draft = await collab.draftReview.resolveItemByDocument({
       workId: WORK_ID as never,
+      documentId: documentId as never,
     });
-    const draft = drafts.find((candidate) => candidate.documentId === documentId);
-    if (!draft) throw new Error(`missing reviewable draft for ${documentId}`);
-    return draft.draftId;
+    if (!draft?.draftBranchId) throw new Error(`missing reviewable draft for ${documentId}`);
+    return draft.draftBranchId;
   }
 
   return { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId };

@@ -97,7 +97,7 @@ export function ReviewEditorHost({
       session={session}
       localContentReady={!!session}
       draftOnly={draftOnly}
-      reviewDraftId={review.controller.inlineReview?.draftId}
+      reviewItemKey={review.controller.inlineReview?.itemKey}
     />
   );
 }

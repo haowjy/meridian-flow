@@ -8,15 +8,14 @@ import {
   ALPHA_ID,
   closeDatabase,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
   TURN_ID,
   USER_ID,
-  WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
+import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -213,15 +212,9 @@ it.each([
         );
       expect(await view.draftMarkdown(branch.id)).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
-      expect(
-        await view.collab.draftReview.applyWorkDraft({
-          projectId: PROJECT_ID as never,
-          workId: WORK_ID,
-          documentId: ALPHA_ID,
-          draftId: branch.id,
-          userId: USER_ID as never,
-        }),
-      ).toMatchObject({ status: "applied" });
+      expect(await reviewDriver(view.collab.draftReview).applyItem(ALPHA_ID)).toMatchObject({
+        status: "applied",
+      });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(await db.select().from(schema.pushLineage)).not.toEqual([]);
       await createDrizzleChangeTrailAggregateWriter(db).reconcileTerminalOwners();

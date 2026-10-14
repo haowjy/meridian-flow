@@ -33,7 +33,14 @@ import { createUploadIntake } from "../../uploads/upload-intake.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
 import { guardWorkContextRestore } from "./document-locations.js";
 
+/**
+ * Replays 0037 over rows seeded in today's schema. It ran before the Work-branch foundation
+ * dropped `documents.kind` (0039), so the replay restores that column for its duration,
+ * inside the test's rolled-back transaction. The populated upgrade through 0037 and the
+ * foundation in deploy order is `work-branch-foundation-migration.db.test.ts`.
+ */
 async function migrate(db: import("@meridian/database").Database) {
+  await db.execute(sql`ALTER TABLE documents ADD COLUMN kind text NOT NULL DEFAULT 'content'`);
   const migration = readFileSync(
     fileURLToPath(
       new URL(
@@ -46,6 +53,7 @@ async function migrate(db: import("@meridian/database").Database) {
   for (const statement of migration.split("--> statement-breakpoint")) {
     if (statement.trim()) await db.execute(sql.raw(statement));
   }
+  await db.execute(sql`ALTER TABLE documents DROP COLUMN kind`);
 }
 
 const enabled = process.env.RUN_DB_TESTS === "1" && process.env.DATABASE_URL;
@@ -423,7 +431,7 @@ else
         db,
         links: createTestDocumentLinkScopes(db),
         documentSync: collab,
-        manifestMembership: collab,
+        drafts: collab.drafts,
         catalogMutations: createDrizzleContextCatalog(db),
       });
       const service = createUploadIntake({

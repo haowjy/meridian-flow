@@ -68,7 +68,7 @@ export function WorkChanges({
 
   const everyDraft = files.map((file) => ({
     documentId: file.documentId,
-    draftId: file.draft.draftId,
+    itemKey: file.draft.itemKey,
   }));
   const dispose = (mode: "apply" | "discard") => void controller.disposeDrafts(mode, everyDraft);
 
@@ -76,34 +76,7 @@ export function WorkChanges({
     <WorkFileGroup
       label={t`Changes to review`}
       actions={
-        confirmingDiscard ? (
-          <div className="flex shrink-0 items-center gap-1 text-xs">
-            <span className="text-muted-foreground">
-              <Trans>Discard all changes?</Trans>{" "}
-              <Trans>This removes pending changes from every document in this Work.</Trans>
-            </span>
-            <Button
-              variant="quiet"
-              size={touch ? "default" : "xs"}
-              className={touch ? "min-h-11" : undefined}
-              onClick={() => setConfirmingDiscard(false)}
-            >
-              <Trans>Keep</Trans>
-            </Button>
-            <Button
-              variant="quiet"
-              size={touch ? "default" : "xs"}
-              className={touch ? "min-h-11" : undefined}
-              disabled={controller.dispositionLocked}
-              onClick={() => {
-                setConfirmingDiscard(false);
-                dispose("discard");
-              }}
-            >
-              <Trans>Discard</Trans>
-            </Button>
-          </div>
-        ) : (
+        confirmingDiscard ? null : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -134,6 +107,34 @@ export function WorkChanges({
         )
       }
     >
+      {confirmingDiscard ? (
+        <div className="flex flex-wrap items-center gap-x-1 gap-y-1 pb-2 text-xs">
+          <span className="min-w-0 basis-full text-muted-foreground">
+            <Trans>Discard all changes?</Trans>{" "}
+            <Trans>This removes pending changes from every document in this Work.</Trans>
+          </span>
+          <Button
+            variant="quiet"
+            size={touch ? "default" : "xs"}
+            className={touch ? "min-h-11" : undefined}
+            onClick={() => setConfirmingDiscard(false)}
+          >
+            <Trans>Keep</Trans>
+          </Button>
+          <Button
+            variant="quiet"
+            size={touch ? "default" : "xs"}
+            className={touch ? "min-h-11" : undefined}
+            disabled={controller.dispositionLocked}
+            onClick={() => {
+              setConfirmingDiscard(false);
+              dispose("discard");
+            }}
+          >
+            <Trans>Discard</Trans>
+          </Button>
+        </div>
+      ) : null}
       <RuledList
         className="-mx-2"
         rows={visible.map((file) => ({

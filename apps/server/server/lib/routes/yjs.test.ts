@@ -27,6 +27,9 @@ function services(stale: boolean) {
   return {
     fileAccess: {} as never,
     fileAccessChanges: createLocalFileAccessChanges(),
+    liveDocuments: {
+      findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+    },
     eventSink: {} as never,
     documentSync: {
       rejectStaleBranchSyncStep1: vi.fn(async () => stale),
@@ -39,6 +42,9 @@ function gatewayServices() {
   return {
     fileAccess: {} as never,
     fileAccessChanges: createLocalFileAccessChanges(),
+    liveDocuments: {
+      findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+    },
     eventSink: {} as never,
     documentSync: { bindHocuspocus: () => undefined } as never,
   };
@@ -65,6 +71,7 @@ describe("Yjs branch handshake route guard", () => {
           documentId: "document-1" as never,
           kind: "work_draft",
           upstreamBranchId: null,
+          draftId: "draft-1",
           workId: "work-1" as never,
           threadId: null,
           status: "active",
@@ -103,8 +110,11 @@ describe("Yjs branch handshake route guard", () => {
       branchCoordinator,
       branches: {
         listActiveWorkDraftBranchIds: async () => ["branch_1"],
-        ensureWorkDraftBranch: async () => ({ branchId: "branch_1" }),
-        ensureThreadPeerBranch: async () => ({ branchId: "thread-peer" }),
+        ensureThreadPeerBranch: async () => ({
+          branchId: "thread-peer",
+          upstreamBranchId: "branch_1",
+          state: new Uint8Array(),
+        }),
       },
     });
     const flushBranchLivePull = vi.fn(branchPulls.flushLivePull);
@@ -125,6 +135,13 @@ describe("Yjs branch handshake route guard", () => {
           headSchemaVersion: vi.fn(async () => null),
           flushBranchLivePull,
         } as never,
+        liveDocuments: {
+          findById: async () => ({
+            kind: "found" as const,
+            document: {} as never,
+            clashesWith: [],
+          }),
+        },
         eventSink: { emit() {} } as never,
       },
       createYjsRoomAccessIndex(),
@@ -305,6 +322,9 @@ describe("Yjs branch handshake route guard", () => {
     });
     const gateway = createYjsGateway({
       ...gatewayServices(),
+      liveDocuments: {
+        findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+      },
       eventSink: { emit: vi.fn() } as never,
       documentSync: {
         bindHocuspocus: () => undefined,
@@ -480,8 +500,6 @@ describe("Yjs room access", () => {
     const allowAll = createAllowAllFileAccess();
     const documentSync = {
       bindHocuspocus: vi.fn(),
-      resolveManifestMembership: vi.fn(async () => ({ members: [liveRoom] })),
-      reconcileProjectManifest: vi.fn(async () => undefined),
       headSchemaVersion: vi.fn(async () => null),
       currentLiveGeneration: vi.fn(async () => 1n),
       admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true, joinedSettlement: false })),
@@ -506,6 +524,9 @@ describe("Yjs room access", () => {
       },
       fileAccessChanges: createLocalFileAccessChanges(),
       documentSync: documentSync as never,
+      liveDocuments: {
+        findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
+      },
       eventSink: { emit() {} } as never,
       admitLiveWriterUpdate: documentSync.admitLiveWriterUpdate,
     };

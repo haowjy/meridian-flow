@@ -10,8 +10,9 @@ import type { ParsedDocumentFilename } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type {
+  AdapterCreateUntitledOptions,
+  ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
-  ContextCreateUntitledDocumentOptions,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
   ContextListOptions,
@@ -65,7 +66,7 @@ export type AdapterFault =
   | { code: "conflict"; occupantKind?: "file" | "folder" }
   | { code: "stale_source" }
   | { code: "stale_target" }
-  | { code: "invalid_operation"; message?: string }
+  | { code: "invalid_operation"; message?: string; reason?: "ambiguous_path" }
   | {
       code: "context_unavailable";
       reason: "work_archived" | "work_deleted" | "work_missing";
@@ -93,7 +94,7 @@ export type AdapterContextReadResult = Omit<ContextReadResult, "uri">;
 export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
 
 export type AdapterUntitledDocumentResult = {
-  status: "created" | "already-exists";
+  status: "created" | "already-exists" | "joined";
   documentId: string;
   path: string;
   name: string;
@@ -155,19 +156,31 @@ export interface ContextSchemeAdapter {
     options?: ContextWriteOptions,
   ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */
-  locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
+  /** `includeDeleted` also answers a soft-deleted document's last address. */
+  locateDocument(
+    documentId: string,
+    options?: { includeDeleted?: boolean },
+  ): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   createUntitledDocument(
     path: string,
-    options: ContextCreateUntitledDocumentOptions,
+    options: AdapterCreateUntitledOptions,
   ): Promise<Result<AdapterUntitledDocumentResult, AdapterFault>>;
   ensureTrackedDocument(
     path: string,
     options?: ContextEnsureTrackedOptions,
   ): Promise<Result<Omit<ContextEnsureTrackedDocumentResult, "uri">, AdapterFault>>;
+  /**
+   * Reverse this adapter's create of `documentId` (contract §12.5): a draft placement
+   * retracts the draft's use itself; `live` asks the caller to delete the document.
+   */
+  retractCreate(
+    path: string,
+    documentId: string,
+  ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>>;
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<AdapterContextWriteResult, AdapterFault>>;
+  ): Promise<Result<Omit<ContextBinaryWriteResult, "uri">, AdapterFault>>;
   list(
     path: string,
     options?: ContextListOptions,

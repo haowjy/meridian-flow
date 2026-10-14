@@ -166,7 +166,7 @@ export function FollowOutcomeContent({
               const documentId = await create(creation);
               if (!documentId) return;
               onClose();
-              await onOpen({ documentId });
+              await onOpen({ documentId, focus: true });
             }}
           >
             {t`Create “${name}”`}

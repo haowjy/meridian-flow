@@ -234,13 +234,12 @@ it("failed response rolls back immediate live and draft parts while keeping a wr
           ),
         ),
       ).toMatchObject({ status: "success", phase: "committed" });
-    const [draft] = (
-      await view.collab.draftReview.list({ projectId: PROJECT_ID as never, workId: WORK_ID })
-    ).filter((d) => d.documentId === BETA_ID);
+    const betaBranch = await view.branchStore.resolveWorkDraftBranchForThread(BETA_ID, THREAD_ID);
+    betaBranch.doc.destroy();
     const [branch] = await db
       .select()
       .from(schema.documentBranches)
-      .where(eq(schema.documentBranches.id, draft.draftId));
+      .where(eq(schema.documentBranches.id, betaBranch.branchId));
     const doc = new Y.Doc({ gc: false });
     try {
       Y.applyUpdate(doc, branch.state);

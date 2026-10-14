@@ -1,13 +1,13 @@
-/** Builds whole-content candidate batches with optional manifest membership companions. */
+/** Builds the candidate batches a publication stages: whole-branch, or the rows a review selected. */
 import { randomUUID } from "node:crypto";
-import type { DocumentId, UserId } from "@meridian/contracts/runtime";
+import type { UserId } from "@meridian/contracts/runtime";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import {
   type BranchJournalRow,
   BranchPushCommitConflictError,
   type CandidateBatch,
+  type PublicationPayloads,
 } from "./branch-push-contracts.js";
-import { manifestMembershipRowDocumentId } from "./manifest-membership-journal.js";
 
 type CandidateSource = {
   branch: BranchSnapshot;
@@ -15,29 +15,29 @@ type CandidateSource = {
 };
 
 export function buildWholeBranchCandidates(input: {
-  source: CandidateSource;
-  resetPolicy?: "auto";
+  sources: readonly CandidateSource[];
+  payloads?: PublicationPayloads;
   pushedByUserId?: UserId;
 }): CandidateBatch {
   return {
-    candidates: [
-      {
-        branchId: input.source.branch.branchId,
-        documentId: input.source.branch.documentId,
-        rows: input.source.rows,
-        kind: "content",
-        materialization: "whole",
-      },
-    ],
+    ...(input.payloads ? { payloads: input.payloads } : {}),
+    candidates: input.sources.map((source) => ({
+      branchId: source.branch.branchId,
+      documentId: source.branch.documentId,
+      rows: source.rows,
+      materialization: "whole" as const,
+    })),
     receiptId: randomUUID(),
-    ...(input.resetPolicy ? { resetPolicy: input.resetPolicy } : {}),
     ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
   };
 }
 
+/** One branch's selected rows, fenced by the live revision the selection was made against. */
 export function buildSelectedRowCandidates(input: {
   source: CandidateSource;
   journalIds: readonly number[];
+  expectedLiveRevision: string;
+  payloads?: PublicationPayloads;
   pushedByUserId?: UserId;
 }): CandidateBatch {
   const selected = new Set(input.journalIds);
@@ -47,53 +47,17 @@ export function buildSelectedRowCandidates(input: {
     throw new BranchPushCommitConflictError(input.source.branch.branchId);
   }
   return {
+    ...(input.payloads ? { payloads: input.payloads } : {}),
     candidates: [
       {
         branchId: input.source.branch.branchId,
         documentId: input.source.branch.documentId,
         rows,
-        kind: "content",
         materialization: "selected_rows",
       },
     ],
     receiptId: randomUUID(),
+    expectedLiveRevision: input.expectedLiveRevision,
     ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
-  };
-}
-
-export function buildCompanionCandidates(input: {
-  content: CandidateSource;
-  manifest: CandidateSource;
-  manifestEntryDocumentId: DocumentId;
-  pushedByUserId?: UserId;
-  resetPolicy?: "auto";
-}): CandidateBatch {
-  const manifestRows = input.manifest.rows.filter(
-    (row) => manifestMembershipRowDocumentId(row) === input.manifestEntryDocumentId,
-  );
-  return {
-    candidates: [
-      {
-        branchId: input.content.branch.branchId,
-        documentId: input.content.branch.documentId,
-        rows: input.content.rows,
-        kind: "content",
-        materialization: "whole",
-      },
-      ...(manifestRows.length > 0
-        ? [
-            {
-              branchId: input.manifest.branch.branchId,
-              documentId: input.manifest.branch.documentId,
-              rows: manifestRows,
-              kind: "manifest" as const,
-              materialization: "selected_rows" as const,
-            },
-          ]
-        : []),
-    ],
-    receiptId: randomUUID(),
-    ...(input.pushedByUserId ? { pushedByUserId: input.pushedByUserId } : {}),
-    ...(input.resetPolicy ? { resetPolicy: input.resetPolicy } : {}),
   };
 }

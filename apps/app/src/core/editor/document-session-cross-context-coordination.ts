@@ -13,6 +13,7 @@ import {
   type LocalAdoptionPendingReceipt,
   type PendingDrain,
   type PersistenceAuthority,
+  storedTerminalLineage,
 } from "./document-session-authority-store";
 import {
   DocumentSessionCoordinationError,
@@ -447,6 +448,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     commandId: AvailabilityCommandId,
+    deletionVersion: string | null,
   ): Promise<{ revokedThrough: AvailabilityGeneration; persistence: "cleared" }> {
     await this.requireReady();
     this.assertOpen();
@@ -458,21 +460,18 @@ class Coordination implements DocumentSessionCrossContextCoordination {
       | undefined;
     await this.documentLocks.withOperation(documentId, async () => {
       const room = await this.store.readRoom(documentId);
-      if (room.persistence?.phase === "terminal-local") {
-        lineageReceipt = {
-          kind: "lineage-transition-required",
-          documentId,
-          generation: room.persistence.terminalGeneration,
-          commandId: room.persistence.commandId,
-          transitionId: room.persistence.transitionId,
-          lineageHandle: room.persistence.lineageHandle,
-          exactDatabaseName: room.persistence.exactDatabaseName,
-          persistenceGeneration: room.pendingDrain?.incarnation?.generation ?? null,
-        };
+      const stored = storedTerminalLineage(room);
+      if (stored) {
+        lineageReceipt = stored;
         return;
       }
       await this.recovery.helpPendingUnderOperation(documentId);
-      const start = await this.store.startDocumentDrain({ documentId, generation, commandId });
+      const start = await this.store.startDocumentDrain({
+        documentId,
+        generation,
+        commandId,
+        deletionVersion,
+      });
       if (start.kind === "lineage-transition-required") {
         lineageReceipt = start;
         return;

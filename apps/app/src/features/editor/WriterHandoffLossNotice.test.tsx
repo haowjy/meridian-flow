@@ -16,7 +16,7 @@ it("keeps one loss sentence on the addressed document until dismissal", async ()
       projectId: "project",
       workId: "work",
       documentId: "affected",
-      draftId: "draft",
+      itemKey: "draft",
     },
     "branch",
   );

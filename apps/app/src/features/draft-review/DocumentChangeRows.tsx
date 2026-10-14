@@ -41,7 +41,7 @@ export function DocumentChangeRows({
   const arrived = useArrivedChanges(
     changes,
     view.status === "ready",
-    view.documentId && view.draftId ? `${view.documentId}:${view.draftId}` : null,
+    view.documentId && view.itemKey ? `${view.documentId}:${view.itemKey}` : null,
   );
 
   if (standIn) return standIn;

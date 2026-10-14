@@ -6,8 +6,10 @@ import { I18nProvider } from "@lingui/react";
 import { EditorContent } from "@tiptap/react";
 import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as draftsApi from "@/client/api/drafts-api";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import type { ContextTab } from "@/client/stores";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
@@ -59,12 +61,12 @@ const click = (label: string, within: ParentNode = document) =>
 it("focuses and discards through this document's sheet, keeping its editor through whole Discard", async () => {
   const network = fixture.network;
   network.listWorkDrafts.mockResolvedValue({
-    drafts: [
+    items: [
       listed,
       {
         ...listed,
         documentId: "document-b",
-        draftId: "draft-b",
+        itemKey: "draft-b",
         documentName: "Foreign document",
         contextLocation: { scheme: "manuscript", path: "/foreign.md" },
       },
@@ -72,7 +74,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
   });
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
-    draftId: id,
+    itemKey: id,
   }));
   const selective = deferredReviewAnswer<ReturnType<typeof discarded>>();
   const whole = deferredReviewAnswer<ReturnType<typeof discarded>>();
@@ -114,7 +116,9 @@ it("focuses and discards through this document's sheet, keeping its editor throu
           "work-a",
           "document-a",
           {
-            draftId: "draft-a",
+            commandId: expect.any(String),
+            draftId: "work-draft-a",
+            itemKey: "draft-a",
             closureClassIds: ["class-1"],
             memberPartKeys: [],
             admissionTokens: ["class-1"],
@@ -140,7 +144,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
         "project-a",
         "work-a",
         "document-a",
-        { draftId: "draft-a" },
+        { commandId: expect.any(String), draftId: "work-draft-a", itemKey: "draft-a" },
       ]);
       await act(async () => whole.resolve(discarded(true)));
       await settleReact(() => expect(probe().presented.controller.isDisposing).toBe(false));
@@ -149,12 +153,12 @@ it("focuses and discards through this document's sheet, keeping its editor throu
       await act(async () => editor.commands.insertContent(" Still writing."));
       expect(editor.getText()).toContain("Still writing.");
       expect(navigate).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ documentId: "document-b", draftId: "draft-b", workId: "work-a" }),
+        expect.objectContaining({ documentId: "document-b", itemKey: "draft-b", workId: "work-a" }),
       );
     },
     {
       surface: (
-        <MobileDocumentReview documentId="document-a">
+        <MobileDocumentReview projectId="project-a" tab={reviewedTab}>
           <EditorContent editor={manuscript.editor} />
         </MobileDocumentReview>
       ),
@@ -172,7 +176,7 @@ it("focuses and discards through this document's sheet, keeping its editor throu
 });
 
 it("closes the sheet on the last change without repeating attribution", async () => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue({
     ...preview,
     operations: [{ ...operation("1"), actorThreadId: "thread-a", actorThreadTitle: "Lore" }],
@@ -202,7 +206,7 @@ it("closes the sheet on the last change without repeating attribution", async ()
     },
     {
       surface: (
-        <MobileDocumentReview documentId="document-a">
+        <MobileDocumentReview projectId="project-a" tab={reviewedTab}>
           <div />
         </MobileDocumentReview>
       ),
@@ -213,6 +217,66 @@ it("closes the sheet on the last change without repeating attribution", async ()
               <ChatThreadNavigationProvider onOpenThread={navigate}>
                 {children}
               </ChatThreadNavigationProvider>
+            </ProjectNavigationProvider>
+          </TooltipProvider>
+        </I18nProvider>
+      ),
+    },
+  );
+});
+
+/** The tab of the document under review; a local reservation, which has no drafts to hint at. */
+const reviewedTab = {
+  kind: "new",
+  documentId: "document-a",
+  name: "Chapter",
+  resourceHandle: "handle-a",
+} as unknown as ContextTab;
+
+it("shows another draft's hint on the phone, live and while reviewing, never the reviewed draft's", async () => {
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  fixture.network.getDraftPreview.mockResolvedValue(preview);
+  vi.spyOn(draftsApi, "listDocumentDraftHints").mockResolvedValue({
+    items: [
+      { draftId: "a", itemKey: "draft-a", label: "Draft A", originWorkId: "work-a" },
+      { draftId: "b", itemKey: "draft-b", label: "Draft B", originWorkId: "work-b" },
+    ],
+  } as never);
+  const trackedTab = {
+    kind: "tracked",
+    documentId: "document-a",
+    name: "Chapter",
+    scheme: "manuscript",
+    path: "/chapter.md",
+    workId: "work-a",
+  } as unknown as ContextTab;
+  const hint = () => document.querySelector("[data-document-draft-hint]")?.textContent ?? "";
+  await fixture.render(
+    async (probe) => {
+      await settleReact(() => expect(hint()).toContain("(Draft B)"));
+      expect(hint()).not.toContain("Draft A");
+      await act(async () =>
+        probe().presented.controller.enterInlineReview("document-a", "draft-a"),
+      );
+      await act(async () =>
+        probe().presented.controller.setInlineReviewShown("document-a", "draft-a", true),
+      );
+      await settleReact(() =>
+        expect(document.querySelector("[data-phone-review-header]")).not.toBeNull(),
+      );
+      expect(hint()).toContain("(Draft B)");
+    },
+    {
+      surface: (
+        <MobileDocumentReview projectId="project-a" tab={trackedTab}>
+          <div />
+        </MobileDocumentReview>
+      ),
+      host: (children) => (
+        <I18nProvider i18n={i18n}>
+          <TooltipProvider>
+            <ProjectNavigationProvider openContextRoute={navigate} openWork={navigate}>
+              {children}
             </ProjectNavigationProvider>
           </TooltipProvider>
         </I18nProvider>

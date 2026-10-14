@@ -71,9 +71,7 @@ const draftTab: ServerContextTab = {
   editable: true,
   filetype: "markdown",
   schemaType: "document",
-  draftOnly: true,
-  reviewWorkId: "work-a",
-  reviewDraftId: "draft-a",
+  reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "tab-a" } },
 };
 
 describe("MobileDocumentHost draft-only review", () => {

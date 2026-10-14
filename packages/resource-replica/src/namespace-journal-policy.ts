@@ -199,6 +199,7 @@ export function validateNamespaceJournal(input: {
         if (
           attempt.request.kind !== "create" ||
           (attempt.outcome.result.status !== "conflict" &&
+            attempt.outcome.result.status !== "joined" &&
             attempt.outcome.result.documentId !== attempt.request.body.documentId)
         )
           throw new Error("Create outcome does not match submitted identity");
@@ -246,7 +247,12 @@ export function validateNamespaceJournal(input: {
       if (previousIntent?.state !== "settled-locally" && !localDeletionAllowed)
         throw new Error("Local deletion requires proven never-submitted identity");
     }
-    if (intent.state === "unexecutable-after-terminal" && !input.terminal)
+    // Recorded history survives a later restore of the identity; only entering it needs terminal.
+    if (
+      intent.state === "unexecutable-after-terminal" &&
+      previousIntent?.state !== "unexecutable-after-terminal" &&
+      !input.terminal
+    )
       throw new Error("Non-executable namespace history requires terminal identity");
     const lastAttempt = intent.attempts.at(-1);
     if (intent.state === "submitted" && (!lastAttempt || lastAttempt.outcome))

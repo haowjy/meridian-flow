@@ -14,6 +14,11 @@ whose captured revision is still current. A late response cannot regress a newer
 canonical location. Scope disappearance and invalidation change projection
 membership only; they never imply global deletion. Resource aliases are obsolete
 local identities after remint, not catalog identity aliases.
+A join (`resource-join.ts`) is the same re-identification triggered by a `joined`
+create answer or a catalog entry's `joinedFrom`: a create that carries its
+destination landed on a document that already existed (a draft's, hidden live only
+because it is a draft). The joined id becomes current, the handle stays, queued
+intents rebase, and no two records ever fold.
 
 `resource-records.ts` defines durable descriptors and ordered project-qualified
 namespace intentions. Submitted attempt payloads and outcomes are immutable.
@@ -112,6 +117,33 @@ receipt requires post-receipt canonical observation before later dispatch.
 Catalog observations install atomically with their checkpoint; exact-ID availability
 observations use the same metadata CAS. Both journals share typed settlement policy,
 and terminal identity absorbs late outcomes as `unexecutable-after-terminal` history.
+
+Terminal is not forever. Deletion ownership is versioned: `confirmedDeletionVersion`
+reads an accepted delete's receipt version, and every terminal document holds the
+namespace version that proved its deletion in `lifecycle.deletionVersion`. A delete
+receipt (`committedResourceDeletion`) stores the receipt's version. The editor's
+exact-ID terminal (`publishResourceTerminal`) stores the version that exact-ID
+availability reported with the deletion. It reaches the terminal through the
+`terminal-remove` command, the `revokeDocument` session effect, the stored
+`terminal-local` room authority and `TerminalLineageReceipt`. Either path keeps the
+higher version when both apply. Folders hold their tombstone's `observationVersion`.
+Catalog installation compares a present entry with the deletion version, never with a
+pre-deletion `observationVersion`. A request that starts after the terminal can still
+replay history from before the deletion, one page at a time. Only strictly newer
+evidence revives, and which evidence counts differs by kind. A document revives only
+from a strictly newer catalog entry (`revivedResourceWrite`); exact-ID presence does
+not revive it (`settleNamespaceOutcome` and `installCanonicalRefresh` skip terminal
+records). A folder revives from a strictly newer canonical observation (catalog
+installation dropping `terminal`); exact-ID presence clears its witness only through
+a pending canonical refresh after a move (`installFolderNamespaceAvailability` into
+`installFolderCanonicalRefresh`). A
+terminal document without a deletion version never revives from a catalog. The
+validators admit exactly that transition: newer than the deletion version,
+acknowledged with a canonical location, unacquired content, no outstanding purge
+cleanup, `revivedFrom` naming the superseded transition. A terminal never loses or
+lowers its deletion version.
+`unexecutable-after-terminal` history survives revival. `publishResourceTerminal` and
+its cleanup acknowledgement are no-ops at or below `revivedFrom`'s generation.
 
 Folder and document destinations store `{ parent: ParentRef, createFolders?: string[], name }`, where a
 parent is a picked folder identity or qualified area root. Linked creation alone

@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IconButton } from "@/components/ui/icon-button";
+import { cn } from "@/lib/utils";
 import { useDockEditorJump } from "../DesktopProjectController";
 import { headerFailure, useDocumentSwitchFailures } from "../routing/document-switch-failure";
 import { type DockDocument, useDockDocumentStore } from "./dock-document-store";
@@ -37,7 +38,7 @@ export function DockDocumentActions({
           <IconButton
             size="sm"
             tooltip={failed ? t`This view couldn’t open.` : t`Document actions`}
-            className={failed ? "text-destructive" : undefined}
+            className={cn("[@media(pointer:coarse)]:size-11", failed && "text-destructive")}
           >
             <MoreHorizontal aria-hidden className="size-4" />
           </IconButton>

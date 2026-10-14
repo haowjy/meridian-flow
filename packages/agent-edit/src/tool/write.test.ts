@@ -147,6 +147,7 @@ describe("write tool dispatch", () => {
           mode: "threadPeer",
           afterJournalId: 0,
           branchGeneration: 1,
+          peerBranchId: "branch-peer",
         },
       },
     );
@@ -172,6 +173,7 @@ describe("write tool dispatch", () => {
           mode: "threadPeer",
           afterJournalId: 0,
           branchGeneration: 1,
+          peerBranchId: "branch-peer",
         },
       },
     );
@@ -223,8 +225,9 @@ describe("write tool dispatch", () => {
 
     expect(outcomeText(result)).toContain("status: invalid_write");
     expectOutcome(result, "invalid_write", true);
-    expect(outcomeText(result)).toContain("File already exists: chapter.md");
-    expect(outcomeText(result)).toContain("overwrite=true");
+    expect(outcomeText(result)).toContain(
+      "File already exists: chapter.md. Read it, then edit it; use overwrite=true only to replace all of its content.",
+    );
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Already here."]);
 
     // A host's fresh bound write: empty when checked and restored, then a writer's paragraph is

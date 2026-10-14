@@ -11,6 +11,7 @@ import {
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { DraftImagePreview, isDraftImagePath } from "@/features/draft-review/DraftImagePreview";
 import {
   type DraftChangesView,
   isWholeDocumentChange,
@@ -38,10 +39,11 @@ export function WorkChangeFile({
 }) {
   const [expanded, setExpanded] = useState(false);
   const { openReviewFile } = useAiDraftLauncher();
+  const [previewing, setPreviewing] = useState(false);
   const records = useDraftCommandRecords();
-  const draft = { projectId, workId, documentId: file.documentId, draftId: file.draft.draftId };
+  const draft = { projectId, workId, documentId: file.documentId, itemKey: file.draft.itemKey };
   const refused = draftCommandFailure(records, draft);
-  const view = useDraftView(draft, { controller, enabled: expanded });
+  const view = useDraftView(draft, { controller, enabled: expanded, item: file.draft });
   if (
     expanded &&
     (view.status === "gone" ||
@@ -49,10 +51,13 @@ export function WorkChangeFile({
   )
     return null;
   const wholeDocument = expanded && isWholeDocumentChange(view);
+  const imageOpenable = isDraftImagePath(file.contextLocation?.path);
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
 
   const review = (focusOperationIds?: readonly string[]) =>
-    openReviewFile(file, workId, focusOperationIds);
+    file.draft.branchGeneration !== null
+      ? openReviewFile(file, workId, focusOperationIds)
+      : imageOpenable && setPreviewing(true);
 
   return (
     <>
@@ -87,13 +92,19 @@ export function WorkChangeFile({
           <button
             type="button"
             className={cn(workFileRowClass, "w-auto flex-1 pl-1", touch && "min-h-11")}
-            disabled={!file.contextLocation}
+            disabled={
+              !file.contextLocation || (file.draft.branchGeneration === null && !imageOpenable)
+            }
             onClick={() => review()}
           >
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
           </button>
         )}
       </div>
+      <DraftImagePreview
+        target={previewing ? { projectId, workId, documentId: file.documentId, name } : null}
+        onClose={() => setPreviewing(false)}
+      />
       {refused && !view.items.some((item) => item.draftFailure) ? (
         <InlineErrorRow
           message={<ReviewMessageText failure={refused} />}

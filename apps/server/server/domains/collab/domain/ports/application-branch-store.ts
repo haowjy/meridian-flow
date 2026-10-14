@@ -1,85 +1,72 @@
 /** Branch capabilities consumed by collab application services. */
-import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftId } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
-import type { BranchLockLease } from "../branch-critical-sections.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
-import type { RetiredBranch } from "../peer-retirement.js";
+import type { PeerRetirementCause, RetiredBranch } from "../peer-retirement.js";
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
     appendJournal(
       input: import("../branch-coordinator.js").AppendBranchJournalInput,
     ): Promise<void>;
-    removeWorkManifestEntryForDraftDiscard(input: {
-      lease: BranchLockLease;
-      manifestBranchId: string;
-      manifestDocumentId: DocumentId;
-      workId: WorkId;
-      documentId: DocumentId;
-    }): Promise<void>;
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
-    ensureWorkDraftBranch(input: {
+    /** Every active branch of the draft, both kinds. */
+    listActiveDraftBranchIds(draftId: DraftId): Promise<string[]>;
+    /**
+     * The draft's branch on the document, made from `liveDoc` if absent: a write boundary
+     * only. Never makes a draft; refuses a closed one in the insert's transaction.
+     */
+    ensureDraftBranch(input: {
       documentId: DocumentId;
-      workId: WorkId;
+      draftId: DraftId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
+    /** The draft's branch on its new document, from its durable live state, in the caller's transaction. */
+    ensureCreatedDraftBranch(input: { documentId: DocumentId; draftId: DraftId }): Promise<void>;
+    /**
+     * Delete the draft's branch on a document it created and that branch's thread peers,
+     * unless any of them holds a journal row that isn't discarded (a contribution).
+     * `deleted` is exactly the branches removed, with each peer's thread.
+     */
+    retractCreatedDraftBranch(input: { documentId: DocumentId; draftId: DraftId }): Promise<
+      | { outcome: "stands" }
+      | {
+          outcome: "retracted";
+          deleted: readonly { branchId: string; threadId: ThreadId | null }[];
+        }
+    >;
+    /**
+     * The thread's peer of the draft's branch on the document. Takes the draft it is given,
+     * never ensures one; a draft that is no longer active is `BranchStaleUpdateError`.
+     */
     ensureThreadPeerBranch(input: {
       documentId: DocumentId;
       threadId: ThreadId;
+      draftId: DraftId;
       liveDoc: Y.Doc;
     }): Promise<BranchSnapshot>;
-    closeThreadPeersOf(upstreamBranchIds: readonly string[]): Promise<RetiredBranch[]>;
+    /**
+     * Close the active thread peers of these branches (a reset or a Discard moved their
+     * upstream), in the caller's transaction; exactly the peers closed come back with the
+     * caller's `cause`, for their rooms, staged writes and thread state to retire after commit.
+     */
+    closeThreadPeersOf(
+      upstreamBranchIds: readonly string[],
+      cause: PeerRetirementCause,
+    ): Promise<RetiredBranch[]>;
     resolveWorkDraftBranchForThread(
       documentId: DocumentId,
       threadId: ThreadId,
     ): Promise<BranchState>;
-    resolveWorkDraftBranchForWork(input: {
+    /**
+     * Lookup only: the requested branch, while it is the draft's active branch on the
+     * document; otherwise `BranchNotFoundError`. A review read never makes a branch.
+     */
+    resolveDraftBranch(input: {
+      draftBranchId: string;
       documentId: DocumentId;
-      workId: WorkId;
-      liveDoc: Y.Doc;
+      draftId: DraftId;
     }): Promise<BranchState>;
-    ensureProjectManifest(input: { projectId: ProjectId; contextSourceId?: string }): Promise<{
-      documentId: DocumentId;
-      doc: Y.Doc;
-    }>;
-    resolveManifestMembership(input: {
-      projectId: ProjectId;
-      workId?: WorkId | null;
-      threadId?: ThreadId | null;
-    }): Promise<{ documentId: DocumentId; members: string[] }>;
-    reconcileProjectManifest(projectId: ProjectId): Promise<void>;
-    transferLiveManifestMembership(
-      documentIds: readonly DocumentId[],
-      projects: { from: ProjectId; to: ProjectId },
-    ): Promise<void>;
-    recordManifestDocumentCreated(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<void>;
-    recordManifestDocumentDeleted(
-      documentId: DocumentId,
-      view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
-    ): Promise<void>;
   };
-
-/** Discards one Work draft and its draft-only membership without applying content to live. */
-export type WorkDraftDiscard = (input: {
-  draftOnlyProjectId?: ProjectId;
-  workId: WorkId;
-  documentId: DocumentId;
-  contentBranchId: string;
-}) => Promise<RetiredBranch[]>;
-
-/** Settles an empty review under the branch/live/Work fence, preserving pushed rows. */
-export type WorkDraftEmptySettlement = (input: {
-  workId: WorkId;
-  documentId: DocumentId;
-  branchId: string;
-  isEmpty(liveDoc: Y.Doc, draftDoc: Y.Doc): boolean;
-  disposition(
-    rows: readonly import("../branch-push-contracts.js").BranchJournalRow[],
-  ): "applied" | "discarded";
-}) => Promise<
-  { draftClosed: false } | { draftClosed: true; draftDisposition: "applied" | "discarded" }
->;

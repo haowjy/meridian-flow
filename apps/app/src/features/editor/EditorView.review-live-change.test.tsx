@@ -58,7 +58,7 @@ function Host() {
       projectId="project-a"
       session={sessions.get(documentId)}
       localContentReady
-      reviewDraftId={value.controller.inlineReview?.draftId}
+      reviewItemKey={value.controller.inlineReview?.itemKey}
     />
   );
 }
@@ -79,7 +79,7 @@ beforeEach(() => {
   });
   resetDraftCommandRecords();
   review = null;
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
 });
 afterEach(() => {

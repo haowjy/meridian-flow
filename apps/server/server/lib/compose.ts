@@ -24,6 +24,7 @@ import {
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
+import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
@@ -56,6 +57,7 @@ import {
   createDrizzleUploadIdentityPort,
   createDrizzleUploadIntakeRepository,
   createFigureAssetService,
+  createHiddenNodeRepair,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
@@ -66,15 +68,14 @@ import {
   type FigureAssetService,
   InMemoryContextCatalog,
   type LinkAheadRegistry,
-  type LinkScopeMembership,
   type ProjectCatalogLifecyclePort,
   type ProjectContextAvailabilityPort,
-  type ProjectDocumentCatalogRefreshPort,
   type PromotionService,
   type UnifiedContextPortFactory,
   type UploadIdentityPort,
   type UploadIntake,
 } from "../domains/context/index.js";
+import { createTreeReader, type TreeReader } from "../domains/context/tree/tree-view.js";
 import {
   type AgentChain,
   createAllowAllFileAccess,
@@ -210,7 +211,11 @@ import {
   createModelRequestDebugStore,
 } from "../domains/runtime/model-request-debug/index.js";
 import type { HandoffBriefStopper } from "../domains/runtime/ports/handoff-briefs.js";
-import type { LocalObjectStoreAdapter, ObjectStorePort } from "../domains/storage/index.js";
+import {
+  createObjectRelease,
+  type LocalObjectStoreAdapter,
+  type ObjectStorePort,
+} from "../domains/storage/index.js";
 import { createDrizzleEventJournalReader } from "../domains/threads/adapters/drizzle/event-reader.js";
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
@@ -244,6 +249,7 @@ import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import {
+  type AgentEditResponseWriteLifecycle,
   createAgentEditResponseWriteLifecycle,
   createModelToolRegistrations,
   createReferenceReader,
@@ -252,6 +258,7 @@ import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { APP_DRAIN_DEADLINE_MS } from "./shutdown-deadlines.js";
 
 export type AppServices = {
+  liveDocuments: Pick<TreeReader, "findById">;
   gateway: Gateway;
   threadRepos: ThreadRepositories;
   journalReader: EventJournalReader;
@@ -263,7 +270,6 @@ export type AppServices = {
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
-  contextCatalogRefresh: ProjectDocumentCatalogRefreshPort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -280,6 +286,8 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextNotices: WorkContextNotices;
+  /** A reply's write lifecycle: its save, its rollback, and the staged creates they retract. */
+  responseWrites: AgentEditResponseWriteLifecycle;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -350,10 +358,7 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
-  contextCatalog: ContextCatalog &
-    ContextCatalogMutationPort &
-    ProjectCatalogLifecyclePort &
-    ProjectDocumentCatalogRefreshPort;
+  contextCatalog: ContextCatalog & ContextCatalogMutationPort & ProjectCatalogLifecyclePort;
   projectContextAvailability: ProjectContextAvailabilityPort;
   documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
@@ -424,6 +429,7 @@ function concurrentRenderBudgetBytes(request: {
 
 export async function createProductionAppPorts(input: {
   db: Database;
+  backgroundTasks?: DetachedWorkTracker;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
@@ -469,46 +475,23 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = createDetachedWorkTracker();
+  const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
   const contextCatalogWakeHub = createContextCatalogWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
-  let boundManifestMembership: CollabDomain | null = null;
   const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
     availabilityMutations: projectContextAvailability,
-    eventSink,
-    backgroundTasks,
-    manifestMembership: {
-      resolveManifestMembership: (input) => {
-        if (!boundManifestMembership) {
-          throw new Error("Manifest membership resolver used before the collab domain was bound");
-        }
-        return boundManifestMembership.resolveManifestMembership(input);
-      },
-    },
   });
   const workProjectionMutation = createWorkProjectionMutation({
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
+    pending: createDrizzleWorkDraftPendingStore(db),
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
   const statusReader = createDrizzleHandoffStatusReader(db, runClaim);
-  // Bound once the collab domain exists; neither runs before composition finishes.
-  const manifestMembership: LinkScopeMembership = (input) => {
-    if (!boundManifestMembership) {
-      throw new Error("Manifest membership resolver used before the collab domain was bound");
-    }
-    return boundManifestMembership.resolveManifestMembership(
-      input as Parameters<CollabDomain["resolveManifestMembership"]>[0],
-    );
-  };
-  const linkAheadRegistry = createDrizzleLinkAheadRegistry(
-    db,
-    async (input) => ({ members: [...(await manifestMembership(input)).members] }),
-    eventSink,
-  );
+  const linkAheadRegistry = createDrizzleLinkAheadRegistry(db, { eventSink });
   const arrivals = createDrizzleDocumentArrivals(db, linkAheadRegistry);
   const lineageScratch = createDrizzleLineageScratchLifecycle(db, contextCatalog, arrivals);
   const threadRepos = createDrizzleRepositories(
@@ -547,15 +530,36 @@ export async function createProductionAppPorts(input: {
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
+  // A discarded or repaired hidden image's bytes go once its tombstone commits (§12.2).
+  const objectRelease = createObjectRelease({
+    objectStore,
+    onFailure(key, error) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "context.hidden-node",
+        name: "object_delete.failed",
+        payload: { key, error },
+      });
+    },
+  });
+  // One repair on touch for every production tree reader and create (§12.4).
+  const hiddenNodeRepair = createHiddenNodeRepair({
+    db,
+    eventSink,
+    objects: objectRelease,
+    backgroundTasks,
+  });
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
-    membership: manifestMembership,
     observer: createLinkScopeObserver(eventSink),
+    repair: hiddenNodeRepair,
   });
   const documentSync = createCollabDomain({
     db,
+    backgroundTasks,
     arrivals,
+    catalogMutations: contextCatalog,
     aheadRegistrations: linkAheadRegistry,
     fileAccess,
     links: documentLinks,
@@ -563,6 +567,7 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
+    objects: objectRelease,
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -574,7 +579,6 @@ export async function createProductionAppPorts(input: {
       },
     },
   });
-  boundManifestMembership = documentSync;
   const results = createDrizzleResultRepository(db);
   const promotionService = createPromotionService({
     lineages: createDrizzleScratchLineages(db),
@@ -587,11 +591,13 @@ export async function createProductionAppPorts(input: {
     links: documentLinks,
     db,
     documentSync,
-    manifestMembership: documentSync,
     documentDerivations: documentSync.documentDerivations,
     catalogMutations: contextCatalog,
     eventSink,
     arrivals,
+    hiddenNodeRepair,
+    drafts: documentSync.drafts,
+    pendingDraft: workProjectionMutation,
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db),
@@ -864,6 +870,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
+    drafts: ports.documentSync.workDraftDisposal,
   });
   const orphanRepair = createOrphanReportRepair({
     toolRegistry,
@@ -1015,6 +1022,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       threads: ports.threadRepos.threads,
       availability: ports.projectContextAvailability,
       documents: ports.documentSync,
+      drafts: ports.documentSync.drafts,
       threadWorks: coreToolDeps.threadWorks,
       works: coreToolDeps.works,
     }),
@@ -1086,10 +1094,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       readPending,
     }),
     documentSync: ports.documentSync,
+    liveDocuments: createTreeReader(ports.db),
     linkAheadRegistry: ports.linkAheadRegistry,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
-    contextCatalogRefresh: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
     documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
@@ -1104,6 +1112,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextNotices,
+    responseWrites,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1379,15 +1388,18 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     documentSync,
+    liveDocuments: {
+      async findById() {
+        throw new Error("Live tree reads are unavailable in memory");
+      },
+    },
     linkAheadRegistry,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
-    contextCatalogRefresh: {
-      async refreshProjectDocuments() {
-        throw new Error("Project document catalog refresh is unavailable in memory");
-      },
-    },
     documentAddresses: {
+      async resolveById() {
+        return { kind: "unavailable" };
+      },
       async resolve() {
         return { kind: "unavailable" };
       },
@@ -1542,6 +1554,7 @@ export function createInMemoryAppServices(): AppServices {
     workAuthorityResolver,
     workContext: unavailableWorkContext,
     workContextNotices: delivery,
+    responseWrites: createAgentEditResponseWriteLifecycle({ documentSync }),
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -1706,6 +1719,12 @@ function createInMemoryNoticePort(): NoticePort {
       const consumed = new Set(ids);
       for (let index = rows.length - 1; index >= 0; index -= 1) {
         if (consumed.has(rows[index]?.id ?? -1)) rows.splice(index, 1);
+      }
+    },
+    async retractForPushes(pushIds) {
+      const retracted = new Set(pushIds);
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (retracted.has(String(rows[index]?.data.pushId))) rows.splice(index, 1);
       }
     },
   };

@@ -18,6 +18,7 @@ import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useLayoutEffect } from "react";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import { PaintCapture, PaintHold } from "@/components/app/PaintHold";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
@@ -54,7 +55,7 @@ export function MobileDocumentHost(props: MobileDocumentHostProps) {
       className="relative h-full min-h-0"
     >
       <PaintCapture
-        surface={`${props.localTab ? "local" : props.route.tab?.kind === "tracked" && props.route.tab.draftOnly ? "draft-only" : "server"}:${props.localTab?.documentId ?? props.route.tab?.documentId ?? props.route.path}`}
+        surface={`${props.localTab ? "local" : props.route.tab && isDraftOnly(props.route.tab) ? "draft-only" : "server"}:${props.localTab?.documentId ?? props.route.tab?.documentId ?? props.route.path}`}
       />
       <MobileDocumentHostForRoute {...props} />
     </PaintHold>
@@ -73,7 +74,7 @@ function MobileDocumentHostForRoute(props: MobileDocumentHostProps) {
   const tab = props.route.tab;
   // A pending new-document draft has no live room and the server refuses one: its
   // branch is hosted alone, exactly as the desktop does.
-  if (tab?.kind === "tracked" && tab.draftOnly)
+  if (tab?.kind === "tracked" && isDraftOnly(tab))
     return <MobileDraftOnlyDocumentHost {...props} tab={tab} />;
   return <MobileServerDocumentHost {...props} />;
 }
@@ -90,7 +91,8 @@ function MobileDraftOnlyDocumentHost({
   const removal = useContextRemovalCoordinator();
   return (
     <MobileDocumentReview
-      documentId={tab.documentId}
+      projectId={projectId}
+      tab={tab}
       // A draft-only document has no live version to return to: its review closes the document.
       onCloseDraftOnly={() => {
         const closing = removal.writerClose(projectId, tab);
@@ -201,7 +203,7 @@ function useMobileRouteBinding({
       return;
     // The live catalog says nothing about a pending draft: its tab is the identity.
     const catalogSettled = !isFetching && !isError;
-    const draftOnly = activeTab?.kind === "tracked" && activeTab.draftOnly === true;
+    const draftOnly = activeTab !== null && isDraftOnly(activeTab);
     if (activeTab && (draftOnly || catalogSettled)) {
       contextRemoval.bindRouteSelection(projectId, selection.revision, {
         kind: "server",
@@ -259,7 +261,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   useMobileRouteBinding({ projectId, workId, route, activate: true });
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
-  const selectedReviewDraftId = useRequestedReview({
+  const selectedReviewItemKey = useRequestedReview({
     container: "editor",
     editorWorkId,
     activeScheme: activeContextScheme,
@@ -284,7 +286,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
     documentId: activeLive ? activeEditorDocumentId : null,
     liveSession: activeLive,
     active: true,
-    inReview: Boolean(selectedReviewDraftId),
+    inReview: Boolean(selectedReviewItemKey),
   });
 
   const failed = liveState.kind === "failed" && liveState.documentId === activeTab?.documentId;
@@ -370,7 +372,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   }
 
   return (
-    <MobileDocumentReview documentId={activeTab.documentId}>
+    <MobileDocumentReview projectId={projectId} tab={activeTab}>
       {capture}
       <WriterHandoffLossNotice projectId={projectId} documentId={activeTab.documentId} />
       <div className="relative min-h-0 flex-1">
@@ -387,7 +389,7 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
           showToolbar={false}
           ariaLabel={t`Read-only live document`}
           showCollaborationDecorations={false}
-          reviewDraftId={selectedReviewDraftId}
+          reviewItemKey={selectedReviewItemKey}
         />
       </div>
     </MobileDocumentReview>

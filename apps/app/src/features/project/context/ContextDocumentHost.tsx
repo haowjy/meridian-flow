@@ -12,9 +12,9 @@
 import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
@@ -78,14 +78,14 @@ export function ContextDocumentHost({
     activeScheme: tab.kind === "tracked" ? tab.scheme : null,
     documentId: shown ? tab.documentId : null,
   });
-  const selectedReviewDraftId = shown ? requestedReview : null;
-  const reviewRoomName = selectedReviewDraftId
-    ? reviewRoomNameForDraft(tab.documentId, selectedReviewDraftId)
+  const selectedReviewItemKey = shown ? requestedReview : null;
+  const reviewRoomName = selectedReviewItemKey
+    ? reviewRoomNameForDraft(tab.documentId, selectedReviewItemKey)
     : null;
-  const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
+  const reviewItemKey = reviewRoomName ? selectedReviewItemKey : null;
   // A draft-only document has no live room until Apply promotes it, and
   // the server refuses one. Review hosts the draft branch alone.
-  const branchOnly = tab.kind === "tracked" && tab.draftOnly === true;
+  const branchOnly = isDraftOnly(tab);
   const renderEditor = (
     session: DocumentSession | null,
     failed = false,
@@ -93,7 +93,7 @@ export function ContextDocumentHost({
     retry?: () => void,
   ): ReactNode => {
     if (!mountEditor) return null;
-    const hosted = session !== null || branchOnly;
+    const hosted = session !== null || branchOnly || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
     if (session) {
@@ -156,7 +156,7 @@ export function ContextDocumentHost({
                 documentId={tab.documentId}
                 liveSession={session}
                 active={active && shown}
-                inReview={Boolean(reviewDraftId)}
+                inReview={Boolean(reviewItemKey)}
               />
               <EditorView
                 draftOnly={branchOnly}
@@ -170,6 +170,7 @@ export function ContextDocumentHost({
                 className={editorClassName}
                 projectId={projectId}
                 documentId={tab.documentId}
+                focusKey={tab.tabInstanceId}
                 session={session ?? undefined}
                 bindingKey={bindingKey}
                 // A warm editor is hidden, not gone. Its chrome portals to
@@ -182,7 +183,7 @@ export function ContextDocumentHost({
                 schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
-                reviewDraftId={selectedReviewDraftId}
+                reviewItemKey={selectedReviewItemKey}
               />
             </>
           )}

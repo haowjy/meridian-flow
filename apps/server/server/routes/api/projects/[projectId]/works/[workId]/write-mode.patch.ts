@@ -23,5 +23,6 @@ export default defineEventHandler(async (event) => {
     pending: body.pending,
   });
 
+  if (result.status === "pending") event.res.status = 202;
   return serializeTransport(result);
 });

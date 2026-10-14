@@ -25,7 +25,7 @@ import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 export type ReviewHeaderOptions = {
   documentId: string;
   /** Empty while a stable chrome wrapper has no shown review. */
-  draftId: string;
+  itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
   /** Opens another draft of the Work in review (the presenting container's launcher). */
@@ -63,31 +63,31 @@ export type ReviewHeaderModel = {
 
 /**
  * What the Work's drafts hold as refused or lost, as the review of
- * (`documentId`, `draftId`) reads it: its own draft's failure, every listed
+ * (`documentId`, `itemKey`) reads it: its own draft's failure, every listed
  * draft's (a draft the review moved on from still says it was refused), and
  * the other drafts' separately. Pure reads of the command records, so the
  * identity row's notices can read them beside the header model.
  */
 export function useReviewFailures({
   documentId,
-  draftId,
+  itemKey,
 }: {
   documentId: string;
-  draftId: string;
+  itemKey: string;
 }) {
   const { controller, files } = useDraftReview();
   const commandRecords = useDraftCommandRecords();
-  const draftOf = (row: { documentId: string; draft: { draftId: string } }) => ({
+  const draftOf = (row: { documentId: string; draft: { itemKey: string } }) => ({
     projectId: controller.projectId,
     workId: controller.workId,
     documentId: row.documentId,
-    draftId: row.draft.draftId,
+    itemKey: row.draft.itemKey,
   });
   const commandError = draftCommandFailure(commandRecords, {
     projectId: controller.projectId,
     workId: controller.workId,
     documentId,
-    draftId,
+    itemKey,
   });
   const failedElsewhere: { row: ReviewFileTarget; failure: DraftCommandFailure }[] = [];
   for (const row of files) {
@@ -100,12 +100,12 @@ export function useReviewFailures({
 
 export function useReviewHeader({
   documentId,
-  draftId,
+  itemKey,
   onCloseDraftOnly,
   onOpenDraft,
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, files } = useDraftReview();
-  const view = useReviewChanges(controller, { enabled: Boolean(draftId) });
+  const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
   const next = nextReviewFile(
     files,
@@ -117,22 +117,22 @@ export function useReviewHeader({
   // finds its preview already in the cache.
   const queryClient = useQueryClient();
   const nextDocumentId = next?.documentId;
-  const nextDraftId = next?.draft.draftId;
+  const nextItemKey = next?.draft.itemKey;
   const ready = view.status === "ready";
   useEffect(() => {
-    if (!ready || !nextDocumentId || !nextDraftId) return;
+    if (!ready || !nextDocumentId || !nextItemKey) return;
     void queryClient.prefetchQuery(
       draftPreviewQueryOptions({
         projectId: controller.projectId,
         workId: controller.workId,
         documentId: nextDocumentId,
-        draftId: nextDraftId,
+        itemKey: nextItemKey,
       }),
     );
-  }, [ready, nextDocumentId, nextDraftId, controller.projectId, controller.workId, queryClient]);
+  }, [ready, nextDocumentId, nextItemKey, controller.projectId, controller.workId, queryClient]);
   const locked = controller.dispositionLocked;
   const { finished, completing, unlisted } = view;
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, draftId });
+  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey });
   const showLive = () => (onCloseDraftOnly ?? controller.exitInlineReview)();
 
   /**
@@ -142,7 +142,7 @@ export function useReviewHeader({
    */
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
-    const start = controller.startDraft(mode, { documentId, draftId });
+    const start = controller.startDraft(mode, { documentId, itemKey });
     void start.outcome;
     if (next && start.sent) onOpenDraft(next);
   };

@@ -6,6 +6,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
+import { type DetachedWorkTracker, processDetachedWork } from "../runtime/detached-work.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
 import type {
@@ -50,6 +51,7 @@ type CheckpointSlot = {
 
 type HocuspocusPersistenceDeps = {
   journal: CheckpointJournal;
+  backgroundTasks?: DetachedWorkTracker;
   branchStore?: BranchStore;
   branchCoordinator?: BranchCoordinator;
   hocuspocus(): Hocuspocus | null;
@@ -64,6 +66,8 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
+  /** A writer's update to a draft branch is durable (the draft's own links register, §10.7). */
+  onBranchWriterUpdateAdmitted?(branchId: string): void;
   offlineReconciliation?: OfflineReconciliation;
 };
 
@@ -92,6 +96,7 @@ export type HocuspocusPersistenceService = Pick<
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
 ): HocuspocusPersistenceService {
+  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
@@ -216,38 +221,41 @@ export function createHocuspocusPersistenceService(
     }
     const created: CheckpointSlot = { next: pending, running: Promise.resolve() };
     checkpointSlots.set(documentId, created);
-    created.running = (async () => {
-      while (created.next) {
-        const { document, authority } = created.next;
-        created.next = undefined;
-        // A retired room's state belongs to an authority generation that has
-        // since been replaced.
-        if (isDocumentHandleRetired(document)) {
-          continue;
-        }
-        try {
-          const cut = await deps.journal.captureCheckpoint(documentId, authority);
-          if (cut) {
-            const state = await cut.materializeState();
-            await deps.journal.storeCheckpoint(cut);
-            if (deps.eventSink)
-              emitEvent(deps.eventSink, {
-                level: "debug",
-                source: "collab.hocuspocus",
-                name: "checkpoint.clients",
-                payload: {
-                  documentId,
-                  clientCount: Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)).size,
-                },
-              });
+    created.running = backgroundTasks.track(
+      (async () => {
+        while (created.next) {
+          const { document, authority } = created.next;
+          created.next = undefined;
+          // A retired room's state belongs to an authority generation that has
+          // since been replaced.
+          if (isDocumentHandleRetired(document)) {
+            continue;
           }
-        } catch (cause) {
-          emitCheckpointFailure(documentId, cause);
+          try {
+            const cut = await deps.journal.captureCheckpoint(documentId, authority);
+            if (cut) {
+              const state = await cut.materializeState();
+              await deps.journal.storeCheckpoint(cut);
+              if (deps.eventSink)
+                emitEvent(deps.eventSink, {
+                  level: "debug",
+                  source: "collab.hocuspocus",
+                  name: "checkpoint.clients",
+                  payload: {
+                    documentId,
+                    clientCount: Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)).size,
+                  },
+                });
+            }
+          } catch (cause) {
+            emitCheckpointFailure(documentId, cause);
+          }
         }
-      }
-    })().finally(() => {
-      checkpointSlots.delete(documentId);
-    });
+      })().finally(() => {
+        checkpointSlots.delete(documentId);
+      }),
+      "Hocuspocus checkpoint",
+    );
   }
 
   async function drainCheckpoints(): Promise<void> {
@@ -504,13 +512,14 @@ export function createHocuspocusPersistenceService(
       const queueKey = branchRoomName(input.branchId, input.expectedGeneration);
       const admission = (async () => {
         try {
-          await requireBranchCoordinator().commitWriterUpdate({
+          const { admitted } = await requireBranchCoordinator().commitWriterUpdate({
             branchId: input.branchId,
             expectedGeneration: input.expectedGeneration,
             updateData: input.update,
             actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
             roomDocument: input.document,
           });
+          if (admitted) deps.onBranchWriterUpdateAdmitted?.(input.branchId);
         } catch (cause) {
           if (
             cause instanceof ReservedNamespaceAdmissionError ||

@@ -20,9 +20,8 @@ import {
 import { parseLinkRef } from "./document-ref.js";
 import type { ResolvedContextOwner } from "./protocol/context-owner.js";
 
-export type LinkView =
-  | { kind: "live"; responseId?: string }
-  | { kind: "draft"; workId: string; responseId?: string };
+/** The tree a link is read in: live, or one draft's view (the live tree plus what it created). */
+export type LinkView = { kind: "live" } | { kind: "draft"; draftId: string };
 
 export interface LinkHolder {
   /** Canonical URI of the holder in this view; null for chat (no holder). */
@@ -38,8 +37,16 @@ export interface CatalogDocument {
   projectId: string;
   /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;
-  /** live: in the live tree; draft: exists only in a Work draft (or is staged by this response). */
+  /**
+   * live: in the live tree; draft: a hidden document, exists only in drafts (its `uri` is
+   * where `draft` has it); deleted: soft-deleted, at its last address.
+   */
   presence: "live" | "draft" | "deleted";
+  /**
+   * Present iff presence is "draft": the draft the chip opens, the reader's own if it uses
+   * the document, otherwise the oldest active draft that does.
+   */
+  draft?: { draftId: string; workId: string | null };
   /** The reader may read it (file policy). False is answered exactly like a missing row. */
   readable: boolean;
   /** Nameable from the holder: same project, or the reader's personal `user://` space. */

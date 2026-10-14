@@ -2,7 +2,7 @@ import { createTestDocumentLinkScopes } from "./test-support/document-link-scope
 /** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
@@ -29,12 +29,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { branchWriteJournal, documentBranches, documentYjsUpdates, documents, modelResponses } =
-      await import("@meridian/database/schema");
+    const {
+      branchWriteJournal,
+      documentBranches,
+      documentMarkdownProjections,
+      documentYjsUpdates,
+      documents,
+      modelResponses,
+    } = await import("@meridian/database/schema");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose, applyDraft, currentDraftId } =
-      createWorkDraftFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose, applyDraft } = createWorkDraftFixture(db);
     afterEach(dispose);
 
     beforeEach(reset);
@@ -64,6 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         predictedCacheReason: "facts_unavailable",
       });
       const context = new ContextFS({
+        placement: { kind: "live" },
         holder: { projectId: PROJECT_ID },
         links: createTestDocumentLinkScopes(db),
         scheme: "manuscript",
@@ -99,10 +105,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ok: true,
         });
         const [row] = await db
-          .select()
+          .select({
+            sizeBytes: documents.sizeBytes,
+            markdown: documentMarkdownProjections.markdown,
+          })
           .from(documents)
+          .leftJoin(
+            documentMarkdownProjections,
+            eq(documentMarkdownProjections.documentId, documents.id),
+          )
           .where(eq(documents.id, created.value.documentId));
-        expect(row?.markdownProjection).toBe("Current café.\n");
+        expect(row?.markdown).toBe("Current café.\n");
         expect(row?.sizeBytes).toBe(Buffer.byteLength("Current café.\n", "utf8"));
       } finally {
         await collab.documentDerivations.stop();
@@ -239,8 +252,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
-      const [workDraft] = await activeWorkDraft();
-      await collab.pushToLive({ branchId: workDraft.id });
+      await applyDraft(collab, DOC_ID);
       await collab.reverseTurn({
         threadId: THREAD_ID as never,
         turnId: TURN_ID as never,
@@ -307,8 +319,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
-      const [workDraft] = await activeWorkDraft();
-      await collab.pushToLive({ branchId: workDraft.id });
+      await applyDraft(collab, DOC_ID);
 
       await writeMarkdown(collab, {
         documentId: DOC_ID as never,
@@ -355,8 +366,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           grant: testFileGrant(DRAFT_DESTINATION),
         },
       );
-      const [workDraft] = await activeWorkDraft();
-      await collab.pushToLive({ branchId: workDraft.id });
+      await applyDraft(collab, DOC_ID);
 
       const unrelatedDoc = new Y.Doc({ gc: false });
       unrelatedDoc.getMap("elsewhere").set("note", "writer edit outside the agent paragraph");
@@ -442,10 +452,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(branchWriteJournal.id);
       expect(rows).toHaveLength(2);
       expect(rows[0]).toEqual(expect.objectContaining({ status: "active" }));
-      const pending = await collab.draftReview.preview({
+      const item = await collab.draftReview.resolveItemByDocument({
         workId: WORK_ID as never,
         documentId: DOC_ID as never,
-        draftId: await currentDraftId(collab, DOC_ID as never as string),
+      });
+      if (!item) throw new Error("Missing review item");
+      const pending = await collab.draftReview.preview({
+        workId: WORK_ID as never,
+        itemKey: item.itemKey,
       });
       expect(pending.status).toBe("active");
       expect(await readMarkdown(collab, DOC_ID)).toContain("Base.");
@@ -534,20 +548,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect.objectContaining({ status: "active" }),
       ]);
     });
-
-    async function activeWorkDraft() {
-      return db
-        .select()
-        .from(documentBranches)
-        .where(
-          and(
-            eq(documentBranches.documentId, DOC_ID as never),
-            eq(documentBranches.kind, "work_draft"),
-            eq(documentBranches.status, "active"),
-          ),
-        )
-        .limit(1);
-    }
   });
 }
 

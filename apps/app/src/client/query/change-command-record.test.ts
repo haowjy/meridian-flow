@@ -2,8 +2,10 @@
  * The change command record: what a preview read may bring back after the
  * writer applied or discarded a change, and what a held failure follows.
  */
+
 import type { DraftPreviewResponse } from "@meridian/contracts/drafts";
 import { beforeEach, describe, expect, it } from "vitest";
+import { listed } from "@/test-support/draft-review-scope";
 import {
   beginChangeCommand,
   changeCommandState,
@@ -15,7 +17,7 @@ import {
 } from "./draft-command-record";
 import { previewWithoutKeys } from "./draft-projection";
 
-const draft = { projectId: "p", workId: "w", documentId: "d", draftId: "x" };
+const draft = { projectId: "p", workId: "w", documentId: "d", itemKey: "x" };
 const one = { classIds: ["c1"], admissionTokens: ["c1"], operationIds: ["1"] };
 const two = { classIds: ["c2"], admissionTokens: ["c2"], operationIds: ["2", "3"] };
 
@@ -29,8 +31,10 @@ function preview(): DraftPreviewResponse {
   });
   return {
     status: "active",
-    draftId: "x",
-    draftGeneration: 1,
+    draftId: "d",
+    item: { ...listed, itemKey: "x" },
+    itemKey: "x",
+    branchGeneration: 1,
     reviewRoomName: "room",
 
     liveRevisionToken: "l",
@@ -76,7 +80,7 @@ describe("change command record", () => {
       expect(changeCommandState(records, draft, one)).toMatchObject({ code: "offline" });
       expect(changeCommandState(records, draft, two)).toMatchObject({ code: "offline" });
       // Another draft, and a change the selection did not name, show nothing.
-      expect(changeCommandState(records, { ...draft, draftId: "y" }, both)).toBeNull();
+      expect(changeCommandState(records, { ...draft, itemKey: "y" }, both)).toBeNull();
       expect(
         changeCommandState(records, draft, {
           classIds: ["c9"],

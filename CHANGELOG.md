@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- A document the AI drafted keeps the name the writer gives it after revealing it. Apply publishes it where it now lives, and draft links spell the new name.
+- Apply and Discard, for an item, a change or the whole draft, are server commands that carry a command id, so a lost response can be resent without applying twice. Apply never closes the draft; only Discard all does. Work Files' Apply all and Discard all are one command each.
+- Discarding one document's draft while the AI is still replying fails that reply's writes to it ("the user discarded the text it edited"), saves its other documents, and lets a later write start a fresh draft.
+- A link to a document that does not exist yet binds once, for everyone, when a document first goes live at its path. Copying a link keeps it as it is, and Apply no longer re-binds links.
+- Card Undo skips a part by name when its draft was discarded and undoes the rest.
+- The review list reads live document fingerprints from a cache keyed by the document's authority head, and one Apply refreshes only its own project's chats.
+
+- Deleted Works no longer serve pending drafts. Restoring a Work keeps its drafts available, without a draft-loading error after deletion.
+
 - Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
 
 - Keep a grown draft change focused after a refused Discard by distinguishing surviving immutable members from a disappeared change.
@@ -172,10 +181,20 @@
 - Draft review stays quick on long chapters and large projects: building changes no longer compares every edit with every other, the file tree only redraws rows that changed, stepping between changes no longer re-anchors every mark, and opening a draft no longer prepares two whole copies of the document nobody reads.
 ### Changed
 
+- Documents and folders an AI draft creates stay out of your Manuscript, and out of other Works, until you apply them. If you create a document the draft already made, you get that same document, with the draft's text waiting for review. Discarding a draft leaves nothing behind: its new documents and folders are gone and their names are free again. A link to a document that exists only in a draft reads "in a draft" instead of missing. Apply all applies every item in one step, so an interruption never leaves the draft half applied.
+
 - Deleting a chat also clears its unsent and failed messages from this browser. If a chat is deleted elsewhere while you're in it, what you wrote moves to New chat under a note naming the chat.
 - A deleted chat or project now tells its owner so ("This chat was deleted.", "This project was deleted."). Other accounts still get "not found".
 
 ### Fixed
+
+- Exiting review while its address is resolving no longer reopens that review. Switching to another Work or draft keeps the new destination.
+
+- A successful live document open no longer waits for or fails on an older browser catalog.
+
+- Review opens the draft's document even when a separate live file shares its path. Moved and renamed review documents repair their addresses.
+
+- Inline review keeps the sidebar collapsed during warm address loading; unavailable destinations and Work recovery restore navigation.
 
 - Words typed just before a document reloads are never lost, and saving a document's checkpoint no longer holds up other writers' edits.
 
@@ -300,6 +319,7 @@
 - Moving a linked file keeps plain draft text unlinked after earlier moves and draft edits, without overriding concurrent manual retargets.
 ### Fixed
 
+- Drain background room checkpoints before resetting DB test fixtures, preventing a checkpoint reader from deadlocking with the suite reset.
 - Development: remove the duplicate phone paint-hold fixture and redundant hold tag; keep the framework regression and capture-phase state.
 
 - A stale missing-draft preview no longer closes a review that has already picked up a newer round of changes.

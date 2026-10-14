@@ -58,7 +58,8 @@ function fixture() {
   const store = createInMemoryPendingSettlementStore({ onCompleted: (id) => completed.push(id) });
   const pushes: PushLineageRow[] = [];
   const commits: PushCommitStore = {
-    async commitPush(prepared) {
+    async commitPushBatch({ settlement, pushes: [prepared] }) {
+      if (!prepared) throw new Error("single push fixture");
       const push = {
         id: 1,
         branchId: "branch",
@@ -69,11 +70,21 @@ function fixture() {
         idempotencyKey: "push",
       };
       pushes.push(push);
-      store.stage({ ...prepared.pendingLiveSettlement, push });
-      return { status: "inserted", push, settlement: await store.loadLiveSettlement(push.id) };
-    },
-    async commitPushBatch() {
-      throw new Error("single push fixture");
+      store.stage({
+        batchId: settlement.batchId,
+        claimToken: settlement.claimToken,
+        members: [
+          {
+            push,
+            documentTitle: prepared.documentTitle,
+            lockCutUpdate: prepared.lockCutUpdate,
+            pushUpdate: prepared.pushUpdate,
+            trail: prepared.trail,
+            sweepEvidence: null,
+          },
+        ],
+      });
+      return { status: "inserted", pushes: [push] };
     },
     async commitDiscard() {
       throw new Error("push only");
@@ -114,6 +125,7 @@ function fixture() {
       documentId,
       kind: "work_draft",
       upstreamBranchId: null,
+      draftId: "draft-1",
       workId: "work" as WorkId,
       threadId: null,
       status: "active",
@@ -126,13 +138,8 @@ function fixture() {
     pushUpdate,
     idempotencyKey: "push",
     trail,
-    pendingLiveSettlement: owner.prepare({
-      documentTitle: "alpha",
-      lockCutUpdate: lockCut,
-      pushUpdate,
-      trail,
-      sweepEvidence: null,
-    }),
+    documentTitle: "alpha",
+    lockCutUpdate: lockCut,
   };
   let admission = 0;
   async function deletePrefix() {
@@ -171,6 +178,7 @@ function fixture() {
         documentIds: [documentId],
         prepare: async () => ({
           kind: "push",
+          leasedBranchIds: [],
           pushes: [prepared],
           afterDurableCommit,
           onConflict: () => "conflict",
@@ -220,13 +228,12 @@ describe("branch push settlement transitions", () => {
     "after classification",
   ] as const)("joins delete-only writer changes %s and settles the latest revision", async (when) => {
     const rig = fixture();
-    const settle = rig.store.settlePushTrail;
+    const complete = rig.store.completeBatch;
     const revisions: number[] = [];
-    rig.store.settlePushTrail = async (input) => {
-      revisions.push(input.joinVersion);
-      const result = await settle(input);
+    rig.store.completeBatch = async (input) => {
+      revisions.push(input.members[0]?.joinVersion ?? -1);
       if (when === "after classification" && revisions.length === 1) await rig.deletePrefix();
-      return result;
+      return complete(input);
     };
     await expect(
       rig.push(when === "before classification" ? rig.deletePrefix : undefined),

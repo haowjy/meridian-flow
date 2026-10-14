@@ -4,6 +4,7 @@ import type {
   BranchPeerShadowAccess,
   BranchPushAccess,
   CollabDomain,
+  CollabDraftResolver,
   CollabDrafts,
   CollabLifecycle,
   CollabTransport,
@@ -33,6 +34,7 @@ export type CollabFacadeServices = {
   branchPush: BranchPushAccess;
   branchPeers: BranchPeerShadowAccess;
   drafts: CollabDrafts;
+  draftResolver: CollabDraftResolver;
   documentCreation: DocumentCreationAggregate;
 };
 
@@ -52,6 +54,7 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.branchPush,
     ...services.branchPeers,
     ...services.drafts,
+    ...services.draftResolver,
     ...services.documentCreation,
   };
 }

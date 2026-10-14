@@ -108,15 +108,27 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           "selective_discard_refork",
           survivors.map((row) => row.id),
         );
-        const draftClosed = documentEffectsEqual(live, peer);
+        const itemClosed = documentEffectsEqual(live, peer);
+        const itemDisposition = history.some((row) => row.status === "pushed")
+          ? ("applied" as const)
+          : ("discarded" as const);
+        const outcome = { itemClosed, ...(itemClosed ? { itemDisposition } : {}) };
         await deps.commitStore.commitDiscard({
+          ...(discardInput.command
+            ? {
+                command: {
+                  envelope: discardInput.command.envelope,
+                  result: discardInput.command.result(outcome),
+                },
+              }
+            : {}),
           branch,
           journalRows: rows,
           survivors,
-          retireSurvivors: draftClosed,
+          retireSurvivors: itemClosed,
           expectedLiveRevision: selection.expectedLiveRevision,
-          state: Y.encodeStateAsUpdate(draftClosed ? live : peer),
-          stateVector: Y.encodeStateVector(draftClosed ? live : peer),
+          state: Y.encodeStateAsUpdate(itemClosed ? live : peer),
+          stateVector: Y.encodeStateVector(itemClosed ? live : peer),
           reviewedByUserId: discardInput.reviewedByUserId,
         });
         deps.branchCoordinator?.notifyReset?.({
@@ -127,14 +139,7 @@ export function createBranchReviewOperations(deps: Dependencies): BranchReviewSe
           status: "discarded",
           branchId: branch.branchId,
           journalIds: [...selected].sort((a, b) => a - b),
-          draftClosed,
-          ...(draftClosed
-            ? {
-                draftDisposition: history.some((row) => row.status === "pushed")
-                  ? ("applied" as const)
-                  : ("discarded" as const),
-              }
-            : {}),
+          ...outcome,
         };
       } finally {
         live.destroy();

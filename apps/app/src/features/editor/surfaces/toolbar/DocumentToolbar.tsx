@@ -294,7 +294,10 @@ function AlignmentTrigger({
         aria-disabled={blocked || undefined}
         // Wider than the icon buttons by exactly the chevron it carries: the
         // dropdown says so before it is opened.
-        className={cn("gap-px px-1 has-[>svg]:px-1", toolbarControlClass({ active, blocked }))}
+        className={cn(
+          "gap-px px-1 has-[>svg]:px-1 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:min-w-11",
+          toolbarControlClass({ active, blocked }),
+        )}
       >
         <Icon className="size-3.5" aria-hidden />
         <ChevronDown className="size-2.5" aria-hidden />

@@ -55,6 +55,7 @@ import {
   modelResult,
   type ResponseCommitWriteReceipt,
   renderAgentEditResult,
+  type WriteRejection,
 } from "@meridian/agent-edit/integration";
 import {
   type MeridianError,
@@ -1120,6 +1121,8 @@ async function persistUncommittedWriteResult(input: {
   status?: "internal_error" | "invalid_write";
   /** A file-policy refusal at the save: `permission_denied` with this reason. */
   reason?: PermissionDeniedReason;
+  /** Why the host rejected a staged write, so the chat can say it plainly. */
+  rejected?: WriteRejection;
 }): Promise<{ block: Block }> {
   const content = input.block.content as { toolCallId?: string } | null;
   const toolCallId = content?.toolCallId ?? "";
@@ -1132,6 +1135,7 @@ async function persistUncommittedWriteResult(input: {
       payload: {
         ...(staged?.path ? { path: staged.path } : {}),
         ...(input.reason ? { reason: input.reason } : {}),
+        ...(input.rejected ? { rejected: input.rejected } : {}),
         message,
       },
     }),
@@ -1481,6 +1485,7 @@ function createResponseScope(input: {
             status: "invalid_write",
             text: "the user discarded the text it edited. Re-read and retry.",
             message: receipt.result.message,
+            ...(receipt.result.rejected ? { rejected: receipt.result.rejected } : {}),
           });
         // The settled receipt replaces the staged echo; both were shown.
         await recordShown(documentId, receipt);

@@ -15,22 +15,22 @@
  * a visible extension (`outline.json`) states its type.
  */
 import { classifyFiletype, filetypeForPath } from "@meridian/contracts/protocol";
-import type { ServerContextTab } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
 import type { ContextUri } from "@/lib/context-uri";
 
 export function contextTabFromDraftGroup(group: {
   workId: string;
   documentId: string;
-  draftId: string;
+  itemKey: string;
   contextLocation?: Pick<ContextUri, "scheme" | "path"> | null;
   documentName?: string | null;
   /**
-   * Server flag for a draft-CREATED document. Marks the tab `draftOnly` so
+   * Server flag for a draft-CREATED document. Gives the tab a review entry (draft-only) so
    * the tab lifecycle can follow the draft's: cleared on Apply, closed on
    * whole-draft Discard (the document never joins the tree).
    */
-  isNewDocument?: boolean;
-}): ServerContextTab | null {
+  isNew?: boolean;
+}): Extract<ContextTab, { kind: "tracked" }> | null {
   const location = group.contextLocation;
   if (!location?.path) return null;
   const { scheme, path } = location;
@@ -51,12 +51,11 @@ export function contextTabFromDraftGroup(group: {
     editable: true,
     filetype,
     schemaType: classification.schemaType,
-    reviewWorkId: group.workId,
-    ...(group.isNewDocument
+    ...(group.isNew
       ? {
-          draftOnly: true,
-          reviewDraftId: group.draftId,
-          tabInstanceToken: crypto.randomUUID(),
+          reviews: {
+            [group.workId]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
+          },
         }
       : {}),
   };

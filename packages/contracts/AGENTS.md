@@ -28,6 +28,9 @@ runtime shapes, and observability records.
   are declared once. Tool lists are arrays of real tool names; `edit` is
   permission, never a tool. The compiler, resolver, invocation patch, and effort provider mapping
   are projections; do not re-declare an effort set or tool alias map.
+- `context-uri.ts` owns `isDraftedScheme`: manuscript, kb, user, and unfiled
+  are drafted in draft-mode Works; scratch and uploads never are (D9, D11).
+  Both app review and server file policy consume this rule.
 - Context entry validation reserves a leading `@` in every path segment for
   Work authority qualifiers. An `@` elsewhere in a segment remains valid.
 - `document-href.ts` is the one place a standard Markdown link's destination

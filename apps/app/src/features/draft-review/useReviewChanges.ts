@@ -29,7 +29,7 @@ export type ReviewChangesView = DraftChangesView & {
   completing: "apply" | "discard" | null;
   /**
    * The server closed the draft: nothing is left to review. This is its answer
-   * (`draftClosed`) and nothing else, never how many changes the list shows.
+   * (`itemClosed`) and nothing else, never how many changes the list shows.
    */
   finished: boolean;
   focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
@@ -40,15 +40,15 @@ export function useReviewChanges(
   controller: DraftReviewController,
   options?: { enabled?: boolean },
 ): ReviewChangesView {
-  const { documentId, draftId, changes, items, completing, finished, unlisted, status } =
+  const { documentId, itemKey, changes, items, completing, finished, unlisted, status } =
     useOpenReviewChanges(controller, options);
   // The review owns the focus (class and operations); this only reads it.
   const focused = resolveFocusedChange(changes, controller.focus);
   const focusedIndex = focused ? changes.indexOf(focused) : -1;
 
   const review = useMemo(
-    () => (documentId && draftId ? { documentId, draftId } : null),
-    [documentId, draftId],
+    () => (documentId && itemKey ? { documentId, itemKey } : null),
+    [documentId, itemKey],
   );
   const focus = useCallback(
     (change: ReviewChange, options?: { scroll?: boolean; instant?: boolean }) => {
@@ -107,7 +107,7 @@ export function useReviewChanges(
 
   return {
     documentId,
-    draftId,
+    itemKey,
     status,
     // A draft the server closed has nothing to list, whatever a stale read still holds.
     items,

@@ -4,8 +4,8 @@ import type {
   CatalogFileClassification,
   CatalogScope,
   ContextOperationReceipt,
+  CreateUntitledContextDocumentAnswer,
   CreateUntitledContextDocumentRequest,
-  CreateUntitledContextDocumentResult,
   DeleteContextEntryRequest,
   MeridianError,
   MoveContextEntryRequest,
@@ -117,8 +117,19 @@ export type ResourceDescriptor = ResourceKey & {
   lifecycle:
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
-    | { kind: "terminal"; generation: string; transitionId: string };
+    | {
+        kind: "terminal";
+        generation: string;
+        transitionId: string;
+        /**
+         * Server namespace version that proved the deletion. Only a strictly newer observation
+         * of the document as present revives it; without one it never revives from a catalog.
+         */
+        deletionVersion?: string;
+      };
   aliases: Record<string, { introducedAtIdentityRevision: number }>;
+  /** The terminal transition a newer server observation superseded; its late purge is stale. */
+  revivedFrom?: { generation: string; transitionId: string };
   obligations: {
     /** A new local document cannot dispatch Create until content exists or the writer files it. */
     createEligibility?: { eligibleAt: number | null };
@@ -185,7 +196,16 @@ export type NamespaceIntent = ResourceKey & {
   sequence: number;
   identityRevision: number;
   desired:
-    | { kind: "create"; folderPath: string; provisionalName?: string }
+    | {
+        kind: "create";
+        folderPath: string;
+        provisionalName?: string;
+        /**
+         * Where the writer put the document, sent with the create so the server can join a
+         * draft's document waiting there. Absent for a nameless create (the editor's New document).
+         */
+        destination?: ResourceDestination;
+      }
     | {
         kind: "set-location";
         /** Original input; canonical destination is only for display and comparison. */
@@ -286,7 +306,7 @@ export interface ResourceMetadataStore {
 
 /** Transport evidence is matched to its recorded attempt by journal policy before installation. */
 export type NamespaceOutcome =
-  | { kind: "create"; result: CreateUntitledContextDocumentResult }
+  | { kind: "create"; result: CreateUntitledContextDocumentAnswer }
   | { kind: "operation"; receipt: ContextOperationReceipt }
   | { kind: "refusal"; operationId: string; error: MeridianError };
 

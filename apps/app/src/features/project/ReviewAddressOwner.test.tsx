@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import { getContextTabs, reviewEntryOf, useContextTabsStore } from "@/client/stores";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useDraftReviewScopeValue } from "@/features/draft-review/DraftReviewProvider";
 import { createReviewScopeFixture, listed, work } from "@/test-support/draft-review-scope";
@@ -22,13 +22,13 @@ import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 const draft: AiDraftLaunchTarget = {
   workId: "work-1",
   documentId: "document-a",
-  draftId: "draft-a",
+  itemKey: "draft-a",
   contextLocation: { scheme: "manuscript", path: "chapters/a.md" },
 };
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 type InlineReview = {
   documentId: string;
-  draftId: string;
+  itemKey: string;
   completion?: { phase: "pending" | "closed"; documentName: string | null };
 };
 let setInline: ((inline: InlineReview | null) => void) | null = null;
@@ -42,12 +42,12 @@ function CommandCapture() {
 }
 
 function Harness({
-  requestedDraftId,
+  requestedItemKey,
   activeScreen = "context",
   activeScheme = "manuscript",
   activePath = draft.contextLocation.path,
   activeDocumentId,
-  onSetDraftId,
+  onSetItemKey,
   exitInlineReview,
   openContextRoute,
   listed = true,
@@ -60,12 +60,12 @@ function Harness({
   container?: "editor" | "dock";
   draftOnly?: boolean;
   admit?: (target: AiDraftLaunchTarget) => void;
-  requestedDraftId?: string;
+  requestedItemKey?: string;
   activeScreen?: "chat" | "work" | "context";
   activeScheme?: "manuscript" | null;
   activePath?: string | null;
   activeDocumentId?: string;
-  onSetDraftId: (draftId: string | null) => void;
+  onSetItemKey: (itemKey: string | null) => void;
   exitInlineReview?: () => void;
   openContextRoute: OpenContextRoute;
 }) {
@@ -86,7 +86,7 @@ function Harness({
             documentName: "A",
             contextLocation: draft.contextLocation,
             draft: {
-              draftId: draft.draftId,
+              itemKey: draft.itemKey,
               documentId: draft.documentId,
               documentName: "A",
               contextLocation: draft.contextLocation,
@@ -101,7 +101,7 @@ function Harness({
                 documentId: draft.documentId,
                 documentName: "A",
                 contextLocation: draft.contextLocation,
-                draft: { draftId: draft.draftId },
+                draft: { itemKey: draft.itemKey },
               }
             : null,
       }) as unknown as DraftReviewContextValue,
@@ -111,6 +111,7 @@ function Harness({
     <EditorReviewHandoffProvider projectId="project-1" openContextRoute={openContextRoute}>
       <CommandCapture />
       <ReviewAddressOwner
+        admission="admitted"
         review={review}
         presented={
           activeScreen === "context" || container === "dock"
@@ -120,14 +121,14 @@ function Harness({
                 scheme: activeScheme,
                 path: activePath,
                 draftOnly,
-                review: requestedDraftId
-                  ? { workId: draft.workId, draftId: requestedDraftId }
+                review: requestedItemKey
+                  ? { workId: draft.workId, itemKey: requestedItemKey }
                   : null,
               }
             : null
         }
         port={{
-          write: (address) => onSetDraftId(address?.draftId ?? null),
+          write: (address) => onSetItemKey(address?.itemKey ?? null),
           admit: container === "dock" ? admit : (target) => openReview?.(target),
         }}
       />
@@ -146,13 +147,13 @@ describe("ReviewAddressOwner", () => {
     await withReactRoot(
       <Harness
         activeDocumentId="document-b"
-        onSetDraftId={vi.fn()}
+        onSetItemKey={vi.fn()}
         exitInlineReview={exit}
         openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
       />,
       async () => {
         await act(async () =>
-          setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
+          setInline?.({ documentId: draft.documentId, itemKey: draft.itemKey }),
         );
         expect(exit).toHaveBeenCalledOnce();
       },
@@ -160,24 +161,29 @@ describe("ReviewAddressOwner", () => {
   });
 
   describe("a review whose draft the list no longer names", () => {
-    it("an unfinished review whose draft left the list is left to the review's own list decision", async () => {
+    it("a cold, unlisted open is still owned: Back to live clears the address instead of reopening", async () => {
       const exit = vi.fn();
-      const setDraftId = vi.fn();
+      const setItemKey = vi.fn();
+      const openContextRoute = vi.fn(async () => ({ kind: "applied" as const }));
       await withReactRoot(
         <Harness
           listed={false}
           activeDocumentId={draft.documentId}
-          onSetDraftId={setDraftId}
+          requestedItemKey={draft.itemKey}
+          onSetItemKey={setItemKey}
           exitInlineReview={exit}
-          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+          openContextRoute={openContextRoute}
         />,
         async () => {
           await act(async () =>
-            setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
+            setInline?.({ documentId: draft.documentId, itemKey: draft.itemKey }),
           );
           expect(exit).not.toHaveBeenCalled();
-          expect(setDraftId).toHaveBeenLastCalledWith(draft.draftId);
-          expect(setDraftId).not.toHaveBeenCalledWith(null);
+          expect(setItemKey).not.toHaveBeenCalled();
+          const coldAdmissions = openContextRoute.mock.calls.length;
+          await act(async () => setInline?.(null));
+          expect(setItemKey).toHaveBeenCalledExactlyOnceWith(null);
+          expect(openContextRoute).toHaveBeenCalledTimes(coldAdmissions);
         },
       );
     });
@@ -185,22 +191,22 @@ describe("ReviewAddressOwner", () => {
 
   it("never writes a draft identity on a non-document screen", async () => {
     const exit = vi.fn();
-    const setDraftId = vi.fn();
+    const setItemKey = vi.fn();
     await withReactRoot(
       <Harness
         activeScreen="chat"
         activeScheme={null}
         activePath={null}
-        onSetDraftId={setDraftId}
+        onSetItemKey={setItemKey}
         exitInlineReview={exit}
         openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
       />,
       async () => {
         await act(async () =>
-          setInline?.({ documentId: draft.documentId, draftId: draft.draftId }),
+          setInline?.({ documentId: draft.documentId, itemKey: draft.itemKey }),
         );
         expect(exit).toHaveBeenCalledOnce();
-        expect(setDraftId).not.toHaveBeenCalledWith(draft.draftId);
+        expect(setItemKey).not.toHaveBeenCalledWith(draft.itemKey);
       },
     );
   });
@@ -210,16 +216,16 @@ describe("ReviewAddressOwner", () => {
     const route = new Promise<{ kind: "applied" }>((resolve) => {
       settle = () => resolve({ kind: "applied" });
     });
-    const setDraftId = vi.fn();
+    const setItemKey = vi.fn();
     await withReactRoot(
-      <Harness onSetDraftId={setDraftId} openContextRoute={vi.fn(() => route)} />,
+      <Harness onSetItemKey={setItemKey} openContextRoute={vi.fn(() => route)} />,
       async () => {
         let pending: Promise<void> | undefined;
         await act(async () => {
           pending = openReview?.(draft);
-          setInline?.({ documentId: draft.documentId, draftId: draft.draftId });
+          setInline?.({ documentId: draft.documentId, itemKey: draft.itemKey });
         });
-        expect(setDraftId).not.toHaveBeenCalled();
+        expect(setItemKey).not.toHaveBeenCalled();
         settle();
         await act(async () => pending);
       },
@@ -236,14 +242,14 @@ describe("ReviewAddressOwner", () => {
         <Harness
           activePath="chapters/renamed.md"
           activeDocumentId={documentId}
-          onSetDraftId={vi.fn()}
+          onSetItemKey={vi.fn()}
           exitInlineReview={exit}
           openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
         />
       );
     }
     await withReactRoot(<Resolving />, async () => {
-      await act(async () => setInline?.({ documentId: draft.documentId, draftId: draft.draftId }));
+      await act(async () => setInline?.({ documentId: draft.documentId, itemKey: draft.itemKey }));
       expect(exit).not.toHaveBeenCalled();
       await act(async () => resolveAddress(draft.documentId));
       expect(exit).not.toHaveBeenCalled();
@@ -253,24 +259,31 @@ describe("ReviewAddressOwner", () => {
     const fixture = createReviewScopeFixture();
     const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     fixture.network.listWorkDrafts.mockResolvedValue({
-      drafts: [
+      items: [
         {
           ...listed,
+          draftId: "whole-draft",
+          origin: "created",
+          binary: false,
+          wholeItem: true,
+          conflict: null,
+          settling: false,
+          tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
           contextLocation: { scheme: "manuscript", path: "/chapter.md" },
-          isNewDocument: true,
+          isNew: true,
         },
       ],
     });
-    fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", draftId: "draft-a" });
-    useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+    fixture.network.getDraftPreview.mockResolvedValue({ status: "gone", itemKey: "draft-a" });
+    useContextTabsStore.setState({ byProject: {} });
     useContextTabsStore.getState().openTab(
       "project-a",
       contextTabFromDraftGroup({
         workId: "work-a",
         documentId: "document-a",
-        draftId: "draft-a",
+        itemKey: "draft-a",
         contextLocation: { scheme: "manuscript", path: "/chapter.md" },
-        isNewDocument: true,
+        isNew: true,
       })!,
     );
     let refresh!: () => void;
@@ -278,9 +291,9 @@ describe("ReviewAddressOwner", () => {
     let address: string | undefined;
     function PendingAddress() {
       const [fetching, setFetching] = useState(false);
-      const [draftId, setDraftId] = useState<string | undefined>("draft-a");
+      const [itemKey, setItemKey] = useState<string | undefined>("draft-a");
       refresh = () => setFetching(true);
-      address = draftId;
+      address = itemKey;
       const gate = gateLiveView(
         {
           kind: "current",
@@ -294,7 +307,7 @@ describe("ReviewAddressOwner", () => {
         } as unknown as Parameters<typeof gateLiveView>[1],
         {
           status: "ready",
-          files: [{ documentId: "document-a", isNewDocument: true, draft: { draftId: "draft-a" } }],
+          files: [{ documentId: "document-a", isNew: true, draft: { itemKey: "draft-a" } }],
         } as Parameters<typeof gateLiveView>[2],
         () => false,
       );
@@ -311,25 +324,22 @@ describe("ReviewAddressOwner", () => {
           scheme: "manuscript",
           path: "/chapter.md",
           documentId,
-          draftId,
+          itemKey,
           draftOnly: getContextTabs("project-a").tabs.some(
-            (tab) =>
-              tab.kind === "tracked" &&
-              tab.draftOnly &&
-              tab.documentId === documentId &&
-              tab.reviewWorkId === "work-a",
+            (tab) => tab.documentId === documentId && reviewEntryOf(tab, "work-a"),
           ),
         },
       });
       selected = useDraftReviewScopeValue({ projectId: "project-a", work, presented });
       return (
         <ReviewAddressOwner
+          admission="admitted"
           review={selected}
           presented={presented}
           port={{
-            write: (review) => setDraftId(review?.draftId),
+            write: (review) => setItemKey(review?.itemKey),
             admit: (target) =>
-              selected.controller.enterInlineReview(target.documentId, target.draftId),
+              selected.controller.enterInlineReview(target.documentId, target.itemKey),
           }}
         />
       );
@@ -343,11 +353,11 @@ describe("ReviewAddressOwner", () => {
           await vi.waitFor(() => expect(selected.controller.reviewRoomError).toBe(true));
           expect(address).toBe("draft-a");
           await act(async () => refresh());
-          expect(selected.controller.inlineReview?.draftId).toBe("draft-a");
+          expect(selected.controller.inlineReview?.itemKey).toBe("draft-a");
           expect(address).toBe("draft-a");
           expect(
             getContextTabs("project-a").tabs.find((tab) => tab.documentId === "document-a"),
-          ).toHaveProperty("draftOnly", true);
+          ).toHaveProperty("reviews");
         },
       );
     } finally {
@@ -370,17 +380,17 @@ it.each([
       draftOnly={draftOnly}
       activeScreen="chat"
       activeDocumentId={draft.documentId}
-      requestedDraftId={draft.draftId}
+      requestedItemKey={draft.itemKey}
       admit={admit}
-      onSetDraftId={write}
+      onSetItemKey={write}
       openContextRoute={route}
     />,
     async () => {
       expect(admit).toHaveBeenCalledWith(
-        expect.objectContaining({ documentId: draft.documentId, draftId: draft.draftId }),
+        expect.objectContaining({ documentId: draft.documentId, itemKey: draft.itemKey }),
       );
       expect(route).not.toHaveBeenCalled();
-      await act(async () => setInline?.({ documentId: draft.documentId, draftId: draft.draftId }));
+      await act(async () => setInline?.({ documentId: draft.documentId, itemKey: draft.itemKey }));
       await act(async () => setInline?.(null));
       if (draftOnly) expect(write).not.toHaveBeenCalledWith(null);
       else expect(write).toHaveBeenLastCalledWith(null);

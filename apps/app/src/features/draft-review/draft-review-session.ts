@@ -3,7 +3,7 @@ import type { ReviewFocus } from "./review-changes";
 
 export type DraftReviewSelection = {
   documentId: string;
-  draftId: string;
+  itemKey: string;
 };
 
 export type InlineDraftReview = {
@@ -15,7 +15,7 @@ export type InlineDraftReview = {
    * first read says (nothing was known on entry). It moves only through
    * `reenter`, and never down.
    */
-  draftGeneration?: number;
+  branchGeneration?: number;
   /** The review room of the draft, once a read has resolved it; the server's, never parsed. */
   roomName?: string;
   /** The room read failed; entering the draft again retries it. */
@@ -60,12 +60,12 @@ export type ReviewCompletion =
  * and the completion it gives (none when it does not cover the draft's last
  * changes). The completion belongs to that generation and to no other.
  */
-export type ReviewClaim = { draftGeneration: number; completion?: ReviewCompletion };
+export type ReviewClaim = { branchGeneration: number; completion?: ReviewCompletion };
 
 export type DraftReviewSurface = { kind: "none" } | InlineDraftReview;
 
 /** What the draft's newest cached preview says: the generation it describes and whether it lists changes. */
-export type ProposalEvidence = { draftGeneration: number; proposal: boolean };
+export type ProposalEvidence = { branchGeneration: number; proposal: boolean };
 
 /** What a toast says; the render layer owns the words. */
 export type ReviewToastCode = "change-gone";
@@ -84,27 +84,27 @@ export type DraftReviewAction =
   | {
       type: "enterInline";
       documentId: string;
-      draftId: string;
+      itemKey: string;
       /** The newest proposal the caches know of (the cached preview that lists changes, the list row). */
-      draftGeneration?: number;
+      branchGeneration?: number;
       /** A command already in flight on this draft (`draftClaim`). */
       claim?: ReviewClaim;
     }
-  | { type: "inlineModelAvailable"; documentId: string; draftId: string; identity: string }
-  | { type: "inlineShown"; documentId: string; draftId: string; shown: boolean }
+  | { type: "inlineModelAvailable"; documentId: string; itemKey: string; identity: string }
+  | { type: "inlineShown"; documentId: string; itemKey: string; shown: boolean }
   | {
       type: "reviewDisposed";
       documentId: string;
-      draftId: string;
-      draftGeneration: number | undefined;
+      itemKey: string;
+      branchGeneration: number | undefined;
     }
-  | { type: "changeFocused"; documentId: string; draftId: string; focus: ReviewFocus | null }
+  | { type: "changeFocused"; documentId: string; itemKey: string; focus: ReviewFocus | null }
   | {
       /** A preview or list read of the draft landed (rows O1-O4), or the room read resolved (P, with `roomName`). */
       type: "generationObserved";
       documentId: string;
-      draftId: string;
-      draftGeneration: number;
+      itemKey: string;
+      branchGeneration: number;
       /** The read lists changes: a list row always does, a preview when `reviewChangesOfPreview` is non-empty. */
       proposal: boolean;
       claim?: ReviewClaim;
@@ -117,19 +117,19 @@ export type DraftReviewAction =
        */
       type: "reviewAbsent";
       documentId: string;
-      draftId: string;
+      itemKey: string;
       /** The generation addressed by the absent read; older absence cannot close R. */
-      draftGeneration?: number;
+      branchGeneration?: number;
       evidence: ProposalEvidence | null;
       draftOnly?: boolean;
       /** A terminal session or failed rebuild is not a transient missing read. */
       terminal?: boolean;
     }
-  | { type: "roomFailed"; documentId: string; draftId: string }
-  | { type: "roomStale"; documentId: string; draftId: string; roomName: string }
+  | { type: "roomFailed"; documentId: string; itemKey: string }
+  | { type: "roomStale"; documentId: string; itemKey: string; roomName: string }
   | (DraftReviewSelection & {
       type: "completionObserved";
-      draftGeneration: number;
+      branchGeneration: number;
       completion: ReviewCompletion | null;
     })
   | { type: "marksVisible"; visible: boolean }
@@ -166,9 +166,9 @@ export function draftReviewReducer(
       if (!surfaceMatchesDraft(state.surface, action) || state.surface.kind !== "inline")
         return state;
       if (
-        state.surface.draftGeneration !== undefined &&
-        (action.draftGeneration === undefined ||
-          action.draftGeneration < state.surface.draftGeneration)
+        state.surface.branchGeneration !== undefined &&
+        (action.branchGeneration === undefined ||
+          action.branchGeneration < state.surface.branchGeneration)
       )
         return state;
       return clearInlineState({ ...state, surface: { kind: "none" } });
@@ -240,7 +240,7 @@ function sameFocus(left: ReviewFocus | null, right: ReviewFocus | null): boolean
 /** Entering a draft that is already open keeps the review; it only retries a failed room read. */
 function inlineSurfaceForEnter(
   current: DraftReviewSurface,
-  entering: DraftReviewSelection & { draftGeneration?: number; claim?: ReviewClaim },
+  entering: DraftReviewSelection & { branchGeneration?: number; claim?: ReviewClaim },
 ): DraftReviewSurface {
   if (surfaceMatchesDraft(current, entering)) {
     if (current.kind !== "inline" || !current.roomError) return current;
@@ -248,7 +248,7 @@ function inlineSurfaceForEnter(
     return retrying;
   }
   // The newest proposal known; a claim counts too (it acted on a proposal).
-  const known = [entering.draftGeneration, entering.claim?.draftGeneration].filter(
+  const known = [entering.branchGeneration, entering.claim?.branchGeneration].filter(
     (generation) => generation !== undefined,
   );
   const generation = known.length > 0 ? Math.max(...known) : undefined;
@@ -256,8 +256,8 @@ function inlineSurfaceForEnter(
   return {
     kind: "inline",
     documentId: entering.documentId,
-    draftId: entering.draftId,
-    ...(generation !== undefined ? { draftGeneration: generation } : {}),
+    itemKey: entering.itemKey,
+    ...(generation !== undefined ? { branchGeneration: generation } : {}),
     ...(completion ? { completion } : {}),
   };
 }
@@ -267,7 +267,7 @@ function completionAt(
   claim: ReviewClaim | undefined,
   generation: number | undefined,
 ): ReviewCompletion | undefined {
-  return claim && claim.draftGeneration === generation ? claim.completion : undefined;
+  return claim && claim.branchGeneration === generation ? claim.completion : undefined;
 }
 
 /** Apply `change` to the open review the action names; any other state is untouched. */
@@ -282,7 +282,7 @@ function onInline(
   if (next === prior) return state;
   // Re-entering a generation restores the marks, as entering a review does.
   const reentered =
-    prior.draftGeneration !== undefined && next.draftGeneration !== prior.draftGeneration;
+    prior.branchGeneration !== undefined && next.branchGeneration !== prior.branchGeneration;
   return { ...state, marksVisible: reentered ? true : state.marksVisible, surface: next };
 }
 
@@ -303,7 +303,7 @@ function reenter(
   const { completion: _left, roomName: _room, roomError: _error, ...kept } = review;
   return {
     ...kept,
-    draftGeneration: generation,
+    branchGeneration: generation,
     ...(completion ? { completion } : {}),
     ...(roomName !== undefined ? { roomName } : {}),
   };
@@ -312,12 +312,12 @@ function reenter(
 /** Rows C1-C5: a claim speaks for the generation it acted on, and for no other. */
 function observeCompletion(
   review: InlineDraftReview,
-  observed: { draftGeneration: number; completion: ReviewCompletion | null },
+  observed: { branchGeneration: number; completion: ReviewCompletion | null },
 ): InlineDraftReview {
-  const shown = review.draftGeneration;
-  if (shown !== undefined && observed.draftGeneration < shown) return review;
-  if (shown === undefined || observed.draftGeneration > shown)
-    return reenter(review, observed.draftGeneration, observed.completion ?? undefined, undefined);
+  const shown = review.branchGeneration;
+  if (shown !== undefined && observed.branchGeneration < shown) return review;
+  if (shown === undefined || observed.branchGeneration > shown)
+    return reenter(review, observed.branchGeneration, observed.completion ?? undefined, undefined);
   const held = review.completion;
   const next = observed.completion;
   if (held?.phase === "closed") return review;
@@ -340,13 +340,13 @@ function observeCompletion(
 function observeGeneration(
   review: InlineDraftReview,
   read: {
-    draftGeneration: number;
+    branchGeneration: number;
     proposal: boolean;
     claim?: ReviewClaim;
     roomName?: string;
   },
 ): InlineDraftReview {
-  const shown = review.draftGeneration;
+  const shown = review.branchGeneration;
   const withRoom = (current: InlineDraftReview): InlineDraftReview => {
     if (read.roomName === undefined) return current;
     if (current.roomName === read.roomName && !current.roomError) return current;
@@ -355,17 +355,17 @@ function observeGeneration(
   };
   if (shown === undefined) {
     // Nothing was known on entry: the first read says what the review shows.
-    const completion = completionAt(read.claim, read.draftGeneration);
+    const completion = completionAt(read.claim, read.branchGeneration);
     return withRoom({
       ...review,
-      draftGeneration: read.draftGeneration,
+      branchGeneration: read.branchGeneration,
       ...(completion ? { completion } : {}),
     });
   }
-  if (read.draftGeneration < shown) return review;
+  if (read.branchGeneration < shown) return review;
   if (!adoptsGeneration(review, read)) return withRoom(review);
-  const completion = completionAt(read.claim, read.draftGeneration);
-  return reenter(review, read.draftGeneration, completion, read.roomName);
+  const completion = completionAt(read.claim, read.branchGeneration);
+  return reenter(review, read.branchGeneration, completion, read.roomName);
 }
 
 /**
@@ -386,16 +386,16 @@ function reviewAbsent(
     !surfaceMatchesDraft(review, action) ||
     (!action.terminal &&
       (review.completion ||
-        (action.draftGeneration !== undefined &&
-          review.draftGeneration !== undefined &&
-          action.draftGeneration < review.draftGeneration)))
+        (action.branchGeneration !== undefined &&
+          review.branchGeneration !== undefined &&
+          action.branchGeneration < review.branchGeneration)))
   ) {
     return state;
   }
   const { evidence } = action;
   const alive =
     evidence?.proposal === true &&
-    (review.draftGeneration === undefined || evidence.draftGeneration >= review.draftGeneration);
+    (review.branchGeneration === undefined || evidence.branchGeneration >= review.branchGeneration);
   if (alive && !action.terminal) return state;
   return action.draftOnly
     ? review.roomError
@@ -406,7 +406,7 @@ function reviewAbsent(
 
 function stateAfterInlineModelAvailable(
   state: DraftReviewState,
-  action: { documentId: string; draftId: string; identity: string },
+  action: { documentId: string; itemKey: string; identity: string },
 ): DraftReviewState {
   const nextSurface = surfaceMatchesDraft(state.surface, action)
     ? { ...state.surface, previewIdentity: action.identity }
@@ -432,17 +432,17 @@ function surfaceMatchesDraft(
 }
 
 function selectionMatches(left: DraftReviewSelection | null, right: DraftReviewSelection): boolean {
-  return left?.documentId === right.documentId && left.draftId === right.draftId;
+  return left?.documentId === right.documentId && left.itemKey === right.itemKey;
 }
 
 /** A newer proposal, never an empty close-reset, re-enters the review. */
 export function adoptsGeneration(
   review: InlineDraftReview,
-  read: { draftGeneration: number; proposal: boolean },
+  read: { branchGeneration: number; proposal: boolean },
 ) {
   return (
-    review.draftGeneration !== undefined &&
-    read.draftGeneration > review.draftGeneration &&
+    review.branchGeneration !== undefined &&
+    read.branchGeneration > review.branchGeneration &&
     read.proposal
   );
 }

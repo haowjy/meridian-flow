@@ -1,5 +1,9 @@
 /** Route core for authenticated Work AI write mode updates. */
-import { meridianErrorFromSystem, type PendingChangesChoice } from "@meridian/contracts/protocol";
+import {
+  meridianErrorFromSystem,
+  type PendingChangesChoice,
+  type UpdateWorkWriteModeResponse,
+} from "@meridian/contracts/protocol";
 import type { UserId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
@@ -10,15 +14,12 @@ import {
 } from "../domains/projects/index.js";
 import { throwHttpInterrupt } from "../shared/interrupt-boundary.js";
 import type { AppServices } from "./app.js";
+import { draftPublicationHttpAnswer } from "./draft-publication-http.js";
+import { requireDraftWorkAccess } from "./draft-review-route.js";
 
 type WorkWriteModeServices = {
-  works: {
-    findById(workId: WorkId): Promise<{
-      id: WorkId;
-      createdByUserId: UserId;
-      aiWriteMode: AiWriteMode;
-    } | null>;
-  };
+  projects: Pick<AppServices["projectRepo"], "findById">;
+  works: Pick<AppServices["workRepo"], "findById">;
   branchPush: {
     setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
   };
@@ -27,6 +28,7 @@ type WorkWriteModeServices = {
 
 export function selectWorkWriteModeServices(app: AppServices): WorkWriteModeServices {
   return {
+    projects: app.projectRepo,
     works: app.workRepo,
     branchPush: app.documentSync,
     workContextNotices: app.workContextNotices,
@@ -47,16 +49,7 @@ export async function handleWorkWriteModeRequest(
     aiWriteMode: unknown;
     pending?: unknown;
   },
-): Promise<
-  | { aiWriteMode: AiWriteMode; status: "updated" }
-  | {
-      aiWriteMode: AiWriteMode;
-      status: "confirmation_required";
-      reason: "pending_branch_changes";
-      pendingChangeCount: number;
-      message: string;
-    }
-> {
+): Promise<UpdateWorkWriteModeResponse> {
   const aiWriteMode = parseAiWriteMode(input.aiWriteMode);
   if (!aiWriteMode) {
     throw createError({ statusCode: 400, message: "aiWriteMode must be 'direct' or 'draft'" });
@@ -66,8 +59,8 @@ export async function handleWorkWriteModeRequest(
     throw createError({ statusCode: 400, message: "pending must be 'apply' or 'keep'" });
   }
 
-  const work = await deps.works.findById(input.workId);
-  if (!work || work.createdByUserId !== input.userId) {
+  const work = await requireDraftWorkAccess(deps, input);
+  if (work.createdByUserId !== input.userId) {
     throw createError({ statusCode: 404, message: "Work not found" });
   }
 
@@ -83,8 +76,12 @@ export async function handleWorkWriteModeRequest(
       if (cause instanceof WorkLifecycleUnavailableError && cause.state === "archived") {
         throwArchivedApply();
       }
+      // The staged Apply is accepted, but the mode has not switched (F27).
+      const pending = draftPublicationHttpAnswer(cause);
+      if (pending) return pending;
       throw cause;
     });
+  if (policyResult.status === "pending") return policyResult;
   if (policyResult.status === "confirmation_required") {
     return {
       aiWriteMode: work.aiWriteMode,

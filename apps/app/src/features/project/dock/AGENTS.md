@@ -48,5 +48,5 @@ review being left that is still painted is never focused, and ids no longer in
 the preview open the review at the top. The route can settle before the Editor
 has mounted the document, with the address already naming the draft: the address
 owner restores no review for a draft whose launch is still unclaimed
-(`usePendingEditorReviewDraftId`), because a restore is a second launch and the
+(`usePendingEditorReviewItemKey`), because a restore is a second launch and the
 latest launch decides the focus.

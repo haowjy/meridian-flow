@@ -17,7 +17,7 @@ import type {
 import { toDocHandle } from "../handles.js";
 import { type LineageRange, subtractLineageRanges } from "../lineage/range-set.js";
 import { withRunShownLinks } from "../links/shown.js";
-import type { DocumentCoordinator } from "../ports/document-coordinator.js";
+import type { DocumentCoordinator, DocumentLockOptions } from "../ports/document-coordinator.js";
 import type { DocumentLinksPort } from "../ports/document-links.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { UpdateMeta } from "../ports/types.js";
@@ -74,6 +74,7 @@ export interface LiveProjectionInput extends LiveUpdateCommitInput {
   preOwnSnapshot?: Uint8Array;
   /** Frozen host cut before checked publication, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
+  access?: DocumentLockOptions;
   turnId?: string;
   actor: MutationActor;
 }
@@ -106,6 +107,7 @@ export interface CommitPreflightInput {
   preOwnSnapshot?: Uint8Array;
   /** Frozen host cut before checked publication, for terminal receipt reporting. */
   reportingCut?: Uint8Array;
+  access?: DocumentLockOptions;
   ownTurnId?: string;
   actor: MutationActor;
   /**
@@ -178,6 +180,7 @@ export interface MutationCommit {
     preOwnSnapshot?: Uint8Array;
     /** Frozen host cut before checked publication, for terminal receipt reporting. */
     reportingCut?: Uint8Array;
+    access?: DocumentLockOptions;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult>;
   captureCommitPreflight(
@@ -252,6 +255,7 @@ export function createMutationCommit(deps: {
     preOwnSnapshot?: Uint8Array;
     /** Frozen host cut before checked publication, for terminal receipt reporting. */
     reportingCut?: Uint8Array;
+    access?: DocumentLockOptions;
     ownTurnId?: string;
   }): Promise<ConcurrentDetectionResult> {
     const detectionDoc = input.preOwnSnapshot
@@ -272,6 +276,7 @@ export function createMutationCommit(deps: {
         input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
         input.reportingCut,
+        input.access,
       );
       return applyConcurrentOnDoc(
         detectionDoc,
@@ -324,6 +329,10 @@ export function createMutationCommit(deps: {
           awarenessDegraded = applied.awarenessDegraded;
           return null;
         },
+        // A thread-peer write commits to exactly the branch it was staged against.
+        input.interactionContext?.mode === "threadPeer"
+          ? { pinnedBranchId: input.interactionContext.peerBranchId }
+          : undefined,
       );
     } catch (cause) {
       if (journalCommitKind) throw new AcceptedMutationSubmissionError(cause, journalCommitKind);
@@ -502,6 +511,7 @@ export function createMutationCommit(deps: {
         input.interactionContext?.liveJournalSeq,
         input.interactionContext?.attemptId,
         input.reportingCut,
+        input.access,
       );
       const incremental = applyConcurrentUpdates(
         toDocHandle(detectionDoc),
@@ -645,6 +655,7 @@ async function concurrentUpdatesSince(
   liveJournalSeq?: number,
   attemptId?: string,
   reportingCut?: Uint8Array,
+  access?: DocumentLockOptions,
 ): Promise<ConcurrentUpdate[]> {
   if (coordinator.concurrentUpdatesSince) {
     return coordinator.concurrentUpdatesSince({
@@ -656,6 +667,7 @@ async function concurrentUpdatesSince(
       liveJournalSeq,
       attemptId,
       reportingCut,
+      access,
     });
   }
   const update = Y.encodeStateAsUpdate(doc, sinceStateVector);

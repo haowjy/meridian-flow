@@ -23,5 +23,8 @@ export function createTestWorkProjectionMutation(db: Database): WorkProjectionMu
     async mutatePendingBranches(_branchIds, operation) {
       return operation();
     },
+    async mutatePendingDraft(_draftIds, operation) {
+      return operation();
+    },
   };
 }

@@ -14,6 +14,8 @@ export interface AgentEditCore {
   hasResponseDocument: ReturnType<typeof createWriteTool>["hasResponseDocument"];
   prepare: ReturnType<typeof createWriteTool>["prepare"];
   responseDocuments: ReturnType<typeof createWriteTool>["responseDocuments"];
+  refuseStaged: ReturnType<typeof createWriteTool>["refuseStaged"];
+  retirePeer: ReturnType<typeof createWriteTool>["retirePeer"];
   invalidateThreadDocument: ReturnType<typeof createWriteTool>["invalidateThreadDocument"];
   evictThread: ReturnType<typeof createWriteTool>["evictThread"];
 }
@@ -29,6 +31,8 @@ export function createAgentEditCore(options: AgentEditCoreOptions): AgentEditCor
     hasResponseDocument: tool.hasResponseDocument,
     prepare: tool.prepare,
     responseDocuments: tool.responseDocuments,
+    refuseStaged: tool.refuseStaged,
+    retirePeer: tool.retirePeer,
     invalidateThreadDocument: tool.invalidateThreadDocument,
     evictThread: tool.evictThread,
   };
@@ -85,6 +89,7 @@ export {
   modelBlockItem,
   modelConcurrentResult,
   modelResult,
+  type WriteRejection,
 } from "./tool/model-result.js";
 export {
   agentEditResultSummary,

@@ -28,17 +28,6 @@ import {
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { users } from "./users";
 
-export const DOCUMENT_KINDS = {
-  content: "content",
-  manifest: "manifest",
-} as const;
-
-export type DocumentKind = (typeof DOCUMENT_KINDS)[keyof typeof DOCUMENT_KINDS];
-
-export function isContentDocumentKind(kind: string | null | undefined): boolean {
-  return kind === DOCUMENT_KINDS.content;
-}
-
 export const projects = pgTable(
   "projects",
   {
@@ -214,6 +203,9 @@ export const folders = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
+    /** A draft's new folder: in no live view until placed (read only through the tree view). */
+    hidden: boolean("hidden").notNull().default(false),
+    locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
   },
   (table) => [
     index("folders_deleted_by_work_idx")
@@ -222,12 +214,17 @@ export const folders = pgTable(
     index("folders_context_parent_active")
       .on(table.contextSourceId, table.parentId)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("folders_context_parent_name_active")
+    // Hidden folders occupy no live path; nothing makes them unique.
+    uniqueIndex("folders_context_parent_name_live")
       .on(table.contextSourceId, table.parentId, table.name)
-      .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("folders_context_root_name_active")
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    uniqueIndex("folders_context_root_name_live")
       .on(table.contextSourceId, table.name)
-      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL`),
+      .where(sql`${table.parentId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    // Joining a hidden folder by path, and absorb.
+    index("folders_hidden_location")
+      .on(table.contextSourceId, table.parentId, table.name)
+      .where(sql`${table.hidden} AND ${table.deletedAt} IS NULL`),
     // Image path lookups walk deleted folders too, so the active-only indexes miss them.
     index("folders_context_root").on(table.contextSourceId).where(sql`${table.parentId} IS NULL`),
     index("folders_parent").on(table.parentId),
@@ -238,7 +235,6 @@ export const documents = pgTable(
   "documents",
   {
     id: idColumn<DocumentId>(),
-    kind: text("kind").$type<DocumentKind>().notNull().default(DOCUMENT_KINDS.content),
     contextSourceId: uuid("context_source_id")
       .$type<ContextSourceId>()
       .notNull()
@@ -256,7 +252,6 @@ export const documents = pgTable(
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     locationVersion: bigint("location_version", { mode: "bigint" }).notNull().default(sql`0`),
-    markdownProjection: text("markdown_projection").notNull().default(""),
     provisionalName: boolean("provisional_name").notNull().default(false),
     metadata: jsonbDefault("metadata"),
     createdAt: createdAt(),
@@ -265,37 +260,32 @@ export const documents = pgTable(
     deletedByWorkId: uuid("deleted_by_work_id")
       .$type<WorkId>()
       .references(() => works.id, { onDelete: "set null" }),
+    /** A draft's new document: in no live view until placed (read only through the tree view). */
+    hidden: boolean("hidden").notNull().default(false),
   },
   (table) => [
     index("documents_deleted_by_work_idx")
       .on(table.deletedByWorkId)
       .where(sql`${table.deletedByWorkId} IS NOT NULL`),
-    index("documents_context_folder_active")
-      .on(table.contextSourceId, table.folderId)
-      .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("documents_context_folder_name_active")
+    // Not limited to live rows: hidden-document matching by row location, the review's
+    // tree-state query, and listing by folder.
+    index("documents_context_location").on(
+      table.contextSourceId,
+      table.folderId,
+      table.name,
+      table.extension,
+    ),
+    // Hidden documents occupy no live path; nothing makes them unique.
+    uniqueIndex("documents_context_folder_name_live")
       .on(table.contextSourceId, table.folderId, table.name, table.extension)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'content'`),
-    uniqueIndex("documents_context_root_name_active")
+      .where(sql`${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
+    uniqueIndex("documents_context_root_name_live")
       .on(table.contextSourceId, table.name, table.extension)
-      .where(
-        sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND ${table.kind} = 'content'`,
-      ),
-    uniqueIndex("documents_manifest_context_active")
-      .on(table.contextSourceId)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.kind} = 'manifest'`),
+      .where(sql`${table.folderId} IS NULL AND ${table.deletedAt} IS NULL AND NOT ${table.hidden}`),
     // Image path lookups, deleted images included.
-    index("documents_context_images")
+    index("documents_context_all_images")
       .on(table.contextSourceId)
-      .where(sql`${table.fileType} = 'image' AND ${table.kind} = 'content'`),
-    index("documents_markdown_projection_fts").using(
-      "gin",
-      sql`to_tsvector('simple', ${table.markdownProjection})`,
-    ),
-    index("documents_markdown_projection_trgm").using(
-      "gin",
-      sql`${table.markdownProjection} gin_trgm_ops`,
-    ),
+      .where(sql`${table.fileType} = 'image'`),
     index("documents_name_fts").using("gin", sql`to_tsvector('simple', ${table.name})`),
     index("documents_name_trgm").using("gin", sql`${table.name} gin_trgm_ops`),
     check(
@@ -306,7 +296,48 @@ export const documents = pgTable(
       "documents_file_type_valid",
       sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
-    check("documents_kind_valid", sql`${table.kind} IN ('content', 'manifest')`),
+  ],
+);
+
+/**
+ * A device's create that joined a draft's document: `fromDocumentId` is the id the device
+ * minted and never got a `documents` row, now meaning `toDocumentId`. No FK on the
+ * source id, which names no row; deleting the target drops the forward with it.
+ */
+export const documentForwards = pgTable(
+  "document_forwards",
+  {
+    fromDocumentId: uuid("from_document_id").$type<DocumentId>().primaryKey(),
+    toDocumentId: uuid("to_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("document_forwards_to").on(table.toDocumentId)],
+);
+
+/** Markdown projection kept separate so location writes never rebuild its GIN indexes. */
+export const documentMarkdownProjections = pgTable(
+  "document_markdown_projections",
+  {
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .primaryKey()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    markdown: text("markdown").notNull().default(""),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("document_markdown_projections_fts").using(
+      "gin",
+      sql`to_tsvector('simple', ${t.markdown})`,
+    ),
+    index("document_markdown_projections_trgm").using("gin", sql`${t.markdown} gin_trgm_ops`),
   ],
 );
 
@@ -358,14 +389,6 @@ export const uploadIntakes = pgTable(
     check("upload_intakes_digest_valid", sql`${table.byteDigest} ~ '^[0-9a-f]{64}$'`),
   ],
 );
-
-export function contentDocumentPredicate(table: Pick<typeof documents, "kind"> = documents) {
-  return sql`${table.kind} = ${DOCUMENT_KINDS.content}`;
-}
-
-export function contentDocumentKindSql(alias = "documents") {
-  return sql`${sql.raw(alias)}.kind = ${DOCUMENT_KINDS.content}`;
-}
 
 // folders.parent_id self-FK added in migration SQL
 

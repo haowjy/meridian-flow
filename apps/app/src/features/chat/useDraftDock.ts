@@ -1,6 +1,6 @@
 /** The chat's pending changes and creation-bound Work commands. Selective items send complete classes; whole-draft items send whole commands. No disposition navigates. */
 import { t } from "@lingui/core/macro";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   type ChangeCommandState,
   changeCommandState,
@@ -11,6 +11,10 @@ import {
 import { useDraftPreviews } from "@/client/query/useDraftPreview";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { selectionOf } from "@/features/draft-review/change-selection";
+import {
+  type DraftImagePreviewTarget,
+  isDraftImagePath,
+} from "@/features/draft-review/DraftImagePreview";
 import { usePresentedDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { type ReviewChange, targetOfChanges } from "@/features/draft-review/review-changes";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
@@ -32,6 +36,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
   const records = useChangeCommandRecords();
+  const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
   const { projectId, workId } = controller;
 
   const candidates = useMemo(
@@ -43,12 +48,14 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   );
   const targets = useMemo(
     () =>
-      candidates.map((row) => ({
-        projectId,
-        workId,
-        documentId: row.documentId,
-        draftId: row.draft.draftId,
-      })),
+      candidates
+        .filter((row) => row.draft.branchGeneration !== null)
+        .map((row) => ({
+          projectId,
+          workId,
+          documentId: row.documentId,
+          itemKey: row.draft.itemKey,
+        })),
     [candidates, projectId, workId],
   );
   // The open review keeps its own refresh; the strip refreshes the rest.
@@ -59,25 +66,36 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
   const files = useMemo(
     () =>
       candidates
-        .map((row, index) =>
-          dockFile(row, reviewFileTargetName(row, untitled), entries[index], threadId),
+        .map((row, _index) =>
+          dockFile(
+            row,
+            reviewFileTargetName(row, untitled),
+            entries[targets.findIndex((target) => target.itemKey === row.draft.itemKey)],
+            threadId,
+          ),
         )
         .filter(isOnStrip),
-    [candidates, entries, threadId, untitled],
+    [candidates, entries, targets, threadId, untitled],
   );
   const actionableFiles = files.filter((file) => file.actionable.length > 0);
 
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
+      // A draft-only picture has no review room: it opens as a preview.
+      if (file.row.draft.branchGeneration === null) {
+        if (isDraftImagePath(file.row.contextLocation?.path))
+          setImagePreview({ projectId, workId, documentId: file.row.documentId, name: file.name });
+        return;
+      }
       openReviewFile(file.row, workId, change?.operationIds ?? file.changes[0]?.operationIds);
     },
-    [openReviewFile, workId],
+    [openReviewFile, projectId, workId],
   );
 
   const send = useCallback(
     (mode: "apply" | "discard") => {
       const items = actionableFiles.map((file) => ({
-        draft: { documentId: file.row.documentId, draftId: file.row.draft.draftId },
+        draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
         target: targetOfChanges(file.actionable),
       }));
       if (items.length === 0) return;
@@ -94,7 +112,7 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
       projectId,
       workId,
       documentId: file.row.documentId,
-      draftId: file.row.draft.draftId,
+      itemKey: file.row.draft.itemKey,
     };
     const state = changeCommandState(records, ref, selectionOf(file.changes));
     const held = draftCommandFailure(records.drafts, ref);
@@ -117,6 +135,8 @@ export function useDraftDock({ threadId, generating }: { threadId: string; gener
     workId,
     fileFailures,
     review,
+    imagePreview,
+    closeImagePreview: () => setImagePreview(null),
     apply: () => send("apply"),
     discard: () => send("discard"),
   };

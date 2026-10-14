@@ -1,4 +1,6 @@
 /** Shared authoritative row-to-file mapping for catalog and project availability. */
+
+import type { DocumentId } from "@meridian/contracts";
 import {
   type CanonicalContextAuthority,
   type ContextUriScheme,
@@ -9,7 +11,16 @@ import { classifyFiletype } from "@meridian/contracts/protocol";
 import { decodeWorkSlug, type ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { documentAliases } from "../document-metadata.js";
 
-const BINARY_FILE_TYPES = new Set(["docx", "image", "pdf", "binary"]);
+/** The stored file types whose bytes live in object storage (one definition, SQL included). */
+export const BINARY_FILE_TYPES: ReadonlySet<string> = new Set(["docx", "image", "pdf", "binary"]);
+
+/** Bytes in object storage rather than a Yjs document. */
+export function isStorageBackedDocument(document: {
+  fileType: string;
+  storageUrl: string | null;
+}): boolean {
+  return document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+}
 
 export type CatalogFileRow = {
   id: string;
@@ -22,6 +33,8 @@ export type CatalogFileRow = {
   mimeType: string | null;
   metadata: unknown;
   provisionalName: boolean;
+  /** Ids a device's create forwarded into this document (a join). */
+  joinedFrom?: readonly string[];
 };
 
 export function catalogSourceAuthority(
@@ -53,7 +66,7 @@ export function mapAuthoritativeFile(input: {
   const filename = document.extension ? `${document.name}.${document.extension}` : document.name;
   const path = [...input.parentPath, filename];
   const classification = classifyFiletype(document.fileType);
-  const storageBacked = document.storageUrl !== null || BINARY_FILE_TYPES.has(document.fileType);
+  const storageBacked = isStorageBackedDocument(document);
   const persistedClassification =
     !storageBacked && classification.kind === "tracked"
       ? {
@@ -100,5 +113,6 @@ export function mapAuthoritativeFile(input: {
     ),
     ...persistedClassification,
     provisionalName: document.provisionalName,
+    ...(document.joinedFrom?.length ? { joinedFrom: document.joinedFrom as DocumentId[] } : {}),
   };
 }

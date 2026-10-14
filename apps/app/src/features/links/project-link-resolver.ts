@@ -141,13 +141,15 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
   switch (answer.state) {
     case "document": {
       const { document } = answer;
-      return documentAnswer({
+      const found = documentAnswer({
         documentId: document.id,
         title: document.title,
         uri: document.uri,
         workId: document.workId,
         rootThreadId: document.rootThreadId ?? undefined,
       });
+      // A hidden document is "in a draft": keep the destination the server named.
+      return found && answer.inDraft && answer.draft ? { ...found, draft: answer.draft } : found;
     }
     case "gone":
       return GONE;

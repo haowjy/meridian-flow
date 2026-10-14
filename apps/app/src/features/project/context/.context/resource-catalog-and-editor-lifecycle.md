@@ -121,7 +121,7 @@ but neither offers Retry nor retries on a revision change, so a failed phone
 open has no in-place recovery yet.
 
 A draft-only tab (a new document proposed by a draft) opens no live binding at
-all: it has no live manifest membership and the server refuses a room for it,
+all: it is absent from the live SQL tree and the server refuses a room for it,
 so review hosts the draft branch room alone (`liveRoom={!branchOnly}`) and a
 failed branch room offers Retry or closing the tab, never a fallback to an empty
 live editor. The phone hosts it through the same `ContextEditorMountHost`
@@ -208,11 +208,9 @@ must retain that fence across asynchronous navigation. Document identity alone
 is reserved for document-wide availability facts, not representation removal.
 The removal coordinator remains the sole close/Discard owner.
 
-The composed workspace retains durable tabs and each Work's overlays.
-Review selection carries a transient mounted-instance pointer; durable workspace
-selection and persistence continue to name the document.
-`editorTabsForWork` projects one Work's strip: an overlay shadows the durable
-representation only in its own Work. Applying one overlay consumes only its
-exact instance and converges on the durable document, preserving other Works'
-review tabs. Dock restoration already queries the saved review Work and matches
+The workspace holds one tab per document. A draft-only tab (a hidden draft-created
+document) is that tab with review metadata; persistence skips it and selection names
+the document. `editorTabsForWork` projects one Work's strip. Applying the draft
+settles the same tab in place; a join re-identifies the resource's tab to the draft's
+document and absorbs the draft-only tab into it. Dock restoration already queries the saved review Work and matches
 both draft and document within that list.

@@ -253,6 +253,7 @@ describe("namespace record transitions", () => {
       kind: "terminal",
       generation: "2",
       transitionId: "operation",
+      deletionVersion: "1",
     });
     expect(settled?.next.resource.content).toEqual(before.resource.content);
     expect(settled?.next.resource.canonical).toBeNull();
