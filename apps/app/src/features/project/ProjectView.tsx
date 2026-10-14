@@ -70,6 +70,7 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
@@ -634,29 +635,27 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   });
   const { editorPresentation } = screenSwitch;
   const { active: editorActive, mounted: mountedEditor } = editorPresentation;
-  const mountedEditorRoute = mountedEditor
-    ? {
-        editorWorkId: mountedEditor.editorWorkId,
-        activeContextScheme: mountedEditor.activeContextScheme,
-        activeContextPath: mountedEditor.activeContextPath,
-        activeContextChat: mountedEditor.activeContextChat,
-        localDocumentId: mountedEditor.activeLocalDocumentId,
-      }
-    : null;
-
-  // The Editor's navigation frame outlives readiness: it follows the requested
-  // address until a destination is admitted, so only the document body is masked.
-  const frameEditorRoute =
-    mountedEditorRoute ??
-    (props.activeScreen === "context"
+  // The Editor's navigation frame names where the writer is going; only the document body
+  // keeps the previous destination beneath the mask (see `resolveEditorFrame`).
+  const frameEditorRoute = resolveEditorFrame({
+    screen: props.activeScreen,
+    requested: {
+      editorWorkId: props.editorWorkId,
+      activeContextScheme: props.activeContextScheme,
+      activeContextPath: props.activeContextPath,
+      activeContextChat: props.activeContextChat,
+      localDocumentId: props.activeLocalDocumentId,
+    },
+    mounted: mountedEditor
       ? {
-          editorWorkId: props.editorWorkId,
-          activeContextScheme: props.activeContextScheme,
-          activeContextPath: props.activeContextPath,
-          activeContextChat: props.activeContextChat,
-          localDocumentId: props.activeLocalDocumentId,
+          editorWorkId: mountedEditor.editorWorkId,
+          activeContextScheme: mountedEditor.activeContextScheme,
+          activeContextPath: mountedEditor.activeContextPath,
+          activeContextChat: mountedEditor.activeContextChat,
+          localDocumentId: mountedEditor.activeLocalDocumentId,
         }
-      : null);
+      : null,
+  });
   const editorMask: ProjectRouteMask = {
     destinationKey: props.routeLocationKey,
     issue: props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined,
@@ -766,7 +765,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               {...frameEditorRoute}
               mask={editorMask}
               resolvedEditor={editorPresentation.resolved}
-              editorWork={mountedEditor?.editorWork ?? null}
+              editorWork={
+                props.activeScreen === "context"
+                  ? props.editorWork
+                  : (mountedEditor?.editorWork ?? null)
+              }
               addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
               active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}

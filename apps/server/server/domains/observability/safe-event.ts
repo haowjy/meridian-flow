@@ -51,6 +51,17 @@ const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "workId",
   "yjsSpans",
 ]);
+/**
+ * Finite diagnostic codes, allowed by key and by exactly these values (the
+ * settlement, reply-pin and hidden-node repair events). Default-deny stays: any
+ * other value under these keys is redacted.
+ */
+const DIAGNOSTIC_CODE_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
+  effect: new Set(["warm_rooms", "publication_step"]),
+  refusal: new Set(["integration"]),
+  stage: new Set(["claim", "execute", "handoff"]),
+  trigger: new Set(["create", "read"]),
+};
 const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
   action: new Set(["flush_then_exit", "logged_continue"]),
   command: new Set(["copy", "create", "insert", "read", "redo", "remove", "replace", "undo"]),
@@ -77,6 +88,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   outcome: new Set(["cancelled", "error", "ok"]),
   phase: new Set(["committed", "skeleton", "staged"]),
   reason: new Set(["client-schema-superseded", "document-schema-stale", "record_byte_limit"]),
+  ...DIAGNOSTIC_CODE_ENUMS,
   source: new Set(["agent", "connection", "local", "redis", "system", "unknown", "writer"]),
   status: new Set([
     "active",

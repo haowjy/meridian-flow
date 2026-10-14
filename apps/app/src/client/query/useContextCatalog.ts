@@ -654,8 +654,7 @@ export function useContextCatalogWake(
     () =>
       projectId
         ? resources?.onIdentityChanged((change) => {
-            if (change.projectId === projectId && !change.initial)
-              invalidateDraftReads(queryClient, projectId);
+            if (change.projectId === projectId) invalidateDraftReads(queryClient, projectId);
           })
         : undefined,
     [projectId, queryClient, resources],

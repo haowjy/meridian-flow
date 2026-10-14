@@ -9,7 +9,6 @@ import type { Database } from "@meridian/database";
 import { modelResponses } from "@meridian/database/schema";
 import { afterEach } from "vitest";
 import * as Y from "yjs";
-import type { BranchCriticalSections } from "../domains/collab/domain/branch-critical-sections.js";
 import type { EventSink } from "../domains/observability/index.js";
 import { createNoopEventSink } from "../domains/observability/index.js";
 import { processDetachedWork } from "../domains/runtime/detached-work.js";
@@ -25,16 +24,11 @@ export type ToolCall = (
 /** Calls a tool and returns its text, throwing when the tool reports an error. */
 type ToolCallText = (name: string, args: Record<string, unknown>) => Promise<string>;
 
-async function composeRuntime(
-  db: Database,
-  eventSink: EventSink,
-  criticalSections?: BranchCriticalSections,
-) {
+async function composeRuntime(db: Database, eventSink: EventSink) {
   const ports = await createProductionAppPorts({
     db,
     backgroundTasks: processDetachedWork,
     eventSink,
-    ...(criticalSections ? { criticalSections } : {}),
     environment: { FLOW_OPENAI_API_KEY: "sk-test-runtime-composition" },
   });
   const hocuspocus = new Hocuspocus({
@@ -98,14 +92,8 @@ export function useComposedRuntimes(db: () => Database) {
     }
   });
 
-  async function compose(
-    options: { eventSink?: EventSink; criticalSections?: BranchCriticalSections } = {},
-  ): Promise<ComposedRuntime> {
-    const runtime = await composeRuntime(
-      db(),
-      options.eventSink ?? createNoopEventSink(),
-      options.criticalSections,
-    );
+  async function compose(options: { eventSink?: EventSink } = {}): Promise<ComposedRuntime> {
+    const runtime = await composeRuntime(db(), options.eventSink ?? createNoopEventSink());
     runtimes.push(runtime);
     return runtime;
   }

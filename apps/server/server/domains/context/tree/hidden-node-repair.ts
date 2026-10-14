@@ -13,7 +13,12 @@ import {
   runAfterDrizzleCommit,
   runInRootDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import {
+  type EventSink,
+  emitEvent,
+  joinIds,
+  unknownToEventPayload,
+} from "../../observability/index.js";
 import { type DetachedWorkTracker, processDetachedWork } from "../../runtime/detached-work.js";
 import type { ObjectRelease } from "../../storage/index.js";
 import {
@@ -56,11 +61,15 @@ export function createHiddenNodeRepair(deps: {
         level: "warn",
         source: SOURCE,
         name: "repaired",
+        correlation: {
+          folderIds: joinIds(
+            ended.tombstoned.flatMap((ref) => (ref.kind === "folder" ? [ref.id] : [])),
+          ),
+          releasedBranchIds: joinIds(ended.releasedBranches.map((branch) => branch.branchId)),
+        },
         payload: {
           trigger,
           documentIds: ended.tombstoned.flatMap((ref) => (ref.kind === "document" ? [ref.id] : [])),
-          folderIds: ended.tombstoned.flatMap((ref) => (ref.kind === "folder" ? [ref.id] : [])),
-          releasedBranchIds: ended.releasedBranches.map((branch) => branch.branchId),
         },
       });
     }

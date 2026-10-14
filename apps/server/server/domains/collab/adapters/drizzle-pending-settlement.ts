@@ -51,6 +51,7 @@ import type {
   BatchCompletion,
   BatchCompletionMember,
   PendingSettlementStore,
+  SettlementFailureStage,
 } from "../domain/ports/pending-settlement-store.js";
 import type {
   PublicationItemHold,
@@ -228,6 +229,60 @@ export function createDrizzlePendingSettlementStore(
       .where(batchOwnerPredicate(input.batchId, input.claim))
       .returning({ id: branchPushSettlementBatches.id });
     if (!abandoned) throw new CompletionRetry();
+  }
+
+  async function claimRecoverable(input: { batchId: string; token: string }) {
+    assertRootOwnedSettlement("Settlement recovery");
+    // One row, one UPDATE: two recoverers serialize on it, and only one owns the batch.
+    const lease = await databaseLease(db);
+    const [row] = await db
+      .update(branchPushSettlementBatches)
+      .set({
+        claimToken: input.token,
+        claimEpoch: sql`${branchPushSettlementBatches.claimEpoch} + 1`,
+        claimKind: "recovery",
+        claimedAt: sql`clock_timestamp()`,
+        leaseExpiresAt: lease.expiresAt,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(branchPushSettlementBatches.id, input.batchId),
+          eq(branchPushSettlementBatches.state, "pending"),
+          sql`${branchPushSettlementBatches.availableAt} <= clock_timestamp()`,
+          or(
+            isNull(branchPushSettlementBatches.claimToken),
+            sql`${branchPushSettlementBatches.leaseExpiresAt} <= clock_timestamp()`,
+          ),
+        ),
+      )
+      .returning({
+        epoch: branchPushSettlementBatches.claimEpoch,
+        leaseExpiresAt: branchPushSettlementBatches.leaseExpiresAt,
+      });
+    if (!row?.leaseExpiresAt) return null;
+    const claimed: SettlementClaim = {
+      token: input.token,
+      epoch: row.epoch,
+      kind: "recovery",
+      leaseExpiresAt: row.leaseExpiresAt,
+    };
+    try {
+      // Ownership is the credentials this UPDATE returned; a successor's are never adopted.
+      return await readSettlementBatch(db, input.batchId, claimed, eventSink);
+    } catch (cause) {
+      await db
+        .update(branchPushSettlementBatches)
+        .set({
+          state: "blocked",
+          lastErrorCode: "corrupt_settlement_authority",
+          lastError: cause instanceof Error ? cause.message : String(cause),
+          blockedAt: sql`clock_timestamp()`,
+          ...releasedClaim,
+        })
+        .where(batchOwnerPredicate(input.batchId, claimed));
+      throw cause;
+    }
   }
 
   return {
@@ -427,10 +482,10 @@ export function createDrizzlePendingSettlementStore(
       const admittedAfterCommit = admitted;
       await runAfterCommitEffects(
         [
-          { name: "warm rooms", run: () => input.afterCommit(admittedAfterCommit) },
-          ...plans.flatMap(({ step, plan }) =>
+          { name: "warm_rooms" as const, run: () => input.afterCommit(admittedAfterCommit) },
+          ...plans.flatMap(({ plan }) =>
             plan.afterCommit
-              ? [{ name: `publication step ${step}`, run: plan.afterCommit.bind(plan) }]
+              ? [{ name: "publication_step" as const, run: plan.afterCommit.bind(plan) }]
               : [],
           ),
         ],
@@ -531,55 +586,10 @@ export function createDrizzlePendingSettlementStore(
     },
 
     async claimRecoverableBatch(input) {
-      assertRootOwnedSettlement("Settlement recovery");
-      // One row, one UPDATE: two recoverers serialize on it, and only one owns the batch.
-      const lease = await databaseLease(db);
-      const [row] = await db
-        .update(branchPushSettlementBatches)
-        .set({
-          claimToken: input.token,
-          claimEpoch: sql`${branchPushSettlementBatches.claimEpoch} + 1`,
-          claimKind: "recovery",
-          claimedAt: sql`clock_timestamp()`,
-          leaseExpiresAt: lease.expiresAt,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(
-          and(
-            eq(branchPushSettlementBatches.id, input.batchId),
-            eq(branchPushSettlementBatches.state, "pending"),
-            sql`${branchPushSettlementBatches.availableAt} <= clock_timestamp()`,
-            or(
-              isNull(branchPushSettlementBatches.claimToken),
-              sql`${branchPushSettlementBatches.leaseExpiresAt} <= clock_timestamp()`,
-            ),
-          ),
-        )
-        .returning({
-          epoch: branchPushSettlementBatches.claimEpoch,
-          leaseExpiresAt: branchPushSettlementBatches.leaseExpiresAt,
-        });
-      if (!row?.leaseExpiresAt) return null;
-      const claimed: SettlementClaim = {
-        token: input.token,
-        epoch: row.epoch,
-        kind: "recovery",
-        leaseExpiresAt: row.leaseExpiresAt,
-      };
       try {
-        // Ownership is the credentials this UPDATE returned; a successor's are never adopted.
-        return await readSettlementBatch(db, input.batchId, claimed, eventSink);
+        return await claimRecoverable(input);
       } catch (cause) {
-        await db
-          .update(branchPushSettlementBatches)
-          .set({
-            state: "blocked",
-            lastErrorCode: "corrupt_settlement_authority",
-            lastError: cause instanceof Error ? cause.message : String(cause),
-            blockedAt: sql`clock_timestamp()`,
-            ...releasedClaim,
-          })
-          .where(batchOwnerPredicate(input.batchId, claimed));
+        emitSettlementFailure(eventSink, { batchId: input.batchId, stage: "claim", cause });
         throw cause;
       }
     },
@@ -589,12 +599,20 @@ export function createDrizzlePendingSettlementStore(
         .update(branchPushSettlementBatches)
         .set({
           attemptCount: sql`${branchPushSettlementBatches.attemptCount} + 1`,
-          lastError: failure.error,
+          lastError: failure.error instanceof Error ? failure.error.message : String(failure.error),
           availableAt: sql`clock_timestamp() + make_interval(secs => least(60, power(2, least(6, ${branchPushSettlementBatches.attemptCount} + 1))::int))`,
           ...releasedClaim,
         })
         .where(batchOwnerPredicate(failure.batchId, failure.claim))
-        .returning({ id: branchPushSettlementBatches.id });
+        .returning({ attemptCount: branchPushSettlementBatches.attemptCount });
+      if (failed) {
+        emitSettlementFailure(eventSink, {
+          batchId: failure.batchId,
+          stage: failure.stage,
+          attemptCount: failed.attemptCount,
+          cause: failure.error,
+        });
+      }
       return Boolean(failed);
     },
 
@@ -727,7 +745,7 @@ async function readSettlementBatch(
  * hint after a failed catalog refresh) still run.
  */
 async function runAfterCommitEffects(
-  effects: readonly { name: string; run: () => void | Promise<void> }[],
+  effects: readonly { name: "warm_rooms" | "publication_step"; run: () => void | Promise<void> }[],
   batchId: string,
   eventSink?: EventSink,
 ): Promise<void> {
@@ -740,11 +758,46 @@ async function runAfterCommitEffects(
           level: "error",
           source: "collab.settlement",
           name: "settlement.after_commit_failed",
-          payload: { batchId, effect: effect.name, ...unknownToEventPayload(cause) },
+          correlation: { batchId },
+          payload: {
+            effect: effect.name,
+            ...unknownToEventPayload(cause),
+          },
         });
       }
     }
   }
+}
+
+/** Attempts at which a still-failing batch is called stuck (about 8 minutes at the 60s backoff cap). */
+const STUCK_ATTEMPT_THRESHOLD = 10;
+
+/**
+ * The one event for a swallowed claim or execution failure, so a batch that keeps
+ * failing is never silent. The claim-lost race is not a failure and never gets here.
+ */
+function emitSettlementFailure(
+  eventSink: EventSink | undefined,
+  failure: {
+    batchId: string;
+    stage: SettlementFailureStage;
+    attemptCount?: number;
+    cause: unknown;
+  },
+): void {
+  if (!eventSink) return;
+  const stuck = (failure.attemptCount ?? 0) >= STUCK_ATTEMPT_THRESHOLD;
+  emitEvent(eventSink, {
+    level: stuck ? "error" : "warn",
+    source: "collab.settlement",
+    name: stuck ? "settlement.batch_stuck" : "settlement.batch_failed",
+    correlation: { batchId: failure.batchId },
+    payload: {
+      stage: failure.stage,
+      ...(failure.attemptCount !== undefined && { attemptCount: failure.attemptCount }),
+      ...unknownToEventPayload(failure.cause),
+    },
+  });
 }
 
 function batchOwnerPredicate(batchId: string, claim: SettlementClaim) {

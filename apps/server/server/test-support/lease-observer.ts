@@ -1,7 +1,7 @@
 /**
  * An instance-owned branch lease adapter that records the acquisitions it serves: each
- * attempt, and the entry and exit of the real callback. A test that says a contender
- * "waited on the lease" asserts it attempted and had not entered before release, and did after.
+ * attempt, and the entry and exit of the real callback. Only a test that builds the primitive
+ * itself wraps it; production composition always builds its own and takes no observer.
  */
 import {
   type BranchCriticalSections,

@@ -105,8 +105,13 @@ export function createBranchAgentEditDiagnostics(
         level: "error",
         source: "collab.reply_save_fences",
         name: "reply_pin.identity_mismatch",
-        correlation: { documentId: payload.documentId },
-        payload: { threadId: payload.threadId ?? null, pin: payload.pin },
+        correlation: {
+          documentId: payload.documentId,
+          draftId: payload.pin.draftId,
+          peerBranchId: payload.pin.peerBranchId,
+          upstreamBranchId: payload.pin.upstreamBranchId,
+        },
+        payload: { threadId: payload.threadId ?? null, refusal: "integration" },
       });
     },
   };
@@ -136,7 +141,8 @@ export function createSweepProjectionDiagnostics(
         level: "warn",
         source: "collab.change_event",
         name: "sweep_projection.unavailable",
-        payload: { pushId, documentId, ...unknownToEventPayload(cause) },
+        correlation: { pushId: String(pushId) },
+        payload: { documentId, ...unknownToEventPayload(cause) },
       });
     },
   };

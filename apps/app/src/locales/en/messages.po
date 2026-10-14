@@ -522,10 +522,6 @@ msgstr "AI"
 msgid "AI assistant"
 msgstr "AI assistant"
 
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "AI edits wait here for your review."
-#~ msgstr "AI edits wait here for your review."
-
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 msgid "AI write mode"
 msgstr "AI write mode"
@@ -4586,6 +4582,14 @@ msgstr "Turn into"
 msgid "Turns {0}"
 msgstr "Turns {0}"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Two files in the draft share the path {name}. Review the draft to keep one."
+msgstr "Two files in the draft share the path {name}. Review the draft to keep one."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Two files in the draft share this path. Review the draft to keep one."
+msgstr "Two files in the draft share this path. Review the draft to keep one."
+
 #: src/features/chat/TextBlock.tsx
 msgid "Type your answer…"
 msgstr "Type your answer…"
@@ -4802,10 +4806,6 @@ msgstr "What's on your mind?"
 #: src/components/app/composer/placeholders.ts
 msgid "Where were we?"
 msgstr "Where were we?"
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Why this is marked merged"
-#~ msgstr "Why this is marked merged"
 
 #: src/features/chat/thread-controls/QueuedControlRows.tsx
 msgid "Withdraw"

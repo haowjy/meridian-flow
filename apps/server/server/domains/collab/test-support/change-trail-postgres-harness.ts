@@ -457,6 +457,33 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     notices,
   );
   const durableWorkDraftPendingStore = createDrizzleWorkDraftPendingStore(db);
+  const events: Array<{
+    name: string;
+    level: string;
+    payload: Record<string, unknown>;
+    correlation?: object;
+  }> = [];
+  let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
+  const eventSink: import("../../observability/index.js").EventSink = {
+    emit(event) {
+      events.push({
+        name: event.name,
+        level: event.level,
+        payload: event.payload,
+        correlation: event.correlation,
+      });
+    },
+    emitBatch(batch) {
+      for (const event of batch)
+        events.push({
+          name: event.name,
+          level: event.level,
+          payload: event.payload,
+          correlation: event.correlation,
+        });
+    },
+    flush: async () => {},
+  };
   const durableSettlementStore = createDrizzlePendingSettlementStore(
     db,
     durableProjectionSerializer,
@@ -471,7 +498,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
         return notices.retractForPushes(pushIds);
       },
     },
-    undefined,
+    eventSink,
     {
       // The real sorted acquisition, as composition's arrivals adapter takes it.
       namespaces: {
@@ -592,17 +619,6 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
     } as never,
     eventHub: { invalidateCommittedJournal() {} },
   });
-  const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
-  let preCommitBranchHashes: Array<{ id: string; state: string; stateVector: string }> = [];
-  const eventSink: import("../../observability/index.js").EventSink = {
-    emit(event) {
-      events.push({ name: event.name, payload: event.payload });
-    },
-    emitBatch(batch) {
-      for (const event of batch) events.push({ name: event.name, payload: event.payload });
-    },
-    flush: async () => {},
-  };
   const resolveDocumentUri = async (documentId: string) =>
     `manuscript/${documentName(documentId as DocumentId)}.md`;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
@@ -2254,6 +2270,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       const failureRecorded = await durableSettlementStore.recordFailure({
         batchId: row.batchId,
         claim,
+        stage: "execute",
         error: "stale actor A failure",
       });
       const completion = await durableSettlementStore.completeBatch({
@@ -2445,6 +2462,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       collab.agentEdit().hasResponseDocument(responseId, BETA_ID) ? [BETA_ID] : [],
     ],
     pendingWatermarkDocuments: () => [...pendingWatermarks].sort(),
+    eventsNamed: (name: string) => events.filter((event) => event.name === name),
     responseEvents: (responseId: string) =>
       events
         .filter((event) => event.payload.responseId === responseId)

@@ -143,7 +143,7 @@ export function createInMemoryPendingSettlementStore(options?: {
         const batch = batches.get(input.batchId);
         if (!isOwned(batch, input.claim)) return false;
         batch.attemptCount += 1;
-        batch.lastError = input.error;
+        batch.lastError = input.error instanceof Error ? input.error.message : String(input.error);
         batch.claim = null;
         const backoffSeconds = Math.min(60, 2 ** Math.min(6, batch.attemptCount));
         batch.availableAt = new Date(Date.now() + backoffSeconds * 1_000);

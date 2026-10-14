@@ -96,10 +96,7 @@ import type { CollabDomain } from "./contracts.js";
 import { createAgentEditRuntime, metaForOrigin } from "./domain/agent-edit-runtime.js";
 import { createBranchConcurrentJournalWatermarks } from "./domain/branch-agent-edit.js";
 import { createBranchCoordinator } from "./domain/branch-coordinator.js";
-import {
-  type BranchCriticalSections,
-  createBranchCriticalSections,
-} from "./domain/branch-critical-sections.js";
+import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
 import { createBranchPushService } from "./domain/branch-push.js";
 import { fullStateFingerprint } from "./domain/branch-push-transition.js";
@@ -168,8 +165,6 @@ type CollabDomainDeps = {
    * §5); the writer's turn undo also asks it for its grants.
    */
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
-  /** The branch lease adapter; tests pass an observed instance of their own. */
-  criticalSections?: BranchCriticalSections;
   /** How long a live AI write waits before merging into Work drafts; tests shorten it. */
   livePullDebounceMs?: number;
   /** Ahead-ref settlement at tracked creates and Apply completions (contract §9.3–9.4). */
@@ -194,7 +189,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     hocuspocus: hocuspocusBinding.require,
     journal: persistence.journal,
   });
-  const criticalSections = deps.criticalSections ?? createBranchCriticalSections();
+  const criticalSections = createBranchCriticalSections();
   const workDrafts = createDrafts({
     store: createDrizzleDraftStore(deps.db),
     boundary: createDrizzleDraftWriteBoundary(deps.db),
