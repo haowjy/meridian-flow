@@ -10,6 +10,7 @@ import {
   handleApplyWorkDraftRequest,
   handleDiscardWorkDraftRequest,
   handleDocumentDraftHintsRequest,
+  handleDraftAttributionRequest,
   handleWorkDraftItemMetaRequest,
   selectDraftRouteServices,
 } from "../../lib/draft-review-route.js";
@@ -163,5 +164,27 @@ describeDraftTreeDb("review items (postgres)", (start, db) => {
         item.documentId === chapter ? [item.itemKey] : expect.any(Array),
       );
     }
+  });
+
+  it("the chat-name hint lists the item's pending AI edits, and an unknown item is gone", async () => {
+    const { runtime, s } = await start();
+    const work = await s.work("Ascension", "draft");
+    const chapter = await s.writer.createDocument("chapter.md", "Opening.");
+    await s.model(work).edit("chapter.md", "Opening.", "Opening, drafted.");
+    const deps = selectDraftRouteServices(runtime.app);
+    const scope = { projectId: s.project.id, workId: work.id, userId: s.project.userId };
+    const [item] = await s.items(work);
+    if (!item) throw new Error("no item");
+    const hint = await handleDraftAttributionRequest(deps, {
+      ...scope,
+      documentId: chapter,
+      itemKey: item.itemKey,
+    });
+    expect(hint.itemKey).toBe(item.itemKey);
+    expect(hint.edits).toHaveLength(1);
+    expect(hint.edits[0]?.inserted.length).toBeGreaterThan(0);
+    await expect(
+      handleDraftAttributionRequest(deps, { ...scope, documentId: chapter, itemKey: "nope" }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

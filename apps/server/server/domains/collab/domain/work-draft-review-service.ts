@@ -8,12 +8,14 @@
 import type { DraftId, WorkId } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type {
+  DraftAttribution,
   DraftCommandOutcome,
   DraftItemMeta,
   ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
 import { branchRoomName, isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CollabDrafts, CommandOutcome, ModelDraftRow } from "../contracts.js";
+import type { DraftAttributionService } from "./draft-attribution.js";
 import {
   type CommandLookup,
   type DraftCommandEnvelope,
@@ -38,6 +40,7 @@ export function createWorkDraftReviewService(input: {
   publication: DraftPublication;
   discard: DraftDiscard;
   commands: DraftCommands;
+  attribution: DraftAttributionService;
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   pending: Pick<WorkDraftPendingStore, "listDraftsChangingDocument">;
 }): CollabDrafts {
@@ -133,10 +136,9 @@ export function createWorkDraftReviewService(input: {
     const first = await known(envelope);
     if (first) return first;
     try {
-      const settled = await run();
+      await run();
       // The row holds the answer; a lost race on the id answers the winner's row. A command
       // whose row is still pending (a staged batch) is the handoff: the client observes it.
-      void settled;
       return (await known(envelope)) ?? { kind: "pending" };
     } catch (cause) {
       if (cause instanceof DraftApplyPendingError || cause instanceof DraftCommandExistsError) {
@@ -176,6 +178,10 @@ export function createWorkDraftReviewService(input: {
       resolveItem: (command) => input.identity.resolveReviewItem(command),
       resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),
       itemMeta,
+      async attribution(command): Promise<DraftAttribution | null> {
+        const resolved = await input.identity.resolveReviewItem(command);
+        return resolved ? input.attribution.forItem(resolved.item) : null;
+      },
       lookupCommand: (envelope) => input.commands.lookup(envelope),
       applyItem(command) {
         const { envelope, item } = command;

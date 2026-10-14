@@ -19,6 +19,7 @@ import {
   type DraftApplyItemBody,
   DraftApplyItemBodySchema,
   type DraftApplyPendingResponse,
+  type DraftAttribution,
   DraftCommandIdSchema,
   type DraftCommandKind,
   type DraftCommandOutcome,
@@ -27,11 +28,12 @@ import {
   type DraftItemDiscardBody,
   DraftItemDiscardBodySchema,
   type DraftItemMeta,
+  type ThreadDraftFilesResponse,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
-import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import type { z } from "zod";
@@ -408,6 +410,53 @@ export async function handleWorkDraftItemMetaRequest(
   else await draftGrants(deps, input, "read");
   const meta = await callDraftReview(deps.documentSync.draftReview.itemMeta(input));
   return "status" in meta ? gone() : meta;
+}
+
+/**
+ * The chat-name hint for one item (Q3): the AI edits pending in its room, as item ranges the
+ * browser matches. Authorized like the item's metadata; the hint never gates a change.
+ */
+export async function handleDraftAttributionRequest(
+  deps: DraftRouteServices,
+  input: CommandScope & { documentId: DocumentId; itemKey: string },
+): Promise<DraftAttribution> {
+  await requireDraftWorkAccess(deps, input);
+  const resolved = await deps.documentSync.draftReview.resolveItem(input);
+  if (!resolved || resolved.documentId !== input.documentId) {
+    throwHttpInterrupt(meridianErrorFromSystem("gone", "That draft item is closed", false), 404);
+  }
+  await draftGrants(deps, input, "read");
+  const attribution = await deps.documentSync.draftReview.attribution(input);
+  if (!attribution) {
+    throwHttpInterrupt(meridianErrorFromSystem("gone", "That draft item is closed", false), 404);
+  }
+  return attribution;
+}
+
+/** The chat strip's collapsed list: the listed items of the chat's Work with this chat's AI edits. */
+export async function handleThreadDraftFilesRequest(
+  deps: DraftRouteServices & {
+    threads: Pick<AppServices["repos"]["threads"], "findById">;
+    threadWorks: Pick<AppServices["repos"]["threadWorks"], "findPrimary">;
+  },
+  input: { threadId: ThreadId; userId: UserId },
+): Promise<ThreadDraftFilesResponse> {
+  const thread = await deps.threads.findById(input.threadId);
+  if (!thread || thread.userId !== input.userId)
+    throw createError({ statusCode: 404, message: "Thread not found" });
+  const primary = await deps.threadWorks.findPrimary(input.threadId);
+  const work = primary ? await deps.works.findById(primary.workId) : null;
+  if (!work) return { drafts: [] };
+  const { items } = await handleWorkDraftListRequest(deps, {
+    projectId: work.projectId,
+    workId: work.id,
+    userId: input.userId,
+  });
+  return {
+    drafts: items.filter((item) =>
+      item.actorThreads.some((actor) => actor.threadId === input.threadId),
+    ),
+  };
 }
 
 // --- Commands ----------------------------------------------------------------------------------

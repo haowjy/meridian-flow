@@ -6,6 +6,7 @@ import {
   type EditTarget,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { DraftAttributionEdit } from "@meridian/contracts/drafts";
 import {
   branchWriteJournal,
   type Database,
@@ -15,9 +16,12 @@ import {
   type EditOrigin,
   type EditPlacement,
   documentBranches as importedDocumentBranches,
+  threads,
 } from "@meridian/database";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import * as Y from "yjs";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { DraftAttributionStore } from "../domain/ports/draft-attribution-store.js";
 
 type Db = Pick<Database, "select" | "insert" | "update">;
 export interface ReceiptWrite {
@@ -152,4 +156,50 @@ export async function discardDraftEditParts(db: Db, branchIds: readonly string[]
         )})`,
       ),
     );
+}
+
+/** AI edit parts pending in a branch with the item ranges they inserted and deleted, latest first. */
+async function listPendingAgentEdits(
+  db: Pick<Database, "select">,
+  branchId: string,
+): Promise<DraftAttributionEdit[]> {
+  const rows = await db
+    .select({
+      threadId: documentEdits.threadId,
+      turnId: documentEdits.turnId,
+      title: threads.title,
+      at: documentEdits.createdAt,
+      effect: documentEditParts.effect,
+    })
+    .from(documentEditParts)
+    .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
+    .innerJoin(threads, eq(threads.id, documentEdits.threadId))
+    .where(
+      and(
+        sql`${documentEditParts.placement}->>'kind' = 'pending'`,
+        sql`${documentEditParts.placement}->>'branchId' = ${branchId}`,
+        eq(documentEdits.actor, "agent"),
+      ),
+    )
+    .orderBy(desc(documentEdits.createdAt), desc(documentEditParts.id));
+  const tuple = (r: { client: number; clock: number; len: number }) =>
+    [r.client, r.clock, r.len] as [number, number, number];
+  return rows.flatMap((row) =>
+    row.threadId && row.turnId
+      ? [
+          {
+            threadId: row.threadId,
+            title: row.title ?? "",
+            turnId: row.turnId,
+            at: row.at.toISOString(),
+            inserted: row.effect.inserted.map(tuple),
+            deleted: row.effect.deleted.map(tuple),
+          },
+        ]
+      : [],
+  );
+}
+
+export function createDrizzleDraftAttributionStore(db: Database): DraftAttributionStore {
+  return { pendingAgentEdits: (branchId) => listPendingAgentEdits(currentDrizzleDb(db), branchId) };
 }

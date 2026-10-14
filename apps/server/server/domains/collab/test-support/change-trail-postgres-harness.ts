@@ -1,3 +1,4 @@
+import { createDrizzleDraftAttributionStore } from "../adapters/drizzle-document-edits.js";
 import { createDrizzleDraftCommands } from "../adapters/drizzle-draft-commands.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import { createDraftReviewIdentity } from "../domain/draft-review-identity.js";
@@ -41,6 +42,7 @@ import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "../adapters/in-memory/static-document-link-scopes.js";
+import { createDraftAttribution } from "../domain/draft-attribution.js";
 import { createDraftBranchLeases } from "../domain/draft-branch-leases.js";
 import { createDraftDiscard } from "../domain/draft-discard.js";
 import { createDrafts } from "../domain/drafts.js";
@@ -773,6 +775,7 @@ export function createHarness(db: Database, options: ChangeTrailHarnessOptions =
       releaseObjects: async () => {},
     }),
     commands: draftCommands,
+    attribution: createDraftAttribution(createDrizzleDraftAttributionStore(db)),
     resolveThreadTitles: lookups.resolveThreadTitles,
     publication: createDraftPublication({
       drafts: workDrafts,

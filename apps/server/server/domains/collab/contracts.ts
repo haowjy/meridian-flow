@@ -5,7 +5,11 @@ import type {
   ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
-import type { DraftCommandOutcome, DraftItemMeta } from "@meridian/contracts/drafts";
+import type {
+  DraftAttribution,
+  DraftCommandOutcome,
+  DraftItemMeta,
+} from "@meridian/contracts/drafts";
 import type {
   DocumentId,
   ProjectId,
@@ -322,6 +326,8 @@ export type DraftReviewApi = {
     workId: WorkId;
     itemKey: string;
   }): Promise<DraftItemMeta | { status: "gone"; itemKey: string }>;
+  /** The chat-name hint for one item (Q3): null when the item isn't addressable. */
+  attribution(input: { workId: WorkId; itemKey: string }): Promise<DraftAttribution | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   /** Apply draft for one item: the whole item, or what a snapshot of its room names. */
   applyItem(input: {

@@ -60,6 +60,7 @@ import {
   type AheadRegistrationRecovery,
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
+import { createDrizzleDraftAttributionStore } from "./adapters/drizzle-document-edits.js";
 import { createDrizzleDraftCommands } from "./adapters/drizzle-draft-commands.js";
 import {
   createDrizzleDraftDiscard,
@@ -109,6 +110,7 @@ import {
   createDocumentWriteHookRunner,
   createProjectionEffectsDocumentWriteHook,
 } from "./domain/document-projection-refresher.js";
+import { createDraftAttribution } from "./domain/draft-attribution.js";
 import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import { createDraftBranchLeases } from "./domain/draft-branch-leases.js";
 import { createDraftDiscard } from "./domain/draft-discard.js";
@@ -542,6 +544,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     publication,
     discard,
     commands: draftCommands,
+    attribution: createDraftAttribution(createDrizzleDraftAttributionStore(deps.db)),
     resolveThreadTitles: lookups.resolveThreadTitles,
     pending: workDraftPendingStore,
   });
