@@ -161,7 +161,7 @@ export function DocumentIdentityBar({
           variant === "header"
             ? "min-h-10 gap-y-0.5 py-1 pl-2"
             : ["gap-y-0.5 px-4 py-[3px]", IDENTITY_BAR_BAND_CLASS],
-          trailing && "pr-12",
+          trailing && "pr-12 [@media(pointer:coarse)]:pr-14",
           // The row grows so every control can own a 44px target (document-identity-row.css).
           "[@media(pointer:coarse)]:min-h-11",
         )}
