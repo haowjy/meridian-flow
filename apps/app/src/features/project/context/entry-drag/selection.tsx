@@ -1,19 +1,25 @@
 /**
- * Row selection for one list, on VS Code's model: a click selects the row (and
- * the row opens as before), Ctrl/Cmd-click adds or removes a row starting from
- * the open document, Shift-click selects the visible range from the last
- * clicked row, Escape clears. A selection of one row is just the open
- * document's highlight; the fill appears on a row only once two are selected. Dragging
- * a selected row carries the whole selection. Range order is the order rows
- * appear on screen, read from the DOM, so it always matches what the writer sees.
+ * Row selection for one list, on VS Code's model. A plain click opens or
+ * toggles the row and leaves no selection of its own: until the writer
+ * Ctrl/Cmd- or Shift-clicks, the selection is just the open row. Ctrl/Cmd-click
+ * starts an explicit selection from the open row and adds or removes rows;
+ * Shift-click selects the on-screen range from the last clicked row; Escape
+ * returns to the open row. Dragging a selected row carries the whole selection.
+ * Range order is the order rows appear on screen, read from the DOM, so it
+ * always matches what the writer sees.
+ *
+ * The list that renders the rows owns the selection (`useEntrySelection`), so
+ * its drop route can reselect what it moved; rows read it through the provider.
  */
 import {
   createContext,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
   useCallback,
   useContext,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -21,30 +27,31 @@ import {
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import type { SelectableEntry } from "./entry";
 
-type SelectionValue = {
+export type EntrySelection = {
   /** Rows drag on the desktop shell only; the phone has no drag (owner, 2026-10-11). */
   draggable: boolean;
-  /** Selected and shown as selected: one of two or more, or the open row itself. */
-  isSelected(key: string, active: boolean): boolean;
+  /** Shown as selected: part of an explicit selection. The open row has its own highlight. */
+  isSelected(key: string): boolean;
   /** True when the click was a selection gesture and must not open the row. */
   click(entry: SelectableEntry, event: MouseEvent | KeyboardEvent): boolean;
-  /** The entries a drag of this row carries, in screen order; selects the row if it was not. */
+  /** What a drag of this row carries, in screen order; a row outside the selection goes alone. */
   dragged(entry: SelectableEntry): SelectableEntry[];
   /** Selects exactly these keys (after a move). */
   replace(keys: readonly string[]): void;
-  register(entry: SelectableEntry, active: boolean): void;
+  clear(): void;
+  /** Rows announce themselves while mounted; the open row says so. */
+  register(entry: SelectableEntry, active: boolean): () => void;
+  root: RefObject<HTMLDivElement | null>;
 };
-
-const SelectionContext = createContext<SelectionValue | null>(null);
 
 const KEY_ATTRIBUTE = "data-entry-key";
 
-/** One list's selection; every selectable row inside reads it. */
-export function EntrySelectionScope({ children }: { children: ReactNode }) {
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+/** One list's selection; the list component owns it and hands it to its rows and drop route. */
+export function useEntrySelection(): EntrySelection {
+  // null: no explicit selection, so the selection is the open row.
+  const [explicit, setExplicit] = useState<ReadonlySet<string> | null>(null);
   const anchor = useRef<string | null>(null);
-  const registry = useRef(new Map<string, SelectableEntry>());
-  const activeKey = useRef<string | null>(null);
+  const registry = useRef(new Map<string, { entry: SelectableEntry; active: boolean }>());
   const root = useRef<HTMLDivElement>(null);
   const draggable = usePhoneShell() !== true;
 
@@ -53,70 +60,89 @@ export function EntrySelectionScope({ children }: { children: ReactNode }) {
     return Array.from(nodes, (node) => node.getAttribute(KEY_ATTRIBUTE) ?? "");
   }, []);
 
-  const value = useMemo<SelectionValue>(() => {
-    const entriesInOrder = (keys: ReadonlySet<string>) =>
-      screenOrder()
-        .filter((key) => keys.has(key))
-        .map((key) => registry.current.get(key))
-        .filter((entry): entry is SelectableEntry => entry !== undefined);
+  const openKey = useCallback(() => {
+    for (const [key, row] of registry.current) if (row.active) return key;
+    return null;
+  }, []);
+
+  return useMemo<EntrySelection>(() => {
+    const current = (): ReadonlySet<string> => {
+      if (explicit) return explicit;
+      const open = openKey();
+      return new Set(open ? [open] : []);
+    };
     return {
       draggable,
-      isSelected: (key, active) => selected.has(key) && (selected.size > 1 || active),
+      root,
+      isSelected: (key) => explicit?.has(key) ?? false,
       click(entry, event) {
-        const toggle = event.metaKey || event.ctrlKey;
         if (event.shiftKey && anchor.current) {
           const order = screenOrder();
           const from = order.indexOf(anchor.current);
           const to = order.indexOf(entry.key);
           if (from >= 0 && to >= 0) {
             const [start, end] = from < to ? [from, to] : [to, from];
-            setSelected(new Set(order.slice(start, end + 1)));
+            setExplicit(new Set(order.slice(start, end + 1)));
             return true;
           }
         }
-        anchor.current = entry.key;
-        if (toggle) {
-          setSelected((current) => {
-            // A lone selection may be stale (the open document changed elsewhere); start from what is open.
-            const next = new Set(
-              current.size > 1 ? current : activeKey.current ? [activeKey.current] : [],
-            );
+        if (event.metaKey || event.ctrlKey) {
+          anchor.current = entry.key;
+          setExplicit((previous) => {
+            const open = openKey();
+            const next = new Set(previous ?? (open ? [open] : []));
             if (next.has(entry.key)) next.delete(entry.key);
             else next.add(entry.key);
             return next;
           });
           return true;
         }
-        setSelected(new Set([entry.key]));
+        anchor.current = entry.key;
+        setExplicit(null);
         return false;
       },
       dragged(entry) {
-        if (!selected.has(entry.key)) {
-          anchor.current = entry.key;
-          setSelected(new Set([entry.key]));
-          return [entry];
-        }
-        return withoutNested(entriesInOrder(selected));
+        const selected = current();
+        if (!selected.has(entry.key)) return [entry];
+        const rows = screenOrder()
+          .filter((key) => selected.has(key))
+          .map((key) => registry.current.get(key)?.entry)
+          .filter((row): row is SelectableEntry => row !== undefined);
+        return withoutNested(rows);
       },
       replace(keys) {
-        setSelected(new Set(keys));
+        setExplicit(keys.length > 1 ? new Set(keys) : null);
+      },
+      clear() {
+        setExplicit(null);
       },
       register(entry, active) {
-        registry.current.set(entry.key, entry);
-        if (active) activeKey.current = entry.key;
-        else if (activeKey.current === entry.key) activeKey.current = null;
+        registry.current.set(entry.key, { entry, active });
+        return () => {
+          if (registry.current.get(entry.key)?.entry === entry) registry.current.delete(entry.key);
+        };
       },
     };
-  }, [selected, screenOrder, draggable]);
+  }, [explicit, draggable, screenOrder, openKey]);
+}
 
+const SelectionContext = createContext<EntrySelection | null>(null);
+
+/** Gives the list's rows its selection; Escape inside returns to the open row. */
+export function EntrySelectionProvider({
+  selection,
+  children,
+}: {
+  selection: EntrySelection;
+  children: ReactNode;
+}) {
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && selected.size > 0) setSelected(new Set());
+    if (event.key === "Escape") selection.clear();
   };
-
   return (
-    <SelectionContext.Provider value={value}>
+    <SelectionContext.Provider value={selection}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape clears the selection made by the rows inside. */}
-      <div ref={root} className="contents" onKeyDown={onKeyDown}>
+      <div ref={selection.root} className="contents" onKeyDown={onKeyDown}>
         {children}
       </div>
     </SelectionContext.Provider>
@@ -131,25 +157,20 @@ function withoutNested(entries: SelectableEntry[]): SelectableEntry[] {
       !folders.some(
         (folder) =>
           folder !== entry &&
-          folder.catalog === entry.catalog &&
+          folder.catalogRootId === entry.catalogRootId &&
           entry.path.startsWith(`${folder.path}/`),
       ),
   );
 }
 
-/** The list's selection, for a drop route that reselects what it moved. */
-export function useOptionalEntrySelectionScope() {
-  return useContext(SelectionContext);
-}
-
-/** A row's selection state and handlers; inert outside a selection scope (phone). */
-export function useEntrySelection(entry: SelectableEntry | null, active = false) {
-  const scope = useContext(SelectionContext);
-  if (scope && entry) scope.register(entry, active);
+/** A row's place in its list's selection; inert outside one (phone browsing). */
+export function useEntrySelectionRow(entry: SelectableEntry, active: boolean) {
+  const selection = useContext(SelectionContext);
+  useLayoutEffect(() => selection?.register(entry, active), [selection, entry, active]);
   return {
-    scope,
-    selected: Boolean(scope && entry && scope.isSelected(entry.key, active)),
+    selection,
+    selected: selection?.isSelected(entry.key) ?? false,
     /** Spread on the row so range selection can read screen order. */
-    rowProps: entry ? { [KEY_ATTRIBUTE]: entry.key } : {},
+    rowProps: { [KEY_ATTRIBUTE]: entry.key },
   };
 }

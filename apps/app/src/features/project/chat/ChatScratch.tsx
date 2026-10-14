@@ -29,7 +29,7 @@ import {
 import { ContextTreeEntry, TreeEnvProvider } from "../context/ContextTreeRows";
 import { fileKindIcon as nodeIcon } from "../context/context-file-icon";
 import { schemeIcon, schemeLabel } from "../context/context-schemes";
-import { EntrySelectionScope } from "../context/entry-drag/selection";
+import { EntrySelectionProvider, useEntrySelection } from "../context/entry-drag/selection";
 import { useEntryMoveRoute } from "../context/entry-drag/use-entry-move-route";
 import { RailPaneHeader } from "../context/RailPaneHeader";
 import { AreaDropRegion } from "../context/tree-drop/AreaDropRegion";
@@ -111,18 +111,22 @@ export function RailScratchSection({
   const sectionRef = useRef<HTMLElement | null>(null);
   const deletion = useDeleteConfirmation({ projectId });
   const { works, noWork } = useWorks(projectId);
-  const capabilitiesByOwner = new Map<string, EntryCapabilities>();
-  const capabilitiesFor = (owner: ContextOwner): EntryCapabilities => {
-    const key = owner.rootThreadId ? `lineage:${owner.rootThreadId}` : `work:${owner.workId ?? ""}`;
-    const cached = capabilitiesByOwner.get(key);
-    if (cached) return cached;
-    const work =
-      owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
-    const actions: EntryCapabilities =
-      !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
-    capabilitiesByOwner.set(key, actions);
-    return actions;
-  };
+  const capabilitiesFor = useMemo(() => {
+    const capabilitiesByOwner = new Map<string, EntryCapabilities>();
+    return (owner: ContextOwner): EntryCapabilities => {
+      const key = owner.rootThreadId
+        ? `lineage:${owner.rootThreadId}`
+        : `work:${owner.workId ?? ""}`;
+      const cached = capabilitiesByOwner.get(key);
+      if (cached) return cached;
+      const work =
+        owner.workId === noWork?.id ? noWork : works?.find((work) => work.id === owner.workId);
+      const actions: EntryCapabilities =
+        !owner.workId || (work && !isWorkArchived(work)) ? ["rename", "move", "delete"] : [];
+      capabilitiesByOwner.set(key, actions);
+      return actions;
+    };
+  }, [works, noWork]);
   const folderIds = useMemo(
     () =>
       scratch?.source.ready
@@ -143,9 +147,15 @@ export function RailScratchSection({
   const listed = scratch?.source.catalogs;
   const areas = useMemo(
     () =>
-      (listed ?? []).map(({ catalog, owner }) => ({ scheme: "scratch" as const, owner, catalog })),
-    [listed],
+      (listed ?? []).map(({ catalog, owner }) => ({
+        scheme: "scratch" as const,
+        owner,
+        catalog,
+        movable: capabilitiesFor(owner).includes("move"),
+      })),
+    [listed, capabilitiesFor],
   );
+  const selection = useEntrySelection();
   const onLanded = useCallback(
     (target: TreeDropTarget) => {
       setExpanded("scratch", true);
@@ -154,7 +164,13 @@ export function RailScratchSection({
     },
     [setExpanded, isExpanded, toggleEntry],
   );
-  const moveRoute = useEntryMoveRoute({ projectId, areas, onLanded });
+  const moveRoute = useEntryMoveRoute({
+    projectId,
+    areas,
+    selection,
+    surface: "sidebar",
+    onLanded,
+  });
   const routes = useMemo<TreeDropRoutes>(() => ({ entries: moveRoute }), [moveRoute]);
   if (!scratch) return null;
   const { tree } = scratch.source;
@@ -204,7 +220,7 @@ export function RailScratchSection({
         />
       ) : null}
       <TreeDropScope routes={routes}>
-        <EntrySelectionScope>
+        <EntrySelectionProvider selection={selection}>
           <AreaDropRegion
             scheme="scratch"
             catalogRootId={areas[0]?.catalog.root.entryId ?? null}
@@ -242,7 +258,7 @@ export function RailScratchSection({
               </div>
             ) : null}
           </AreaDropRegion>
-        </EntrySelectionScope>
+        </EntrySelectionProvider>
       </TreeDropScope>
       <DeleteConfirmationDialog
         target={deletion.target}

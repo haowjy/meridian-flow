@@ -19,7 +19,8 @@ after the drag ends. This recipe is not a current pass claim.
 Tool notes: agent-browser clicks don't carry held modifier keys, so send
 selection gestures from the page:
 `row.dispatchEvent(new MouseEvent('click', {bubbles: true, ctrlKey: true}))`
-on the element with the row's `data-entry-key`. Native drags work with
+on the element with the row's `data-entry-key` (in Work Files, on the button
+inside it, which owns the click). Native drags work with
 `mouse move` / `mouse down` / several `mouse move` steps / `mouse up`; screenshot
 between the moves to see the lit target and the pointer hint. The headless
 browser reports no fine pointer, so rows render at touch height.
@@ -27,8 +28,9 @@ browser reports no fine pointer, so rows render at touch height.
 ## Files tree
 
 1. Ctrl-click `chapter-1` and `chapter-3` while `chapter-2` is open: all three
-   rows fill. Shift-click selects the on-screen range from the last click.
-   Escape clears.
+   rows fill. Ctrl-click `chapter-3` again: only it loses the fill. Shift-click
+   selects the on-screen range from the last click. Escape returns to the open
+   row.
 2. Drag the selection over the collapsed Knowledge Base header: after about
    600 ms it opens, the header and its whole list light as one block, and the
    hint reads "Move to Knowledge Base".
@@ -52,9 +54,10 @@ browser reports no fine pointer, so rows render at touch height.
    onto `research`: it opens, lights, and the note moves in with Undo.
 2. Drag a Scratch note over a project folder: nothing lights and no hint shows
    (crossing between Scratch and the project is Move or Copy, not built yet).
-3. Open the Work, then its Files tab. Drag `Scene notes` onto `research`: the
-   folder opens, the folder row and its notes light together, and the note
-   moves in. The sidebar's Scratch shows the same change.
+3. Open the Work, then its Files tab, and collapse the sidebar. Select two
+   notes inside `research` and drag them onto the Scratch heading: they move
+   out, stay selected, and "Moved 2 items to Scratch." with Undo shows under
+   the list. Undo puts them back. The sidebar's Scratch shows the same changes.
 
 ## Evidence
 

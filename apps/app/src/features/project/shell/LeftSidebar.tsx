@@ -133,7 +133,7 @@ export function LeftSidebar({
           />
         ) : null}
       </WorkspaceNavBody>
-      <MoveNotice />
+      <MoveNotice surface="sidebar" className="absolute inset-x-2 bottom-2" />
       <DragHint />
     </nav>
   );

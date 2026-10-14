@@ -118,7 +118,12 @@ msgstr ""
 
 #. placeholder {0}: failed.length
 #: src/features/project/context/entry-drag/use-entry-move-route.ts
-msgid "{0, plural, one {Couldn't move # item to {destinationName}.} other {Couldn't move # items to {destinationName}.}}"
+#~ msgid "{0, plural, one {Couldn't move # item to {destinationName}.} other {Couldn't move # items to {destinationName}.}}"
+#~ msgstr ""
+
+#. placeholder {0}: failed.length
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "{0, plural, one {Couldn't move # item.} other {Couldn't move # items.}}"
 msgstr ""
 
 #. placeholder {0}: editedDocuments.size
@@ -131,7 +136,7 @@ msgstr ""
 #~ msgid "{0, plural, one {edited # document} other {edited # documents}}"
 #~ msgstr ""
 
-#. placeholder {0}: moving.length
+#. placeholder {0}: moved.length
 #: src/features/project/context/entry-drag/use-entry-move-route.ts
 msgid "{0, plural, one {Moved # item to {destinationName}.} other {Moved # items to {destinationName}.}}"
 msgstr ""
@@ -1486,7 +1491,12 @@ msgstr ""
 
 #. placeholder {0}: lost.name
 #: src/features/project/context/entry-drag/use-entry-move-route.ts
-msgid "Couldn't move {0} to {destinationName}."
+#~ msgid "Couldn't move {0} to {destinationName}."
+#~ msgstr ""
+
+#. placeholder {0}: lost.name
+#: src/features/project/context/entry-drag/use-entry-move-route.ts
+msgid "Couldn't move {0}."
 msgstr ""
 
 #: src/features/project/context/entry-drag/move-notice.tsx

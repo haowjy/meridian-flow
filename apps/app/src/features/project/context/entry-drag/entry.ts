@@ -2,17 +2,19 @@
 import { isProjectScopedScheme } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogNode } from "@/client/query/context-catalog-projection";
-import type { MoveSubject } from "../move-entry";
+import type { MoveSubject, PlacementParent } from "../move-entry";
 
-export type SelectableEntry = Omit<MoveSubject, "catalog"> & {
-  catalog: NonNullable<MoveSubject["catalog"]>;
+export type SelectableEntry = MoveSubject & {
+  catalogRootId: string;
+  /** Where it sits now; Undo puts it back here, under whatever name it has by then. */
+  origin: PlacementParent;
+  /** The row offers Move (its owner is editable, it isn't a navigation-only placeholder). */
+  movable: boolean;
   /** Unique within the sidebar: scheme and catalog entry. */
   key: string;
   scheme: ProjectContextTreeScheme;
   owner: ContextOwner;
   uri: string;
-  /** The parent's path, or "/" at the area's top level (Undo moves it back here). */
-  parentPath: string;
 };
 
 /**
@@ -29,9 +31,9 @@ export function selectableEntry(
   node: CatalogNode,
   scheme: ProjectContextTreeScheme,
   owner: ContextOwner,
-  catalog: SelectableEntry["catalog"],
+  root: PlacementParent["root"],
+  movable: boolean,
 ): SelectableEntry {
-  const parentPath = node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : "/";
   return {
     key: `${scheme}:${node.entryId}`,
     kind: node.kind === "file" ? "file" : "folder",
@@ -40,8 +42,9 @@ export function selectableEntry(
     path: node.path,
     uri: node.uri,
     parentId: node.parentId,
-    parentPath,
-    catalog,
+    catalogRootId: root.entryId,
+    origin: { scheme, owner, root, entryId: node.parentId ?? root.entryId },
+    movable,
     scheme,
     owner,
   };
