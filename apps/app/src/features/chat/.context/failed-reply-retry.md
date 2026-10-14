@@ -73,7 +73,9 @@ is announced once and is not reported as a failed run.
 
 `useRetryStandIns.ts` owns this optimistic half for both this Retry and the
 handoff brief's: the stand-in list, placement after the turn it followed
-(`placeStandIns`, now run by `viewTranscript` from `@meridian/thread-client`), reconciliation by id, the refused
+(`placeStandIns`, now run by `viewTranscript` from `@meridian/thread-client`; it goes after the
+`write_mode_switch` turns that directly follow the failed reply, so failed reply, switch, Retry, while a
+newer writer message still comes after it), reconciliation by id, the refused
 set, and the lost-request re-send. Each caller supplies the POST, the
 stand-in's shape and, for a reply, when its reservation ended (`retired`). A
 handoff brief holds no execution; its seed's id is its only identity.
