@@ -53,7 +53,10 @@ Local-dev-only utilities. Never imported by the application runtime.
   migration separately with its history row. A `-- migration: no-transaction`
   file autocommits and is recorded only after every statement succeeds; before
   it runs, the runner drops INVALID remnants of its concurrent builds and never
-  a valid index. Authoring rules live in
+  a valid index. A migration whose first line is `-- data-step: <id>@<version>`
+  anchors a registered data step (`lib/migration-data-steps.ts`): the runner
+  runs its preflight before the run's first pending migration and the step just
+  before the anchor, in the same locked run. Authoring rules live in
   [`packages/database`](../../packages/database/.context/CONTEXT.md). Only reset a
   database owned by the current dev checkout; shared and deployed resets
   require explicit owner authorization.

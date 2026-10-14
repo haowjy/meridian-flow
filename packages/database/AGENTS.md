@@ -36,6 +36,16 @@ Drizzle schema, migrations, functions, and Postgres connection helpers for the M
   statements are all re-runnable. Authoring rules and runner semantics are in
   `.context/CONTEXT.md`. Regenerating after a base merge drops these hand
   edits; reapply them.
+- **Data steps.** Code that must run between two SQL migrations (a row
+  transform SQL cannot express) is a versioned data step in
+  `tools/dev/lib/migration-data-steps.ts`, with its implementation in
+  `src/migration-steps/`. Its identity is the marker
+  `-- data-step: <id>@<version>` on the first line of the migration it must
+  precede (the anchor), so renumbering the migration needs no registry edit.
+  `pnpm db:migrate` alone runs it: the step's read-only preflight before the
+  run's first pending migration, its `run` immediately before the anchor.
+  Changing a step's semantics means a new version, a new marker and a new
+  migration. Details in `.context/CONTEXT.md`.
 - Column retirement requires auditing the removed values and removing readers
   in the same release. Transfer valid pins to canonical Favorites before
   retirement. Bound the lock acquisition wait with transactional
