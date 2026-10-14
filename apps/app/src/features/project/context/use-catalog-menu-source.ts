@@ -42,6 +42,8 @@ export type CatalogMenuSource = {
   ready: boolean;
   /** The tab a picked note opens as. */
   tabFor(rowId: string): ServerContextTab | null;
+  /** The loaded catalogs the list shows, each with its owner: this Scratch first, then earlier notes. */
+  catalogs: readonly { catalog: CatalogContextView; owner: ContextOwner }[];
 };
 
 /** The Scratch a chat has on screen: who owns it, what to call it, and any lineage left behind. */
@@ -110,26 +112,26 @@ export function useCatalogMenuSource({
     () => buildMenuTree({ heading, empty: NO_NOTES(), areas, rooted: false }),
     [areas, heading],
   );
+  const catalogs = useMemo(() => {
+    if (!area) return [];
+    const listed = [
+      { catalog: area.catalog, owner: area.owner },
+      ...(area.earlier
+        ? [{ catalog: area.earlier.catalog, owner: { rootThreadId: area.earlier.rootThreadId } }]
+        : []),
+    ];
+    return listed.filter(
+      (entry): entry is { catalog: CatalogContextView; owner: ContextOwner } =>
+        entry.catalog !== null && entry.catalog !== undefined,
+    );
+  }, [area]);
   return {
     tree,
     ready: area?.complete ?? false,
     tabFor: (rowId) => menuTabFor(areas, rowId),
+    catalogs,
     entryFor: (rowId) => {
-      const catalogs = area
-        ? [
-            { catalog: area.catalog, owner: area.owner },
-            ...(area.earlier
-              ? [
-                  {
-                    catalog: area.earlier.catalog,
-                    owner: { rootThreadId: area.earlier.rootThreadId },
-                  },
-                ]
-              : []),
-          ]
-        : [];
       for (const { catalog, owner } of catalogs) {
-        if (!catalog) continue;
         const node = menuEntryFor(catalog, rowId);
         if (node) return { node, catalog, owner };
       }

@@ -30,17 +30,20 @@ type Plan = {
   refusal: { refusal: MoveRefusal; entry: SelectableEntry } | null;
 };
 
+export type MoveArea = {
+  scheme: ProjectContextTreeScheme;
+  owner: ContextOwner;
+  catalog: CatalogContextView;
+};
+
 export function useEntryMoveRoute({
   projectId,
-  scheme,
-  owner,
-  catalog,
+  areas,
   onLanded,
 }: {
   projectId: string;
-  scheme: ProjectContextTreeScheme;
-  owner: ContextOwner;
-  catalog: CatalogContextView | null;
+  /** The catalogs this list shows; a target names its catalog by root ID. */
+  areas: readonly MoveArea[];
   /** Opens the destination folder so the moved rows are in view. */
   onLanded?: (target: TreeDropTarget) => void;
 }): NonNullable<TreeDropRoutes["entries"]> {
@@ -51,7 +54,11 @@ export function useEntryMoveRoute({
   return useMemo(() => {
     const plan = (target: TreeDropTarget): Plan | null => {
       const drag = activeEntryDrag();
-      if (!drag || !catalog || target.scheme !== scheme) return null;
+      const area = areas.find(
+        (candidate) => candidate.catalog.root.entryId === target.catalogRootId,
+      );
+      if (!drag || !area || target.scheme !== area.scheme) return null;
+      const { scheme, owner, catalog } = area;
       if (drag.system !== entrySystem(scheme, owner)) return null;
       const destination: MoveDestination = {
         scheme,
@@ -109,7 +116,9 @@ export function useEntryMoveRoute({
         if (!planned || planned.refusal || planned.moving.length === 0) return;
         const { destination, destinationName, moving } = planned;
         selection?.replace(
-          moving.map((entry) => `${scheme}:${entry.key.slice(entry.key.indexOf(":") + 1)}`),
+          moving.map(
+            (entry) => `${destination.scheme}:${entry.key.slice(entry.key.indexOf(":") + 1)}`,
+          ),
         );
         onLanded?.(target);
         void place(moving, () => destination).then((failed) => {
@@ -157,5 +166,5 @@ export function useEntryMoveRoute({
         });
       },
     };
-  }, [catalog, scheme, owner, works, noWork, resources, projectId, selection, onLanded]);
+  }, [areas, works, noWork, resources, projectId, selection, onLanded]);
 }

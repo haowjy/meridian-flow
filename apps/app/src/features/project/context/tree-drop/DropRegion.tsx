@@ -9,9 +9,17 @@ import { cn } from "@/lib/utils";
 import { contextTreeDropTargetClassName } from "../context-row-geometry";
 import type { TreeDropState } from "./tree-drop";
 
-export function DropRegion({ state, children }: { state: TreeDropState; children: ReactNode }) {
+export function DropRegion({
+  state,
+  className,
+  children,
+}: {
+  state: TreeDropState;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="relative isolate">
+    <div className={cn("relative isolate", className)}>
       {state === "over" ? (
         <div
           aria-hidden

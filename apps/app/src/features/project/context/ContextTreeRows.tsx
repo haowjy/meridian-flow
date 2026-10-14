@@ -183,7 +183,7 @@ function DirRow({
   const isOpen = env.isExpanded(dir.entryId);
   const folder: DropFolder = { entryId: dir.entryId, path: dir.path, uri: dir.uri, name: dir.name };
   const drop = useTreeDropTarget(
-    { scheme: env.scheme, folder },
+    { scheme: env.scheme, catalogRootId: env.catalog.root.entryId, folder },
     { onSpring: () => !env.isExpanded(dir.entryId) && env.toggleEntry(dir.entryId) },
   );
   const entry = useMemo(
@@ -267,7 +267,11 @@ function FileRow({
 }) {
   const env = useTreeEnv();
   // A file is not a drop target of its own: it hands the drop to its folder (or the area).
-  const { dropProps } = useTreeDropTarget({ scheme: env.scheme, folder: parent });
+  const { dropProps } = useTreeDropTarget({
+    scheme: env.scheme,
+    catalogRootId: env.catalog.root.entryId,
+    folder: parent,
+  });
   const interaction = useEntryInteraction({
     projectId: env.projectId,
     node: file,
