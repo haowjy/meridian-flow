@@ -3,8 +3,9 @@
  * (`DocumentIdentityBar`) rather than a header of their own: the Draft chip with
  * its menu right after the breadcrumb, then, on the right, the stepper, Show
  * changes, Discard draft and Apply draft (the per-change bar's Discard and
- * Apply act on one change; these name their scope). Everything is sized to the row's 22px box, so
- * entering or leaving review moves nothing below it.
+ * Apply act on one change; these name their scope). They sit at the end of the
+ * row's first line or wrap to a second one, so entering or leaving review may
+ * add or remove that line.
  *
  * The list button, left of the stepper, opens this document's own change list
  * (`DocumentChanges`) in a popover under the row, independent of marks
