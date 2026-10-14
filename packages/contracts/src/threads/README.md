@@ -31,7 +31,8 @@ space: the snapshot's `nextSeq - 1`) and `mode` (the applied write mode).
 `pending` is the thread's queued write-mode switch, which may be another
 request's row. Every switch transition commits under that lock and appends
 its frames, so the state the answer reports is the server's switch state as
-of every frame at or below `seq`. The withdraw answer carries `seq` likewise.
+of every frame at or below `seq`. The withdraw answer carries `pending`, `mode` and `seq`
+likewise, read after the acknowledgment, so a quiet chat's record can reach the answer.
 An applied switch also projects `meridian.write_mode.switched`
 (`{ threadId, mode, controlId, turnId }`) at its own journal `seq`, ahead of
 the `meridian.inbox.changed` that empties the queue; catch-up replay delivers

@@ -105,8 +105,18 @@ it("announces a Withdraw only once its outcome is known", async () => {
   );
   const cases: [string, "removed" | "admitted" | "kept", unknown, string[]][] = [
     ["w1", "removed", undefined, ["say:withdrawn"]],
-    ["w2", "admitted", { outcome: "withdrawn", seq: "1999" }, ["say:withdrawn"]],
-    ["w3", "admitted", { outcome: "already_started", seq: "1999" }, ["say:already"]],
+    [
+      "w2",
+      "admitted",
+      { outcome: "withdrawn", seq: "1999", pending: null, mode: "direct" },
+      ["say:withdrawn"],
+    ],
+    [
+      "w3",
+      "admitted",
+      { outcome: "already_started", seq: "1999", pending: null, mode: "direct" },
+      ["say:already"],
+    ],
     ["w4", "admitted", new HttpResponseError("gone", 404, null), []],
     ["w5", "kept", undefined, []],
     ["w6", "admitted", new Error("offline"), ["error:Couldn't withdraw. Try again."]],

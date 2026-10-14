@@ -28,20 +28,19 @@ const byOrder = (a: Switch, b: Switch) =>
   a.order - b.order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /**
- * `base` is the mode to show before the server has sent a record. The row for a switch
- * the server holds is `queued`; one only this device holds is `sending`.
+ * Null before the first record: there is no server mode to fold over, and the caller shows
+ * its own (the thread row's). The row for a switch the server holds is `queued`; one only
+ * this device holds is `sending`.
  */
-export function switchState(
-  view: RunStateView,
-  base: AiWriteMode,
-): { mode: AiWriteMode; rows: SwitchRow[] } {
-  const applied = view.record?.mode ?? base;
+export function switchState(view: RunStateView): { mode: AiWriteMode; rows: SwitchRow[] } | null {
+  if (!view.record) return null;
+  const applied = view.record.mode;
   const withdrawals = new Map<string, boolean>();
   for (const intent of view.intents)
     if (intent.kind === "withdraw") withdrawals.set(intent.id, intent.failed === true);
 
   let queued: Queued | null = null;
-  for (const item of view.record?.items ?? []) {
+  for (const item of view.record.items) {
     if (item.intent !== "control" || item.control?.kind !== "write_mode") continue;
     if (withdrawals.get(item.id) === false) continue;
     queued = { id: item.id, mode: item.control.mode, from: "server" };
