@@ -38,7 +38,11 @@ describe("assembleNextTurnContext invoked skill tool", () => {
     const agentRevisions = createInMemoryAgentRevisionStore({
       threadExists: async (id) => Boolean(await repos.threads.findById(id)),
     });
-    const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const thread = await repos.threads.create({
+      aiWriteMode: "direct",
+      userId: "user-1",
+      projectId: project.id,
+    });
     await agentRevisions.bindThread(
       thread.id,
       null,
@@ -98,7 +102,11 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
     const agentRevisions = createInMemoryAgentRevisionStore({
       threadExists: async (id) => Boolean(await repos.threads.findById(id)),
     });
-    const parent = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const parent = await repos.threads.create({
+      aiWriteMode: "direct",
+      userId: "user-1",
+      projectId: project.id,
+    });
     const parentTurn = await repos.turns.create({
       threadId: parent.id,
       role: "assistant",
@@ -106,6 +114,7 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
       status: "complete",
     });
     const child = await repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: "user-1",
       projectId: project.id,
       parentThreadId: parent.id,

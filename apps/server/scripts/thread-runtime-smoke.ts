@@ -130,6 +130,8 @@ await db.insert(threads).values({
   projectId,
   createdByUserId: userId,
   title: "Smoke thread",
+  // The chat copies its Work's default, as thread creation does.
+  aiWriteMode: "direct",
 });
 await db.insert(threadWorks).values({
   threadId,

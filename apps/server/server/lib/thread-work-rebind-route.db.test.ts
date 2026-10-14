@@ -115,7 +115,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userTurnId: turnId,
           userBlocks: [{ type: "text", text: "Keep writing" }],
           delivery,
-          inbox: delivery,
           draft: {
             id: turnId,
             threadId: THREAD_ID,
@@ -190,7 +189,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const modelInstance = createDrizzleRunClaim(db);
       const writerInstance = createDrizzleRunClaim(db);
-      const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run");
+      const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run", async () => {});
       expect(modelClaim).not.toBeNull();
 
       try {

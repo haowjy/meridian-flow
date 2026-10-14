@@ -27,3 +27,10 @@ export function compareSeq(a: string, b: string): number {
   }
   return a > b ? 1 : -1;
 }
+
+/** The last seq a snapshot covers: its `nextSeq` minus one, or "0" for a thread with no events. */
+export function headSeq(nextSeq: string): string {
+  const next = parseSeq(nextSeq);
+  if (next === null || next === "0") return "0";
+  return (BigInt(next) - 1n).toString();
+}

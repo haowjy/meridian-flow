@@ -35,7 +35,7 @@ origin Work, read only through `draftBranchWorks`/`branchDraftWork`
 lineage, marks source journal rows reviewed, and resets/advances branch
 generation where needed.
 
-Draft HTTP routes (including write-mode changes that can Apply) share
+Draft HTTP routes share
 `requireDraftWorkAccess`: a deleted Work is 404 `Draft not found` before any
 draft read or mutation. Archived Works still permit review reads. The client
 draft-list query treats 404 as empty so a post-delete catalog wake is silent.

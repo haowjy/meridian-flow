@@ -21,6 +21,7 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
+import type { SwitchView } from "./useSwitchView";
 import { type ThreadControls, useThreadControls } from "./useThreadControls";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -33,6 +34,13 @@ afterAll(() => {
 });
 
 const EMPTY: ThreadPendingInbox = { items: [] };
+const NO_SWITCHES: SwitchView = {
+  rows: [],
+  writeMode: "direct",
+  switchWriteMode: () => undefined,
+  retry: () => undefined,
+  withdraw: () => undefined,
+};
 const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
@@ -41,7 +49,8 @@ function Probe(props: { pending?: ThreadPendingInbox }) {
   latest = useThreadControls({
     threadId: "thread-1",
     pending: props.pending ?? EMPTY,
-    answeredControlIds: NONE,
+    answeredCompactionIds: NONE,
+    switches: NO_SWITCHES,
   });
   return null;
 }
@@ -78,10 +87,11 @@ describe("useThreadControls", () => {
       id,
       control: { kind: "compact" },
     });
-    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
     expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
-    await act(async () => response.resolve({ id, pending: null, turnId: "c" }));
-    expect(latest.queued).toEqual([]);
+    // This request is still queued though the chat has no queued switch (`pending: null`).
+    await act(async () => response.resolve({ id, queued: true, pending: null, turnId: null }));
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
     expect(invalidateQueries).toHaveBeenCalled();
   });
 
@@ -98,20 +108,12 @@ describe("useThreadControls", () => {
     await act(async () => latest.withdraw(queued));
     expect(api.withdrawThreadControl).not.toHaveBeenCalled();
     expect(latest.queued).toEqual([]);
-    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction withdrawn");
+    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction stopped");
     await act(async () =>
       enqueued.resolve({
         id,
-        pending: {
-          id,
-          seq: 1,
-          intent: "control",
-          control: { kind: "compact" },
-          provenance: { kind: "writer", actorId: "w" },
-          deliveryState: "awaiting_run",
-          summary: "Compact conversation",
-          enqueuedAt: "2026-09-28T00:00:00.000Z",
-        },
+        queued: true,
+        pending: null,
         turnId: null,
       }),
     );

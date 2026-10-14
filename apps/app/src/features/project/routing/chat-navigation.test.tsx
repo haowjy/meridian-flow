@@ -9,7 +9,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readCurrentChat } from "@/client/current-chat";
-import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
+import { threadSnapshotQueryOptions } from "@/client/query/thread-snapshot-query";
 import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import {

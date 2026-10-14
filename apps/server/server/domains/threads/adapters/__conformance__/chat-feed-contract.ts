@@ -17,6 +17,7 @@ async function createTitledThread(
   title: string,
 ): Promise<void> {
   await h.repos.threads.create({
+    aiWriteMode: "direct",
     id: id as ThreadId,
     userId: h.userId as UserId,
     projectId: h.projectId,

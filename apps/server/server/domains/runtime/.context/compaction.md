@@ -51,6 +51,14 @@ Compaction is two delivery transitions around an unlocked
    adoption, notice consumption, and B's reservation. A moved leaf repeats
    only successor preparation, never the summary.
 
+**The yield exception.** If the boundary after the summary finds a message
+waiting behind a queued write-mode switch (`S, M2`), the successor commit
+yields instead: C completes with its own outcome through its placeholder
+callbacks, nothing is adopted, no notice is consumed, no B is reserved, and
+the claim is released. C's receipt stays unacknowledged, so its messages and
+M2 wait for the next run, which starts after the release wake applies S. See
+[controls](controls.md#the-yield) for the ordering and receipt rules.
+
 The complete summary block is immutable. Its fit limit comes from the
 decision, independently of the automatic trigger. A usable value's token
 count describes the compacted base before late arrivals. Only assistant response
@@ -146,7 +154,8 @@ headroom, using `apps/server/scripts/fixtures/compaction-estimator-probe.json`.
 ## Failure landing
 
 - A failed automatic summary errors C and fails the reply below the latest
-  message. A failed command summary errors only C; command failures never fail
+  message, except at a yield: C errors, no reply is failed, and the messages
+  wait for the next run ([the yield exception](#two-delivery-transitions)). A failed command summary errors only C; command failures never fail
   a reply.
 - Failed C metadata records the typed `reason` and `phase`; a fit rejection also
   records `estimatedTokens` and `fitLimitTokens`. `turn.error` carries the outcome

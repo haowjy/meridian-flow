@@ -43,10 +43,10 @@ function message(key: string, threadId: ThreadId): MessageDraft {
 describe("wake run", () => {
   it("rereads after an empty run when a message arrives under its claim", async () => {
     const rig = await runtimeScenario({ gateway: textGateway() });
-    const repair = rig.delivery.repairOrphanedTurns.bind(rig.delivery);
+    const settle = rig.delivery.settleStaleExecution.bind(rig.delivery);
     let injected = false;
-    rig.delivery.repairOrphanedTurns = async (lease) => {
-      await repair(lease);
+    rig.delivery.settleStaleExecution = async (threadId) => {
+      await settle(threadId);
       if (injected) return;
       injected = true;
       await rig.inbox.enqueue(message("arrived during empty run", rig.thread.id));
@@ -68,7 +68,7 @@ describe("wake run", () => {
       starts += 1;
       return startExecution(...args);
     };
-    rig.delivery.repairOrphanedTurns = async () => {
+    rig.delivery.settleStaleExecution = async () => {
       throw new Error("orphan repair unavailable");
     };
 

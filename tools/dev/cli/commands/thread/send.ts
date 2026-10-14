@@ -28,6 +28,7 @@ import type { Session } from "../../core/session";
 import { resolveDocumentId, resolveUri } from "../doc/uri";
 import { enqueueMockScript, removeMockScript } from "../mock/queue";
 import type { CliEvent } from "./events-map";
+import { replyReaching } from "./reply-reaching";
 import { resolveThreadId, THREAD_TARGET_OPTIONS } from "./resolve";
 import { followThread } from "./stream";
 
@@ -200,7 +201,13 @@ async function followToOutcome(
   admitted: SendMessageResponse,
 ): Promise<SendOutcome> {
   const { threadId } = input;
-  let ourTurn: string | null = admitted.assistantTurnId;
+  // The admission's steered reply is only where to start: the message joined its
+  // execution, so that execution's successors answer it. With none named, the
+  // reply reserved for this user turn is ours. Never the next start in the
+  // stream: the early cursor replays others', and another client's can follow.
+  // Not a redesign (#768): it keeps the old successor/finish shape on execution facts.
+  let ourTurn: string | null = admitted.steersTurnId;
+  let ourExecution: string | null = null;
   let lastSeq = admitted.resumeAfterSeq;
   let interrupt: SendOutcome["interrupt"];
   const blockedOutcome = (
@@ -224,7 +231,11 @@ async function followToOutcome(
   );
   if (initial) return initial;
   let blocked: SendOutcome | null = null;
-  const isOurs = (turnId: string) => ourTurn === null || ourTurn === turnId;
+  // Our reply finished; until its execution ends, the next start is its successor
+  // (one claim per thread: another execution can start only after that end).
+  let continuing = false;
+  let recover = false;
+  const isOurs = (turnId: string) => ourTurn === turnId;
   try {
     const deadlineAt = Date.now() + input.timeoutMs;
     for (;;) {
@@ -244,9 +255,34 @@ async function followToOutcome(
             if (pending) blocked = blockedOutcome(pending);
             if (blocked) return true;
           }
-          if (event.type === "turn.started" && ourTurn === null) ourTurn = event.turnId;
-          if (event.type === "turn.finished") return isOurs(event.turnId);
-          if (event.type === "turn.failed") return ourTurn !== null;
+          if (event.type === "turn.started") {
+            const answers = event.reservedForUserTurnIds.includes(admitted.userTurnId);
+            const successor =
+              continuing ||
+              (ourExecution !== null &&
+                event.executionId === ourExecution &&
+                event.turnId !== ourTurn);
+            if (answers || successor) {
+              ourTurn = event.turnId;
+              ourExecution = event.executionId;
+              continuing = false;
+            }
+            return false;
+          }
+          if (event.type === "turn.finished") {
+            if (!isOurs(event.turnId)) return false;
+            continuing = true;
+            return false;
+          }
+          if (event.type === "execution.ended") {
+            if (!continuing || (ourExecution !== null && event.executionId !== ourExecution))
+              return false;
+            return true;
+          }
+          if (event.type === "turn.failed") {
+            recover = ourTurn !== null;
+            return recover;
+          }
           if (event.type === "interrupt.requested" && isOurs(event.turnId)) {
             interrupt = { turnId: event.turnId, interruptId: event.interruptId };
             return true;
@@ -264,22 +300,25 @@ async function followToOutcome(
         );
         blocked = blockedOutcome(snapshot.liveState.pending);
         if (blocked) return blocked;
-        const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
+        const answer = replyReaching(snapshot.turns, admitted.userTurnId);
         if (answer) {
           ourTurn = answer.id;
           if (["complete", "cancelled", "error"].includes(answer.status)) break;
         }
         continue;
       }
-      if (followed.stoppedBy?.type !== "turn.failed") break;
+      if (!recover) break;
+      recover = false;
+      continuing = false;
 
-      // A previous run can fail while this send's user turn is still queued.
-      // If release already started its successor, follow that reply instead.
+      // Our reply (or the lease it continued) failed while this send's user
+      // turn may still be queued: durable turns say what answers it now.
       const snapshot = await session.request<ThreadSnapshotResponse>(
         "GET",
         apiThreadSnapshotPath(threadId),
       );
-      const answer = answerForUserTurn(snapshot.turns, admitted.userTurnId);
+      interrupt = undefined;
+      const answer = replyReaching(snapshot.turns, admitted.userTurnId);
       if (answer) {
         ourTurn = answer.id;
         if (["complete", "cancelled", "error"].includes(answer.status)) break;
@@ -323,22 +362,6 @@ async function followToOutcome(
     error: turn?.error ?? null,
     ...(interrupt ? { interrupt } : {}),
   };
-}
-
-function answerForUserTurn(turns: readonly Turn[], userTurnId: string): Turn | undefined {
-  const byId = new Map(turns.map((turn) => [turn.id, turn]));
-  const descendsFromUserTurn = (turn: Turn) => {
-    let current: Turn | undefined = turn;
-    while (current?.prevTurnId) {
-      if (current.prevTurnId === userTurnId) return true;
-      current = byId.get(current.prevTurnId);
-    }
-    return false;
-  };
-  return turns
-    .filter((turn) => turn.role === "assistant" && descendsFromUserTurn(turn))
-    .sort((left, right) => left.position - right.position)
-    .at(-1);
 }
 
 /** Writes the terminal envelope (always the last NDJSON line) and returns the exit code. */
@@ -403,7 +426,7 @@ export const threadSendCommand: CommandSpec = {
           threadId,
           submissionId,
           userTurnId: admitted.userTurnId,
-          assistantTurnId: admitted.assistantTurnId,
+          steersTurnId: admitted.steersTurnId,
           resumeAfterSeq: admitted.resumeAfterSeq,
           // Nothing waits here to remove it; clear it with `./mf mock clear --id` when done.
           mockScriptId,

@@ -2,17 +2,14 @@
  * useThreadSnapshotSync — authoritative history and mounted-thread block projection.
  *
  * The hook owns one addressed durable-block subscriber for its mounted lifetime;
- * the run controller keeps stream deltas and commands. Explicit activation
+ * the run controller keeps stream deltas and commands. Every accepted snapshot
+ * and live pending inbox frame also feeds the run controller's follow rule. Explicit activation
  * installs that owner synchronously after first-send admission succeeds.
  */
-import { EventType, parseSeq } from "@meridian/contracts/protocol";
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import { EventType, EXECUTION_ENDED_EVENT, parseSeq } from "@meridian/contracts/protocol";
+import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
-import {
-  deserializeThreadSnapshot,
-  getThreadSnapshot,
-  toThreadSnapshotApplyOptions,
-} from "@/client/api/threads-api";
+import { toThreadSnapshotApplyOptions } from "@/client/api/threads-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
@@ -26,11 +23,11 @@ import {
   useAccountEpochSignal,
   useAccountId,
 } from "@/features/project/context/account-feature-context";
-import { threadQueryKeys } from "./thread-query-keys";
-
-type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
-
-class StaleThreadSnapshot extends Error {}
+import {
+  type DeserializedThreadSnapshot,
+  StaleThreadSnapshot,
+  threadSnapshotQueryOptions,
+} from "./thread-snapshot-query";
 
 export type ThreadSnapshotSyncStatus = {
   snapshot: DeserializedThreadSnapshot | null;
@@ -52,19 +49,6 @@ export type ThreadSnapshotSyncStatus = {
   activateProjection: (after?: string) => boolean;
 };
 
-/** Shared options for the live host and its passive observers
- * (`useMissingChatFallback`, `useDisplayedThread`). They stay `enabled: false`
- * and only read whatever the live host's own richer query already put in
- * the shared cache entry, so this queryFn's simpler shape never actually
- * runs; never replace it with skipToken, which would drop the shared key.
- */
-export function threadSnapshotQueryOptions(threadId: string) {
-  return queryOptions({
-    queryKey: threadQueryKeys.snapshot(threadId),
-    queryFn: async () => deserializeThreadSnapshot(await getThreadSnapshot({ data: { threadId } })),
-  });
-}
-
 /** Pending creation gates HTTP and automatic subscription through first-send admission. */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
@@ -75,26 +59,20 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
   const accountId = useAccountId();
 
   const { data, isError, isFetching, refetch } = useQuery({
-    queryKey: threadQueryKeys.snapshot(threadId),
+    ...threadSnapshotQueryOptions(threadId, {
+      accountSignal,
+      accept(snapshot) {
+        if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
+          throw new Error("Thread snapshot identity mismatch");
+        }
+        if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
+          throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
+        }
+      },
+    }),
     // Always revalidate on activation: the thread may have advanced while the
     // writer was elsewhere (for example a background child's report waking the
     // parent). Cached turns still render first, so this stays navigate-first.
-    queryFn: async ({ signal }) => {
-      const requestSignal = AbortSignal.any([accountSignal, signal]);
-      // The source check runs before TanStack Query can publish this response.
-      // An obsolete HTTP success cannot become history or handoff authority.
-      const snapshot = deserializeThreadSnapshot(
-        await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
-      );
-      requestSignal.throwIfAborted();
-      if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
-        throw new Error("Thread snapshot identity mismatch");
-      }
-      if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
-        throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
-      }
-      return snapshot;
-    },
     staleTime: 0,
     refetchOnMount: "always",
     enabled: !isPendingCreation && !accountSignal.aborted,
@@ -145,10 +123,17 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                 if (event.type === EventType.CUSTOM && event.name === "meridian.usage")
                   refresh(expected);
                 // Compaction turns have no stream of their own, and a cancelled
-                // one ends without RUN_FINISHED. The server sends an inbox frame
-                // after every lease release, so every inbox frame revalidates:
-                // that is when a divider reserves, settles, or stops.
-                if (pendingInboxFromEvent(event)) refresh(expected);
+                // one ends without RUN_FINISHED. Its execution's end, and the
+                // inbox frame after every lease release, revalidate: that is
+                // when a divider reserves, settles, or stops.
+                if (event.type === EventType.CUSTOM && event.name === EXECUTION_ENDED_EVENT)
+                  refresh(expected);
+                const pending = pendingInboxFromEvent(event);
+                if (pending) {
+                  // The chat's owed messages: every tab follows them, not just the sender.
+                  controller.observePending(threadId, pending, seq);
+                  refresh(expected);
+                }
                 // A handoff brief holds the chat with no lease or run, so its
                 // start and end reach the chat only as a status frame.
                 if (event.type === EventType.CUSTOM && event.name === "meridian.thread.status")
@@ -216,8 +201,9 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       snapshot.turns,
       toThreadSnapshotApplyOptions(snapshot),
     );
+    controller.observeSnapshot(threadId, snapshot);
     setAppliedThreadId(snapshot.thread.id);
-  }, [accountSignal, actions, snapshot]);
+  }, [accountSignal, actions, controller, snapshot, threadId]);
 
   return {
     snapshot,
