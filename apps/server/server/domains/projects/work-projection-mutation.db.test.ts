@@ -169,6 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: DRAFT_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
+        hasEffect: true,
       });
       await db.insert(documentBranches).values({
         id: SECOND_BRANCH_ID,
@@ -177,6 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: SECOND_DRAFT_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
+        hasEffect: true,
       });
       await db.insert(documentBranches).values({
         id: OTHER_BRANCH_ID,
@@ -185,6 +187,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: OTHER_DRAFT_ID,
         state: Buffer.from([0, 0]),
         stateVector: Buffer.from([0]),
+        hasEffect: true,
       });
       await db.insert(threads).values({
         rootThreadId: THREAD_ID,
