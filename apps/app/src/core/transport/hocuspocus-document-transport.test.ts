@@ -39,11 +39,11 @@ describe("Hocuspocus document transport adapter", () => {
       }),
     ).toEqual({ kind: "unauthorized", reason: "permission-denied", code: 4403 });
     expect(
-      classifyDocumentTransportClose("branch:draft-1:gen:1", {
-        code: 4205,
-        reason: "branch-stale-doc",
+      classifyDocumentTransportClose("branch:draft-1", {
+        code: 4206,
+        reason: "branch-closed",
       }),
-    ).toEqual({ kind: "reset", reason: "branch-stale-doc", disposition: "rebuild", code: 4205 });
+    ).toEqual({ kind: "reset", reason: "branch-closed", disposition: "superseded", code: 4206 });
     expect(
       classifyDocumentTransportClose("document-1", {
         code: 1006,
@@ -55,17 +55,17 @@ describe("Hocuspocus document transport adapter", () => {
   it.each([
     {
       signal: "close",
-      contract: WS_CLOSE.BRANCH_GENERATION_STALE,
+      contract: WS_CLOSE.BRANCH_CLOSED,
       pending: true,
       disposition: "superseded",
     },
     {
       signal: "denial",
-      contract: WS_CLOSE.BRANCH_GENERATION_STALE,
+      contract: WS_CLOSE.BRANCH_CLOSED,
       pending: true,
       disposition: "superseded",
     },
-    { signal: "close", contract: WS_CLOSE.BRANCH_STALE, pending: true, disposition: "rebuild" },
+    { signal: "close", contract: WS_CLOSE.WRITE_REFUSED, pending: true, disposition: "refused" },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: "refused" },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: false, disposition: null },
   ] as const)("classifies $signal $contract.reason with pending=$pending", async ({

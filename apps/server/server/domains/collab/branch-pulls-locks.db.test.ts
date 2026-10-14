@@ -123,23 +123,23 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
         }
         return locks.withBranches([...ids], run as never);
       },
-      pullFromDoc: async (_lease: unknown, id: string) => {
+    } as unknown as Parameters<typeof createBranchPullService>[0]["branchCoordinator"],
+    draftRebase: {
+      catchUp: async (_lease, id) => {
         if (id !== secondId) {
           expect(
             await branches.updateBranchSnapshot({
               branchId: id,
-              expectedGeneration: a.generation,
               expectedState: a.state,
-              expectedStateVector: a.stateVector,
               state: a.state,
               stateVector: a.stateVector,
-              liveCut: a.state,
+              effect: { kind: "text", hasEffect: false },
             }),
           ).toBe(true);
         }
-        return new Uint8Array();
+        return { kind: "noop", reason: "current" };
       },
-    } as unknown as Parameters<typeof createBranchPullService>[0]["branchCoordinator"],
+    },
   });
   try {
     const pull = pulls.flushLivePull(ALPHA_ID);
@@ -167,7 +167,6 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       .from(schema.documentBranches)
       .where(eq(schema.documentBranches.id, a.id));
     expect(saved.hasEffect).toBe(false);
-    expect(saved.liveCut).toEqual(a.state);
   } finally {
     live.destroy();
     harness.cancelScheduledPulls();
@@ -193,8 +192,8 @@ it("a pull waiting for a branch lease holds no pooled connection", async () => {
     branchCoordinator: {
       withLeases: (ids: readonly string[], run: (lease: never) => Promise<unknown>) =>
         locks.withBranches([...ids], run as never),
-      pullFromDoc: async () => new Uint8Array(),
     } as unknown as Parameters<typeof createBranchPullService>[0]["branchCoordinator"],
+    draftRebase: { catchUp: async () => ({ kind: "noop", reason: "current" }) },
   });
   const release = gate();
   const held = locks.withBranches([branchId], () => release.promise);

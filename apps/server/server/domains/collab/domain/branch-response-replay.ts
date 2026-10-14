@@ -1,4 +1,6 @@
 /** Checked replay of whole response writes onto the current draft, without stale helper bytes. */
+
+import { DRAFT_SERVER_CLIENT_ID } from "@meridian/agent-edit/diff";
 import {
   cloneYDoc,
   decodeUpdateForDependencies,
@@ -125,11 +127,18 @@ export function reconcileStagedBranchWrites(
   );
   const inserted = explained.flatMap(suppliedRanges),
     deleted = explained.flatMap(deleteRanges);
+  // The server client's items (seed, rebase, reset) are never the helper's own content, and a reset
+  // restarts that client's clocks: they are not residual a response could publish.
+  const helperOwn = (range: { client: number }) => range.client !== DRAFT_SERVER_CLIENT_ID;
   if (
-    subtractRanges(suppliedRanges(residual), inserted).length ||
-    subtractRanges(subtractRanges(deleteRanges(residual), currentDeletes), deleted).length
-  )
+    subtractRanges(suppliedRanges(residual).filter(helperOwn), inserted).length ||
+    subtractRanges(
+      subtractRanges(deleteRanges(residual).filter(helperOwn), currentDeletes),
+      deleted,
+    ).length
+  ) {
     throw new Error("Response publication left an unexplained generation residual");
+  }
   // Never merge helper state into the candidate, even when the residual is explained.
   return {
     keptEntries: kept.map((row) => row.entry),

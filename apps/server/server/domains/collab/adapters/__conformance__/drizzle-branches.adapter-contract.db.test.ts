@@ -654,7 +654,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const persistence = branchRoomPersistence();
 
       await expect(
-        persistence.loadHocuspocusBranchState("branch_corrupt_review_entry", 1),
+        persistence.loadHocuspocusBranchState("branch_corrupt_review_entry"),
       ).rejects.toThrow(BranchCorruptError);
     });
 
@@ -746,42 +746,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(repaired.doc.getText("content").toString()).toBe("live repair");
     });
 
-    it("G2 §6.1 entry mid-reset rebinds to the bumped generation branch room", async () => {
-      const coordinator = createBranchCoordinator({ store });
-      const branch = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("before reset"),
-      });
-      await resetBranchFromDoc(coordinator, store, branch.branchId, docWithText("after reset"));
-      const persistence = branchRoomPersistence();
-
-      const freshGeneration = branch.generation + 1;
-      const room = await persistence.resolveBranchHocuspocusRoom(branch.branchId, freshGeneration);
-      const loaded = (await persistence.loadHocuspocusBranchState(branch.branchId, freshGeneration))
-        ?.state;
-      const loadedDoc = new Y.Doc({ gc: false });
-      if (loaded) Y.applyUpdate(loadedDoc, loaded);
-
-      expect(room?.generation).toBe(freshGeneration);
-      expect(loadedDoc.getText("content").toString()).toBe("after reset");
-    });
-
     it("G2 §6.1 entry connect failure is a typed branch-room miss, never live fallback", async () => {
       const { parseYjsRoomName } = await import("@meridian/contracts/protocol");
       const persistence = branchRoomPersistence();
 
-      expect(parseYjsRoomName("branch:missing-review-branch:gen:1")).toEqual({
+      expect(parseYjsRoomName("branch:missing-review-branch")).toEqual({
         kind: "branch",
         branchId: "missing-review-branch",
-        generation: 1,
       });
-      expect(parseYjsRoomName("branch:missing-review-branch")).toBeNull();
+      expect(parseYjsRoomName("branch:")).toBeNull();
       await expect(
-        persistence.resolveBranchHocuspocusRoom("missing-review-branch", 1),
+        persistence.resolveBranchHocuspocusRoom("missing-review-branch"),
       ).resolves.toBeNull();
       await expect(
-        persistence.loadHocuspocusBranchState("missing-review-branch", 1),
+        persistence.loadHocuspocusBranchState("missing-review-branch"),
       ).resolves.toBeUndefined();
     });
     it("captures an immutable live journal draftBase for each new draft row", async () => {
@@ -823,41 +801,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(branchWriteJournal.id);
       expect(rows).toEqual([{ draftBaseUpdateSeq: firstSeq }, { draftBaseUpdateSeq: secondSeq }]);
     });
-    it("rejects branch journal writes whose generation does not match the snapshot CAS generation", async () => {
-      const branch = await store.ensureDraftBranch({
-        documentId: DOC_ID as never,
-        draftId: DRAFT_ID as never,
-        liveDoc: docWithText("seed"),
-      });
-      const changed = docWithText("changed");
-      const updateData = Y.encodeStateAsUpdate(changed);
-      const committed = await store.commitBranchMutation?.({
-        branchId: branch.branchId,
-        expectedGeneration: branch.generation,
-        expectedStateVector: branch.stateVector,
-        expectedState: branch.state,
-        state: updateData,
-        stateVector: Y.encodeStateVector(changed),
-        journals: [
-          {
-            branchId: branch.branchId,
-            generation: branch.generation + 1,
-            updateData,
-            source: "agent",
-          },
-        ],
-      });
-      const reloaded = await store.getBranch(branch.branchId);
-      const journalRows = await db
-        .select({ id: branchWriteJournal.id })
-        .from(branchWriteJournal)
-        .where(eq(branchWriteJournal.branchId, branch.branchId));
-
-      expect(committed).toBe(false);
-      expect(reloaded?.generation).toBe(branch.generation);
-      expect(journalRows).toEqual([]);
-    });
-
     it("rejects a staged reversal after Apply changes the planned row status", async () => {
       const branch = await store.ensureDraftBranch({
         documentId: DOC_ID as never,
@@ -883,9 +826,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const changed = docWithText("changed");
       const committed = await store.commitBranchMutation?.({
         branchId: branch.branchId,
-        expectedGeneration: branch.generation,
-        expectedStateVector: branch.stateVector,
         expectedState: branch.state,
+        effect: { kind: "text", hasEffect: false },
         state: Y.encodeStateAsUpdate(changed),
         stateVector: Y.encodeStateVector(changed),
         journals: [

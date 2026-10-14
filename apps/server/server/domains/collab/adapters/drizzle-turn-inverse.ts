@@ -25,6 +25,8 @@ import { lockDraftBranchWorks } from "../../../shared/work-draft-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { BranchCoordinator, BranchStore } from "../domain/branch-coordinator.js";
 import type { BranchCriticalSections } from "../domain/branch-critical-sections.js";
+import { draftDiffersFromBase } from "../domain/draft-rebase.js";
+import type { ApplicationBranchStore } from "../domain/ports/application-branch-store.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import {
   createTurnInverseService,
@@ -34,13 +36,12 @@ import {
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
 import { recordDocumentEdit } from "./drizzle-document-edits.js";
-import { refreshDraftEffect } from "./drizzle-draft-effect.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 
 type Dependencies = {
   db: Database;
   journal: UpdateJournal;
-  branches: BranchStore;
+  branches: BranchStore & Pick<ApplicationBranchStore, "writeBranchState">;
   coordinator: DocumentCoordinator;
   branchCoordinator: Pick<BranchCoordinator, "broadcastUpdate">;
   criticalSections: BranchCriticalSections;
@@ -317,29 +318,17 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             });
           }
           if (draft && updates.length) {
-            const [updated] = await db()
-              .update(documentBranches)
-              .set({
-                state: Buffer.from(Y.encodeStateAsUpdate(view)),
-                stateVector: Buffer.from(Y.encodeStateVector(view)),
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(documentBranches.id, draft.branch.branchId),
-                  eq(documentBranches.generation, draft.branch.generation),
-                  eq(documentBranches.status, "active"),
-                  eq(documentBranches.state, Buffer.from(draft.branch.state)),
-                  eq(documentBranches.stateVector, Buffer.from(draft.branch.stateVector)),
-                ),
-              )
-              .returning({ id: documentBranches.id });
-            if (!updated) throw new Error("Inverse draft admission changed under its lock");
-            await refreshDraftEffect(
-              db(),
-              draft.branch.branchId,
-              Y.encodeStateAsUpdate(document.live),
-            );
+            const written = await input.branches.writeBranchState({
+              branchId: draft.branch.branchId,
+              expectedState: draft.branch.state,
+              state: Y.encodeStateAsUpdate(view),
+              stateVector: Y.encodeStateVector(view),
+              effect:
+                draft.branch.kind === "work_draft"
+                  ? { kind: "text", hasEffect: draftDiffersFromBase(view) }
+                  : { kind: "peer" },
+            });
+            if (!written) throw new Error("Inverse draft admission changed under its lock");
           }
           if (kind === "rollback") {
             const accepted = new Set(

@@ -440,7 +440,6 @@ it.each(["empty", "mixed"])("inverse placement through Apply and %s reset", asyn
         });
         await view.branchCoordinator.commitWriterUpdate({
           branchId: branch.id,
-          expectedGeneration: branch.generation,
           updateData: Y.mergeUpdates(updates),
           actorUserId: USER_ID,
           roomDocument: doc,

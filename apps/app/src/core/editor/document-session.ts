@@ -116,10 +116,10 @@ export type DocumentSessionAccess = "edit" | "read";
 export type DocumentSessionResetReason =
   /** The room's access changed while local edits were pending; the server refused them. */
   | typeof WS_CLOSE.ACCESS_CHANGED.reason
-  | typeof WS_CLOSE.BRANCH_STALE.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
-  | typeof WS_CLOSE.BRANCH_GENERATION_STALE.reason;
+  | typeof WS_CLOSE.BRANCH_CLOSED.reason
+  | typeof WS_CLOSE.WRITE_REFUSED.reason;
 
 /** How a terminal room reset treats its unacknowledged writer updates. */
 export type ResetDisposition = "superseded" | "rebuild" | "refused" | "schema";

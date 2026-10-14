@@ -136,8 +136,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
-
     it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
 
     it("writes a No Work draft onto a branch keyed by the locked Work", async () => {

@@ -34,6 +34,7 @@ import {
   createBranchPullDiagnostics,
   createDocumentProjectionDiagnostics,
   createDraftBranchAheadDiagnostics,
+  createDraftRebaseDiagnostics,
   createDraftReviewDiagnostics,
   createMarkdownSerializationAnomalyObserver,
   createResponseTransactionDiagnostics,
@@ -74,6 +75,7 @@ import {
   createDrizzleDraftWriteBoundary,
 } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import { createLiveCutReader } from "./adapters/drizzle-live-cut.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
 import {
   createDrizzlePendingSettlementStore,
@@ -118,6 +120,7 @@ import { createDraftBranchAheadRegistration } from "./domain/draft-branch-ahead-
 import { createDraftBranchLeases } from "./domain/draft-branch-leases.js";
 import { createDraftDiscard } from "./domain/draft-discard.js";
 import { createDraftPublication } from "./domain/draft-publication.js";
+import { createDraftRebase } from "./domain/draft-rebase.js";
 import { createDraftReviewIdentity } from "./domain/draft-review-identity.js";
 import { createDraftReviewItems } from "./domain/draft-review-items.js";
 import { createDrafts } from "./domain/drafts.js";
@@ -209,6 +212,22 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     criticalSections,
     onBranchUpdate: hocuspocusBinding.publishBranchUpdate,
     onBranchReset: ({ branchId }) => hocuspocusBinding.closeBranch(branchId),
+    onPeerNotContained: ({ branchId, upstreamBranchId }) => {
+      if (!deps.eventSink) return;
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "collab.branch_pull",
+        name: "peer.not_contained",
+        correlation: { branchId, ...(upstreamBranchId ? { upstreamBranchId } : {}) },
+        payload: {},
+      });
+    },
+  });
+  const draftRebase = createDraftRebase({
+    branchCoordinator,
+    liveCut: createLiveCutReader(persistence.journal),
+    blockingApplySettlement: branches.blockingApplySettlement,
+    diagnostics: createDraftRebaseDiagnostics(deps.eventSink),
   });
   const concurrentJournalWatermarks = createBranchConcurrentJournalWatermarks();
   const branchPulls = createBranchPullService({
@@ -220,6 +239,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     branches,
     concurrentJournalWatermarks,
     liveJournal: persistence.journal,
+    draftRebase,
     diagnostics: createBranchPullDiagnostics(deps.eventSink),
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
@@ -616,9 +636,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   return createCollabFacade({
     lifecycle: {
-      dispose: () => {
-        branchPulls.cancelScheduledPulls();
+      dispose: async () => {
+        // Pulls already running finish before the replicas they use are destroyed.
+        await branchPulls.close();
         draftBranchAheads.cancelScheduled();
+        branchCoordinator.dispose();
       },
     },
     transport: {
@@ -639,7 +661,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
       drainHocuspocusBranchPersistence: hocuspocusPersistence.drainHocuspocusBranchPersistence,
       closeHocuspocusBranchRoom: hocuspocusPersistence.closeHocuspocusBranchRoom,
-      rejectStaleBranchSyncStep1: hocuspocusPersistence.rejectStaleBranchSyncStep1,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     authorityHeads: createDrizzleDocumentAuthorityHeads(deps.db),

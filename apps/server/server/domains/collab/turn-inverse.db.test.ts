@@ -246,7 +246,6 @@ it("typing inside restored text leaves Redo unavailable and does not delete the 
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
       await view.branchCoordinator.commitWriterUpdate({
         branchId: branch.id,
-        expectedGeneration: branch.generation,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
         roomDocument: doc,

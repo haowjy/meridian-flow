@@ -299,7 +299,7 @@ describe("per-change Apply (postgres)", () => {
     expect(reset).toMatchObject({
       status: "active",
       branchGeneration: branch.generation + 1,
-      reviewRoomName: branchRoomName(branch.branchId, branch.generation + 1),
+      reviewRoomName: branchRoomName(branch.branchId),
       operations: [],
       hunks: [],
     });

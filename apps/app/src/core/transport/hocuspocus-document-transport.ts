@@ -187,8 +187,8 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 }
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
-  [WS_CLOSE.BRANCH_GENERATION_STALE.reason]: "superseded",
-  [WS_CLOSE.BRANCH_STALE.reason]: "rebuild",
+  [WS_CLOSE.BRANCH_CLOSED.reason]: "superseded",
+  [WS_CLOSE.WRITE_REFUSED.reason]: "refused",
   [WS_CLOSE.ACCESS_CHANGED.reason]: "refused",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",

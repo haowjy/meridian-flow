@@ -171,7 +171,8 @@ export class BranchRoomPool {
       (disposition === "superseded" || disposition === "rebuild")
         ? {
             ref,
-            source: { roomKey, generation: room.generation },
+            // Rooms carry no generation now; the handoff's generation ordering collapses to one value.
+            source: { roomKey, generation: 0 },
             carry,
             sourceState: Y.encodeStateAsUpdate(session.document),
           }

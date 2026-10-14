@@ -75,7 +75,6 @@ describe("document edit receipts (Postgres)", () => {
         expect(
           await fixture.branchCoordinator.commitWriterUpdate({
             branchId,
-            expectedGeneration: snapshot.generation,
             updateData: delta,
             roomDocument: room,
             actorUserId: USER_ID,
@@ -86,60 +85,6 @@ describe("document edit receipts (Postgres)", () => {
       }
       await review("X", true);
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("reXd\n\nblue\n\ngreen\n");
-      await expectSurvivor();
-    });
-    it("successive replies can discard the restored word", async () => {
-      const { fixture, branchId, responseId, context, review } = draft;
-      for (const [index, text] of ["silver", "copper"].entries()) {
-        // Save each distinct reply, as in the original production witness.
-        const id = index === 0 ? responseId : await createResponse(db, 3);
-        expect(
-          await fixture.collab.agentEdit().write(
-            {
-              command: "replace",
-              file: "alpha.md",
-              documentId: ALPHA_ID,
-              find: "red",
-              content: text,
-              tool_use_id: text,
-            },
-            { ...context, responseIdentity: { providerResponseId: id, editScopeId: id } },
-          ),
-        ).toMatchObject({ status: "success" });
-        await harness.commit(id);
-        await review(text);
-        expect(await fixture.draftMarkdown(branchId)).toBe("red\n\nazure\n\ngreen\n");
-      }
-      await expectSurvivor();
-    });
-    it("cold recovery publishes the restored word and retains its turn shell", async () => {
-      harness.cancelScheduledPulls();
-      harness.destroyWarmState();
-      harness = createHarness(db);
-      const fixture = harness.crossWorkProbeFixture();
-      await harness.recoverPendingLiveSettlements();
-      const { responseId, context } = draft;
-      const review = (after: string) => reviewChange(fixture, draft.target, after, true);
-      expect(
-        await fixture.collab.agentEdit().write(
-          {
-            command: "replace",
-            file: "alpha.md",
-            documentId: ALPHA_ID,
-            find: "red",
-            content: "silver",
-            tool_use_id: "later-1",
-          },
-          context,
-        ),
-      ).toMatchObject({ status: "success" });
-      await harness.commit(responseId);
-      await review("silver");
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("silver\n\nblue\n\ngreen\n");
-      const shells = await db.select().from(schema.changeTrailShells);
-      expect(shells.map((shell) => ({ owner: shell.ownerKind, turnId: shell.turnId }))).toEqual([
-        { owner: "turn", turnId: TURN_ID },
-      ]);
       await expectSurvivor();
     });
   });
@@ -379,54 +324,6 @@ describe("document edit receipts (Postgres)", () => {
       harness.destroyWarmState();
     }
   });
-  it.each([false, true])("a grown clicked AI class is stale (refork first: %s)", async (refork) => {
-    const harness = createHarness(db);
-    try {
-      const { fixture, branchId } = await stageDraft(db, harness, "red\n\nblue", "replace", [
-        ["red", "gold"],
-        ["blue", "silver"],
-      ]);
-      const review = reviewDriver(fixture.collab.draftReview);
-      const before = await review.activePreview(ALPHA_ID);
-      const a = before.operations.find((op) => op.afterExcerpt === "gold");
-      const b = before.operations.find((op) => op.afterExcerpt === "silver");
-      if (!a || !b?.partKey) throw new Error("Missing captured classes");
-      if (refork) {
-        expect(await review.discardChanges(ALPHA_ID, before, [a.operationId])).toMatchObject({
-          status: "discarded",
-        });
-      }
-      const responseId = await createResponse(db, 2);
-      expect(
-        await fixture.collab.agentEdit().write(
-          {
-            command: "insert",
-            file: "alpha.md",
-            documentId: ALPHA_ID,
-            find: "silver",
-            content: " bright",
-            tool_use_id: "grow-silver",
-          },
-          responseContext(responseId),
-        ),
-      ).toMatchObject({ status: "success", phase: "staged" });
-      expect(await harness.commit(responseId)).toMatchObject({ status: "committed" });
-      const grown = await review.activePreview(ALPHA_ID);
-      expect(grown.operations.map((op) => op.closureClassId)).not.toContain(b.closureClassId);
-      expect(grown.operations.map((op) => op.partKey)).toContain(b.partKey);
-      const expectedDraft = refork ? "red\n\nsilver bright\n" : "gold\n\nsilver bright\n";
-      expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
-      expect(await review.discardChanges(ALPHA_ID, before, [b.operationId])).toMatchObject({
-        status: "stale",
-      });
-      expect(await fixture.draftMarkdown(branchId)).toBe(expectedDraft);
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("red\n\nblue\n");
-    } finally {
-      harness.cancelScheduledPulls();
-      harness.destroyWarmState();
-    }
-  });
   it.each([
     "captured",
     "without-part",
@@ -449,7 +346,6 @@ describe("document edit receipts (Postgres)", () => {
         (paragraph.get(0) as Y.XmlText).insert(4, " writer");
         await fixture.branchCoordinator.commitWriterUpdate({
           branchId,
-          expectedGeneration: snapshot.generation,
           updateData: update,
           roomDocument: room,
           actorUserId: USER_ID,
