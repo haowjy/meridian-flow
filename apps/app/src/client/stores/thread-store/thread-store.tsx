@@ -827,9 +827,11 @@ export function useThreadActions(): ThreadStoreActions {
 
 /** True when an optimistic thread create is in flight (pre-server confirmation). */
 export function useIsThreadPendingCreation(threadId: string | null | undefined): boolean {
-  const store = useThreadStoreApi();
+  // Lenient on purpose: catalog hooks also run in trees with no thread store, where no chat can be pending.
+  const store = useContext(ThreadStoreContext);
   const subscribe = useCallback(
     (listener: () => void) => {
+      if (!store) return () => undefined;
       const unsubscribeStore = store.subscribe((state, previous) => {
         if (state.pendingCreation !== previous.pendingCreation) listener();
       });
@@ -845,7 +847,7 @@ export function useIsThreadPendingCreation(threadId: string | null | undefined):
     isThreadAwaitingCreation(
       getChatSubmissionAccountId() ?? "",
       threadId,
-      Boolean(threadId && store.getState().pendingCreation.threadIds[threadId]),
+      Boolean(threadId && store?.getState().pendingCreation.threadIds[threadId]),
     );
   return useSyncExternalStore(subscribe, snapshot, () => false);
 }
