@@ -9,9 +9,12 @@
  * and whether the document is frozen (`readOnly`). The host fills its
  * `relative` parent.
  */
+
 import { Trans } from "@lingui/react/macro";
+import { isWorkArchived } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useWorksSnapshot } from "@/client/query/useWorks";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import type { ContextTab } from "@/client/stores";
 import { isDraftOnly } from "@/client/stores";
@@ -156,6 +159,7 @@ export function ContextDocumentHost({
                   projectId={projectId}
                   session={session}
                   reviewRoomName={reviewRoomName}
+                  reviewWorkId={controller.workId}
                   readOnly={readOnly}
                 />
               ) : null}
@@ -237,19 +241,29 @@ function RoomScopeCatalogCheck({
   projectId,
   session,
   reviewRoomName,
+  reviewWorkId,
   readOnly,
 }: {
   projectId: string;
   /** Null while a draft-only document is hosted by its branch room alone. */
   session: DocumentSession | null;
   reviewRoomName: string | null;
+  /** The Work a review room belongs to; its archive state is that room's expected scope. */
+  reviewWorkId: string | null;
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
+  const works = useWorksSnapshot(projectId).list.data?.works;
   const registry = useLiveDocumentSessionRegistry();
   const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
-  const readOnlyRef = useRef(readOnly);
-  readOnlyRef.current = readOnly;
+  // A review room follows the review's Work even when the reviewed file is
+  // project-owned; a live room follows the file's own scope (`readOnly`).
+  const reviewWork = reviewRoomName ? works?.find((work) => work.id === reviewWorkId) : undefined;
+  const expectedReadOnly = reviewRoomName
+    ? Boolean(reviewWork && isWorkArchived(reviewWork))
+    : readOnly;
+  const readOnlyRef = useRef(expectedReadOnly);
+  readOnlyRef.current = expectedReadOnly;
   useEffect(() => {
     const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
     return reviewRoomName

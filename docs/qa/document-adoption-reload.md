@@ -42,10 +42,20 @@ For each branch:
    and its parent.
 2. No remote carets or selections. The editor's accessible name is "Read-only
    live document". Tapping text never raises the keyboard.
-3. Opening the document sends no Works refresh (watch the network panel for the
-   Works snapshot request); an archived Work still opens read-only.
+3. Warm the Works catalog and let its request settle, then open the document:
+   no additional Works refresh follows (watch the network panel for the Works
+   snapshot request). An archived Work still opens read-only.
 4. Presence stands down from the click that requests a review.
 5. Force a failed open: the card shows Retry, and Retry reopens.
 
 Record commit, date, stack, viewport, run counts and the evidence path in the
 active work directory.
+
+## Archived Work reviewing a manuscript document
+
+Archive Work A in the Works catalog, with a pending draft on a project-owned
+manuscript file. Open the file from Files, then open A's draft review (desktop
+and phone). The review opens read-only (its room follows A, not the file). After
+the catalog is warm and settled, opening and reopening the review sends no
+additional Works refresh; unarchiving A from another tab sends one and the room
+becomes editable.

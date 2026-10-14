@@ -20,7 +20,7 @@ import {
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
 import type { CrossContextLockManager } from "../cross-context-locks";
-import { DocumentSession } from "../editor/document-session";
+import { DocumentSession, type DocumentSessionTransportFactory } from "../editor/document-session";
 import { DocumentSessionAuthorityStore } from "../editor/document-session-authority-store";
 import { createDocumentSessionCrossContextCoordination } from "../editor/document-session-cross-context-coordination";
 import { DocumentSessionRegistry } from "../editor/document-session-registry-implementation";
@@ -108,7 +108,23 @@ function adoptingRecord(legacyPin: boolean): ResourceRecord {
 let sequence = 0;
 const cleanups: Array<() => Promise<void>> = [];
 
-async function seam(seed: "owed" | "reserved" | "legacy-reserved" | "committed" = "owed") {
+/** A transport that connects at once: the registry's attach at commit leaves the session synced. */
+const connectedTransport: DocumentSessionTransportFactory = () => ({
+  unacknowledgedUpdates: () => null,
+  synced: true,
+  whenSynced: Promise.resolve(),
+  whenDurablySynced: Promise.resolve(),
+  subscribeStatus(listener) {
+    listener({ kind: "connected" });
+    return () => {};
+  },
+  destroy() {},
+});
+
+async function seam(
+  seed: "owed" | "reserved" | "legacy-reserved" | "committed" = "owed",
+  transportFactory?: DocumentSessionTransportFactory,
+) {
   const accountId = `adoption-commit-${++sequence}`;
   const metadata = new IndexedDbResourceMetadata(accountId, vi.fn());
   const initial = adoptingRecord(seed === "legacy-reserved");
@@ -136,6 +152,7 @@ async function seam(seed: "owed" | "reserved" | "legacy-reserved" | "committed" 
       }),
     undefined,
     accountId as never,
+    transportFactory,
   );
   const created: DocumentSession[] = [];
   const access = new ResourceContentAccess(
@@ -291,34 +308,31 @@ it("releases a fence-refused reservation and adopts at the next fresh admission"
 });
 
 it("re-acknowledges the committed incarnation after a failed acknowledgement", async () => {
-  const { answer, coordinator, created, key, metadata, room, store } = await seam("committed");
+  const { answer, coordinator, created, key, metadata, room, store } = await seam(
+    "committed",
+    connectedTransport,
+  );
   answer.generation = "9";
   const commit = metadata.commitResource.bind(metadata);
   let failed = false;
   vi.spyOn(metadata, "commitResource").mockImplementation(async (write) => {
     if (!failed && !write.next.resource.obligations.sessionAdoption) {
       failed = true;
+      // The registry attached the transport at commit; the session is synced before this failure.
+      await vi.waitFor(() =>
+        expect(created[0]?.getSnapshot()).toMatchObject({
+          status: "synced",
+          adoptionStalled: false,
+        }),
+      );
       throw new Error("transient acknowledgement failure");
     }
     return commit(write);
   });
 
   await expect(coordinator.reconcile(key)).rejects.toThrow("transient acknowledgement failure");
-  // The registry now owns a live transport: a failed acknowledgement must not label it offline.
-  created[0]?.attachTransport(() => ({
-    unacknowledgedUpdates: () => null,
-    synced: true,
-    whenSynced: Promise.resolve(),
-    whenDurablySynced: Promise.resolve(),
-    subscribeStatus(listener) {
-      listener({ kind: "connected" });
-      return () => {};
-    },
-    destroy() {},
-  }));
-  await vi.waitFor(() =>
-    expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false }),
-  );
+  // A failed acknowledgement must not label the live transport offline or stalled.
+  expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
 
   expect(created[0]?.getSnapshot()).toMatchObject({ status: "synced", adoptionStalled: false });
