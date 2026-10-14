@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { type MeridianError, meridianErrorSchema } from "../interrupt/index.js";
 import { controlBodySchema } from "../threads/control-body.js";
+import type { RunState } from "../threads/run-state.js";
 import { aiWriteModeSchema } from "../works/ai-write-mode.js";
 import { type AGUIEvent, EventSchemas } from "./agui";
 import type { ThreadLiveState } from "./http-types";
@@ -172,7 +173,7 @@ const threadPendingInboxSchema: z.ZodType<import("../threads/index.js").ThreadPe
     items: z.array(pendingInboxItemSchema),
   });
 
-const runStateSchema: z.ZodType<import("../threads/index.js").RunState> = z.object({
+const runStateSchema: z.ZodType<RunState> = z.object({
   version: wsEventSeqSchema,
   items: z.array(pendingInboxItemSchema),
   sentThrough: z.number().int().nonnegative(),
@@ -182,6 +183,12 @@ const runStateSchema: z.ZodType<import("../threads/index.js").RunState> = z.obje
   mode: aiWriteModeSchema,
   blocked: z.object({ reason: z.literal("credits_exhausted") }).nullable(),
 });
+
+/** Reads a whole `RunState` (a `meridian.run_state` frame's value, a stored answer); null when malformed. */
+export function readRunState(value: unknown): RunState | null {
+  const parsed = runStateSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),

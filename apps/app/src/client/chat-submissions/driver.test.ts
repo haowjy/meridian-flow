@@ -636,10 +636,10 @@ describe("write-mode switches in the journal", () => {
       expect(r.scenario.appendRequests).toHaveLength(2);
       // The answer is stamped on the record for every tab to read; it is not posted again.
       expect([...r.records.keys()]).toEqual(["switch-1"]);
-      expect(r.records.get("switch-1")?.answer).toMatchObject({
-        seq: "1",
+      expect(r.records.get("switch-1")?.answer?.runState).toMatchObject({
+        version: "0",
         mode: "direct",
-        pending: null,
+        items: [],
       });
       await owner.drive("thread_1");
       expect(order).toHaveLength(1);

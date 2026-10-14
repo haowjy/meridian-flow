@@ -9,7 +9,7 @@
  * queued one.
  */
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { Intent, RunStateView } from "./run-state-view";
+import type { RunStateIntent, RunStateView } from "./run-state-view";
 
 export type SwitchRowStatus = "sending" | "queued" | "failed" | "withdraw_failed";
 
@@ -21,7 +21,7 @@ export type SwitchRow = {
   awaitingServer?: boolean;
 };
 
-type Switch = Extract<Intent, { kind: "switch" }>;
+type Switch = Extract<RunStateIntent, { kind: "switch" }>;
 type Queued = { id: string; mode: AiWriteMode; from: "server" | Switch };
 
 const byOrder = (a: Switch, b: Switch) =>
