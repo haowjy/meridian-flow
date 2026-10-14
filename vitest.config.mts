@@ -22,9 +22,16 @@ export default defineConfig({
   test: {
     // Mixed projects share a worker budget; it must match the capped DB fleet.
     // CI runners are 4 cores and the 50% cap left each shard on 2 workers, which
-    // is what made import-bound shards take ~95s. The cap is numeric rather than
-    // a percentage so a many-core machine cannot walk itself into the cliff above.
-    maxWorkers: includeDatabase ? databaseWorkers : process.env.CI ? "100%" : localWorkers,
+    // is what made import-bound shards take ~95s, so CI takes all of them. Both
+    // branches are numeric rather than a percentage: on a many-core runner a
+    // percentage would walk itself into the 24-worker cliff, and the resulting
+    // blast in memory would fail the memory ceiling instead of the run it was
+    // there to measure.
+    maxWorkers: includeDatabase
+      ? databaseWorkers
+      : process.env.CI
+        ? Math.min(8, availableParallelism())
+        : localWorkers,
     pool: "threads",
     reporters: [
       "default",
