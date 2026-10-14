@@ -1,4 +1,4 @@
-/** PostgreSQL barrier: an effect toggle publishes the Work projection and agrees with the list and the hint. */
+/** PostgreSQL barrier: an effect written through writeBranchState publishes the Work projection and agrees with the count and the hint, with no journal row. */
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -14,6 +14,7 @@ import {
 } from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-branch-push.js";
 import { createDrizzleBranchStore } from "../collab/adapters/drizzle-branches.js";
@@ -129,25 +130,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       };
     }
 
-    it("publishes an effect toggle on a branch that keeps its reviewable rows", async () => {
+    // Risk: an effect change the Work page never sees, or one that needs a journal row to count.
+    it("publishes an effect written through the branch store, with no journal row, and a repeated one not at all", async () => {
       const { db, projection } = await fixture();
       const pending = createDrizzleWorkDraftPendingStore(db);
-      await createDrizzleBranchStore(db, {
+      const branches = createDrizzleBranchStore(db, {
         workProjection: projection,
         drafts: createDrizzleDraftStore(db),
-      }).appendJournal?.({
-        branchId: BRANCH_ID,
-        updateData: new Uint8Array([1]),
-        source: "agent",
-        updateMeta: { kind: "edit" },
       });
-      const setEffect = (hasEffect: boolean) =>
-        projection.mutatePendingBranches([BRANCH_ID], async () => {
-          await db
-            .update(documentBranches)
-            .set({ hasEffect })
-            .where(eq(documentBranches.id, BRANCH_ID));
-        });
+      let version = 0;
+      const setEffect = async (hasEffect: boolean) => {
+        const written = await runInDrizzleTransaction(db, () =>
+          branches.writeBranchState({
+            branchId: BRANCH_ID,
+            expectedState: new Uint8Array([0, version]),
+            state: new Uint8Array([0, ++version]),
+            stateVector: new Uint8Array([0]),
+            effect: { kind: "text", hasEffect },
+          }),
+        );
+        expect(written).toBe(true);
+      };
       // The hint and the catalog count read the one membership relation; the Work revision follows.
       const agree = async (members: number) => {
         expect(
@@ -173,6 +176,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(BigInt(after.catalogEntityRevision ?? "0")).toBe(after.entityRevision);
         expect(after.availabilityGeneration).toBeGreaterThan(before.availabilityGeneration ?? 0);
       }
+      // Same effect, new bytes: nothing moved for the Work page.
+      const settled = await projectionState();
+      await setEffect(true);
+      await expect(projectionState()).resolves.toEqual(settled);
     });
   });
 }

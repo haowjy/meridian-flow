@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import type { DocumentId } from "@meridian/contracts";
 import { expect, it } from "vitest";
+import type * as Y from "yjs";
 import {
   handleApplyWorkDraftChangesRequest,
   handleApplyWorkDraftRequest,
@@ -147,27 +148,59 @@ describeDraftTreeDb("review items (postgres)", (start, db) => {
     const { runtime, s } = await start();
     const work = await s.work("Ascension", "draft");
     const chapter = await s.writer.createDocument("chapter.md", "Opening.");
-    await s.writer.createDocument("quiet.md", "Quiet.");
+    const scene = await s.writer.createDocument("scene.md", "Quiet.");
+    const lost = await s.writer.createDocument("lost.md", "Gone.");
+    await s.writer.createDocument("quiet.md", "Untouched.");
     await s.model(work).edit("chapter.md", "Opening.", "Opening, drafted.");
+    await s.model(work).edit("scene.md", "Quiet.", "Quiet, drafted.");
+    await s.model(work).edit("lost.md", "Gone.", "Gone, drafted.");
     const blank = await s
       .model(work)
       .now("write", { command: "create", path: "manuscript://notes/blank.md" });
     expect(blank.isError).not.toBe(true);
-    const listed = await s.items(work);
-    expect(listed).toHaveLength(2);
-    const counts = await createDrizzleWorkDraftPendingStore(db).countPendingByWorkIds([work.id]);
-    expect(counts.get(work.id)).toBe(listed.length);
     const deps = selectDraftRouteServices(runtime.app);
-    for (const item of listed) {
-      const { items: hints } = await handleDocumentDraftHintsRequest(deps, {
-        projectId: s.project.id,
-        documentId: item.documentId as DocumentId,
-        userId: s.project.userId,
-      });
-      expect(hints.map((hint) => hint.itemKey)).toEqual(
-        item.documentId === chapter ? [item.itemKey] : expect.any(Array),
-      );
-    }
+    // Every consumer of the relation, read at once: the list, the Work's count, the relation's own
+    // drafts for each item and the route's hint. A created document has no live file for the route's
+    // read grant to open, so its route hint is exactly empty while the relation still names its draft.
+    const consumers = async () => {
+      const store = createDrizzleWorkDraftPendingStore(db);
+      const listed = await s.items(work);
+      const counts = await store.countPendingByWorkIds([work.id]);
+      expect(counts.get(work.id) ?? 0).toBe(listed.length);
+      for (const item of listed) {
+        const documentId = item.documentId as DocumentId;
+        const related = await store.listDraftsChangingDocument({
+          projectId: s.project.id,
+          documentId,
+        });
+        expect(related.map((draft) => draft.draftId)).toEqual([item.draftId]);
+        const { items } = await handleDocumentDraftHintsRequest(deps, {
+          projectId: s.project.id,
+          documentId,
+          userId: s.project.userId,
+        });
+        expect(items.map((hint) => hint.itemKey)).toEqual(item.wholeItem ? [] : [item.itemKey]);
+      }
+      return listed.map((item) => item.documentId).sort();
+    };
+    expect(await consumers()).toEqual(
+      [(await s.view(work).idAt("notes/blank.md")) as DocumentId, chapter, scene, lost].sort(),
+    );
+
+    // An AI edit the writer discards locally to empty leaves the relation, and no other arm moves.
+    await s.writer.editDraft(work, scene, (doc) => {
+      const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+      text.delete("Quiet".length, ", drafted".length);
+    });
+    expect(await consumers()).not.toContain(scene);
+    // A live delete under a drafted edit leaves the item to the relation's rule, the same for all three.
+    await s.writer.delete("lost.md");
+    await consumers();
+
+    // The last change Applied through the route empties the item for every consumer at once.
+    const [applied] = await s.apply(work, [chapter], { tokens: "rendered" });
+    expect(applied?.body).toMatchObject({ status: "applied", hasChanges: false });
+    expect(await consumers()).not.toContain(chapter);
   });
 
   it("the chat-name hint lists the item's pending AI edits, and an unknown item is gone", async () => {
