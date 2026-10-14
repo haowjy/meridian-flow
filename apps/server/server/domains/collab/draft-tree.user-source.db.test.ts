@@ -128,7 +128,7 @@ describeDraftTreeDb("Drafted user:// (postgres)", (start, db) => {
     expect.soft(row?.deleted, "tombstoned at the last use").not.toBeNull();
   });
 
-  it("reveals the account's hidden user:// document from any of its projects, never a stranger's", async () => {
+  it("reveals the account's hidden user:// document from any of its projects and never lets a stranger's draft use it", async () => {
     const { s } = await start();
     const other = await s.another("project");
     const stranger = await s.another("account");
@@ -160,14 +160,11 @@ describeDraftTreeDb("Drafted user:// (postgres)", (start, db) => {
           .where(eq(draftTreeChanges.draftId, draft.id)),
       )
       .toEqual([]);
-    expect
-      .soft(await stranger.writer.create("user://kael", { documentId: kael }), "stranger")
-      .toEqual({ status: "conflict" });
 
-    // Reveal authority is per document: a draft in Ascension's project uses it, and the
-    // writer reveals it from another project of the same account.
+    // The source is the account's: a draft in Ascension's project uses the document, and
+    // the writer's create at its path reveals it from another project of the same account.
     expect
-      .soft(await other.writer.create("user://kael", { documentId: kael }))
+      .soft(await other.writer.create("user://kael"))
       .toEqual({ status: "created", documentId: kael });
   });
 

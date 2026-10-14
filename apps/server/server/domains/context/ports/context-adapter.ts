@@ -10,9 +10,9 @@ import type { ParsedDocumentFilename } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type {
+  AdapterCreateUntitledOptions,
   ContextBinaryWriteResult,
   ContextCreateTrackedDocumentResult,
-  ContextCreateUntitledDocumentOptions,
   ContextEnsureTrackedDocumentResult,
   ContextListEntry,
   ContextListOptions,
@@ -94,7 +94,7 @@ export type AdapterContextReadResult = Omit<ContextReadResult, "uri">;
 export type AdapterContextWriteResult = Omit<ContextWriteResult, "uri">;
 
 export type AdapterUntitledDocumentResult = {
-  status: "created" | "already-exists";
+  status: "created" | "already-exists" | "joined";
   documentId: string;
   path: string;
   name: string;
@@ -156,10 +156,14 @@ export interface ContextSchemeAdapter {
     options?: ContextWriteOptions,
   ): Promise<Result<Omit<ContextCreateTrackedDocumentResult, "uri">, AdapterFault>>;
   /** Find an active document owned by this adapter's source. */
-  locateDocument(documentId: string): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
+  /** `includeDeleted` also answers a soft-deleted document's last address. */
+  locateDocument(
+    documentId: string,
+    options?: { includeDeleted?: boolean },
+  ): Promise<Result<AdapterLocatedDocument | null, AdapterFault>>;
   createUntitledDocument(
     path: string,
-    options: ContextCreateUntitledDocumentOptions,
+    options: AdapterCreateUntitledOptions,
   ): Promise<Result<AdapterUntitledDocumentResult, AdapterFault>>;
   ensureTrackedDocument(
     path: string,

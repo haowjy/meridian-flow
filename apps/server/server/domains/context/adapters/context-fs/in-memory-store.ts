@@ -34,7 +34,7 @@ import {
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
-import type { LiveCreateCandidate, RevealIdentity } from "../../tree/hidden-node-types.js";
+import type { LiveCreateCandidate } from "../../tree/hidden-node-types.js";
 import type { TreeView } from "../../tree/tree-view.js";
 
 type FolderRow = ContextFolder & {
@@ -49,6 +49,8 @@ type DocumentRow = ContextDocument & {
 
 export interface InMemoryContextDocumentStoreBacking {
   previousLocations: Map<string, string>;
+  /** Joined-create forwards, `from → to`. */
+  forwards: Map<string, string>;
   folders: Map<string, FolderRow>;
   documents: Map<string, DocumentRow>;
   projections: Map<string, string>;
@@ -64,6 +66,7 @@ export interface InMemoryContextDocumentStoreOptions {
 export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocumentStoreBacking {
   return {
     previousLocations: new Map(),
+    forwards: new Map(),
     folders: new Map(),
     documents: new Map(),
     projections: new Map(),
@@ -398,13 +401,28 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     return { document: this.publicDocument(doc), revealed: false };
   }
 
-  async findRevealIdentity(documentId: string): Promise<RevealIdentity> {
+  async findForward(fromId: string): Promise<string | null> {
+    return this.backing.forwards.get(fromId) ?? null;
+  }
+
+  async recordForward(input: { fromId: string; toId: string }): Promise<void> {
+    this.backing.forwards.set(input.fromId, input.toId);
+  }
+
+  async listHiddenNames(): Promise<string[]> {
     // In memory nothing is ever hidden: drafts and the tree view are Postgres's.
+    return [];
+  }
+
+  async findDocumentLastLocation(documentId: string) {
     const row = this.backing.documents.get(documentId);
-    if (!row) return { kind: "absent" };
-    return row.deletedAt === null
-      ? { kind: "visible", documentId: row.id, sourceId: row.contextSourceId }
-      : { kind: "unusable" };
+    if (!row || row.contextSourceId !== this.sourceId) return null;
+    const located = await this.findDocumentById({ kind: "live" }, documentId);
+    return {
+      path: located?.path ?? renderFilename(row.name, row.extension),
+      name: renderFilename(row.name, row.extension),
+      deleted: row.deletedAt !== null,
+    };
   }
 
   async findLiveCreateCandidate(): Promise<LiveCreateCandidate> {
