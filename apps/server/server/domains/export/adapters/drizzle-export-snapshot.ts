@@ -13,11 +13,11 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
-import { catalogSourceAuthority } from "../../context/adapters/catalog-file-mapper.js";
 import {
+  catalogSourceAuthority,
   listsThroughLiveManifest,
   loadDocumentAddresses,
-} from "../../context/adapters/document-address.js";
+} from "../../context/index.js";
 import type { ExportSnapshotStore, ExportSourceRoot } from "../ports/export-snapshot.js";
 
 export function createDrizzleExportSnapshotStore(db: Database): ExportSnapshotStore {

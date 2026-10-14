@@ -11,8 +11,12 @@ files move while it streams.
   Archived Work files remain readable and are included when selected.
 - ZIP output is incremental, with browser/network backpressure. Object storage
   currently supplies one binary's bytes at a time; never gather project bytes.
-- Ordinary/model serialization must never use the export codec. The explicit
-  collab export read door receives an export scope over the frozen map.
+- Ordinary/model serialization must never use the export codec. Export owns
+  `ExportLinkScope` (archive spelling, beside `export-layout`) and reads
+  through its `ExportDocumentReader` port, adapted from Collab's explicit
+  export read door in `lib/compose.ts`; Collab owns the codec, not archive policy.
+- The snapshot adapter reads canonical addresses through Context's public
+  index (`loadDocumentAddresses`), never its private adapters.
 - The export codec writes wiki-style literals verbatim (wikilinks and
   embeds, callout markers, footnote references and definitions) so the
   exported folder reopens in a Markdown note app; everything else that could form a link stays escaped.

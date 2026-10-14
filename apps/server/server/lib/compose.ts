@@ -4,6 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
+import type { ProjectId } from "@meridian/contracts";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -78,6 +79,7 @@ import {
   createProjectExport,
   type ProjectExport,
 } from "../domains/export/domain/project-export.js";
+import type { ExportDocumentReader } from "../domains/export/ports/export-documents.js";
 import type { ExportSnapshotStore } from "../domains/export/ports/export-snapshot.js";
 import {
   type AgentChain,
@@ -1102,7 +1104,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
           return [...counts.values()].reduce((sum, count) => sum + count, 0);
         },
       },
-      documents: ports.documentSync,
+      documents: exportDocumentsFrom(ports.documentSync),
       files: ports.fileAccess,
       objects: ports.objectStore,
     }),
@@ -1473,7 +1475,7 @@ export function createInMemoryAppServices(): AppServices {
           return { documents: [], sources: [], settlements: new Map() };
         },
       },
-      documents: documentSync,
+      documents: exportDocumentsFrom(documentSync),
       files: createAllowAllFileAccess(),
       objects: {
         async get() {
@@ -1787,3 +1789,14 @@ function createInMemoryNoticePort(): NoticePort {
 }
 
 export type { ThreadRepositories } from "../domains/threads/ports/index.js";
+
+/** Adapts Collab's export read door and live membership to the port Export owns. */
+function exportDocumentsFrom(
+  documents: Pick<CollabDomain, "readForExport" | "resolveManifestMembership">,
+): ExportDocumentReader {
+  return {
+    readForExport: (documentId, scope) => documents.readForExport(documentId, scope),
+    resolveManifestMembership: ({ projectId }) =>
+      documents.resolveManifestMembership({ projectId: projectId as ProjectId }),
+  };
+}

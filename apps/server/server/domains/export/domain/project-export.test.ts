@@ -8,9 +8,9 @@ import { createHolderLinkScope, walkLinkOccurrences } from "@meridian/markup/lin
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { ExportLinkScope } from "../../collab/domain/export-link-scope.js";
 import type { ExportDocument } from "../ports/export-snapshot.js";
 import { buildExportLayout } from "./export-layout.js";
+import { ExportLinkScope } from "./export-link-scope.js";
 import { createProjectExport } from "./project-export.js";
 
 const schema = buildDocumentSchema();

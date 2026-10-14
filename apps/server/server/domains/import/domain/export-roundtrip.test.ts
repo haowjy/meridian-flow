@@ -1,7 +1,7 @@
 /** Export spelling then import conversion: a link keeps its identity across the round trip. */
 import { createHolderLinkScope } from "@meridian/markup/links";
 import { describe, expect, it } from "vitest";
-import { ExportLinkScope } from "../../collab/domain/export-link-scope.js";
+import { ExportLinkScope } from "../../export/domain/export-link-scope.js";
 import { createLinkIndex, type ImportLinkCandidate } from "./link-index.js";
 import { convertNote } from "./note-conversion.js";
 
