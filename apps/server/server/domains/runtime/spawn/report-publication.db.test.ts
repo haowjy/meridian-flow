@@ -69,12 +69,12 @@ else
       await scenario.admit();
     });
     afterAll(async () => {
+      await removePublicationAudit(db);
       await db.close();
     });
     // Publication pins: no input write without a record, and the last record equals the rows.
-    const { assertPublicationHooks, installPublicationAudit } = await import(
-      "../../../test-support/run-state-publication.js"
-    );
+    const { assertPublicationHooks, installPublicationAudit, removePublicationAudit } =
+      await import("../../../test-support/run-state-publication.js");
     beforeAll(() => installPublicationAudit(db));
     afterEach(() => assertPublicationHooks(db));
 
