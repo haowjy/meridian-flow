@@ -35,6 +35,7 @@ export {
 import { BranchRoomPool, type BranchRoomRef } from "./branch-room-pool";
 import { BranchWriterHandoff } from "./branch-writer-handoff";
 import type {
+  LiveSessionIncarnationPort,
   LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
@@ -55,7 +56,11 @@ type LiveRoomState = {
 type RetainedLiveDocument = { lease: LiveDocumentSessionLease; detached: boolean };
 
 export class DocumentSessionRegistry
-  implements LiveDocumentSessionAuthority, LocalSessionAuthority, LocalDocumentSessionFactory
+  implements
+    LiveDocumentSessionAuthority,
+    LocalSessionAuthority,
+    LocalDocumentSessionFactory,
+    LiveSessionIncarnationPort
 {
   private accountId: AccountId | null = null;
   private coordination: DocumentSessionCrossContextCoordination | null = null;
@@ -605,6 +610,11 @@ export class DocumentSessionRegistry
   private attachSessionTransport(session: DocumentSession): void {
     if (session.getSnapshot().schemaFence) return;
     session.attachTransport(this.transportFactory);
+  }
+
+  incarnationOf(session: DocumentSession): AvailabilityGeneration | null {
+    const state = this.liveRooms.get(session.documentId as DocumentId);
+    return state?.session === session ? state.persistenceGeneration : null;
   }
 
   whenRefusedRoomDropped(session: DocumentSession): Promise<void> | null {
