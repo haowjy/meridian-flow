@@ -158,76 +158,81 @@ export function DocumentIdentityBar({
         data-document-identity-row
         className={cn(
           "relative flex flex-wrap items-center gap-x-1 font-mono text-ink-subtle text-sm",
-          variant === "header" ? "min-h-10 pl-2" : ["px-4", IDENTITY_BAR_BAND_CLASS],
+          variant === "header"
+            ? "min-h-10 gap-y-0.5 py-1 pl-2"
+            : ["gap-y-0.5 px-4 py-[3px]", IDENTITY_BAR_BAND_CLASS],
           trailing && "pr-12",
           // The row grows so every control can own a 44px target (document-identity-row.css).
           "[@media(pointer:coarse)]:min-h-11",
         )}
       >
-        {leading ? <div className="flex shrink-0 items-center gap-0.5">{leading}</div> : null}
-        <div data-identity-main className="flex min-w-0 flex-[1_1_16rem] items-center gap-1">
-          {placementOpen ? (
-            <IdentityPlacementField
-              projectId={projectId}
-              editorWorkId={editorWorkId}
-              tab={tab}
-              location={location}
-              failure={identityFailure}
-              commit={commit}
-              onExit={(reason) => {
-                // Leaving the field acknowledges any failure receipt — it must
-                // not reopen the editor it just closed.
-                setFieldOpen(false);
-                if (repair?.kind === "set-location") setDismissedRepairId(repair.intentId);
-                if (reason === "escape") focusEditorProse(tab.documentId);
-              }}
-              onOpenExisting={onOpenExisting}
-            />
-          ) : (
-            <DocumentPath
-              projectId={projectId}
-              tab={tab}
-              location={location}
-              trailing={
-                <LinkUpdateNote
-                  projectId={projectId}
-                  subject={{ kind: "file", id: tab.documentId }}
-                  operationId={noteOperationId}
-                  className="ml-3 font-sans text-ink-muted"
-                />
-              }
-            />
-          )}
-          {version}
-          {!reviewItemKey && !reviewPending ? (
-            <DraftReviewChip documentId={tab.documentId} />
-          ) : null}
-          <span className="min-w-0 flex-1" />
-          {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
-          {repair?.kind === "set-location" && !placementOpen ? (
-            location.provisional && !readOnly ? (
-              <button
-                type="button"
-                className="focus-ring flex min-w-0 items-center rounded-md"
-                onClick={() => {
-                  setDismissedRepairId(null);
-                  setFieldOpen(true);
+        {/* One unit for wrapping: the commands never part from the path. */}
+        <div className="flex min-w-0 flex-auto items-center gap-1">
+          {leading ? <div className="flex shrink-0 items-center gap-0.5">{leading}</div> : null}
+          <div data-identity-main className="flex min-w-0 flex-auto items-center gap-1">
+            {placementOpen ? (
+              <IdentityPlacementField
+                projectId={projectId}
+                editorWorkId={editorWorkId}
+                tab={tab}
+                location={location}
+                failure={identityFailure}
+                commit={commit}
+                onExit={(reason) => {
+                  // Leaving the field acknowledges any failure receipt — it must
+                  // not reopen the editor it just closed.
+                  setFieldOpen(false);
+                  if (repair?.kind === "set-location") setDismissedRepairId(repair.intentId);
+                  if (reason === "escape") focusEditorProse(tab.documentId);
                 }}
-              >
-                <NamespaceFailureMark failure="set-location" labelled />
-              </button>
+                onOpenExisting={onOpenExisting}
+              />
             ) : (
-              <NamespaceFailureMark failure="set-location" message={passiveFailure} />
-            )
-          ) : null}
-          <IdentityChipSlot
-            projectId={projectId}
-            tab={tab}
-            show={showChip && !placementOpen}
-            onChooseHome={() => {
-              setFieldOpen(true);
-            }}
-          />
+              <DocumentPath
+                projectId={projectId}
+                tab={tab}
+                location={location}
+                trailing={
+                  <LinkUpdateNote
+                    projectId={projectId}
+                    subject={{ kind: "file", id: tab.documentId }}
+                    operationId={noteOperationId}
+                    className="ml-3 font-sans text-ink-muted"
+                  />
+                }
+              />
+            )}
+            {version}
+            {!reviewItemKey && !reviewPending ? (
+              <DraftReviewChip documentId={tab.documentId} />
+            ) : null}
+            <span className="min-w-0 flex-1" />
+            {/* Only a provisional placement refusal offers repair here; list failures are passive. */}
+            {repair?.kind === "set-location" && !placementOpen ? (
+              location.provisional && !readOnly ? (
+                <button
+                  type="button"
+                  className="focus-ring flex min-w-0 items-center rounded-md"
+                  onClick={() => {
+                    setDismissedRepairId(null);
+                    setFieldOpen(true);
+                  }}
+                >
+                  <NamespaceFailureMark failure="set-location" labelled />
+                </button>
+              ) : (
+                <NamespaceFailureMark failure="set-location" message={passiveFailure} />
+              )
+            ) : null}
+            <IdentityChipSlot
+              projectId={projectId}
+              tab={tab}
+              show={showChip && !placementOpen}
+              onChooseHome={() => {
+                setFieldOpen(true);
+              }}
+            />
+          </div>
         </div>
         {controls}
         {trailing ? (
@@ -245,17 +250,15 @@ export function DocumentIdentityBar({
       ) : null}
     </div>
   );
-  return reviewItemKey ? (
+  return (
     <DraftReviewBand
       documentId={tab.documentId}
-      itemKey={reviewItemKey}
+      itemKey={reviewItemKey ?? ""}
       onOpenDraft={openDraft}
       onCloseDraftOnly={onCloseDraftOnly}
     >
       {({ version, controls }) => renderRow(version, controls)}
     </DraftReviewBand>
-  ) : (
-    renderRow(null, null)
   );
 }
 

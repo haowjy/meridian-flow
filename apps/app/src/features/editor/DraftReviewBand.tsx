@@ -56,7 +56,12 @@ export type DraftReviewBandProps = {
   onRename?: () => void;
 };
 
-/** The review's two parts, for the identity row to place: the version chip and the controls. */
+/**
+ * The review's two parts, for the identity row to place: the version chip and
+ * the controls. With an empty `itemKey` (no shown review) there are no parts,
+ * but the wrapper stays mounted so the row beneath it keeps its identity when
+ * a review begins or ends.
+ */
 export function DraftReviewBand({
   children,
   ...props
@@ -70,8 +75,9 @@ export function DraftReviewBand({
   const listed = view.status === "ready" && count > 0;
   // A finger's 44px targets leave no room for every control in a docked row, so the
   // version menu carries Show changes, and the list and stepper give way before
-  // Discard draft and Apply draft do (document-identity-row.css, collapse 5).
+  // Discard draft and Apply draft do (document-identity-row.css, collapse 4).
   const coarse = useCoarsePointer();
+  if (!props.itemKey) return children({ version: null, controls: null });
 
   const version = (
     <>
