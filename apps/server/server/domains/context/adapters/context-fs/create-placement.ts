@@ -90,7 +90,6 @@ function livePlacement(deps: CreatePlacementDeps): CreatePlacement {
         if (!target.ok) return target;
         const folderId = await store.ensureFolderPath(target.value.dir);
         const existing = await store.findDocument(
-          LIVE_TREE,
           folderId,
           target.value.name,
           target.value.extension,
@@ -225,12 +224,14 @@ function draftPlacement(
   };
 }
 
+/** What a path two of a draft's files share answers, to a create and to a read alike. */
+export const AMBIGUOUS_PATH_FAULT: AdapterFault = {
+  code: "invalid_operation",
+  message: "More than one file has this path in the draft; review the draft to resolve the clash",
+};
+
 function createFault(fault: CreateFault): AdapterFault {
   return fault.code === "ambiguous"
-    ? {
-        code: "invalid_operation",
-        message:
-          "More than one file has this path in the draft; review the draft to resolve the clash",
-      }
+    ? AMBIGUOUS_PATH_FAULT
     : { code: "conflict", ...(fault.occupantKind ? { occupantKind: fault.occupantKind } : {}) };
 }
