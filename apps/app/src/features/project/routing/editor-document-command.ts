@@ -5,9 +5,10 @@ import {
   type ContextTab,
   editorTabsForWork,
   getContextTabs,
+  isDraftOnly,
   matchesReviewItem,
   matchesTabInstance,
-  soleReview,
+  reviewEntryOf,
   useContextTabsStore,
 } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
@@ -73,7 +74,7 @@ export function createEditorDocumentCommand({
           tabs: getContextTabs(projectId).tabs,
           addressed: current.address.destination,
           addressNamesIt: sameDocument,
-          draftOnly: options.tab?.kind === "tracked" && options.tab.draftOnly === true,
+          draftOnly: options.tab !== undefined && isDraftOnly(options.tab),
           catalog: current.documentCatalog,
           selected: !!options.itemKey && !!requested.workId,
           lookup,
@@ -266,8 +267,7 @@ export function prepareEditorDestination(
   };
 }
 function reviewItemKeyOf(tab: ContextTab, workId: string | undefined): string | undefined {
-  if (tab.kind !== "tracked" || tab.draftOnly !== true) return undefined;
-  return (workId ? tab.reviews?.[workId]?.itemKey : undefined) ?? soleReview(tab)?.itemKey;
+  return workId ? reviewEntryOf(tab, workId)?.itemKey : undefined;
 }
 
 /** A prepared tab states the locator the route will use, not the one it was built from. */

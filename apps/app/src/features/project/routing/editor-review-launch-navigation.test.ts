@@ -73,7 +73,6 @@ describe("review launch navigation", () => {
       editable: true,
       filetype: "markdown" as const,
       schemaType: "document" as const,
-      draftOnly: true,
       reviews: { [workId]: { itemKey: "draft-1:doc-1", tabInstanceToken: "token" } },
       tabInstanceId: "tab-1",
     } as never;

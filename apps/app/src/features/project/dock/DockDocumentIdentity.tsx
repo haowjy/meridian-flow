@@ -7,6 +7,7 @@ import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { isWorkArchived, type Work } from "@meridian/contracts/works";
 import { useWorks } from "@/client/query/useWorks";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import {
   DraftReviewBoundary,
   usePresentedDraftReview,
@@ -55,7 +56,7 @@ function DockIdentityBody({
       editorWorkId={tab.kind === "new" ? null : (tab.workId ?? null)}
       tab={tab}
       readOnly={Boolean(archivedWork)}
-      onCloseDraftOnly={tab.kind !== "new" && tab.draftOnly ? closeDocument : undefined}
+      onCloseDraftOnly={isDraftOnly(tab) ? closeDocument : undefined}
       // The dock follows a rename through the resource projection; it keeps no tab to patch.
       onCommitted={noopCommitted}
       onOpenExisting={(scheme, path, owner) => {

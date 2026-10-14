@@ -7,6 +7,7 @@ export {
   type DraftWorkspaceSettlementReceipt,
   editorTabsForWork,
   getContextTabs,
+  isDraftOnly,
   isEditorContextTab,
   isEditorScheme,
   isEditorTab,
@@ -18,14 +19,15 @@ export {
   reconcileEditorWorkspaceBootstrap,
   rehydrateEditorWorkspace,
   replaceOwner,
+  reviewEntriesOf,
   reviewEntryOf,
   type ServerContextTab,
-  soleReview,
   type TabOwner,
   tabContextOwner,
   useContextTabs,
   useContextTabsActions,
   useContextTabsStore,
+  withoutReviewEntry,
 } from "./context-tabs-store";
 
 export { durableContextTab, parseContextTab } from "./editor-workspace-state";

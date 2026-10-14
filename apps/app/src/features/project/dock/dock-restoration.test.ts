@@ -9,6 +9,7 @@ import {
 } from "@meridian/resource-replica";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
+import { isDraftOnly } from "@/client/stores";
 import {
   createDockDocumentStore,
   type DockDocument,
@@ -398,8 +399,7 @@ it.each([
       documentId: "stale",
       ...(hidden
         ? {
-            draftOnly: true,
-            reviews: { ["work"]: { itemKey: review.itemKey, tabInstanceToken: "token" } },
+            reviews: { work: { itemKey: review.itemKey, tabInstanceToken: "token" } },
           }
         : {}),
     },
@@ -431,7 +431,7 @@ it.each([
     reviewAdmission: "admitted",
     tab: { documentId: "admitted", scheme: "kb", path: "/Hidden.md" },
   });
-  expect(restored?.tab.draftOnly === true).toBe(hidden);
+  expect(restored && isDraftOnly(restored.tab)).toBe(hidden);
 });
 it("keeps failed and unavailable saved selectors without showing a live occupant", async () => {
   const review = { workId: "work", itemKey: "draft:doc" };
