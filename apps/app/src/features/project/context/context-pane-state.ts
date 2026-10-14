@@ -6,6 +6,7 @@ import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
+import { sameServerContextTabLocator } from "@/client/stores";
 
 export type OptimisticContextTab = { id: string; name: string };
 
@@ -18,13 +19,18 @@ export type MissingDestination = { name: string; scheme: ProjectContextTreeSchem
 
 export type ContextPaneState =
   | { kind: "document"; tab: ContextTab }
-  | { kind: "optimistic-loading"; tab: OptimisticContextTab }
+  /**
+   * `settledTab` is the workspace tab already standing for the destination; it
+   * is the strip's one entry while the body loads, so no chip renders.
+   */
+  | { kind: "optimistic-loading"; tab: OptimisticContextTab; settledTab: ContextTab | null }
   | { kind: "empty-workspace" }
   | { kind: "dead-route"; destination: MissingDestination }
   | { kind: "route-error" };
 
 export function deriveContextPaneState({
   activeTab,
+  tabs,
   masked,
   destination,
   catalog,
@@ -33,11 +39,14 @@ export function deriveContextPaneState({
   removalFenced,
 }: {
   activeTab: ContextTab | null;
+  tabs: readonly ContextTab[];
   /** The destination's body is masked: the retained tab is not where the writer is going. */
   masked: boolean;
   destination: {
     path: string;
     scheme: ProjectContextTreeScheme;
+    workId?: string;
+    rootThreadId?: string;
     optimisticTab: OptimisticContextTab;
   } | null;
   catalog: CatalogContextView | null;
@@ -50,7 +59,10 @@ export function deriveContextPaneState({
 
   const routeExists = catalog?.findPath(destination.path)?.kind === "file";
   if (routeExists || isFetching || (!catalog && !isError)) {
-    return { kind: "optimistic-loading", tab: destination.optimisticTab };
+    const settledTab =
+      tabs.find((tab) => tab.kind !== "new" && sameServerContextTabLocator(tab, destination)) ??
+      null;
+    return { kind: "optimistic-loading", tab: destination.optimisticTab, settledTab };
   }
   if (isError) return { kind: "route-error" };
   return {

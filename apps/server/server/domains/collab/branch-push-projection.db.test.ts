@@ -27,7 +27,7 @@ import {
 import { mdxCodec } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createDocumentLastAddress } from "../context/document-uri-resolver.js";
 import {
@@ -53,6 +53,7 @@ import { createBranchPushService } from "./domain/branch-push.js";
 import { createDrafts } from "./domain/drafts.js";
 import { createMarkdownDocumentEngine } from "./domain/markdown-document.js";
 import { commitJournaledUpdate } from "./test-support/branch-update-writes.js";
+import { resetDatabase } from "./test-support/change-trail-postgres-harness.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error("DB suites require DATABASE_URL");
@@ -90,6 +91,13 @@ describe("branch-push durable projection", () => {
   afterAll(async () => {
     for (const doc of liveDocs.values()) doc.destroy();
     await db.$client.end();
+  });
+
+  // Recovery settles every pending batch in the database, so another file's leftover
+  // batch would change this file's counts.
+  beforeEach(async () => {
+    await resetDatabase(db);
+    liveDocs.clear();
   });
 
   it("keeps a generic projection failure pending and completes it on recovery", async () => {

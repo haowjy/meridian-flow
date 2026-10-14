@@ -233,12 +233,15 @@ export function ContextViewerSurfaceController({
   // route. Their activation must not depend on search-param validation.
   const paneState = deriveContextPaneState({
     activeTab,
+    tabs,
     masked: isProjectRouteMasked(mask),
     destination:
       activeContextScheme !== null && activeContextPath && openTabKey
         ? {
             path: activeContextPath,
             scheme: activeContextScheme,
+            workId: routeWorkId,
+            rootThreadId: activeContextChat ?? undefined,
             optimisticTab: {
               id: `optimistic:${openTabKey}`,
               // Full basename, not the extension-stripped resume label — the chip
