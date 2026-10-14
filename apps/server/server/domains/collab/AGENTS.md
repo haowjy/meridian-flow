@@ -114,8 +114,8 @@ their writes use ordinary journal rows, never status reversal or row replacement
 Only inverse policies acquire the outer transition lock. Stored `undo` and `redo`
 edit kinds remain readable history; nothing writes them.
 
-`has_effect` and `blocking` decide whether an edited item is listed (see the
-Pending publication section of [`branch-model-and-records.md`](.context/branch-model-and-records.md)).
+`has_effect` and `blocking` decide whether an edited item is listed (see
+[Membership in `branch-model-and-records.md`](.context/branch-model-and-records.md#membership)).
 A skipped inverse hold marks its draft blocking so the item stays reachable even
 when its text equals its base.
 

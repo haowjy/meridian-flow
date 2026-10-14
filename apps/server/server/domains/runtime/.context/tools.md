@@ -93,7 +93,7 @@ policy-free.
   runtime and the app's interrupt card remain; re-enabling is that one line.
 - Documents have two tools (D1): `read({ path, in?, around?, format?,
   version? })` never changes a document, and every `write` command (`create`,
-  `copy`, `insert`, `replace`, `remove`, `undo`, `redo`, `revert`) does. There is no
+  `copy`, `insert`, `replace`, `remove`, `revert`) does. There is no
   `diff` and no whole-document delete; old `write({ command: "read" })` rows
   render through the generic fallback and nothing accepts them as input.
   `version` (also on `search` and `ls`) defaults to the version this thread's
@@ -153,10 +153,10 @@ policy-free.
   instead of clamping it — a clamp silently prices cached turns as free.
   Billing owns ledger behavior in `domains/billing`.
 
-Model inverse commands use `write undo/redo {path, count?}` (default 1, maximum
-20, all or nothing) and `write revert {path, edit}`. `read {path, format:
-"edits", before?}` lists 20 own entries newest first, with state and command
-availability. It cannot select blocks or a version. Handles stay model-only.
+The model's one inverse command is `write revert {path, edit}`: it reverts one of
+its own edits in the thread's current destination and reports the parts it left. `read {path, format:
+"edits", before?}` lists 20 own entries newest first, with state (applied, pending,
+discarded, rolled back) and command availability. It cannot select blocks or a version. Handles stay model-only.
 Skill sources retain the on-disk Mars filenames (`SKILL.md` and resource files).
 The model-only `skills://` adapter exposes text files at the document codec’s
 name (`SKILL`, `resources/line-edit`), accepts typed prose suffixes, and uses

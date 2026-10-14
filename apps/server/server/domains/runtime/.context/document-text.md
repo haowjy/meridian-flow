@@ -67,7 +67,7 @@ the transaction that persists the tool result. Handlers get only
 |---|---|---|
 | successful read, narrowed or outline | `read` handler (`lib/model-tools/document-tools.ts`) | with the tool result (`loop/tool-dispatch.ts`) |
 | returned, authorized search passages | `search` handler (`listing-tools.ts`) | with the tool result |
-| write echoes, staged or immediate, undo/redo, a partial failure's echo | `writeUnderGrant` | with the tool result |
+| write echoes, staged or immediate, `revert`, a partial failure's echo | `writeUnderGrant` | with the tool result |
 | settled receipts | the response save | the response scope's commit (`loop/orchestrator.ts`), inside the save transaction |
 | concurrent runs that fit the render budget | the response save | the response scope's backfill |
 | `@` reference reads | `lib/model-tools/reference-reader.ts` | with the reference blocks: the run-start persist (`loop/orchestrator.ts`) or the adoption commit (`adapters/runtime-delivery.ts`) |

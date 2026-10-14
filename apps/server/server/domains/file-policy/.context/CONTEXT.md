@@ -39,7 +39,7 @@ proof, not a flag: it carries the principal, the facts it was decided on
 | Call | Use it for |
 |---|---|
 | `authorize(principal, target, need)` | Preflight for one target. Returns a `FileGrant` or a `FileAccessDenied`. Authoritative for reads; advisory for writes. |
-| `authorizeAt(principal, target, destination, need?)` | Access at an explicit destination, defaulting to edit. Undo reverses a write where it landed; deleted-live review uses a read-only destination grant after validating the active draft item and branch. Ordinary file grants still refuse the deleted file. |
+| `authorizeAt(principal, target, destination, need?)` | Access at an explicit destination, defaulting to edit. Review routes use it for the item's draft destination; deleted-live review uses a read-only destination grant after validating the active draft item and branch. Ordinary file grants still refuse the deleted file. |
 | `confirmEdit(grants)` | The authoritative re-check of edit grants, inside the write's transaction. Takes no lock: the caller has already locked the Works the grants' facts name (`grantWorkIds`) in its one id-ordered select. Reads facts once per grant, re-reads each agent chain, and re-runs the policy at each grant's own destination. A file whose owner or draft Work moved outside the locked set is refused, since locking it then would break the id order. Returns the refusals; it does not throw, so a reply can save the rest. Write seams call it through `lockSeamWorks`; the reply save locks the grants' Works itself first. |
 | `listAccess(principal, documentIds, { draftViews }?)` | Lists (`ls`, `search`, recent documents, link resolution, draft review). Facts use each document's explicit draft view when supplied (link identity metadata chooses its active draft); otherwise the live view. A row the principal can't read is absent from the map, so drop it. |
 | `historyAccess(principal, documentId)` | Change-trail detail. Person term only, so a deleted document's captured evidence stays visible: `"available"`, `"deleted"` or `null`. |
@@ -52,7 +52,7 @@ turn cache: a `work switch` or rebind must show on the next call.
 
 **Targets.** `document` for anything an agent addresses; the policy picks
 live or draft. `draft` (`documentId` + `workId`) for the writer's draft
-preview, Apply, Discard and branch rooms. `container` (scheme + project or
+review: item metadata, Apply, Discard and branch rooms. `container` (scheme + project or
 Work owner) for creates: a create needs `edit` on the container.
 `lib/file-targets.ts` builds them.
 
@@ -98,10 +98,9 @@ methods enter through `enterJournalSeam`. The order is:
 4. Document mutation locks, in id order.
 
 Taking an advisory or document lock before step 2 can deadlock against archive.
-The seams today: the journal (seam A: `append`, `appendBatch`, the persisted
-undo and redo, the live writer append), Work drafts (seam B:
-`runWithActiveWorkDrafts`, draft discard, `lockDraftWorks` on turn
-reversal), and context storage (seam C: `lockContextNamespaces`,
+The seams today: the journal (seam A: `append`, `appendBatch`, a live `revert`, the
+live writer append), Work drafts (seam B: `runWithActiveWorkDrafts`, draft discard,
+`lockDraftBranchWorks` on inverse admission), and context storage (seam C: `lockContextNamespaces`,
 `lockContextSources`, source provisioning, upload intake).
 
 Seams keep their own locked lifecycle check (`requireLockedActiveWorks`)
