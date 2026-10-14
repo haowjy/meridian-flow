@@ -1,18 +1,19 @@
 /**
  * Late-peer recovery (spec-content-rebase "Late peers"). A peer update authored before the peer got a
- * rebase can type into, or delete from, top-level blocks the rebase deleted or retyped; Yjs merges that
+ * rebase can type into top-level blocks the rebase deleted or retyped; Yjs merges that
  * into dead state (`late-peer.ts` detects it). This replays each affected block as a paragraph-level
  * rebase and writes the result into the draft, so the typing comes back green: the draft wins.
  *
  * The block "as the peer saw it" is rebuilt from an exact causal cut (`rebase-cuts.ts`, stored beside the
  * document, never in it): the latest recorded state at which every item the peer touched was still alive, plus the peer's own earlier items.
  * `rebase(old block, its current version or nothing, old block plus the peer's edit)` then merges the
- * peer's change into whatever the rebase left. A peer that deleted the whole block merges as an empty
+ * peer's change into whatever the rebase left. A peer that deleted the whole block it also typed in merges as an empty
  * side. The merge is checked before anything is written: no word may appear that neither the current
  * text nor the peer's text holds, none may repeat beyond the larger of the two, and typed text must be
  * present. A group that fails the check, or has no cut to rebuild from, is reported unplaced. Its typed words
  * are the writer's own, so they are never dropped: they go in as their own paragraph right after the
- * nearest surviving block that stood before them (D21). Deleted text that cannot be placed stays log-only.
+ * nearest surviving block that stood before them (D21), also when the block has no current version: the old
+ * words stay deleted. A late deletion alone is never replayed (D32): it is log-only.
  * Pure: it needs the doc, the update and a snapshot of the doc before the update.
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";
@@ -31,9 +32,9 @@ const SAME_BLOCK = 0.5;
 export interface LateRecovery {
   /** The server-peer update that restores the edits, or null when nothing needed writing. */
   update: Uint8Array | null;
-  /** The text of each recovered edit: what the peer typed, or the block text it deleted from. */
+  /** The text each recovered edit typed. */
   recovered: string[];
-  /** Text the recovery could not place exactly. Typed text here is also in `fallback`; deleted text is lost. */
+  /** Text the recovery could not place exactly. Typed text here is also in `fallback`; deleted text is log-only. */
   unplaced: string[];
   /** Typed text written as its own paragraph after the nearest surviving earlier block. */
   fallback: string[];
@@ -158,7 +159,7 @@ export function recoverLatePeerEdits(input: {
   const current = readBlocks(fragment, schema);
   const replace = new Map<number, PMNode[]>(); // current index -> its replacement
   const insertAfter = new Map<number, PMNode[]>(); // anchor index (-1 = start) -> blocks to add
-  const attempted: Array<{ texts: string[] }> = [];
+  const attempted: string[][] = [];
 
   /** The index of the nearest surviving top-level block before `item` (-1 = the start). */
   const anchorOf = (item: Y.Item | null) => {
@@ -177,24 +178,32 @@ export function recoverLatePeerEdits(input: {
     addAfter(anchorOf(item), para(schema, text));
   };
 
-  // Group the lost edits by the top-level block they belong to.
+  // Group the late typing by the top-level block it belongs to. A deletion joins the group of the block
+  // it touched when that block also holds typing (a replaced word merges as one edit); a deletion alone
+  // is log-only (D32): the same delete set arrives again on every reconnect, and nothing durable
+  // distinguishes that replay from the first, so acting on it would erase words written since.
   const blocks = new Map<string, { item: Y.Item; typed: string[]; deleted: string[] }>();
   const edits: Array<{ edit: LostEdit; kind: "typed" | "deleted" }> = [];
-  for (const [kind, list] of [
-    ["typed", input.lost.typed],
-    ["deleted", input.lost.deleted],
-  ] as const)
-    for (const edit of list) {
-      const item = topLevelBlock(doc, fragment, edit.id);
-      if (!item) {
-        unplace(null, kind === "typed" ? [edit.text] : [], kind === "typed" ? [] : [edit.text]);
-        continue;
-      }
-      const group = blocks.get(keyOf(item.id)) ?? { item, typed: [], deleted: [] };
-      group[kind].push(edit.text);
-      blocks.set(keyOf(item.id), group);
-      edits.push({ edit, kind });
+  for (const edit of input.lost.typed) {
+    const item = topLevelBlock(doc, fragment, edit.id);
+    if (!item) {
+      unplace(null, [edit.text], []);
+      continue;
     }
+    const group = blocks.get(keyOf(item.id)) ?? { item, typed: [], deleted: [] };
+    group.typed.push(edit.text);
+    blocks.set(keyOf(item.id), group);
+    edits.push({ edit, kind: "typed" });
+  }
+  for (const edit of input.lost.deleted) {
+    const group = blocks.get(keyOf(topLevelBlock(doc, fragment, edit.id)?.id ?? edit.id));
+    if (!group) {
+      out.unplaced.push(edit.text);
+      continue;
+    }
+    group.deleted.push(edit.text);
+    edits.push({ edit, kind: "deleted" });
+  }
   const unplaceAll = () => {
     for (const g of blocks.values()) unplace(g.item, g.typed, g.deleted);
     return finish();
@@ -253,7 +262,6 @@ export function recoverLatePeerEdits(input: {
           }
         });
       }
-      const texts = typed.length ? typed : deleted;
       if (index >= 0) {
         // The rebase may have split the block: take the neighbours made of its words too.
         const words = new Set(blockWords(old));
@@ -276,11 +284,12 @@ export function recoverLatePeerEdits(input: {
         replace.set(lo, merged);
         for (let i = lo + 1; i <= hi; i++) replace.set(i, []);
       } else {
-        // No current version: a peer that only deleted text from a dead block changes nothing visible.
-        if (!typed.length || !seenBlock) continue;
-        addAfter(anchorOf(item), seenBlock);
+        // No current version: the block stays deleted (never revive its old words); the peer's own
+        // words go beside the nearest surviving neighbour (D21).
+        unplace(item, typed, deleted);
+        continue;
       }
-      attempted.push({ texts });
+      attempted.push(typed);
     } catch {
       unplace(item, typed, deleted);
     }
@@ -306,7 +315,7 @@ export function recoverLatePeerEdits(input: {
     doc.clientID = input.clientId;
     doc.transact(() => writeBlocks(fragment, schema, target), "late-peer");
     out.update = Y.encodeStateAsUpdate(doc, before);
-    for (const a of attempted) out.recovered.push(a.texts.join(""));
+    for (const typed of attempted) out.recovered.push(typed.join(""));
     return out;
   }
 }

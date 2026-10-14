@@ -117,8 +117,8 @@ export function reconcileStagedBranchWrites(
   const baseline = decodeUpdateForDependencies(planningState);
   const inserted = [...explained.flatMap(suppliedRanges), ...suppliedRanges(baseline)],
     deleted = [...explained.flatMap(deleteRanges), ...deleteRanges(baseline)];
-  // The server client's items (seed, rebase, reset) are never the helper's own content, and a reset
-  // restarts that client's clocks: they are not residual a response could publish.
+  // The server client's items (seed, rebase) are never the helper's own content: they are not
+  // residual a response could publish.
   const helperOwn = (range: { client: number }) => range.client !== DRAFT_SERVER_CLIENT_ID;
   if (
     subtractRanges(suppliedRanges(residual).filter(helperOwn), inserted).length ||

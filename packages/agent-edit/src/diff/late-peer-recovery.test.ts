@@ -99,11 +99,18 @@ const typeAt = (i: number, at: number, s: string) => (f: Y.XmlFragment) =>
 const SEEDS = 400;
 
 describe("late-peer recovery", () => {
-  // Risk: typing into a paragraph the rebase deleted vanished silently.
-  it("brings back a paragraph the rebase deleted, with the peer's typing", () => {
-    const r = late(["one", "two", "three"], ["one", "three"], typeAt(1, 3, " typed late"));
-    expect(r.text).toBe("p[one] p[two typed late] p[three]");
-    expect(r.recovered).toEqual([" typed late"]);
+  // Risk: typing into a paragraph the rebase deleted vanished silently, or revived the deleted words
+  // around it. The late words survive beside the surviving neighbour; the deleted words stay deleted.
+  it("keeps late typing, not the deleted words, when the rebase deleted the paragraph", () => {
+    for (const [at, typed] of [
+      [9, " late"],
+      [0, "late "],
+      [4, "late "],
+    ] as const) {
+      const r = late(["one", "two words", "three"], ["one", "three"], typeAt(1, at, typed));
+      expect(r.text).toBe(`p[one] p[${typed}] p[three]`);
+      expect(r.fallback).toEqual([typed]);
+    }
   });
 
   // Risk: typing into a paragraph the rebase retyped lands in dead text, or a duplicate paragraph appears.
@@ -116,12 +123,15 @@ describe("late-peer recovery", () => {
     expect(r.text).toBe("p[tail] p[ALPHA beta gamma delta]");
   });
 
-  // Risk: a peer's deletion of text the rebase moved lands on the dead copy and the text survives.
-  it("redoes a deletion at the paragraph's new place", () => {
+  // Risk (D32): a deletion of text the rebase moved was redone on the new copy; the same delete set
+  // arrives again on every reconnect, and redoing it erased words written since. It is log-only.
+  it("leaves a late deletion of rebased text alone and reports it", () => {
     const r = late(["one two three four", "end"], ["one two", "three four", "end"], (f) =>
       ((f.get(0) as Y.XmlElement).get(0) as Y.XmlText).delete(8, 6),
     );
-    expect(r.text).toBe("p[one two] p[four] p[end]");
+    expect(r.update).toBeNull();
+    expect(r.text).toBe("p[one two] p[three four] p[end]");
+    expect(r.unplaced.join("")).toBe("three ");
   });
 
   it("changes nothing when the edit was not lost", () => {
@@ -143,15 +153,15 @@ describe("late-peer recovery", () => {
   });
 
   // Risk: a peer that saw rebase 1 and typed, then rebase 2 deleted the paragraph: the revived view held
-  // the original word and its replacement at once and persisted "ALPHAalpha beta gamma delta".
-  it("restores typing after two rebases without inventing text from the first", () => {
+  // the original word and its replacement at once ("ALPHAalpha beta gamma delta"), or the deleted
+  // paragraph came back whole. Only the typed word survives.
+  it("keeps only the typed word after two rebases, inventing and reviving nothing", () => {
     const server = seeded(["alpha beta gamma", "tail"]);
     rebaseTo(server, ["ALPHA beta gamma", "tail"]);
     const update = updateOf(forkOf(server), typeAt(0, 16, " delta"));
     rebaseTo(server, ["tail"]);
     const r = land(server, update);
-    expect(r.text).toBe("p[ALPHA beta gamma delta] p[tail]");
-    expect(r.unplaced).toEqual([]);
+    expect(r.text).toBe("p[ delta] p[tail]");
   });
 
   // Risk (D21): typed words the exact recovery cannot place vanish silently. They must land once, as their own
@@ -176,21 +186,6 @@ describe("late-peer recovery", () => {
     const r = land(server, update);
     expect(r.fallback).toEqual([" zzqq"]);
     expect(r.text).toBe("p[ zzqq] p[tail] p[ALPHA beta gamma zzqq]");
-  });
-
-  // Risk: a peer deletes a whole paragraph while the rebase retyped it; the heading stayed and nothing
-  // was journaled because "the peer deleted all of it" was treated as a failed reconstruction.
-  it("deletes the heading the rebase made of a paragraph the peer deleted", () => {
-    const server = seeded(["alpha beta gamma", "tail"]);
-    const update = updateOf(forkOf(server), (f) => f.delete(0, 1));
-    writeWithRebaseCut(server, "rebase", () =>
-      writeBlocks(server.getXmlFragment(FRAG), schema, [
-        schema.nodes.heading.create({ level: 2 }, schema.text("alpha beta gamma")),
-        para("tail"),
-      ]),
-    );
-    const r = land(server, update);
-    expect(r.text).toBe("p[tail]");
   });
 
   // Risk: a peer older than every retained cut (the history is capped) loses its typing, or recovery
