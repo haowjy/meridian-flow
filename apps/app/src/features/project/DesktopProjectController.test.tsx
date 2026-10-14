@@ -20,7 +20,7 @@ import {
   DesktopProjectPresentationProvider,
   useDesktopProjectController,
 } from "./DesktopProjectController";
-import { DockDocumentActions } from "./dock/DockDocumentActions";
+import { DockDocumentCommands } from "./dock/DockDocumentCommands";
 import { dockDocument, useDockDocumentStore } from "./dock/dock-document-store";
 import { useProjectSurfacePrefsStore } from "./layout/surface-prefs-store";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./routing/chat-navigation";
@@ -159,7 +159,7 @@ async function setup(source: ScreenKey = "context") {
         </button>
         {railSwitchFailed && <p role="alert">Rail failure</p>}
         {headerFailure(failures.failures, revision) && <p>Header failure</p>}
-        {switcher.dockDocument && <DockDocumentActions document={switcher.dockDocument} />}
+        {switcher.dockDocument && <DockDocumentCommands document={switcher.dockDocument} />}
         <ProjectRouteBoundary
           issue={acceptedFailure ? "error" : issue}
           retainWhileLoading={switcher.editorPresentation.retainWhileLoading}
@@ -242,14 +242,7 @@ async function setup(source: ScreenKey = "context") {
   const click = async (label: string) => {
     if (label === "Header") {
       await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('button[aria-label="Document actions"]')
-          ?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 })),
-      );
-      await act(async () =>
-        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-          .find((item) => item.textContent === "Open in Editor")
-          ?.click(),
+        container.querySelector<HTMLButtonElement>('button[aria-label="Open in Editor"]')?.click(),
       );
       return;
     }
