@@ -19,6 +19,7 @@
 import { headSeq } from "@meridian/contracts/protocol";
 import type { PendingInboxItem, ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
+import { switchState } from "@/client/run-state/fold-switches";
 import {
   answerIntent,
   type RunStateRecord,
@@ -61,6 +62,21 @@ export function recordFromFrame(
         mode: frame.mode,
         items: current.items.filter((item) => item.id !== frame.controlId),
       };
+}
+
+/**
+ * What the toolbar and rows show. Before the first record the chat's own mode (`base`, the
+ * thread row's) stands in as the applied one, so a choice made before the snapshot still
+ * shows at once.
+ */
+export function switchDisplay(view: RunStateView, base: AiWriteMode) {
+  return (
+    switchState(view) ??
+    switchState({ ...view, record: { version: "0", mode: base, items: [] } }) ?? {
+      mode: base,
+      rows: [],
+    }
+  );
 }
 
 export type SwitchAnswerFacts = {

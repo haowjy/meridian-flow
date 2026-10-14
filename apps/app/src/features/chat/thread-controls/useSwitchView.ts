@@ -43,7 +43,6 @@ import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import type { DeserializedThreadSnapshot } from "@/client/query/thread-snapshot-query";
-import { switchState } from "@/client/run-state/fold-switches";
 import { announce, announceError, useIsThreadPendingCreation } from "@/client/stores";
 import { pendingInboxFromEvent } from "../pending-inbox";
 import {
@@ -52,6 +51,7 @@ import {
   controlWithdrawnCopy,
   writeModeSwitchedCopy,
 } from "./control-copy";
+import { switchDisplay } from "./switch-record";
 import { INITIAL_SWITCH_STATE, reduceSwitch } from "./switch-reducer";
 import type { QueuedControl } from "./thread-controls";
 import { readWriteModeSwitch } from "./write-mode-model";
@@ -243,7 +243,7 @@ export function useSwitchView(input: {
         : known,
     );
   }, [dividerIds, applied]);
-  const folded = useMemo(() => switchState(view, input.writeMode), [view, input.writeMode]);
+  const folded = useMemo(() => switchDisplay(view, input.writeMode), [view, input.writeMode]);
   const rows = useMemo<QueuedControl[]>(() => {
     const own = folded.rows.map((row) => ({
       id: row.id,

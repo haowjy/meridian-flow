@@ -8,8 +8,7 @@
  */
 import { expect, it } from "vitest";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
-import { switchState } from "@/client/run-state/fold-switches";
-import type { SwitchFrame } from "./switch-record";
+import { type SwitchFrame, switchDisplay } from "./switch-record";
 import {
   INITIAL_SWITCH_STATE,
   reduceSwitch,
@@ -381,7 +380,7 @@ it("derives the switch rows and toolbar mode from server facts at one seq and un
     let harness: Harness = { state: INITIAL_SWITCH_STATE, journal: {} };
     scenario.steps.forEach(([event, mode, rows], index) => {
       harness = step(harness, event);
-      const shown = switchState(harness.state.view, "direct");
+      const shown = switchDisplay(harness.state.view, "direct");
       const label = `${scenario.name} (step ${index + 1})`;
       expect(shown.mode, label).toBe(mode);
       expect(
