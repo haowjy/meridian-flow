@@ -21,7 +21,7 @@ import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { useDraftReview } from "./DraftReviewProvider";
 import { nextReviewFile } from "./review-files";
 import type { ReviewSurface } from "./review-runtime";
-import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
+import { type HeadlessReview, type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
 export type ReviewHeaderOptions = {
   documentId: string;
@@ -33,6 +33,8 @@ export type ReviewHeaderOptions = {
   onOpenDraft: (row: ReviewFileTarget) => void;
   /** The editor surface this header belongs to: its commands act in that surface's editor. */
   surface?: ReviewSurface;
+  /** Set where the review has no editor (the phone): Discards are headless edits with their own Undo. */
+  headless?: HeadlessReview;
 };
 
 export type ReviewHeaderModel = {
@@ -113,9 +115,14 @@ export function useReviewHeader({
   onCloseDraftOnly,
   onOpenDraft,
   surface = "editor",
+  headless,
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, files } = useDraftReview();
-  const view = useReviewChanges(controller, { enabled: Boolean(itemKey), editor: surface });
+  const view = useReviewChanges(controller, {
+    enabled: Boolean(itemKey),
+    editor: surface,
+    headless,
+  });
 
   const next = nextReviewFile(files, documentId);
   // The draft Next draft moves to is looked up while the writer is still here, so opening it finds
@@ -150,6 +157,10 @@ export function useReviewHeader({
    */
   const dispose = (mode: "apply" | "discard") => {
     if (locked) return;
+    if (mode === "discard" && headless && !view.wholeDocument) {
+      headless.discards.discardAll(headless.file, headless.roomName);
+      return;
+    }
     void controller.startDraft(
       mode,
       { documentId, itemKey },

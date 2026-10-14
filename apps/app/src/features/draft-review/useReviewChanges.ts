@@ -9,19 +9,29 @@
 import { useCallback, useMemo } from "react";
 
 import type { AppliedChange } from "@/client/query/draft-command-record";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { isSameChange } from "@/core/editor/extensions/inline-review";
 import type { DraftChangesView } from "./draft-changes";
 import type { ReviewFrame } from "./review-frame";
 import type { ReviewChange } from "./review-model";
 import type { EditorRef } from "./review-runtime";
 import type { DraftReviewController } from "./useDraftReviewController";
+import type { HeadlessDiscards } from "./useHeadlessDiscards";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
+
+/**
+ * A review with no editor to author a Discard into (the phone's read-only one): a Discard is a headless
+ * edit of the draft's room, its own history per Discard, and the view lists it as `discarded` with `undoDiscard`.
+ */
+export type HeadlessReview = {
+  discards: HeadlessDiscards;
+  file: ReviewFileTarget;
+  roomName: string;
+};
 
 /** The open review's model: a draft's changes plus the review's focus and stepping. */
 export type ReviewChangesView = Omit<DraftChangesView, "discard"> & {
-  /** Resolves true when a local edit reverted the change, so `undoLastDiscard` can take it back. */
-  discard: (change: ReviewChange) => Promise<boolean>;
-  /** Undo the last Discard authored in this view's surface. */
-  undoLastDiscard: () => void;
+  discard: (change: ReviewChange) => Promise<unknown>;
   /** The frame this view's rows were drawn from: what a whole-draft Apply carries. */
   frame: ReviewFrame | null;
   /** The applied entries in force: the manuscript stops painting the changes they name. */
@@ -35,9 +45,10 @@ export type ReviewChangesView = Omit<DraftChangesView, "discard"> & {
 export function useReviewChanges(
   controller: DraftReviewController,
   /** `editor`: the editor this view is read in (or its surface), so a Discard is authored into its history. */
-  options?: { enabled?: boolean; editor?: EditorRef | null },
+  options?: { enabled?: boolean; editor?: EditorRef | null; headless?: HeadlessReview },
 ): ReviewChangesView {
   const data = useOpenReviewChanges(controller, options);
+  const headless = options?.headless;
   const surface = options?.editor ?? null;
   const { documentId, itemKey, items } = data;
   const focused = items.find((item) => item.change.id === controller.focus)?.change ?? null;
@@ -79,11 +90,6 @@ export function useReviewChanges(
     [items, focus, focused],
   );
 
-  const undoLastDiscard = useCallback(
-    () => controller.undoDiscard(surface),
-    [controller.undoDiscard, surface],
-  );
-
   const apply = useCallback(
     async (change: ReviewChange) => {
       if (!review) return;
@@ -98,17 +104,29 @@ export function useReviewChanges(
     [controller.apply, controller.applyOpenChange, data.wholeDocument, review, settleFocus, focus],
   );
   const discard = useCallback(
-    /** True when the change was reverted by a local edit this surface's history can undo (`undoLastDiscard`). */
-    async (change: ReviewChange): Promise<boolean> => {
-      if (!review) return false;
+    async (change: ReviewChange) => {
+      if (!review) return;
       settleFocus(change);
       if (data.wholeDocument) {
         await controller.discard(review.documentId, review.itemKey, surface);
-        return false;
+        return;
       }
-      return controller.discardOpenChange(change, surface) === "discarded";
+      if (headless) {
+        if (controller.changesLocked) return;
+        headless.discards.discardChange(
+          headless.file,
+          change,
+          items.findIndex((item) => isSameChange(change, item.change.id, item.change.pin)),
+          headless.roomName,
+        );
+        return;
+      }
+      controller.discardOpenChange(change, surface);
     },
     [
+      headless,
+      items,
+      controller.changesLocked,
       controller.discard,
       controller.discardOpenChange,
       data.wholeDocument,
@@ -135,6 +153,13 @@ export function useReviewChanges(
     step,
     apply,
     discard,
-    undoLastDiscard,
+    ...(headless
+      ? {
+          discarded: headless.discards.entries.filter(
+            (entry) => entry.file.draft.itemKey === itemKey && entry.change,
+          ),
+          undoDiscard: headless.discards.undo,
+        }
+      : {}),
   };
 }

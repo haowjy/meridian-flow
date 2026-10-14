@@ -103,6 +103,7 @@ const IDLE_FILE = {} as ReviewFileTarget;
 const NO_DISCARDS: HeadlessDiscards = {
   entries: [],
   discardChange: () => {},
+  discardAll: () => {},
   discardFile: () => {},
   undo: () => {},
 };

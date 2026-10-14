@@ -13,6 +13,7 @@
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type * as Y from "yjs";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import { draftMetaQueryOptions } from "@/client/query/useDraftMeta";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
@@ -47,6 +48,8 @@ export type HeadlessDiscards = {
     index: number,
     roomName: string,
   ) => void;
+  /** Discard every change of the file's draft in the room its review reads: the edit is made before this returns. */
+  discardAll: (file: ReviewFileTarget, roomName: string) => void;
   /** Discard only the changes the attribution hint names this chat for. */
   discardFile: (file: ReviewFileTarget, threadId: string) => void;
   /** Revert a landed Discard, cancel a pending one, or dismiss a failed one. */
@@ -57,10 +60,18 @@ let sequence = 0;
 const NO_ENTRIES: readonly DiscardedEntry[] = [];
 const NOTHING: RoomDiscard = { undo: () => {}, release: () => {} };
 
-export function useHeadlessDiscards(projectId: string, workId: string): HeadlessDiscards {
+/**
+ * `extent` narrows the scope below the Work (the phone's one open review): when it changes, every Undo
+ * ends the way a rebind of the Work ends it.
+ */
+export function useHeadlessDiscards(
+  projectId: string,
+  workId: string,
+  extent = "",
+): HeadlessDiscards {
   const queryClient = useQueryClient();
   const registry = useLiveDocumentSessionRegistry();
-  const scope = `${projectId}:${workId}`;
+  const scope = `${projectId}:${workId}:${extent}`;
   const [held, setHeld] = useState<{ scope: string; entries: readonly DiscardedEntry[] }>({
     scope,
     entries: [],
@@ -110,16 +121,19 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
     [registry],
   );
 
-  const writeChange = useCallback(
-    (file: ReviewFileTarget, change: ReviewChange, index: number, roomName: string) => {
+  const write = useCallback(
+    (
+      file: ReviewFileTarget,
+      change: ReviewChange | null,
+      index: number,
+      roomName: string,
+      edit: (doc: Y.Doc) => RoomDiscard | null,
+    ) => {
       const id = `${file.draft.itemKey}:${++sequence}`;
       let result: RoomDiscard | null = null;
       try {
         // The expanded row's reader holds this room, so it is live now; the lease keeps it so for Undo.
-        result = discardClickedChange(registry.getBranchRoom(roomName).document, {
-          id: change.id,
-          pin: change.pin,
-        });
+        result = edit(registry.getBranchRoom(roomName).document);
       } catch {
         // A failed write leaves the failed entry below.
       }
@@ -201,8 +215,13 @@ export function useHeadlessDiscards(projectId: string, workId: string): Headless
       const again = entries.some(
         (entry) => entry.change && isSameChange(entry.change, change.id, change.pin),
       );
-      if (!again) writeChange(file, change, index, roomName);
+      if (!again)
+        write(file, change, index, roomName, (doc) =>
+          discardClickedChange(doc, { id: change.id, pin: change.pin }),
+        );
     },
+    discardAll: (file, roomName) =>
+      write(file, null, 0, roomName, (doc) => discardInRoom(doc, "all")),
     discardFile,
     undo,
   };

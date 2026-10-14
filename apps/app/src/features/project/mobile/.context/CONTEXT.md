@@ -92,8 +92,11 @@ review is open, so entering and leaving never remounts the warm live editor;
 the review editor mounts beside it and swaps in, as on desktop (`EditorView`). Nothing here owns
 review state: the stable wrapper obtains one `useReviewHeader` model and passes
 it to the header, bar and sheet. Sheet state and its toast stay phone-owned. Optimistic Apply and
-Discard, refusals held on the change, toasts (no Undo), the entry hold (`inlineReview.shown`) and "No changes
-left" with Next draft are therefore the desktop's behaviour, not a copy of it.
+Discard, refusals held on the change, toasts, the entry hold (`inlineReview.shown`) and "No changes
+left" with Next draft are therefore the desktop's behaviour, not a copy of it. The one exception is Discard:
+the review is read-only (no editor history), so every phone Discard (bar, sheet, header) is a headless edit of
+the draft's room (`useHeadlessDiscards`, scoped to this document's open review) with its own history. It leaves
+its own `DiscardedRow` above the bar and in the sheet, and that row's Undo restores that change only, in any order.
 
 - **Header** (`MobileReviewHeader`): the Draft chip (`DraftSwitcher`), the
   stepper and the list button (with the change count when there are changes),
