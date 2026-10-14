@@ -41,6 +41,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     projectId: input.projectId,
     workId: input.workId,
     aiWriteMode: input.aiWriteMode,
+    effectiveAiWriteMode: input.aiWriteMode,
     userId: input.userId,
     kind: "primary",
     status: "idle",

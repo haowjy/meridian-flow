@@ -40,7 +40,8 @@ rebinds; the model's `work switch` never does
 
 The neutral `useWriteModeToolbarControl` shows a value and reports a choice:
 no dialog, no draft query. In an existing chat the value is the chat's mode
-(`thread.aiWriteMode`) with the switch view's intents laid over it
+(the snapshot's record, else `thread.effectiveAiWriteMode` from the project thread list: the
+queued switch's mode, else the applied `aiWriteMode`) with the switch view's intents laid over it
 (`useThreadControls().writeMode`), and a choice dispatches a `write_mode`
 control: a record in the chat's submission journal, posted in order with the
 messages around it. In the new-chat composer the value is the selected Work's
@@ -83,8 +84,8 @@ transcript layer's: an applied switch whose turn has not rendered shows the noti
 keyed by the `write_mode.switched` frame's turn, until that turn renders.
 
 No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
-mode but never rewrites an existing row's, and a `switched` frame invalidates the Works query and
-the project thread lists instead.
+mode but never rewrites an existing row's, and a queued or cancelled switch (the control's POST) and a `switched` frame invalidate the Works query
+and the project thread lists instead.
 
 The composer control shows the number of documents waiting beside Draft ("Draft (3)"), from the
 Work's draft list, in the trigger and the menu option; with none it reads "Draft".
