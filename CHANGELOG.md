@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Share import attention reasons and the changed-file upload header protocol.
+
 - Refuse Stop after an import reveals, while its catalog publication finishes.
 
 - Persist the import reveal boundary before catalog publication completes.

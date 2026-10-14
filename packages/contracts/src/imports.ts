@@ -37,6 +37,24 @@ export type ImportEntryReason =
   | "changed_after_pick"
   | "upload_lost"
   | "server_error";
+/** Writer attention is shared by the detail list and the server's aggregate count. */
+export const IMPORT_REASON_NEEDS_LOOK = {
+  obsidian_canvas: false,
+  trash: false,
+  hidden: false,
+  export_works: false,
+  unreadable: true,
+  not_found: true,
+  too_large: true,
+  kept_as_file: true,
+  changed_after_pick: true,
+  upload_lost: true,
+  server_error: true,
+} as const satisfies Record<ImportEntryReason, boolean>;
+export const IMPORT_NEEDS_LOOK_REASONS = (
+  Object.keys(IMPORT_REASON_NEEDS_LOOK) as ImportEntryReason[]
+).filter((reason) => IMPORT_REASON_NEEDS_LOOK[reason]);
+
 export type ImportUnreadableReason =
   | "unreadable"
   | "permission_denied"
@@ -81,6 +99,14 @@ export interface ImportDetail extends ImportSummary {
   roots: ImportSelection["roots"];
   entries: ImportEntryStatus[];
 }
+/**
+ * POST /imports/:id/files uses multipart file parts named by entryId.
+ * Optional X-Import-Changed-Entries is request-level metadata (FormData cannot set
+ * part headers): a comma-separated list of at most IMPORT_ADMISSION.partsPerRequest
+ * nonnegative safe-integer decimal ids, without whitespace or leading zeros.
+ * Every id must name a part in this request; duplicates have set semantics.
+ * The transport decodes this into changedAfterPick on each part, not stored metadata.
+ */
 export interface ImportFilesResult {
   entries: Pick<ImportEntryStatus, "entryId" | "state" | "reason">[];
   summary: ImportSummary;
