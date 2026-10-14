@@ -22,6 +22,7 @@ function depsFor(threads: Thread[], turns: Turn[], blocks: Block[]): ThreadConve
     turns: {
       listByThread: async (id: string) => turns.filter((t) => t.threadId === id),
       findById: async (id: string) => turns.find((t) => t.id === id) ?? null,
+      listHandedBackIds: async () => new Set<string>(),
     },
     blocks: {
       listByThread: async (id: string) =>
