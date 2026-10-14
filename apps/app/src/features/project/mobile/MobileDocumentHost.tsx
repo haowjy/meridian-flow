@@ -28,6 +28,7 @@ import { ContextViewerBareHost } from "../context/ContextViewerHost";
 import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { PHONE_DOCUMENT_PRESENTATION } from "../context/document-presentation";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
+import { useDockArchivedWork } from "../dock/DockDocumentIdentity";
 import { MobileDocumentReview } from "./MobileDocumentReview";
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
@@ -146,13 +147,20 @@ function MobileLocalDocumentHost({
         });
     }
   }, [projectId, workId, tab, removal, state]);
-  return <PhoneDocument projectId={projectId} tab={tab} />;
+  // No review wraps a local pointer, so it brings the column `MobileDocumentReview` gives the
+  // other two: the frame below takes its height from a flex parent.
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PhoneDocument projectId={projectId} tab={tab} />
+    </div>
+  );
 }
 
 /**
  * The phone's one editable document. It renders the shared session boundary directly: the
  * phone has a single document, and a warm-set host would add a frame of its own. The host
- * fills this `relative` frame, which is a direct child of the document column.
+ * fills this `relative` frame, which is a direct child of a flex column: the review's, or the
+ * local pointer's own.
  */
 function PhoneDocument({
   projectId,
@@ -163,6 +171,8 @@ function PhoneDocument({
   tab: EditableContextTab;
   children?: React.ReactNode;
 }) {
+  // The room's scope follows the Work; the presentation is what keeps the phone from typing.
+  const archived = useDockArchivedWork(projectId, tab);
   return (
     <div className="relative min-h-0 flex-1">
       {children}
@@ -171,7 +181,7 @@ function PhoneDocument({
         projectId={projectId}
         tab={tab}
         active
-        readOnly
+        readOnly={Boolean(archived)}
         presentation={PHONE_DOCUMENT_PRESENTATION}
       />
     </div>
