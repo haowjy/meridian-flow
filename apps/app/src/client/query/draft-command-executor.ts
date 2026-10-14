@@ -229,11 +229,14 @@ async function carry<R extends { status: string }>(
           }),
       })
       .execute(undefined);
+    // Revoked while out: nothing is published, and the account's bookkeeping is not written for it.
+    if (settled.kind === "revoked" || !command.live()) return { kind: "revoked" };
     retainUnknownCommand(draft, command.kind, null);
     return settled.kind === "result"
       ? { kind: "result", result: settled.result }
       : { kind: settled.kind };
   } catch (error) {
+    if (!command.live()) return { kind: "revoked" };
     const unknown = httpErrorStatus(error) === undefined;
     retainUnknownCommand(draft, command.kind, unknown ? { commandId, digest } : null);
     return { kind: "error", error, unknown };

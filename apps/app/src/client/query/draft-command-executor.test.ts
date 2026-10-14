@@ -14,6 +14,7 @@ import { appliedIn, baseKeyOf } from "@/features/draft-review/review-frame";
 import { applyChanges, applyChatChanges, applyDraft } from "./draft-command-executor";
 import {
   appliedChanges,
+  bindDraftCommandAccount,
   changeFailure,
   currentDraftCommandRecords,
   draftCommandFailure,
@@ -200,4 +201,37 @@ it("the strip's Apply is pending at the click, reads the room inside the command
   const acquire = vi.fn();
   expect(await applyChatChanges(queryClient, draft, acquire)).toEqual({ kind: "blocked" });
   expect(acquire).not.toHaveBeenCalled();
+});
+
+it("an account change during preparation revokes the command: no request, no published result, preparation released", async () => {
+  bindDraftCommandAccount("a");
+  let accounts = 0;
+  const item = vi
+    .spyOn(draftsApi, "applyDraft")
+    .mockResolvedValue({ status: "applied", itemClosed: true, overrode: [] } as never);
+  for (const run of [
+    (prepare: () => Promise<never>) => applyDraft(queryClient, { scope: "item", draft, prepare }),
+    (prepare: () => Promise<never>) =>
+      applyChanges(queryClient, {
+        scope: "change",
+        draft,
+        targets: targets("c"),
+        baseKey: "k",
+        prepare,
+      }),
+  ]) {
+    let finish!: () => void;
+    const preparing = new Promise<void>((resolve) => (finish = resolve));
+    const release = vi.fn();
+    const pending = run((async () => {
+      await preparing;
+      return { snapshot: "c25hcA==", synced: async () => {}, release };
+    }) as never);
+    bindDraftCommandAccount(`other-${accounts++}`);
+    finish();
+    expect(await pending).toEqual({ kind: "blocked" });
+    expect(release).toHaveBeenCalledOnce();
+  }
+  expect(item).not.toHaveBeenCalled();
+  expect(apply).not.toHaveBeenCalled();
 });
