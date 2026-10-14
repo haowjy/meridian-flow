@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- A document the AI drafted keeps the name the writer gives it after revealing it. Apply publishes it where it now lives, and draft links spell the new name.
 - Apply and Discard, for an item, a change or the whole draft, are server commands that carry a command id, so a lost response can be resent without applying twice. Apply never closes the draft; only Discard all does. Work Files' Apply all and Discard all are one command each.
 - Discarding one document's draft while the AI is still replying fails that reply's writes to it ("the user discarded the text it edited"), saves its other documents, and lets a later write start a fresh draft.
 - A link to a document that does not exist yet binds once, for everyone, when a document first goes live at its path. Copying a link keeps it as it is, and Apply no longer re-binds links.

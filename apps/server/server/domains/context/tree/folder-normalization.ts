@@ -11,7 +11,7 @@
  */
 import type { ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { documents, draftTreeChanges, folders } from "@meridian/database/schema";
+import { documents, folders } from "@meridian/database/schema";
 import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { insertFolder, tombstoneFolders } from "./node-rows.js";
@@ -88,10 +88,6 @@ async function fold(db: Database, hidden: FolderId, into: FolderId): Promise<voi
     .update(documents)
     .set({ folderId: into, updatedAt: now })
     .where(and(eq(documents.folderId, hidden), isNull(documents.deletedAt)));
-  await tx
-    .update(draftTreeChanges)
-    .set({ parentFolderId: into, updatedAt: now })
-    .where(eq(draftTreeChanges.parentFolderId, hidden));
   await tombstoneFolders(db, [hidden]);
 }
 
@@ -111,8 +107,7 @@ export type SplitFolder = {
 
 /**
  * What a split will write, decided from a snapshot taken before any write (F19): twins
- * root to leaf at their originals' coordinates, the boundary nodes to move under them,
- * and the folders whose change rows follow their twins.
+ * root to leaf at their originals' coordinates, and the boundary nodes to move under them.
  */
 export type SplitPlan = {
   twins: readonly {
@@ -123,21 +118,17 @@ export type SplitPlan = {
     name: string;
   }[];
   boundaries: readonly SplitBoundary[];
-  repoint: readonly FolderId[];
 };
 
 /**
  * The ancestor-closed twin set (§8.3, B6) over a snapshot: every boundary parent, then
  * each twinned folder's parent while that parent leaves its path too (a deleted or split
- * root's own ancestors, or a folder another move of the same batch carries away). Only
- * folders whose own hidden contents split off (`splits`) repoint their change rows; a
- * moving ancestor twinned only to anchor the path keeps its rows, which move with it.
+ * root's own ancestors, or a folder another move of the same batch carries away).
  */
 export function planSplit(input: {
   folders: ReadonlyMap<FolderId, SplitFolder>;
   boundaries: readonly SplitBoundary[];
   leaves(folder: FolderId): boolean;
-  splits(folder: FolderId): boolean;
 }): SplitPlan {
   const set = new Set<FolderId>();
   const pending = input.boundaries.map((boundary) => boundary.parentId);
@@ -167,11 +158,10 @@ export function planSplit(input: {
         };
       }),
     boundaries: input.boundaries,
-    repoint: [...set].filter((folder) => input.splits(folder)),
   };
 }
 
-/** Writes a split plan: twins, boundary nodes under them, change rows after them. */
+/** Writes a split plan: twins, then the boundary nodes under them. */
 export async function applySplit(db: Database, plan: SplitPlan): Promise<SplitResult> {
   await treeHook("split.beforeRepoint");
   const tx = currentDrizzleDb(db);
@@ -205,12 +195,6 @@ export async function applySplit(db: Database, plan: SplitPlan): Promise<SplitRe
         .where(eq(folders.id, boundary.id));
     }
   }
-  for (const folder of plan.repoint) {
-    await tx
-      .update(draftTreeChanges)
-      .set({ parentFolderId: twins.get(folder) as FolderId, updatedAt: now })
-      .where(eq(draftTreeChanges.parentFolderId, folder));
-  }
   return {
     twins,
     movedHidden: plan.boundaries.map(
@@ -241,7 +225,6 @@ export async function splitHiddenContents(db: Database, root: FolderId): Promise
       folders: visible,
       boundaries: hiddenBoundaries(nodes, (folder) => visible.has(folder)),
       leaves: (folder) => visible.has(folder),
-      splits: () => true,
     }),
   );
 }

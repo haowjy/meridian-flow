@@ -12,8 +12,9 @@ import {
   drafts,
   draftTreeChanges,
   pushLineage,
+  works,
 } from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -366,6 +367,57 @@ export function createDrizzleWorkDraftPendingStore(db: Database): WorkDraftPendi
         documents.set(workId as WorkId, set);
       }
       return new Map([...documents].map(([workId, set]) => [workId, set.size]));
+    },
+    async listDraftsChangingDocument({ projectId, documentId }) {
+      const tx = currentDrizzleDb(db);
+      // The same two membership arms as the Work counts, narrowed to one document.
+      const branched = tx
+        .select({ draftId: documentBranches.draftId })
+        .from(documentBranches)
+        .where(
+          and(
+            eq(documentBranches.documentId, documentId),
+            eq(documentBranches.kind, "work_draft"),
+            eq(documentBranches.status, "active"),
+            sql`(${documentBranches.hasEffect} OR ${documentBranches.blocking})`,
+            sql`exists (
+              select 1 from ${branchWriteJournal}
+              where ${branchWriteJournal.branchId} = ${documentBranches.id}
+                and ${branchWriteJournal.generation} = ${documentBranches.generation}
+                and ${branchWriteJournal.status} in ('active', 'rollback_pending'))`,
+          ),
+        );
+      const changed = tx
+        .select({ draftId: draftTreeChanges.draftId })
+        .from(draftTreeChanges)
+        .where(
+          and(eq(draftTreeChanges.nodeId, documentId), eq(draftTreeChanges.nodeKind, "document")),
+        );
+      // Archived Works stay (their drafts remain reviewable); deleted Works and drafts whose
+      // origin Work is gone are out, since today's review address needs a live Work.
+      const rows = await tx
+        .select({
+          draftId: drafts.id,
+          originWorkId: works.id,
+          name: works.name,
+          isNoWork: works.isNoWork,
+        })
+        .from(drafts)
+        .innerJoin(works, eq(works.id, drafts.originWorkId))
+        .where(
+          and(
+            eq(drafts.projectId, projectId),
+            eq(drafts.status, "active"),
+            isNull(works.deletedAt),
+            sql`${drafts.id} in (${branched.union(changed)})`,
+          ),
+        )
+        .orderBy(asc(drafts.createdAt), asc(drafts.id));
+      return rows.map((row) => ({
+        draftId: row.draftId,
+        originWorkId: row.originWorkId,
+        originWorkName: row.isNoWork ? null : row.name,
+      }));
     },
     async listCreators(draftId, documentIds) {
       const rows = await currentDrizzleDb(db)

@@ -286,16 +286,75 @@ export function documentToolFailureCopy(tool: ToolView): string {
   switch (status) {
     case "cant_undo_dependent":
       return t`That change can't be undone because later edits depend on it.`;
+    case "cant_undo_applied":
+      return t`That change can't be undone here because it was already applied to your manuscript.`;
+    case "cant_undo_discarded":
+      return t`That change can't be undone because you discarded it.`;
+    case "cant_undo_changed":
+      return t`That change can't be undone because the text changed afterwards.`;
+    case "cant_undo_held":
+      return t`That change can't be undone because it is held for review.`;
+    case "cant_undo_elsewhere":
+      return t`That change can't be undone here because the chat now writes somewhere else.`;
+    case "cant_redo_applied":
+      return t`That change can't be redone here because it was already applied to your manuscript.`;
+    case "cant_redo_discarded":
+      return t`That change can't be redone because you discarded it.`;
+    case "cant_redo_changed":
+      return t`That change can't be redone because the text changed afterwards.`;
+    case "cant_redo_held":
+      return t`That change can't be redone because it is held for review.`;
+    case "cant_redo_elsewhere":
+      return t`That change can't be redone here because the chat now writes somewhere else.`;
+    case "cant_redo_users_undo":
+      return t`That change can't be redone because you undid it.`;
+    case "insufficient_undo":
+      return t`There isn't enough left to undo.`;
+    case "insufficient_redo":
+      return t`There isn't enough left to redo.`;
+    case "nothing_to_revert":
+      return t`There was nothing to revert.`;
+    case "work_archived":
+      return t`That change can't be made because the draft is archived.`;
+    case "permission_denied":
+      return name ? t`${name} can't be changed.` : t`That document can't be changed.`;
     case "partial_failure":
       return name
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
-    case "invalid_write":
+    case "invalid_write": {
+      const reason = rejectionCopy(documentFailureRejected(tool));
+      if (reason) return reason;
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
+    }
     default:
       return name
         ? t`Something went wrong while changing ${name}.`
         : t`Something went wrong while making that change.`;
+  }
+}
+
+/** The host's structured reason a staged write was rejected, when it gave one. */
+function documentFailureRejected(tool: ToolView): string | null {
+  const result = tool.result;
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return null;
+  return asString(result.rejected) ?? null;
+}
+
+function rejectionCopy(rejected: string | null): string | null {
+  switch (rejected) {
+    case "discarded_draft":
+      return t`You discarded this draft, so the change wasn't kept. The AI will read it again.`;
+    case "discarded_document":
+      return t`You discarded this new document, so the change wasn't kept. The AI will read it again.`;
+    case "discarded_edit":
+      return t`You discarded the text it edited, so the change wasn't kept. The AI will read it again.`;
+    case "inverse":
+      return t`The text it edited was undone, so the change wasn't kept. The AI will read it again.`;
+    case "integration":
+      return t`The change didn't fit the current draft. The AI will read it again.`;
+    default:
+      return null;
   }
 }
 

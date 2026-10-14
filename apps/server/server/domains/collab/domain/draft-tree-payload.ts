@@ -128,10 +128,7 @@ export type ApplyNote = DraftApplyNote;
 
 const NotesDetail = z.object({
   notes: z.array(
-    z.discriminatedUnion("code", [
-      z.object({ code: z.literal("rename_replaced"), replacedPath: z.string(), path: z.string() }),
-      z.object({ code: z.literal("restored"), path: z.string() }),
-    ]),
+    z.discriminatedUnion("code", [z.object({ code: z.literal("restored"), path: z.string() })]),
   ),
 });
 

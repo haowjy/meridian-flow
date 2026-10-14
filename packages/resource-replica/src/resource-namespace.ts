@@ -2,6 +2,8 @@
 import { type ParsedContextAuthority, parseContextUri } from "@meridian/contracts/context-uri";
 import {
   type ContextOperationReceipt,
+  type CreateUntitledContextDocumentResponse,
+  type CreateUntitledDestination,
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
@@ -12,6 +14,7 @@ import {
   settleNamespaceIntent,
 } from "./namespace-journal-policy";
 import { committedResourceDeletion } from "./resource-deletion";
+import { followedJoin, pendingJoinTarget } from "./resource-join";
 import type {
   DestinationParentLookup,
   NamespaceAttempt,
@@ -19,6 +22,7 @@ import type {
   NamespaceIntent,
   NamespaceOutcome,
   NamespaceRequest,
+  ResourceDestination,
   ResourceLocation,
   ResourceMetadataStore,
   ResourceNamespaceLock,
@@ -45,7 +49,9 @@ export type NamespaceReconcileResult =
   | "blocked"
   | "progressed"
   | "uncertain"
-  | "needs-repair";
+  | "needs-repair"
+  /** The create was answered `joined`; the app re-identifies the reservation, then reconciles again. */
+  | "needs-join";
 
 export function activeNamespaceIntent(record: {
   intents: readonly NamespaceIntent[];
@@ -114,9 +120,11 @@ function requestFor(
       kind: "create",
       body: {
         documentId: resource.identity.documentId,
-        ...(intent.desired.folderPath
-          ? { folderPath: normalizedPath(intent.desired.folderPath) }
-          : {}),
+        ...(intent.desired.destination
+          ? { destination: createDestination(intent.desired.destination) }
+          : intent.desired.folderPath
+            ? { folderPath: normalizedPath(intent.desired.folderPath) }
+            : {}),
       },
     };
   }
@@ -160,6 +168,17 @@ function requestFor(
       ...owners.body,
       newName: intent.desired.kind === "set-location" ? intent.desired.typedName : destination.name,
     },
+  };
+}
+
+/** The create carries what a move would: the server resolves the parent by identity. */
+function createDestination(destination: ResourceDestination): CreateUntitledDestination {
+  return {
+    parent: {
+      ...destination.parent,
+      ...(destination.createFolders?.length ? { createFolders: destination.createFolders } : {}),
+    },
+    name: destination.name,
   };
 }
 
@@ -241,6 +260,7 @@ export function namespaceOutcomeMatches(
     return (
       outcome.kind === "create" &&
       (outcome.result.status === "conflict" ||
+        outcome.result.status === "joined" ||
         outcome.result.documentId === attempt.request.body.documentId)
     );
   }
@@ -402,9 +422,7 @@ export function recordNamespaceOutcome(
   return { expectedRevision: record.resource.revision, next };
 }
 
-function createLocation(
-  result: Exclude<Extract<NamespaceOutcome, { kind: "create" }>["result"], { status: "conflict" }>,
-): ResourceLocation | null {
+function createLocation(result: CreateUntitledContextDocumentResponse): ResourceLocation | null {
   // The create response names a Work by id alone; a Work-scoped location
   // waits for the catalog observation, which carries the Work's slug.
   if (result.workId) return null;
@@ -420,6 +438,8 @@ function createLocation(
 export function settleNamespaceOutcome(
   record: ResourceRecord,
   settledAt = Date.now(),
+  /** Another record already holds the joined id: the create cannot join and is repaired. */
+  joinTaken = false,
 ): ResourceWrite | null {
   const intent = activeNamespaceIntent(record);
   const attempt = intent?.attempts.at(-1);
@@ -430,8 +450,24 @@ export function settleNamespaceOutcome(
   const identityStillMatches = intent.identityRevision === resource.identity.revision;
   if (resource.lifecycle.kind === "terminal") {
     // Terminal authority supersedes older historical namespace effects.
+  } else if (
+    outcome.kind === "create" &&
+    outcome.result.status === "joined" &&
+    attemptIs(attempt, "create")
+  ) {
+    // Following the join re-identifies the session, which the app brackets; settling only
+    // records that it happened.
+    if (!followedJoin(record, attempt.request.body.documentId, outcome.result.documentId)) {
+      if (!joinTaken) return null;
+      repair = true;
+    }
   } else if (outcome.kind === "create") {
-    if (outcome.result.status === "conflict" || !identityStillMatches) repair = true;
+    if (
+      outcome.result.status === "conflict" ||
+      outcome.result.status === "joined" ||
+      !identityStillMatches
+    )
+      repair = true;
     else {
       if (resource.content.kind !== "exact" || resource.content.initialization === "reserved")
         throw new Error("Created resource content is not initialized");
@@ -601,13 +637,15 @@ function replayEligible(
   intent: NamespaceIntent,
   attempt: NamespaceAttempt,
 ) {
-  if (
-    record.resource.lifecycle.kind === "terminal" ||
-    intent.identityRevision !== record.resource.identity.revision
-  )
-    return false;
+  if (record.resource.lifecycle.kind === "terminal") return false;
+  // A create that followed a join replays under its old id, which the server forwards.
   if (attempt.request.kind === "create")
-    return attempt.request.body.documentId === record.resource.identity.documentId;
+    return (
+      (attempt.request.body.documentId === record.resource.identity.documentId &&
+        intent.identityRevision === record.resource.identity.revision) ||
+      record.resource.aliases[attempt.request.body.documentId] !== undefined
+    );
+  if (intent.identityRevision !== record.resource.identity.revision) return false;
   return sameSource(record.resource.canonical, attempt.request);
 }
 
@@ -641,6 +679,7 @@ export function reconcileResourceNamespace(input: {
     },
     recordOutcome: recordNamespaceOutcome,
     settle: (record: ResourceRecord) => settleNamespaceOutcome(record, input.now?.()),
+    pendingJoin: (record: ResourceRecord) => pendingJoinTarget(record) !== null,
     replayEligible,
     refresh: async (record) => {
       const barrier = record.resource.obligations.canonicalRefresh;
@@ -683,6 +722,8 @@ export async function reconcileNamespaceJournal<
     outcome: NamespaceOutcome,
   ) => Write | null;
   settle: (record: Record) => Write | null;
+  /** A received outcome that only the app can settle (it brackets a session re-identification). */
+  pendingJoin?: (record: Record) => boolean;
   refresh: (record: Record) => Promise<Write | null>;
   replayEligible: (record: Record, intent: NamespaceIntent, attempt: NamespaceAttempt) => boolean;
 }): Promise<NamespaceReconcileResult> {
@@ -716,7 +757,7 @@ export async function reconcileNamespaceJournal<
     }
     if (intent.state === "received") {
       const write = input.settle(record);
-      if (!write) return "idle";
+      if (!write) return input.pendingJoin?.(record) ? "needs-join" : "idle";
       if ((await input.commit(write)) === "stale") continue;
       return write.next.intents.find((item) => item.intentId === intent.intentId)?.state ===
         "needs-repair"

@@ -11,6 +11,7 @@
  * folders are the live ones plus the hidden ones its documents sit under.
  */
 import type { ContextSourceId, DocumentId, DraftId, FolderId, WorkId } from "@meridian/contracts";
+import { folderDocumentName, renderFilename } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { documents, folders } from "@meridian/database/schema";
 import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
@@ -48,8 +49,6 @@ const visibleDocumentShape = pgTable("visible_documents", {
   hidden: boolean("hidden").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
-  /** The draft sets this row's location (always false in the live view). */
-  draftLocated: boolean("draft_located").notNull(),
 });
 
 const visibleFolderShape = pgTable("visible_folders", {
@@ -99,12 +98,8 @@ const folderColumns = sql.raw(
 
 /** The predicate: a document row in the live tree. */
 const liveDocument = sql.raw("d.deleted_at IS NULL AND NOT d.hidden");
-/** A document the draft has a change row for, in the draft's view (PR 3 adds `AND NOT c.deleted`). */
-const draftDocument = sql.raw("d.deleted_at IS NULL AND (NOT d.hidden OR c.created)");
-/** Where the draft has the document: its own location when it sets one, else the row's. */
-const draftFolderId = sql.raw(
-  "CASE WHEN c.context_source_id IS NULL THEN d.folder_id ELSE c.parent_folder_id END",
-);
+/** A hidden document the draft created, in the draft's view (PR 3 adds `AND NOT c.deleted`). */
+const draftDocument = sql.raw("d.deleted_at IS NULL AND d.hidden AND c.created");
 
 /**
  * Lookup positions joined into each branch, so a path question stays bounded by the path
@@ -130,40 +125,24 @@ function at(
 }
 
 const rowLocation = { source: "d.context_source_id", parent: "d.folder_id", name: "d.name" };
-const draftLocation = {
-  source: "c.context_source_id",
-  parent: "c.parent_folder_id",
-  name: "c.name",
-};
 
 /**
- * Live rows D says nothing about, D's rows at D's location, and D's rows that set no
- * location at the row's. The last two are separate branches projecting plain columns, so
- * a path predicate reaches an index on either side.
+ * Live rows, and the hidden documents D created. Both sit at their row's location (a draft's
+ * create is a real hidden row), as separate branches so a path predicate reaches an index.
  */
 function documentsQuery(view: TreeView, match?: SlotMatch): SQL {
   const slots = slotted(match, "key, source_id, parent_id, name, extension");
-  const select = (location: string, located: boolean) =>
-    match
-      ? sql`SELECT p.key, d.id`
-      : sql`SELECT d.id, ${sql.raw(location)}, ${documentTail}, ${sql.raw(String(located))} AS draft_located`;
-  const rowColumns = "d.context_source_id, d.folder_id, d.name, d.extension";
-  const live = sql`${select(rowColumns, false)}
+  const select = match
+    ? sql`SELECT p.key, d.id`
+    : sql`SELECT d.id, d.context_source_id, d.folder_id, d.name, d.extension, ${documentTail}`;
+  const live = sql`${select}
     FROM ${slots}documents d WHERE ${liveDocument}${at(match, rowLocation, "d.extension")}`;
   if (view.kind === "live") return live;
-  const draftId = view.draftId;
-  const draftRows = sql`c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND ${draftDocument}`;
   return sql`${live}
-      AND NOT EXISTS (SELECT 1 FROM draft_tree_changes c
-        WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND c.node_id = d.id)
     UNION ALL
-    ${select("c.context_source_id, c.parent_folder_id, c.name, c.extension", true)}
+    ${select}
     FROM ${slots}draft_tree_changes c JOIN documents d ON d.id = c.node_id
-    WHERE ${draftRows} AND c.context_source_id IS NOT NULL${at(match, draftLocation, "c.extension")}
-    UNION ALL
-    ${select(rowColumns, false)}
-    FROM ${slots}draft_tree_changes c JOIN documents d ON d.id = c.node_id
-    WHERE ${draftRows} AND c.context_source_id IS NULL${at(match, rowLocation, "d.extension")}`;
+    WHERE c.draft_id = ${view.draftId}::uuid AND c.node_kind = 'document' AND ${draftDocument}${at(match, rowLocation, "d.extension")}`;
 }
 
 /**
@@ -175,7 +154,7 @@ function usedHiddenFolderIds(draftId: DraftId): SQL {
     WITH RECURSIVE used(id) AS (
       SELECT placed.folder_id FROM draft_tree_changes c
       CROSS JOIN LATERAL (
-        SELECT ${draftFolderId} AS folder_id FROM documents d
+        SELECT d.folder_id AS folder_id FROM documents d
         WHERE d.id = c.node_id AND ${draftDocument} OFFSET 0
       ) placed
       WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document'
@@ -355,16 +334,8 @@ export async function loadDocumentIdentityRows(
   return rows.map(identityRow);
 }
 
-/** Where a draft has a node: null fields when the draft sets no location. */
-export type DraftLocation = {
-  contextSourceId: ContextSourceId | null;
-  parentFolderId: FolderId | null;
-  name: string | null;
-  extension: string | null;
-};
-
 /** One active draft that created a document, oldest draft first per document. */
-export type DraftUseRow = DraftLocation & {
+export type DraftUseRow = {
   documentId: DocumentId;
   draftId: DraftId;
   originWorkId: WorkId | null;
@@ -381,16 +352,10 @@ export async function loadActiveDraftUses(
     draft_id: string;
     origin_work_id: string | null;
     draft_created_ms: number;
-    context_source_id: string | null;
-    parent_folder_id: string | null;
-    name: string | null;
-    extension: string | null;
   }>(sql`
     SELECT c.node_id::text AS document_id, r.id::text AS draft_id,
       r.origin_work_id::text AS origin_work_id,
-      (extract(epoch FROM r.created_at) * 1000)::float8 AS draft_created_ms,
-      c.context_source_id::text AS context_source_id,
-      c.parent_folder_id::text AS parent_folder_id, c.name, c.extension
+      (extract(epoch FROM r.created_at) * 1000)::float8 AS draft_created_ms
     FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
     WHERE c.node_kind = 'document' AND c.node_id IN (${uuidList(documentIds)})
       AND c.created AND r.status = 'active'
@@ -400,34 +365,17 @@ export async function loadActiveDraftUses(
     draftId: row.draft_id as DraftId,
     originWorkId: row.origin_work_id as WorkId | null,
     draftCreatedAt: new Date(Number(row.draft_created_ms)),
-    contextSourceId: row.context_source_id as ContextSourceId | null,
-    parentFolderId: row.parent_folder_id as FolderId | null,
-    name: row.name,
-    extension: row.extension,
   }));
 }
-
-/** A document the draft created, with the draft's location and the row. */
-export type DraftCreatedRow = { draft: DraftLocation; row: DocumentIdentityRow };
 
 export async function loadDraftCreatedDocuments(
   db: DrizzleDb,
   draftId: DraftId,
   only?: readonly string[],
-): Promise<DraftCreatedRow[]> {
+): Promise<DocumentIdentityRow[]> {
   if (only?.length === 0) return [];
-  const rows = await currentDrizzleDb(db).execute<
-    RawIdentityRow & {
-      c_context_source_id: string | null;
-      c_parent_folder_id: string | null;
-      c_name: string | null;
-      c_extension: string | null;
-    }
-  >(sql`
-    SELECT ${identityColumns},
-      c.context_source_id::text AS c_context_source_id,
-      c.parent_folder_id::text AS c_parent_folder_id,
-      c.name AS c_name, c.extension AS c_extension
+  const rows = await currentDrizzleDb(db).execute<RawIdentityRow>(sql`
+    SELECT ${identityColumns}
     FROM draft_tree_changes c
     CROSS JOIN LATERAL (
       SELECT * FROM documents d WHERE d.id = c.node_id OFFSET 0
@@ -435,15 +383,7 @@ export async function loadDraftCreatedDocuments(
     WHERE c.draft_id = ${draftId}::uuid AND c.node_kind = 'document' AND c.created
       ${only ? sql`AND c.node_id IN (${uuidList(only)})` : sql``}
     ORDER BY c.created_at, c.node_id`);
-  return rows.map((row) => ({
-    row: identityRow(row),
-    draft: {
-      contextSourceId: row.c_context_source_id as ContextSourceId | null,
-      parentFolderId: row.c_parent_folder_id as FolderId | null,
-      name: row.c_name,
-      extension: row.c_extension,
-    },
-  }));
+  return rows.map(identityRow);
 }
 
 /** The `hidden` column of a documents alias, for the address loader's identity rows. */
@@ -572,8 +512,8 @@ const textDocument = sql`d.storage_url IS NULL AND d.file_type NOT IN (${sql.joi
 )})`;
 
 /**
- * Hidden, live text documents at `slot`, oldest first, matched by any active draft's
- * `created` row location or by the row's own location, excluding the documents
+ * Hidden, live text documents at `slot`, oldest first, matched by the row's own location,
+ * excluding the documents
  * `excludeDraftId` already uses (§6.2 step 3). Binaries are never candidates (12b-Q2).
  * `ids` narrows the match to rows already locked, for revalidation under their locks.
  */
@@ -598,14 +538,8 @@ export async function loadHiddenDocumentCandidates(
           AND r.status = 'active') AS active_uses
     FROM documents d
     WHERE d.hidden AND d.deleted_at IS NULL AND ${textDocument}
-      AND (
-        (d.context_source_id = ${slot.contextSourceId}::uuid AND ${sameFolder("d.folder_id")}
-          AND d.name = ${slot.name} AND d.extension = ${slot.extension})
-        OR EXISTS (SELECT 1 FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
-          WHERE c.node_kind = 'document' AND c.node_id = d.id AND c.created
-            AND r.status = 'active' AND c.context_source_id = ${slot.contextSourceId}::uuid
-            AND ${sameFolder("c.parent_folder_id")} AND c.name = ${slot.name}
-            AND c.extension = ${slot.extension}))
+      AND d.context_source_id = ${slot.contextSourceId}::uuid AND ${sameFolder("d.folder_id")}
+      AND d.name = ${slot.name} AND d.extension = ${slot.extension}
       ${
         options.excludeDraftId
           ? sql`AND NOT EXISTS (SELECT 1 FROM draft_tree_changes x
@@ -622,50 +556,27 @@ export async function loadHiddenDocumentCandidates(
   }));
 }
 
-/** A caller-named document's lifecycle facts, for §6.4's authority and identity checks. */
-export type RevealIdentityRow = {
-  id: DocumentId;
-  hidden: boolean;
-  deleted: boolean;
-  /** The row's physical source, never a draft's address for it. */
-  sourceId: ContextSourceId;
-  owner: SourceOwner;
-  /**
-   * Active drafts with a `created` row on it, in any project: only drafts that may hold
-   * the document ever use it, so a caller that may hold it shares their authority.
-   */
-  activeUses: number;
-};
-
-export async function loadRevealIdentityRow(
+/** Filenames the live hidden documents and folders of one folder hold: names no live create takes. */
+export async function loadHiddenFilenames(
   db: DrizzleDb,
-  documentId: DocumentId,
-): Promise<RevealIdentityRow | null> {
-  const [row] = await currentDrizzleDb(db).execute<{
-    hidden: boolean;
-    deleted: boolean;
-    source_id: string;
-    active_uses: number;
-  }>(sql`
-    SELECT d.hidden, d.deleted_at IS NOT NULL AS deleted, d.context_source_id::text AS source_id,
-      (SELECT count(*)::int FROM draft_tree_changes c JOIN drafts r ON r.id = c.draft_id
-        WHERE c.node_kind = 'document' AND c.node_id = d.id AND c.created
-          AND r.status = 'active') AS active_uses
-    FROM documents d
-    WHERE d.id = ${documentId}::uuid`);
-  if (!row) return null;
-  const sourceId = row.source_id as ContextSourceId;
-  const owner = (await loadSourceOwners(db, [sourceId])).get(sourceId);
-  return owner
-    ? {
-        id: documentId,
-        hidden: row.hidden,
-        deleted: row.deleted,
-        sourceId,
-        owner,
-        activeUses: Number(row.active_uses),
-      }
-    : null;
+  contextSourceId: ContextSourceId,
+  folderId: FolderId | null,
+): Promise<string[]> {
+  const inFolder = (column: string) =>
+    folderId === null ? sql.raw(`${column} IS NULL`) : sql`${sql.raw(column)} = ${folderId}::uuid`;
+  const tx = currentDrizzleDb(db);
+  const docs = await tx.execute<{ name: string; extension: string }>(sql`
+    SELECT d.name, d.extension FROM documents d
+    WHERE d.hidden AND d.deleted_at IS NULL AND d.context_source_id = ${contextSourceId}::uuid
+      AND ${inFolder("d.folder_id")}`);
+  const subfolders = await tx.execute<{ name: string }>(sql`
+    SELECT f.name FROM folders f
+    WHERE f.hidden AND f.deleted_at IS NULL AND f.context_source_id = ${contextSourceId}::uuid
+      AND ${inFolder("f.parent_id")}`);
+  return [
+    ...docs.map((row) => renderFilename(row.name, row.extension)),
+    ...subfolders.map((row) => folderDocumentName(row.name)),
+  ];
 }
 
 /** The oldest hidden, live folder at (source, parent, name), else null. */
@@ -720,15 +631,14 @@ export async function loadFolderIdentityRows(
 }
 
 /**
- * Whether a hidden, live folder is unused: nothing live under it (no non-deleted
- * document or folder) and no draft's change row names it as a parent (§12.2 step 5).
+ * Whether a hidden, live folder is unused: nothing live under it, hidden or not (no
+ * non-deleted document or folder), which includes every draft's created documents (§12.2 step 5).
  */
 export async function isUnusedHiddenFolder(db: DrizzleDb, folderId: FolderId): Promise<boolean> {
   const [row] = await currentDrizzleDb(db).execute<{ unused: boolean }>(sql`
     SELECT (f.hidden AND f.deleted_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)
       AND NOT EXISTS (SELECT 1 FROM folders c WHERE c.parent_id = f.id AND c.deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM draft_tree_changes t WHERE t.parent_folder_id = f.id)
     ) AS unused
     FROM folders f WHERE f.id = ${folderId}::uuid`);
   return row?.unused === true;

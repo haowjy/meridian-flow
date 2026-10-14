@@ -507,13 +507,13 @@ export const MeridianOrderedList = OrderedList.extend({
   },
 }).configure({ itemTypeName: "list_item" });
 
-export const MeridianImage = Image.extend<ImageOptions & { projectId?: string }>({
+export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; workId?: string }>({
   marks: "",
 
   addOptions() {
     const parent = this.parent?.();
     if (!parent) throw new Error("MeridianImage requires the base image options");
-    return { ...parent, projectId: undefined };
+    return { ...parent, projectId: undefined, workId: undefined };
   },
 
   addAttributes() {
@@ -642,7 +642,7 @@ export const MeridianJsxContainer = Node.create({
   },
 });
 
-export const MeridianFigure = Node.create<{ projectId?: string }>({
+export const MeridianFigure = Node.create<{ projectId?: string; workId?: string }>({
   name: "figure",
   group: "block",
   atom: true,
@@ -654,6 +654,7 @@ export const MeridianFigure = Node.create<{ projectId?: string }>({
   addOptions() {
     return {
       projectId: undefined,
+      workId: undefined,
     };
   },
 

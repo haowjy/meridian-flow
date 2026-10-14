@@ -5,7 +5,11 @@
  */
 
 import type { ContextSourceId, DocumentId, FolderId, ProjectId } from "@meridian/contracts";
-import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
+import {
+  type DocumentFileType,
+  type Filetype,
+  folderDocumentName,
+} from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documentMarkdownProjections, documents } from "@meridian/database/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -27,7 +31,8 @@ import {
   type UpsertBinaryDocumentInput,
 } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
-import { createLive, findLiveCreateCandidate, findRevealIdentity } from "../../tree/creates.js";
+import { createLive, findLiveCreateCandidate } from "../../tree/creates.js";
+import { findForward, lastLocationOf, recordForward } from "../../tree/forwards.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import type { LiveClaim } from "../../tree/hidden-node-types.js";
 import { insertDocumentRow } from "../../tree/node-rows.js";
@@ -40,6 +45,7 @@ import {
   visibleDocuments,
   visibleFolders,
 } from "../../tree/tree-view.js";
+import { loadHiddenFilenames } from "../../tree/tree-view-sql.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import { hasOppositeContextEntry, lockContextSources } from "./document-locations.js";
 
@@ -155,8 +161,27 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     };
   }
 
-  async findRevealIdentity(documentId: string, projectId: ProjectId) {
-    return findRevealIdentity(this.deps.db, { documentId, projectId });
+  async findForward(fromId: string, projectId: ProjectId) {
+    return findForward(this.deps.db, fromId, projectId);
+  }
+
+  async recordForward(input: { fromId: string; toId: string; projectId: ProjectId }) {
+    await recordForward(this.deps.db, {
+      fromId: input.fromId as DocumentId,
+      toId: input.toId as DocumentId,
+      projectId: input.projectId,
+    });
+  }
+
+  async listHiddenNames(folderId: string | null) {
+    return loadHiddenFilenames(this.deps.db, this.sourceId, folderId as FolderId | null);
+  }
+
+  async findDocumentLastLocation(documentId: string) {
+    const located = await lastLocationOf(this.deps.db, documentId as DocumentId);
+    if (!located || located.contextSourceId !== this.sourceId) return null;
+    const name = located.path.split("/").at(-1) ?? "";
+    return { path: located.path, name, deleted: located.deleted };
   }
 
   async ensureFolderPath(dir: readonly string[]): Promise<string | null> {
@@ -229,6 +254,13 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         return null;
       }
       const outcome = created.value;
+      if (outcome.kind === "revealed" && input.joinFrom) {
+        await recordForward(this.deps.db, {
+          fromId: input.joinFrom.fromId as DocumentId,
+          toId: outcome.documentId,
+          projectId: input.joinFrom.projectId,
+        });
+      }
       if (outcome.kind === "inserted") {
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       } else {

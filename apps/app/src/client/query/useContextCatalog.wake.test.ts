@@ -27,13 +27,17 @@ it("re-reads the project's draft lists once the pulled catalog is installed, and
   const queryClient = new QueryClient();
   const mine = projectQueryKeys.workDrafts("project-a", "work-1");
   const other = projectQueryKeys.workDrafts("project-b", "work-1");
+  const hints = projectQueryKeys.documentDraftHints("project-a", "doc-1");
   queryClient.setQueryData(mine, []);
   queryClient.setQueryData(other, []);
+  queryClient.setQueryData(hints, []);
   const resources = { hintCatalog: vi.fn().mockResolvedValue({ entries: new Map() }) };
 
   pullContextCatalogOnHint(queryClient, resources, "project-a", hint);
   await vi.waitFor(() => expect(queryClient.getQueryState(mine)?.isInvalidated).toBe(true));
   expect(queryClient.getQueryState(other)?.isInvalidated).toBe(false);
+  // A document's draft hints are re-read on the same signal.
+  expect(queryClient.getQueryState(hints)?.isInvalidated).toBe(true);
 });
 
 it("re-reads only the hinted Work's draft list for a Work-scoped hint", async () => {
@@ -75,18 +79,6 @@ it("does not re-read again for a hint whose catalog revision was already handled
   hintCatalog.mockResolvedValue(installed("6"));
   pullContextCatalogOnHint(queryClient, { hintCatalog }, "project-a", workHint("work-1", "6"));
   await vi.waitFor(() => expect(invalidated(queryClient, "work-1")).toBe(true));
-});
-
-it("tracks the handled revision per scope", async () => {
-  const queryClient = new QueryClient();
-  queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-1"), []);
-  queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-2"), []);
-  const resources = { hintCatalog: vi.fn().mockResolvedValue(installed("5")) };
-
-  pullContextCatalogOnHint(queryClient, resources, "project-a", workHint("work-1"));
-  await vi.waitFor(() => expect(invalidated(queryClient, "work-1")).toBe(true));
-  pullContextCatalogOnHint(queryClient, resources, "project-a", workHint("work-2"));
-  await vi.waitFor(() => expect(invalidated(queryClient, "work-2")).toBe(true));
 });
 
 it("still re-reads every Work's list of the project for a project-wide manifest hint, once per revision", async () => {
