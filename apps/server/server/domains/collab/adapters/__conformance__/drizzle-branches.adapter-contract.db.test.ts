@@ -8,7 +8,6 @@ import {
   commitSegmentRows,
   resetBranchFromDoc,
 } from "../../test-support/branch-update-writes.js";
-import { createDrizzleWorkDraftPendingStore } from "../drizzle-branch-push.js";
 import { createDrizzleDocumentDerivationStore } from "../drizzle-document-derivations.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
