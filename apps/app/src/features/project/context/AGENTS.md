@@ -36,6 +36,11 @@ ID from the normalized catalog. `MobileContextBrowser` renders the phone Files
 destination one level at a time (scheme → folder → file), driven by `?scheme=` /
 `?folder=` / `?path=` params.
 
+Imports add rows and marks without touching the replica: both shells render
+`features/import`'s projection over the catalog view (`useImportedCatalog`), and
+`ImportRunMark` on the row its `targetOf` names. Never write import rows into the
+replica or the catalog; see [features/import](../../import/AGENTS.md).
+
 Shared across both shells:
 - **File suggestions** (`file-suggestions/`): reusable client-side flattening,
   ranking, cached multi-scheme query composition, and keyboard-accessible list.

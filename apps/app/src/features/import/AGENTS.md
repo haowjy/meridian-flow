@@ -10,10 +10,12 @@ and the export marker parser come from `@meridian/contracts`; `limits.ts` holds
 only browser scheduling. There is no report page, route or
 status row; a clean finish leaves nothing: the coordinator retires the import
 once its bridges close. A failed file keeps its row warning and
-its in-document notice (`ImportDocumentNotice.tsx`) with Retry. No surface yet
-shows a running or interrupted import; the owner is deciding a single global
-import panel, which will read `coordinator.view` and `display-state.ts` as they are.
-`StopImportDialog` waits for it. The server (`apps/server/server/domains/import`) owns
+its in-document notice (`ImportDocumentNotice.tsx`) with Retry. The tree and the
+phone listing show only the run's own marks (`ImportRunMark`): a spinner while the
+selection is read, and a not-started warning. No surface yet shows sending
+progress, an interrupted import or Stop here: the owner is deciding where one
+global progress popup goes. It will read `coordinator.view` and
+`display-state.ts` as they are. `StopImportDialog` waits for it. The server (`apps/server/server/domains/import`) owns
 planning, allocation, conversion and landing; this feature owns what the browser
 can do about it.
 
@@ -47,6 +49,12 @@ can do about it.
   a render React throws away leaves no subscriber. Every answer after an await is
   fenced by the coordinator's `epoch` (advanced by `dispose`, since `watchOpen`
   revives the same object) and by the import's current record.
+- **Continue resumes by id.** It re-picks the files, checks them against the
+  stored plan (`continue-check.ts`), and installs the match once as a map from
+  server entry id to `File`; every later send and Retry looks files up by entry
+  id and never rematches. A `planning` import is resumed with
+  `POST /imports/:id/resume`, never re-planned. A wanted entry with no held file
+  fails locally on its row.
 - **Commands need a fresh read.** Retry, Continue and resume send only after a
   successful full read (`read` answers true or false; background polls ignore
   it). On failure nothing is sent and recovery state is kept: Retry's rows keep a
@@ -64,12 +72,12 @@ can do about it.
   whose nodes can land in a scheme is skipped, so an unrelated scheme keeps its
   own view. It never writes back.
 - **One store per import** (`ImportStore`) is a passive cache: the full read,
-  `?since=` cuts and this tab's own upload answers merge into one report. It never
-  reads or polls.
+  `?since=` cuts and this tab's own upload answers merge into one import status
+  (`ImportStatus`; the store's fields still say `report`). It never reads or polls.
 - **One display state** (`display-state.ts`) for every surface. Counts come from
   `effectiveCounts`: a file whose send failed here is failed, though the server
   still thinks it is planned.
-- **`wanted` is the send authority.** The report's `entry.wanted` decides what
+- **`wanted` is the send authority.** The status's `entry.wanted` decides what
   this tab sends or counts as left; never re-derive it from entry states (a
   planned/failed filter stranded crashed landings).
 - **Words are the app's.** The server sends codes (`reason-copy.ts`); every

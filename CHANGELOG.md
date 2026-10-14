@@ -8,10 +8,10 @@
 - Save binary API downloads with `./mf api GET <path> --output <file>`.
 - Documents with imported frontmatter show a read-only Properties row under the path, in the Editor and the dock. The model's `copy` carries a document's properties and aliases.
 - Import planning, leased per-file landing, Finish, resumable progress and API probes for folders or loose files.
-- Incremental import versions, open-import summaries naming the destination folder by id, dismissal and unreadable-file reporting (including names Meridian cannot use).
-- Import a folder or files into Manuscript, Knowledge Base or Unfiled from the area headers, folder menus, the phone's `+` menu, or by dropping them on the tree. New rows arrive in the tree at once, picking or dropping starts the import, a failed file keeps a row warning and an in-document notice with Retry or Continue import, a clean finish dismisses itself, and a document whose text has not arrived says so above its page.
+- Incremental import status versions, open-import summaries naming the destination folder by id, resuming an import by id, and unreadable-file reporting (including names Meridian cannot use).
+- Import a folder or files into Manuscript, Knowledge Base or Unfiled from the area headers, folder menus, the phone's `+` menu, or by dropping them on the tree. New rows arrive in the tree at once, picking or dropping starts the import, a refused plan shows on its destination with Try again and Discard, a failed file keeps a row warning and an in-document notice with Retry or Continue import, a clean finish leaves nothing behind, and a document whose text has not arrived says so above its page.
 - Markdown notes import as Meridian documents: frontmatter stored verbatim as properties with derived aliases, wikilinks, embeds and internal Markdown links bound to selected or existing documents by id, and comments, callouts, highlights, tags and footnotes kept as literal text.
-- Exports keep wiki-style callouts (`> [!note]`) and footnotes (`[^1]`, `[^1]:`) unescaped, so an exported vault round-trips them as written.
+- Exports keep wiki-style callouts (`> [!note]`) and footnotes (`[^1]`, `[^1]:`) unescaped, so an exported folder round-trips them as written.
 - Importing a Meridian export folder routes its Manuscript, Knowledge Base and Unfiled folders to their area roots and skips Works.
 
 ### Removed

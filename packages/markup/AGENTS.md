@@ -4,7 +4,7 @@ Composable text ↔ ProseMirror codec package, and the one home of the link
 rules server and client share (holder scope, pass 3, stored-link walks). The
 link rules ship at `@meridian/markup/links` and the Yjs walks at
 `@meridian/markup/stored-links`; keep both out of the root barrel so neither
-pulls in codecs, Yjs or the schema builder. Wiki-style Markdown syntax (wikilinks, embeds, callouts, comments) lives at `@meridian/markup/wikilinks`; import and app
+pulls in codecs, Yjs or the schema builder. Wiki-style Markdown syntax (wikilinks, embeds, `%%` and HTML comments) lives at `@meridian/markup/wikilinks`; import and app
 paste share its scanner. Browser manifests can load the raw-text frontmatter
 splitter alone at `@meridian/markup/frontmatter`. MDX
 is the canonical Meridian wire format; pure markdown is the supported subset. This is a leaf package: it must

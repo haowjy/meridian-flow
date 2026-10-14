@@ -84,7 +84,7 @@ somewhere outside the repository, then:
    `agent-browser upload '[data-import-input="folder"]' <copy>`. The import
    starts with no dialog and the folder appears in the tree, muted until its
    files land, with the area and the new folder expanded.
-3. A clean finish leaves no report, status row or badge. Open
+3. A clean finish leaves no status row, badge or mark. Open
    `Chapters/Chapter 1 - The Gate`: Properties sits under the path bar, aligned
    with the prose, with list values as chips.
 4. Repeat with Files… and with a drop onto a folder row (highlighted "Import

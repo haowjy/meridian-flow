@@ -14,11 +14,11 @@ files move while it streams.
 - Ordinary/model serialization must never use the export codec. The explicit
   collab export read door receives an export scope over the frozen map.
 - The export codec writes wiki-style literals verbatim (wikilinks and
-  embeds, callout markers, footnote references and definitions) so a vault
-  reopens in a note app; everything else that could form a link stays escaped.
+  embeds, callout markers, footnote references and definitions) so the
+  exported folder reopens in a Markdown note app; everything else that could form a link stays escaped.
   Reparsing an export must find exactly the document's links.
 - The visible `meridian-export.json` marker carries `formatVersion`, `areas`,
-  `works`, and the count of internal link occurrences excluded from the vault.
+  `works`, and the count of internal link occurrences excluded from the export.
   Its shape, filename, default area names and the one parser live in
   `packages/contracts/src/export-marker.ts`; import (server and app) reads it
   through that parser.

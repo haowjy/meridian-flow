@@ -14,10 +14,12 @@ persists the complete identity graph before creating anything. Chunks
 track preparation separately from creation: folders and prose/DOCX notes exist
 after planning, while binaries and code documents only have allocated names.
 Chunks process one parent at a time and use the live listing plus the import's
-own uncreated allocations. The same selection resumes by content, independent
-of client numbers/order. A different selection conflicts. `POST .../resume` (no
-body) runs a stored plan's remaining chunks, then the automatic finish, and
-answers the status in any state; it is also what a re-POST of the manifest does.
+own uncreated allocations. `POST .../resume` (no body) runs a stored plan's
+remaining chunks, then the automatic finish, and answers the status in any
+state; Continue uses it. A re-POST of the manifest under the same import id is
+the same resume when its fingerprint matches (Try again after a lost answer)
+and `selection_mismatch` when it does not. The first POST plans, finishes an
+import with nothing to send, and answers the status the same way.
 
 Landing claims use an attempt id and two-minute lease. Conversion and link
 binding happen outside transactions. Content, pending metadata and the landed
@@ -49,7 +51,7 @@ from current locations. Project fallback uses markup's shared wikilink
 ranking, the same one paste uses. Frontmatter is stored verbatim in
 metadata.properties with derived metadata.aliases.
 
-Conversion edits only Markdown destination spans the scanner reports, and
+Conversion edits only the Markdown destination spans the scanner finds, and
 writes every converted destination as a unique placeholder. The binder parses
 that template, so each source link is its own occurrence, and receives the
 target id and written href per occurrence. Refs are assigned before real
@@ -112,7 +114,7 @@ uri and sweep state, so every query filters on a typed column. `spec` is the typ
 `ImportEntryPayload` (the remaining planned node fields plus prependOnRetry). `ImportEntryPatch` is the only mutable surface, split into payload and
 column fields at the repository boundary; a column field is never written to `spec`.
 
-## Reports and activity
+## Status and activity
 
 Failure and skip reasons are the typed codes/params in contracts/imports; there
 are no per-entry findings or finding counts. Raw
@@ -130,17 +132,24 @@ through Context's canonical batch loaders, never a scalar ancestry walk. Each
 entry's wanted flag uses the rule land() claims by; it is the only authority on
 which entries the app sends or counts.
 
-Intake is bounded before work: paths at 4,096 bytes and 64 segments, entries
-plus synthesized folders at 20,000 nodes, manifest bodies at 32 MiB, file
-requests at 50 MiB plus framing (refused while streaming), at most 200 parts,
-four concurrent receives per import (import_busy) and four concurrent landings
+Intake is bounded before work. What the browser and server both enforce is
+`IMPORT_ADMISSION` in contracts (`import-admission.ts`): 10,000 files counting
+unreadable items (`importFileCount`, the one count both sides use), 2 GiB in
+total, 50 MiB per file (larger files are skipped, never sent), 8 MiB of file
+bytes in a multipart request of up to 200 parts, and which paths are omitted or
+skipped (`importPathDisposition`). Server-only limits live in
+`domain/manifest.ts` (`IMPORT_LIMITS`): paths at 4,096 bytes and 64 segments,
+entries plus synthesized folders at 20,000 nodes, manifest bodies at 32 MiB,
+1 MiB of multipart framing (refused while streaming), four concurrent receives
+per import (one admission count, `import_busy`) and four concurrent landings
 per request. Every refusal is an ImportRefusalCode with bounded numeric params.
 
 The imports row cannot also be the progress counter: shared landing fences
 would deadlock on lock upgrades. import_progress sequences publication in a
 before-commit transaction participant, after all entry/content locks. The same
-commit writes entry versions and activity. Repeatable-read report cuts combine
-summary and entries; since returns only changed file entries, not the roots.
+commit writes entry versions and activity. Repeatable-read status cuts combine
+summary and nodes; `?since=` returns the summary, the changed folders and file
+entries, and only the roots whose node changed.
 
 Both long multipart receives and owned landing attempts pulse every 30 seconds.
 An expired attempt cannot renew a replacement's lease. Open summaries list
