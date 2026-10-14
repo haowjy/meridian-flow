@@ -82,7 +82,9 @@ One document, two surfaces, <strong>one consent point</strong>. Everything in
 the system merges automatically (draft-mode AI edits into the draft, live edits
 into the draft) except a single edge: promoting the <span class="draft-word">draft</span>
 into <span class="live-word">live</span>. That edge is
-<span class="gate-word">Apply</span>, and it belongs to the writer. Each chat
+<span class="gate-word">Apply</span>, and it belongs to the writer. Apply is a
+merge: the change lands in live's current text, and anything it replaced is
+reported, never refused. Each chat
 owns its write mode; a chat in auto-apply (direct) mode writes straight to live,
 whatever its Work's default or its sibling chats do.
 </p>
@@ -98,7 +100,7 @@ whatever its Work's default or its sibling chats do.
   <g style="color: var(--live)">
     <rect x="40" y="30" width="280" height="86" rx="10" fill="none" stroke="currentColor" stroke-width="2"/>
     <text x="180" y="62" text-anchor="middle" fill="currentColor" font-size="19" font-weight="700" font-family="sans-serif">Live document</text>
-    <text x="180" y="88" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">canonical Yjs journal · the manuscript</text>
+    <text x="180" y="88" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">canonical Yjs journal, the manuscript</text>
   </g>
   <!-- Writer / other sessions -->
   <text x="470" y="55" fill="var(--muted)" font-size="13" font-family="sans-serif">writer &amp; other sessions</text>
@@ -107,8 +109,8 @@ whatever its Work's default or its sibling chats do.
   <!-- Pull: live -> draft -->
   <g style="color: var(--draft)">
     <line x1="140" y1="116" x2="140" y2="242" stroke="currentColor" stroke-width="2" marker-end="url(#arrA)"/>
-    <text x="152" y="168" fill="currentColor" font-size="13.5" font-weight="600" font-family="sans-serif">continuous pull — automatic</text>
-    <text x="152" y="188" fill="var(--muted)" font-size="12.5" font-family="sans-serif">chunked, attributed with marks,</text>
+    <text x="152" y="168" fill="currentColor" font-size="13.5" font-weight="600" font-family="sans-serif">continuous rebase, automatic</text>
+    <text x="152" y="188" fill="var(--muted)" font-size="12.5" font-family="sans-serif">three-way merge into the draft,</text>
     <text x="152" y="206" fill="var(--muted)" font-size="12.5" font-family="sans-serif">never gated, never refused</text>
   </g>
   <!-- Apply: draft -> live -->
@@ -116,14 +118,14 @@ whatever its Work's default or its sibling chats do.
     <line x1="565" y1="242" x2="565" y2="120" stroke="currentColor" stroke-width="2.4" marker-end="url(#arrA)"/>
     <rect x="500" y="150" width="130" height="56" rx="8" fill="var(--paper)" stroke="currentColor" stroke-width="2"/>
     <text x="565" y="173" text-anchor="middle" fill="currentColor" font-size="15" font-weight="700" font-family="sans-serif">Apply</text>
-    <text x="565" y="193" text-anchor="middle" fill="currentColor" font-size="12" font-family="sans-serif">writer consent · gated</text>
+    <text x="565" y="193" text-anchor="middle" fill="currentColor" font-size="12" font-family="sans-serif">writer consent a merge</text>
     <text x="352" y="132" fill="var(--live)" font-size="12.5" font-family="sans-serif" transform="rotate(0)"> </text>
   </g>
   <!-- Draft -->
   <g style="color: var(--draft)">
     <rect x="40" y="242" width="590" height="86" rx="10" fill="none" stroke="currentColor" stroke-width="2"/>
     <text x="335" y="274" text-anchor="middle" fill="currentColor" font-size="19" font-weight="700" font-family="sans-serif">Work draft (branch)</text>
-    <text x="335" y="300" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">one review branch per (document, Work) · real Y.Doc</text>
+    <text x="335" y="300" text-anchor="middle" fill="var(--muted)" font-size="13" font-family="sans-serif">one text branch per (document, draft) real Y.Doc, with a base</text>
   </g>
   <!-- AI -->
   <text x="200" y="372" fill="var(--muted)" font-size="13" font-family="sans-serif">Draft-mode AI (thread peers) writes here</text>
@@ -138,8 +140,11 @@ the writer's Apply.
 <h2>The two surfaces</h2>
 <p>
 Both surfaces are real Y.Docs mounted by the same editor with an explicit
-<code>EditorMountIdentity</code> — the surface is a construction fact, not a
-prop that drifts.
+<code>EditorMountIdentity</code>: the surface is a construction fact, not a
+prop that drifts. A draft's Y.Doc carries two fragments, the
+<code>prosemirror</code> text the writer and the AI edit and a server-owned
+<code>review_base</code>: live's text as of the last time the draft caught up
+(<code>base_revision</code>). The review is the difference between them.
 </p>
 <div class="scroll">
 <table>
@@ -147,22 +152,22 @@ prop that drifts.
   <tr>
     <td><strong>What it is</strong></td>
     <td>The manuscript. Canonical journal (<code>document_yjs_updates</code>).</td>
-    <td>The proposal. One Work-draft branch per <code>(documentId, workId)</code>.</td>
+    <td>The proposal. One text branch per <code>(documentId, draftId)</code>, shown as a diff against its base.</td>
   </tr>
   <tr>
     <td><strong>Who writes</strong></td>
     <td>The writer and other live sessions, plus the AI of a chat in direct (auto-apply) mode.</td>
-    <td>AI peers of draft-mode chats push every write here; live content pulls in continuously.</td>
+    <td>AI peers of draft-mode chats push every write here; live content rebases in continuously; the writer edits it directly, including local Discard.</td>
   </tr>
   <tr>
     <td><strong>Annotations</strong></td>
-    <td>Peer marks — ephemeral session overlay (<code>markerStore</code>).</td>
-    <td>Inline review decorations from the durable review model.</td>
+    <td>Peer marks, an ephemeral session overlay (<code>markerStore</code>).</td>
+    <td>Changes: the review projection of base against draft (<code>projectReview</code>), one red/green unit each.</td>
   </tr>
   <tr>
     <td><strong>Leaving it</strong></td>
-    <td>—</td>
-    <td>Apply (publish whole branch) or Discard (by discard class).</td>
+    <td></td>
+    <td>Apply (all of an item, or chosen changes), local Discard (a writer edit), item Discard, Discard all.</td>
   </tr>
 </table>
 </div>
@@ -174,108 +179,99 @@ prop that drifts.
       no path to live. A chat in direct mode (<code>aiWriteMode: "direct"</code>)
       routes AI writes to the live core instead (<code>composition.ts</code>).
       Either way there is no per-edit accept, no veto, no sweep negotiation.</li>
-  <li><strong>The draft continuously pulls from live.</strong>
-      <code>branch-pulls.ts</code> (<code>scheduleLivePull</code> /
-      <code>flushLivePull</code>) merges live updates into the draft. Room
-      admission triggers a pull; open rooms receive pull deltas without
-      reconnecting. If another session edits live, the edit shows up in the
-      draft — peer marks riding along.</li>
-  <li><strong>Pulls arrive as chunks, attributed with marks — not cursors.</strong>
-      Yjs presence is room-scoped by design; a cursor for someone editing a
-      different surface would be a ghost. A chunked pull is a unit you can
-      mark with provenance. Keystroke streaming has no boundary to hang a
-      mark on: it reads as haunted text, not collaboration.
-      <em>Live enough to trust, chunked enough to read.</em></li>
-  <li><strong>Merging always succeeds.</strong> CRDTs never refuse a merge —
-      that is the point of them. Rejection is not a Yjs concept; it exists
-      only at the one application-layer edge below.</li>
+  <li><strong>The draft continuously rebases onto live.</strong>
+      <code>branch-pulls.ts</code> schedules the catch-up and
+      <code>draft-rebase.ts</code> performs it: a three-way content merge of base,
+      live and draft, so the writer's and the AI's pending edits survive a live
+      edit and the base advances to live. Room admission awaits one before
+      frames are admitted; open rooms receive the delta without reconnecting.</li>
+  <li><strong>Discard is the writer's edit.</strong> Discarding a change, a draft
+      or a Work row sets the text back to the base inside the room, under the
+      editor's own origin. It sends no command and closes nothing; Ctrl+Z
+      restores it. A reply still writing into text the writer discarded merges
+      like any peer, and both the writer and the model are told which words
+      landed in discarded text.</li>
+  <li><strong>Merging always succeeds.</strong> CRDTs never refuse a merge,
+      that is the point of them. Rejection is not a Yjs concept; the one
+      application-layer edge is below, and it reports instead of refusing.</li>
 </ul>
 
 <h2>The one consent point: Apply</h2>
 <p>
 <span class="gate-word">Apply is consent.</span> Clicking it means the writer
-accepted that each selected item's <em>whole</em> current branch, including
-writer edits made after preview, replaces live, with its tree change (reveal,
-restore, rename back). Within an item there is no partial apply and no machine
-arbitration of meaning; an item whose path is taken is held. Proposal cards offer selective
-<em>Discard</em> only, grouped by server-vended discard class.
+accepted that the change (or every change of the item) merges into live. The
+request carries a snapshot of the room frame the writer acted on, so Apply
+applies what the writer saw, not words typed since. The server merges the
+change into live's <em>current</em> text, moves it into the base, and reports
+the live text it replaced as <code>overrode</code>: one dismissible notice,
+never a gate. A tree change rides along: a hidden create is revealed, a
+live-deleted document restored, and an item whose path is taken is held.
 </p>
 <p>
 The writer's protection is not a veto layer. It is two things:
 </p>
 <ol>
-  <li><strong>Seeing what Apply will do</strong> — the review surface, and a
-      planned live-vs-draft diff mode
-      (<a href="https://github.com/haowjy/meridian-flow/issues/421">#421</a>).</li>
-  <li><strong>Refusing a stale Apply</strong> (below).</li>
+  <li><strong>Seeing what Apply will do</strong>: the review surface shows each
+      change as a diff against the base the writer's live text produced.</li>
+  <li><strong>Being told what it replaced</strong>, and Ctrl+Z, because Apply is
+      itself a live edit.</li>
 </ol>
-
 <p>
-A stale Apply is refused, never merged on the writer's behalf. Each item
-carries the tokens its review rendered (location version, the live text's
-full-state fingerprint, the branch generation); Apply compares them under the
-batch's locks and answers <code>stale</code> when any moved, so the writer
-looks again. A deletion moves the fingerprint, which a state vector would miss.
-Pulls (live to draft) are never gated.
-(<code>domain/draft-publication.ts</code>, <code>adapters/drizzle-draft-tree-step.ts</code>)
+Live text moving never refuses an Apply. Only a live rename, move or reveal
+between the list and the click answers <code>stale</code>, because the
+item's location token is the one freshness check left; the review refreshes
+and the writer looks again. After Apply the applied change is part of the
+base, so the item lists only if the draft still differs from it; an edited
+item whose changes are all applied simply has no changes left, and its room
+stays.
+(<code>domain/draft-publication.ts</code>, <code>domain/draft-apply.ts</code>)
 </p>
 
 <h2>The durable record</h2>
 <ul class="rule-list">
   <li><strong>Change trails are the sole durable publication record.</strong>
-      Settlement keeps exact authored rows plus a canonical reconciliation
-      row, so cold replay matches the live merge.</li>
-  <li><strong>A completed turn rests as one compact receipt.</strong>
-      Expansion shows every trail change in ordinal order with Before/After.
-      Receipt-level Undo/Redo is the sole AI reversal authority; mark
-      popovers are read-only evidence.</li>
+      Settlement keeps a canonical reconciliation row, so cold replay matches
+      the live merge.</li>
+  <li><strong>The model's recovery is revert.</strong> It writes into the thread's
+      current destination as an ordinary pending change the writer applies,
+      and a failed reply rolls back. Mark popovers are read-only evidence.</li>
   <li><strong>Runtime state is memory-only.</strong> Restarts cold-reconstruct
-      from the live journal plus branch state/journal rows.</li>
+      from the live journal plus branch state and journal rows.</li>
 </ul>
 
-<h2>What this model replaced</h2>
-<details>
-<summary>Deleted machinery, and why</summary>
+<h2>Deliberately absent</h2>
 <ul class="rule-list">
-  <li><strong>The conflict veto</strong> — could refuse a valid Yjs merge.
-      Refusing merges is anti-CRDT; consent moved to the Apply edge instead.</li>
-  <li><strong>Durable <code>writerImpact</code> classification</strong> —
-      duplicated live-mark meaning; a second source of truth for the same
-      fact.</li>
-  <li><strong>Popover Restore</strong> — a second reversal authority
-      competing with receipt Undo.</li>
-  <li><strong>Publish-time rebase</strong> — rejected on product grounds: it
-      would have the machine arbitrate meaning. Preserved as a rejected
-      alternative in the work archive
-      (<code>archive/work/draft-simplify/design/publish-time-rebase.md</code>).</li>
-  <li><strong>Per-edit accept surfaces and sweep fan-out</strong> — made
-      routine edits feel exceptional; consent belongs at one edge, not
-      smeared across every change.</li>
+  <li><strong>A conflict veto.</strong> Refusing a valid Yjs merge is anti-CRDT.
+      Consent sits at the Apply edge, and the edge reports.</li>
+  <li><strong>Publish-time arbitration of meaning.</strong> The server never
+      picks between the writer's words and live's; Yjs merges and the
+      notice reports (rejected alternative in the work archive,
+      <code>archive/work/draft-simplify/design/publish-time-rebase.md</code>).</li>
+  <li><strong>Per-edit accept surfaces.</strong> Routine edits are not
+      exceptional; consent belongs at one edge, not smeared across every change.</li>
 </ul>
 <p class="muted">
 The recurring disease was two sources of truth for one fact; the recurring
 cure was one mechanism, enforced by types and keys rather than prose.
 </p>
-</details>
 
 <h2>Boundaries that must hold</h2>
 <div class="scroll">
 <table>
   <tr><th>Edge</th><th>Rule</th></tr>
   <tr><td>live → draft</td><td><strong>Never gated.</strong> Continuous, automatic, always merges.</td></tr>
-  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion. The stale-Apply guard (#420) is not built yet.</td></tr>
+  <tr><td>draft → live</td><td><strong>Only via Apply.</strong> The single consent-bearing promotion, a merge that reports what it replaced.</td></tr>
   <tr><td>AI → live</td><td><strong>Direct mode only.</strong> A draft-mode chat's AI writes to its Work's branch, always. The mode is the chat's, never the Work's.</td></tr>
+  <tr><td>Discard</td><td><strong>Local Discard is a writer edit.</strong> Only whole-item items and Discard all send commands, and only they close branches.</td></tr>
   <tr><td>Presence</td><td><strong>Room-scoped.</strong> No cross-surface cursors; cross-surface provenance uses marks.</td></tr>
 </table>
 </div>
 
 <h2>Further reading</h2>
 <ul>
-  <li><a href="CONTEXT.md">CONTEXT.md</a> — contracts, authority head, write codec, branch model in depth</li>
-  <li><a href="../AGENTS.md">collab AGENTS.md</a> — the working mental model for this domain</li>
-  <li><a href="https://github.com/haowjy/meridian-flow/issues/420">#420 refuse stale Apply (not built)</a> ·
-      <a href="https://github.com/haowjy/meridian-flow/issues/421">#421 diff mode</a> ·
-      <a href="https://github.com/haowjy/meridian-flow/issues/422">#422 one mark vocabulary</a></li>
+  <li><a href="CONTEXT.md">CONTEXT.md</a>: contracts, authority head, write codec, branch model in depth</li>
+  <li><a href="../AGENTS.md">collab AGENTS.md</a>: the working mental model for this domain</li>
+  <li><a href="https://github.com/haowjy/meridian-flow/issues/422">#422 one mark vocabulary</a></li>
 </ul>
 
 </main>
