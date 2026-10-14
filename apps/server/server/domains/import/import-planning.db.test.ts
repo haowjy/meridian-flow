@@ -289,11 +289,9 @@ describe.skipIf(!importDbEnabled)("import planning (postgres)", () => {
     }
     const report = await planning;
     expect(report.state).toBe("ready");
-    expect(
-      report.entries
-        .filter((entry) => entry.path.startsWith("Chapters/"))
-        .every((entry) => entry.uri?.startsWith("manuscript://Book/")),
-    ).toBe(true);
+    // The planned addresses stay; the moved chapters live under their new area.
+    const chapters = report.entries.filter((entry) => entry.path.startsWith("Chapters/"));
+    expect((await ok(context().list("manuscript://Book/"))).entries).toHaveLength(chapters.length);
     expect(
       report.entries
         .filter((entry) => entry.path.startsWith("Lore/"))

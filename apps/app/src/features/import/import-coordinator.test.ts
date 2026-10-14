@@ -173,8 +173,7 @@ function serverReport(): ImportStatus {
     },
     lastActivityAt: "2000-01-01T00:00:00.000Z",
     version: "1",
-    dismissedAt: null,
-    roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null, uri: null }],
+    roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null }],
     folders: [],
     entries: [],
   };
@@ -501,13 +500,11 @@ function binary(entryId: number, state: ImportEntryStatus["state"]): ImportEntry
     documentId: `m${entryId}`,
     kind: "binary",
     state,
-    uri: null,
     parentId: "art",
     scheme: "kb",
     name: `m${entryId}`,
     extension: "png",
     reason: state === "failed" ? "upload_failed" : null,
-    exists: true,
     wanted: state === "planned" || state === "failed",
   };
 }
@@ -535,8 +532,7 @@ function elsewhere(
     },
     lastActivityAt: "2000-01-01T00:00:00.000Z",
     version: String(version),
-    dismissedAt: null,
-    roots: [{ rootId: 0, kind: "folder", name: "Art", id: "art", uri: null }],
+    roots: [{ rootId: 0, kind: "folder", name: "Art", id: "art" }],
     folders: [{ id: "art", parentId: null, scheme: "kb", name: "Art", state: "landed" }],
     entries,
   };

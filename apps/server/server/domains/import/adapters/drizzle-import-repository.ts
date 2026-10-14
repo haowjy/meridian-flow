@@ -212,7 +212,6 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
                 ...planned,
                 prepared: false,
                 prependOnRetry: false,
-                exists: false,
               } satisfies ImportEntryPayload,
               state,
             })),
@@ -265,10 +264,6 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         return Promise.all(rows.map((row) => summary(record(row))));
       }),
     async touch(id) {
-      changed(id);
-    },
-    async dismiss(id) {
-      await tx().update(imports).set({ dismissedAt: new Date() }).where(eq(imports.id, id));
       changed(id);
     },
     async fileEntry(importId, entryId) {

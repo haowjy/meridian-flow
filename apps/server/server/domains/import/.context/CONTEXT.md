@@ -106,7 +106,7 @@ only the allocation seen at preparation.
 
 `import_entries` has one owner per field. Columns own identity, order, version,
 state, created, lease, storage, uri and sweep state; `spec` is the typed
-`ImportEntryPayload` (the planned node plus prepared, prependOnRetry and exists). `ImportEntryPatch` is the only mutable surface, split into payload and
+`ImportEntryPayload` (the planned node plus prepared and prependOnRetry). `ImportEntryPatch` is the only mutable surface, split into payload and
 column fields at the repository boundary; a column field is never written to `spec`.
 
 ## Reports and activity
@@ -120,11 +120,10 @@ reported rather than refusing the selection); only bounds, empty, dot and
 control-character segments are checked.
 
 The status (`ImportStatus`) carries the plan's folders and each entry's planned
-parent, scheme, stored allocated name and extension. Statuses first observe created entries' live address and presence and publish
-any drift as ordinary entry changes, so every report field comes from one
-versioned cut and since never misses a move or delete. Rows a landing commit
-holds are skipped (SKIP LOCKED) and compared again next time. Addresses come
-from Context's canonical batch loaders, never a scalar ancestry walk. Each
+parent, scheme, stored allocated name and extension. The status carries no address and no
+presence: `import_entries.uri` is the internal planned address (link ranking and the
+fallback ahead href) and never goes on the wire; hrefs follow live locations
+through Context's canonical batch loaders, never a scalar ancestry walk. Each
 entry's wanted flag uses the rule land() claims by; it is the only authority on
 which entries the app sends or counts.
 
@@ -144,7 +143,7 @@ Both long multipart receives and owned landing attempts pulse every 30 seconds.
 An expired attempt cannot renew a replacement's lease. Open summaries list
 unfinished imports only (a finished one is read by id); each names its
 destination folder by id (null at an area root), which survives a rename where
-the URI does not. Dismissal is finished-only and never deletes documents. Version values are decimal strings.
+the URI does not. A finished import simply leaves the open list. Version values are decimal strings.
 
 Catalog pending-flag clearing uses Context's exact-file reconciliation. It
 reserves publication ordering without changing namespace observations for

@@ -10,6 +10,7 @@ import {
   contentDocumentPredicate,
   contextSources,
   documents,
+  importEntries,
   projects,
   users,
   works,
@@ -264,6 +265,14 @@ export function useImportDb() {
         ),
       );
   }
+  /** The internal planned address of an import entry; the wire status does not carry it. */
+  async function plannedUri(documentId: string) {
+    const [row] = await db
+      .select({ uri: importEntries.uri })
+      .from(importEntries)
+      .where(eq(importEntries.id, documentId));
+    return row?.uri ?? null;
+  }
   async function _ok<T>(result: Promise<{ ok: true; value: T } | { ok: false; error: unknown }>) {
     const value = await result;
     if (!value.ok) throw new Error(JSON.stringify(value.error));
@@ -276,6 +285,7 @@ export function useImportDb() {
     ports,
     context,
     projectDocuments,
+    plannedUri,
     ok: _ok,
     current: () => ({ app, projectId, userId }),
   };

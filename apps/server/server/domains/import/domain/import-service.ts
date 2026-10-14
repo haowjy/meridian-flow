@@ -88,46 +88,7 @@ export function createImportService(deps: {
       counts: cut.counts,
       lastActivityAt: cut.lastActivityAt,
       version: cut.version,
-      dismissedAt: record.dismissedAt?.toISOString() ?? null,
     };
-  }
-  /**
-   * Publish created entries' live identity into the import's versioned cut. A move or
-   * delete becomes an ordinary entry change, so `since` cuts cannot miss it. Rows a
-   * landing commit holds are skipped: that commit publishes them, and the next
-   * observation compares again.
-   */
-  async function observe(id: string, projectId: string, entries: readonly ImportEntry[]) {
-    const observed = entries.filter(
-      (entry) => entry.created && (entry.entryId !== null || entry.path === ""),
-    );
-    if (!observed.length) return;
-    const live = await tree.currentUris({
-      files: observed.filter((entry) => entry.kind !== "folder").map((entry) => entry.id),
-      folders: observed.filter((entry) => entry.kind === "folder").map((entry) => entry.id),
-    });
-    const drifted = (entry: ImportEntry) => {
-      const uri = live.get(entry.id);
-      return uri === undefined ? entry.exists : !entry.exists || uri !== entry.uri;
-    };
-    const candidates = observed.filter(drifted);
-    if (!candidates.length) return;
-    await repo.transaction(async () => {
-      if (!(await repo.fence(id, projectId))) return;
-      const locked = await repo.lockEntries(
-        candidates.map((entry) => entry.id),
-        { skipLocked: true },
-      );
-      await repo.updateEntries(
-        locked.filter(drifted).map((entry) => {
-          const uri = live.get(entry.id);
-          return {
-            id: entry.id,
-            patch: uri === undefined ? { exists: false } : { exists: true, uri },
-          };
-        }),
-      );
-    });
   }
   async function status(id: string, projectId: string): Promise<ImportStatus>;
   async function status(id: string, projectId: string, since: string): Promise<ImportStatusChanges>;
@@ -136,7 +97,6 @@ export function createImportService(deps: {
     projectId: string,
     since?: string,
   ): Promise<ImportStatus | ImportStatusChanges> {
-    await observe(id, projectId, await repo.entries(id));
     const cut = await repo.snapshot(id, projectId, since);
     if (!cut) throw new ImportError(404, "import_not_found");
     const { record, entries } = cut;
@@ -169,14 +129,12 @@ export function createImportService(deps: {
           kind: root.kind,
           name: root.name,
           id: node?.id ?? null,
-          uri: node?.uri ?? null,
         },
       ];
     });
     return { ...summary(cut), roots, folders, entries: reportedEntries };
   }
   function entryStatus(entry: ImportEntry, scheme: ImportScheme) {
-    const exists = entry.created && entry.exists;
     return {
       entryId: entry.entryId as number,
       rootId: entry.rootId,
@@ -187,12 +145,10 @@ export function createImportService(deps: {
       documentId: entry.id,
       kind: entry.kind as "note" | "docx" | "code" | "binary",
       state: entry.state,
-      uri: entry.uri,
       parentId: entry.parentId,
       scheme,
       name: entry.name,
       extension: entry.extension,
-      exists,
       wanted: wantsBytes(entry, now()),
       reason: entry.reason,
       ...(entry.reasonParams ? { reasonParams: entry.reasonParams } : {}),
@@ -201,9 +157,7 @@ export function createImportService(deps: {
   async function entryOutcome(id: string, projectId: string, entryId: number) {
     const entry = await repo.fileEntry(id, entryId);
     if (!entry) throw new ImportError(404, "entry_not_found");
-    await observe(id, projectId, [entry]);
-    const current = (await repo.fileEntry(id, entryId)) ?? entry;
-    return entryStatus(current, schemeOf(await requireImport(id, projectId), current));
+    return entryStatus(entry, schemeOf(await requireImport(id, projectId), entry));
   }
   /** Ready admission is its own exclusive transition: a shared fence never upgrades. */
   async function admitReady(record: ImportRecord) {
@@ -269,7 +223,6 @@ export function createImportService(deps: {
                 uri: entry.uri,
                 prepared: true,
                 created: creates(entry),
-                exists: creates(entry),
               },
             })),
           );
@@ -531,8 +484,6 @@ export function createImportService(deps: {
           await repo.updateEntry(entry.id, {
             state: "landed",
             reason: null,
-            uri: await tree.currentUri(entry.id, "file"),
-            exists: true,
           });
         } else if (!parent) {
           await repo.updateEntry(entry.id, {
@@ -546,7 +497,6 @@ export function createImportService(deps: {
             ...allocated,
             state: "landed",
             created: true,
-            exists: true,
             reason: null,
           });
         }
@@ -627,15 +577,6 @@ export function createImportService(deps: {
     },
     async listOpen(projectId: string) {
       return (await repo.listOpen(projectId)).map(summary);
-    },
-    async dismiss(id: string, projectId: string) {
-      await repo.transaction(async () => {
-        const record = await repo.fence(id, projectId, true);
-        if (!record) throw new ImportError(404, "import_not_found");
-        if (record.state !== "finished") throw new ImportError(409, "import_not_finished");
-        if (!record.dismissedAt) await repo.dismiss(id);
-      });
-      return status(id, projectId);
     },
     finish: (id: string, projectId: string) => finish(id, projectId),
     /** Runs the stored plan's remaining chunks, then the automatic finish, in any state. */

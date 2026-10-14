@@ -16,7 +16,7 @@ import { createImportService } from "./domain/import-service.js";
 
 describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
   const fx = useImportDb();
-  const { db, ports, context, projectDocuments, ok } = fx;
+  const { db, ports, context, projectDocuments, plannedUri, ok } = fx;
   let projectId: string, userId: string;
   beforeEach(() => {
     ({ projectId, userId } = fx.current());
@@ -178,15 +178,17 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       expect.objectContaining({ state: "skipped" }),
     ]);
     // D16: the note counts up beside the folder spelled like it.
-    expect(byPath("Lore.markdown").uri).toBe("kb://notes-folder-edge/Lore (2)");
+    expect(await plannedUri(byPath("Lore.markdown").documentId)).toBe(
+      "kb://notes-folder-edge/Lore (2)",
+    );
     // D17: a PDF under a prose name lands with its registered extension.
-    expect(byPath("scan.txt")).toMatchObject({
-      kind: "binary",
-      uri: "kb://notes-folder-edge/scan.pdf",
-    });
+    expect(byPath("scan.txt")).toMatchObject({ kind: "binary" });
+    expect(await plannedUri(byPath("scan.txt").documentId)).toBe("kb://notes-folder-edge/scan.pdf");
     // The shared registry types `.toml` as plain text, not code; either way it is not converted.
     expect(byPath("config.toml")).toMatchObject({ state: "landed" });
-    expect(await read(byPath("config.toml").uri ?? "")).toBe('title = "\\[\\[literal]]"\n');
+    expect(await read((await plannedUri(byPath("config.toml").documentId)) ?? "")).toBe(
+      'title = "\\[\\[literal]]"\n',
+    );
   });
   it("stores verbatim properties and binds a selected note by id after move and address capture", async () => {
     const selection = loose({
@@ -271,7 +273,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     await competitorAtPlannedPicture();
     const result = await service.land(projectId, plan.importId, 1, selection.bytes[1]);
     expect(result.state).toBe("landed");
-    expect(result.uri).toBe("kb://vault/attachments/map (2).png");
+    expect(await plannedUri(result.documentId)).toBe("kb://vault/attachments/map (2).png");
     expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
       "attachments/map (2).png",
     );
@@ -289,7 +291,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       }),
     );
     const code = await service.land(projectId, plan.importId, 1, selection.bytes[1]);
-    expect(code.uri).toBe("kb://tool (2).py");
+    expect(await plannedUri(code.documentId)).toBe("kb://tool (2).py");
     expect((await ok(context().read("kb://Holder"))).content).toContain("tool (2).py");
   });
   it("Finish releases a link awaiting a file that was never imported to its address's occupant", async () => {
@@ -337,7 +339,7 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       "landed",
     );
     const picture = await service.land(projectId, plan.importId, 1, selection.bytes[1]);
-    expect(picture.uri).toBe("kb://vault/attachments/map (2).png");
+    expect(await plannedUri(picture.documentId)).toBe("kb://vault/attachments/map (2).png");
     expect((await ok(context().read("kb://vault/Chapter"))).content).toContain(
       "kb://vault/attachments/map (2).png",
     );
@@ -357,9 +359,11 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     const holder = service.land(projectId, plan.importId, 0, selection.bytes[0]);
     await gate.arrived;
     try {
-      expect((await service.land(projectId, plan.importId, 1, selection.bytes[1])).uri).toBe(
-        "kb://vault/attachments/map (2).png",
-      );
+      expect(
+        await plannedUri(
+          (await service.land(projectId, plan.importId, 1, selection.bytes[1])).documentId,
+        ),
+      ).toBe("kb://vault/attachments/map (2).png");
     } finally {
       gate.release();
     }
@@ -400,9 +404,11 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     expect((await service.land(projectId, plan.importId, 0, selection.bytes[0])).state).toBe(
       "landed",
     );
-    expect((await service.land(projectId, plan.importId, 1, selection.bytes[1])).uri).toBe(
-      "kb://vault/attachments/map (2).png",
-    );
+    expect(
+      await plannedUri(
+        (await service.land(projectId, plan.importId, 1, selection.bytes[1])).documentId,
+      ),
+    ).toBe("kb://vault/attachments/map (2).png");
     const content = (await ok(context().read("kb://vault/Chapter"))).content;
     // The converted link follows the planned picture; the hand-written one names the file there.
     expect(content).toContain("map (2).png");
@@ -445,9 +451,15 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
       state: "skipped",
       reason: "export_works",
     });
-    expect(plan.entries.find((entry) => entry.entryId === 0)?.uri).toBe("manuscript://Chapter");
-    expect(plan.entries.find((entry) => entry.entryId === 1)?.uri).toBe("kb://Lore/Sects");
-    expect(plan.entries.find((entry) => entry.entryId === 2)?.uri).toBe("unfiled://Notes");
+    expect(
+      await plannedUri(plan.entries.find((entry) => entry.entryId === 0)?.documentId ?? ""),
+    ).toBe("manuscript://Chapter");
+    expect(
+      await plannedUri(plan.entries.find((entry) => entry.entryId === 1)?.documentId ?? ""),
+    ).toBe("kb://Lore/Sects");
+    expect(
+      await plannedUri(plan.entries.find((entry) => entry.entryId === 2)?.documentId ?? ""),
+    ).toBe("unfiled://Notes");
     for (const entry of plan.entries.filter((entry) => entry.state === "planned"))
       expect(
         (
@@ -534,9 +546,9 @@ describe.skipIf(!importDbEnabled)("import conversion (postgres)", () => {
     const selectedLin = second.find((entry) => entry.filename === "Lin Feng.md");
     expect(selectedLin?.documentId).not.toBe(lin.documentId);
     const secondChapter = second.find((entry) => entry.filename === "Chapter 1 - The Gate.md");
-    expect((await ok(context().read(secondChapter?.uri ?? ""))).content).toContain(
-      `[the protagonist](<${selectedLin?.name}>)`,
-    );
+    expect(
+      (await ok(context().read((await plannedUri(secondChapter?.documentId ?? "")) ?? ""))).content,
+    ).toContain(`[the protagonist](<${selectedLin?.name}>)`);
     // Path-qualified ranking: the exact path at another area's root before a deeper suffix.
     await ok(context().createTrackedDocument("kb://Lore/Sects", "Sects", human));
     await ok(context().createTrackedDocument("manuscript://Archive/Lore/Sects", "Old", human));

@@ -13,10 +13,8 @@ const planned: ImportEntryStatus = {
   documentId: "doc-0",
   kind: "note",
   state: "planned",
-  uri: "kb://Ch 1",
   name: "Ch 1",
   reason: null,
-  exists: true,
   parentId: null,
   scheme: "kb",
   extension: "",
@@ -41,21 +39,20 @@ function summary(version: string, state: ImportSummary["state"] = "ready"): Impo
     },
     lastActivityAt: "2026-10-12T00:00:00.000Z",
     version,
-    dismissedAt: null,
   };
 }
 
 function report(version: string, entries: ImportEntryStatus[]): ImportStatus {
   return {
     ...summary(version),
-    roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null, uri: null }],
+    roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null }],
     folders: [],
     entries,
   };
 }
 
 describe("ImportStore", () => {
-  it("applies a cut on top of a full read and follows a moved root", () => {
+  it("applies a cut on top of a full read and adopts a root's new id", () => {
     const store = new ImportStore("p", "import-1");
     store.installReport(report("1", [planned]));
     store.seedSummary(summary("2", "finished"));
@@ -64,14 +61,14 @@ describe("ImportStore", () => {
 
     store.applyChanges({
       ...summary("2", "finished"),
-      roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0", uri: "kb://Moved/Ch 1" }],
+      roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: "doc-0" }],
       folders: [],
       entries: [landed],
     });
 
     expect(store.getSnapshot().report?.cursor).toBe("2");
     expect(store.getSnapshot().report?.entries.get(0)?.state).toBe("landed");
-    expect(store.getSnapshot().report?.roots[0]?.uri).toBe("kb://Moved/Ch 1");
+    expect(store.getSnapshot().report?.roots[0]?.id).toBe("doc-0");
   });
 
   it("never lets an older answer replace a newer one", () => {

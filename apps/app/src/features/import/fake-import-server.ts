@@ -41,12 +41,10 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
     counts: counts(),
     lastActivityAt: new Date().toISOString(),
     version: String(version),
-    dismissedAt: null,
     folders: [...folders.values()],
     roots: (manifest?.roots ?? []).map((root) => ({
       ...root,
       id: folders.get(rootFolderId(root.rootId))?.id ?? null,
-      uri: null,
     })),
     entries: [...entries.values()],
   });
@@ -98,13 +96,11 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
           documentId: await idOf("entry", entry.rootId, entry.path),
           kind: extension === "md" ? "note" : "binary",
           state: "planned",
-          uri: null,
           parentId,
           scheme: "kb",
           name: dot > 0 ? filename.slice(0, dot) : filename,
           extension,
           reason: null,
-          exists: true,
           wanted: true,
         });
       }

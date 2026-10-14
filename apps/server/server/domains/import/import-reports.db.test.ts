@@ -29,7 +29,7 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       ),
     ).toMatchObject({ importPending: false });
   });
-  it("codes, summaries, incremental cuts, unreadable paths and dismissal are durable", async () => {
+  it("codes, summaries, incremental cuts, unreadable paths are durable", async () => {
     const selection = loose({ "First.md": "First", "Second.md": "Second" });
     selection.manifest.roots.push({ rootId: 2, kind: "file", name: "Missing.md" });
     selection.manifest.unreadable = [{ rootId: 2, path: "", reason: "permission_denied" }];
@@ -42,16 +42,14 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
     expect(plan.entries.find((entry) => entry.entryId < 0)).toMatchObject({
       reason: "unreadable",
       reasonParams: { readReason: "permission_denied" },
-      exists: false,
     });
     expect(
       plan.entries
         .filter((entry) => entry.entryId >= 0)
-        .every((entry) => entry.exists && entry.size > 0 && entry.sha256.length === 64),
+        .every((entry) => entry.size > 0 && entry.sha256.length === 64),
     ).toBe(true);
     expect((await service.status(plan.importId, projectId, plan.version)).entries).toEqual([]);
     expect(await service.listOpen(projectId)).toHaveLength(1);
-    await expect(service.dismiss(plan.importId, projectId)).rejects.toThrow("import_not_finished");
     expect(await service.land(projectId, plan.importId, 0, Buffer.from("Changed"))).toMatchObject({
       reason: "changed_since_chosen",
       state: "failed",
@@ -66,10 +64,6 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
     const finished = await service.finish(plan.importId, projectId);
     expect(finished?.counts).toMatchObject({ notImported: 2, skipped: 1 });
     // The open list is nonterminal imports only: a finished one is read by id.
-    expect(await service.listOpen(projectId)).toEqual([]);
-    const dismissed = await service.dismiss(plan.importId, projectId);
-    expect(dismissed.dismissedAt).not.toBeNull();
-    expect(BigInt(dismissed.version)).toBeGreaterThan(BigInt(finished?.version ?? "0"));
     expect(await service.listOpen(projectId)).toEqual([]);
     expect(await projectDocuments()).toHaveLength(2);
   });
@@ -106,55 +100,10 @@ describe.skipIf(!importDbEnabled)("import reports (postgres)", () => {
       filename: "Who?.md",
       state: "skipped",
       reason: "unreadable",
-      exists: false,
     });
     expect(await service.land(projectId, plan.importId, 0, book.bytes[0])).toMatchObject({
       state: "landed",
     });
-  });
-  it("incremental reports publish moves and deletes of landed documents", async () => {
-    const selection = loose({ "A.md": "hello" }),
-      service = createImportService(ports()),
-      plan = await service.plan(projectId, userId, selection.manifest);
-    await service.land(projectId, plan.importId, 0, selection.bytes[0]);
-    const landed = await service.status(plan.importId, projectId);
-    expect((await service.status(plan.importId, projectId, landed.version)).entries).toEqual([]);
-    await ok(context().move("kb://A", "manuscript://Renamed"));
-    const moved = await service.status(plan.importId, projectId, landed.version);
-    expect(BigInt(moved.version)).toBeGreaterThan(BigInt(landed.version));
-    expect(moved.entries).toEqual([
-      expect.objectContaining({
-        entryId: 0,
-        uri: "manuscript://Renamed",
-        // The stored allocated name stays; the live address moves.
-        name: "A",
-        exists: true,
-      }),
-    ]);
-    expect((await service.status(plan.importId, projectId)).entries[0]).toMatchObject({
-      uri: "manuscript://Renamed",
-    });
-    await ok(
-      context().delete("manuscript://Renamed", {
-        expected: { kind: "file", documentId: plan.entries[0].documentId },
-      }),
-    );
-    const deleted = await service.status(plan.importId, projectId, moved.version);
-    expect(deleted.entries).toEqual([expect.objectContaining({ entryId: 0, exists: false })]);
-    expect((await service.status(plan.importId, projectId, deleted.version)).entries).toEqual([]);
-  });
-  it("incremental reports publish a moved folder root, so its Open follows it", async () => {
-    const service = createImportService(ports());
-    const book = loose({ "Seed.md": "Seed" });
-    book.manifest.roots = [{ rootId: 0, kind: "folder", name: "Book" }];
-    book.manifest.entries[0].path = "Seed.md";
-    const plan = await service.plan(projectId, userId, book.manifest);
-    expect((await service.status(plan.importId, projectId, plan.version)).roots).toEqual([]);
-    await ok(context().move("kb://Book/", "kb://Renamed/"));
-    const moved = await service.status(plan.importId, projectId, plan.version);
-    expect(moved.roots).toEqual([
-      { rootId: 0, kind: "folder", name: "Book", id: plan.roots[0].id, uri: "kb://Renamed/" },
-    ]);
   });
   it("lease renewal advances activity/version, but an old attempt cannot renew", async () => {
     const selection = loose({ "Lease.md": "Imported" }),

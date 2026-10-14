@@ -26,7 +26,6 @@ export const imports = pgTable(
     folderId: uuid("folder_id"),
     state: text("state").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
   },
   // Open-import polls filter by project and order newest first; project deletes follow the FK.
   (table) => [index("imports_project_created").on(table.projectId, table.createdAt)],

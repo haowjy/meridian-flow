@@ -18,7 +18,6 @@ export interface ImportRecord {
   folderId: string | null;
   state: ImportState;
   createdAt?: Date;
-  dismissedAt?: Date | null;
 }
 /**
  * What `import_entries.spec` holds: the planned node and the payload state no query or
@@ -27,8 +26,6 @@ export interface ImportRecord {
 export interface ImportEntryPayload extends Omit<PlannedNode, "id" | "state"> {
   prepared: boolean;
   prependOnRetry: boolean;
-  /** Last observed presence of the created document or folder at `uri`. */
-  exists: boolean;
 }
 /** What import_entries columns own: identity, order, lifecycle, lease and sweep state. */
 export interface ImportEntryColumns {
@@ -46,10 +43,7 @@ export interface ImportEntryColumns {
 export type ImportEntry = ImportEntryPayload & ImportEntryColumns;
 /** Mutable payload fields. */
 export type ImportEntryPayloadPatch = Partial<
-  Pick<
-    ImportEntryPayload,
-    "name" | "reason" | "reasonParams" | "prepared" | "prependOnRetry" | "exists"
-  >
+  Pick<ImportEntryPayload, "name" | "reason" | "reasonParams" | "prepared" | "prependOnRetry">
 >;
 /** Mutable column fields. */
 export type ImportEntryColumnPatch = Partial<
@@ -83,7 +77,6 @@ export interface ImportRepository {
     { record: ImportRecord; counts: ImportCounts; lastActivityAt: string; version: string }[]
   >;
   touch(id: string): Promise<void>;
-  dismiss(id: string): Promise<void>;
   fileEntry(importId: string, entryId: number): Promise<ImportEntry | null>;
   hasUnfinished(importId: string): Promise<boolean>;
   /** Whether any planned entry still awaits its planning chunk. */

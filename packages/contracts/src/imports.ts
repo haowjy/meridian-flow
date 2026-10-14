@@ -77,7 +77,6 @@ export interface ImportSummary {
   lastActivityAt: string;
   /** Decimal commit-ordered sequence; never coerced through a JS number. */
   version: string;
-  dismissedAt: string | null;
 }
 export interface ImportEntryStatus {
   entryId: number;
@@ -89,7 +88,6 @@ export interface ImportEntryStatus {
   documentId: string;
   kind: "note" | "docx" | "code" | "binary";
   state: ImportEntryState;
-  uri: string | null;
   /** Planned folder id; null means the root of `scheme`. */
   parentId: string | null;
   scheme: ImportScheme;
@@ -98,7 +96,6 @@ export interface ImportEntryStatus {
   extension: string;
   reason: ImportEntryReason | null;
   reasonParams?: { readReason: ImportUnreadableReason };
-  exists: boolean;
   /**
    * The server takes this file's bytes now: planned, failed, or a landing whose
    * claim lapsed (its process died). Read at report time; senders trust it alone.
@@ -111,7 +108,6 @@ export interface ImportRootStatus {
   name: string;
   /** Null for a routed export selection: its project wrapper is not created. */
   id: string | null;
-  uri: string | null;
 }
 /** A folder the plan holds, whether or not the selection listed it. */
 export interface ImportFolderStatus {

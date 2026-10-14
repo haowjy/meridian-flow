@@ -21,7 +21,6 @@ const summary: ImportSummary = {
   },
   lastActivityAt: "2026-10-12T00:00:00.000Z",
   version: "7",
-  dismissedAt: null,
 };
 
 vi.mock("../../../../../lib/auth-gate.js", () => ({

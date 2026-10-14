@@ -123,13 +123,11 @@ const entry = (
   documentId: id,
   kind: "binary",
   state: "planned",
-  uri: null,
   parentId,
   scheme: "kb",
   name: `map${entryId}`,
   extension: "png",
   reason: null,
-  exists: true,
   wanted: true,
   ...patch,
 });
