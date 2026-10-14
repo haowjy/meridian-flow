@@ -22,7 +22,10 @@ and dock hosts.
   syntax lives in
   `apps/server/server/domains/runtime/gateway/adapters/mock/write-directive.ts`.
 - Drive the UI with `agent-browser` (snapshot → click by ref → re-snapshot).
-  Capture `agent-browser console` and `errors` at the end of every scenario —
+  Browsing live with no `?work=`, there is no Version chip for another Work's draft; the open
+  document's draft hint (below) says so instead. Use `?work=<the drafting Work>` for the chip.
+
+Capture `agent-browser console` and `errors` at the end of every scenario —
   a clean console is part of every pass criterion below.
 
 ### Controlled failures and evidence
@@ -950,3 +953,63 @@ For the link chip, record every change of `data-link-chip` and `aria-description
 the `links/resolve` response held by an owned fetch seam. A live chapter holding an `ahead:` link to a document that
 exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
 
+
+## A writer's New file joins the draft's document (browser, #757)
+
+A draft's new document is a real document with a draft, hidden live only because it is a
+draft. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
+with an ordinary draft over it. The device's instant create carries its destination, so the
+server joins the document waiting there. The only device work is identity: the reservation's id
+becomes the joined id, and what the writer typed is kept. No draft text is merged; the draft's
+text stays in the draft for review.
+
+Setup (own stack, `MODEL_PROVIDER=mock pnpm dev`): `./mf api` to create a Work with
+`aiWriteMode: "draft"` and a thread bound to it. `./mf thread send <thread> go --mock @script`
+with one scripted `write create` of `manuscript://Chapter 2` (give it text). Desktop 1440x900,
+then the phone 390x844 with touch emulation.
+
+1. **Online.** Open the project. Sidebar, Manuscript, New file, `Chapter 2`, Enter, and type a
+   line at once.
+   PASS: one `Chapter 2` row and one tab, on the draft's document (same id as the Work's draft
+   item, read with `./mf api`); the typed line is kept; the Work's review item is an edit, not
+   new. As soon as the create's answer lands, with no reload or navigation, the open document
+   shows the "Live" chip with the version menu, and Draft opens that draft's review. Measure
+   from the `create-untitled` response to the chip appearing. Check it inside the drafting
+   Work's chat and browsing live with no Work. Database: one `documents` row at that path
+   (`psql`, `hidden = false`).
+2. **Offline.** `agent-browser set offline on` before New file; New file `Chapter 2`, type a
+   line, set offline off. PASS: the same as step 1 once the connection returns; before it, the
+   row sits at `Chapter 2` in the Manuscript, not under Unfiled.
+3. **A rename while the create is out.** Offline, New file `Chapter 2`, rename it
+   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the draft's document; the rename is
+   not offered for repair.
+4. **A link's Create.** The Create button exists only on a link that reads "doesn't exist yet", and
+   following an "In a draft" link opens the review instead. So make the link in the editor (select
+   text, Link, destination `manuscript://Chapter 10`), open it so its "Create" dialog is up, have
+   the AI draft `Chapter 10` in the Work, then press Create. PASS: the same as step 1.
+5. **No regression.** New file at a free name, and at a name a visible document holds (the
+   second takes the free name, `Chapter 2 (2)`).
+
+With no `?work=` the document shows the draft hint instead of the Live chip (see the next section).
+
+Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
+
+## An open document says when a draft has changes to it (browser, #757)
+
+`GET /api/projects/:p/documents/:d/drafts` answers the active drafts in the project with changes to the
+document (`draftId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
+review. The editor shows a line under the identity row for every draft other than the one the view works
+in: "A draft has changes to this (Northern Arc)" with Review, or "2 drafts have changes to this" with a
+menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
+at 390x844.
+
+1. **The owner's flow, in No Work.** The AI drafts `manuscript://Chapter 2` in Work A. With no Work open,
+   New file `Chapter 2`. PASS: one row, and the hint naming Work A appears with no reload; Review opens
+   Work A's review of Chapter 2. Time the `create-untitled` response to the hint (a `fetch` wrapper and a
+   `MutationObserver` on `[data-document-draft-hint]`); note `uptime`.
+2. **A live document a draft edits.** Open it with no Work and from Work B: the hint. Open it in Work A: the
+   Live chip only, no hint.
+3. **After Discard** of Work A's draft (Work page, Discard all changes): the hint goes on this device at
+   once, and on another device on focus or the catalog wake.
+4. **A document no draft touches** shows no hint.
+5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.

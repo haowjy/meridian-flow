@@ -59,7 +59,7 @@ import {
   ContextEntryConflictError,
 } from "../../ports/context-document-store.js";
 import type {
-  ContextCreateUntitledDocumentOptions,
+  AdapterCreateUntitledOptions,
   ContextListOptions,
   ContextScheme,
   ContextWriteBinaryOptions,
@@ -73,7 +73,6 @@ import type {
   ContextTreeMutationStore,
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
-import type { RevealIdentity } from "../../tree/hidden-node-types.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
@@ -82,7 +81,8 @@ import {
   type CreatePlacement,
   createPlacement,
 } from "./create-placement.js";
-import { LiveCreate, type LiveCreatePlan } from "./live-create.js";
+import { resolveCreateTarget } from "./create-target.js";
+import { LiveCreate } from "./live-create.js";
 import { matchDocument } from "./match.js";
 
 /**
@@ -123,8 +123,6 @@ export interface ContextFSDeps {
 
 /** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
 const MISSING = Symbol("missing-folder");
-const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
-const UNTITLED_ALLOCATION_ATTEMPTS = 32;
 
 function trackedSchemaForPersistedFiletype(
   filetype: string | null | undefined,
@@ -263,7 +261,6 @@ export class ContextFS implements ContextSchemeAdapter {
       projectId: deps.holder.projectId,
       holderUri: (path) => this.holderUri(path),
       syncFault: (error) => this.syncFault(error),
-      findDocumentAt: (path) => this.findDocumentAt(LIVE_TREE, path),
     });
     this.placement = createPlacement(deps.placement, {
       store: deps.store,
@@ -473,10 +470,14 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.liveCreate.create(path, bound, options);
   }
 
-  async locateDocument(documentId: string) {
+  async locateDocument(documentId: string, options?: { includeDeleted?: boolean }) {
     const sourceId = await this.store.existingContextSourceId();
     if (!sourceId) return Ok(null);
     const located = await this.store.findDocumentById(await this.readTreeView(), documentId);
+    if (!located && options?.includeDeleted) {
+      const last = await this.store.findDocumentLastLocation(documentId);
+      return last ? Ok({ documentId, path: last.path, name: last.name }) : Ok(null);
+    }
     if (!located || located.contextSourceId !== sourceId) return Ok(null);
     return Ok({
       documentId: located.document.id,
@@ -487,10 +488,15 @@ export class ContextFS implements ContextSchemeAdapter {
 
   async createUntitledDocument(
     path: string,
-    options: ContextCreateUntitledDocumentOptions,
+    options: AdapterCreateUntitledOptions,
   ): Promise<
     Result<
-      { status: "created" | "already-exists"; documentId: string; path: string; name: string },
+      {
+        status: "created" | "already-exists" | "joined";
+        documentId: string;
+        path: string;
+        name: string;
+      },
       AdapterFault
     >
   > {
@@ -499,100 +505,29 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!isUuid(options.documentId)) {
       return Err({ code: "invalid_operation", message: "documentId must be a UUID" });
     }
-    const identity = await this.commandExecutor.exclusive(() =>
-      this.store.findRevealIdentity(options.documentId, this.holder.projectId),
-    );
-    return this.commandExecutor.run(
-      () => this.createUntitledDocumentInTransaction(path, options, identity),
-      undefined,
-      identity.kind === "hidden" ? { sourceIds: [identity.sourceId] } : undefined,
-    );
-  }
-
-  /**
-   * The untitled create's id is the client's own (optimistic UI): a fresh id is minted
-   * as given, an id this source already shows is that document, and a hidden id of this
-   * project is a draft's document, revealed (§5.2, §6.4). Anything else conflicts.
-   */
-  private async createUntitledDocumentInTransaction(
-    path: string,
-    options: ContextCreateUntitledDocumentOptions,
-    identity: RevealIdentity,
-  ): Promise<
-    Result<
-      { status: "created" | "already-exists"; documentId: string; path: string; name: string },
-      AdapterFault
-    >
-  > {
-    const sourceId = await this.store.contextSourceId();
-    const alreadyExists = async () => {
-      const existing = await this.store.findDocumentById(LIVE_TREE, options.documentId);
-      if (!existing || existing.contextSourceId !== sourceId) return null;
-      return Ok({
-        status: "already-exists" as const,
-        documentId: existing.document.id,
-        path: existing.path,
-        name: renderFilename(existing.document.name, existing.document.extension),
-      });
-    };
-    if (identity.kind === "visible") return (await alreadyExists()) ?? Err({ code: "conflict" });
-    if (identity.kind === "unusable") return Err({ code: "conflict" });
-    const plan: LiveCreatePlan =
-      identity.kind === "hidden"
-        ? {
-            kind: "reveal",
-            reveal: {
-              documentId: identity.documentId,
-              sourceId: identity.sourceId,
-              byId: true,
-              projectId: this.holder.projectId,
-            },
-          }
-        : { kind: "mint", id: options.documentId };
-
-    const folderSegments = path.split("/").filter(Boolean);
-    const folderId = await this.store.ensureFolderPath(folderSegments);
-    let lastNumber = 0;
-    for (let attempt = 0; attempt < UNTITLED_ALLOCATION_ATTEMPTS; attempt += 1) {
-      // Live names only: a hidden node never takes a live name (F11).
-      const documents = await this.store.listDocuments(LIVE_TREE, folderId);
-      const folders = await this.store.listFolders(LIVE_TREE, folderId);
-      const occupied = [
-        ...documents.map((document) => renderFilename(document.name, document.extension)),
-        ...folders.map((folder) => folderDocumentName(folder.name)),
-      ];
-      const maxNumber = occupied.reduce((max, name) => {
-        const match = UNTITLED_NAME_PATTERN.exec(name);
-        if (!match) return max;
-        const suffix = Number(match[1]);
-        return Number.isSafeInteger(suffix) && suffix < Number.MAX_SAFE_INTEGER
-          ? Math.max(max, suffix)
-          : max;
-      }, lastNumber);
-      lastNumber = maxNumber + 1;
-      const name = `Untitled ${lastNumber}`;
-      const created = await this.liveCreate.atomically(
-        { folderId, name, extension: "", filetype: "markdown" },
-        plan,
-        { provisionalName: true, options: { origin: options.origin } },
-      );
-      if (created.ok) {
-        const document = created.value.document;
-        return Ok({
-          status: "created",
-          documentId: document.id,
-          path: joinPath(path, renderFilename(document.name, document.extension)),
-          name: renderFilename(document.name, document.extension),
-        });
-      } else if (created.error.code !== "conflict") return created;
-
-      const collision = await alreadyExists();
-      if (collision) return collision;
-      // The name was taken: try the next one, unless the id itself now exists elsewhere.
-      const now = await this.store.findRevealIdentity(options.documentId, this.holder.projectId);
-      if (now.kind !== "absent" && now.kind !== "hidden") return Err({ code: "conflict" });
+    const dir = path.split("/").filter(Boolean);
+    let leaf: { name: string; extension: string; filetype: Filetype } | null = null;
+    if (options.name !== undefined) {
+      const target = resolveCreateTarget(joinPath(path, options.name));
+      if (!target.ok) return target;
+      leaf = target.value;
     }
-    return Err({ code: "conflict" });
+    const created = await this.liveCreate.createOptimistic({
+      dir,
+      leaf,
+      documentId: options.documentId as DocumentId,
+      ...(options.expectFolderId ? { expectFolderId: options.expectFolderId } : {}),
+      options: { origin: options.origin },
+    });
+    if (!created.ok) return created;
+    const { status, documentId, name } = created.value;
+    // A replayed join knows only its target: the router reads that document's address.
+    return Ok({
+      status,
+      documentId,
+      path: created.value.path ?? (name ? joinPath(path, name) : ""),
+      name: name ?? (created.value.path ?? "").split("/").at(-1) ?? "",
+    });
   }
 
   ensureTrackedDocument(

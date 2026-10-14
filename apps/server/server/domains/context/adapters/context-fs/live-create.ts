@@ -2,11 +2,16 @@
  * ContextFS's live create pipeline (contract §6.3, §6.4): discovery holding nothing, the
  * candidate's live lease when the create carries content, then one command transaction
  * that claims what was planned and initializes content. A live create at a hidden
- * document's path reveals it instead of inserting a twin; Create by id reveals only a
- * hidden identity of this project; a changed candidate rolls back and rediscovers once.
+ * document's path reveals it instead of inserting a twin; a changed candidate rolls back
+ * and rediscovers once.
+ *
+ * The writer's instant create (`createOptimistic`) is the same pipeline: a draft's new
+ * document is a real document that is hidden only because it is a draft, so a create at
+ * its path unhides it. The device's minted id forwards to it. Nothing of the draft's text
+ * moves: the writer's text goes to live, and the draft's stays in the draft for review.
  */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
-import type { Filetype } from "@meridian/contracts/protocol";
+import { type Filetype, folderDocumentName } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BoundWrite,
@@ -17,6 +22,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { writeCollabMarkdownHeld } from "../../context/collab-document-sync.js";
+import { renderFilename } from "../../context/paths.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import {
@@ -26,10 +32,18 @@ import {
   LiveCreateCandidateChangedError,
 } from "../../ports/context-document-store.js";
 import type { ContextWriteOptions } from "../../ports/context-port.js";
-import type { LiveClaim, RevealExpectation } from "../../tree/hidden-node-types.js";
+import type {
+  LiveClaim,
+  LiveCreateCandidate,
+  RevealExpectation,
+} from "../../tree/hidden-node-types.js";
 import { treeHook } from "../../tree/test-hooks.js";
 import { LIVE_TREE } from "../../tree/tree-view.js";
-import { type BoundWrites, binaryTrackedWriteFault } from "./bound-writes.js";
+import {
+  type BoundWrites,
+  binaryTrackedWriteFault,
+  DEFAULT_EDITABLE_FILETYPE,
+} from "./bound-writes.js";
 import { type CreateTarget, resolveCreateTarget } from "./create-target.js";
 
 /**
@@ -41,7 +55,7 @@ export type LiveCreatePlan =
   | { kind: "empty" }
   /** No content, a caller-minted identity (untitled): insert, never trade it for another. */
   | { kind: "mint"; id: DocumentId }
-  /** No content: reveal exactly this hidden document. */
+  /** No content: reveal exactly the hidden document discovery found at the path. */
   | { kind: "reveal"; reveal: RevealExpectation }
   /** Content where discovery found nothing hidden; an upload may mint its reserved id. */
   | { kind: "insert-with-content"; content: BoundWrite; mintId?: DocumentId }
@@ -97,6 +111,37 @@ export function setLiveCreateHook(
   };
 }
 
+export type OptimisticOutcome = {
+  status: "created" | "already-exists" | "joined";
+  /** The document: the device's id, or the one it joined. */
+  documentId: DocumentId;
+  /** Present when the outcome knows the document's address in this source. */
+  path?: string;
+  name?: string;
+};
+
+const OPTIMISTIC_NAME_ATTEMPTS = 32;
+const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
+
+function highestUntitled(filenames: ReadonlySet<string>): number {
+  let max = 0;
+  for (const filename of filenames) {
+    const match = UNTITLED_NAME_PATTERN.exec(filename);
+    const suffix = match ? Number(match[1]) : 0;
+    if (Number.isSafeInteger(suffix) && suffix < Number.MAX_SAFE_INTEGER)
+      max = Math.max(max, suffix);
+  }
+  return max;
+}
+
+/** The first of `Kael`, `Kael (2)`... whose filename no live node holds. */
+function freeName(leaf: { name: string; extension: string }, taken: ReadonlySet<string>): string {
+  for (let suffix = 1; ; suffix += 1) {
+    const name = suffix === 1 ? leaf.name : `${leaf.name} (${suffix})`;
+    if (!taken.has(renderFilename(name, leaf.extension))) return name;
+  }
+}
+
 class DocumentCreationFault extends Error {
   constructor(readonly fault: AdapterFault) {
     super("message" in fault ? fault.message : fault.code);
@@ -105,7 +150,6 @@ class DocumentCreationFault extends Error {
 
 type Discovery =
   | { kind: "conflict"; occupantKind?: "file" | "folder" }
-  | { kind: "existing"; documentId: DocumentId }
   | { kind: "reveal"; reveal: RevealExpectation }
   | { kind: "none" };
 
@@ -118,7 +162,6 @@ export interface LiveCreateDeps {
   projectId: ProjectId;
   holderUri(path: string): string;
   syncFault(error: SyncError): AdapterFault;
-  findDocumentAt(path: string): Promise<ContextDocument | null>;
 }
 
 export class LiveCreate {
@@ -138,20 +181,14 @@ export class LiveCreate {
     if (!target.ok) return target;
     const withContent = content !== null && content.markdown.length > 0 ? content : null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const found = await this.deps.executor.exclusive(() =>
-        this.discover(path, target.value, options),
-      );
+      const found = await this.deps.executor.exclusive(() => this.discover(target.value));
       if (found.kind === "conflict") {
         return Err({
           code: "conflict",
           ...(found.occupantKind ? { occupantKind: found.occupantKind } : {}),
         });
       }
-      if (found.kind === "existing") return Ok({ documentId: found.documentId });
       // Holding nothing: a split or move may change the candidate before its sources lock.
-      if (found.kind === "reveal" && options?.revealDocumentId) {
-        await treeHook("revealById.afterDiscovery");
-      }
       const sourceIds = found.kind === "reveal" ? [found.reveal.sourceId] : [];
       const run = (plan: LiveCreatePlan) =>
         this.deps.executor.run(
@@ -196,31 +233,7 @@ export class LiveCreate {
   }
 
   /** §6.3 step 1 and §6.4's discovery, holding nothing. */
-  private async discover(
-    path: string,
-    target: CreateTarget,
-    options?: ContextWriteOptions,
-  ): Promise<Discovery> {
-    const named = options?.revealDocumentId;
-    if (named) {
-      const identity = await this.deps.store.findRevealIdentity(named, this.deps.projectId);
-      if (identity.kind === "hidden") {
-        return {
-          kind: "reveal",
-          reveal: {
-            documentId: identity.documentId,
-            sourceId: identity.sourceId,
-            byId: true,
-            projectId: this.deps.projectId,
-          },
-        };
-      }
-      if (identity.kind === "visible" && (await this.deps.findDocumentAt(path))?.id === named) {
-        return { kind: "existing", documentId: named };
-      }
-      // Missing, a tombstone, elsewhere or another project's: never minted (C-R4).
-      return { kind: "conflict" };
-    }
+  private async discover(target: CreateTarget): Promise<Discovery> {
     const found = await this.deps.store.findLiveCreateCandidate(
       target.dir,
       target.name,
@@ -235,7 +248,7 @@ export class LiveCreate {
     if (found.kind === "none") return { kind: "none" };
     return {
       kind: "reveal",
-      reveal: { documentId: found.documentId, sourceId: found.sourceId, byId: false },
+      reveal: { documentId: found.documentId, sourceId: found.sourceId },
     };
   }
 
@@ -271,16 +284,147 @@ export class LiveCreate {
   }
 
   /**
+   * The writer's instant create under the id their device minted (New file, a link's
+   * Create, the editor's New document): never refused for a name. At the final path:
+   * nothing there inserts the device's id; a draft's hidden text document there is
+   * unhidden, keeps its own id, and the device's id forwards to it (`joined`); a visible
+   * node there leaves the create at the first free name. A replay answers from the
+   * forward first. `leaf` is null for a nameless create, which takes `Untitled N`.
+   */
+  async createOptimistic(input: {
+    dir: readonly string[];
+    leaf: { name: string; extension: string; filetype: Filetype } | null;
+    documentId: DocumentId;
+    /** The folder identity the destination named; a different folder here is stale. */
+    expectFolderId?: string;
+    options: ContextWriteOptions;
+  }): Promise<Result<OptimisticOutcome, AdapterFault>> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { leaf } = input;
+      const found = leaf
+        ? await this.deps.executor.exclusive(() =>
+            this.deps.store.findLiveCreateCandidate(input.dir, leaf.name, leaf.extension),
+          )
+        : { kind: "none" as const };
+      const sourceIds = found.kind === "candidate" ? [found.sourceId] : [];
+      try {
+        return await this.deps.executor.run(
+          () => this.optimisticInTransaction(input, found),
+          undefined,
+          { sourceIds },
+        );
+      } catch (error) {
+        if (!(error instanceof LiveCreateCandidateChangedError)) throw error;
+      }
+    }
+    return Err({ code: "conflict" });
+  }
+
+  private async optimisticInTransaction(
+    input: Parameters<LiveCreate["createOptimistic"]>[0],
+    found: LiveCreateCandidate,
+  ): Promise<Result<OptimisticOutcome, AdapterFault>> {
+    const { store, projectId } = this.deps;
+    // A replay of a create that joined: the forward answers before any path is read.
+    const forwarded = await store.findForward(input.documentId, projectId);
+    if (forwarded) return Ok({ status: "joined", documentId: forwarded as DocumentId });
+
+    const sourceId = await store.contextSourceId();
+    const alreadyHere = async (): Promise<OptimisticOutcome | null> => {
+      const existing = await store.findDocumentById(LIVE_TREE, input.documentId);
+      if (!existing || existing.contextSourceId !== sourceId) return null;
+      return {
+        status: "already-exists",
+        documentId: existing.document.id as DocumentId,
+        path: existing.path,
+      };
+    };
+    const here = await alreadyHere();
+    if (here) return Ok(here);
+
+    const folderId = await store.ensureFolderPath([...input.dir]);
+    if (input.expectFolderId !== undefined && folderId !== input.expectFolderId) {
+      return Err({ code: "stale_target" });
+    }
+    const extra = { options: input.options };
+    const hiddenNames = new Set(await store.listHiddenNames(folderId));
+    let lastNumber = 0;
+    for (let attempt = 0; attempt < OPTIMISTIC_NAME_ATTEMPTS; attempt += 1) {
+      const live = [
+        ...(await store.listDocuments(LIVE_TREE, folderId)).map((document) =>
+          renderFilename(document.name, document.extension),
+        ),
+        ...(await store.listFolders(LIVE_TREE, folderId)).map((folder) =>
+          folderDocumentName(folder.name),
+        ),
+      ];
+      let target: { name: string; extension: string; filetype: Filetype };
+      let plan: LiveCreatePlan;
+      let joinFrom: DocumentId | undefined;
+      if (input.leaf === null) {
+        // Untitled names skip what hidden documents hold: a scratch never joins an AI document.
+        const taken = new Set([...live, ...hiddenNames]);
+        lastNumber = Math.max(lastNumber, highestUntitled(taken)) + 1;
+        target = {
+          name: `Untitled ${lastNumber}`,
+          extension: "",
+          filetype: DEFAULT_EDITABLE_FILETYPE,
+        };
+        plan = { kind: "mint", id: input.documentId };
+      } else {
+        const free = freeName(input.leaf, new Set(live));
+        target = { ...input.leaf, name: free };
+        const atTypedName = free === input.leaf.name;
+        if (atTypedName && found.kind === "candidate") {
+          plan = {
+            kind: "reveal",
+            reveal: { documentId: found.documentId, sourceId: found.sourceId },
+          };
+          joinFrom = input.documentId;
+        } else plan = { kind: "mint", id: input.documentId };
+      }
+      const created = await this.atomically({ ...target, folderId }, plan, {
+        ...extra,
+        provisionalName: input.leaf === null,
+        ...(joinFrom ? { joinFrom } : {}),
+      });
+      if (created.ok) {
+        const { document, revealed } = created.value;
+        return Ok({
+          status: revealed ? "joined" : "created",
+          documentId: document.id as DocumentId,
+          name: renderFilename(document.name, document.extension),
+        });
+      }
+      if (created.error.code !== "conflict") return created;
+      // The name was taken since we listed it: look again, unless the id itself landed.
+      const landed = await alreadyHere();
+      if (landed) return Ok(landed);
+      const raced = await store.findForward(input.documentId, projectId);
+      if (raced) return Ok({ status: "joined", documentId: raced as DocumentId });
+    }
+    return Err({ code: "conflict" });
+  }
+
+  /**
    * Identity, content and arrival in one aggregate, at a resolved folder, under the claim
    * `plan` makes. The caller holds the command transaction.
    */
   async atomically(
     target: { folderId: string | null; name: string; extension: string; filetype: Filetype },
     plan: LiveCreatePlan,
-    extra: { provisionalName?: boolean; options?: ContextWriteOptions } = {},
-  ): Promise<Result<{ document: ContextDocument; markdown: string }, AdapterFault>> {
+    extra: {
+      provisionalName?: boolean;
+      options?: ContextWriteOptions;
+      /** The device's create id a reveal forwards to the revealed document. */
+      joinFrom?: DocumentId;
+    } = {},
+  ): Promise<
+    Result<{ document: ContextDocument; markdown: string; revealed: boolean }, AdapterFault>
+  > {
     const { options } = extra;
     let document: ContextDocument | null = null;
+    let revealed = false;
     try {
       const created = await this.deps.documentCreation.createDocumentAtomically({
         persistIdentity: async () => {
@@ -293,11 +437,15 @@ export class LiveCreate {
               markdown: "",
               filetype: target.filetype,
               provisionalName: extra.provisionalName,
+              ...(extra.joinFrom
+                ? { joinFrom: { fromId: extra.joinFrom, projectId: this.deps.projectId } }
+                : {}),
               ...(options?.metadata ? { metadata: options.metadata } : {}),
             },
             claimOf(plan),
           );
           document = claimed?.document ?? null;
+          revealed = claimed?.revealed ?? false;
           return claimed?.document.id ?? null;
         },
         initializeContent: (documentId) => this.initializeContent(documentId, plan, options),
@@ -306,7 +454,7 @@ export class LiveCreate {
       if (!document) {
         return Err({ code: "io_error", message: "Created document identity was not returned" });
       }
-      return Ok({ document, markdown: created.value });
+      return Ok({ document, markdown: created.value, revealed });
     } catch (error) {
       if (error instanceof DocumentCreationFault) return Err(error.fault);
       if (error instanceof ContextEntryConflictError) {

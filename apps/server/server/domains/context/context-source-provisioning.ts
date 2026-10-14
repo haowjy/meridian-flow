@@ -32,7 +32,7 @@ import type {
 } from "./ports/context-document-store.js";
 import type { ProjectContextFsScheme, WorkScopedContextFsScheme } from "./ports/context-port.js";
 import type { DocumentArrivals } from "./ports/document-arrivals.js";
-import { findRevealIdentity } from "./tree/creates.js";
+import { findForward, recordForward } from "./tree/forwards.js";
 import type { HiddenNodeRepair } from "./tree/hidden-node-repair.js";
 import type { LiveClaim } from "./tree/hidden-node-types.js";
 import type { TreeView } from "./tree/tree-view.js";
@@ -301,12 +301,25 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return (await this.readableSourceStore())?.findDocumentById(view, documentId) ?? null;
   }
 
-  /**
-   * A named identity is the project's, not this source's: its lookup never waits on (or
-   * provisions) the destination source, which a cross-source reveal may not have yet.
-   */
-  findRevealIdentity(documentId: string, projectId: ProjectId) {
-    return findRevealIdentity(this.db, { documentId: documentId as DocumentId, projectId });
+  /** A forward is the project's, not this source's: it never waits on the source. */
+  findForward(fromId: string, projectId: ProjectId) {
+    return findForward(this.db, fromId, projectId);
+  }
+
+  async recordForward(input: { fromId: string; toId: string; projectId: ProjectId }) {
+    await recordForward(this.db, {
+      fromId: input.fromId as DocumentId,
+      toId: input.toId as DocumentId,
+      projectId: input.projectId,
+    });
+  }
+
+  async listHiddenNames(folderId: string | null) {
+    return (await this.readableSourceStore())?.listHiddenNames(folderId) ?? [];
+  }
+
+  async findDocumentLastLocation(documentId: string) {
+    return (await this.readableSourceStore())?.findDocumentLastLocation(documentId) ?? null;
   }
 
   async readProjections(ids: string[]): Promise<Map<string, string>> {

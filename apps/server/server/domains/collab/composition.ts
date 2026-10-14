@@ -548,6 +548,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     commands: createDrizzleDraftCommands(deps.db),
     model: runtime.model,
     resolveThreadTitles: lookups.resolveThreadTitles,
+    pending: workDraftPendingStore,
     readReviewCut: createDrizzleReviewCut({
       db: deps.db,
       journal: persistence.journal,

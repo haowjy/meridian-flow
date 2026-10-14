@@ -115,6 +115,7 @@ import {
   useChatNavigation,
   useDockReveal,
 } from "./routing/chat-navigation";
+import { EditorRouteChrome } from "./routing/EditorRouteChrome";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
@@ -730,6 +731,23 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
           issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
           onRetry={props.onRetryEditorRoute}
           retainWhileLoading={editorPresentation.retainWhileLoading}
+          chrome={
+            <EditorRouteChrome
+              projectId={props.projectId}
+              editorWorkId={props.editorWorkId}
+              scheme={props.activeContextScheme}
+              path={props.activeContextPath}
+              onShowRecents={() => void props.routeCommands.showEditorRecents({ replace: false })}
+              onShowFiles={() => props.onSelectContextPath("", "kb")}
+              onShowFolder={(path) =>
+                props.activeContextScheme
+                  ? props.onSelectContextPath(path, props.activeContextScheme)
+                  : undefined
+              }
+              sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
+              dockToggle={surfaceToggle("chat", t`Expand chat`)}
+            />
+          }
           recovery={
             props.editorScope.status !== "ready" ? (
               <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />

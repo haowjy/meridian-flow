@@ -1,0 +1,47 @@
+/** A failed write tells the writer why, and every undo/redo refusal has its own plain copy. */
+import { i18n } from "@lingui/core";
+import { beforeEach, expect, it } from "vitest";
+import type { ToolView } from "./group-delivery-segments";
+import { block } from "./report-test-fixtures";
+import { documentToolFailureCopy } from "./tool-renderers";
+
+beforeEach(() => i18n.loadAndActivate({ locale: "en", messages: {} }));
+
+function failed(result: Record<string, unknown>): ToolView {
+  const input = { command: "replace", path: "manuscript://B3X" };
+  return {
+    toolName: "write",
+    input,
+    toolCallId: "call-1",
+    result: result as ToolView["result"],
+    status: "complete",
+    isError: true,
+    message: null,
+    streamedOutput: null,
+    metadata: null,
+    keyBlock: block("call-1", 1, "tool_use", input),
+  };
+}
+
+it("says why a write failed, and gives every undo and redo refusal its own copy", () => {
+  expect(
+    documentToolFailureCopy(failed({ status: "invalid_write", rejected: "discarded_edit" })),
+  ).toBe("You discarded the text it edited, so the change wasn't kept. The AI will read it again.");
+
+  const statuses = [
+    "cant_undo_applied",
+    "cant_undo_discarded",
+    "cant_undo_changed",
+    "cant_undo_held",
+    "cant_undo_elsewhere",
+    "cant_redo_applied",
+    "cant_redo_discarded",
+    "cant_redo_changed",
+    "cant_redo_held",
+    "cant_redo_elsewhere",
+    "cant_redo_users_undo",
+  ];
+  const copies = statuses.map((status) => documentToolFailureCopy(failed({ status })));
+  expect(new Set(copies).size).toBe(statuses.length);
+  for (const copy of copies) expect(copy).not.toContain("Something went wrong");
+});

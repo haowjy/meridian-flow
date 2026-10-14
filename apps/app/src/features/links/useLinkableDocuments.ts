@@ -24,8 +24,8 @@
 
 import { contextOwner } from "@meridian/contracts/protocol";
 import { useMemo, useRef } from "react";
-
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import { useDraftLinkEpoch } from "@/client/query/draft-link-epoch";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 
 import { LINKABLE_SCHEMES, linkableCatalogScopes } from "./linkable-catalog-scopes";
@@ -64,6 +64,7 @@ export function useLinkableDocuments({
   workId: string | null;
   rootThreadId?: string | null;
 }): LinkableDocumentIndex {
+  const draftEpoch = useDraftLinkEpoch(projectId);
   const prior = useRef<LinkableDocumentIndex | null>(null);
   const scopes = linkableCatalogScopes({ projectId, workId, rootThreadId });
   const catalogWorkId = scopes?.workId ?? null;
@@ -99,7 +100,7 @@ export function useLinkableDocuments({
     ];
     const next = {
       documents,
-      revision: catalogRevision(documents),
+      revision: `${draftEpoch}\n${catalogRevision(documents)}`,
       complete:
         manuscriptComplete &&
         knowledgeBaseComplete &&
@@ -127,6 +128,7 @@ export function useLinkableDocuments({
     userComplete,
     catalogWorkId,
     catalogRootThreadId,
+    draftEpoch,
   ]);
 }
 

@@ -69,33 +69,36 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
     });
   }, [accountId, deletionRevision, projectId, queryClient]);
 
-  const documents = useMemo(
-    () =>
-      local.bound
-        ? local.items.flatMap((item) => {
-            if (item.projectId !== projectId) return [];
-            const identity = identities.get(item.documentId);
-            if (identity === null) return [];
-            if (!identity) return [item];
-            const parsed = parseContextUri(identity.path);
-            return [
-              {
-                ...item,
-                name: identity.name,
-                address:
-                  parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
-                    ? {
-                        kind: "document" as const,
-                        scheme: parsed.value.scheme,
-                        path: `/${parsed.value.path}`,
-                      }
-                    : item.address,
-              },
-            ];
-          })
-        : [],
-    [identities, local, projectId],
-  );
+  const documents = useMemo(() => {
+    if (!local.bound) return [];
+    // Items are newest first, so the first sighting of a resource is its latest open.
+    const seen = new Set<string>();
+    return local.items.flatMap((item) => {
+      if (item.projectId !== projectId) return [];
+      const identity = identities.get(item.documentId);
+      if (identity === null) return [];
+      const currentId = identity?.documentId ?? item.documentId;
+      if (seen.has(currentId)) return [];
+      seen.add(currentId);
+      if (!identity) return [item];
+      const parsed = parseContextUri(identity.path);
+      return [
+        {
+          ...item,
+          documentId: currentId,
+          name: identity.name,
+          address:
+            parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)
+              ? {
+                  kind: "document" as const,
+                  scheme: parsed.value.scheme,
+                  path: `/${parsed.value.path}`,
+                }
+              : item.address,
+        },
+      ];
+    });
+  }, [identities, local, projectId]);
   const awaitingServer =
     !local.bound || (documents.length === 0 && (query.isPending || query.isFetching));
   const status =

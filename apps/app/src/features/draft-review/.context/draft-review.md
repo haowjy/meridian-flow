@@ -320,6 +320,14 @@ addresses no-op; absent/empty focus normalizes there. The route-level handoff is
 latest-wins and above shell selection. Claiming requires successful route command
 and matching Work/path/document/membership; it owns no paint state.
 
+A live document that other drafts have changes to says so from any view
+(`DocumentDraftHint` under the identity row, fed by `useDocumentDraftHints`, one read per
+document: `GET /documents/:d/drafts`, answering `{ draftId, itemKey, label, originWorkId }`).
+`draft-hint-review.ts` holds the only two Work-shaped steps (hide the view's own Work draft,
+and map a hint to today's review address); the draft selector replaces just that file. The
+read re-reads on the Work draft lists' signals: commands, catalog wakes, identity changes,
+focus and reconnect.
+
 New-document drafts have server document/Yjs state but no live catalog
 membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` and
 `reviewItemKey` in the review overlay, never durable workspace identity.
