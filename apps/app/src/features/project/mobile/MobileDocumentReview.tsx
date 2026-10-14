@@ -15,7 +15,7 @@
  * entering and leaving review never remounts it.
  */
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
@@ -59,8 +59,18 @@ export function MobileDocumentReview({
     controller.workId,
     `${documentId}:${itemKey ?? ""}`,
   );
-  const file = fileForDocument(documentId);
   const roomName = itemKey ? reviewRoomNameForDraft(documentId, itemKey) : null;
+  // The open review names what a Discard acts on. The Work list only supplies presentation: a draft that
+  // lists no changes any more (its last one was just discarded) leaves it, and its Undo still holds.
+  const listed = fileForDocument(documentId);
+  const kept = useRef<ReviewFileTarget | null>(null);
+  if (listed && listed.draft.itemKey === itemKey) kept.current = listed;
+  const file =
+    itemKey && kept.current?.draft.itemKey === itemKey
+      ? kept.current
+      : itemKey
+        ? reviewedFile(documentId, itemKey, tab.name)
+        : null;
   const header = useReviewHeader({
     documentId,
     itemKey: itemKey ?? "",
@@ -95,6 +105,18 @@ export function MobileDocumentReview({
       </div>
     </MobileKeyboardAware>
   );
+}
+
+/** The open review's own identity as a Discard's subject, for a review the Work list does not (or no longer) carry. */
+function reviewedFile(documentId: string, itemKey: string, name: string): ReviewFileTarget {
+  return {
+    documentId,
+    documentName: name,
+    contextLocation: null,
+    isNew: false,
+    // A Discard reads only the item key; the rest of a list row is presentation the review never needed.
+    draft: { documentId, itemKey } as ReviewFileTarget["draft"],
+  };
 }
 
 /**

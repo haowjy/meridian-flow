@@ -8,12 +8,12 @@ import { act } from "react";
 import { expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { DocumentSession } from "@/core/editor/document-session";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { projectRoom } from "@/features/draft-review/review-frame";
 import { reviewChanges } from "@/features/draft-review/review-model";
+import { retainReviewRuntime, reviewRuntimeOf } from "@/features/draft-review/review-runtime";
 import { useHeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
-import { useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
+import { MobileDocumentReview } from "@/features/project/mobile/MobileDocumentReview";
 import {
   createReviewScopeFixture,
   draftA,
@@ -23,6 +23,11 @@ import {
 } from "@/test-support/draft-review-scope";
 import { seedReviewBase } from "@/test-support/inline-review-editor";
 import { settleReact } from "@/test-support/react-dom-harness";
+
+// Opening another draft is navigation; this suite owns what a Discard binds to.
+vi.mock("@/features/project/dock/useAiDraftLauncher", () => ({
+  useAiDraftLauncher: () => ({ openReviewFile: () => {} }),
+}));
 
 it("a text Discard without an editor never closes the item, and a same-chat Work rebind retires the old Work's Discard rows, Undo and pending completions", async () => {
   vi.useFakeTimers();
@@ -87,58 +92,82 @@ it("a text Discard without an editor never closes the item, and a same-chat Work
   }
 });
 
-it("the phone's Discards each own their history: Discard A, Discard B, Undo A restores A and leaves B discarded", async () => {
+it("a phone Discard binds to its open review: with the document absent from the Work list, Discard, Undo, Discard again still leaves its own Undo row", async () => {
   const fixture = createReviewScopeFixture();
-  const room = new DocumentSession({ roomKey: "r", persistence: { kind: "none" } });
+  const room = new DocumentSession({ roomKey: meta.roomName, persistence: { kind: "none" } });
   room.whenSynced = () => Promise.resolve();
-  fixture.rooms.set("r", room);
+  fixture.rooms.set(meta.roomName, room);
   const fragment = room.document.getXmlFragment("prosemirror");
-  for (const line of ["Door green.", "Keep me.", "Sky blue."]) {
-    const paragraph = new Y.XmlElement("paragraph");
-    const text = new Y.XmlText();
-    paragraph.insert(0, [text]);
-    text.insert(0, line);
-    fragment.insert(fragment.length, [paragraph]);
-  }
-  seedReviewBase(room.document, ["Door red.", "Keep me.", "Sky grey."]);
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  const paragraph = new Y.XmlElement("paragraph");
+  const text = new Y.XmlText();
+  paragraph.insert(0, [text]);
+  text.insert(0, "Door green.");
+  fragment.insert(0, [paragraph]);
+  seedReviewBase(room.document, ["Door red."]);
+  // The Work lists no draft for this document: the open review alone names what a Discard acts on.
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
   fixture.network.getDraftMeta.mockResolvedValue(meta as never);
-  const file = { documentId: listed.documentId, draft: listed } as never;
-  let phone!: ReturnType<typeof useReviewHeader>;
-  let discards!: ReturnType<typeof useHeadlessDiscards>;
-  function Phone() {
-    const { controller } = useDraftReview();
-    discards = useHeadlessDiscards(controller.projectId, controller.workId, "phone");
-    phone = useReviewHeader({
-      ...draftA,
-      onOpenDraft: () => {},
-      headless: { discards, file, roomName: "r" },
+  const tab = {
+    kind: "tracked",
+    documentId: draftA.documentId,
+    scheme: "manuscript",
+    path: "/door.md",
+    name: "door.md",
+    editable: true,
+    filetype: "markdown",
+  } as never;
+  let releaseRuntime: (() => void) | undefined;
+  const rows = () => document.querySelectorAll("[data-phone-discarded] li").length;
+  const click = (label: RegExp) =>
+    act(async () => {
+      const button = [...document.querySelectorAll("button")].find((b) =>
+        label.test(b.textContent ?? ""),
+      );
+      if (!button) throw new Error(`No button ${label}`);
+      button.click();
     });
-    return null;
-  }
-  const paragraphs = () => fragment.toArray().map((node) => String(node.toString()));
   try {
     await fixture.render(
       async (read) => {
         await act(async () =>
           read().presented.controller.enterInlineReview(draftA.documentId, draftA.itemKey),
         );
-        const [door, sky] = reviewChanges(projectRoom(room.document));
-        await act(async () => phone.view.discard(door));
-        await act(async () => phone.view.discard(sky));
-        const [first, second] = discards.entries;
-        expect(first.change?.id).not.toBe(second.change?.id);
-        expect(paragraphs().join("")).toContain("red");
-        expect(paragraphs().join("")).toContain("grey");
-
-        await act(async () => phone.view.undoDiscard?.(first.id));
-        expect(paragraphs().join("")).toContain("green");
-        expect(paragraphs().join("")).toContain("grey");
-        expect(phone.view.discarded?.map((entry) => entry.id)).toEqual([second.id]);
+        await act(async () =>
+          read().presented.controller.setInlineReviewShown(draftA.documentId, draftA.itemKey, true),
+        );
+        await settleReact(() => expect(read().presented.roomOwner.roomName).toBe(meta.roomName));
+        // The editor retains the review's runtime while it paints; this fixture has none, so it does.
+        const draft = { projectId: "project-a", workId: "work-a", ...draftA };
+        const release = retainReviewRuntime(draft, room, read().queryClient);
+        releaseRuntime = release;
+        reviewRuntimeOf(draft)?.projectNow();
+        const [change] = reviewChanges(projectRoom(room.document));
+        await act(async () =>
+          read().presented.controller.focusReviewChange(draftA, change.id, { scroll: false }),
+        );
+        await settleReact(() =>
+          expect(document.querySelector("[data-phone-change-bar]")).not.toBeNull(),
+        );
+        await click(/^Discard$/);
+        expect(rows()).toBe(1);
+        expect(fragment.toString()).toContain("red");
+        await click(/^Undo$/);
+        expect(rows()).toBe(0);
+        expect(fragment.toString()).toContain("green");
+        await click(/^Discard$/);
+        expect(rows()).toBe(1);
+        expect(fragment.toString()).toContain("red");
       },
-      { surface: <Phone /> },
+      {
+        surface: (
+          <MobileDocumentReview projectId="project-a" tab={tab}>
+            {null}
+          </MobileDocumentReview>
+        ),
+      },
     );
   } finally {
+    releaseRuntime?.();
     fixture.dispose();
     vi.restoreAllMocks();
   }
