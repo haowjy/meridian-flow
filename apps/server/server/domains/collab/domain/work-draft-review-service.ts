@@ -280,6 +280,9 @@ export function createWorkDraftReviewService(input: {
   ): DraftCommandResult {
     if (result.status === "command_exists")
       throw new DraftCommandExistsError(item?.itemKey as never);
+    // An item Apply answers about its own item (§4.5); the batch's key list is not its wire shape.
+    if (item && result.status === "stale")
+      return { status: "stale", draftId, itemKey: item.itemKey };
     if (!item || result.status !== "completed") return result;
     const [applied] = result.items;
     if (!applied) return { status: "gone", draftId };
