@@ -4,15 +4,18 @@
  * is the decision alone are `stop-rule.test.ts`. Every case also runs the publication parity check.
  */
 
-import type { StopResponse } from "@meridian/contracts/threads";
+import { globSync, readFileSync } from "node:fs";
+import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { journalEventsByThread } from "../../../test-support/journal-events.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
-import { readRunStateAtHead } from "../adapters/drizzle-run-state.js";
+import { markRunStateChanged, readRunStateAtHead } from "../adapters/drizzle-run-state.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import { scriptedGateway } from "./__tests__/test-gateway.js";
+import { NoPendingWakeError } from "./run-turn-port.js";
 import { HandBackConflictError } from "./runtime-delivery.js";
 
 const url = process.env.DATABASE_URL;
@@ -136,6 +139,77 @@ else
       return response.handedBack.map(({ blocks }) =>
         blocks.map((b) => ("text" in b ? b.text : "")).join(""),
       );
+    }
+
+    function gate() {
+      let open!: () => void;
+      const promise = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return { promise, open };
+    }
+
+    /** A summarizer that holds at its first call until the test lets it finish. */
+    function heldSummarizer() {
+      const started = gate();
+      const released = gate();
+      const summarizer = scriptedSummarizer(async () => {
+        started.open();
+        await released.promise;
+        return {
+          kind: "complete",
+          text: "Earlier context.",
+          model: "summary-model",
+          modelResponses: [],
+        };
+      });
+      return { summarizer, started: started.promise, release: released.open };
+    }
+
+    /**
+     * An execution whose holder died: its lease row is expired and binds a pending reply or compaction
+     * placeholder with `receipt`, and nothing holds the claim. The record is published as production
+     * would have, so only repair and the press move it from here.
+     */
+    async function deadExecution(rig: Rig, kind: "assistant" | "compaction", receipt: string[]) {
+      const executionId = crypto.randomUUID();
+      const lease = await rig.runClaim.startExecution(
+        rig.threadId as never,
+        executionId as never,
+        async () => {},
+      );
+      if (!lease) throw new Error("Expected a run claim");
+      const leaf = (await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId ?? null;
+      const turn = await rig.repos.turns.create({
+        threadId: rig.threadId as never,
+        prevTurnId: leaf,
+        role: kind,
+        origin: kind === "compaction" ? "system" : "assistant",
+        status: kind === "compaction" ? "pending" : "streaming",
+        executionId,
+        reservedForUserTurnIds: receipt,
+      });
+      await rig.delivery.withThreadLock(rig.threadId as never, async () => {
+        await currentDrizzleDb(db)
+          .update(schema.threadRunLeases)
+          .set({ turnId: turn.id, boundTurnIds: [turn.id], adoptedMessageIds: receipt })
+          .where(eq(schema.threadRunLeases.threadId, rig.threadId));
+        markRunStateChanged(rig.threadId as never);
+      });
+      await rig.runClaim.abandon(lease);
+      return { executionId, turn };
+    }
+    /** The next claim holder's repair of whatever the dead holder left. */
+    async function repair(rig: Rig) {
+      await rig.runClaim.withExclusiveThread(rig.threadId as never, () =>
+        rig.delivery.settleStaleExecution(rig.threadId as never),
+      );
+      await processDetachedWork.drain();
+    }
+    async function endsOf(rig: Rig, executionId: string | null) {
+      return (await journalTypes(rig, "execution.ended")).filter(
+        (event) => (event.payload as { executionId: string }).executionId === executionId,
+      ).length;
     }
 
     it("row 3: a message waiting after a yield and an applied switch is handed back, and no reply starts", async () => {
@@ -295,5 +369,570 @@ else
       expect(reply).not.toBeNull();
       expect(requestText(rig)).not.toContain("M2 handed back");
       expect(requestText(rig)).toContain("M3 stays");
+    });
+
+    it("row 9: a press that waits on the wake's locked attempt runs after the adoption and finds M3 taken on", async () => {
+      const gateway = pausedGateway();
+      let rig: Rig;
+      let armed = false;
+      let injecting = false;
+      let peeks = 0;
+      const lockedAttempt = gate();
+      // Two stale preparations, then the final locked attempt: it holds the thread lock a moment so the
+      // press, sent from outside the attempt, queues behind it.
+      const notices = {
+        async peek() {
+          if (!armed || injecting) return [];
+          peeks += 1;
+          if (peeks <= 2) {
+            injecting = true;
+            await rig.send(rig.threadId, `extra ${peeks}`);
+            injecting = false;
+          } else if (peeks === 3) {
+            lockedAttempt.open();
+            await new Promise((resolve) => setTimeout(resolve, 300));
+          }
+          return [];
+        },
+        async consume() {},
+      };
+      rig = await rigWith({ gateway, notices: notices as never });
+      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
+      const seenThrough = await seqOf(rig, m2);
+      armed = true;
+      const { done } = await startDrain(rig);
+      await lockedAttempt.promise;
+      const response = await press(rig, { seenThrough });
+      await gateway.untilGatewayBoundary(1);
+      expect(response).toMatchObject({
+        cancelledExecutionId: null,
+        handedBack: [],
+        answered: [m2],
+      });
+      expect((await leaseRow(rig))?.adoptedMessageIds).toHaveLength(3);
+      expect((await leaseRow(rig))?.cancelRequested).toBe(false);
+      await finish(rig, done);
+      expect((await rowOf(rig, m2)).by).not.toBeNull();
+    });
+
+    it("row 11: a later steer not yet adopted stays pending when the press cancels, and the next execution answers it", async () => {
+      const gateway = pausedGateway();
+      const rig = await rigWith({ gateway });
+      const { run, done } = await heldReply(rig, "M1");
+      const seenThrough = await seqOf(rig, run.userTurnId);
+      const m3 = (await rig.send(rig.threadId, "M3 steer")).userTurnId;
+
+      const response = await press(rig, { seenThrough });
+      expect(response.cancelledExecutionId).toBe(run.executionId);
+      await finish(rig, done);
+      expect((await rowOf(rig, run.userTurnId)).by).toBe(run.executionTurnId);
+      expect((await rowOf(rig, m3)).deliveredAt).toBeNull();
+      const next = await startDrain(rig);
+      await next.done;
+      await processDetachedWork.drain();
+      const reply = (await rowOf(rig, m3)).by;
+      expect(reply).not.toBeNull();
+      expect(reply).not.toBe(run.executionTurnId);
+    });
+
+    it("row 14: a start-time compaction's message is handed back, out of the receipt, and nothing answers it", async () => {
+      const held = heldSummarizer();
+      const rig = await fixture({
+        summarizer: held.summarizer,
+        gateway: scriptedGateway({ usage: lowUsage }),
+        holdWakes: true,
+      });
+      const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "M1 asks" });
+      expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
+        role: "compaction",
+      });
+      const done = run.execute();
+      await held.started;
+      expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([run.userTurnId]);
+
+      const response = await press(rig, { seenThrough: await seqOf(rig, run.userTurnId) });
+      expect(response.cancelledExecutionId).toBe(run.executionId);
+      expect(response.handedBack.map(({ userTurnId }) => userTurnId)).toEqual([run.userTurnId]);
+      expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([]);
+      held.release();
+      expect(await done).toMatchObject({ status: "cancelled" });
+      await processDetachedWork.drain();
+      const row = await rowOf(rig, run.userTurnId);
+      expect(row.handedBackBy).toBe(response.handedBack.length ? row.handedBackBy : null);
+      expect(row.by).toBeNull();
+      await rig.orchestrator.startDrain(rig.threadId as never);
+      await processDetachedWork.drain();
+      expect(rig.gateway.requests).toHaveLength(0);
+      expect(await endsOf(rig, run.executionId)).toBe(1);
+    });
+
+    it("row 16: a manual compaction's waiting message is handed back and the compact control is untouched", async () => {
+      const held = heldSummarizer();
+      const rig = await rigWith({ summarizer: held.summarizer });
+      const control = await rig.delivery.enqueue({
+        id: crypto.randomUUID(),
+        threadId: rig.threadId as never,
+        intent: "control",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "compact" },
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const { run, done } = await startDrain(rig);
+      await held.started;
+      const m2 = (await rig.send(rig.threadId, "M2 waits")).userTurnId;
+
+      const response = await press(rig);
+      expect(response.cancelledExecutionId).toBe(run.executionId);
+      expect(text(response)).toEqual(["M2 waits"]);
+      held.release();
+      await done;
+      await processDetachedWork.drain();
+      expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
+      // The compact was acknowledged when its run started; Stop never touches a control.
+      expect(await rig.delivery.selectPending(rig.threadId as never)).toEqual([]);
+      expect((await rig.repos.turns.findById(run.executionTurnId))?.status).toBe("cancelled");
+      expect(control.deliveredAt).toBeNull();
+      expect(rig.gateway.requests).toHaveLength(0);
+    });
+
+    it("row 23: an expired heartbeat does not refuse the press, and the live holder cancels", async () => {
+      const gateway = pausedGateway();
+      const rig = await rigWith({ gateway });
+      const { run, done } = await heldReply(rig, "M1");
+      await db
+        .update(schema.threadRunLeases)
+        .set({ expiresAt: new Date(Date.now() - 60_000) })
+        .where(eq(schema.threadRunLeases.threadId, rig.threadId));
+
+      const response = await press(rig);
+      expect(response.cancelledExecutionId).toBe(run.executionId);
+      expect((await leaseRow(rig))?.cancelRequested).toBe(true);
+      gateway.release(1);
+      expect(await done).toMatchObject({ status: "cancelled" });
+    });
+
+    it("row 24: a dead holder's reply keeps its message and the press hands the waiting one back, then repair settles", async () => {
+      const rig = await rigWith();
+      const m1 = (await rig.send(rig.threadId, "M1")).userTurnId;
+      const dead = await deadExecution(rig, "assistant", [m1]);
+      const m2 = (await rig.send(rig.threadId, "M2 waits")).userTurnId;
+
+      const response = await press(rig, { seenExecutionId: dead.executionId });
+      expect(response.cancelledExecutionId).toBe(dead.executionId);
+      expect(text(response)).toEqual(["M2 waits"]);
+      expect(response.answered).toEqual([m1]);
+      expect((await leaseRow(rig))?.cancelRequested).toBe(true);
+      // The record shows the execution until repair settles it.
+      expect(response.runState.execution?.executionId).toBe(dead.executionId);
+
+      await repair(rig);
+      expect((await rowOf(rig, m1)).by).toBe(dead.turn.id);
+      expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
+      expect(await leaseRow(rig)).toBeNull();
+      expect(await endsOf(rig, dead.executionId)).toBe(1);
+    });
+
+    it("row 31: Stop then a crash in a compaction leaves the message out of the chat for the next claim", async () => {
+      const rig = await rigWith();
+      const m1 = (await rig.send(rig.threadId, "M1")).userTurnId;
+      const dead = await deadExecution(rig, "compaction", [m1]);
+
+      const response = await press(rig, {
+        seenThrough: await seqOf(rig, m1),
+        seenExecutionId: null,
+      });
+      expect(response.cancelledExecutionId).toBe(dead.executionId);
+      expect(text(response)).toEqual(["M1"]);
+      expect((await leaseRow(rig))?.adoptedMessageIds).toEqual([]);
+      await repair(rig);
+      expect((await rowOf(rig, m1)).by).toBeNull();
+      await rig.orchestrator.startDrain(rig.threadId as never);
+      await processDetachedWork.drain();
+      expect(rig.gateway.requests).toHaveLength(0);
+      expect(await rig.delivery.selectPending(rig.threadId as never)).toEqual([]);
+    });
+
+    it("row 32: a press on an abandoned compaction before repair gives the same outcome as row 31", async () => {
+      const rig = await rigWith();
+      const m1 = (await rig.send(rig.threadId, "M1")).userTurnId;
+      const dead = await deadExecution(rig, "compaction", [m1]);
+
+      const response = await press(rig, { seenExecutionId: dead.executionId });
+      expect(text(response)).toEqual(["M1"]);
+      await repair(rig);
+      expect((await rowOf(rig, m1)).handedBackBy).not.toBeNull();
+      expect(await leaseRow(rig)).toBeNull();
+      await rig.orchestrator.startDrain(rig.threadId as never);
+      await processDetachedWork.drain();
+      expect(rig.gateway.requests).toHaveLength(0);
+    });
+
+    it("row 33: a crash with no press leaves the message pending and the next execution answers it", async () => {
+      const rig = await rigWith();
+      const m1 = (await rig.send(rig.threadId, "M1 survives")).userTurnId;
+      await deadExecution(rig, "compaction", [m1]);
+      await repair(rig);
+      expect((await rowOf(rig, m1)).deliveredAt).toBeNull();
+      await rig.orchestrator.startDrain(rig.threadId as never);
+      await processDetachedWork.drain();
+      expect((await rowOf(rig, m1)).by).not.toBeNull();
+      expect(requestText(rig)).toContain("M1 survives");
+    });
+
+    const handBack = (rig: Rig, requestId: string, scope: HandBackRequest["scope"]) =>
+      rig.delivery.handBack(rig.threadId as never, { requestId, scope });
+    const ids = (ids_: string[]) => ({ kind: "ids" as const, ids: ids_ });
+    const content = (response: { handedBack: StopResponse["handedBack"] }) =>
+      response.handedBack.map(({ userTurnId, blocks }) => [userTurnId, blocks] as const);
+
+    it("row 34: the x that loses the claim to the wake's adoption answers its message and hands nothing back", async () => {
+      const gateway = pausedGateway();
+      const rig = await rigWith({ gateway });
+      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
+      const m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
+      const { done } = await startDrain(rig);
+      await gateway.untilGatewayBoundary(1);
+
+      const response = await handBack(rig, crypto.randomUUID(), ids([m2]));
+      expect(response).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
+      await finish(rig, done);
+      const reply = (await rowOf(rig, m2)).by;
+      expect(reply).not.toBeNull();
+      expect((await rowOf(rig, m3)).by).toBe(reply);
+      expect(await journalTypes(rig, "messages.handed_back")).toEqual([]);
+    });
+
+    it("row 35: Cancel queue committed during a stale preparation leaves the wake nothing to reserve", async () => {
+      let rig: Rig;
+      let armed = false;
+      let m3 = "";
+      const notices = {
+        async peek() {
+          if (!armed) return [];
+          armed = false;
+          m3 = (await rig.send(rig.threadId, "M3")).userTurnId;
+          await handBack(rig, crypto.randomUUID(), {
+            kind: "seen",
+            seenThrough: await seqOf(rig, m3),
+            mine: [],
+          });
+          return [];
+        },
+        async consume() {},
+      };
+      rig = await rigWith({ notices: notices as never });
+      const m2 = (await rig.send(rig.threadId, "M2")).userTurnId;
+      armed = true;
+
+      await expect(
+        rig.orchestrator.prepare({ threadId: rig.threadId, drain: true }),
+      ).rejects.toBeInstanceOf(NoPendingWakeError);
+      expect((await rowOf(rig, m2)).handedBackBy).not.toBeNull();
+      expect((await rowOf(rig, m3)).handedBackBy).not.toBeNull();
+      expect(await leaseRow(rig)).toBeNull();
+      expect(rig.gateway.requests).toHaveLength(0);
+    });
+
+    it("row 36: a replay answers the stored decision, a later request cannot resurrect, and another body is refused", async () => {
+      const rig = await rigWith();
+      const m2 = (await rig.send(rig.threadId, "M2 words")).userTurnId;
+      const m3 = (await rig.send(rig.threadId, "M3 words")).userTurnId;
+      const [r1, r2] = [crypto.randomUUID(), crypto.randomUUID()];
+      const first = await handBack(rig, r1, ids([m2]));
+      expect(text(first as never)).toEqual(["M2 words"]);
+      const second = await handBack(rig, r2, {
+        kind: "seen",
+        seenThrough: await seqOf(rig, m3),
+        mine: [],
+      });
+      expect(second).toMatchObject({ answered: [], gone: [m2] });
+      expect(content(second)).toEqual([[m3, [{ type: "text", text: "M3 words" }]]]);
+
+      const replay2 = await handBack(rig, r2, {
+        kind: "seen",
+        seenThrough: await seqOf(rig, m3),
+        mine: [],
+      });
+      expect(content(replay2)).toEqual(content(second));
+      expect(replay2).toMatchObject({ answered: [], gone: [m2] });
+      const replay1 = await handBack(rig, r1, ids([m2]));
+      expect(content(replay1)).toEqual(content(first));
+      // Another body under a used id is a conflict, however it would have decided.
+      await expect(handBack(rig, r1, ids([m3]))).rejects.toBeInstanceOf(HandBackConflictError);
+      expect((await rowOf(rig, m2)).handedBackBy).toBe(r1);
+      expect((await rowOf(rig, m3)).handedBackBy).toBe(r2);
+      expect(await journalTypes(rig, "messages.handed_back")).toHaveLength(2);
+    });
+
+    it("row 37: a handed-back message is in no conversation read, and a later reader that skips the conversation read fails here", async () => {
+      const rig = await rigWith();
+      const main = await rig.repos.threads.findById(rig.threadId);
+      if (!main) throw new Error("Expected the chat");
+      const m2 = (await rig.send(rig.threadId, "M2 hidden words")).userTurnId;
+      const m3 = (await rig.send(rig.threadId, "M3 kept words")).userTurnId;
+      const r1 = crypto.randomUUID();
+      await handBack(rig, r1, ids([m2]));
+      const fork = (
+        await rig.repos.threads.createDerivedPrimary({
+          aiWriteMode: "direct",
+          id: crypto.randomUUID(),
+          source: main,
+          workId: main.workId,
+          userId: main.userId,
+          projectId: main.projectId,
+          originType: "fork",
+          originTurnId: m3 as never,
+        })
+      ).thread;
+      const [turn2, turn3] = [
+        await rig.repos.turns.findById(m2 as never),
+        await rig.repos.turns.findById(m3 as never),
+      ];
+      // The graph keeps both turns: M3 chains after the hidden M2, at its own position.
+      expect(turn3?.prevTurnId).toBe(m2);
+      expect(turn3?.position).toBe((turn2?.position ?? 0) + 1);
+
+      // The snapshot.
+      const { buildThreadSnapshot } = await import("../../threads/thread-snapshot.js");
+      const hub = {
+        headSeq: async () => 0n,
+        readModelProjectionWatermark: async () => 0n,
+      } as never;
+      const statusReader = {
+        read: async () => ({ kind: "asleep" as const }),
+        readRunningTurnId: async () => null,
+        readOpenExecutionId: async () => null,
+        readMany: async () => new Map(),
+        readPending: async () => ({ items: [] }),
+        readRunState: async () => readRunStateAtHead(db, rig.threadId as never),
+      } as never;
+      const snapshot = await buildThreadSnapshot(
+        rig.repos,
+        hub,
+        statusReader,
+        rig.threadId as never,
+      );
+      expect(snapshot.turns.map(({ id }) => id)).not.toContain(m2);
+      expect(snapshot.turns.map(({ id }) => id)).toContain(m3);
+      expect(JSON.stringify(snapshot.turns)).not.toContain("M2 hidden words");
+      expect(snapshot.turns.find(({ id }) => id === m3)?.siblingIds).toEqual([m3]);
+
+      // Deliveries and the latest requester text.
+      expect((await rig.repos.turns.listMessageDeliveries(rig.threadId as never)).has(m2)).toBe(
+        false,
+      );
+      expect(
+        [
+          ...(await rig.repos.turns.listLatestLocalRequesterText([rig.threadId as never])).values(),
+        ].join(""),
+      ).toContain("M3 kept words");
+
+      // Both transcript page units, their counts and ordinals, on the chat and on the fork.
+      const { readTranscriptPage, resolveTranscriptSpans } = await import("../../threads/index.js");
+      for (const thread of [main, fork]) {
+        for (const unit of ["item", "turn"] as const) {
+          const page = await readTranscriptPage(rig.repos, thread, {
+            order: "oldest_first",
+            unit,
+            limit: 100,
+          });
+          const pageIds = page.entries.map(({ turn }) => turn.id);
+          expect(pageIds).not.toContain(m2);
+          expect(JSON.stringify(page.entries)).not.toContain("M2 hidden words");
+          expect(pageIds).toContain(m3);
+        }
+        const { spans } = await resolveTranscriptSpans(rig.repos, thread);
+        const total = await rig.repos.turns.countConversationTurns(spans, 1_000_000);
+        const walked: string[] = [];
+        for (let ordinal = 1; ordinal <= total; ordinal += 1)
+          walked.push(
+            (await rig.repos.turns.findConversationTurnByOrdinal(spans, ordinal))?.id ?? "",
+          );
+        expect(walked).not.toContain(m2);
+        expect(walked).toContain(m3);
+        expect(walked).not.toContain("");
+      }
+
+      // The derive source and the model: the loader's conversation, then a reply on each chat.
+      const { loadThreadConversationContext } = await import("../../threads/index.js");
+      for (const thread of [main, fork]) {
+        const conversation = await loadThreadConversationContext(rig.repos, thread);
+        expect(conversation.turns.map(({ id }) => id)).not.toContain(m2);
+        expect(conversation.blocks.map(({ turnId }) => turnId)).not.toContain(m2);
+        expect(conversation.turns.map(({ id }) => id)).toContain(m3);
+      }
+      expect(
+        (await loadThreadConversationContext(rig.repos, fork)).inherited.turns.map(({ id }) => id),
+      ).not.toContain(m2);
+      const m4 = (await rig.send(rig.threadId, "M4 next")).userTurnId;
+      expect((await rig.repos.turns.findById(m4 as never))?.position).toBe(
+        (turn3?.position ?? 0) + 1,
+      );
+      rig.bindThread(fork.id);
+      await rig.send(fork.id, "F question");
+      for (const threadId of [rig.threadId, fork.id]) {
+        const run = await rig.orchestrator.prepare({ threadId, drain: true });
+        await run.execute();
+        await processDetachedWork.drain();
+      }
+      expect(rig.gateway.requests).toHaveLength(2);
+      for (const request of rig.gateway.requests) {
+        expect(JSON.stringify(request)).not.toContain("M2 hidden words");
+        expect(JSON.stringify(request)).toContain("M3 kept words");
+      }
+
+      // The chat list: a handed-back message is neither the preview nor the activity head.
+      const m5 = (await rig.send(rig.threadId, "M5 hidden preview")).userTurnId;
+      await handBack(rig, crypto.randomUUID(), ids([m5]));
+      const [head] = await db
+        .select({ leaf: schema.threads.conversationalLeafTurnId })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, rig.threadId));
+      expect(head?.leaf).not.toBe(m5);
+      expect(
+        [
+          ...(await rig.repos.turns.listLatestLocalRequesterText([rig.threadId as never])).values(),
+        ].join(""),
+      ).not.toContain("M5 hidden preview");
+
+      // Structural: every reader of turns, blocks or transcript rows is either a conversation read or a
+      // named graph reader. A new reader that skips the conversation read fails here until it is routed
+      // through `loadThreadConversationContext`, `listConversationTurns` or `listConversationBlocks`, or
+      // it is added to the graph readers below with its reason.
+      const root = new URL("../../../", import.meta.url).pathname;
+      const reads =
+        /\.(?:turns|blocks)\.listByThread\(|\.(?:readTranscriptItems|countConversationTurns|findConversationTurnByOrdinal)\(/;
+      const graphReaders = new Set([
+        "domains/threads/domain/thread-conversation-context.ts", // the conversation read itself
+        "domains/threads/domain/transcript-page.ts", // pages, counts and ordinals filter in SQL
+        "domains/threads/thread-snapshot.ts", // graph walk for the leaf, output filtered
+        "domains/runtime/loop/orchestrator.ts", // graph for the leaf and positions, content from the loader
+        "domains/threads/domain/prompt-epochs.ts", // assistant boundaries only
+        "domains/runtime/loop/prefix-cache-state.ts", // model responses and timing only
+        "domains/runtime/adapters/runtime-delivery.ts", // completed replies in the lineage
+        "domains/runtime/spawn/orphan-report-repair.ts", // child execution chains, no writer content
+        "domains/runtime/handoff/brief-request.ts", // graph walk for the last summary attempt
+      ]);
+      const offenders: string[] = [];
+      for (const file of globSync("domains/**/*.ts", { cwd: root })) {
+        const path = file.replaceAll("\\", "/");
+        if (
+          /\.(test|db\.test)\.ts$|__tests__|__conformance__|\/adapters\/(drizzle|in-memory)\//.test(
+            path,
+          )
+        )
+          continue;
+        if (path.endsWith("/ports/repositories.ts")) continue;
+        if (reads.test(readFileSync(`${root}${path}`, "utf8")) && !graphReaders.has(path))
+          offenders.push(path);
+      }
+      expect(offenders).toEqual([]);
+      // The derive source reads the common loader and never the graph.
+      expect(
+        readFileSync(`${root}domains/threads/domain/derive-conversation.ts`, "utf8"),
+      ).toContain("loadThreadConversationContext(");
+    });
+
+    it("row 38: a replay returns the stored decision after the compaction that held the message dies", async () => {
+      const rig = await rigWith();
+      const m2 = (await rig.send(rig.threadId, "M2 words")).userTurnId;
+      const dead = await deadExecution(rig, "compaction", [m2]);
+      const request = crypto.randomUUID();
+      const first = await handBack(rig, request, ids([m2]));
+      expect(first).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
+
+      await repair(rig);
+      expect((await rowOf(rig, m2)).deliveredAt).toBeNull();
+      const replay = await handBack(rig, request, ids([m2]));
+      expect(replay).toMatchObject({ handedBack: [], answered: [m2], gone: [] });
+      expect((await rowOf(rig, m2)).handedBackBy).toBeNull();
+      expect(await endsOf(rig, dead.executionId)).toBe(1);
+      await rig.orchestrator.startDrain(rig.threadId as never);
+      await processDetachedWork.drain();
+      expect((await rowOf(rig, m2)).by).not.toBeNull();
+      expect(requestText(rig)).toContain("M2 words");
+    });
+
+    it("row 39: a run that starts with no writer message after the leaf was handed back chains from the graph and omits it", async () => {
+      const summarizer = scriptedSummarizer();
+      const rig = await rigWith({ summarizer });
+      const m2 = (await rig.send(rig.threadId, "M2 hidden words")).userTurnId;
+      await handBack(rig, crypto.randomUUID(), ids([m2]));
+      const leaf = await rig.repos.turns.findById(m2 as never);
+      expect((await rig.repos.threads.findById(rig.threadId))?.activeLeafTurnId).toBe(m2);
+      await rig.delivery.enqueue({
+        id: crypto.randomUUID(),
+        threadId: rig.threadId as never,
+        intent: "control",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "compact" },
+        idempotencyKey: crypto.randomUUID(),
+      });
+
+      const { run, done } = await startDrain(rig);
+      expect(await done).toMatchObject({ status: "complete" });
+      await processDetachedWork.drain();
+      const compaction = await rig.repos.turns.findById(run.executionTurnId);
+      expect(compaction).toMatchObject({ role: "compaction", prevTurnId: m2 });
+      expect(compaction?.position).toBe((leaf?.position ?? 0) + 1);
+      expect(JSON.stringify(summarizer.calls)).not.toContain("M2 hidden words");
+    });
+
+    it("row 40: a completed compaction's pin on a handed-back message neither breaks the next run nor reaches a summary", async () => {
+      const held = heldSummarizer();
+      const rig = await fixture({
+        summarizer: held.summarizer,
+        gateway: scriptedGateway({ usage: lowUsage }),
+        holdWakes: true,
+      });
+      const run = await rig.orchestrator.prepare({
+        threadId: rig.threadId,
+        userText: "M1 pinned words",
+      });
+      const done = run.execute();
+      await held.started;
+      // A switch and a message behind it queue while C summarizes, so C yields at its boundary.
+      await rig.delivery.enqueueControl({
+        threadId: rig.threadId as never,
+        actorId: rig.ids.user,
+        id: crypto.randomUUID(),
+        control: { kind: "write_mode", mode: "draft" },
+      });
+      const m2 = (await rig.send(rig.threadId, "M2 behind the switch")).userTurnId;
+      held.release();
+      await done;
+      await processDetachedWork.drain();
+      const compaction = await rig.repos.turns.findById(run.executionTurnId);
+      expect(compaction).toMatchObject({ role: "compaction", status: "complete" });
+      expect(
+        (compaction?.metadata as { pinnedRequestTurnIds?: string[] }).pinnedRequestTurnIds,
+      ).toContain(run.userTurnId);
+      expect(await leaseRow(rig)).toBeNull();
+      expect((await rowOf(rig, run.userTurnId)).deliveredAt).toBeNull();
+
+      await handBack(rig, crypto.randomUUID(), ids([run.userTurnId]));
+      // The next run builds its context over the pin and answers M2 without it.
+      rig.setThreshold(100000);
+      expect(await rig.delivery.applyDueSwitches(rig.threadId as never)).toBe(true);
+      const next = await startDrain(rig);
+      expect(await next.done).toMatchObject({ status: "complete" });
+      await processDetachedWork.drain();
+      expect((await rowOf(rig, m2)).by).not.toBeNull();
+      const last = rig.gateway.requests.at(-1);
+      expect(JSON.stringify(last)).not.toContain("M1 pinned words");
+      expect(JSON.stringify(last)).toContain("M2 behind the switch");
+      // A cold summary over the same chat builds without the pin too.
+      await rig.delivery.enqueue({
+        id: crypto.randomUUID(),
+        threadId: rig.threadId as never,
+        intent: "control",
+        provenance: { kind: "writer", actorId: rig.ids.user },
+        body: { kind: "compact" },
+        idempotencyKey: crypto.randomUUID(),
+      });
+      const summary = await startDrain(rig);
+      expect(await summary.done).toMatchObject({ status: "complete" });
+      await processDetachedWork.drain();
+      expect(JSON.stringify(held.summarizer.calls.at(-1))).not.toContain("M1 pinned words");
     });
   });
