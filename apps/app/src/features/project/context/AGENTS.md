@@ -65,8 +65,8 @@ Shared across both shells:
   through the replica. Don't place entries anywhere else.
 - **Selection and dragging** (`entry-drag/`): VS Code's selection model. The
   list that renders the rows owns one selection (`useEntrySelection`, handed to
-  rows through `EntrySelectionProvider`) and its drop route, so a drop can
-  reselect what moved. Until the writer Ctrl/Cmd- or Shift-clicks, the
+  rows through `EntrySelectionProvider`) and gives it to its drop routes (the
+  Files tree has one per area), so a drop can reselect what moved. Until the writer Ctrl/Cmd- or Shift-clicks, the
   selection is just the open row; Escape returns to it. Dragging carries the
   selection; a drop on a folder, an area header or any row inside an open folder
   moves within one system (the project areas are one; each owner's Scratch is

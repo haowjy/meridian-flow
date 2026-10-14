@@ -159,6 +159,13 @@ entry identity; equal paths in different areas remain distinct destinations.
 Destination resolution, refusals and the replica call live in `move-entry.ts`,
 shared with dragging.
 
+The chat's Scratch renders actual entries through `ContextTreeEntry` and its
+`TreeEnvProvider`, retaining lineage or Work authority. Rename, Move… and Delete share the Files implementations through
+`useEntryInteraction`, the row boundary for management state, dispatch and
+operation selection. Creation is absent. One surface-owned deletion coordinator
+and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
+"Earlier notes" group is navigation only, not a mutable folder.
+
 ## Selecting and dragging rows
 
 The Files tree, the chat's Scratch and a Work's Files each own one selection
@@ -179,7 +186,8 @@ silently dropping rows. `drag-session.ts` holds the drag (a browser hides drag
 data until the drop) and writes the entries' URIs and names to the transfer for
 anything outside the app.
 
-Each list has a `TreeDropScope` whose `entries` route (`use-entry-move-route.ts`)
+Each list has a `TreeDropScope` (the Files tree one per area, all sharing the
+tree's selection) whose `entries` route (`use-entry-move-route.ts`)
 answers every hovered target: accept ("Move to Act 2"), refuse ("Can't go inside
 itself", "Act 2 already has chapter-2", including two selected rows with the
 same name), or nothing (the row is already there, the target is a
@@ -208,10 +216,3 @@ scope counts hovered elements per target and the innermost target claims each
 event; `DropRegion` lights the folder row and everything open under it as one
 block (Work Files, a flat list, lights each row of the folder). Hovering a
 closed folder or area for 600 ms opens it. The phone shell has no drag.
-
-The chat's Scratch renders actual entries through `ContextTreeEntry` and its
-`TreeEnvProvider`, retaining lineage or Work authority. Rename, Move… and Delete share the Files implementations through
-`useEntryInteraction`, the row boundary for management state, dispatch and
-operation selection. Creation is absent. One surface-owned deletion coordinator
-and dialog serve all Scratch rows, retaining each target's owner. The actual owning Work determines editability (`isWorkArchived`); archived or unavailable Work owners remain navigable with no mutation controls. Shared rows receive explicit action capabilities from their surface. The synthetic
-"Earlier notes" group is navigation only, not a mutable folder.
