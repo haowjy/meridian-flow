@@ -21,12 +21,12 @@ export type DurableTrailRecord = {
   transactionalNotice?: NoticeInput;
 };
 
-/** Total parser for the frozen settlement trail input stored in jsonb. */
 /** A stored trail seed that does not parse: corruption, never a transient failure. */
 export class DurableTrailSeedError extends Error {
   readonly name = "DurableTrailSeedError";
 }
 
+/** Total parser for the frozen settlement trail input stored in jsonb. */
 export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
   if (!isRecord(value)) throw new DurableTrailSeedError("Durable trail seed must be an object");
   const {
