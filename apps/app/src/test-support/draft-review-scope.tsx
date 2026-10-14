@@ -147,6 +147,21 @@ export type ScopeProbe = {
 
 export type ReviewedDraft = { documentId: string; itemKey: string };
 
+/** The query and thread providers every composed review surface needs; mount the real ones, not mocks. */
+export function ReviewTestProviders({
+  client,
+  children,
+}: {
+  client: QueryClient;
+  children: ReactNode;
+}) {
+  return (
+    <QueryClientProvider client={client}>
+      <ThreadStoreProvider now={0}>{children}</ThreadStoreProvider>
+    </QueryClientProvider>
+  );
+}
+
 export async function renderReviewScopes(
   run: (probe: () => ScopeProbe) => Promise<void>,
   options: {
@@ -268,11 +283,9 @@ export async function renderReviewScopes(
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   current.queryClient = queryClient;
   const node = (
-    <QueryClientProvider client={queryClient}>
-      <ThreadStoreProvider now={0}>
-        {options.host ? options.host(<Scopes />) : <Scopes />}
-      </ThreadStoreProvider>
-    </QueryClientProvider>
+    <ReviewTestProviders client={queryClient}>
+      {options.host ? options.host(<Scopes />) : <Scopes />}
+    </ReviewTestProviders>
   );
   try {
     await withReactRoot(node, () => run(() => current as ScopeProbe), {

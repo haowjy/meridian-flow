@@ -2,7 +2,7 @@
 /** Real editor, controller, sessions and handoff with held reads and wire acknowledgements. */
 
 import { MessageType } from "@hocuspocus/provider";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import * as encoding from "lib0/encoding";
 import { act, useEffect, useState } from "react";
@@ -18,7 +18,7 @@ import {
   type useDraftReview,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
-import { listed, previewOf, work } from "@/test-support/draft-review-scope";
+import { listed, previewOf, ReviewTestProviders, work } from "@/test-support/draft-review-scope";
 import { createEditorSessions } from "@/test-support/editor-sessions";
 import { installEditorShell, ReviewEditorHost } from "@/test-support/editor-shell";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
@@ -103,9 +103,9 @@ function renderEditor(run: () => Promise<void>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   testQueryClient = queryClient;
   return withReactRoot(
-    <QueryClientProvider client={queryClient}>
+    <ReviewTestProviders client={queryClient}>
       <Scope />
-    </QueryClientProvider>,
+    </ReviewTestProviders>,
     run,
   );
 }
