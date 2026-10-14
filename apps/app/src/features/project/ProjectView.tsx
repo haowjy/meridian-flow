@@ -541,7 +541,7 @@ function HydratedReviewControllers({
           tab.kind === "tracked" &&
           tab.draftOnly &&
           tab.documentId === props.reviewAddressDocumentId &&
-          tab.reviewWorkId === props.editorWorkId,
+          Boolean(props.editorWorkId && tab.reviews?.[props.editorWorkId]),
       ),
     },
   });

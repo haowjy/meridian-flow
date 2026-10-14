@@ -329,14 +329,16 @@ read re-reads on the Work draft lists' signals: commands, catalog wakes, identit
 focus and reconnect.
 
 New-document drafts have server document/Yjs state but no live catalog
-membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` and
-`reviewItemKey` in the review overlay, never durable workspace identity.
-Overlay identity includes document, Work and draft; navigation consumes the
+membership. A synthesized `draftOnly` tab carries `reviewWorkId` and
+`reviewItemKey`; it is the document's one tab in the workspace and is not persisted.
+Navigation consumes the
 row’s own `contextLocation`, without restricting its document scheme. Hosts acquire only its
 branch; phone `MobileDraftOnlyDocumentHost` delegates to `ContextEditorMountHost`.
 Close review closes only the container used, without discarding the draft; it can be reopened.
-Readable-address admission enriches/absorbs the overlay rather than hiding a
-durable tab beneath it. Another Work cannot resolve that overlay.
+Readable-address admission enriches that one tab; a join (`reconcile-resource`) absorbs
+it into the resource's tab. Another Work cannot resolve it. The editor card
+"Couldn't open review mode." means a failed review room only; a draft-only tab with no
+review item yet is pending, and a gone draft is the lifecycle closing its tab.
 
 `draft-only-lifecycle.ts` defines promotion/removal once over Editor-tab and dock
 adapters. Both containers settle; Close is container-local. The Editor adapter
@@ -364,8 +366,8 @@ cannot enumerate or settle presentations. Hidden restore candidates are not life
   address before promotion/removal. A preview `gone`/404 is not this catalog evidence: it keeps the draft-only error
   destination with Retry/Close. Remote confirmed-Discard omission plus fresh
   catalog absence closes it.
-- Editor overlay tabs are never persisted and are skipped by durable route
-  continuity. The dock persists its review address and rebuilds the overlay from
+- Draft-only Editor tabs are never persisted and are skipped by durable route
+  continuity. The dock persists its review address and rebuilds its tab from
   the Work’s draft list. `pullContextCatalogOnHint` wakes mounted draft lists after manifest
   changes so another page can classify remote Apply/Discard without reload.
 

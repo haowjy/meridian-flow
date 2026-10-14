@@ -17,7 +17,7 @@ it.each([
   "user",
 ] as const)("launches creates and edits at the row's %s locator, retaining one overlay on repeat", async (scheme) => {
   const prior = useContextTabsStore.getState();
-  useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
+  useContextTabsStore.setState({ byProject: {} });
   let launch: ReturnType<typeof useOpenEditorReview> | undefined;
   let destination: Parameters<OpenContextRoute>[0] | undefined;
   const navigate: OpenContextRoute = async (target, options) => {
@@ -39,7 +39,7 @@ it.each([
       </EditorReviewHandoffProvider>,
       async () => {
         for (const isNew of [true, false]) {
-          useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
+          useContextTabsStore.setState({ byProject: {} });
           const target: AiDraftLaunchTarget = {
             workId: "work-a",
             documentId: "document-a",
@@ -68,8 +68,9 @@ it.each([
           if (isNew)
             expect(tabs[0]).toMatchObject({
               draftOnly: true,
-              reviewWorkId: "work-a",
-              reviewItemKey: "branch-a",
+              reviews: {
+                ["work-a"]: { itemKey: "branch-a", tabInstanceToken: expect.any(String) },
+              },
             });
         }
       },

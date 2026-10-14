@@ -51,12 +51,12 @@ export function contextTabFromDraftGroup(group: {
     editable: true,
     filetype,
     schemaType: classification.schemaType,
-    reviewWorkId: group.workId,
     ...(group.isNew
       ? {
           draftOnly: true,
-          reviewItemKey: group.itemKey,
-          tabInstanceToken: crypto.randomUUID(),
+          reviews: {
+            [group.workId]: { itemKey: group.itemKey, tabInstanceToken: crypto.randomUUID() },
+          },
         }
       : {}),
   };
