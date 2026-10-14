@@ -3,11 +3,14 @@
  * content member of one batch, crash recovery, and the command record (resend, conflict, blocked).
  */
 import { randomUUID } from "node:crypto";
+import { REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { branchPushSettlementBatches } from "@meridian/database/schema";
+import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { createError } from "nitro/h3";
 import { expect, it } from "vitest";
+import * as Y from "yjs";
 import {
   handleApplyWorkDraftChangesRequest,
   handleApplyWorkDraftRequest,
@@ -134,8 +137,25 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     });
   });
 
-  it("4: a kill after staging recovers exactly the selected change, with live changed meanwhile or not", async () => {
+  it("4: a kill after staging, then a late writer's recovery that consumes client 1's clocks, still recovers exactly the selected change and advances the base", async () => {
     const c = await twoChanges(start);
+    const sync = c.runtime.ports.documentSync;
+    const { branchId } = await c.s.draftBranch(c.ascension, c.chapter);
+    const load = async () => {
+      const loaded = await sync.loadHocuspocusBranchState(branchId);
+      if (!loaded) throw new Error("the item has no branch state");
+      const doc = new Y.Doc({ gc: false });
+      Y.applyUpdate(doc, loaded.state);
+      return doc;
+    };
+    const paragraphs = (doc: Y.Doc, fragment: string) =>
+      readBlocks(doc.getXmlFragment(fragment), buildDocumentSchema()).map((b) => b.textContent);
+    const client1 = (doc: Y.Doc) => Y.decodeStateVector(Y.encodeStateVector(doc)).get(1) ?? 0;
+
+    // A writer's tab opens the draft, then live rewrites the paragraph they are about to type into.
+    const peer = await load();
+    await c.s.writer.write("chapter.md", "Opening.\n\nCentre.\n\nEnd.");
+    await sync.flushBranchLivePull(c.chapter);
     const request = await c.click("first");
     const remove = setCollabHook("applyItems.afterStaging", async () => {
       remove();
@@ -143,15 +163,45 @@ describeDraftTreeDb("review commands (postgres)", (start, db) => {
     });
     await expect(c.applyChange(request)).rejects.toThrow("process death");
     expect(await c.s.batchStates()).toEqual(["pending"]);
-    await c.s.writer.write("chapter.md", "Opening.\n\nMiddle.\n\nEnd.\n\nCoda.");
+
+    // The batch is pending without its leases: the late update is admitted and recovered as client 1.
+    const room = await load();
+    const clockBefore = client1(room);
+    const before = Y.encodeStateVector(peer);
+    peer.clientID = allocateDocumentClient(peer);
+    const typed = (peer.getXmlFragment("prosemirror").get(1) as Y.XmlElement).get(0) as Y.XmlText;
+    typed.insert(0, "quickly ");
+    const update = Y.encodeStateAsUpdate(peer, before);
+    Y.applyUpdate(room, update);
+    await sync.admitBranchWriterUpdate({
+      branchId,
+      update,
+      origin: { type: "user", userId: c.scope.userId },
+      document: room,
+    });
+    const admitted = await load();
+    expect(client1(admitted)).toBeGreaterThan(clockBefore);
+    expect(await c.s.batchStates()).toEqual(["pending"]);
+
     await c.s.expirePendingClaims();
     expect(await c.s.recover()).toBe(1);
     expect(await c.s.batchStates()).toEqual(["completed"]);
-    const live = c.s.view("live");
-    expect(await live.text("chapter.md")).toContain("Opening, drafted.");
-    expect(await live.text("chapter.md")).toContain("Coda.");
-    expect(await live.text("chapter.md")).not.toContain("End, drafted.");
+    const settled = await load();
+    const snapshot = {
+      live: await c.s.view("live").text("chapter.md"),
+      draft: paragraphs(settled, "prosemirror"),
+      base: paragraphs(settled, REVIEW_BASE_FRAGMENT),
+      remaining: (await c.frame()).groups.length,
+    };
+    expect(snapshot).toEqual({
+      live: "Opening, drafted.\n\nCentre.\n\nEnd.\n",
+      draft: ["Opening, drafted.", "Centre.", "quickly ", "End, drafted."],
+      base: ["Opening, drafted.", "Centre.", "End."],
+      remaining: 1,
+    });
     expect(await c.s.recover()).toBe(0);
+    expect(await c.s.view("live").text("chapter.md")).toBe(snapshot.live);
+    expect(paragraphs(await load(), REVIEW_BASE_FRAGMENT)).toEqual(snapshot.base);
   });
 
   it("11: a command id sent twice, after completion and concurrently, has one effect and one answer", async () => {
