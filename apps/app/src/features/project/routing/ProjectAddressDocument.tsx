@@ -90,12 +90,12 @@ export function ProjectAddressDocument({
       return;
     }
     if (reviewItemKey) {
-      // The address carries the item and ReviewAddressOwner opens its review. A document
-      // that has a live location keeps the locator its tab and catalog follow (a sidebar
-      // rename moves them): the draft view's locator lags that rename, so repairing from it
-      // would walk the route back to the old name, the rename would walk it forward, and the
-      // two would trade writes without end (#845). Only a hidden review has no live
-      // catalog to refresh its labels, so there the server's canonical locator repairs its tab.
+      // The address carries the item and ReviewAddressOwner opens its review. A live
+      // document's locator belongs to its live tab and the live catalog, which a sidebar
+      // rename moves; the review does not write it back. The server-canonical repair is for a
+      // review with no live entry (a draft-only document), whose tab nothing else updates.
+      // Repairing a live document's route here wrote against the rename-follow and the two
+      // traded writes without end (#845).
       if (!reviewTab && liveTabOpen) return;
       if (reviewTab) {
         const patch = canonicalReviewTabPatch(

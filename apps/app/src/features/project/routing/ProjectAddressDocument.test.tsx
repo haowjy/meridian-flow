@@ -223,10 +223,10 @@ it("keeps a draft-only document out of the live view and repairs only its review
   navigation.dispose();
 });
 
-it("leaves a renamed live document's route to its tab when the draft view still has the old name (#845)", async () => {
+it("a renamed live document's route stays with its tab (#845)", async () => {
   const noWorkId = "00000000-0000-4000-8000-000000000009";
   const projectId = "550e8400-e29b-41d4-a716-446655440000";
-  // The sidebar rename moved the tab and the route to `renamed`; the draft view still says `doc`.
+  // The sidebar rename moved the tab and the route to `renamed`; the review entry's uri says `doc`.
   const href = `/p/${projectId}/editor/manuscript/renamed?work=&item=draft-1`;
   openTabs.push({ kind: "tracked", documentId: "doc-id", scheme: "manuscript", path: "/renamed" });
   const replaceEntry = vi.fn();
