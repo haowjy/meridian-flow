@@ -82,6 +82,7 @@ function rig(options: ConstructorParameters<typeof ThreadRunScenario>[0] = {}) {
       },
       postControl: async () => ({
         id: "control",
+        queued: false,
         pending: null,
         turnId: "switch-turn",
         seq: "1",
@@ -592,10 +593,7 @@ describe("write-mode switches in the journal", () => {
           order.push(`switch after ${r.scenario.appendRequests.length} message(s)`);
           return {
             id: "switch-1",
-            pending: null,
             turnId: "switch-turn",
-            seq: "1",
-            mode: "direct",
             runState: {
               version: "0",
               items: [],
@@ -638,10 +636,7 @@ describe("write-mode switches in the journal", () => {
           if (refuse) throw new HttpResponseError("work_unavailable", 400, null);
           return {
             id: "switch-1",
-            pending: null,
             turnId: "switch-turn",
-            seq: "1",
-            mode: "direct",
             runState: {
               version: "0",
               items: [],

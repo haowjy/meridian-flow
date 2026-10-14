@@ -24,7 +24,7 @@ export interface CreateDerivedPrimaryThreadInput {
   userId: UserId;
   projectId: ProjectId;
   workId: WorkId | null;
-  /** The source chat's mode: a fork or handoff continues in it. */
+  /** The mode the writer sees on the source chat (a pending switch's): a fork or handoff starts in it. */
   aiWriteMode: AiWriteMode;
   /** The source thread's own lineage, inherited byte-for-byte (see file header). */
   source: Pick<Thread, "parentThreadId" | "rootThreadId" | "spawnDepth">;

@@ -52,8 +52,9 @@ describe("next", () => {
       boundary: "yield",
       runStart: "switch S",
     },
-    { name: "S", pending: () => [S()], boundary: "none", runStart: "switch S" },
-    { name: "S, N", pending: () => [S(), notice("N")], boundary: "batch N", runStart: "switch S" },
+    { name: "S", pending: () => [S()], boundary: "none", runStart: "none" },
+    { name: "S, C", pending: () => [S(), C()], boundary: "none", runStart: "switch S" },
+    { name: "S, N", pending: () => [S(), notice("N")], boundary: "batch N", runStart: "none" },
     {
       name: "C, S, M2",
       pending: () => [C(), S(), message("M2")],

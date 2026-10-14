@@ -26,12 +26,15 @@ row with a higher seq) must be answered in S's mode, so:
 | Pending (seq order) | At a request boundary | At run start |
 | --- | --- | --- |
 | `S, M2` | yield: end the execution | apply S, then run M2 |
-| `M1, S` | adopt M1 | run M1, then apply S |
+| `M1, S` | adopt M1 | run M1; S stays pending |
 | `M1, S, M2` | yield | apply S, then run M1 and M2 together |
-| `S` (with or without notices) | adopt as today | apply S |
+| `S` (with or without notices) | adopt as today | nothing: S stays pending |
+| `S, C` | adopt as today | apply S, then run C |
 | `C, S, M2` | yield | apply S, then M2, then C |
 
-With nothing behind it, S runs as the oldest control. Materialization
+A switch is pending until a run is admitted. With nothing else to run, S stays
+queued, in an idle chat as well as during a reply, and a reply ending with S
+pending and nothing waiting leaves it so. Materialization
 (`materializePrefix`) is not a request boundary: it keeps putting every waiting
 non-command row into the graph in seq order and never yields.
 
@@ -59,55 +62,53 @@ into a cancel or the shutdown failure.
   the execution ends with no successor. Its receipt stays unacknowledged:
   the messages wait for the next run.
 
-Either way the execution ends (`execution.ended`) with the waiting messages
-undelivered; the next execution is reserved for them and delivers them
+Either way the execution ends (its lease row is released) with the waiting
+messages undelivered; the next execution is reserved for them and delivers them
 ([run identity](delivery.md#run-identity)).
 
-The release wake then applies S, and a new run adopts the waiting messages and
-chains its reply after the switch turn. A writer message sent while a switch is
+The release wake starts a run, which applies S at its start, adopts the waiting
+messages and chains its reply after the switch turn. A writer message sent while a switch is
 queued is stamped `send`, not `steer`. Admission decides the stamp under the
 thread lock that fixes the message's inbox order, and again on a retried
 attempt, so a switch another tab commits first is always seen.
 
 ## Applying a switch
 
-`applyDueSwitches(threadId)` takes `RunClaim.withExclusiveThread`, so it is a
-no-op while an execution holds the chat; an execution's mode can't change under it. Each
-due switch is one transaction under the thread lock: set `threads.ai_write_mode`
-and the Work's `default_ai_write_mode` (thread, then Work), append a complete
-`system` turn at the active leaf (`writeMode` = the new mode, metadata
-`{ kind: "write_mode_switch", mode, controlMessageId }`) whose text block is
-the model's `<system_update>` notice, acknowledge the control and publish the
-pending inbox. No model call and no lease.
+A switch applies at the admitted run start (`selectRunStart` in the delivery
+adapter): after the start refusals, including the usage check, and under the
+run's claim, so an execution's mode can't change under it. A refused start
+leaves S pending. It is due when `next(pending, "run_start")` returns `switch`:
+a message behind it, or a compaction. A Retry always starts a run, so it
+applies a pending switch (`retry`). A lone switch never starts a run, so a
+release wake with nothing else to run leaves it, and the sweep ignores a thread
+whose only pending row is a switch. A switch queued while setup is in flight is
+found by the selection's retry loop, and the start commit validates that
+selection.
 
-It runs after a switch enqueue commits (the idle case), in `RunStarter.start`
-before every drain (release wake, sweep), and indirectly when run-start
-selection returns `switch`: the run reports no work, and the release wake's
-reread reaches `applyDueSwitches`.
+The apply is one transaction under the thread lock: set `threads.ai_write_mode`,
+append a complete `system` turn at the active leaf (`writeMode` = the new mode,
+metadata `{ kind: "write_mode_switch", mode, controlMessageId }`) whose text
+block is the model's `<system_update>` notice, acknowledge the control and
+publish the run-state record (which carries the new mode). No model call and no lease.
 
-The control route applies an idle chat's switch itself before answering. A
-short exclusive claim (idle materialization, a rebind) only delays it: the
-route retries for about 2 s while no run lease holds the chat, and stops at
-once when an execution holds it (the release wake applies it). A claim that outlasts
-the retries turned them away, and a short claim that turned an attempt away
-wakes its chat on release (`loop/contended-claim-wake.ts`, wrapped around the
-run claim at composition), so the switch applies right after it releases. That
-tracking is process-local: only a claim held by another server process leaves
-the switch to the sweep. The route does not enqueue a wake of its own, but a
-contended claim's release wake, or an execution's, can apply the switch while the
-attempts are still running. The answer stays consistent because of the
-thread lock, not because no wake runs: it reads the control's switch turn and
-queue row together under the lock that every apply takes, so an apply lands
-wholly before or after it. A switch turn recording the control means applied,
-and a waiting row means queued.
+A switch never wakes the chat and the route never applies one. Switching back,
+or Stop, cancels the queued switch with nothing recorded. The Work's
+`default_ai_write_mode` follows the writer's latest choice, not the apply: it
+is set when the writer switches, switches back or stops the pending switch (last
+action wins), so a chat created in between starts in the mode the writer just
+chose. A fork or handoff starts in the mode the writer sees
+(`effectiveWriteMode`: the pending switch's, else the applied one); a subagent
+keeps its parent's applied mode, which is the running reply's.
 
 **Undo seam.** The switch turn owns no document edits: no change-trail rows,
 no receipt, nothing undoable. Because the yield ends the execution, writes before
 and after a switch always belong to different turns and responses, so no edit
 or receipt spans a mode change. Keep both true.
 
-Retry looks past trailing switch turns to find the failed reply and chains the
-retry after them, so a switch never takes Retry away.
+Retry is runnable input at that boundary. Its compare-and-swap looks past
+trailing switch turns to find the failed reply and chains the retry after them,
+so a switch never takes Retry away; a newer message or another Retry moves the
+leaf and refuses it, leaving the switch pending.
 
 ## Enqueue, cancel-out and replay
 
@@ -122,14 +123,12 @@ Enqueue runs under the thread lock, and every request writes its own row.
    most one queued switch.
 3. **No change.** A switch to the queued mode, or to the chat's current mode
    with nothing queued, writes the row already acknowledged.
-4. **Otherwise** the switch is queued and, if the chat is idle, applied at once.
+4. **Otherwise** the switch is queued, idle chat or not, and sets the Work's default.
 5. `compact_requires_completed_reply` applies to `compact` only.
 
-An acknowledged row with no switch turn answers replays with `pending` and
-`turnId` both null, so a retried cancel never cancels a newer switch. The route
-answers `{ id, pending, turnId }`: applied gives the switch turn's id, queued
-gives the waiting item, canceled or unchanged gives both null (201 when
-created, 200 on replay).
+An acknowledged row with no switch turn answers replays with `turnId` null and
+no item for it in the answer's `runState`, so a retried cancel never cancels a newer switch. The answer's fields are in the
+[control API](../../../../../../docs/api/thread-controls.md#enqueue).
 
 ## Ownership and withdrawal
 

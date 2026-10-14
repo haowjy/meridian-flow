@@ -771,10 +771,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolRegistry = createToolRegistry();
   let runner: TurnRunner;
   const runStarter = createRunStarter(
-    {
-      startDrain: (id) => runner.startDrain(id),
-      applyDueSwitches: (id) => delivery.applyDueSwitches(id),
-    },
+    { startDrain: (id) => runner.startDrain(id) },
     ports.eventSink,
   );
   const publishThreadStatus = async (threadId: ThreadId) => {
