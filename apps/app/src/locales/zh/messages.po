@@ -1536,9 +1536,10 @@ msgid "Couldn't stop the brief. Try again."
 msgstr ""
 
 #: src/features/chat/thread-controls/useThreadControls.ts
-msgid "Couldn't stop the compaction. Try again."
-msgstr ""
+#~ msgid "Couldn't stop the compaction. Try again."
+#~ msgstr ""
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/useChatStop.ts
 msgid "Couldn't stop. Try again."
 msgstr ""
@@ -3812,13 +3813,13 @@ msgstr "已停止"
 msgid "Stopped"
 msgstr "已取消"
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/useChatStop.ts
 msgid "Stopping"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
-#: src/features/chat/thread-controls/useThreadControls.ts
 msgid "Stopping compaction"
 msgstr ""
 
