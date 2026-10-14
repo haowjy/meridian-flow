@@ -1,4 +1,10 @@
-/** Shared upload/import byte classification and document filename codec. */
+/**
+ * Shared upload/import byte classification and document filename codec.
+ *
+ * Classification is layered: `file-type` binary signatures first, then the declared MIME and
+ * extension table for text-like formats. A signature that names a binary format (RTF, archives,
+ * office, media) wins over the extension and never classifies as text.
+ */
 import type { Filetype } from "@meridian/contracts/protocol";
 import {
   classifyFiletype,
@@ -9,6 +15,7 @@ import {
   parseDocumentFilename,
   registeredExtensionForFiletype,
 } from "@meridian/contracts/protocol";
+import { fileTypeFromBuffer } from "file-type";
 
 const TEXT_MIMES = new Set([
   "application/json",
@@ -37,21 +44,37 @@ export function normalizeFilename(filename: string): string {
   return !safe || safe === "." || safe === ".." ? "upload" : safe;
 }
 
-export function classifyUpload(input: {
+function isTextLikeMime(mime: string): boolean {
+  return (
+    mime.startsWith("text/") ||
+    TEXT_MIMES.has(mime) ||
+    mime.endsWith("+json") ||
+    mime.endsWith("+xml")
+  );
+}
+
+/**
+ * Binary format named by the leading bytes, or null. Import classifies from the manifest's
+ * 512-byte sniff, which bounds detection to signatures inside that window: a ZIP-based office file
+ * reads as a plain archive there, and the DOCX extension is handled before this runs.
+ */
+export async function sniffMime(bytes: Uint8Array): Promise<string | null> {
+  const detected = await fileTypeFromBuffer(bytes);
+  // file-type also names XML, which is text.
+  return detected && !isTextLikeMime(detected.mime) ? detected.mime : null;
+}
+
+export async function classifyUpload(input: {
   filename: string;
   mimeType: string;
   bytes: Uint8Array;
-}): Filetype {
-  const sniffed = sniffMime(input.bytes);
+}): Promise<Filetype> {
+  const sniffed = await sniffMime(input.bytes);
   const mime = sniffed ?? normalizeMime(input.mimeType);
   const byMime = filetypeForKnownMimeType(mime);
   const byPath = filetypeForKnownPath(input.filename);
   const textLike =
-    mime.startsWith("text/") ||
-    TEXT_MIMES.has(mime) ||
-    mime.endsWith("+json") ||
-    mime.endsWith("+xml") ||
-    (!input.bytes.includes(0) && mime === "application/octet-stream");
+    isTextLikeMime(mime) || (!input.bytes.includes(0) && mime === "application/octet-stream");
   if (textLike) {
     const candidate = byPath ?? byMime ?? "text";
     const classification = classifyFiletype(candidate);
@@ -69,18 +92,6 @@ export function classifyUpload(input: {
   return documentFileTypeFor({ filetype: null, mimeType: mime }) ?? "binary";
 }
 
-export function sniffMime(bytes: Uint8Array): string | null {
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
-    return "image/png";
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
-  if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)
-    return "application/pdf";
-  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38)
-    return "image/gif";
-  if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 3 && bytes[3] === 4)
-    return "application/zip";
-  return null;
-}
 export function intakeFilename(filename: string, fileType: Filetype, mimeType: string) {
   const tracked = classifyFiletype(fileType).kind === "tracked";
   const parsed = parseDocumentFilename(filename, {

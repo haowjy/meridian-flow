@@ -181,7 +181,7 @@ export function createUploadIntake<Bound>(deps: {
       const actualDigest = createHash("sha256").update(raw.bytes).digest("hex");
       if (actualDigest !== byteDigest)
         return { ok: false, error: { code: "idempotency_conflict" } };
-      const fileType = classifyUpload({ filename, mimeType, bytes: raw.bytes });
+      const fileType = await classifyUpload({ filename, mimeType, bytes: raw.bytes });
       const parsed = intakeFilename(filename, fileType, mimeType);
       if (!parsed.ok)
         return { ok: false, error: { code: "invalid_filename", reason: "name/reserved" } };

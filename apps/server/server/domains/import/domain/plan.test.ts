@@ -35,8 +35,8 @@ function manifest(): ImportManifest {
   };
 }
 describe("import planning", () => {
-  it("creates the folder graph, moves folder notes inside and omits settings", () => {
-    const planned = planSelection(validateManifest(manifest()), mint, null);
+  it("creates the folder graph, moves folder notes inside and omits settings", async () => {
+    const planned = await planSelection(validateManifest(manifest()), mint, null);
     const lore = planned.find((node) => node.kind === "folder" && node.path === "Lore");
     expect(planned.find((node) => node.filename === "Lore.md")).toMatchObject({
       parentId: lore?.id,
@@ -64,11 +64,11 @@ describe("import planning", () => {
     resumed.entries[0].sha256 = "b".repeat(64);
     expect(manifestFingerprint(resumed)).not.toBe(manifestFingerprint(original));
   });
-  it("keeps identically named selected roots independent", () => {
+  it("keeps identically named selected roots independent", async () => {
     const selection = manifest();
     selection.roots.push({ rootId: 2, kind: "folder", name: "Book" });
     selection.entries.push({ ...selection.entries[0], rootId: 2, entryId: 30 });
-    const roots = planSelection(selection, mint, null).filter(
+    const roots = (await planSelection(selection, mint, null)).filter(
       (node) => node.kind === "folder" && node.path === "",
     );
     expect(roots).toHaveLength(2);
@@ -81,7 +81,7 @@ describe("import planning", () => {
     selection.entries.push({ ...selection.entries[0], rootId: 2, entryId: 30 });
     selection.unreadable = [{ rootId: 1, path: "Lore/Gone.md" }];
     const validated = validateManifest(selection);
-    const planned = planWithDerivedIds(validated, { projectId }, null);
+    const planned = await planWithDerivedIds(validated, { projectId }, null);
     const kinds = { folder: "folder", entry: "entry" } as const;
     for (const node of planned) {
       const kind =
@@ -153,7 +153,7 @@ describe("import planning", () => {
       "Works/No Work/Scratch/Note.md",
     ].map((path, entryId) => ({ path, entryId, rootId: 1, size: 0, sha256: "a".repeat(64) }));
     const projectId = randomUUID();
-    const planned = planWithDerivedIds(value, { projectId }, null);
+    const planned = await planWithDerivedIds(value, { projectId }, null);
     expect(planned.find((node) => node.path === "Manuscript/Chapter.md")).toMatchObject({
       id: importNodeId({
         projectId,
@@ -177,7 +177,7 @@ describe("import planning", () => {
       "Knowledge Base/Lore",
     ]);
     value.roots[0].meridianExport = '{"formatVersion":2}';
-    expect(() => planSelection(value, mint, null)).toThrow("export_marker_invalid");
+    await expect(planSelection(value, mint, null)).rejects.toThrow("export_marker_invalid");
   });
   it("resume identity includes routing settings and aliases rather than trusting a new reader", () => {
     const original = manifest();
@@ -188,26 +188,28 @@ describe("import planning", () => {
     changed.entries[0].frontmatter = "aliases: [Different]\n";
     expect(manifestFingerprint(original)).not.toBe(manifestFingerprint(changed));
   });
-  it("classifies binary sniffing, DOCX, prose and code without conversion", () => {
-    expect(classify("scan.txt", Buffer.from("%PDF-1.5"))).toMatchObject({
+  it("classifies binary sniffing, DOCX, prose and code without conversion", async () => {
+    expect(await classify("scan.txt", Buffer.from("%PDF-1.5"))).toMatchObject({
       kind: "binary",
       name: "scan",
       extension: "pdf",
     });
-    expect(classify("notes.yaml", Buffer.from("---\nx: [[x]]"))).toMatchObject({
+    expect(await classify("notes.yaml", Buffer.from("---\nx: [[x]]"))).toMatchObject({
       kind: "code",
       extension: "yaml",
     });
-    expect(classify("Chapter.docx", new Uint8Array())).toMatchObject({
+    expect(await classify("Chapter.docx", new Uint8Array())).toMatchObject({
       kind: "docx",
       name: "Chapter",
       extension: "",
     });
-    expect(classify("Book.zip", Buffer.from([80, 75, 3, 4]))).toMatchObject({
+    // Binary signatures win over text-looking names and never import as a note of raw code.
+    expect(await classify("Draft.md", Buffer.from("{\\rtf1\\ansi Chapter}"))).toMatchObject({
       kind: "binary",
-      name: "Book.zip",
-      extension: "",
     });
+    expect(
+      await classify("Book.7z", Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4])),
+    ).toMatchObject({ kind: "binary", name: "Book.7z", extension: "" });
     expect(importPathDisposition(".trash/Old.md")).toBe("trash");
   });
   it.each([

@@ -64,11 +64,11 @@ export type MintId = (
   path: string,
 ) => string;
 
-export function planSelection(
+export async function planSelection(
   manifest: ImportManifest,
   mintId: MintId,
   destinationId: string | null,
-): PlannedNode[] {
+): Promise<PlannedNode[]> {
   const marker = readExportMarker(manifest);
   const nodes: PlannedNode[] = [];
   for (const root of [...manifest.roots].sort(
@@ -140,7 +140,7 @@ export function planSelection(
             ? "export_works"
             : importPathDisposition(entry.path || filename);
       if (skip === "omit") continue;
-      const typed = classify(filename, Buffer.from(entry.sniff ?? "", "base64"));
+      const typed = await classify(filename, Buffer.from(entry.sniff ?? "", "base64"));
       let parentPath = entry.path.includes("/")
         ? entry.path.slice(0, entry.path.lastIndexOf("/"))
         : "";
@@ -208,11 +208,11 @@ export function planSelection(
 }
 
 /** Plans with every node id derived by `importNodeId`. */
-export function planWithDerivedIds(
+export async function planWithDerivedIds(
   manifest: ImportManifest,
   scope: { projectId: string },
   destinationId: string | null,
-): PlannedNode[] {
+): Promise<PlannedNode[]> {
   return planSelection(
     manifest,
     (kind, rootId, path) =>
