@@ -93,7 +93,7 @@ export async function followThread(options: FollowOptions): Promise<FollowResult
           break;
         }
         case "event": {
-          options.reduced?.apply(message.event.event);
+          options.reduced?.apply(message.event.event, message.event.seq);
           const stop = consume(message.event.seq, message.event);
           if (stop) {
             stopRequested = true;

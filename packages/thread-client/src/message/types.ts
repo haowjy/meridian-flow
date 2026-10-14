@@ -1,9 +1,19 @@
 /** Plain JSON authoring shapes, independent of any editor or platform. */
+import type { CanonicalContextUri, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import type {
   ReferenceOccurrence,
   SubmittedReference,
   UserMessageBlock,
 } from "@meridian/contracts/protocol";
+import type { WorkSlug } from "@meridian/contracts/works";
+
+/** The stable owner of a referenced document: what survives a rename of its URI. */
+export type StableReferenceAuthority =
+  | { kind: "project"; projectId: ProjectId }
+  | { kind: "user"; userId: UserId }
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null }
+  /** A No Work chat's Scratch: the lineage by its first chat's id, and the handle its URI spells. */
+  | { kind: "lineage"; projectId: ProjectId; rootThreadId: string; rootThreadRef: string };
 
 /** Only the fields message serialization consumes; hosts may carry more metadata. */
 export type MessageReference = {
@@ -13,6 +23,17 @@ export type MessageReference = {
   displayText?: string;
   imageCapable: boolean;
   upload?: { intakeId: string } | null;
+};
+
+/**
+ * A reference chip as the composer stores and restores it: what serialization consumes plus the
+ * file type and owner. The app's draft parser requires every field, so a chip built anywhere
+ * (the app, a hand-back) restores the same way.
+ */
+export type RestorableReference = MessageReference & {
+  uri: CanonicalContextUri;
+  fileType: string;
+  authority: StableReferenceAuthority;
 };
 
 export type MessageSkill = { slug: string; name: string; description: string };

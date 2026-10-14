@@ -8,9 +8,9 @@
  * transcript. Withdraw removes the row at once and, once any in-flight enqueue
  * settles, always asks the server: an enqueue that looked failed may still
  * have landed. A 404 means the server did not have it yet: the local send
- * goes, and the row shows again if the inbox lists it later. Also stops a
- * running compaction divider through the turn cancel route, and announces each
- * state change the writer caused.
+ * goes, and the row shows again if the inbox lists it later. Announces each
+ * state change the writer caused. A running compaction divider's Stop is the
+ * chat's Stop (`useChatStop`), not a command of its own.
  *
  * A write-mode switch is the switch view's (`useSwitchView`): its rows,
  * Retry, Withdraw and the chat's mode come from there and are listed after the
@@ -25,7 +25,6 @@ import { httpErrorStatus } from "@/client/api/http-client";
 import { enqueueThreadControl, withdrawThreadControl } from "@/client/api/threads-api";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError, useThreadActions } from "@/client/stores";
-import { useTurnStop } from "../useTurnStop";
 import { controlAlreadyStartedCopy, controlStatusCopy, controlWithdrawnCopy } from "./control-copy";
 import {
   type CompactControl,
@@ -38,7 +37,6 @@ import type { SwitchView } from "./useSwitchView";
 
 export type ThreadControls = {
   queued: readonly QueuedControl[];
-  stoppingTurnIds: ReadonlySet<string>;
   /** The chat's mode as the writer should see it: the switch view's fold over the server's record. */
   writeMode: AiWriteMode;
   enqueue: (control: CompactControl) => string;
@@ -46,8 +44,6 @@ export type ThreadControls = {
   switchWriteMode: (mode: AiWriteMode) => void;
   retry: (controlId: string) => void;
   withdraw: (control: QueuedControl) => void;
-  /** Stop a running compaction divider. */
-  stop: (turnId: string) => void;
 };
 
 export function useThreadControls(input: {
@@ -65,7 +61,6 @@ export function useThreadControls(input: {
   /** In-flight enqueues; a withdrawal waits for its enqueue to settle first. */
   const inflight = useRef(new Map<string, Promise<void>>());
   const queryClient = useQueryClient();
-  const turnStop = useTurnStop(threadId);
 
   const revalidate = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
@@ -156,16 +151,6 @@ export function useThreadControls(input: {
     [dispatchRunState, revalidate, threadId, withdrawSwitch],
   );
 
-  const { stop: stopTurn } = turnStop;
-  const stop = useCallback(
-    (turnId: string) =>
-      stopTurn(turnId, {
-        stopping: t`Stopping compaction`,
-        failed: t`Couldn't stop the compaction. Try again.`,
-      }),
-    [stopTurn],
-  );
-
   const compactRows = useMemo(
     () => mergeQueuedControls({ local, items, executedControlIds: answeredCompactionIds }),
     [answeredCompactionIds, local, items],
@@ -174,12 +159,10 @@ export function useThreadControls(input: {
 
   return {
     queued,
-    stoppingTurnIds: turnStop.stopping,
     writeMode: switches.writeMode,
     enqueue,
     switchWriteMode: switches.switchWriteMode,
     retry,
     withdraw,
-    stop,
   };
 }

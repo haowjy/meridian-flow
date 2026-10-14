@@ -160,7 +160,18 @@ message back into the composer, in send order as one plain editable message with
 a blank line between them, above what is typed. The press is written to the
 tab's composer draft (`handBacks`) before it is sent, so a reload re-posts it;
 the answer's content is prepended with one checked draft write that also records
-its `received` receipt, and only then is the command retired.
+its `received` receipt, and only then is the command retired. A document that
+would not restore after a reload never retires the command. The references come
+back as chips owned by the chat (`chatReferenceResolver`); one the chat doesn't
+own comes back as its link text.
+
+Stop's control state (`StopStatus`) belongs to the tab that pressed it; other tabs
+see the record. `pending` is the press (Stopping at once). An answer that names a
+cancelled execution reads `stopping` while the held record still shows it; any
+other answer clears with the answer. `failed` says so on the Stop control and
+stays after the chat goes idle, so the retry (same request id and body) stays
+reachable. A compaction divider's Stop is this one; only a handoff brief's own
+Stop (`useTurnStop`) still uses the turn cancel route.
 
 The mounted snapshot-sync hook, not the run controller, owns addressed
 `meridian.block.upserted` projection for the whole

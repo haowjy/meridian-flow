@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** A hand-back's content reaches the composer exactly once, across reloads. */
 
-import { composerDocFromHandedBack } from "@meridian/thread-client";
+import { chatReferenceResolver, composerDocFromHandedBack } from "@meridian/thread-client";
 import { expect, it } from "vitest";
 import { ComposerSessionDraft, type PendingHandBack } from "@/client/composer-drafts";
 import {
@@ -14,10 +14,31 @@ const command: PendingHandBack = {
   requestId: "request-1",
   body: { requestId: "request-1", seenThrough: 4, seenExecutionId: null, mine: [] },
 };
-const returned = composerDocFromHandedBack([
-  { userTurnId: "m1", blocks: [{ type: "text", text: "Steer first" }] },
-  { userTurnId: "m2", blocks: [{ type: "text", text: "Steer second" }] },
-]);
+const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const resolve = chatReferenceResolver({
+  projectId: uuid(1),
+  userId: uuid(2),
+  work: { id: uuid(3), slug: null },
+  rootThreadId: uuid(4),
+} as never);
+const returned = composerDocFromHandedBack(
+  [
+    {
+      userTurnId: "m1",
+      blocks: [
+        { type: "text", text: "Steer first " },
+        {
+          type: "reference",
+          text: "[notes](scratch://@/c1/notes.md)",
+          documentId: uuid(5),
+          uri: "scratch://@/c1/notes.md",
+        },
+      ],
+    },
+    { userTurnId: "m2", blocks: [{ type: "text", text: "Steer second" }] },
+  ] as never,
+  resolve,
+);
 const reload = (account: string) => new ComposerSessionDraft(account, { kind: "chat", id: "t" });
 const typed = (draft: ComposerSessionDraft) =>
   draft.initialDraft ? serializeComposerDraft(draft.initialDraft.doc).text : null;
@@ -38,7 +59,8 @@ it("prepends a hand-back once, whether the tab reloads before the answer or afte
   // The original answer and the re-posted one both arrive in this tab.
   expect(afterPress.receiveHandBack("request-1", returned)).toBe(true);
   expect(afterPress.receiveHandBack("request-1", returned)).toBe(true);
-  expect(typed(afterPress)).toBe("Steer first\n\nSteer second\n\nTyped since");
+  const merged = "Steer first [notes](scratch://@/c1/notes.md)\n\nSteer second\n\nTyped since";
+  expect(typed(afterPress)).toBe(merged);
   expect(afterPress.handBacks).toEqual([]);
 
   // Reloaded after the write, before the intent retired: nothing is posted or prepended again.
@@ -46,5 +68,23 @@ it("prepends a hand-back once, whether the tab reloads before the answer or afte
   expect(afterWrite.handBacks).toEqual([]);
   expect(afterWrite.hasReceivedHandBack("request-1")).toBe(true);
   expect(afterWrite.receiveHandBack("request-1", returned)).toBe(true);
-  expect(typed(afterWrite)).toBe("Steer first\n\nSteer second\n\nTyped since");
+  // The reference chip and the typed words both survive the reload.
+  expect(typed(afterWrite)).toBe(merged);
+
+  // A returned document that wouldn't restore after a reload leaves its command in place
+  // (risk: retiring a command into a draft the next load throws away).
+  const second = { ...command, requestId: "request-2" };
+  expect(afterWrite.recordHandBack(second)).toBe(true);
+  const broken = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "composerReference", attrs: { reference: { documentId: uuid(5) } } }],
+      },
+    ],
+  };
+  expect(afterWrite.receiveHandBack("request-2", broken)).toBe(false);
+  expect(afterWrite.handBacks).toEqual([second]);
+  expect(afterWrite.hasReceivedHandBack("request-2")).toBe(false);
 });

@@ -16,6 +16,7 @@
  * editor bar share one controller so preview selection cannot drift.
  */
 import { t } from "@lingui/core/macro";
+import type { ProjectId, UserId } from "@meridian/contracts";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import {
   answeredControlIds,
@@ -24,10 +25,11 @@ import {
 } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import {
+  type ChatReferenceScope,
   hiddenWriterTurns,
   isAwaitingExecution,
   isBusy,
-  isUsageBlocked,
+  usageBlockedMessages,
   viewTranscript,
   waitingWriterMessages,
 } from "@meridian/thread-client";
@@ -189,7 +191,7 @@ export function ChatView({
     [runState],
   );
   const hiddenTurnIds = useMemo(() => hiddenWriterTurns(runState), [runState]);
-  const usageBlocked = isUsageBlocked(runState);
+  const usageBlocked = usageBlockedMessages(runState).length > 0;
   const inheritedTranscript = inherited.view?.transcript ?? null;
   const opening = useMemo(
     () =>
@@ -416,13 +418,25 @@ export function ChatView({
     return recorded;
   }
 
-  const stopChat = useChatStop({ threadId, accountId });
+  const stopScope = useMemo<ChatReferenceScope | null>(
+    () =>
+      activeThread && activeWork
+        ? {
+            projectId: projectId as ProjectId,
+            userId: accountId as UserId,
+            work: { id: activeWork.id, slug: activeWork.slug },
+            rootThreadId: activeThread.rootThreadId,
+          }
+        : null,
+    [accountId, activeThread, activeWork, projectId],
+  );
+  const chatStop = useChatStop({ threadId, accountId, scope: stopScope });
   function handleStop() {
     // A brief being written holds the chat with no run: its own Stop. Everything else, a reply,
     // a compaction, the gap between replies, is the chat's Stop, decided on the server, and
     // the waiting messages it hands back arrive in the composer.
     if (run?.kind === "placeholder") brief.stop(run.turn.id);
-    else stopChat();
+    else chatStop.stop();
   }
 
   const handleRespondToInterrupt = useCallback(
@@ -470,6 +484,7 @@ export function ChatView({
                   </>
                 }
                 running={running}
+                stopStatus={chatStop.status}
                 referenceCatalog={referenceCatalog}
                 availableSkills={availableSkills.skills}
                 commands={chatCommands}
@@ -511,6 +526,7 @@ export function ChatView({
                     submissionRecoveryByTurnId={submissions.presentation}
                     waitingForUsage={usageBlocked}
                     controls={controls}
+                    chatStop={chatStop}
                     brief={brief}
                     replyRetry={replyRetry}
                     busy={liveStatus.kind === "awake" || running}

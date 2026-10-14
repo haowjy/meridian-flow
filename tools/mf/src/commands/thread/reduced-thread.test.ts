@@ -30,8 +30,8 @@ it("applies journal-only deltas between the replay cursor and nextSeq, and rejec
       value: { threadId: THREAD, mode: "direct", controlId: "c1", turnId: "sys-1" },
     }),
   );
-  replay.forEach((item) => {
-    reduced.apply(item);
+  replay.forEach((item, index) => {
+    reduced.apply(item, String(98 + index));
   });
   const turnId = GOLDEN_ASSISTANT_TURN_ID;
 

@@ -2025,6 +2025,9 @@ else
 
         const done = run.execute();
         await summaryStarted.promise;
+        // The turn cancel endpoint (`./mf thread cancel`, a handoff brief's Stop), not the chat's
+        // Stop: it ends the compaction and leaves the message for the next execution. The chat's
+        // Stop hands the message back instead (`stop-protocol.db.test.ts`).
         expect(await rig.orchestrator.cancel(rig.threadId, run.executionTurnId)).toBe("cancelled");
         summaryReleased.open();
         expect(await done).toMatchObject({ status: "cancelled" });
