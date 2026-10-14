@@ -173,8 +173,9 @@ export function createImportUploadService(deps: {
         );
         for (const item of input.entries)
           if (!entries.has(item.entryId)) throw new ImportError(404, "entry_not_found");
+        const skips = new Map(input.entries.map((item) => [item.entryId, item]));
         for (const reason of ["unreadable", "not_found"] as const) {
-          const ids = input.entries
+          const ids = [...skips.values()]
             .filter((item) => item.reason === reason)
             .map((item) => (entries.get(item.entryId) as ImportEntry).id);
           if (ids.length)

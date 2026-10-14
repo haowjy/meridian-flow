@@ -189,10 +189,17 @@ describe.runIf(enabled)("durable upload", () => {
     expect(
       (
         await service().skips(input.importId, projectId, {
-          entries: [{ entryId: 1, reason: "not_found" }],
+          entries: [
+            { entryId: 1, reason: "unreadable" },
+            { entryId: 1, reason: "not_found" },
+          ],
         })
       ).state,
     ).toBe("organizing");
+    expect((await repository.fileEntries(input.importId, [1]))[0]).toMatchObject({
+      state: "skipped",
+      reason: "not_found",
+    });
     await repository.update(input.importId, { state: "failed", reason: "organize_failed" });
     expect((await service().retry(input.importId, projectId)).state).toBe("organizing");
     await repository.update(input.importId, { state: "failed", reason: "organize_failed" });
