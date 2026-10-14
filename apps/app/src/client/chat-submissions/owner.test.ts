@@ -3,7 +3,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
-import { enqueueThreadControl, getThreadSnapshot } from "@/client/api/threads-api";
+import { getThreadSnapshot } from "@/client/api/threads-api";
 import {
   bindChatSubmissions,
   type ChatSubmission,
