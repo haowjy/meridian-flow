@@ -18,7 +18,7 @@ export type ApplicationBranchStore = BranchStore &
     /**
      * The one runtime write of a branch's state, on the caller's ambient transaction, inside the Work
      * projection: the CAS on the full prior state writes the state, the effect arm and the optional
-     * `baseRevision`, `rebaseCuts` and journal rows together or not at all. False when the CAS lost;
+     * `baseRevision` and journal rows together or not at all. False when the CAS lost;
      * the caller retries or reports.
      */
     writeBranchState(
