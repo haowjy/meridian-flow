@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { ThreadStoreProvider, useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
 import {
   bindChatSubmissions,
@@ -57,10 +58,14 @@ it("holds only the lineage catalog read while its chat is pending creation", asy
     });
   const client = new QueryClient();
   const root = createRoot(document.createElement("div"));
+  const warmed: string[][] = [];
   function Reader() {
     useContextCatalogViews("project", ["manuscript", "user", "scratch"], {
       rootThreadId: "thread",
     });
+    // The reference browser prefetches and warms its own scope list; it takes the same gate.
+    const references = useReferenceBrowserCatalog("project", null, "Reference", "thread");
+    warmed.push((references?.openContext?.()?.warmScopes ?? []).map((scope) => scope.kind).sort());
     return null;
   }
   try {
@@ -76,8 +81,10 @@ it("holds only the lineage catalog read while its chat is pending creation", asy
       ),
     );
     expect([...acquired].sort()).toEqual(["project", "user"]);
+    expect(warmed.at(-1)).toEqual(["project", "user"]);
     await act(async () => retireChatSubmission("catalog-account", "record"));
     expect([...acquired].sort()).toEqual(["lineage", "project", "user"]);
+    expect(warmed.at(-1)).toEqual(["lineage", "project", "user"]);
   } finally {
     await act(async () => root.unmount());
     spy.mockRestore();

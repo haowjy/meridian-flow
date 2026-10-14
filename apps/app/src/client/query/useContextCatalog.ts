@@ -92,6 +92,22 @@ export function contextCatalogScope(
   return { kind: "project", projectId };
 }
 
+/**
+ * The one creation gate for a chat's catalog scopes. Only a lineage scope waits
+ * on its chat's creation; other scopes already exist on the server.
+ *
+ * Hidden constraint: `prefetchQuery` and `fetchQuery` ignore `enabled`, so a
+ * gate must remove the scope from the list a reader builds, not just disable
+ * its query. Every reader that lists a chat's scopes applies this.
+ */
+export function catalogScopeReady(
+  scope: CatalogScope,
+  enabled: boolean,
+  lineagePending: boolean,
+): boolean {
+  return enabled && !(scope.kind === "lineage" && lineagePending);
+}
+
 export function contextCatalogQueryOptions(
   acquisition: Pick<AccountResourceReplica, "acquireCatalog"> | null,
   projectId: string,
@@ -481,15 +497,6 @@ type CatalogViewResult = {
   isFetching: boolean;
   refetch: () => void;
 };
-
-/** Only a lineage scope waits on its chat's creation; other scopes already exist on the server. */
-function catalogScopeReady(
-  scope: CatalogScope,
-  enabled: boolean,
-  lineagePending: boolean,
-): boolean {
-  return enabled && !(scope.kind === "lineage" && lineagePending);
-}
 
 /** Composite consumers share one observation and one query per distinct authority scope. */
 export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
