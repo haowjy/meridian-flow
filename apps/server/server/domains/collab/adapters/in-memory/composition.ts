@@ -46,7 +46,6 @@ import { createAgentEditObservabilityOptions } from "../agent-edit-observability
 import {
   SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS,
   SILENT_POST_DURABILITY_NOTICES,
-  UNSUPPORTED_REVERSE_THREAD_CONTEXT,
 } from "../declared-stubs.js";
 import { createHocuspocusBinding } from "../hocuspocus-binding.js";
 import {
@@ -148,6 +147,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
+    visibility: { async report() {} },
   });
   const checkpoints = createCheckpointService({
     coordinator,
@@ -181,12 +181,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     authorityHeads,
     agentEdit: {
       agentEdit: () => agentEdit,
-    },
-    reversal: {
-      reverseTurn: async () => {
-        throw new Error("Turn receipts require the durable Postgres receipt adapter");
-      },
-      reverseThreadContext: UNSUPPORTED_REVERSE_THREAD_CONTEXT,
     },
     documents: {
       ensureDocument: lifecycle.ensureDocument,

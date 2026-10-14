@@ -1,4 +1,4 @@
-/** Writer receipt and failed-response policies over immutable forward-inverse parts. */
+/** Model revert and failed-response rollback over immutable forward-inverse parts. */
 import { randomUUID } from "node:crypto";
 import type {
   ComputedInverse,
@@ -9,19 +9,14 @@ import type {
   DocumentId,
   EditOrigin,
   EditPlacement,
+  ModelResponseIdentity,
   ThreadId,
   TurnId,
-  UserId,
 } from "@meridian/contracts";
-import type {
-  ReversalOutcome,
-  TurnInverseSkip,
-  TurnReceiptChip,
-} from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import { effectiveActionIndex, isRolledBack, partKey } from "./inverse-actions.js";
+import { isRolledBack } from "./inverse-actions.js";
 import { prepareHolds } from "./inverse-holds.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 
@@ -31,7 +26,6 @@ export type StoredInversePart = InversePart & {
   turnId: TurnId | null;
   responseId: string | null;
   editScopeId: string | null;
-  consumes: string[];
   actor: "agent" | "human" | "system";
   wId: number | null;
   origin: EditOrigin;
@@ -40,7 +34,7 @@ export type StoredInversePart = InversePart & {
 export type TurnInverseQuery = {
   threadId: ThreadId;
   turnId?: TurnId;
-  responseIdentity?: import("@meridian/contracts").ModelResponseIdentity;
+  responseIdentity?: ModelResponseIdentity;
   model?: boolean;
   branchId?: string | null;
   documentIds?: DocumentId[];
@@ -59,8 +53,6 @@ export type PreparedDocumentInverse = {
   document: InverseDocument;
   branchId: string | null;
   computed: ComputedInverse;
-  consumes: string[];
-  skips: TurnInverseSkip[];
   heldDraftIds: string[];
 };
 export interface TurnInverseStore {
@@ -72,8 +64,7 @@ export interface TurnInverseStore {
   ): Promise<T>;
   commit(input: {
     plans: PreparedDocumentInverse[];
-    kind: "undo" | "redo" | "revert" | "rollback";
-    userId?: UserId;
+    kind: "revert" | "rollback";
     query: TurnInverseQuery;
   }): Promise<string[]>;
   describePart(
@@ -83,57 +74,35 @@ export interface TurnInverseStore {
 }
 const eligiblePlacement = (part: StoredInversePart) =>
   part.placement.kind === "pending" || part.placement.kind === "live";
-const targetsTurn = (part: StoredInversePart, query: TurnInverseQuery) =>
-  (query.responseIdentity
-    ? part.actor === "agent" && part.kind !== "rollback"
-    : part.kind === "write" || part.kind === "revert") &&
+const targetsResponse = (
+  part: StoredInversePart,
+  query: TurnInverseQuery & { responseIdentity: ModelResponseIdentity },
+) =>
+  part.actor === "agent" &&
+  part.kind !== "rollback" &&
   part.threadId === query.threadId &&
   part.turnId === query.turnId &&
-  (!query.responseIdentity || part.editScopeId === query.responseIdentity.editScopeId);
+  part.editScopeId === query.responseIdentity.editScopeId;
 
-/** One selection and one destination per document, for both command and dry run. */
+/** One selection and one destination per document: invert every part the response left. */
 function prepare(
-  store: TurnInverseStore,
   documents: InverseDocument[],
-  query: TurnInverseQuery,
-  direction: "undo" | "redo",
+  query: TurnInverseQuery & { responseIdentity: ModelResponseIdentity },
   actionId: string,
   contexts: ReturnType<typeof prepareHolds>,
 ): PreparedDocumentInverse[] {
-  const originals = documents.flatMap((document) =>
-    document.history.filter((part) => targetsTurn(part, query)),
-  );
-  const keys = new Set(originals.map(partKey));
-  const all = documents.flatMap((document) => document.history).sort((a, b) => a.id - b.id);
-  const selected =
-    direction === "redo"
-      ? effectiveActionIndex(all, keys, eligiblePlacement).actions.find((action) =>
-          action.parts.some(eligiblePlacement),
-        )
-      : undefined;
-  const selectedAction = selected?.id;
-  const accepted = selected?.targets ?? new Set<string>();
   return documents.map((document) => {
-    const targets = document.history.filter(
-      (part) => targetsTurn(part, query) && (direction === "undo" || accepted.has(partKey(part))),
-    );
+    const targets = document.history.filter((part) => targetsResponse(part, query));
     const rolledBack = (part: StoredInversePart) => isRolledBack(document.history, part);
-    const placements =
-      direction === "undo"
-        ? targets.filter((part) => !rolledBack(part))
-        : document.history.filter(
-            (part) =>
-              part.actionId === selectedAction &&
-              !rolledBack(part) &&
-              part.targets.some((target) => accepted.has(partKey(target))),
-          );
-    const pending = placements.find((part) => part.placement.kind === "pending");
+    const pending = targets
+      .filter((part) => !rolledBack(part))
+      .find((part) => part.placement.kind === "pending");
     let branchId = pending?.placement.kind === "pending" ? pending.placement.branchId : null;
     const context = contexts.get(document.documentId);
     if (!context) throw new Error("Missing document hold context");
     const { views, liveIndex, holds } = context;
     const targetRoots = new Set(targets.flatMap((part) => liveIndex.roots(part.effect)));
-    if (!branchId && direction === "undo") {
+    if (!branchId) {
       const ownHolders = new Set([...targetRoots].flatMap((root) => [...(holds.get(root) ?? [])]));
       branchId =
         targets
@@ -141,187 +110,38 @@ function prepare(
           .find((id) => ownHolders.has(id)) ?? null;
     }
     const draft = branchId ? document.drafts.get(branchId) : undefined;
-    const skips: TurnInverseSkip[] = [];
     const heldDraftIds: string[] = [];
     const selection: InverseSelection[] = [];
-    const skip = (part: StoredInversePart, reason: string) =>
-      skips.push({
-        ...store.describePart(document, part),
-        documentId: document.documentId,
-        uri: document.uri,
-        reason,
-      });
-    for (const part of targets.sort((a, b) => (direction === "undo" ? b.id - a.id : a.id - b.id))) {
-      if (rolledBack(part)) {
-        skip(part, "Rolled back");
-        continue;
-      }
-      if (!eligiblePlacement(part)) {
-        skip(part, part.placement.kind === "discarded" ? "discarded" : "No longer reversible");
-        continue;
-      }
-      if (draft?.frozen) {
-        skip(part, "This draft is archived");
-        continue;
-      }
-      if (
-        part.placement.kind === "pending" &&
-        (part.placement.branchId !== branchId ||
-          draft?.branch.generation !== part.placement.generation)
-      ) {
-        skip(part, "This part is in another draft");
-        continue;
-      }
+    for (const part of targets.sort((a, b) => b.id - a.id)) {
+      if (rolledBack(part) || !eligiblePlacement(part) || draft?.frozen) continue;
+      if (part.placement.kind === "pending" && part.placement.branchId !== branchId) continue;
       const holder = liveIndex
         .roots(part.effect)
         .flatMap((root) => [...(holds.get(root) ?? [])])
         .find((id) => id !== branchId);
       if (holder) {
         heldDraftIds.push(holder);
-        skip(
-          part,
-          `The draft in ${document.drafts.get(holder)?.name ?? holder} holds a restored copy of this text. Apply or discard that draft first.`,
-        );
         continue;
       }
-      selection.push({ part, direction: direction === "undo" ? "invert" : "reapply" });
+      selection.push({ part });
     }
     const computed = (views.get(branchId) ?? liveIndex).compute(selection, {
       actionId,
+      kind: "rollback",
       allocateClient: allocateDocumentClient,
     });
-    for (const classified of computed.skipped) {
-      const part = targets.find((target) => partKey(target) === partKey(classified.part));
-      if (part)
-        skip(
-          part,
-          classified.reasons.includes("inaccessible ancestor")
-            ? "Its paragraph was removed"
-            : classified.state === "undone"
-              ? "Already undone"
-              : "Stayed as you edited it",
-        );
-    }
-    return {
-      document,
-      branchId,
-      computed,
-      consumes: selectedAction ? [selectedAction] : [],
-      skips,
-      heldDraftIds,
-    };
+    return { document, branchId, computed, heldDraftIds };
   });
 }
-const countAccepted = (plans: PreparedDocumentInverse[]) =>
-  plans.reduce(
-    (count, plan) => count + plan.computed.edits.reduce((n, edit) => n + edit.parts.length, 0),
-    0,
-  );
 
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
-    async getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
-      const query = { threadId, turnId };
-      return store.withLockedDocuments(query, async (documents) => {
-        if (!documents.length) return null;
-        const contexts = prepareHolds(documents);
-        const redo = prepare(store, documents, query, "redo", randomUUID(), contexts);
-        await store.markBlocking(redo.flatMap((plan) => plan.heldDraftIds));
-        if (countAccepted(redo))
-          return {
-            state: "live-reversed",
-            control: "redo",
-            skips: redo.flatMap((plan) => plan.skips),
-          };
-        const undo = prepare(store, documents, query, "undo", randomUUID(), contexts);
-        await store.markBlocking(undo.flatMap((plan) => plan.heldDraftIds));
-        if (countAccepted(undo))
-          return {
-            state: "live-active",
-            control: "undo",
-            skips: undo.flatMap((plan) => plan.skips),
-          };
-        return {
-          state: "expired",
-          control: "view_change",
-          skips: undo.flatMap((plan) => plan.skips),
-        };
-      });
-    },
-    async reverseTurn(
-      query: TurnInverseQuery & {
-        direction: "undo" | "redo";
-        actor: { type: "user"; userId: string } | { type: "agent" };
-      },
-    ): Promise<ReversalOutcome> {
-      return store.withLockedDocuments(query, async (documents) => {
-        const plans = prepare(
-          store,
-          documents,
-          query,
-          query.direction,
-          randomUUID(),
-          prepareHolds(documents),
-        );
-        await store.markBlocking(plans.flatMap((plan) => plan.heldDraftIds));
-        const accepted = countAccepted(plans);
-        if (accepted)
-          await store.commit({
-            plans,
-            kind: query.direction,
-            query,
-            userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
-          });
-        const skips = plans.flatMap((plan) => plan.skips);
-        return {
-          status: accepted
-            ? skips.length
-              ? "partial"
-              : "reversed"
-            : plans.length &&
-                plans.every(
-                  (plan) =>
-                    plan.skips.length &&
-                    plan.skips.every((skip) => skip.reason === "This draft is archived"),
-                )
-              ? "permission_denied"
-              : "expired",
-          documents: plans.map((plan) => ({
-            uri: plan.document.uri,
-            ...(plan.computed.edits.length
-              ? {
-                  destination: plan.branchId
-                    ? { kind: "draft" as const, branchId: plan.branchId }
-                    : { kind: "live" as const },
-                }
-              : {}),
-            status: plan.computed.edits.length
-              ? "reversed"
-              : plan.skips.length &&
-                  plan.skips.every((skip) => skip.reason === "This draft is archived")
-                ? "permission_denied"
-                : "expired",
-          })),
-          skips,
-          acceptedParts: accepted,
-        };
-      });
-    },
     async rollbackResponse(
-      query: TurnInverseQuery & {
-        responseIdentity: import("@meridian/contracts").ModelResponseIdentity;
-      },
+      query: TurnInverseQuery & { responseIdentity: ModelResponseIdentity },
     ): Promise<void> {
       await store.withLockedDocuments(query, async (documents) => {
-        const plans = prepare(
-          store,
-          documents,
-          query,
-          "undo",
-          randomUUID(),
-          prepareHolds(documents),
-        );
+        const plans = prepare(documents, query, randomUUID(), prepareHolds(documents));
         await store.markBlocking(plans.flatMap((plan) => plan.heldDraftIds));
         // The store also marks only this response's remaining pending target rows.
         await store.commit({ plans, kind: "rollback", query });

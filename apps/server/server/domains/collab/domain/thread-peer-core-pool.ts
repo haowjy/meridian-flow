@@ -51,7 +51,6 @@ import { pinStaged, type ReplyRecord, type ReplySaveFences } from "./reply-save-
 type PulledThreadPeer = {
   peerBranchId: string;
   upstreamBranchId: string;
-  branchGeneration: number;
   afterJournalId?: number;
   liveJournalSeq?: number;
   attributionBaseline: Uint8Array;
@@ -223,7 +222,6 @@ export function createThreadPeerCorePool(input: {
         mode: "threadPeer" as const,
         peerBranchId: pulled.peerBranchId,
         upstreamBranchId: pulled.upstreamBranchId,
-        branchGeneration: pulled.branchGeneration,
         afterJournalId: pulled.afterJournalId ?? 0,
         liveJournalSeq: pulled.liveJournalSeq,
         attributionBaseline: pulled.attributionBaseline,
@@ -317,8 +315,7 @@ export function createThreadPeerCorePool(input: {
     // before cache maintenance yields, so that owner's lifecycle rejects late staging.
     record?.participants.add(core);
     await evictIdleCores();
-    const immediateInverse =
-      command.command === "undo" || command.command === "redo" || command.command === "revert";
+    const immediateInverse = command.command === "revert";
     const draftView: LinkView | undefined =
       pinned || destination.kind !== "draft" || immediateInverse
         ? undefined

@@ -572,6 +572,15 @@ export function createDrizzleBranchStore(
       return writeBranchState(currentDrizzleDb(db), input);
     },
 
+    async readRebaseCuts(branchId: string) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ cuts: documentBranches.rebaseCuts })
+        .from(documentBranches)
+        .where(eq(documentBranches.id, branchId))
+        .limit(1);
+      return (row?.cuts ?? []).map((cut) => new Uint8Array(cut));
+    },
+
     async updateBranchSnapshot(input: PersistBranchInput) {
       return runInDrizzleTransaction(db, () => writeBranchState(currentDrizzleDb(db), input));
     },

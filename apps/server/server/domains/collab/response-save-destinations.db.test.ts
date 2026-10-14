@@ -134,12 +134,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...testLinkDeps(db),
         ...(links ? { links } : {}),
         db,
+        catalogMutations: createDrizzleContextCatalog(db),
         fileAccess,
         workProjectionMutation: createTestWorkProjectionMutation(db),
-        catalogMutations: createDrizzleContextCatalog(db),
-        threadContext: {
-          requireThreadOwner: async () => ({ projectId: PROJECT_ID as never }),
-        },
         ...rest,
       });
       collab.bindHocuspocus(hocuspocus as never);
@@ -298,7 +295,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         );
     }
 
-    it("reads its own scratch write, then saves and undoes the mixed turn as one", async () => {
+    it("reads its own scratch write, then saves the mixed turn", async () => {
       const collab = createTestCollab();
       await stageMixedReply(collab);
       // Scratch reads back inside the reply after the later kb write.
@@ -316,21 +313,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
       expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
-
-      await expect(collab.getTurnReceiptChip(ctx.threadId, ctx.turnId)).resolves.toEqual(
-        expect.objectContaining({ control: "undo" }),
-      );
-      const undone = await collab.reverseTurn({
-        ...ctx,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      });
-      expect(["reversed", "reconciled"]).toContain(undone.status);
-      expect(await liveText(collab, SCRATCH_ID)).not.toContain("Agent notes.");
-      expect(await draftText(collab, KB_ID)).not.toContain("Agent lore.");
     });
 
-    it("refuses an undo of an archived Work's scratch under the journal's locks", async () => {
+    it("refuses a revert of an archived Work's scratch under the journal's locks", async () => {
       const collab = createTestCollab();
       await seed(collab);
       const agentEdit = collab.agentEdit();
@@ -350,13 +335,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await archiveWork(WORK_ID);
 
-      const undo = agentEdit.write(
-        { command: "undo", file: "notes.md", documentId: SCRATCH_ID },
+      const revert = agentEdit.write(
+        { command: "revert", file: "notes.md", documentId: SCRATCH_ID, edit: "w1" },
         scratch,
       );
 
-      await expect(undo).rejects.toBeInstanceOf(FileEditRefusedError);
-      await expect(undo).rejects.toMatchObject({ refused: [{ reason: "work_archived" }] });
+      await expect(revert).rejects.toBeInstanceOf(FileEditRefusedError);
+      await expect(revert).rejects.toMatchObject({ refused: [{ reason: "work_archived" }] });
       expect(await liveText(collab, SCRATCH_ID)).toContain("Agent notes.");
     });
 
@@ -652,57 +637,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await liveText(collab, SCRATCH_B_ID)).toContain(`From ${WORK_ID}.`);
     });
 
-    it("leaves an archived Work's draft as it is on the writer's turn undo and redo", async () => {
-      const collab = createTestCollab();
-      await seed(collab);
-      const agentEdit = collab.agentEdit();
-      const lore = await context(drafting(), KB_ID);
-      await agentEdit.read({ file: "lore.md", documentId: KB_ID }, lore);
-      await agentEdit.write(
-        { command: "insert", file: "lore.md", documentId: KB_ID, content: "Agent lore." },
-        {
-          ...lore,
-          responseIdentity: { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
-        },
-      );
-      await collab.finalizeResponseCommit(
-        { providerResponseId: RESPONSE_ID, editScopeId: RESPONSE_ID },
-        ctx,
-      );
-      // The writer owns lore.md, so their grant holds after the archive; the
-      // draft it would change is what the archive froze (D30).
-      const reverse = (direction: "undo" | "redo") =>
-        collab.reverseThreadContext({
-          threadId: THREAD_ID as never,
-          userId: USER_ID,
-          turnId: TURN_ID as never,
-          direction,
-        });
-      const refused = {
-        status: "permission_denied",
-        documents: [expect.objectContaining({ status: "permission_denied" })],
-      };
-
-      await archiveWork(WORK_ID);
-      await expect(reverse("undo")).resolves.toMatchObject(refused);
-      expect(await journalStatuses()).toEqual(["active"]);
-      expect(await draftText(collab, KB_ID)).toContain("Agent lore.");
-
-      await setArchived(WORK_ID, false);
-      await expect(reverse("undo")).resolves.toMatchObject({ status: "reversed" });
-      await archiveWork(WORK_ID);
-      await expect(reverse("redo")).resolves.toMatchObject(refused);
-      expect(await journalStatuses()).toEqual(["active"]);
-    });
-
-    async function journalStatuses() {
-      const rows = await db
-        .select({ status: schema.branchWriteJournal.status })
-        .from(schema.branchWriteJournal)
-        .where(eq(schema.branchWriteJournal.turnId, TURN_ID as never));
-      return rows.map((row) => row.status);
-    }
-
     async function archiveWork(workId: string) {
       await setArchived(workId, true);
     }
@@ -837,24 +771,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(drafted).toContain("Pending lore.");
     });
 
-    it("undoes the live top and refuses an older edit in another destination", async () => {
+    it("reverts the live edit and finds nothing to revert of an older edit in another destination", async () => {
       const collab = createTestCollab();
       const keptDraftText = await saveLiveWriteOverKeptDraft(collab);
       const agentEdit = collab.agentEdit();
-      const undoLast = async () =>
+      const revert = async (edit: string) =>
         agentEdit.write(
-          { command: "undo", file: "lore.md", documentId: KB_ID, count: 1 },
+          { command: "revert", file: "lore.md", documentId: KB_ID, edit },
           await context(direct(), KB_ID),
         );
 
-      // The live write came after the keep switch; the latest write is undone live.
-      await expect(undoLast()).resolves.toMatchObject({ status: "success" });
+      // The live write came after the keep switch; the latest write is reverted live.
+      await expect(revert("w3")).resolves.toMatchObject({ status: "success" });
       expect(await liveText(collab, KB_ID)).not.toContain("Live lore.");
       expect(await keptDraftText()).toContain("Pending lore.");
 
       // The older top is drafted; this thread now writes live.
       await archiveWork(WORK_ID);
-      await expect(undoLast()).resolves.toMatchObject({ status: "cant_undo_elsewhere" });
+      await expect(revert("w2")).resolves.toMatchObject({ status: "nothing_to_revert" });
       expect(await keptDraftText()).toContain("Pending lore.");
     });
   });

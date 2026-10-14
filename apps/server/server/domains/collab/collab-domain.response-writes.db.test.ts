@@ -1,14 +1,12 @@
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
-/** Public collab-domain reverseTurn coverage over Drizzle branch infrastructure. */
+/** Public collab-domain response write coverage over Drizzle branch infrastructure. */
 
 import { renderAgentEditResult } from "@meridian/agent-edit";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
-  CREATED_DOC_ID,
   createWorkDraftFixture,
   DOC_ID,
   DRAFT_DESTINATION,
@@ -25,9 +23,9 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("collab domain reverseTurn (postgres)", () => {});
+  describe.skip("collab domain response writes (postgres)", () => {});
 } else {
-  describe("collab domain reverseTurn (postgres)", async () => {
+  describe("collab domain response writes (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const {
       branchWriteJournal,
@@ -120,275 +118,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } finally {
         await collab.documentDerivations.stop();
       }
-    });
-
-    it("undoes and redoes overlapping replace and delete writes as one turn", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      const fountain =
-        "The fountain wore a skin of ice, each dark stone mirroring the colorless winter sky.";
-      const gate =
-        "At the gate, Captain Ilyan waited in silence, his gloved hand closed around the iron latch.";
-      await writeMarkdown(collab, {
-        documentId: DOC_ID as never,
-        markdown: fountain,
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      for (const [find, content] of [
-        [fountain, gate],
-        [gate, ""],
-      ] as const) {
-        await expect(
-          collab.agentEdit().write(
-            { command: "replace", file: "chapter.md", documentId: DOC_ID, find, content },
-            {
-              sessionId: "session-overlap",
-              threadId: THREAD_ID,
-              turnId: TURN_ID,
-              grant: testFileGrant(DRAFT_DESTINATION),
-            },
-          ),
-        ).resolves.toMatchObject({ status: "success" });
-        await applyDraft(collab, DOC_ID);
-      }
-
-      const undo = await collab.reverseTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      });
-      expect(["reversed", "reconciled"]).toContain(undo.status);
-      await expectMarkdown(collab, DOC_ID, fountain);
-
-      const redo = await collab.reverseTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-        direction: "redo",
-        actor: { type: "user", userId: USER_ID },
-      });
-      expect(redo.status).toBe("reversed");
-      expect(await readMarkdown(collab, DOC_ID)).not.toContain(fountain);
-    });
-
-    it("undoes the independent document and names the part edited by the writer", async () => {
-      await db.insert(documents).values({
-        id: CREATED_DOC_ID,
-        contextSourceId: SOURCE_ID,
-        name: "chapter-two",
-        extension: "md",
-        fileType: "markdown",
-      });
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      for (const [documentId, markdown] of [
-        [DOC_ID, "First base."],
-        [CREATED_DOC_ID, "Second base."],
-      ] as const) {
-        await writeMarkdown(collab, {
-          documentId: documentId as never,
-          markdown,
-          origin: { type: "user", actorUserId: USER_ID as never },
-          threadId: THREAD_ID as never,
-        });
-        await expect(
-          collab.agentEdit().write(
-            {
-              command: "insert",
-              file: `${documentId}.md`,
-              documentId,
-              content: `Turn edit for ${documentId}.`,
-            },
-            {
-              sessionId: "session-atomic-reversal",
-              threadId: THREAD_ID,
-              turnId: TURN_ID,
-              grant: testFileGrant(DRAFT_DESTINATION),
-            },
-          ),
-        ).resolves.toMatchObject({ status: "success" });
-        await applyDraft(collab, documentId);
-      }
-      await writeMarkdown(collab, {
-        documentId: CREATED_DOC_ID as never,
-        markdown: "Writer invalidated only the second document.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-
-      await expect(
-        collab.reverseTurn({
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-          direction: "undo",
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).resolves.toMatchObject({
-        status: "partial",
-        acceptedParts: 1,
-        skips: [expect.objectContaining({ after: `Turn edit for ${CREATED_DOC_ID}.` })],
-      });
-
-      expect(await readMarkdown(collab, DOC_ID)).toBe("First base.\n");
-      await expectMarkdown(collab, CREATED_DOC_ID, "Writer invalidated only the second document.");
-    });
-
-    it("keeps redo after a writer edit to an unrelated paragraph", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await writeMarkdown(collab, {
-        documentId: DOC_ID as never,
-        markdown: "Base.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      await collab.agentEdit().write(
-        { command: "insert", file: "chapter.md", documentId: DOC_ID, content: "Agent change." },
-        {
-          sessionId: "session-writer-redo",
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          grant: testFileGrant(DRAFT_DESTINATION),
-        },
-      );
-      await applyDraft(collab, DOC_ID);
-      await collab.reverseTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      });
-      await writeMarkdown(collab, {
-        documentId: DOC_ID as never,
-        markdown: "Writer changed the manuscript.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      const [writerRow] = await db
-        .select({ id: documentYjsUpdates.id })
-        .from(documentYjsUpdates)
-        .where(eq(documentYjsUpdates.documentId, DOC_ID as never))
-        .orderBy(sql`${documentYjsUpdates.id} desc`)
-        .limit(1);
-      if (!writerRow) throw new Error("missing writer update");
-      // Collab ingress stores `user`; context-service writes store `human`.
-      // Reconstruction must normalize both to the same writer class.
-      await db
-        .update(documentYjsUpdates)
-        .set({ originType: "user" })
-        .where(eq(documentYjsUpdates.id, writerRow.id));
-
-      await expect(
-        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
-      ).resolves.toEqual(expect.objectContaining({ state: "live-reversed", control: "redo" }));
-      await expect(
-        collab.reverseTurn({
-          threadId: THREAD_ID as never,
-          turnId: TURN_ID as never,
-          direction: "redo",
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).resolves.toMatchObject({ status: "reversed" });
-
-      expect(await readMarkdown(collab, DOC_ID)).toBe(
-        "Writer changed the manuscript.\n\nAgent change.\n",
-      );
-    });
-
-    it("degrades live turn undo when a later writer edit intersects the pushed paragraph", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await writeMarkdown(collab, {
-        documentId: DOC_ID as never,
-        markdown: "Base.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      await collab.agentEdit().write(
-        {
-          command: "insert",
-          file: "chapter.md",
-          documentId: DOC_ID,
-          content: "Agent paragraph.",
-        },
-        {
-          sessionId: "session-live-dependent",
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          grant: testFileGrant(DRAFT_DESTINATION),
-        },
-      );
-      await applyDraft(collab, DOC_ID);
-
-      await writeMarkdown(collab, {
-        documentId: DOC_ID as never,
-        // A pure insertion anchored inside agent-born text: both the chip and the
-        // real undo must treat it as dependent.
-        markdown: "Base.\n\nAgent HUMAN-KEEP paragraph.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-
-      await expect(
-        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
-      ).resolves.toEqual(expect.objectContaining({ state: "expired", control: "view_change" }));
-      const reversed = await collab.reverseTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      });
-      expect(reversed.status).toBe("expired");
-      expect(await readMarkdown(collab, DOC_ID)).toContain("Agent HUMAN-KEEP paragraph.");
-    });
-
-    it("keeps live turn undo available when a later writer edit is elsewhere", async () => {
-      const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
-      await writeMarkdown(collab, {
-        documentId: DOC_ID as never,
-        markdown: "Base.",
-        origin: { type: "user", actorUserId: USER_ID as never },
-        threadId: THREAD_ID as never,
-      });
-      await collab.agentEdit().write(
-        {
-          command: "insert",
-          file: "chapter.md",
-          documentId: DOC_ID,
-          content: "Agent paragraph.",
-        },
-        {
-          sessionId: "session-live-independent",
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          grant: testFileGrant(DRAFT_DESTINATION),
-        },
-      );
-      await applyDraft(collab, DOC_ID);
-
-      const unrelatedDoc = new Y.Doc({ gc: false });
-      unrelatedDoc.getMap("elsewhere").set("note", "writer edit outside the agent paragraph");
-      await createDrizzleJournal(db).append(DOC_ID, Y.encodeStateAsUpdate(unrelatedDoc), {
-        origin: `human:${USER_ID}`,
-        seq: 0,
-      });
-      unrelatedDoc.destroy();
-
-      await expect(
-        collab.getTurnReceiptChip(THREAD_ID as never, TURN_ID as never),
-      ).resolves.toEqual(expect.objectContaining({ state: "live-active", control: "undo" }));
-      const reversed = await collab.reverseTurn({
-        threadId: THREAD_ID as never,
-        turnId: TURN_ID as never,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      });
-      expect(reversed.status).toBe("reversed");
-      const live = await readMarkdown(collab, DOC_ID);
-      expect(live).toContain("Base.");
-      expect(live).not.toContain("Agent paragraph.");
     });
 
     it("durably commits two same-response staged writes to one document", async () => {
@@ -551,7 +280,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   });
 }
 
-async function expectMarkdown(
+async function _expectMarkdown(
   collab: {
     readAsMarkdown(documentId: string): Promise<{ ok: true; value: string } | { ok: false }>;
   },

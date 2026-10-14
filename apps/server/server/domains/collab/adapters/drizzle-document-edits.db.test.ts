@@ -16,8 +16,6 @@ import {
 } from "../test-support/change-trail-postgres-harness.js";
 import {
   createResponse,
-  responseContext,
-  reviewChange,
   setupResponseDraft,
   stageDraft,
 } from "../test-support/document-edit-receipt-fixture.js";
@@ -126,7 +124,6 @@ describe("document edit receipts (Postgres)", () => {
             await commitSegmentRows(fixture.branchCoordinator, {
               branchId,
               sourceDoc: doc,
-              expectedGeneration: snapshot.generation,
               rows: [
                 {
                   branchId,

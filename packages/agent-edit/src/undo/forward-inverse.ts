@@ -31,15 +31,19 @@ export type EditFrontier = Record<string, number>;
 export interface EditTarget {
   editId: string;
   ordinal: number;
+  /** Stored history still holds `reapply` targets from the retired redo (DOPS-7). */
   direction: "invert" | "reapply";
 }
-export type EditKind = "write" | "undo" | "redo" | "revert" | "rollback";
+/** What new writes can be. */
+export type EditKind = "write" | "revert" | "rollback";
+export type InverseKind = Exclude<EditKind, "write">;
+/** Stored history still holds the retired `undo` and `redo` rows (DOPS-7); lineage reads them by effect. */
+export type StoredEditKind = EditKind | "undo" | "redo";
 export interface InversePart {
   id: number;
   editId: string;
   ordinal: number;
-  kind: EditKind;
-  actionId?: string | null;
+  kind: StoredEditKind;
   update: Uint8Array;
   effect: EditEffect;
   frontier: EditFrontier;
@@ -51,6 +55,8 @@ export interface PartClassification {
   part: InversePart;
   state: PartState;
   reasons: string[];
+  /** Set on `changed`: every item the part inserted is gone from the text (lineage-aware), whoever removed it. */
+  textGone?: boolean;
 }
 export interface CapturedPart {
   update: Uint8Array;
@@ -60,11 +66,8 @@ export interface CapturedPart {
 }
 export interface InverseSelection {
   part: InversePart;
-  direction: "invert" | "reapply";
 }
 export interface ComputedInverseEdit {
-  /** Host policy may give an edit its own stack action within an atomic command. */
-  actionId?: string;
   targetEditId: string;
   parts: (CapturedPart & { targets: EditTarget[] })[];
 }
@@ -364,7 +367,10 @@ function classify(index: Lineage, part: InversePart): PartClassification {
       const terminal = index.rollbackTargets.has(`${part.editId}:${part.ordinal}`);
       return { part, state: terminal ? "rolled_back" : "undone", reasons: [] };
     }
-    return changed("items changed since");
+    return {
+      ...changed("items changed since"),
+      textGone: ins.length > 0 && ins.every((k) => !isVisible(k)),
+    };
   } catch (error) {
     return changed(error instanceof Error ? error.message : String(error));
   }
@@ -415,8 +421,9 @@ export function admitInverseReceipt(
   history: readonly InversePart[],
   accepted: readonly InversePart[],
   receipt: CapturedPart,
+  kind: InverseKind = "revert",
 ): void {
-  admitPreparedInverseReceipt(doc, history, accepted, receipt);
+  admitPreparedInverseReceipt(doc, history, accepted, receipt, kind);
 }
 
 function admitPreparedInverseReceipt(
@@ -424,6 +431,7 @@ function admitPreparedInverseReceipt(
   history: readonly InversePart[],
   accepted: readonly InversePart[],
   receipt: CapturedPart,
+  kind: InverseKind,
   prepared?: Lineage,
 ): void {
   const index = new Lineage(doc, history, prepared, undefined, true);
@@ -448,7 +456,7 @@ function admitPreparedInverseReceipt(
       id: Math.max(0, ...history.map((p) => p.id)) + 1,
       editId: "admission",
       ordinal: 0,
-      kind: "undo",
+      kind,
       targets: [],
     };
     const merged = receipt.aliases.length
@@ -471,7 +479,7 @@ export function computeInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
   selection: readonly InverseSelection[],
-  action: { actionId: string; allocateClient: (doc: Y.Doc) => number },
+  action: { actionId: string; kind: InverseKind; allocateClient: (doc: Y.Doc) => number },
 ): ComputedInverse {
   return computePreparedInverse(doc, history, selection, action);
 }
@@ -480,7 +488,7 @@ function computePreparedInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
   selection: readonly InverseSelection[],
-  action: { actionId: string; allocateClient: (doc: Y.Doc) => number },
+  action: { actionId: string; kind: InverseKind; allocateClient: (doc: Y.Doc) => number },
   prepared?: Lineage,
 ): ComputedInverse {
   if (!action.actionId) throw new Error("Inverse requires an action ID");
@@ -490,15 +498,8 @@ function computePreparedInverse(
   const local = [...history],
     result: ComputedInverse = { actionId: action.actionId, edits: [], skipped: [] };
   const groups = new Map<string, ComputedInverseEdit>();
-  const directions = new Map<string, string>();
   try {
-    for (const chosen of selection) {
-      const prior = directions.get(chosen.part.editId);
-      if (prior && prior !== chosen.direction)
-        throw new Error("One target edit cannot transition both ways");
-      directions.set(chosen.part.editId, chosen.direction);
-    }
-    for (const { part, direction } of selection) {
+    for (const { part } of selection) {
       const index = new Lineage(
           scratch,
           local,
@@ -507,17 +508,13 @@ function computePreparedInverse(
           true,
         ),
         state = classify(index, part);
-      if (state.state !== (direction === "invert" ? "active" : "undone")) {
+      if (state.state !== "active") {
         result.skipped.push(state);
         continue;
       }
       index.hydrate();
-      const inserted = clocks(
-        direction === "invert" ? part.effect.inserted : part.effect.deleted,
-      ).map((k) => index.effective(k));
-      const deleted = clocks(
-        direction === "invert" ? part.effect.deleted : part.effect.inserted,
-      ).map((k) => index.effective(k));
+      const inserted = clocks(part.effect.inserted).map((k) => index.effective(k));
+      const deleted = clocks(part.effect.deleted).map((k) => index.effective(k));
       const stack = {
         insertions: deleteSet(inserted),
         deletions: deleteSet(deleted),
@@ -543,8 +540,10 @@ function computePreparedInverse(
         const update = Y.mergeUpdates(updates),
           receipt = captureEditParts(scratch, [{ update, frontier }])[0];
         receipt.aliases = captureAliases(scratch, snapshot);
-        admitPreparedInverseReceipt(before, local, [part], receipt, index);
-        const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal, direction }];
+        admitPreparedInverseReceipt(before, local, [part], receipt, action.kind, index);
+        const targets: EditTarget[] = [
+          { editId: part.editId, ordinal: part.ordinal, direction: "invert" },
+        ];
         let edit = groups.get(part.editId);
         if (!edit) {
           edit = { targetEditId: part.editId, parts: [] };
@@ -558,8 +557,7 @@ function computePreparedInverse(
           id: Math.max(0, ...local.map((p) => p.id)) + 1,
           editId: `computed:${result.edits.indexOf(edit)}`,
           ordinal: edit.parts.length - 1,
-          kind: direction === "invert" ? "undo" : "redo",
-          actionId: action.actionId,
+          kind: action.kind,
         });
       } finally {
         before.destroy();
@@ -575,6 +573,29 @@ function computePreparedInverse(
   }
 }
 
+/**
+ * One part split by the top-level block each changed item belongs to, so a revert can take the
+ * blocks nothing touched since and leave the rest. A one-block part comes back unchanged.
+ */
+function splitByBlock<P extends InversePart>(doc: Y.Doc, part: P): P[] {
+  const blocks = new Map<Key, { inserted: Key[]; deleted: Key[] }>();
+  const group = (k: Key, side: "inserted" | "deleted") => {
+    const item = find(doc, k);
+    const top = item ? (ancestorItems(item).at(-1) ?? item) : undefined;
+    const id = top ? key(top.id) : "";
+    const entry = blocks.get(id) ?? { inserted: [], deleted: [] };
+    entry[side].push(k);
+    blocks.set(id, entry);
+  };
+  for (const k of clocks(part.effect.inserted)) group(k, "inserted");
+  for (const k of clocks(part.effect.deleted)) group(k, "deleted");
+  if (blocks.size < 2) return [part];
+  return [...blocks.values()].map((b) => ({
+    ...part,
+    effect: { inserted: ranges(b.inserted), deleted: ranges(b.deleted) },
+  }));
+}
+
 /** One immutable-view lineage for host inspection and inverses; discard before mutation. */
 export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): PreparedEditRoots {
   return preparedRoots(new Lineage(doc, history));
@@ -582,9 +603,10 @@ export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): P
 export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
   classify(parts: readonly InversePart[]): PartClassification[];
+  blocks<P extends InversePart>(part: P): P[];
   compute(
     selection: readonly InverseSelection[],
-    action: { actionId: string; allocateClient: (doc: Y.Doc) => number },
+    action: { actionId: string; kind: InverseKind; allocateClient: (doc: Y.Doc) => number },
   ): ComputedInverse;
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
@@ -597,6 +619,9 @@ function preparedRoots(index: Lineage): PreparedEditRoots {
     },
     classify(parts) {
       return parts.map((part) => classify(index, part));
+    },
+    blocks(part) {
+      return splitByBlock(doc, part);
     },
     compute(selection, action) {
       return computePreparedInverse(doc, history, selection, action, index);
@@ -611,10 +636,4 @@ function preparedRoots(index: Lineage): PreparedEditRoots {
       });
     },
   };
-}
-
-/** Visible identity by restoration root, used by host-owned cross-view holds. */
-export function inspectEditRoots(doc: Y.Doc, history: readonly InversePart[], effect: EditEffect) {
-  const index = prepareEditRoots(doc, history);
-  return index.inspect(index.roots(effect));
 }

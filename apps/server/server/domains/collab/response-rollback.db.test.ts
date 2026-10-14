@@ -13,7 +13,6 @@ import {
   closeDatabase,
   createHarness,
   createTestDatabase,
-  PROJECT_ID,
   resetDatabase,
   schema,
   THREAD_ID,
@@ -143,7 +142,6 @@ it.each(
         )
         .where(eq(schema.documentEdits.kind, "rollback")),
     ).toHaveLength(edited ? 1 : 2);
-    expect((await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID))?.control).not.toBe("redo");
   } finally {
     harness.cancelScheduledPulls();
     harness.destroyWarmState();

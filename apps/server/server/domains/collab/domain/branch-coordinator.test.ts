@@ -88,6 +88,10 @@ class MemoryBranchStore implements BranchStore {
     return this.branches.get(branchId) ?? null;
   }
 
+  async readRebaseCuts(): Promise<Uint8Array[]> {
+    return [];
+  }
+
   async updateBranchSnapshot(input: {
     branchId: string;
     expectedState: Uint8Array;
@@ -208,6 +212,50 @@ describe("BranchCoordinator", () => {
     expect(materialize(storedBranch(store, "work")).getText("content").toString()).toBe("seed");
   });
 
+  // Risk: a reconnect's cumulative sync.step2 repeats the admitted writer struct and the server's own
+  // tombstones; it was judged as fresh authorship (refused, 4410) or reported as a lost late-peer edit.
+  it("admits a cumulative reconnect frame with repeated server tombstones as a no-op, reporting nothing", async () => {
+    const server = documentWithReservedFacts();
+    const paragraph = new Y.XmlElement("paragraph");
+    paragraph.insert(0, [new Y.XmlText("hello")]);
+    server.getXmlFragment("prosemirror").insert(0, [paragraph]);
+    const dropped = new Y.XmlElement("paragraph");
+    dropped.insert(0, [new Y.XmlText("gone")]);
+    server.getXmlFragment("prosemirror").insert(1, [dropped]);
+    server.getXmlFragment("prosemirror").delete(1, 1);
+    const store = new MemoryBranchStore();
+    store.branches.set("work", branchSnapshot({ branchId: "work", doc: server }));
+    const serverVector = Y.encodeStateVector(server);
+    const writer = materialize(storedBranch(store, "work"));
+    writer.clientID = allocateDocumentClient(writer);
+    let typing: Uint8Array = new Uint8Array();
+    writer.once("update", (update: Uint8Array) => {
+      typing = update;
+    });
+    const text = (writer.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+    text.insert(5, " world");
+    const reports: unknown[] = [];
+    const coordinator = createBranchCoordinator({
+      store,
+      onLateWriterEdits: (report) => reports.push(report),
+    });
+    const room = materialize(storedBranch(store, "work"));
+    Y.applyUpdate(room, typing);
+    await expect(
+      coordinator.commitWriterUpdate({ branchId: "work", updateData: typing, roomDocument: room }),
+    ).resolves.toEqual({ admitted: true });
+
+    await expect(
+      coordinator.commitWriterUpdate({
+        branchId: "work",
+        updateData: Y.encodeStateAsUpdate(writer, serverVector),
+        roomDocument: room,
+      }),
+    ).resolves.toEqual({ admitted: false });
+    expect(store.journal).toHaveLength(1);
+    expect(reports).toEqual([]);
+  });
+
   it("rejects reserved namespace deletion against the snapshot it would commit", async () => {
     const store = new MemoryBranchStore();
     const branchDoc = documentWithReservedFacts();
@@ -264,7 +312,6 @@ describe("BranchCoordinator", () => {
       commitSegmentRows(coordinator, {
         branchId: "work",
         sourceDoc: sourceDoc,
-        expectedGeneration: beforeWork.generation,
         rows: [
           {
             branchId: "work",
@@ -411,7 +458,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   await expect(
     commitSegmentRows(coordinator, {
       branchId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: rows.slice(0, -1),
     }),
@@ -419,7 +465,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   expect(store.journal).toHaveLength(0);
   await commitSegmentRows(coordinator, {
     branchId: "work",
-    expectedGeneration: 1,
     sourceDoc,
     rows,
   });
@@ -429,7 +474,6 @@ it("publishes ordered segment rows once and rejects reused clients and unjournal
   await expect(
     commitSegmentRows(coordinator, {
       branchId: "work",
-      expectedGeneration: 1,
       sourceDoc,
       rows: [rows[0]],
     }),
@@ -476,7 +520,6 @@ describe("a save's owned session (U1)", () => {
       await session.withStagedRows("work", async () => ({ result: 1, rows: [] }), false);
       await session.commitSegmentRows({
         branchId: "work",
-        expectedGeneration: 1,
         sourceDoc: materialize(storedBranch(store, "work")),
         rows: [],
       });

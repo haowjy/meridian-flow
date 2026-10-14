@@ -140,8 +140,6 @@ function degradedReceipts(accepted: readonly ReceiptIdentity[], revision: string
 /** A refusal explains host evidence, not a guess from item visibility. */
 function writeRejection(reason?: StagedWriteRejectionReason): WriteRejection {
   switch (reason) {
-    case "discard":
-      return "discarded_edit";
     case "discarded_draft":
     case "discarded_document":
     case "discarded_edit":
@@ -154,8 +152,6 @@ function writeRejection(reason?: StagedWriteRejectionReason): WriteRejection {
 
 export function rejectedWriteExplanation(reason?: StagedWriteRejectionReason): string {
   switch (reason) {
-    case "discard":
-      return "the user discarded the text it edited";
     case "discarded_draft":
       return "the user discarded this draft";
     case "discarded_document":
