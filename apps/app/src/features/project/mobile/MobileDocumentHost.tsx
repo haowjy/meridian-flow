@@ -146,13 +146,20 @@ function MobileLocalDocumentHost({
         });
     }
   }, [projectId, workId, tab, removal, state]);
-  return <PhoneDocument projectId={projectId} tab={tab} />;
+  // No review wraps a local pointer, so it brings the column `MobileDocumentReview` gives the
+  // other two: the frame below takes its height from a flex parent.
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PhoneDocument projectId={projectId} tab={tab} />
+    </div>
+  );
 }
 
 /**
  * The phone's one editable document. It renders the shared session boundary directly: the
  * phone has a single document, and a warm-set host would add a frame of its own. The host
- * fills this `relative` frame, which is a direct child of the document column.
+ * fills this `relative` frame, which is a direct child of a flex column: the review's, or the
+ * local pointer's own.
  */
 function PhoneDocument({
   projectId,

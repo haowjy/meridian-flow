@@ -64,8 +64,9 @@ Settings is an auxiliary routed surface (`?settings=`), not a drawer/sidebar des
 Mobile documents are read-only for users but live for AI edits (a review's draft
 body too). Every editable phone document (the ordinary route, the local pointer
 and a draft-only document) renders `ContextDocumentHost` directly, inside a
-`relative min-h-0 flex-1` frame that is a direct child of the document column,
-with `presentation={PHONE_DOCUMENT_PRESENTATION}` and `readOnly`. It does not use
+`relative min-h-0 flex-1` frame that is a direct child of a flex column
+(`MobileDocumentReview`'s, or the local pointer's own, since no review wraps
+it), with `presentation={PHONE_DOCUMENT_PRESENTATION}` and `readOnly`. It does not use
 `ContextEditorMountHost`, the desktop's warm-set LRU with a frame of its own.
 
 `PHONE_DOCUMENT_PRESENTATION` (`context/document-presentation.ts`) is the whole
