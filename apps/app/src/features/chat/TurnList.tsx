@@ -13,6 +13,7 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
+import { answeredCompactionIds } from "./compaction/compaction-model";
 
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
@@ -23,7 +24,6 @@ import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
 import type { QueuedControl } from "./thread-controls/thread-controls";
 import type { ThreadControls } from "./thread-controls/useThreadControls";
 import { WriteModeDivider } from "./thread-controls/WriteModeDivider";
-import { answeredControlIds } from "./thread-controls/write-mode-model";
 import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
 import type { ReplyRetry } from "./useReplyRetry";
 
@@ -129,7 +129,7 @@ export function TurnList({
   // A command runs only when no message waits, so queued commands sit at the
   // tail, after every queued message: they take no position until they run.
   const tailControls = useMemo(() => {
-    const answered = answeredControlIds(turns);
+    const answered = answeredCompactionIds(turns);
     return (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id));
   }, [controls?.queued, turns]);
   // List rows are transcript rows shifted down by the alert, when it shows.

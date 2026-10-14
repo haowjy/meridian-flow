@@ -49,7 +49,7 @@ function Probe(props: { pending?: ThreadPendingInbox }) {
   latest = useThreadControls({
     threadId: "thread-1",
     pending: props.pending ?? EMPTY,
-    answeredControlIds: NONE,
+    answeredCompactionIds: NONE,
     switches: NO_SWITCHES,
   });
   return null;

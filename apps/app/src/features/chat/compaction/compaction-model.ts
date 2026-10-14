@@ -130,3 +130,14 @@ export function dividerView(turn: Turn): DividerView {
     failureCopy,
   };
 }
+
+/** Every `/compact` a compaction divider already answers: a queued item for one is no longer queued. */
+export function answeredCompactionIds(turns: readonly Turn[]): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const turn of turns) {
+    if (turn.role !== "compaction") continue;
+    const id = readCompactionFacts(turn).controlId;
+    if (id) ids.add(id);
+  }
+  return ids;
+}
