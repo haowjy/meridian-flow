@@ -11,17 +11,17 @@
  * (deleted first, or the account closed) is never posted. A document the
  * replica does not hold is the server's already.
  */
-import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
+import {
+  type ResourceProjectionSnapshot,
+  type ResourceRecord,
+  resourceIdentityIndex,
+} from "@meridian/resource-replica";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import { accountQueryKeys } from "@/client/query/account-query-keys";
-import {
-  followAccountRecentIdentity,
-  type RecentOpening,
-  touchAccountRecent,
-} from "@/client/recents";
+import { type RecentOpening, touchAccountRecent } from "@/client/recents";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -92,11 +92,7 @@ async function waitOnServer(
       stop = source.observeProjection(
         projectId,
         ({ records }) => {
-          const record = records.find(
-            (candidate) =>
-              candidate.resource.identity.documentId === documentId ||
-              documentId in candidate.resource.aliases,
-          );
+          const record = resourceIdentityIndex(records).byDocumentId(documentId) ?? undefined;
           const current = state(record);
           if (current !== "local")
             finish(
@@ -127,8 +123,6 @@ export function useRecordOpenedDocument(): (opening: RecentOpening) => void {
           ? await whenOnServer(resources, opening.projectId, opening.documentId, epoch)
           : opening.documentId;
         if (!documentId) return;
-        if (documentId !== opening.documentId)
-          followAccountRecentIdentity(accountId, opening.projectId, opening.documentId, documentId);
         const result = await recordRecentDocument(documentId, epoch);
         if (result.kind !== "recorded") return;
         void queryClient.invalidateQueries({
