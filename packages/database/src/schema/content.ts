@@ -299,6 +299,28 @@ export const documents = pgTable(
   ],
 );
 
+/**
+ * A device's create that joined a draft's document: `fromDocumentId` is the id the device
+ * minted and never got a `documents` row, now meaning `toDocumentId`. No FK on the
+ * source id, which names no row; deleting the target drops the forward with it.
+ */
+export const documentForwards = pgTable(
+  "document_forwards",
+  {
+    fromDocumentId: uuid("from_document_id").$type<DocumentId>().primaryKey(),
+    toDocumentId: uuid("to_document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("document_forwards_to").on(table.toDocumentId)],
+);
+
 /** Markdown projection kept separate so location writes never rebuild its GIN indexes. */
 export const documentMarkdownProjections = pgTable(
   "document_markdown_projections",
