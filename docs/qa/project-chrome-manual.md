@@ -1,113 +1,117 @@
 # Project chrome and shell: manual checks
 
-These checks replace the unit tests that were deleted from `apps/app` for being the
-slowest files in the suite. Nine DOM-mounting files (median suite file: 41 ms;
-these: 250 to 1100 ms) carried 53 cases and 56% of the `apps/app` test time. Each
-case below is a behavior those files asserted, rewritten as something to watch on
-screen.
+These are the screen checks that replaced the unit tests deleted from `apps/app`
+for being the slowest files in the suite: nine DOM-mounting files at 250 to 1100
+ms against a 41 ms median.
 
-They are manual because a browser is the only thing that can judge them: every one
-is about what the writer sees after an action, a reload, a rail or tab switch, or a
-refused operation. Judging them needs the durable transcript and the real screen,
-not a jsdom render.
+Only the parts that are genuinely about what the writer sees live here. The
+durable halves of those same files moved to [`runtime-probes.md`](runtime-probes.md)
+as **RP-13** (apply one change row then Discard all, no prose moves) and **RP-14**
+(Work archive, unarchive and delete are durable, reversible and idempotent),
+because `./mf` reads durable state directly and a runnable probe beats a
+checklist. Do not re-check those two by hand; run the probes.
 
-Run against an owned worktree and stack. Discover URLs with `pnpm portless:list`.
-Use the mock model for everything except the rename check, which needs a real
-identity change.
+Run these against an owned worktree and stack. Discover URLs with
+`pnpm portless:list`. Use the mock model.
 
-## Work rows: archive, delete, undo
+## Work rows: the Undo affordance
 
-1. Archive a Work row. The row **moves out of the list at the click**, before the
-   server answers. Check the list immediately, not after a pause.
-2. Force the archive to fail. The row **returns to its old place with an error**, and
-   the error sits on that row.
-3. Retry the failed archive. It succeeds and the row leaves again.
-4. Delete two Work rows. **Undo one.** That row comes back and **the other Undo row
-   stays** where it was.
-5. Dismiss the remaining Undo row. It goes away without undoing anything else.
+1. Delete two Work rows. **Undo one.** That row comes back and **the other Undo
+   row stays** where it was.
+2. Dismiss the remaining Undo row. It goes away without undoing anything else.
 
-## Work rows: change rows, apply and discard
+(Durability of the delete itself is RP-14. Undo is client-side, which is why it
+stays here.)
 
-6. Open a Work with several change rows, at least one never opened. **Apply one
-   unopened row**, then **Discard all** while a filter is active. Every draft goes,
-   and **no prose moves** in the document.
+## Work rows: filters
+
+3. Open a Work with several change rows and apply one. Then activate a row filter
+   and use **Discard all**. Every draft goes and the filter does not cause anything
+   to be applied.
+
+(RP-13 proves no prose moves. This check is only about the filter's effect on the
+row list, which a document read cannot see.)
 
 ## Phone review sheet
 
-7. On a phone viewport, open a document with review changes. Focus a change through
+4. On a phone viewport, open a document with review changes. Focus a change through
    the sheet, then **Discard** the whole draft from the sheet. The editor stays
    present through the discard.
-8. Review the **last** change in the sheet. The sheet closes and does not repeat the
+5. Review the **last** change in the sheet. The sheet closes and does not repeat the
    attribution line.
-9. With two drafts on the phone, one live and one under review, the hint names
-   **the other draft**, never the one being reviewed.
+6. With two drafts on the phone, one live and one under review, the hint names **the
+   other draft**, never the one being reviewed.
 
 ## Composer
 
-10. Type a draft and press Escape. The run and the **draft are both left alone**.
-11. Send `/compact <instructions>`. It goes as a **command, never as a message**.
-12. On a surface that registers no verbs, send text starting with `/compact`. It goes
-    as a **message**.
-13. Accept a presentation, then check that clearing it does **not publish an empty
+7. Type a draft and press Escape. The run and the **draft are both left alone**.
+8. Send `/compact <instructions>`. It goes as a **command, never as a message**.
+9. On a surface that registers no verbs, send text starting with `/compact`. It goes
+   as a **message**.
+10. Accept a presentation, then check that clearing it does **not publish an empty
     draft over another pane's writing**.
-14. Send words the server rejects. The **rejected words stay visible** and the pane
+11. Send words the server rejects. The **rejected words stay visible** and the pane
     does not take over their lifecycle.
-15. Refuse a recording. It draws as the **failure card**, and the card clears once a
+12. Refuse a recording. It draws as the **failure card**, and the card clears once a
     send is recorded.
 
 ## Draft dock and review doors
 
-16. Accept a batch of draft targets, then click apply. **All accepted targets
-    disappear at the click**; a refused target restores **independently** of the rest.
-17. Create a new document. It has **one review door**, and whole-draft commands appear
+13. Accept a batch of draft targets, then apply. **All accepted targets disappear at
+    the click**; a refused target restores **independently** of the rest.
+14. Create a new document. It has **one review door**, and whole-draft commands appear
     in chat and in Work rows.
 
 ## Project shell and dock
 
-18. Retained document A with B pending, switch to Chat: the **retained A** moves to
+15. Retained document A with B pending, switch to Chat: the **retained A** moves to
     Chat, not the pending B.
-19. Hide a pane. It **carries nothing** with it.
-20. From Work Files, follow the rail to Chat. The document follows.
-21. Collapse an occupant, then switch screens. The collapsed occupant **carries
+16. Hide a pane. It **carries nothing** with it.
+17. From Work Files, follow the rail to Chat. The document follows.
+18. Collapse an occupant, then switch screens. The collapsed occupant **carries
     nothing**.
-22. Cancel a dock intent, and separately supersede one. In both cases the document
+19. Cancel a dock intent, and separately supersede one. In both cases the document
     stays and **no failure appears**.
-23. Force admission to fail. The screen **stays on Editor**, the dock stays, and
+20. Force admission to fail. The screen **stays on Editor**, the dock stays, and
     **Retry clears the failure**.
-24. Issue a new dock intent while a tab install is in flight. The newer intent wins
+21. Issue a new dock intent while a tab install is in flight. The newer intent wins
     and the tab still installs.
-25. Navigate same-screen after a source rail action. The feedback **expires**;
+22. Navigate same-screen after a source rail action. The feedback **expires**;
     ordinary opens do not opt into it.
-26. Replace document A with B and then back to A. The header feedback **expires
+23. Replace document A with B and then back to A. The header feedback **expires
     permanently**.
-27. Park an occupant for another project, and separately for Work. Neither receives
+24. Park an occupant for another project, and separately for Work. Neither receives
     the document; a parked Chat occupant is left alone.
 
-## Rename and move feedback
+## Rename feedback and hand-off
 
-28. Move a folder whose record is missing locally, then let a fresh receipt arrive.
+25. Move a folder whose record is missing locally, then let a fresh receipt arrive.
     The **first folder move shows**.
-29. Rename a document, then move it, so the receipt is rebased onto a new identity.
+26. Rename a document, then move it, so the receipt is rebased onto a new identity.
     The feedback appears **at the reminted identity**.
 
-## Hand-off and frame hold
-
-30. Hand a visible document off between panes, draft-only and live. **Review follows
+    (The durable identity claim is still covered by
+    `document-address-canonical.test.ts`, which was not deleted.)
+27. Hand a visible document off between panes, draft-only and live. **Review follows
     both hand-offs.**
-31. Trigger a pending hand-off that paints a held frame. The **whole frame holds**,
+
+## Frame hold
+
+28. Trigger a pending hand-off that paints a held frame. The **whole frame holds**,
     then swaps in the ending commit.
-32. Move the page with changes warm and unseen. They are **dropped, not painted**,
+29. Move the page with changes warm and unseen. They are **dropped, not painted**,
     and a painted copy is reused across synchronous precursor commits.
-33. Move a held copy a second time. The **first copy is kept**, and it releases on a
+30. Move a held copy a second time. The **first copy is kept**, and it releases on a
     terminal surface.
 
 ## What these checks do not cover
 
-The deleted files also asserted state machines that are hard to drive by hand:
+State machines that are neither screen behavior nor `./mf` durable state:
 tab-session availability, account stamping and hydration, restore claims across
-accounts, `Untitled` restoration against a hydrated local resource, and storage that
-throws on read or write. Those live in `apps/app/src/features/project/dock/dock-restoration.test.ts`
-and its neighbours, which are still present.
+accounts, `Untitled` restoration against a hydrated local resource, and storage
+that throws on read or write. Those live in
+`apps/app/src/features/project/dock/dock-restoration.test.ts` and its neighbours,
+which are still present.
 
-If a check above turns out to be impractical to drive by hand, say so and it should
+If a check here turns out to be impractical to drive by hand, say so and it should
 become a probe recipe instead of quietly staying unrun.
