@@ -4,7 +4,7 @@
  * (or is gone) stays. A placement the replica refuses is reported without
  * losing the rows that did move, and Undo still covers those.
  */
-import type { ParentRef } from "@meridian/resource-replica";
+import type { ParentRef, ResourceLocation } from "@meridian/resource-replica";
 import { expect, it } from "vitest";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
@@ -17,7 +17,6 @@ const effect = (id: string): MoveEffect => ({
   name: id,
   before: folder("book"),
   after: folder("act"),
-  operationId: null,
 });
 
 it("returns only rows still where the drop put them, under their current names", () => {
@@ -54,10 +53,12 @@ it("reports a refused row and keeps the rest to undo", async () => {
       moves: ["a", "b"].map((id) => ({
         ref: { kind: "folder", id },
         name: id,
-        before: folder("book"),
+        parent: folder("book"),
+        location: {} as ResourceLocation,
       })),
     },
-    { resources, projectId: "p", works: [], noWork: null },
+    folder("act"),
+    { resources, projectId: "p" },
   );
   expect(result.moved.map((moved) => moved.entry.id)).toEqual(["a"]);
   expect(result.moved[0]).toMatchObject({ before: folder("book"), after: folder("act") });

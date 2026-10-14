@@ -8,17 +8,12 @@
  */
 import { type ParentRef, resourcePlacementForSnapshot } from "@meridian/resource-replica";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
-import { destinationParent, placeEntry } from "../move-entry";
+import { placeEntry } from "../move-entry";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
 import type { EntryRef } from "./entry";
 import { type MoveEffect, planUndo, type ReadyMovePlan } from "./move-plan";
 
-type MoveContext = {
-  resources: AccountResourceReplica;
-  projectId: string;
-  works: Parameters<typeof destinationParent>[1];
-  noWork: Parameters<typeof destinationParent>[2];
-};
+type MoveContext = { resources: AccountResourceReplica; projectId: string };
 
 export type MoveResult = {
   moved: readonly MoveEffect[];
@@ -31,10 +26,9 @@ async function place(
   entry: EntryRef,
   name: string,
   parent: ParentRef,
-): Promise<string | null> {
+): Promise<void> {
   const operationId = await placeEntry(resources, projectId, entry, { parent, name });
   if (operationId) void renameOperationLifecycle(resources).remember(projectId, entry, operationId);
-  return operationId;
 }
 
 async function settle(
@@ -48,28 +42,25 @@ async function settle(
   const failed: { entry: EntryRef; name: string }[] = [];
   rows.forEach((row, index) => {
     const result = results[index];
-    if (result?.status === "fulfilled") moved.push({ ...row, operationId: result.value });
+    if (result?.status === "fulfilled") moved.push(row);
     else failed.push({ entry: row.entry, name: row.name });
   });
   return { moved, failed };
 }
 
-export function executeMove(plan: ReadyMovePlan, context: MoveContext): Promise<MoveResult> {
-  const after = destinationParent(plan.destination, context.works, context.noWork);
+/** `after` is the destination's parent, null when its authority is unavailable (every row then fails). */
+export function executeMove(
+  plan: ReadyMovePlan,
+  after: ParentRef | null,
+  context: MoveContext,
+): Promise<MoveResult> {
+  const rows = plan.moves.map(({ ref, name, parent }) => ({ entry: ref, name, before: parent }));
   return after
     ? settle(
-        plan.moves.map((move) => ({
-          entry: move.ref,
-          name: move.name,
-          before: move.before,
-          after,
-        })),
+        rows.map((row) => ({ ...row, after })),
         context,
       )
-    : Promise.resolve({
-        moved: [],
-        failed: plan.moves.map((move) => ({ entry: move.ref, name: move.name })),
-      });
+    : Promise.resolve({ moved: [], failed: rows.map(({ entry, name }) => ({ entry, name })) });
 }
 
 /**

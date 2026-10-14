@@ -18,7 +18,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useWorks } from "@/client/query/useWorks";
 import { announce } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -98,22 +97,8 @@ export function MoveNoticeHost({
 export function MoveNotice({ className }: { className?: string }) {
   const hostContext = useContext(HostContext);
   if (!hostContext) throw new Error("MoveNotice requires a MoveNoticeHost");
-  return <Notice {...hostContext} className={className} />;
-}
-
-function Notice({
-  projectId,
-  host,
-  publish,
-  className,
-}: {
-  projectId: string;
-  host: object;
-  publish: Publish;
-  className?: string;
-}) {
+  const { host, projectId, publish } = hostContext;
   const resources = useAccountResourceReplica();
-  const { works, noWork } = useWorks(projectId);
   const current = useSyncExternalStore(
     subscribe,
     () => {
@@ -136,7 +121,7 @@ function Notice({
   const undo = async () => {
     setUndoing(true);
     try {
-      const result = await undoMove(current.effects, { resources, projectId, works, noWork });
+      const result = await undoMove(current.effects, { resources, projectId });
       if (latest.get(projectId)?.id !== current.id) return;
       if (result.failed.length > 0) publish(describeUndoFailure(result), []);
       else set(projectId, null);
