@@ -28,7 +28,7 @@ const hidden: LinkDocumentRef = {
 
 async function follow(gesture: "current" | "new-tab") {
   const prior = useContextTabsStore.getState();
-  useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
+  useContextTabsStore.setState({ byProject: {} });
   const liveOpen = vi.fn();
   const openLive = vi.fn();
   let destination: LinkDestination | undefined;

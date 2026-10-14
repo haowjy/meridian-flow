@@ -191,9 +191,6 @@ export function prepareEditorDestination(
       ? workspace.selectedTabIdByWork[resolvedWorkId]
       : undefined);
   const eligible = editorTabsForWork(workspace.tabs, resolvedWorkId ?? null);
-  const selectedInstance = resolvedWorkId
-    ? workspace.selectedTabInstanceIdByWork?.[resolvedWorkId]
-    : undefined;
   const addressedDraft =
     itemKey && documentId && resolvedWorkId
       ? eligible.find((tab) =>
@@ -205,9 +202,6 @@ export function prepareEditorDestination(
       : undefined;
   const tab =
     addressedDraft ??
-    eligible.find(
-      (tab) => tab.documentId === documentId && tab.tabInstanceId === selectedInstance,
-    ) ??
     (documentId
       ? eligible.find((tab) => tab.documentId === documentId)
       : resolvedWorkId

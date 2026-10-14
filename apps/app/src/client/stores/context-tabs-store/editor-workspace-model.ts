@@ -38,9 +38,9 @@ export type ContextTab =
       path: string;
       name: string;
       draftOnly?: boolean;
-      /** Transient owner of a draft-synthesized review tab; never persisted. */
+      /** Review address of a draft-only tab (a hidden draft-created document); never persisted. */
       reviewWorkId?: string;
-      /** Transient exact draft and tab-generation fence for promoting or closing the review tab. */
+      /** Draft item key and tab-generation fence for settling or closing the draft-only tab. */
       reviewItemKey?: string;
       tabInstanceToken?: string;
       editable: true;
@@ -60,7 +60,6 @@ export type ContextTab =
       path: string;
       name: string;
       draftOnly?: boolean;
-      /** Transient owner of a draft-synthesized review tab; never persisted. */
       reviewWorkId?: string;
       reviewItemKey?: string;
       tabInstanceToken?: string;
@@ -84,8 +83,6 @@ export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" 
 export type ProjectTabsSlice = {
   tabs: ContextTab[];
   selectedTabIdByWork: Record<string, string>;
-  /** Transient review selection; durable selections retain document identity. */
-  selectedTabInstanceIdByWork?: Record<string, string>;
 };
 
 /**
@@ -161,15 +158,10 @@ export function matchesTabInstance(tab: ContextTab, addressed: ContextTab): bool
   );
 }
 
-/** One Work's strip: its own overlays shadow only that Work's durable document. */
+/** One Work's strip: the one tab per document that this Work's Editor shows. */
 export function editorTabsForWork(
   tabs: readonly ContextTab[],
   workId: string | null,
 ): ContextTab[] {
-  const overlays = new Set(
-    tabs.filter((tab) => tab.draftOnly && isEditorTab(tab, workId)).map((tab) => tab.documentId),
-  );
-  return tabs.filter(
-    (tab) => isEditorTab(tab, workId) && (tab.draftOnly || !overlays.has(tab.documentId)),
-  );
+  return tabs.filter((tab) => isEditorTab(tab, workId));
 }

@@ -10,6 +10,7 @@ import { sameServerContextTabLocator } from "./context-tab-locator";
 import {
   type ContextTab,
   isEditorContextTab,
+  matchesTabInstance,
   type ProjectTabsSlice,
 } from "./editor-workspace-model";
 
@@ -376,36 +377,37 @@ export function reduceEditorWorkspace(
     return replaceProject(current, command.projectId, next);
   }
   if (command.kind === "settle-draft") {
+    // The draft's document is live now: the same tab drops its review metadata in place.
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    const index = workspace.tabs.findIndex((tab) => tab.documentId === command.tab.documentId);
-    if (command.tab.kind === "new") return outcome("stale", current);
-    const settled = durableContextTab(command.tab);
-    const tabs =
-      index < 0
-        ? canonicalizeTabs([...workspace.tabs, settled])
-        : workspace.tabs.map((candidate, candidateIndex) =>
-            candidateIndex === index
-              ? ({ ...settled, tabInstanceId: candidate.tabInstanceId } as ContextTab)
-              : candidate,
-          );
-    if (JSON.stringify(tabs) === JSON.stringify(workspace.tabs))
-      return outcome("already-committed", current);
-    return replaceProject(current, command.projectId, normalizeProject({ ...workspace, tabs }));
+    const index = workspace.tabs.findIndex((tab) => matchesTabInstance(tab, command.tab));
+    const prior = workspace.tabs[index];
+    if (!prior) return outcome("stale", current);
+    if (prior.kind === "new" || !prior.draftOnly) return outcome("already-committed", current);
+    return replaceProject(current, command.projectId, {
+      ...workspace,
+      tabs: workspace.tabs.map((tab, candidateIndex) =>
+        candidateIndex === index ? durableContextTab(prior) : tab,
+      ),
+    });
   }
   if (command.kind === "reconcile-resource") {
     const workspace = current.projects[command.projectId];
-    const index = workspace?.tabs.findIndex(
-      (tab) =>
-        tab.resourceHandle === command.resourceHandle || tab.documentId === command.tab.documentId,
+    if (!workspace) return outcome("not-referenced", current);
+    const byHandle = workspace.tabs.findIndex(
+      (tab) => tab.resourceHandle === command.resourceHandle,
     );
-    if (!workspace || index === undefined || index < 0) return outcome("not-referenced", current);
+    const index =
+      byHandle >= 0
+        ? byHandle
+        : workspace.tabs.findIndex((tab) => tab.documentId === command.tab.documentId);
+    if (index < 0) return outcome("not-referenced", current);
     if (
       command.tab.resourceHandle !== undefined &&
       command.tab.resourceHandle !== command.resourceHandle
     )
       return outcome("stale", current);
     const prior = workspace.tabs[index] as ContextTab;
-    const conflict = workspace.tabs.some(
+    const conflicts = workspace.tabs.filter(
       (tab, candidateIndex) =>
         candidateIndex !== index &&
         (tab.documentId === command.tab.documentId ||
@@ -413,15 +415,23 @@ export function reduceEditorWorkspace(
             command.tab.kind !== "new" &&
             sameServerContextTabLocator(tab, command.tab))),
     );
-    if (conflict) return outcome("stale", current);
+    // The join re-identifies one document: the draft-only tab the hidden draft
+    // showed it under is the same document, so the resource's tab absorbs it.
+    const absorbed = conflicts.filter(
+      (tab) =>
+        tab.kind !== "new" && tab.draftOnly === true && tab.documentId === command.tab.documentId,
+    );
+    if (conflicts.length > absorbed.length) return outcome("stale", current);
     const next = durableContextTab({
       ...command.tab,
       tabInstanceId: prior.tabInstanceId,
     } as ContextTab);
-    if (JSON.stringify(next) === JSON.stringify(prior))
+    if (absorbed.length === 0 && JSON.stringify(next) === JSON.stringify(prior))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {
-      tabs: workspace.tabs.map((tab, candidateIndex) => (candidateIndex === index ? next : tab)),
+      tabs: workspace.tabs
+        .filter((tab) => !absorbed.includes(tab))
+        .map((tab) => (tab === prior ? next : tab)),
       selectedTabIdByWork: rewriteSelections(
         workspace.selectedTabIdByWork,
         prior.documentId,
@@ -431,18 +441,31 @@ export function reduceEditorWorkspace(
   }
   if (command.kind === "open") {
     const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    if (command.tab.draftOnly) return outcome("already-committed", current);
-    const tab = durableContextTab(command.tab);
+    // A draft-only tab keeps its review metadata while it is the document's one tab.
+    const incoming = command.tab.draftOnly
+      ? ({
+          ...command.tab,
+          tabInstanceId: command.tab.tabInstanceId ?? crypto.randomUUID(),
+        } as ContextTab)
+      : durableContextTab(command.tab);
     const sameDocumentIndex = workspace.tabs.findIndex(
       (candidate) =>
-        candidate.tabInstanceId === tab.tabInstanceId || candidate.documentId === tab.documentId,
+        candidate.tabInstanceId === incoming.tabInstanceId ||
+        candidate.documentId === incoming.documentId,
     );
+    const sameDocument = sameDocumentIndex >= 0 ? workspace.tabs[sameDocumentIndex] : undefined;
+    // A review launch never turns an ordinary tab back into a draft-only one.
+    const tab =
+      incoming.draftOnly && sameDocument && (sameDocument.kind === "new" || !sameDocument.draftOnly)
+        ? durableContextTab(incoming)
+        : incoming;
     const occupiedLocatorIndex =
       tab.kind === "new"
         ? -1
         : workspace.tabs.findIndex(
             (candidate) =>
               candidate.kind !== "new" &&
+              !candidate.draftOnly &&
               candidate.documentId !== tab.documentId &&
               sameServerContextTabLocator(candidate, tab),
           );

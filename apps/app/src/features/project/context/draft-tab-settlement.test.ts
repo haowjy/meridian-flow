@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { editorTabsForWork, getContextTabs, useContextTabsStore } from "@/client/stores";
+import { getContextTabs, rehydrateEditorWorkspace, useContextTabsStore } from "@/client/stores";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
@@ -41,7 +42,6 @@ describe("draft tab settlement", () => {
   beforeEach(() => {
     useContextTabsStore.setState({
       byProject: {},
-      _reviewOverlayByProject: {},
       _workspaceHydrated: false,
     });
     useContextTabsStore.getState().openTab("project-a", draftTab());
@@ -59,32 +59,47 @@ describe("draft tab settlement", () => {
     expect(getContextTabs("project-a")).toEqual(before);
   });
 
-  it("shadows an admitted live tab only in the reviewing Work without inventing live membership", () => {
+  it("keeps one tab per document through a join, and absorbs the hidden draft's tab", async () => {
     const store = useContextTabsStore.getState();
-    const durable = () => useContextTabsStore.getState().byProject["project-a"]?.tabs ?? [];
-    for (const overlayFirst of [false, true]) {
-      useContextTabsStore.setState({ byProject: {}, _reviewOverlayByProject: {} });
-      if (overlayFirst) {
-        store.openTab("project-a", draftTab());
-        store.openTab("project-a", liveTab("document-a", "/chapter.md"));
-      } else {
-        store.openTab("project-a", liveTab("document-a", "/chapter.md"));
-        store.openTab("project-a", draftTab());
-      }
+    const project = "project-join";
+    const distinct = () => {
+      const ids = getContextTabs(project).tabs.map((tab) => tab.documentId);
+      expect(new Set(ids).size).toBe(ids.length);
+    };
+    store.openTab(project, draftTab());
+    await store.selectTab(project, "work-a", "document-a");
+    // New file: the device-minted document N, reserved under handle H.
+    store.openTab(project, {
+      kind: "new",
+      documentId: "document-n",
+      name: "chapter",
+      resourceHandle: "handle-h",
+    });
+    await store.selectTab(project, "work-a", "document-n");
+    distinct();
+    // The join re-identifies N to D; D's draft-only tab is the same document.
+    await store.reconcileResourceTab(project, "handle-h", {
+      ...liveTab("document-a", "/chapter.md"),
+      resourceHandle: "handle-h",
+    });
+    distinct();
+    const slice = getContextTabs(project);
+    expect(slice.tabs).toHaveLength(1);
+    expect(slice.tabs[0]).toMatchObject({ documentId: "document-a", resourceHandle: "handle-h" });
+    expect(slice.tabs[0]?.draftOnly).toBeUndefined();
+    expect(slice.selectedTabIdByWork).toEqual({ "work-a": "document-a" });
+  });
 
-      expect(durable()).toHaveLength(overlayFirst ? 0 : 1);
-      expect(editorTabsForWork(getContextTabs("project-a").tabs, "work-a")).toMatchObject([
-        { documentId: "document-a", draftOnly: true },
-      ]);
-      const outcome = new ContextRemovalCoordinator("account-a").discardDraft(
-        "project-a",
-        "work-a",
-        "draft-a",
-      );
-      expect(outcome.kind).not.toBe("noop");
-      expect(getContextTabs("project-a").tabs).toHaveLength(overlayFirst ? 0 : 1);
-      expect(getContextTabs("project-a").tabs.every((tab) => !tab.draftOnly)).toBe(true);
-    }
+  it("never persists a draft-only tab, so a reload reopens it from its review address", async () => {
+    await rehydrateEditorWorkspace("account-persist");
+    const store = useContextTabsStore.getState();
+    store.openTab("project-a", draftTab());
+    store.openTab("project-a", liveTab("document-b"));
+    const stored = JSON.stringify(
+      Object.values(sessionStorage).map((value) => JSON.parse(value as string)),
+    );
+    expect(stored).not.toContain("document-a");
+    expect(stored).toContain("document-b");
   });
 
   it("lets an explicit Review re-open the draft of a refused Discard at the same address", () => {

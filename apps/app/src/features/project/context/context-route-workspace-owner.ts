@@ -19,7 +19,6 @@ export function resolveWorkspaceRoute({
   selectedDocumentId,
   locator,
   boundDocumentId,
-  selectedTabInstanceId,
 }: {
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
@@ -30,26 +29,9 @@ export function resolveWorkspaceRoute({
    * follows never leaves the route unowned for a frame.
    */
   boundDocumentId?: string | null;
-  selectedTabInstanceId?: string;
 }): WorkspaceRouteResolution {
   if (!locator) return { kind: "unowned" };
   tabs = editorTabsForWork(tabs, locator.workId);
-  const selectedInstance = tabs.find((tab) => tab.tabInstanceId === selectedTabInstanceId);
-  if (
-    selectedInstance &&
-    (boundDocumentId
-      ? selectedInstance.documentId === boundDocumentId
-      : contextTabMatchesRoute(selectedInstance, locator))
-  ) {
-    return {
-      kind: "owner",
-      tab: selectedInstance,
-      identity: {
-        kind: selectedInstance.kind === "new" ? "local" : "server",
-        documentId: selectedInstance.documentId,
-      },
-    };
-  }
   // Identity before path (see route-document-owner): a bound document's tab owns the route
   // wherever the tab's path went, and no other tab may own it by holding the path.
   const server = boundDocumentId

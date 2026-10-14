@@ -110,7 +110,6 @@ describe("DraftReviewProvider remote settlement", () => {
     useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
     useContextTabsStore.setState({
       byProject: {},
-      _reviewOverlayByProject: {},
       _workspaceHydrated: false,
     });
     const tab = contextTabFromDraftGroup({
@@ -144,13 +143,12 @@ describe("DraftReviewProvider remote settlement", () => {
     ["both", "apply"],
     ["both", "discard"],
   ] as const)("settles remote %s %s from a catalog read after omission", async (container, mode) => {
-    const tab = useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs[0];
+    const tab = useContextTabsStore.getState().byProject["project-a"]?.tabs[0];
     if (!tab) throw new Error("Missing draft overlay");
     useDockDocumentStore.setState({
       occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", itemKey: "draft-a" }),
     });
-    if (container === "dock")
-      useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+    if (container === "dock") useContextTabsStore.setState({ byProject: {} });
     let finishCatalog!: () => void;
     resources.acquireCatalogAfter.mockImplementation(
       () =>
