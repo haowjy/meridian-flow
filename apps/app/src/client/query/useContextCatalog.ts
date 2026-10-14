@@ -44,6 +44,7 @@ import {
   type CatalogNode,
   refusedMoveDestination,
 } from "@/client/query/context-catalog-projection";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
@@ -89,6 +90,22 @@ export function contextCatalogScope(
     return owner.workId ? { kind: "work", projectId, workId: owner.workId } : null;
   }
   return { kind: "project", projectId };
+}
+
+/**
+ * The one creation gate for a chat's catalog scopes. Only a lineage scope waits
+ * on its chat's creation; other scopes already exist on the server.
+ *
+ * Hidden constraint: `prefetchQuery` and `fetchQuery` ignore `enabled`, so a
+ * gate must remove the scope from the list a reader builds, not just disable
+ * its query. Every reader that lists a chat's scopes applies this.
+ */
+export function catalogScopeReady(
+  scope: CatalogScope,
+  enabled: boolean,
+  lineagePending: boolean,
+): boolean {
+  return enabled && !(scope.kind === "lineage" && lineagePending);
 }
 
 export function contextCatalogQueryOptions(
@@ -496,8 +513,10 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   } & ContextOwner,
 ): Record<S, CatalogViewResult> {
   const projectPending = useIsProjectPendingCreation(projectId);
-  const enabled = (options.enabled ?? true) && !projectPending;
   const { workId, rootThreadId, uploadsWorkId } = options;
+  // A first send's chat is not on the server yet; its lineage scope would answer 404.
+  const lineagePending = useIsThreadPendingCreation(rootThreadId);
+  const enabled = (options.enabled ?? true) && !projectPending;
   const scopeFor = useCallback(
     (scheme: ProjectContextTreeScheme) =>
       aggregateCatalogScope(projectId, scheme, { workId, rootThreadId, uploadsWorkId }),
@@ -565,7 +584,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
   return useQueries({
     queries: scopes.map((scope) => ({
       ...contextCatalogQueryOptions(resources, projectId, scope),
-      enabled,
+      enabled: catalogScopeReady(scope, enabled, lineagePending),
     })),
     combine,
   });
@@ -573,6 +592,9 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
   const projectPending = useIsProjectPendingCreation(projectId);
+  const lineagePending = useIsThreadPendingCreation(
+    scope.kind === "lineage" ? scope.rootThreadId : null,
+  );
   const scopeKind = scope.kind;
   const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
   const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
@@ -601,7 +623,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),
-    enabled: enabled && !projectPending,
+    enabled: catalogScopeReady(stableScope, enabled && !projectPending, lineagePending),
   });
   const data = useMemo(() => {
     const checkpoint = projection.snapshot?.catalogs.find(

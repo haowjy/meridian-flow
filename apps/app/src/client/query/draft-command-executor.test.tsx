@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
+import { ThreadStoreProvider } from "@/client/stores";
 import { listed } from "@/test-support/draft-review-scope";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import {
@@ -85,7 +86,9 @@ async function withHarness(run: (harness: Harness) => Promise<void>) {
   }
   await withReactRoot(
     <QueryClientProvider client={queryClient}>
-      <Capture />
+      <ThreadStoreProvider now={0}>
+        <Capture />
+      </ThreadStoreProvider>
     </QueryClientProvider>,
     () =>
       run({
