@@ -19,8 +19,6 @@ export const IMPORT_ADMISSION = {
   requestBytes: 8 * 1024 * 1024,
   /** Files one multipart request may carry. */
   partsPerRequest: 200,
-  /** Leading bytes of a file the manifest carries for type sniffing. */
-  sniffBytes: 512,
   /** Upper bound on a settings or marker side file the manifest carries. */
   sideFileBytes: 1024 * 1024,
 } as const;

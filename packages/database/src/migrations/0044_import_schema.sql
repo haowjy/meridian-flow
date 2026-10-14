@@ -7,43 +7,37 @@ CREATE TABLE "import_entries" (
 	"spec" jsonb NOT NULL,
 	"kind" text NOT NULL,
 	"entry_id" integer,
-	"parent_id" uuid,
-	"area" text,
-	"prepared" boolean DEFAULT false NOT NULL,
 	"state" text NOT NULL,
-	"created" boolean DEFAULT false NOT NULL,
-	"attempt_id" uuid,
-	"lease_until" timestamp with time zone,
+	"reason" text,
 	"storage_url" text,
-	"uri" text,
-	"object_swept_at" timestamp with time zone,
-	"version" bigint DEFAULT 0 NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "import_progress" (
-	"import_id" uuid PRIMARY KEY NOT NULL,
-	"version" bigint DEFAULT 0 NOT NULL,
-	"last_activity_at" timestamp with time zone DEFAULT now() NOT NULL
+	"object_key" text,
+	"received_size" bigint,
+	"sha256" text
 );
 --> statement-breakpoint
 CREATE TABLE "imports" (
 	"id" uuid PRIMARY KEY NOT NULL,
-	"project_id" uuid NOT NULL,
+	"project_id" uuid,
 	"user_id" uuid NOT NULL,
 	"destination_uri" text NOT NULL,
-	"roots" jsonb NOT NULL,
-	"existing_links" jsonb NOT NULL,
-	"fingerprint" text NOT NULL,
-	"source_id" uuid NOT NULL,
 	"folder_id" uuid,
+	"roots" jsonb NOT NULL,
+	"fingerprint" text NOT NULL,
 	"state" text NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"counts" jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"last_activity_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"lease_token" uuid,
+	"lease_until" timestamp with time zone,
+	"claims_without_progress" integer DEFAULT 0 NOT NULL,
+	"fell_back" boolean DEFAULT false NOT NULL,
+	"reason" text,
+	"finished_at" timestamp with time zone,
+	"acknowledged_at" timestamp with time zone,
+	"objects_swept_at" timestamp with time zone,
+	"final_sweep_at" timestamp with time zone
 );
---> statement-breakpoint
-ALTER TABLE "link_ahead_refs" ADD COLUMN "awaited_document_id" uuid;
 --> statement-breakpoint
 ALTER TABLE "import_entries" ADD CONSTRAINT "import_entries_import_id_imports_id_fk" FOREIGN KEY ("import_id") REFERENCES "public"."imports"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
 --> statement-breakpoint
-ALTER TABLE "import_progress" ADD CONSTRAINT "import_progress_import_id_imports_id_fk" FOREIGN KEY ("import_id") REFERENCES "public"."imports"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
---> statement-breakpoint
-ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action NOT VALID;
+ALTER TABLE "imports" ADD CONSTRAINT "imports_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE set null ON UPDATE no action NOT VALID;

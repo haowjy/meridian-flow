@@ -1,4 +1,4 @@
-/** Resumable folder/file import records and identity-bearing entry receipts. */
+/** Durable upload selections, receipts, and organize leases. Import identities are never reused. */
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -16,25 +16,37 @@ export const imports = pgTable(
   "imports",
   {
     id: uuid("id").primaryKey(),
-    projectId: uuid("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     userId: uuid("user_id").notNull(),
-    /** The create command's original destination URI; entries and `folder_id` hold what it resolved to. */
     destinationUri: text("destination_uri").notNull(),
-    /** Root descriptors (id, kind, name, parsed settings) the plan was admitted with. */
-    roots: jsonb("roots").notNull(),
-    /** Existing-document link candidates frozen at admission; they rank fallback matches and never follow moves. */
-    existingLinks: jsonb("existing_links").notNull(),
-    /** Hash of the exact create command; a re-POST under this id must match it. */
-    fingerprint: text("fingerprint").notNull(),
-    sourceId: uuid("source_id").notNull(),
     folderId: uuid("folder_id"),
+    roots: jsonb("roots").notNull(),
+    fingerprint: text("fingerprint").notNull(),
     state: text("state").notNull(),
+    /** Retained when entries expire, so exact-command replay still returns the terminal summary. */
+    counts: jsonb("counts").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
+    leaseToken: uuid("lease_token"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    claimsWithoutProgress: integer("claims_without_progress").notNull().default(0),
+    fellBack: boolean("fell_back").notNull().default(false),
+    reason: text("reason"),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    objectsSweptAt: timestamp("objects_swept_at", { withTimezone: true }),
+    finalSweepAt: timestamp("final_sweep_at", { withTimezone: true }),
   },
-  // Open-import polls filter by project and order newest first; project deletes follow the FK.
-  (table) => [index("imports_project_created").on(table.projectId, table.createdAt)],
+  (table) => [
+    index("imports_project_created").on(table.projectId, table.createdAt),
+    index("imports_user_open").on(table.userId).where(sql`${table.acknowledgedAt} IS NULL`),
+    index("imports_organize_claim")
+      .on(table.state, table.leaseUntil)
+      .where(sql`${table.state} = 'organizing'`),
+    index("imports_upload_expiry")
+      .on(table.lastActivityAt)
+      .where(sql`${table.state} = 'uploading'`),
+  ],
 );
 export const importEntries = pgTable(
   "import_entries",
@@ -44,41 +56,18 @@ export const importEntries = pgTable(
       .notNull()
       .references(() => imports.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
-    /** Planned node fields no query filters on, including the source facts landing needs (sniff, aliases). */
     spec: jsonb("spec").notNull(),
     kind: text("kind").notNull(),
-    /** The manifest file's id; null for folders. */
     entryId: integer("entry_id"),
-    parentId: uuid("parent_id"),
-    area: text("area"),
-    /** Whether the planning chunk has reserved this entry's name. */
-    prepared: boolean("prepared").notNull().default(false),
     state: text("state").notNull(),
-    created: boolean("created").notNull().default(false),
-    attemptId: uuid("attempt_id"),
-    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    reason: text("reason"),
     storageUrl: text("storage_url"),
-    uri: text("uri"),
-    /** Last object-key reclamation; a recorded late put clears it so the next sweep retries. */
-    objectSweptAt: timestamp("object_swept_at", { withTimezone: true }),
-    version: bigint("version", { mode: "bigint" }).notNull().default(sql.raw("0")),
+    objectKey: text("object_key"),
+    receivedSize: bigint("received_size", { mode: "number" }),
+    sha256: text("sha256"),
   },
   (table) => [
     index("import_entries_import_order").on(table.importId, table.ordinal),
-    index("import_entries_import_version").on(table.importId, table.version),
-    index("import_entries_object_sweep")
-      .on(table.leaseUntil)
-      .where(
-        sql`${table.attemptId} IS NOT NULL AND ${table.state} IN ('deleted','not_imported') AND ${table.kind} = 'binary'`,
-      ),
+    index("import_entries_import_state").on(table.importId, table.state),
   ],
 );
-
-/** Commit-order progress is separate from the row held FOR SHARE by parallel landings. */
-export const importProgress = pgTable("import_progress", {
-  importId: uuid("import_id")
-    .primaryKey()
-    .references(() => imports.id, { onDelete: "cascade" }),
-  version: bigint("version", { mode: "bigint" }).notNull().default(sql.raw("0")),
-  lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).notNull().defaultNow(),
-});

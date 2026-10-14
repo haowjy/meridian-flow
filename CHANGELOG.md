@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Define upload-first imports with durable receipts and resumable progress.
+
 - Separate Apply and selective Discard admission types while sharing review-cut consistency and row selection.
 
 - Keep a grown draft change focused after a refused Discard by distinguishing surviving immutable members from a disappeared change.

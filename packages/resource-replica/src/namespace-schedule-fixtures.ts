@@ -45,7 +45,6 @@ export function node(
         ...shared,
         kind,
         aliases: [],
-        importPending: false,
         hasProperties: false,
         provisionalName: false,
         editable: true,
