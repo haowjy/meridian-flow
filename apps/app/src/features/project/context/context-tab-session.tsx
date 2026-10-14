@@ -9,6 +9,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
 import { useAccountResourceReplica } from "./account-feature-context";
+import type { DocumentPresentation } from "./document-presentation";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { useRefusedEditsReopen } from "./use-refused-edits-reopen";
 
@@ -19,6 +20,7 @@ type ContextTabSessionProps = {
   availabilityRevision: string;
   /** False for a document with no live room yet (draft-only until Apply promotes it). */
   liveRoom?: boolean;
+  bindingOwner?: DocumentPresentation["bindingOwner"];
   children: (
     session: DocumentSession | null,
     failed: boolean,
@@ -44,6 +46,7 @@ function ContextTabSession({
   resourceHandle,
   availabilityRevision,
   liveRoom = true,
+  bindingOwner = "desktop-document-host",
   children,
   onReopen,
 }: ContextTabSessionProps & { onReopen: () => void }) {
@@ -162,7 +165,7 @@ function ContextTabSession({
   const binding = useLiveDocumentBinding({
     projectId,
     documentId: liveRoom && currentLocal.phase === "server" ? documentId : null,
-    owner: "desktop-document-host",
+    owner: bindingOwner,
   });
   const automaticRetryRevision = useRef(availabilityRevision);
   useEffect(() => {

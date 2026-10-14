@@ -34,6 +34,7 @@ import {
   useLiveDocumentSessionRegistry,
 } from "./account-feature-context";
 import { ContextTabSessionBoundary, resourceAvailabilityRevision } from "./context-tab-session";
+import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 
 export type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
@@ -49,6 +50,7 @@ export type ContextDocumentHostProps = {
   /** Whether the surface is on screen; a hidden surface's chrome stands down. */
   active: boolean;
   readOnly?: boolean;
+  presentation?: DocumentPresentation;
   onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
   /** Overrides the editor shell's own styling, e.g. to take the dock's material. */
   editorClassName?: string;
@@ -63,6 +65,7 @@ export function ContextDocumentHost({
   shown = true,
   active,
   readOnly = false,
+  presentation = DESKTOP_DOCUMENT_PRESENTATION,
   onUntitledBecameNonEmpty,
   editorClassName,
   onCloseDraftOnly,
@@ -156,7 +159,11 @@ export function ContextDocumentHost({
                 documentId={tab.documentId}
                 liveSession={session}
                 active={active && shown}
-                inReview={Boolean(reviewItemKey)}
+                inReview={Boolean(
+                  presentation.presenceSuspendsOn === "requested-review"
+                    ? selectedReviewItemKey
+                    : reviewItemKey,
+                )}
               />
               <EditorView
                 draftOnly={branchOnly}
@@ -181,6 +188,8 @@ export function ContextDocumentHost({
                 detached={tab.kind === "new"}
                 localContentReady={localContentReady}
                 schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
+                ariaLabel={presentation.ariaLabel?.()}
+                showCollaborationDecorations={presentation.collaborationDecorations}
                 // The intent, not the resolved room: the live editor goes
                 // read-only from the click, while the room is still resolving.
                 reviewItemKey={selectedReviewItemKey}
@@ -198,6 +207,7 @@ export function ContextDocumentHost({
       resourceHandle={tab.resourceHandle}
       availabilityRevision={availabilityRevision}
       liveRoom={!branchOnly}
+      bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
     </ContextTabSessionBoundary>
