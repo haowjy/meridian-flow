@@ -30,7 +30,7 @@ import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { splitHiddenContents } from "../../tree/folder-normalization.js";
 import type { HiddenNodeRepair } from "../../tree/hidden-node-repair.js";
 import { bumpLocationVersions } from "../../tree/node-locations.js";
-import { movedDocumentIds, moveNodes } from "../../tree/node-moves.js";
+import { moveNode } from "../../tree/node-moves.js";
 import { createTreeReader, LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { isStorageBackedDocument } from "../catalog-file-mapper.js";
 import {
@@ -294,21 +294,17 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
       const { name, extension } = parsed?.ok
         ? parsed.value
         : { name: targetBasename, extension: undefined };
-      const moved = await moveNodes(this.db, {
-        moves: [
-          {
-            node: isFile
-              ? { kind: "document", id: input.source.nodeId as DocumentId }
-              : { kind: "folder", id: input.source.nodeId as FolderId },
-            to: {
-              contextSourceId: input.destinationSourceId as ContextSourceId,
-              dir: treePathSegments(targetParentPath),
-              name,
-              ...(extension === undefined ? {} : { extension }),
-            },
-          },
-        ],
-        filetypeFor: () => Ok(input.destinationFiletype ?? null),
+      const moved = await moveNode(this.db, {
+        node: isFile
+          ? { kind: "document", id: input.source.nodeId as DocumentId }
+          : { kind: "folder", id: input.source.nodeId as FolderId },
+        to: {
+          contextSourceId: input.destinationSourceId as ContextSourceId,
+          dir: treePathSegments(targetParentPath),
+          name,
+          ...(extension === undefined ? {} : { extension }),
+        },
+        filetype: input.destinationFiletype ?? null,
       });
       if (!moved.ok) rollback(moved.error.code);
       if (
@@ -322,7 +318,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           .where(eq(documents.id, input.source.nodeId));
       }
       // What actually moved: a folder leaving its project left its hidden contents behind.
-      const linkUpdate = await this.settleMovedIn(input, movedDocumentIds(moved.value));
+      const linkUpdate = await this.settleMovedIn(input, moved.value);
       await this.catalogMutations?.refreshSources(
         [...new Set([input.source.sourceId, input.destinationSourceId])],
         [input.source.nodeId],

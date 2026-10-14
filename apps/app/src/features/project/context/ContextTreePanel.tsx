@@ -11,7 +11,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { requestEditorFocus } from "@/features/editor/focus-on-open";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -40,7 +39,11 @@ export type ContextTreePanelProps = {
   /** Path of the currently active file inside `activeScheme`'s tree. */
   activePath: string | null;
   /** Called when the user picks a file row in any scheme section. */
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onSelectFile: (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => void;
   creating?: TreeCreationRequest | null;
   onRequestCreate?: (request: TreeCreationRequest) => void;
   onCreateDone?: () => void;
@@ -123,7 +126,11 @@ function SchemeSection({
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
-  onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
+  onSelectFile: (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => void;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
   onCreateDone: () => void;
@@ -203,8 +210,7 @@ function SchemeSection({
     const entry = catalog.findPath(pendingOpenPath);
     if (entry?.kind !== "file") return;
     const file = entry;
-    requestEditorFocus(file.documentId);
-    onSelectFile(scheme, file);
+    onSelectFile(scheme, file, { focus: true });
     setPendingOpenPath(null);
   }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 

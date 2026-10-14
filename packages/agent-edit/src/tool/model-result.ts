@@ -11,6 +11,7 @@ export type AgentEditResultCommand = DocumentCommandName | "unknown";
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
+  | "ambiguous_path"
   | "invalid_write"
   | "document_not_found"
   | "partial_failure"
@@ -197,6 +198,7 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "success":
     case "not_found":
     case "ambiguous_match":
+    case "ambiguous_path":
     case "invalid_write":
     case "document_not_found":
     case "partial_failure":

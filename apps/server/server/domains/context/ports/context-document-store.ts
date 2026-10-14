@@ -12,7 +12,7 @@ import type { ProjectId } from "@meridian/contracts";
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { LiveClaim, LiveCreateCandidate } from "../tree/hidden-node-types.js";
-import type { TreeView } from "../tree/tree-view.js";
+import type { PathResolution, TreeView } from "../tree/tree-view.js";
 
 /** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
 export class ContextEntryConflictError extends Error {
@@ -78,9 +78,6 @@ export interface CreateBinaryDocumentInput {
   metadata?: DocumentCreationMetadata;
 }
 
-/** Input for creating or overwriting a binary document at the same path. */
-export type UpsertBinaryDocumentInput = CreateBinaryDocumentInput;
-
 /** A live create's identity: inserted, or a hidden document revealed at the path (§6.3). */
 export interface LiveDocumentCreation {
   document: ContextDocument;
@@ -102,10 +99,15 @@ export interface ContextDocumentStore {
   contextSourceId(): Promise<string>;
   /** Return the backing source when already materialized, without provisioning it. */
   existingContextSourceId(): Promise<string | null>;
-  /** Reads see one tree view: live, or one draft's. */
-  findFolder(view: TreeView, parentId: string | null, name: string): Promise<ContextFolder | null>;
+  /**
+   * What `view` shows at a source-relative path, by the tree reader's one meaning of "same
+   * path": two nodes there answer `ambiguous`, never a pick. A path of the other kind is
+   * `not_found`. The source root (`""`) is the folder `null`.
+   */
+  resolveDocumentAt(view: TreeView, path: string): Promise<PathResolution<ContextDocument>>;
+  resolveFolderAt(view: TreeView, path: string): Promise<PathResolution<ContextFolder | null>>;
+  /** The live document under this canonical name: for mutations that already hold the namespace. */
   findDocument(
-    view: TreeView,
     folderId: string | null,
     name: string,
     extension: string,
@@ -114,8 +116,6 @@ export interface ContextDocumentStore {
   findDocumentById(view: TreeView, documentId: string): Promise<LocatedContextDocument | null>;
   /** The document a device's create `fromId` joined, within `projectId`; null when none. */
   findForward(fromId: string, projectId: ProjectId): Promise<string | null>;
-  /** Writes a join's forward, in the caller's transaction (the reveal's own). */
-  recordForward(input: { fromId: string; toId: string; projectId: ProjectId }): Promise<void>;
   /** Filenames hidden documents and folders hold in `folderId`: names no live create may take. */
   listHiddenNames(folderId: string | null): Promise<string[]>;
   /** A document of this source by id, deleted ones too, with its path there. */
@@ -136,7 +136,6 @@ export interface ContextDocumentStore {
     name: string,
     extension: string,
   ): Promise<LiveCreateCandidate>;
-  createDocument(input: CreateDocumentInput): Promise<ContextDocument>;
   /**
    * Claim only the SQL/tree identity, live, under `claim` (default `any`: reveal the
    * hidden document at the path or insert). Null when the path is taken; a claim the
@@ -149,5 +148,4 @@ export interface ContextDocumentStore {
     claim?: LiveClaim,
   ): Promise<LiveDocumentCreation | null>;
   createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument>;
-  upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument>;
 }

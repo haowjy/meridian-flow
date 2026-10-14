@@ -77,6 +77,7 @@ import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import {
+  AMBIGUOUS_PATH_FAULT,
   type ContextPlacement,
   type CreatePlacement,
   createPlacement,
@@ -120,9 +121,6 @@ export interface ContextFSDeps {
   /** The thread reading through this adapter; without one, reads are live. */
   threadView?: ThreadContextView;
 }
-
-/** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
-const MISSING = Symbol("missing-folder");
 
 function trackedSchemaForPersistedFiletype(
   filetype: string | null | undefined,
@@ -294,34 +292,31 @@ export class ContextFS implements ContextSchemeAdapter {
     return this.placement.readView(this.readView?.version);
   }
 
-  /** Resolve a folder chain in a view without creating; `MISSING` if any segment is absent. */
-  private async findFolderId(
+  /**
+   * The document at `path` in `view` under its canonical name, or null. A path two of the
+   * view's files share is the draft clash fault, never one of them.
+   */
+  private async findDocumentAt(
     view: TreeView,
-    dir: string[],
-  ): Promise<string | null | typeof MISSING> {
-    let parentId: string | null = null;
-    for (const name of dir) {
-      const existing = await this.store.findFolder(view, parentId, name);
-      if (!existing) return MISSING;
-      parentId = existing.id;
-    }
-    return parentId;
-  }
-
-  /** The document at `path` in `view` under its canonical name, or null. */
-  private async findDocumentAt(view: TreeView, path: string): Promise<ContextDocument | null> {
+    path: string,
+  ): Promise<Result<ContextDocument | null, AdapterFault>> {
     const parsed = parseDocumentPath(path);
-    if (!parsed.ok || !parsed.value) return null;
+    if (!parsed.ok || !parsed.value) return Ok(null);
     const { dir, name, extension } = parsed.value;
-    const folderId = await this.findFolderId(view, dir);
-    if (folderId === MISSING) return null;
-    return this.store.findDocument(view, folderId, name, extension);
+    const found = await this.store.resolveDocumentAt(
+      view,
+      joinPath(dir.join("/"), renderFilename(name, extension)),
+    );
+    if (found.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
+    return Ok(found.kind === "found" ? found.node : null);
   }
 
   async stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>> {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok) return parsed;
-    const doc = await this.findDocumentAt(await this.readTreeView(), path);
+    const found = await this.findDocumentAt(await this.readTreeView(), path);
+    if (!found.ok) return found;
+    const doc = found.value;
     if (!doc || !parsed.value) return Ok(null);
 
     const base = {
@@ -361,7 +356,9 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<{ content: string; documentId?: string } | null, AdapterFault>> {
     const parsed = parseDocumentPath(path);
     if (!parsed.ok) return parsed;
-    const doc = await this.findDocumentAt(await this.readTreeView(), path);
+    const found = await this.findDocumentAt(await this.readTreeView(), path);
+    if (!found.ok) return found;
+    const doc = found.value;
     if (!doc) return Ok(null);
     if (doc.fileType !== null) {
       return {
@@ -411,7 +408,9 @@ export class ContextFS implements ContextSchemeAdapter {
     content: BoundWrite,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
-    const existing = await this.findDocumentAt(LIVE_TREE, path);
+    const found = await this.findDocumentAt(LIVE_TREE, path);
+    if (!found.ok) return found;
+    const existing = found.value;
     if (existing && existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
     if (!existing || !this.boundWrites.boundFor(path, content, existing)) {
       return Err({ code: "stale_target" });
@@ -574,8 +573,10 @@ export class ContextFS implements ContextSchemeAdapter {
   ): Promise<Result<AdapterFileEntry[], AdapterFault>> {
     const view = await this.readTreeView();
     // Every segment of `path` is a folder name (no trailing filename to split).
-    const folderId = await this.findFolderId(view, path.split("/").filter(Boolean));
-    if (folderId === MISSING) return Err({ code: "not_found" });
+    const folder = await this.store.resolveFolderAt(view, path);
+    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
+    if (folder.kind === "not_found") return Err({ code: "not_found" });
+    const folderId = folder.node?.id ?? null;
 
     const [folders, documents] = await Promise.all([
       this.store.listFolders(view, folderId),

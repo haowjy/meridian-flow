@@ -70,6 +70,7 @@ import {
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
+import { resolveEditorFrame } from "./context/editor-presentation";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
 import { recentAddressFromTab } from "./context/recent-opening";
@@ -115,9 +116,12 @@ import {
   useChatNavigation,
   useDockReveal,
 } from "./routing/chat-navigation";
-import { EditorRouteChrome } from "./routing/EditorRouteChrome";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
-import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
+import {
+  ProjectRouteBoundary,
+  type ProjectRouteIssue,
+  type ProjectRouteMask,
+} from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { routeWorkId } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
@@ -631,15 +635,37 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   });
   const { editorPresentation } = screenSwitch;
   const { active: editorActive, mounted: mountedEditor } = editorPresentation;
-  const mountedEditorRoute = mountedEditor
-    ? {
-        editorWorkId: mountedEditor.editorWorkId,
-        activeContextScheme: mountedEditor.activeContextScheme,
-        activeContextPath: mountedEditor.activeContextPath,
-        activeContextChat: mountedEditor.activeContextChat,
-        localDocumentId: mountedEditor.activeLocalDocumentId,
-      }
-    : null;
+  // The Editor's navigation frame names where the writer is going; only the document body
+  // keeps the previous destination beneath the mask (see `resolveEditorFrame`).
+  const frameEditorRoute = resolveEditorFrame({
+    screen: props.activeScreen,
+    requested: {
+      editorWorkId: props.editorWorkId,
+      activeContextScheme: props.activeContextScheme,
+      activeContextPath: props.activeContextPath,
+      activeContextChat: props.activeContextChat,
+      localDocumentId: props.activeLocalDocumentId,
+    },
+    mounted: mountedEditor
+      ? {
+          editorWorkId: mountedEditor.editorWorkId,
+          activeContextScheme: mountedEditor.activeContextScheme,
+          activeContextPath: mountedEditor.activeContextPath,
+          activeContextChat: mountedEditor.activeContextChat,
+          localDocumentId: mountedEditor.activeLocalDocumentId,
+        }
+      : null,
+  });
+  const editorMask: ProjectRouteMask = {
+    destinationKey: props.routeLocationKey,
+    issue: props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined,
+    onRetry: props.onRetryEditorRoute,
+    retainWhileLoading: editorPresentation.retainWhileLoading,
+    recovery:
+      props.editorScope.status !== "ready" ? (
+        <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
+      ) : undefined,
+  };
 
   // Inline review on the Editor screen holds the left rail collapsed to give
   // the manuscript prose width. The hold is derived from review being open and
@@ -725,64 +751,36 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     },
     {
       id: "context-viewer",
-      children: (
-        <ProjectRouteBoundary
-          destinationKey={props.routeLocationKey}
-          issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
-          onRetry={props.onRetryEditorRoute}
-          retainWhileLoading={editorPresentation.retainWhileLoading}
-          chrome={
-            <EditorRouteChrome
+      children: frameEditorRoute ? (
+        <DraftReviewBoundary value={props.presentedReview}>
+          {editorActive && mountedEditor ? (
+            <EditorReviewIntentClaimant
+              editorWorkId={mountedEditor.editorWorkId}
+              activeScheme={props.activeContextScheme}
+            />
+          ) : null}
+          <PaintScope active={props.activeScreen === "context"}>
+            <ContextViewerSurfaceController
               projectId={props.projectId}
-              editorWorkId={props.editorWorkId}
-              scheme={props.activeContextScheme}
-              path={props.activeContextPath}
-              onShowRecents={() => void props.routeCommands.showEditorRecents({ replace: false })}
-              onShowFiles={() => props.onSelectContextPath("", "kb")}
-              onShowFolder={(path) =>
-                props.activeContextScheme
-                  ? props.onSelectContextPath(path, props.activeContextScheme)
-                  : undefined
+              {...frameEditorRoute}
+              mask={editorMask}
+              resolvedEditor={editorPresentation.resolved}
+              editorWork={
+                props.activeScreen === "context"
+                  ? props.editorWork
+                  : (mountedEditor?.editorWork ?? null)
               }
+              addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
+              active={editorActive}
               sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
               dockToggle={surfaceToggle("chat", t`Expand chat`)}
+              onSelectContextPath={props.onSelectContextPath}
+              onOpenContextTarget={props.onOpenContextTarget}
+              onShowEditorRecents={(options) => void props.routeCommands.showEditorRecents(options)}
             />
-          }
-          recovery={
-            props.editorScope.status !== "ready" ? (
-              <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
-            ) : undefined
-          }
-        >
-          {mountedEditor && mountedEditorRoute ? (
-            <DraftReviewBoundary value={props.presentedReview}>
-              {editorActive ? (
-                <EditorReviewIntentClaimant
-                  editorWorkId={mountedEditor.editorWorkId}
-                  activeScheme={props.activeContextScheme}
-                />
-              ) : null}
-              <PaintScope active={props.activeScreen === "context"}>
-                <ContextViewerSurfaceController
-                  projectId={props.projectId}
-                  {...mountedEditorRoute}
-                  resolvedEditor={editorPresentation.resolved}
-                  editorWork={mountedEditor.editorWork}
-                  addressOwnsDocumentAdmission={props.addressOwnsDocumentAdmission}
-                  active={editorActive}
-                  sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-                  dockToggle={surfaceToggle("chat", t`Expand chat`)}
-                  onSelectContextPath={props.onSelectContextPath}
-                  onOpenContextTarget={props.onOpenContextTarget}
-                  onShowEditorRecents={(options) =>
-                    void props.routeCommands.showEditorRecents(options)
-                  }
-                />
-              </PaintScope>
-            </DraftReviewBoundary>
-          ) : null}
-        </ProjectRouteBoundary>
-      ),
+          </PaintScope>
+        </DraftReviewBoundary>
+      ) : null,
     },
     {
       id: "chat",

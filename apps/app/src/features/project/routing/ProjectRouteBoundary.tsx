@@ -20,29 +20,27 @@ export function isProjectRouteMasked({
   return (!!issue && !retainedPending) || !!recovery;
 }
 
-export function ProjectRouteBoundary({
-  issue,
-  children,
-  recovery,
-  chrome,
-  retainWhileLoading = false,
-  destinationKey,
-  onRetry,
-}: {
+/** What masks a destination's body. Its navigation frame is composed outside the boundary. */
+export type ProjectRouteMask = {
   issue?: ProjectRouteIssue;
-  children: ReactNode;
   recovery?: ReactNode;
-  /** Address navigation stays outside the masked content, even before admission. */
-  chrome?: ReactNode;
   retainWhileLoading?: boolean;
   destinationKey?: string;
   /** Offered with a failed destination: the address stays, only its reads run again. */
   onRetry?: () => void;
-}) {
+};
+
+export function ProjectRouteBoundary({
+  issue,
+  children,
+  recovery,
+  retainWhileLoading = false,
+  destinationKey,
+  onRetry,
+}: ProjectRouteMask & { children: ReactNode }) {
   const blocked = isProjectRouteMasked({ issue, retainWhileLoading, recovery });
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {blocked ? chrome : null}
       <div
         className="relative flex min-h-0 flex-1 flex-col"
         aria-busy={issue === "loading" && !recovery}

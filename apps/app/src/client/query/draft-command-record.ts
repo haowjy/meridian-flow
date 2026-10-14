@@ -72,7 +72,6 @@ export type ClosedDraft = { documentName: string | null };
 /** Selection identity and addressed settlement, shared with every observing review. */
 export type PendingChangeCommand = ChangeSelection & {
   target: "selection";
-  commandId?: string;
   mode: ChangeCommandMode;
   branchGeneration: number;
   completesDraft?: true;
@@ -84,7 +83,6 @@ export type PendingDraftCommand =
   | PendingChangeCommand
   | {
       target: "all";
-      commandId?: string;
       mode: ChangeCommandMode;
       branchGeneration: number | undefined;
       completesDraft?: true;
@@ -92,7 +90,7 @@ export type PendingDraftCommand =
     };
 
 type DraftClaimRecord =
-  | { phase: "pending"; command: PendingDraftCommand; token: symbol; commandId?: string }
+  | { phase: "pending"; command: PendingDraftCommand; token: symbol }
   | { phase: "failed"; failure: DraftCommandFailure; at: number };
 
 type DraftCommandRecord = {
@@ -263,17 +261,6 @@ export function beginDraftCommand(
   return { draft, epoch: accountEpoch, token };
 }
 
-/** Attach the wire identity only to the still-live claim that owns the request. */
-export function bindClaimCommandId(claim: DraftClaim, commandId: string): void {
-  const record = recordFor(claim.draft);
-  if (!claimIsLive(claim) || record?.phase !== "pending") return;
-  setRecord(claim.draft, () => ({
-    ...record,
-    command: { ...record.command, commandId },
-    commandId,
-  }));
-}
-
 /**
  * The server answered the selection command in flight on this draft and
  * closed the draft. Reviews showing it settle on this before the draft list is
@@ -294,7 +281,6 @@ export function answerDraftCommandClosed(by: DraftClaim | DraftRef, closed: Clos
     phase: "pending",
     command: change,
     token: record.token,
-    commandId: record.commandId,
   }));
 }
 
@@ -311,7 +297,6 @@ export function answerDraftSelection(
       phase: "pending",
       command: { ...command, outcome },
       token: record.token,
-      commandId: record.commandId,
     }));
 }
 

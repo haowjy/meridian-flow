@@ -113,8 +113,6 @@ async function setup(source: ScreenKey = "context") {
   let issue: ProjectRouteIssue | undefined;
   let path = "/A.md";
   let contextLive = true;
-  let recovery = false;
-  let chooser = false;
   const container = document.createElement("div");
   const root = createRoot(container);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -139,13 +137,11 @@ async function setup(source: ScreenKey = "context") {
     const switcher = useDesktopProjectController({
       projectId,
       screen,
-      current: recovery
-        ? null
-        : {
-            editorWorkId: workId,
-            activeContextScheme: chooser ? null : "manuscript",
-            activeContextPath: chooser ? null : path,
-          },
+      current: {
+        editorWorkId: workId,
+        activeContextScheme: "manuscript",
+        activeContextPath: path,
+      },
       requestedWorkId: workId,
       contextLive,
       issue: acceptedFailure ? "error" : issue,
@@ -274,14 +270,6 @@ async function setup(source: ScreenKey = "context") {
       path = "/B.md";
       issue = nextIssue;
       contextLive = false;
-      await render();
-    },
-    recover: async () => {
-      recovery = true;
-      await render();
-    },
-    chooser: async () => {
-      chooser = true;
       await render();
     },
     failNavigation: () => {
@@ -537,12 +525,6 @@ it.each(["removed", "terminal"] as const)("a %s projection carries nothing", asy
       return rig.container.querySelector("[data-editor]")?.textContent;
     })
     .toBe("Chooser");
-  await rig.click("Chat");
-  expect(useDockDocumentStore.getState().occupant).toBeNull();
-});
-it.each(["recover", "chooser"] as const)("%s presentation carries nothing", async (mode) => {
-  const rig = await setup();
-  await rig[mode]();
   await rig.click("Chat");
   expect(useDockDocumentStore.getState().occupant).toBeNull();
 });

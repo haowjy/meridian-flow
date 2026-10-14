@@ -161,17 +161,9 @@ export type TreeStateNode = {
   hidden: boolean;
   binary: boolean;
   fileType: string;
-  live: {
-    contextSourceId: ContextSourceId;
-    folderId: FolderId | null;
-    path: string;
-    /** `path` spelled as a canonical URI; null when it can't be spelled. */
-    uri: string | null;
-    deleted: boolean;
-    /** Soft-deleted ancestor folders, nearest first: restored with it (decision 9). */
-    deletedAncestors: readonly FolderId[];
-  };
-  /** Where Apply places it: the draft's location for a created item, else its row's. */
+  /** Soft-deleted live: Apply restores it with its deleted ancestors (decisions 7 and 9). */
+  deleted: boolean;
+  /** The row's own location, the only one a document has: where Apply reveals or restores it. */
   target: {
     contextSourceId: ContextSourceId;
     parentFolderId: FolderId | null;
@@ -769,13 +761,6 @@ export function createTreeReader(
       // A hidden document the draft didn't create isn't in the draft's view.
       ...editedRows.filter((row) => !row.hidden).map((row) => ({ origin: "edited" as const, row })),
     ];
-    // A draft's document is a real row: its place in the draft is its row's.
-    const targets = items.map(({ row }) => ({
-      contextSourceId: row.contextSourceId,
-      parentFolderId: row.folderId,
-      name: row.name,
-      extension: row.extension,
-    }));
     const chains = await loadFolderChains(
       tx(),
       items.map(({ row }) => row.folderId),
@@ -786,16 +771,15 @@ export function createTreeReader(
     // Every path a target needs, in the draft's view: its own, then each ancestor folder's,
     // nearest first. Paths, not folder ids: a deleted folder's path may hold a new folder.
     // Each is a claim of its kind, so the clash is the one Apply's live holds would see.
-    const needs = targets.flatMap((target, item) => {
-      const path = folderPath(
-        chainOf(target.parentFolderId),
-        renderFilename(target.name, target.extension),
-      );
-      const segments = path.split("/");
+    const needs = items.flatMap(({ row }, item) => {
+      const segments = folderPath(
+        chainOf(row.folderId),
+        renderFilename(row.name, row.extension),
+      ).split("/");
       return segments.map((_, drop) => ({
         item,
         target: drop === 0,
-        contextSourceId: target.contextSourceId,
+        contextSourceId: row.contextSourceId,
         path: segments.slice(0, segments.length - drop).join("/"),
         as: drop === 0 ? ("document" as const) : ("folder" as const),
       }));
@@ -823,14 +807,10 @@ export function createTreeReader(
     );
 
     return items.map(({ origin, row }, item): TreeStateNode => {
-      const target = targets[item] as (typeof targets)[number];
-      const liveChain = chainOf(row.folderId);
+      const chain = chainOf(row.folderId);
       const clash = clashOf(item);
       const address = spelled[item]?.uri ?? null;
-      const targetPath = folderPath(
-        chainOf(target.parentFolderId),
-        renderFilename(target.name, target.extension),
-      );
+      const path = folderPath(chain, renderFilename(row.name, row.extension));
       return {
         nodeKind: "document",
         nodeId: row.id,
@@ -838,18 +818,14 @@ export function createTreeReader(
         hidden: row.hidden,
         binary: isStorageBackedDocument(row),
         fileType: row.fileType,
-        live: {
-          contextSourceId: row.contextSourceId,
-          folderId: row.folderId,
-          path: folderPath(liveChain, renderFilename(row.name, row.extension)),
-          uri: address,
-          deleted: row.deleted,
-          deletedAncestors: liveChain.filter((folder) => folder.deleted).map((folder) => folder.id),
-        },
+        deleted: row.deleted,
         target: {
-          ...target,
-          path: targetPath,
-          dir: [...chainOf(target.parentFolderId)].reverse().map((folder) => folder.name),
+          contextSourceId: row.contextSourceId,
+          parentFolderId: row.folderId,
+          name: row.name,
+          extension: row.extension,
+          path,
+          dir: [...chain].reverse().map((folder) => folder.name),
           uri: address,
         },
         locationVersion: row.locationVersion,
@@ -857,7 +833,7 @@ export function createTreeReader(
           ? {
               kind: "clash",
               ...clash,
-              uri: sameSourceUri(address, targetPath, clash.at),
+              uri: sameSourceUri(address, path, clash.at),
             }
           : !row.hidden && row.deleted
             ? { kind: "deleted_live" }

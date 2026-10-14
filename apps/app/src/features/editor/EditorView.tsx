@@ -48,6 +48,8 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   showCollaborationDecorations?: boolean;
   /** Requested destination, including while the canonical room is still resolving. */
   reviewItemKey?: string | null;
+  /** The hosting tab instance, whose focus-on-open intent the live editor claims. */
+  focusKey?: string;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
@@ -292,6 +294,7 @@ export function EditorView(props: EditorViewProps) {
                 held: !liveVisible || (reviewRequested && !closed),
               }}
               session={liveSession}
+              focusKey={props.focusKey}
               onConstructed={setLiveEditor}
             />
           </div>
