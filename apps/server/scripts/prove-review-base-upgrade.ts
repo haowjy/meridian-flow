@@ -26,6 +26,7 @@ import * as Y from "yjs";
 import { MIGRATION_DATA_STEPS } from "../../../tools/dev/lib/migration-data-steps.js";
 import { formatMigrationFailure, runMigrations } from "../../../tools/dev/lib/migration-runner.js";
 import {
+  advanceSeededSequences,
   id,
   seedEditLedger,
   seedMainShape,
@@ -355,6 +356,15 @@ async function main(): Promise<void> {
   const trainHead = journalIndex(journal, "0047_d62_chat_write_mode_online") + 1;
   await stage(trainUrl, dir, trainHead);
   await seedTrainRows(train);
+  // The seeds carry explicit ids and revisions: the product's next write must draw above them (R5c U1).
+  const advanced = await advanceSeededSequences(train);
+  check(
+    `train fixture: every sequence stands past its seeded values (advanced ${advanced.join(", ")})`,
+    advanced.some((s) => s.startsWith("context_availability_generation_seq")) &&
+      advanced.some((s) => s.startsWith("push_lineage_")) &&
+      (await advanceSeededSequences(train)).length === 0,
+    advanced,
+  );
   const appliedAtTrain = (
     await train`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`
   )[0].n;

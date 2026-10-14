@@ -84,3 +84,42 @@ export async function seedObservationEvidence(sql: postgres.Sql) {
     (${id(1)}, ${id(2)}, ${id(41)}, ${sql.json({ operationId: id(41), command: { kind: "move" }, result: { ok: true } })})`;
   await sql`INSERT INTO context_availability_heads (authority_key, generation) VALUES (${SCOPE_KEY}, 7)`;
 }
+
+/** Free-standing sequences the product draws a column from: no OWNED BY links them, so they are listed. */
+const FREE_SEQUENCES = [
+  ["context_availability_generation_seq", "context_availability_heads", "generation"],
+  [
+    "context_namespace_observation_version_seq",
+    "context_availability_heads",
+    "namespace_generation",
+  ],
+] as const;
+
+/**
+ * The fixtures insert explicit ids and revisions; a sequence left behind them makes the next product write
+ * collide (`push_lineage_pkey`) or go backwards (a Work's availability revision losing to a cached head).
+ * Run once after the last seed: every sequence moves past its column's highest value, never back.
+ * Returns the sequences it moved.
+ */
+export async function advanceSeededSequences(sql: postgres.Sql): Promise<string[]> {
+  const owned = await sql<{ seq: string; tbl: string; col: string }[]>`
+    SELECT s.relname AS seq, t.relname AS tbl, a.attname AS col
+    FROM pg_class s
+    JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = s.oid AND d.deptype IN ('a', 'i')
+    JOIN pg_class t ON t.oid = d.refobjid
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+    WHERE s.relkind = 'S' AND s.relnamespace = 'public'::regnamespace`;
+  const moved: string[] = [];
+  for (const { seq, tbl, col } of [
+    ...owned,
+    ...FREE_SEQUENCES.map(([seq, tbl, col]) => ({ seq, tbl, col })),
+  ]) {
+    const [row] = await sql.unsafe<{ moved: boolean }[]>(
+      `SELECT setval('"${seq}"', m, true) IS NOT NULL AS moved
+       FROM (SELECT max("${col}")::bigint AS m FROM "${tbl}") AS seeded, "${seq}" AS s
+       WHERE m IS NOT NULL AND m >= CASE WHEN s.is_called THEN s.last_value + 1 ELSE s.last_value END`,
+    );
+    if (row?.moved) moved.push(`${seq} (${tbl}.${col})`);
+  }
+  return moved;
+}
