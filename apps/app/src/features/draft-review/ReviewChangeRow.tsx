@@ -3,12 +3,12 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, X } from "lucide-react";
 
-import type { ChangeCommandState, DraftCommandFailure } from "@/client/query/draft-command-record";
+import type { ChangeFailure, DraftCommandFailure } from "@/client/query/draft-command-record";
 import { IconButton } from "@/components/ui/icon-button";
 import { cn } from "@/lib/utils";
 import { ChangeAuthor, ChangeDot, ChangeFailureText, discardLabel } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
-import { changeExcerpt, type ReviewChange } from "./review-changes";
+import { changeExcerpt, type ReviewChange } from "./review-model";
 
 export type ReviewChangeRowProps = {
   change: ReviewChange;
@@ -19,7 +19,7 @@ export type ReviewChangeRowProps = {
   disabled: boolean;
 
   /** Why the last command on this change did not land. */
-  failure: Extract<ChangeCommandState, { phase: "failed" }> | null;
+  failure: ChangeFailure | null;
   draftFailure?: DraftCommandFailure | null;
   onFocus: () => void;
   onApply: () => void;
@@ -46,17 +46,19 @@ export function ReviewChangeRow({
   wholeDocument = false,
   documentName,
 }: ReviewChangeRowProps) {
-  const runs = documentName ? [{ kind: "added", text: documentName }] : changeExcerpt(change);
+  const runs = documentName
+    ? [{ kind: "added" as const, text: documentName }]
+    : changeExcerpt(change);
   // The first line's height: the excerpt, the dot and the buttons share it, so
   // they stay centred on each other when the author wraps to a second line.
-  const firstLine = touch ? "min-h-11" : change.target.kind !== "display" ? "min-h-6" : undefined;
+  const firstLine = touch ? "min-h-11" : "min-h-6";
   const iconButton = touch ? "size-11 [&_svg:not([class*='size-'])]:size-5" : undefined;
   return (
     // Mouse convenience only: the keyboard reaches the same command through
     // the excerpt button, which is the row's one tab stop for focusing it.
     // biome-ignore lint/a11y/useKeyWithClickEvents: see above.
     <li
-      data-review-change-row={change.classId}
+      data-review-change-row={change.id}
       data-focused={focused ? "true" : undefined}
       data-arrived={arrived ? "true" : undefined}
       onClick={onFocus}
@@ -96,7 +98,10 @@ export function ReviewChangeRow({
                     key={index}
                     className={cn(
                       index < runs.length - 1 && "mr-1",
-                      run.kind === "removed" && "text-muted-foreground line-through",
+                      !documentName &&
+                        (run.kind === "removed"
+                          ? "text-diff-removed line-through"
+                          : "text-diff-added"),
                     )}
                   >
                     {run.text}
@@ -110,39 +115,37 @@ export function ReviewChangeRow({
           {showAttribution ? (
             <ChangeAuthor
               overflow="hide"
-              attribution={change.attribution}
+              chats={change.chats}
               className="hidden shrink-0 @min-[28rem]/changes:inline-flex"
             />
           ) : null}
         </div>
-        {change.target.kind !== "display" ? (
-          <span className="flex shrink-0 items-center">
-            <IconButton
-              size="xs"
-              tooltip={discardLabel(change)}
-              disabled={disabled}
-              className={iconButton}
-              onClick={(event) => {
-                event.stopPropagation();
-                onDiscard();
-              }}
-            >
-              <X aria-hidden />
-            </IconButton>
-            <IconButton
-              size="xs"
-              tooltip={t`Apply`}
-              disabled={disabled}
-              onClick={(event) => {
-                event.stopPropagation();
-                onApply();
-              }}
-              className={cn("text-primary hover:text-primary", iconButton)}
-            >
-              <Check aria-hidden />
-            </IconButton>
-          </span>
-        ) : null}
+        <span className="flex shrink-0 items-center">
+          <IconButton
+            size="xs"
+            tooltip={discardLabel()}
+            disabled={disabled}
+            className={iconButton}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDiscard();
+            }}
+          >
+            <X aria-hidden />
+          </IconButton>
+          <IconButton
+            size="xs"
+            tooltip={t`Apply`}
+            disabled={disabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              onApply();
+            }}
+            className={cn("text-primary hover:text-primary", iconButton)}
+          >
+            <Check aria-hidden />
+          </IconButton>
+        </span>
       </div>
       {failure || draftFailure ? (
         <p role="status" className="min-w-0 max-w-[50%] text-caption text-destructive">

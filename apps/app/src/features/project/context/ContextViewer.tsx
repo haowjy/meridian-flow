@@ -19,7 +19,6 @@ import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import {
   isProjectRouteMasked,
   ProjectRouteBoundary,
@@ -255,9 +254,6 @@ export function ContextViewer({
             />
           ) : null}
           {paneState.kind === "route-error" ? <RouteErrorState /> : null}
-          {controller.inlineReview?.shown ? (
-            <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
-          ) : null}
         </PaintHold>
       </ProjectRouteBoundary>
     </div>

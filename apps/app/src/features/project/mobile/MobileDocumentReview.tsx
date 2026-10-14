@@ -20,7 +20,6 @@ import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
@@ -118,25 +117,11 @@ function ReviewBottom({
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
 }) {
-  const { controller, view } = header;
+  const { view } = header;
   return (
     <>
       <MobileChangeBar view={view} />
-      <MobileChangeSheet
-        open={listOpen}
-        onOpenChange={onListOpenChange}
-        view={view}
-        controller={controller}
-      />
-      <ReviewToast
-        toast={listOpen ? null : controller.toast}
-        onDismiss={controller.dismissToast}
-        className={
-          view.focused
-            ? "bottom-[calc(max(0.5rem,env(safe-area-inset-bottom),var(--mobile-keyboard-height,0px))+5.25rem)]"
-            : "bottom-4"
-        }
-      />
+      <MobileChangeSheet open={listOpen} onOpenChange={onListOpenChange} view={view} />
     </>
   );
 }

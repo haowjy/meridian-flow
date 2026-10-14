@@ -7,9 +7,7 @@ import { Button } from "@/components/ui/button";
 
 export type ReviewStateProps = {
   finished: boolean;
-  /** The draft is open and lists no change: what remains is handled by Apply draft or Discard draft. */
-  unlisted?: boolean;
-  /** The last change's command is in flight: nothing is finished yet. */
+  /** A whole-draft command is in flight: nothing is finished yet. */
   completing?: "apply" | "discard" | null;
   next: ReviewFileTarget | null;
   draftOnly: boolean;
@@ -30,7 +28,20 @@ export function ReviewStatusContent({
     );
   }
   if (finished) return <Trans>No changes left</Trans>;
-  return <Trans>Formatting changes remain</Trans>;
+  return null;
+}
+
+/** A whole-file command in flight, said on the file the writer acted on. */
+export function FileCommandStatus({ mode }: { mode: "apply" | "discard" }) {
+  return (
+    <span
+      role="status"
+      aria-busy
+      className="flex shrink-0 items-center gap-1 px-1 text-caption text-ink-muted"
+    >
+      <ReviewStatusContent completing={mode} finished={false} />
+    </span>
+  );
 }
 
 export function ReviewNextAction({

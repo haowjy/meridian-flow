@@ -31,14 +31,9 @@ prose are not loading. `PaintScope` excludes warm hidden tabs, the parked Editor
 pane (by visible screen, never route acquisition readiness), warm live under review and a constructing hidden review from pending and
 capture. Viewers are unmarked apart from their delayed skeleton and fail open.
 
-The cover is an immutable capture plus one projection (`projectCover`'s adapter)
-of facts the copy cannot know (a Discard accepted under it); setting the adapter
-rebuilds the cover from the capture, so a withdrawn fact comes back. The adapter
-may also `annotate` the copy at capture, while the content lives, with what the
-cover could not recover later (identities), and `read` where the reader is. Its markup is set by
-the component, not by React (which resets `innerHTML` on every render). The cover
-scrolls but nothing in it answers; `afterRelease` runs work in the task that lifts
-the cover, before paint, told how far the reader scrolled it.
+The cover is an immutable capture. Its markup is set by the component, not by
+React (which resets `innerHTML` on every render). The cover scrolls but nothing
+in it answers; `afterRelease` runs work in the task that lifts the cover, before paint.
 
 The real page and copy are inert during a hold; the copy is unannounced, excludes
 inactive scopes and strips ids. Editor scroll offsets survive. Page focus moves

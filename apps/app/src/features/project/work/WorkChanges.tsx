@@ -24,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useHeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
 import { useWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { RuledList } from "../RuledList";
@@ -43,8 +44,20 @@ export function WorkChanges({
   const workId = work.id;
   const controller = useWorkDraftCommands({ projectId, work });
   const drafts = useWorkDrafts(projectId, workId);
+  const discards = useHeadlessDiscards(projectId, workId);
   const touch = usePhoneShell() === true;
-  const files = drafts.files ?? [];
+  const listed = drafts.files ?? [];
+  // A file stays on the page while one of its Discards can still be undone, even once the server stops listing it.
+  const files = [
+    ...listed,
+    ...discards.entries
+      .filter((entry) => !listed.some((file) => file.draft.itemKey === entry.file.draft.itemKey))
+      .map((entry) => entry.file)
+      .filter(
+        (file, at, all) =>
+          all.findIndex((other) => other.draft.itemKey === file.draft.itemKey) === at,
+      ),
+  ];
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const hasFiles = files.length > 0;
   useEffect(() => {
@@ -53,7 +66,7 @@ export function WorkChanges({
   const visible = files.filter((file) =>
     matchesSearch(file.documentName || file.contextLocation?.path || ""),
   );
-  if (files.length === 0 && drafts.status === "error") {
+  if (listed.length === 0 && discards.entries.length === 0 && drafts.status === "error") {
     return (
       <WorkFileGroup label={t`Changes to review`}>
         <InlineErrorRow
@@ -66,7 +79,10 @@ export function WorkChanges({
   }
   if (visible.length === 0) return null;
 
-  const everyDraft = files.map((file) => ({
+  // Apply all and Discard all act on the Work's listed items, never on a row only kept for its Undo. Discard
+  // all is one `discard_draft`: the draft closes on the server, so a reply still writing opens a new draft
+  // instead of adding to one the writer discarded (per-row Discard keeps its Undo; this one is confirmed first).
+  const everyDraft = listed.map((file) => ({
     documentId: file.documentId,
     itemKey: file.draft.itemKey,
   }));
@@ -137,18 +153,21 @@ export function WorkChanges({
       ) : null}
       <RuledList
         className="-mx-2"
-        rows={visible.map((file) => ({
-          key: file.documentId,
-          node: (
-            <WorkChangeFile
-              projectId={projectId}
-              workId={workId}
-              file={file}
-              controller={controller}
-              touch={touch}
-            />
-          ),
-        }))}
+        rows={[
+          ...visible.map((file) => ({
+            key: file.documentId,
+            node: (
+              <WorkChangeFile
+                projectId={projectId}
+                workId={workId}
+                file={file}
+                controller={controller}
+                discards={discards}
+                touch={touch}
+              />
+            ),
+          })),
+        ]}
       />
     </WorkFileGroup>
   );

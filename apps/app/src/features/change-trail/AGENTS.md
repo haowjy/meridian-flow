@@ -8,7 +8,7 @@ UI surface.
 Swept elevation is live-session-only marker state. The durable trail retains
 the change's Before excerpt and navigation anchor. Receipt rows and live
 peer-mark popovers read that same Before/After evidence. Trail evidence is
-read-only; receipt Undo/Redo is the sole reversal authority for AI changes.
+read-only; the writer reverses an AI change by discarding it in the draft or with Ctrl+Z.
 
 ## Key rules
 

@@ -195,6 +195,7 @@ export function DocumentIdentityBar({
             itemKey={reviewItemKey}
             onOpenDraft={openDraft}
             onCloseDraftOnly={onCloseDraftOnly}
+            surface={variant === "header" ? "dock" : "editor"}
           />
         ) : null}
         {/* The path fills the row; the placement field needs the same push. */}

@@ -1,10 +1,11 @@
 /**
  * DocumentChangeRows — one draft's changes as rows, from any `DraftChangesView`:
  * the open review's (`useReviewChanges`) or an unopened draft's
- * (`useDraftView`). Loading shows a skeleton, an unreadable preview shows
+ * (`useDraftView`). Loading shows a skeleton, an unreadable draft shows
  * Retry (never "no changes"), a ready draft shows its rows in document order
  * and pulses a change that arrived while the writer was looking.
  *
+ * Each row is one state of one change (`changeRows`): as drawn, or what a Discard left (pending, discarded, failed).
  * Presentational: the rows never decide what a click means. `onSelect` is the
  * caller's (focus the change in the manuscript, or open the draft's review at
  * it). `standIn` is a state line (Applying, No changes left) that replaces the
@@ -15,9 +16,10 @@ import { t } from "@lingui/core/macro";
 import { type ReactNode, useMemo } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
-import { type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
+import { DiscardedRow } from "./DiscardedRow";
+import { changeRows, type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
 import { ReviewChangeRow } from "./ReviewChangeRow";
-import type { ReviewChange } from "./review-changes";
+import type { ReviewChange } from "./review-model";
 import { useArrivedChanges } from "./useArrivedChanges";
 
 export function DocumentChangeRows({
@@ -62,26 +64,33 @@ export function DocumentChangeRows({
       />
     );
   }
-  return (
-    <ul className="@container/changes flex flex-col gap-0.5">
-      {view.items.map(({ change, failure, draftFailure }) => (
-        <ReviewChangeRow
-          touch={touch}
-          wholeDocument={wholeDocument}
-          documentName={wholeDocument ? documentName : undefined}
-          showAttribution={showAttribution}
-          key={change.classId}
-          change={change}
-          focused={view.focused?.classId === change.classId}
-          arrived={arrived.has(change.classId)}
-          disabled={view.locked}
-          failure={failure}
-          draftFailure={draftFailure}
-          onFocus={() => onSelect(change)}
-          onApply={() => void view.apply(change)}
-          onDiscard={() => void view.discard(change)}
-        />
-      ))}
-    </ul>
+  const rows = changeRows(view.items, view.discarded ?? []).map((row) =>
+    row.kind === "discarded" ? (
+      <DiscardedRow
+        key={row.entry.id}
+        entry={row.entry}
+        name={documentName ?? ""}
+        touch={touch}
+        onUndo={() => view.undoDiscard?.(row.entry.id)}
+      />
+    ) : (
+      <ReviewChangeRow
+        touch={touch}
+        wholeDocument={wholeDocument}
+        documentName={wholeDocument ? documentName : undefined}
+        showAttribution={showAttribution}
+        key={row.item.change.id}
+        change={row.item.change}
+        focused={view.focused?.id === row.item.change.id}
+        arrived={arrived.has(row.item.change.id)}
+        disabled={view.locked}
+        failure={row.item.failure}
+        draftFailure={row.item.draftFailure}
+        onFocus={() => onSelect(row.item.change)}
+        onApply={() => void view.apply(row.item.change)}
+        onDiscard={() => void view.discard(row.item.change)}
+      />
+    ),
   );
+  return <ul className="@container/changes flex flex-col gap-0.5">{rows}</ul>;
 }

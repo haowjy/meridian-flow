@@ -1,50 +1,43 @@
 /**
- * useReviewChanges — the open review's changes as the writer sees them: in
- * document order, with the one in focus, what failed on each, and the commands
- * that act on them. The header's stepper, the presented document's bar and expanded Work
- * rows all read this, so they cannot disagree about which changes exist.
+ * useReviewChanges: the open review's changes as the writer sees them: in document order, with the one in
+ * focus, what failed on each, and the commands that act on them. The header's stepper, the presented
+ * document's bar and expanded Work rows all read this, so they cannot disagree about which changes exist.
  *
- * Takes the controller explicitly. A surface outside the presenting host's
- * boundary must pass the presented review's controller, never the ambient one.
- *
- * Retained presentation data is shared with listed surfaces; this binding adds
- * only the open review's focus, stepping and command behavior.
+ * Takes the controller explicitly. A surface outside the presenting host's boundary must pass the
+ * presented review's controller, never the ambient one.
  */
 import { useCallback, useMemo } from "react";
 
+import type { AppliedChange } from "@/client/query/draft-command-record";
 import type { DraftChangesView } from "./draft-changes";
-import { type ReviewChange, resolveFocusedChange } from "./review-changes";
+import type { ReviewFrame } from "./review-frame";
+import type { ReviewChange } from "./review-model";
+import type { EditorRef } from "./review-runtime";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
 
-/** The open review's model: a draft's changes plus the review's focus, stepping and completion. */
+/** The open review's model: a draft's changes plus the review's focus and stepping. */
 export type ReviewChangesView = DraftChangesView & {
+  /** The frame this view's rows were drawn from: what a whole-draft Apply carries. */
+  frame: ReviewFrame | null;
+  /** The applied entries in force: the manuscript stops painting the changes they name. */
+  applied: readonly AppliedChange[];
   /** The focused change's place among `items`, or -1. */
   focusedIndex: number;
-  /**
-   * The last change's command is in flight (`"apply"` or `"discard"`): the
-   * change is gone from the list, but nothing is finished until the server
-   * answers. Surfaces say so honestly and offer no way on.
-   */
-  completing: "apply" | "discard" | null;
-  /**
-   * The server closed the draft: nothing is left to review. This is its answer
-   * (`itemClosed`) and nothing else, never how many changes the list shows.
-   */
-  finished: boolean;
   focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
   step: (direction: 1 | -1) => void;
 };
 
 export function useReviewChanges(
   controller: DraftReviewController,
-  options?: { enabled?: boolean },
+  /** `editor`: the editor this view is read in (or its surface), so a Discard is authored into its history. */
+  options?: { enabled?: boolean; editor?: EditorRef | null },
 ): ReviewChangesView {
-  const { documentId, itemKey, changes, items, completing, finished, unlisted, status } =
-    useOpenReviewChanges(controller, options);
-  // The review owns the focus (class and operations); this only reads it.
-  const focused = resolveFocusedChange(changes, controller.focus);
-  const focusedIndex = focused ? changes.indexOf(focused) : -1;
+  const data = useOpenReviewChanges(controller, options);
+  const surface = options?.editor ?? null;
+  const { documentId, itemKey, items } = data;
+  const focused = items.find((item) => item.change.id === controller.focus)?.change ?? null;
+  const focusedIndex = focused ? items.findIndex((item) => item.change === focused) : -1;
 
   const review = useMemo(
     () => (documentId && itemKey ? { documentId, itemKey } : null),
@@ -52,72 +45,79 @@ export function useReviewChanges(
   );
   const focus = useCallback(
     (change: ReviewChange, options?: { scroll?: boolean; instant?: boolean }) => {
-      if (review) controller.focusReviewChange(review, change, options);
+      if (review) controller.focusReviewChange(review, change.id, options);
     },
     [controller.focusReviewChange, review],
   );
 
   const step = useCallback(
     (direction: 1 | -1) => {
-      if (changes.length === 0) return;
-      const from = focusedIndex;
+      if (items.length === 0) return;
       const to =
-        from < 0
+        focusedIndex < 0
           ? direction > 0
             ? 0
-            : changes.length - 1
-          : (from + direction + changes.length) % changes.length;
-      focus(changes[to], { scroll: true });
+            : items.length - 1
+          : (focusedIndex + direction + items.length) % items.length;
+      focus(items[to].change, { scroll: true });
     },
-    [changes, focus, focusedIndex],
+    [items, focus, focusedIndex],
   );
 
-  /**
-   * After a command the writer lands on the next change in the manuscript, or the
-   * one before it. A Discard jumps there: its draft's next generation replaces the
-   * editor, and a smooth scroll would be cut off half way by that swap.
-   */
+  /** After a command the writer lands on the next change in the manuscript, or the one before it. */
   const settleFocus = useCallback(
-    (change: ReviewChange, instant: boolean) => {
-      if (focused && focused.classId !== change.classId) return;
-      const at = changes.indexOf(change);
-      const next = changes[at + 1] ?? changes[at - 1];
-      if (next) focus(next, { scroll: true, instant });
+    (change: ReviewChange) => {
+      if (focused && focused.id !== change.id) return;
+      const at = items.findIndex((item) => item.change === change);
+      const next = items[at + 1] ?? items[at - 1];
+      if (next) focus(next.change, { scroll: true, instant: true });
     },
-    [changes, focus, focused],
+    [items, focus, focused],
   );
 
-  const run = useCallback(
-    async (change: ReviewChange, mode: "apply" | "discard", instant: boolean) => {
-      // Apply draft and Discard draft handle what has no per-change commands.
-      if (change.target.kind === "display" || !review) return;
-      settleFocus(change, instant);
-      const outcome = await controller.commandChange(mode, review, change.target);
-      // The change is back (or was updated): the writer returns to it, where its
-      // reason is shown. Only in the review the command was sent from: the
-      // writer may have opened another while it was in flight.
-      if (outcome.kind === "change-refused" && outcome.code !== "gone") {
-        controller.focusReviewChange(review, change, { scroll: true });
-      }
+  const apply = useCallback(
+    async (change: ReviewChange) => {
+      if (!review) return;
+      settleFocus(change);
+      // A new document's one change is the whole draft.
+      const outcome = data.wholeDocument
+        ? await controller.apply(review.documentId, review.itemKey, change.frame)
+        : await controller.applyOpenChange(change);
+      // The change is back with its reason on it: the writer returns to it, in the review it was sent from.
+      if (outcome.kind === "failed") focus(change, { scroll: true });
     },
-    [controller.commandChange, controller.focusReviewChange, review, settleFocus],
+    [controller.apply, controller.applyOpenChange, data.wholeDocument, review, settleFocus, focus],
   );
-  const apply = useCallback((change: ReviewChange) => run(change, "apply", false), [run]);
-  const discard = useCallback((change: ReviewChange) => run(change, "discard", true), [run]);
+  const discard = useCallback(
+    async (change: ReviewChange) => {
+      if (!review) return;
+      settleFocus(change);
+      if (data.wholeDocument) await controller.discard(review.documentId, review.itemKey, surface);
+      else controller.discardOpenChange(change, surface);
+    },
+    [
+      controller.discard,
+      controller.discardOpenChange,
+      data.wholeDocument,
+      review,
+      settleFocus,
+      surface,
+    ],
+  );
 
   return {
     documentId,
     itemKey,
-    status,
-    // A draft the server closed has nothing to list, whatever a stale read still holds.
+    status: data.status,
+    frame: data.frame,
     items,
+    wholeDocument: data.wholeDocument,
     focused,
     focusedIndex,
-
     locked: controller.changesLocked,
-    completing,
-    finished,
-    unlisted,
+    completing: data.completing,
+    applied: data.applied,
+    finished: data.finished,
     focus,
     step,
     apply,

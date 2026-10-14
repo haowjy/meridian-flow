@@ -26,7 +26,6 @@ import {
   useDraftReviewStateOwner,
 } from "./useDraftReviewController";
 import { useReconcileReviewFocus } from "./useReconcileReviewFocus";
-import { useReviewRefresh } from "./useReviewRefresh";
 import { type ReviewRoomOwner, useReviewRoomOwner } from "./useReviewRoomOwner";
 
 export type DraftReviewContextValue = {
@@ -132,7 +131,6 @@ export function useDraftReviewScopeValue({
     workId: effectiveWorkId,
     review: controller.inlineReview,
     dispatch: reviewState.dispatch,
-    disposing: controller.isDisposing,
     presented,
   });
   useReconcileReviewFocus(controller, presented);
@@ -173,21 +171,10 @@ export function useDraftReviewScopeValue({
     (documentId: string, itemKey: string) =>
       controller.inlineReview?.documentId === documentId &&
       controller.inlineReview.itemKey === itemKey
-        ? controller.reviewRoomName
+        ? roomOwner.roomName
         : null,
-    [controller.inlineReview, controller.reviewRoomName],
+    [controller.inlineReview, roomOwner.roomName],
   );
-
-  useReviewRefresh({
-    projectId,
-    workId,
-    review: controller.inlineReview,
-    session: roomOwner.session,
-    liveSession:
-      activeEditorProjection?.documentId === controller.inlineReview?.documentId
-        ? (activeEditorProjection?.session ?? null)
-        : null,
-  });
 
   useEffect(() => {
     if (!threadId || !activeEditorProjection || activeEditorProjection.inReview) return;
