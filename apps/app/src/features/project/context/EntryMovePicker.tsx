@@ -22,12 +22,7 @@ import {
 import { moveRepairTrail } from "./move-repair-trail";
 import { useProjectMenuSource } from "./use-catalog-menu-source";
 
-export type MoveEntry = {
-  id: string;
-  name: string;
-  path: string;
-  kind: "file" | "folder";
-};
+type MoveEntry = Pick<MoveSubject, "id" | "name" | "path" | "kind">;
 
 type EntryMovePickerProps = {
   projectId: string;

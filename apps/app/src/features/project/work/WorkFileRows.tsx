@@ -61,9 +61,7 @@ function parentFolder(catalog: CatalogContextView, file: CatalogFile): DropFolde
   if (file.parentId === catalog.root.entryId) return null;
   const parentPath = file.path.slice(0, file.path.lastIndexOf("/"));
   const dir = catalog.findPath(parentPath);
-  return dir?.kind === "dir"
-    ? { entryId: dir.entryId, path: dir.path, uri: dir.uri, name: dir.name }
-    : null;
+  return dir?.kind === "dir" ? { entryId: dir.entryId, path: dir.path, name: dir.name } : null;
 }
 
 export function FolderRow({
@@ -94,7 +92,6 @@ export function FolderRow({
     scratchDropTarget(catalog, {
       entryId: folder.entryId,
       path: folder.path,
-      uri: folder.uri,
       name: folder.name,
     }),
     { onSpring: () => !open && onToggle() },

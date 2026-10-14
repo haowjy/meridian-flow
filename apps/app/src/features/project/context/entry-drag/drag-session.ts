@@ -8,7 +8,7 @@ import type { DragEvent } from "react";
 import { MERIDIAN_ENTRIES_MIME } from "../tree-drop/drag-payload";
 import { entrySystem, type SelectableEntry } from "./entry";
 
-export type EntryDrag = {
+type EntryDrag = {
   entries: readonly SelectableEntry[];
   /**
    * The one system every row belongs to, or null: a selection that spans

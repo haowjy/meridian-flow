@@ -27,13 +27,13 @@ import {
   resourceDestination,
 } from "../move-entry";
 import { renameOperationLifecycle } from "../rename-operation-lifecycle";
-import type { TreeDropRoutes, TreeDropTarget } from "../tree-drop/tree-drop";
+import type { EntriesRoute, TreeDropTarget } from "../tree-drop/tree-drop";
 import { activeEntryDrag } from "./drag-session";
 import { entrySystem, type SelectableEntry } from "./entry";
 import { type MoveNoticeSurface, showMoveNotice } from "./move-notice";
 import type { EntrySelection } from "./selection";
 
-export type MoveArea = {
+type MoveArea = {
   scheme: ProjectContextTreeScheme;
   owner: ContextOwner;
   catalog: CatalogContextView;
@@ -64,7 +64,7 @@ export function useEntryMoveRoute({
   selection: EntrySelection;
   /** Opens the destination folder so the moved rows are in view. */
   onLanded?: (target: TreeDropTarget) => void;
-}): NonNullable<TreeDropRoutes["entries"]> {
+}): EntriesRoute {
   const resources = useAccountResourceReplica();
   const { works, noWork } = useWorks(projectId);
   // Undo runs seconds after the drop; it must read the catalogs as they are then.

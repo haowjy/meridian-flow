@@ -1,8 +1,8 @@
 /**
- * The one drop dispatcher on the project tree. Payloads from the desktop
- * (`Files`) go to import; internal payloads (`entries`) are rows dragged inside
- * the app. Each kind has a route; the routes decide, this file only dispatches,
- * lights the target and says what the drop will do.
+ * The one drop dispatcher on the project tree. Rows dragged inside the app
+ * (`entries`) have a route; the route decides, this file only dispatches,
+ * lights the target and says what the drop will do. Desktop file drops arrive
+ * with import.
  */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
@@ -17,7 +17,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { captureDrop, type DroppedItems } from "@/lib/dropped-items";
 import { clearDragHint, showDragHint } from "./drag-hint";
 import { dragPayloadKind } from "./drag-payload";
 
@@ -26,7 +25,7 @@ export type TreeDropTarget = {
   /** The catalog the target belongs to; one list can show several (a chat's Scratch and its earlier notes). */
   catalogRootId: string;
   /** The folder row, or null for the catalog's top level (the area header). */
-  folder: { entryId: string; path: string; uri: string; name: string } | null;
+  folder: { entryId: string; path: string; name: string } | null;
 };
 
 /**
@@ -36,15 +35,9 @@ export type TreeDropTarget = {
  */
 export type EntriesVerdict = { kind: "accept" | "refuse"; label: string };
 
-export type TreeDropRoutes = {
-  files?: {
-    accepts(target: TreeDropTarget): boolean;
-    drop(target: TreeDropTarget, items: DroppedItems): void;
-  };
-  entries?: {
-    verdict(target: TreeDropTarget): EntriesVerdict | null;
-    drop(target: TreeDropTarget): void;
-  };
+export type EntriesRoute = {
+  verdict(target: TreeDropTarget): EntriesVerdict | null;
+  drop(target: TreeDropTarget): void;
 };
 
 export type TreeDropState = "idle" | "over" | "refused";
@@ -54,7 +47,7 @@ const SPRING_MS = 600;
 type Over = { key: string; refused: boolean } | null;
 
 type ScopeValue = {
-  routes: TreeDropRoutes;
+  route: EntriesRoute;
   over: Over;
   /** An element of `key` came under the drag; arms the spring for an accepted target. */
   enter(key: string, refused: boolean, onSpring: (() => void) | undefined): void;
@@ -68,24 +61,18 @@ type ScopeValue = {
 
 const ScopeContext = createContext<ScopeValue | null>(null);
 
-export function targetKey(target: TreeDropTarget): string {
+function targetKey(target: TreeDropTarget): string {
   return `${target.scheme}:${target.folder?.entryId ?? target.catalogRootId}`;
 }
 
 /**
- * Holds the routes and the one lit target for a list. A folder row and every
+ * Holds the route and the one lit target for a list. A folder row and every
  * row inside it share one target: the next row's `dragenter` arrives before the
  * last one's `dragleave`, so a per-target count, not any single element,
  * decides when the target goes dark. Counts, the lit target and spring timers
  * end together when a drag ends anywhere (Escape, a drop elsewhere).
  */
-export function TreeDropScope({
-  routes,
-  children,
-}: {
-  routes: TreeDropRoutes;
-  children: ReactNode;
-}) {
+export function TreeDropScope({ route, children }: { route: EntriesRoute; children: ReactNode }) {
   const [over, setOver] = useState<Over>(null);
   const counts = useRef(new Map<string, number>());
   const springs = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -148,7 +135,7 @@ export function TreeDropScope({
     };
   }, [scope]);
 
-  const value = useMemo<ScopeValue>(() => ({ routes, over, ...scope }), [routes, over, scope]);
+  const value = useMemo<ScopeValue>(() => ({ route, over, ...scope }), [route, over, scope]);
   return <ScopeContext.Provider value={value}>{children}</ScopeContext.Provider>;
 }
 
@@ -165,11 +152,6 @@ const NO_PROPS: DropProps = {};
  * target never takes over (or counts down) a drag its rows chose to ignore.
  */
 const claimed = new WeakSet<Event>();
-
-type Engagement = { kind: "files" } | { kind: "entries"; verdict: EntriesVerdict };
-
-const refusedEngagement = (engagement: Engagement) =>
-  engagement.kind === "entries" && engagement.verdict.kind === "refuse";
 
 /**
  * Drop handlers for one target. A file row passes its folder as the target, so
@@ -188,25 +170,17 @@ export function useTreeDropTarget(
   const latest = useRef({ target, scope, onSpring: options.onSpring });
   latest.current = { target, scope, onSpring: options.onSpring };
 
-  /** Claims the event for this target when it has a route for the payload. */
+  /** Claims the event for this target when the drag carries rows and the scope has a route. */
   const claim = useCallback((event: DragEvent): boolean => {
-    const currentScope = latest.current.scope;
-    if (!currentScope || claimed.has(event.nativeEvent)) return false;
-    const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
-    const routed =
-      (kind === "files" && Boolean(currentScope.routes.files)) ||
-      (kind === "entries" && Boolean(currentScope.routes.entries));
-    if (routed) claimed.add(event.nativeEvent);
-    return routed;
+    if (!latest.current.scope || claimed.has(event.nativeEvent)) return false;
+    if (dragPayloadKind(Array.from(event.dataTransfer?.types ?? [])) !== "entries") return false;
+    claimed.add(event.nativeEvent);
+    return true;
   }, []);
 
-  const engagement = useCallback((event: DragEvent): Engagement | null => {
+  const verdictFor = useCallback((): EntriesVerdict | null => {
     const { target: current, scope: currentScope } = latest.current;
-    const kind = dragPayloadKind(Array.from(event.dataTransfer?.types ?? []));
-    if (kind === "files")
-      return currentScope?.routes.files?.accepts(current) ? { kind: "files" } : null;
-    const verdict = kind === "entries" ? currentScope?.routes.entries?.verdict(current) : null;
-    return verdict ? { kind: "entries", verdict } : null;
+    return currentScope?.route.verdict(current) ?? null;
   }, []);
 
   const holding = useCallback(() => {
@@ -221,22 +195,22 @@ export function useTreeDropTarget(
   }, [holding, key]);
 
   const show = useCallback(
-    (event: DragEvent, current: Engagement) => {
+    (event: DragEvent, verdict: EntriesVerdict) => {
       const currentScope = latest.current.scope;
       if (!currentScope) return;
-      const refused = refusedEngagement(current);
+      const refused = verdict.kind === "refuse";
       if (!holding()) {
         held.current = { generation: currentScope.generation() };
         currentScope.enter(key, refused, latest.current.onSpring);
       } else currentScope.relight(key, refused);
-      if (current.kind === "entries") showDragHint(key, current.verdict, event);
+      showDragHint(key, verdict, event);
       if (refused) {
         event.dataTransfer.dropEffect = "none";
         return;
       }
       // Only an accepted target cancels the default; a refused one keeps the no-drop cursor.
       event.preventDefault();
-      event.dataTransfer.dropEffect = current.kind === "files" ? "copy" : "move";
+      event.dataTransfer.dropEffect = "move";
     },
     [holding, key],
   );
@@ -244,12 +218,12 @@ export function useTreeDropTarget(
   const hover = useCallback(
     (event: DragEvent) => {
       if (!claim(event)) return;
-      const current = engagement(event);
-      if (current) show(event, current);
+      const verdict = verdictFor();
+      if (verdict) show(event, verdict);
       // The verdict went quiet while hovering: give the target back.
       else release();
     },
-    [claim, engagement, show, release],
+    [claim, verdictFor, show, release],
   );
 
   useEffect(() => release, [release]);
@@ -264,18 +238,16 @@ export function useTreeDropTarget(
       },
       onDrop(event) {
         if (!claim(event)) return;
-        const current = engagement(event);
+        const verdict = verdictFor();
         release();
-        if (!current || refusedEngagement(current)) return;
+        if (!verdict || verdict.kind === "refuse") return;
         event.preventDefault();
         event.stopPropagation();
         const { scope: currentScope, target: dropped } = latest.current;
-        if (current.kind === "files")
-          currentScope?.routes.files?.drop(dropped, captureDrop(event.dataTransfer));
-        else currentScope?.routes.entries?.drop(dropped);
+        currentScope?.route.drop(dropped);
       },
     }),
-    [hover, claim, engagement, release],
+    [hover, claim, verdictFor, release],
   );
 
   if (!scope) return { dropProps: NO_PROPS, dropState: "idle" };
