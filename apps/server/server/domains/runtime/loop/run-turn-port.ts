@@ -47,8 +47,6 @@ export interface DrainRunTurnInput extends RunTurnBase {
   replyTurnId?: TurnId;
   /** The failed reply a Retry re-answers; its first reservation records it as `metadata.retryOf`. */
   retryOf?: TurnId;
-  /** Leaf that must still be current after the run claim is acquired. */
-  expectedLeafTurnId?: TurnId;
 }
 
 export type RunTurnInput = WriterRunTurnInput | DrainRunTurnInput;

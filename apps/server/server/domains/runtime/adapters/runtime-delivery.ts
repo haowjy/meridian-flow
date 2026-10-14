@@ -26,7 +26,7 @@ import type {
   RunStarter,
 } from "../loop/ports.js";
 import { preparationFailureError } from "../loop/preparation-failure.js";
-import { NoPendingWakeError } from "../loop/run-turn-port.js";
+import { NoPendingWakeError, ReplyRetryUnavailableError } from "../loop/run-turn-port.js";
 import type {
   AdoptedBatch,
   DeliveryBoundary,
@@ -37,7 +37,11 @@ import type {
 } from "../loop/runtime-delivery.js";
 import { createThreadControls } from "../loop/thread-controls.js";
 import type { ThreadLock } from "../loop/thread-lock.js";
-import { type WriteModeSwitchPort, writeModeSwitchTurn } from "../loop/write-mode-switch.js";
+import {
+  pastTrailingSwitches,
+  type WriteModeSwitchPort,
+  writeModeSwitchTurn,
+} from "../loop/write-mode-switch.js";
 
 /** Adapter-private storage primitives; never injected into the model loop or producers. */
 export interface DeliveryStore extends InboxReader {
@@ -512,23 +516,41 @@ export function createDeliveryAdapter(
    * switch queued while setup was in flight is found by the retry loop in
    * `prepareAndCommit`, whose commit validates this very selection.
    */
-  async function selectRunStart(threadId: ThreadId, retry: boolean, lockHeld: boolean) {
+  async function selectRunStart(
+    threadId: ThreadId,
+    retryOf: TurnId | undefined,
+    lockHeld: boolean,
+  ) {
     for (;;) {
-      const apply = () => applyDueSwitch(threadId, retry);
+      const apply = () => applyDueSwitch(threadId, retryOf);
       if (lockHeld) await apply();
       else await threadLock.withThreadLock(threadId, apply);
-      const selected = await selectForPreparation(threadId, "run_start", retry);
-      if (selected.selection.next.kind !== "switch") return selected;
+      const selected = await selectForPreparation(threadId, "run_start", !!retryOf);
+      if (selected.selection.next.kind === "switch") continue;
+      await assertRetryLeaf(threadId, selected.selection.activeLeafTurnId, retryOf);
+      return selected;
     }
   }
-  async function applyDueSwitch(threadId: ThreadId, retry: boolean): Promise<boolean> {
-    const selected = next(await inbox.selectPending(threadId), "run_start", retry);
+  /**
+   * Retry's compare-and-swap: only switch turns may trail the failed reply. A
+   * newer message or another Retry moved the leaf, so the Retry is refused.
+   */
+  async function assertRetryLeaf(threadId: ThreadId, leaf: TurnId | null, retryOf?: TurnId) {
+    if (!retryOf) return;
+    const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
+    const past = leafTurn ? await pastTrailingSwitches(deps.repos.turns, leafTurn) : null;
+    if (past?.id !== retryOf) throw new ReplyRetryUnavailableError(threadId);
+  }
+  async function applyDueSwitch(threadId: ThreadId, retryOf?: TurnId): Promise<boolean> {
+    const selected = next(await inbox.selectPending(threadId), "run_start", !!retryOf);
     if (selected.kind !== "switch") return false;
     const control = selected.control;
     const thread = await deps.repos.threads.findById(threadId);
     if (!thread) return false;
     const mode = control.body.mode;
     const leaf = thread.activeLeafTurnId as TurnId | null;
+    // A refused Retry leaves the switch pending.
+    await assertRetryLeaf(threadId, leaf, retryOf);
     const leafTurn = leaf ? await deps.repos.turns.findById(leaf) : null;
     if (leaf && !leafTurn) throw new Error(`Missing causal turn: ${leaf}`);
     const { turn, block } = writeModeSwitchTurn({
@@ -1083,7 +1105,7 @@ export function createDeliveryAdapter(
     adoptBatch: async (lease, prepare, options) => {
       const result = await prepareAndCommit({
         threadId: lease.threadId,
-        select: (lockHeld) => selectRunStart(lease.threadId, !!options?.retry, lockHeld),
+        select: (lockHeld) => selectRunStart(lease.threadId, options?.retryOf, lockHeld),
         signal: options?.signal,
         validate: async () => {
           if ((await leaseStore.lockReceipt(lease))?.cancelRequested)
