@@ -20,7 +20,10 @@ import { retryReply } from "@/client/api/threads-api";
 import { announce } from "@/client/stores";
 import { type RetryStandIns, useRetryStandIns } from "./useRetryStandIns";
 
-export type ReplyRetry = Pick<RetryStandIns, "standIns" | "requestOf" | "refused" | "retried"> & {
+export type ReplyRetry = Pick<
+  RetryStandIns,
+  "standIns" | "requestOf" | "refused" | "retried" | "clearRefused"
+> & {
   /** A new reply after `failed`, or the same request again when `failed` is a lost Retry. */
   retry: (failed: Turn) => void;
 };
@@ -85,6 +88,7 @@ export function useReplyRetry(input: {
     requestOf: standIns.requestOf,
     refused: standIns.refused,
     retried: standIns.retried,
+    clearRefused: standIns.clearRefused,
     retry,
   };
 }
