@@ -333,6 +333,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
         expect(after?.defaultAiWriteMode).toBe("direct");
         expect(after?.entityRevision).toBe((before?.entityRevision ?? 0n) + 1n);
+        // Stopping the pending switch is the writer's latest choice too.
+        await runtime.app.delivery.withdrawControl(THREAD.threadId as never, switched.response.id);
+        const [stopped] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
+        expect(stopped?.defaultAiWriteMode).toBe("draft");
 
         expect(await modeOf(SIBLING.threadId)).toBe("draft");
         const sibling = await runtimes.script(runtime, SIBLING).begin();
