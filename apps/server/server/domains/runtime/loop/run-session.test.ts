@@ -18,7 +18,11 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   const sink = createInMemoryEventSink();
   let calls = 0;
   const repos = createInMemoryRepositories();
-  const thread = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const thread = await repos.threads.create({
+    aiWriteMode: "direct",
+    userId: "user-1",
+    projectId: "project-1",
+  });
   const boundThreadIds = new Set([thread.id]);
   const harness = createRuntimeHarness({
     repos,
@@ -147,7 +151,7 @@ describe("RunSession", () => {
       role: "user",
       origin: "writer",
     });
-    expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.executionId);
 
     expect(await run.execute()).toMatchObject({ status: "error", turn: { status: "error" } });
     expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({
@@ -197,9 +201,11 @@ describe("RunSession", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("observes terminal fallback failure, settles the run, and releases", async () => {
+  it("abandons, without an end, an execution whose terminal fallback failed; the next start settles it", async () => {
     const f = await fixture();
     const run = await f.prepare();
+    const listBlocks = f.deps.repos.blocks.listByThread;
+    const transaction = f.deps.repos.transaction;
     f.deps.repos.blocks.listByThread = async () => {
       throw new Error("history unavailable");
     };
@@ -212,7 +218,22 @@ describe("RunSession", () => {
       "terminal_fallback.failed",
     ]);
     expect(f.runtime.getRunningTurn(f.thread.id)).toBeNull();
+    // Unlocked and asleep, but the execution is still open: its turn never went terminal.
     expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
+    const ended = async () =>
+      (await f.journal.listByType(f.thread.id, "execution.ended")).map((entry) => entry.payload);
+    expect(await ended()).toEqual([]);
+    const abandoned = await f.deps.runClaim.readOpenExecutionId(f.thread.id);
+    expect(abandoned).toEqual(expect.any(String));
+
+    f.deps.repos.blocks.listByThread = listBlocks;
+    f.deps.repos.transaction = transaction;
+    await (await f.prepare()).execute();
+    expect(await f.repos.turns.findById(run.executionTurnId)).toMatchObject({ status: "error" });
+    expect(await ended()).toEqual([
+      { type: "execution.ended", executionId: abandoned },
+      expect.objectContaining({ type: "execution.ended" }),
+    ]);
   });
 
   it("terminalizes admitted setup when post-setup cursor capture fails", async () => {
@@ -236,7 +257,7 @@ describe("RunSession", () => {
       const release = deps.runClaim.release;
       deps.runClaim.release = async (lease) => {
         if (++releases === 1) throw new Error("physical unlock failed");
-        await release(lease);
+        return release(lease);
       };
     });
     const run = await f.prepare();
@@ -280,6 +301,7 @@ describe("RunSession", () => {
       prevTurnId: null,
     });
     const child = await f.repos.threads.createSubagent({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
       parentThreadId: f.thread.id,
@@ -350,10 +372,12 @@ describe("RunSession", () => {
   ])("preserves descendant lifetime at parent completion (child parent: %s)", async (childParent) => {
     const f = await fixture();
     const fg = await f.deps.repos.threads.create({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
     });
     const bg = await f.deps.repos.threads.create({
+      aiWriteMode: "direct",
       userId: f.thread.userId,
       projectId: f.thread.projectId,
     });
@@ -410,7 +434,7 @@ describe("RunSession", () => {
       const release = deps.runClaim.release;
       deps.runClaim.release = async (lease) => {
         if (++releases === 2) throw new Error("backstop unavailable");
-        await release(lease);
+        return release(lease);
       };
     });
     const run = await f.prepare();

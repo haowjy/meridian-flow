@@ -206,14 +206,27 @@ for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
       }
       await scenario.mount(<Probe />);
 
-      controller.resume("thread-1", { expectedTurnId: "turn-1" });
+      controller.attach("thread-1", { executionId: "exec-1", after: "0", runningTurnId: "turn-1" });
       act(() => {
         bus.emit(
-          { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
+          {
+            type: EventType.RUN_STARTED,
+            threadId: "thread-1",
+            runId: "turn-1",
+            rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+          } as AGUIEvent,
           "1000",
         );
         bus.emit(card("running"), "2000");
         bus.emit({ type: terminal, threadId: "thread-1", runId: "turn-1" } as AGUIEvent, "3000");
+        bus.emit(
+          {
+            type: EventType.CUSTOM,
+            name: "meridian.execution.ended",
+            value: { executionId: "exec-1" },
+          } as AGUIEvent,
+          "3001",
+        );
       });
       await vi.advanceTimersByTimeAsync(260);
       expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
@@ -239,16 +252,31 @@ describe("current stream ordering", () => {
       vi.useFakeTimers();
       const scenario = mountThreadProjectionScenario();
       const { bus, controller, store } = scenario;
-      if (runFirst) controller.resume("thread-1", { expectedTurnId: "turn-1" });
+      if (runFirst)
+        controller.attach("thread-1", {
+          executionId: "exec-1",
+          after: "0",
+          runningTurnId: "turn-1",
+        });
       function Probe() {
         useThreadSnapshotSync("thread-1");
         return null;
       }
       await scenario.mount(<Probe />);
-      if (!runFirst) controller.resume("thread-1", { expectedTurnId: "turn-1" });
+      if (!runFirst)
+        controller.attach("thread-1", {
+          executionId: "exec-1",
+          after: "0",
+          runningTurnId: "turn-1",
+        });
       act(() => {
         bus.emit(
-          { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
+          {
+            type: EventType.RUN_STARTED,
+            threadId: "thread-1",
+            runId: "turn-1",
+            rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+          } as AGUIEvent,
           "1000",
         );
         bus.emit({ type: EventType.TEXT_MESSAGE_START, messageId: "text-1" } as AGUIEvent, "1100");
@@ -283,6 +311,14 @@ describe("current stream ordering", () => {
         bus.emit(
           { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
           "1500",
+        );
+        bus.emit(
+          {
+            type: EventType.CUSTOM,
+            name: "meridian.execution.ended",
+            value: { executionId: "exec-1" },
+          } as AGUIEvent,
+          "1501",
         );
       });
       await vi.advanceTimersByTimeAsync(260);
@@ -545,17 +581,32 @@ describe("stale acquisition and missing targets", () => {
     // A reveal into a chat the page has not loaded asks "is this turn absent?"
     // the moment history settles. Settling before the turns reach the store
     // reads as an empty chat, and the reveal gives up on a turn about to arrive.
+    // An error settles the history for that reader even though nothing loaded.
     const held = deferred<unknown>();
-    harness.snapshotRequest.mockReset().mockImplementation(() => held.promise);
+    harness.snapshotRequest
+      .mockReset()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockImplementation(() => held.promise);
     const scenario = mountThreadProjectionScenario();
     const { actions } = scenario;
     const renders: Array<{ settled: boolean; turns: number }> = [];
+    let refetch: () => void = () => undefined;
     function Probe() {
-      const { settled } = useThreadSnapshotSync("thread-1");
-      renders.push({ settled, turns: actions.turns("thread-1")?.length ?? 0 });
+      const sync = useThreadSnapshotSync("thread-1");
+      refetch = sync.refetch;
+      renders.push({
+        settled: sync.settled,
+        turns: actions.turns("thread-1")?.length ?? 0,
+      });
       return null;
     }
     await scenario.mount(<Probe />);
+    await act(async () => {
+      await vi.waitFor(() => expect(renders.at(-1)?.settled).toBe(true));
+    });
+    expect(renders.at(-1)).toEqual({ settled: true, turns: 0 });
+    const erroredRenders = renders.length;
+    await act(async () => refetch());
     held.resolve({
       thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
       turns: [
@@ -581,10 +632,10 @@ describe("stale acquisition and missing targets", () => {
       liveState: { runningTurnId: null },
     });
     await act(async () => {
-      await vi.waitFor(() => expect(renders.at(-1)?.settled).toBe(true));
+      await vi.waitFor(() => expect(renders.at(-1)?.turns).toBe(2));
     });
     expect(renders.at(-1)).toEqual({ settled: true, turns: 2 });
-    expect(renders.filter((render) => render.settled && render.turns === 0)).toEqual([]);
+    expect(renders.slice(erroredRenders).filter((r) => r.settled && r.turns === 0)).toEqual([]);
   });
 });
 
@@ -650,7 +701,12 @@ describe("projection lifetime fencing", () => {
     expect(callback).toBeDefined();
     act(() =>
       bus.emit(
-        { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "turn-1" } as AGUIEvent,
+        {
+          type: EventType.RUN_STARTED,
+          threadId: "thread-1",
+          runId: "turn-1",
+          rawEvent: { executionId: "exec-1", reservedForUserTurnIds: [] },
+        } as AGUIEvent,
         "1000",
       ),
     );

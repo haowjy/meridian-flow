@@ -9,11 +9,14 @@
 import type {
   AdmissionLookup,
   AGUIEvent,
+  CancelTurnResponse,
   RetireAdmissionResult,
   SendMessageResponse,
   SequencedEvent,
   ThreadSnapshotResponse,
+  Turn,
 } from "@meridian/contracts/protocol";
+import { goldenAssistantTurn } from "@meridian/contracts/threads";
 import { QueryClient } from "@tanstack/react-query";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
@@ -29,8 +32,8 @@ import type {
   ThreadTransportSubscribeOptions,
 } from "@/core/transport";
 import {
+  type AttachOptions,
   type SubmitOptions,
-  type SubscribeLiveOptions,
   ThreadRunController,
 } from "../ThreadRunController";
 
@@ -130,9 +133,12 @@ class ScenarioThreadTransport implements ThreadTransport {
     for (const listener of this.socketClosedListeners) listener(generation);
   }
 
-  async cancel(threadId: string, turnId: string) {
+  /** What the next cancels answer. */
+  cancelStatus: CancelTurnResponse["status"] = "cancelled";
+
+  async cancel(threadId: string, turnId: string): Promise<CancelTurnResponse> {
     this.cancelRequests.push({ threadId, turnId });
-    return { threadId, turnId, status: "cancelled" as const };
+    return { threadId, turnId, status: this.cancelStatus };
   }
 
   activeSubscription() {
@@ -260,8 +266,28 @@ export class ThreadRunScenario {
     );
   }
 
-  resume(options: SubscribeLiveOptions = {}, threadId = "thread_1"): void {
-    this.controller.resume(threadId, options);
+  /**
+   * What a page load does with a settled snapshot that shows an open execution:
+   * the snapshot owner merges it, then the resume hook attaches.
+   */
+  attach(options: Partial<AttachOptions> = {}, threadId = "thread_1"): void {
+    const executionId = options.executionId ?? "exec-1";
+    const runningTurnId = options.runningTurnId ?? null;
+    this.controller.observeSnapshot(
+      threadId,
+      snapshotResponse({
+        turns: runningTurnId
+          ? [snapshotTurn(runningTurnId, "assistant", { executionId, status: "streaming" })]
+          : [],
+        openExecutionId: executionId,
+        runningTurnId,
+      }),
+    );
+    this.controller.attach(threadId, {
+      executionId,
+      after: options.after ?? "0",
+      runningTurnId,
+    });
   }
 
   emit(event: AGUIEvent, seq = "1", sourceThreadId?: string): void {
@@ -295,10 +321,80 @@ export function defaultSendResponse(
   return {
     threadId: "thread_1",
     userTurnId: "turn-user",
-    assistantTurnId: "turn_1",
+    steersTurnId: "turn_1",
     resumeAfterSeq: "42",
     snapshotFloorNextSeq: "43",
     status: "accepted",
     ...overrides,
+  };
+}
+
+/** A durable turn as the snapshot carries it, with its run identity facts. */
+export function snapshotTurn(
+  id: string,
+  role: Turn["role"],
+  facts: {
+    executionId?: string | null;
+    reservedFor?: string[];
+    /** A writer message's deliverer once delivered (null: unknown deliverer). */
+    deliveredBy?: string | null;
+    status?: Turn["status"];
+    /** `Turn.position`; by default `snapshotResponse` numbers turns in order. */
+    position?: number;
+  } = {},
+): Turn {
+  return {
+    ...goldenAssistantTurn(id, "thread_1", facts.status ?? "complete"),
+    position: facts.position ?? 0,
+    role,
+    executionId: facts.executionId ?? null,
+    reservedForUserTurnIds: facts.reservedFor ?? [],
+    delivery: facts.deliveredBy === undefined ? null : { byTurnId: facts.deliveredBy },
+  } as Turn;
+}
+
+/** Give unpositioned turns the position after their predecessor, as the server's run. */
+function inTranscriptOrder(turns: Turn[]): Turn[] {
+  let position = 0;
+  return turns.map((turn) => {
+    position = turn.position || position + 1;
+    return { ...turn, position };
+  });
+}
+
+/** A thread snapshot: turns, the open execution, and the writer messages still pending. */
+export function snapshotResponse(input: {
+  turns: Turn[];
+  openExecutionId: string | null;
+  runningTurnId?: string | null;
+  pendingWriterMessages?: string[];
+  resumeAfterSeq?: string;
+  nextSeq?: string;
+}): ThreadSnapshotResponse {
+  return {
+    threadId: "thread_1",
+    thread: { id: "thread_1", userId: "account-1" },
+    turns: inTranscriptOrder(input.turns),
+    nextSeq: input.nextSeq ?? "100",
+    actionRequired: false,
+    liveState: {
+      runningTurnId: input.runningTurnId ?? null,
+      openExecutionId: input.openExecutionId,
+      resumeAfterSeq: input.resumeAfterSeq ?? "99",
+      pending: { items: (input.pendingWriterMessages ?? []).map(writerPendingItem) },
+    },
+  } as unknown as ThreadSnapshotResponse;
+}
+
+/** A writer message row in the pending inbox projection. */
+export function writerPendingItem(id: string) {
+  return {
+    id,
+    seq: 1,
+    intent: "message" as const,
+    provenance: { kind: "writer" as const, actorId: "account-1" },
+    deliveryState: "waiting" as const,
+    summary: id,
+    enqueuedAt: "2026-01-01T00:00:00.000Z",
   };
 }

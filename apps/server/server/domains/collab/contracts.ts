@@ -28,13 +28,6 @@ import type {
 
 export type { RefusedResponseDocument, RoutedWriteOutcome };
 
-import type {
-  SetWorkPushPolicyInput,
-  SetWorkPushPolicyResult,
-} from "./domain/branch-push-contracts.js";
-
-export type { SetWorkPushPolicyInput, SetWorkPushPolicyResult };
-
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { DraftBranchAheadRegistration } from "./domain/draft-branch-ahead-registration.js";
 import type { DraftBranchLeases } from "./domain/draft-branch-leases.js";
@@ -457,7 +450,6 @@ export type TurnLiveLineageAccess = {
 export type BranchPushAccess = {
   recoverPendingLiveSettlements(input?: { signal?: AbortSignal }): Promise<number>;
   countPendingByWorkIds(workIds: readonly WorkId[]): Promise<ReadonlyMap<WorkId, number>>;
-  setWorkPushPolicy(input: SetWorkPushPolicyInput): Promise<SetWorkPushPolicyResult>;
 };
 
 /**

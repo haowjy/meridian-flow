@@ -154,6 +154,7 @@ async function main(): Promise<void> {
       userId,
       projectId: PROJECT_ID,
       workId: null,
+      aiWriteMode: "direct",
       title: "Chat",
     });
     const threads = await repos.threads.listByProject(PROJECT_ID);

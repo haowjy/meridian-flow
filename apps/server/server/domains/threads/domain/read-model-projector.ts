@@ -82,6 +82,9 @@ function turnToCreateInput(turn: Turn): CreateTurnInput {
     origin: turn.origin,
     writeMode: turn.writeMode,
     status: turn.status,
+    executionId: turn.executionId,
+    // Only a reserved turn records the list; every other turn keeps null.
+    reservedForUserTurnIds: turn.executionId ? turn.reservedForUserTurnIds : null,
     requestParams: turn.requestParams ?? null,
     metadata: turn.metadata ?? null,
   };

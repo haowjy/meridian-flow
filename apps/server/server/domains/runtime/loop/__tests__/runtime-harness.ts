@@ -45,6 +45,7 @@ import { readPendingInbox } from "../pending-inbox.js";
 import { createRunStarter } from "../run-starter.js";
 import type { PreparedRun } from "../run-turn-port.js";
 import { createWakeIfRunnable } from "../wake-if-runnable.js";
+import { writeModeSwitchNotice } from "../write-mode-switch.js";
 import { createTestAgentBinding, createTestNoticePort } from "./runtime-fixtures.js";
 import { scriptedSummarizer } from "./scripted-summarizer.js";
 import { createInertGateway } from "./test-gateway.js";
@@ -162,11 +163,6 @@ export function createRuntimeHarness(
     accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     toolRegistry,
     projectPreferences,
-    workWriteMode: {
-      async read() {
-        return "direct";
-      },
-    },
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     interruptArtifacts: createNoopInterruptArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),
@@ -188,12 +184,19 @@ export function createRuntimeHarness(
         workContext,
         repos,
         eventWriter,
+        headSeq: (id) => journal.headSeq(id),
         notices,
         runClaim: runClaim as ReturnType<typeof createInMemoryRunClaim>,
         inbox,
         threadLock,
         runStarter: runStarter ?? { async start() {} },
         async publishFinalizedReports() {},
+        writeModeSwitch: {
+          async renderNotice(_threadId, mode) {
+            return writeModeSwitchNotice({ archivedAt: null }, mode, false);
+          },
+          async setWorkDefault() {},
+        },
         schedulePostCommit:
           schedulePostCommit ??
           ((task) => {
@@ -331,7 +334,11 @@ export async function runtimeScenario(
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects, transactionOwner });
   const project = await projects.create({ userId, title: projectTitle });
-  const thread = await repos.threads.create({ userId, projectId: project.id });
+  const thread = await repos.threads.create({
+    aiWriteMode: "direct",
+    userId,
+    projectId: project.id,
+  });
   const journal = createInMemoryEventJournalWriter();
   const eventSink = options.eventSink ?? createInMemoryEventSink();
   const hub = createThreadEventHub({ journalWriter: journal, journalReader: journal, eventSink });

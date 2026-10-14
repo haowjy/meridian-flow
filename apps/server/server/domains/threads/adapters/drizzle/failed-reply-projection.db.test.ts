@@ -92,6 +92,9 @@ else
         async readRunningTurnId() {
           return null;
         },
+        async readOpenExecutionId() {
+          return null;
+        },
         async readMany() {
           return new Map();
         },

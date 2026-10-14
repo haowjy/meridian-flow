@@ -25,6 +25,7 @@ export function createOrphanReportRepair(deps: {
   let reportCursor: TurnId | undefined;
   let unsettledCursor: { threadId: ThreadId; position: number } | undefined;
   let placeholderCursor: TurnId | undefined;
+  let leaseCursor: ThreadId | undefined;
 
   async function repairReport(childThreadId: ThreadId, executionTurnId: TurnId): Promise<void> {
     const reportsToPublish = new Map<TurnId, SavedExecutionReport>();
@@ -81,6 +82,10 @@ export function createOrphanReportRepair(deps: {
       await deps.publisher.publish(report.childThreadId, report.executionTurnId);
   }
 
+  /**
+   * A candidate captured earlier may be stale: repair only the turns it names, so
+   * a newer execution's receipt (admitted since) survives until its own lane.
+   */
   async function repairTurns(candidate: { threadId: ThreadId }): Promise<void> {
     const reports = await deps.authority.withExclusiveThread(candidate.threadId, () =>
       settleStaleExecution(candidate.threadId, () =>
@@ -89,6 +94,11 @@ export function createOrphanReportRepair(deps: {
     );
     for (const report of reports ?? [])
       await deps.publisher.publish(report.childThreadId, report.executionTurnId);
+  }
+
+  /** An expired row is stale as listed: the full settlement ends it, publishing its reports. */
+  async function repairExpired(threadId: ThreadId): Promise<void> {
+    await deps.authority.withExclusiveThread(threadId, () => settleStaleExecution(threadId));
   }
 
   async function sweep(limit: number): Promise<number> {
@@ -134,6 +144,29 @@ export function createOrphanReportRepair(deps: {
       }
     }
 
+    // An expired lease is a stale execution even when no turn is unsettled: an
+    // empty execution that crashed, a row left by older code, or an abandoned
+    // one whose repairs already committed.
+    let expired = await deps.authority.listExpiredExecutions(limit, leaseCursor);
+    if (expired.length === 0 && leaseCursor) {
+      leaseCursor = undefined;
+      expired = await deps.authority.listExpiredExecutions(limit);
+    }
+    for (const threadId of expired) {
+      leaseCursor = threadId;
+      try {
+        await repairExpired(threadId);
+      } catch (error) {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.report-repair",
+          name: "lease.failed",
+          correlation: { threadId },
+          payload: unknownToEventPayload(error),
+        });
+      }
+    }
+
     let reports = await deps.repos.executionReports.listUnfinalized(limit, reportCursor);
     if (reports.length === 0 && reportCursor) {
       reportCursor = undefined;
@@ -153,7 +186,7 @@ export function createOrphanReportRepair(deps: {
         });
       }
     }
-    return unsettled.length + placeholders.length + reports.length;
+    return unsettled.length + placeholders.length + expired.length + reports.length;
   }
 
   return { sweep };
