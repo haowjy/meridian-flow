@@ -54,11 +54,18 @@ const NONE: ReadonlySet<string> = new Set();
 
 let root: Root;
 let latest: ThreadControls;
-function Probe(props: { items?: readonly PendingInboxItem[] }) {
+function Probe(props: {
+  items?: readonly PendingInboxItem[];
+  version?: string;
+  history?: string;
+  answered?: ReadonlySet<string>;
+}) {
   latest = useThreadControls({
     threadId: "thread-1",
     items: props.items ?? EMPTY,
-    answeredCompactionIds: NONE,
+    version: props.version ?? "1",
+    history: props.history ?? null,
+    answeredControlIds: props.answered ?? NONE,
     switches: NO_SWITCHES,
   });
   return null;
@@ -113,6 +120,32 @@ describe("useThreadControls", () => {
     await act(async () => root.render(<Probe items={[listed]} />));
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
     expect(invalidateQueries).toHaveBeenCalled();
+    // The record drops the item as the compaction starts, before its divider reaches the
+    // transcript: the row holds (no frame with neither), and asks for the snapshot that proves it.
+    invalidateQueries.mockClear();
+    await act(async () => root.render(<Probe version="2" />));
+    expect(latest.queued.map((row) => row.id)).toEqual([id]);
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    // A snapshot older than the drop proves nothing; the divider's control id retires the row.
+    await act(async () => root.render(<Probe version="2" history="1" />));
+    expect(latest.queued.map((row) => row.id)).toEqual([id]);
+    await act(async () => root.render(<Probe version="2" history="2" answered={new Set([id])} />));
+    expect(latest.queued).toEqual([]);
+    // Another tab's Withdraw drops an item and no turn ever comes: a snapshot at the drop proves it.
+    const other = {
+      id: "c9",
+      intent: "control",
+      seq: 1,
+      control: { kind: "compact" },
+      provenance: { kind: "writer" },
+      deliveryState: "waiting",
+    } as PendingInboxItem;
+    await act(async () => root.render(<Probe version="3" items={[other]} />));
+    expect(latest.queued.map((row) => row.id)).toEqual(["c9"]);
+    await act(async () => root.render(<Probe version="4" />));
+    expect(latest.queued.map((row) => row.id)).toEqual(["c9"]);
+    await act(async () => root.render(<Probe version="4" history="4" />));
+    expect(latest.queued).toEqual([]);
   });
 
   it("removes the row at once, and withdraws once the in-flight enqueue lands", async () => {

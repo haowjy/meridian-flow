@@ -2,7 +2,6 @@
 
 import { t } from "@lingui/core/macro";
 import { isTerminalTurnStatus } from "@meridian/contracts/protocol";
-import { answeredControlIds } from "@meridian/contracts/threads";
 import type { InheritedMark, TranscriptView, ViewRow } from "@meridian/thread-client";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
@@ -122,15 +121,12 @@ export function TurnList({
   // record says applies at the next run's start is the exception: its turn lands before that
   // run's reply, so its notice sits where `viewTranscript` puts the slot.
   const { beforeReply, tailControls } = useMemo(() => {
-    const answered = answeredControlIds(view.turns);
-    const pending = (controls?.queued ?? NO_CONTROLS).filter(
-      (control) => !answered.has(control.id),
-    );
+    const pending = controls?.queued ?? NO_CONTROLS;
     return {
       beforeReply: pending.filter((control) => control.awaitsRun),
       tailControls: pending.filter((control) => !control.awaitsRun),
     };
-  }, [controls?.queued, view.turns]);
+  }, [controls?.queued]);
   // List rows are transcript rows shifted down by the alert, when it shows, and by the notice
   // that sits among them.
   const rowOffset = onRetryInherited ? 1 : 0;

@@ -130,8 +130,15 @@ when it does not have the command. A confirmed answer (`withdrawn` or
 state; the announcer says "This compaction already started." A 404 only drops
 the local send: the enqueue may still have been committing, so if the record
 lists the id later the row shows again, queued, with Stop. A failed
-withdrawal brings the row back with "Couldn't withdraw. Try again." A command
-a divider already names (`controlMessageId`) is no longer queued.
+withdrawal brings the row back with "Couldn't withdraw. Try again." A queued
+command's row, compaction or write-mode switch, leaves by one rule
+(`retainControls` in `thread-controls.ts`, applied in `useThreadControls` to both row
+sources): it stays until a transcript turn carries its control id
+(`answeredControlIds`), because the record drops the item as the command starts,
+before its divider reaches the transcript. Otherwise it leaves on proof that it
+won't run: this device's Stop, or an accepted snapshot at or after the record that
+dropped it (`history` in the run-state slice) whose turns lack the id (a Withdraw
+from another tab). A dropped row asks for that snapshot.
 
 One announcer. Rows and dividers carry no live region; `useThreadControls`
 announces each writer-caused change and `useControlTurnAnnouncements` each

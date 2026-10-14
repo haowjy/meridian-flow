@@ -41,7 +41,7 @@ import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
 import {
   useIsThreadPendingCreation,
-  useRunState,
+  useRunStateSlice,
   useThreadActions,
   useThreadStore,
 } from "@/client/stores";
@@ -170,7 +170,7 @@ export function ChatView({
   const inherited = useInheritedView(activeThread, derivation?.inherited ?? null);
   const storedTurns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const brief = useHandoffBrief({ threadId, storedTurns });
-  const runState = useRunState(threadId);
+  const { view: runState, history } = useRunStateSlice(threadId);
   const replyRetry = useReplyRetry({ threadId, storedTurns });
   // A handoff's brief is on its way the moment the writer lands; until the
   // server's seed arrives the card stands in for it (it has nothing to stop
@@ -295,7 +295,7 @@ export function ChatView({
       },
     },
   );
-  const answeredCompactions = useMemo(() => answeredControlIds(turns), [turns]);
+  const answeredControls = useMemo(() => answeredControlIds(turns), [turns]);
   const switches = useSwitchView({
     threadId,
     projectId,
@@ -310,7 +310,9 @@ export function ChatView({
   const controls = useThreadControls({
     threadId,
     items: runState.record?.items ?? NO_ITEMS,
-    answeredCompactionIds: answeredCompactions,
+    version: runState.record?.version ?? null,
+    history,
+    answeredControlIds: answeredControls,
     switches,
   });
   useControlTurnAnnouncements(turns);

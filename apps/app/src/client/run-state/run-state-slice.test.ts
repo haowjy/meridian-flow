@@ -462,4 +462,13 @@ it("derives the switch rows and toolbar mode from server facts at one seq and un
         `${scenario.name} (retained)`,
       ).toEqual(scenario.retained);
   }
+  // Risk (F19): `history` is the accepted snapshot's alone, and never goes back. A queued row
+  // that a record dropped waits on it, so an answer's or frame's record must not move it.
+  let state = reduceRunState(INITIAL_RUN_STATE_SLICE, {
+    type: "history",
+    runState: runState(at(5), "direct", []),
+  });
+  state = reduceRunState(state, { type: "record", runState: runState(at(6), "direct", []) });
+  state = reduceRunState(state, { type: "history", runState: runState(at(4), "direct", []) });
+  expect(state.history).toBe(at(5));
 });

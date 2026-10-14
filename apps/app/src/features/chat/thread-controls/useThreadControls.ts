@@ -29,9 +29,11 @@ import { controlAlreadyStartedCopy, controlStatusCopy, controlStoppedCopy } from
 import {
   type CompactControl,
   controlsReducer,
+  type HeldControls,
   mergeQueuedControls,
   NO_LOCAL_CONTROLS,
   type QueuedControl,
+  retainControls,
 } from "./thread-controls";
 import type { SwitchView } from "./useSwitchView";
 
@@ -50,10 +52,19 @@ export function useThreadControls(input: {
   threadId: string;
   /** The run-state record's items. */
   items: readonly PendingInboxItem[];
-  answeredCompactionIds: ReadonlySet<string>;
+  /** The record's version, and the newest accepted snapshot's: what a dropped row waits on. */
+  version: string | null;
+  history: string | null;
+  /** Every command a transcript divider names. */
+  answeredControlIds: ReadonlySet<string>;
   switches: SwitchView;
 }): ThreadControls {
-  const { threadId, items, answeredCompactionIds, switches } = input;
+  const { threadId, items, version, history, answeredControlIds, switches } = input;
+  const held = useRef<{ threadId: string; controls: HeldControls }>({
+    threadId,
+    controls: new Map(),
+  });
+  if (held.current.threadId !== threadId) held.current = { threadId, controls: new Map() };
   const { dispatchRunState } = useThreadActions();
   const [local, dispatch] = useReducer(controlsReducer, NO_LOCAL_CONTROLS);
   const localRef = useRef(local);
@@ -125,6 +136,8 @@ export function useThreadControls(input: {
 
   const withdraw = useCallback(
     (queued: QueuedControl) => {
+      // The writer's own Stop is the server being told it won't run: the row goes at once.
+      held.current.controls.delete(queued.id);
       if (queued.control.kind === "write_mode") return withdrawSwitch(queued);
       dispatch({ type: "withdraw", id: queued.id });
       announce(controlStoppedCopy(queued.control));
@@ -151,11 +164,23 @@ export function useThreadControls(input: {
     [dispatchRunState, revalidate, threadId, withdrawSwitch],
   );
 
-  const compactRows = useMemo(
-    () => mergeQueuedControls({ local, items, executedControlIds: answeredCompactionIds }),
-    [answeredCompactionIds, local, items],
+  const compactRows = useMemo(() => mergeQueuedControls({ local, items }), [local, items]);
+  const queued = useMemo(
+    () =>
+      retainControls(held.current.controls, {
+        rows: [...compactRows, ...switches.rows],
+        answered: answeredControlIds,
+        version,
+        history,
+      }),
+    [compactRows, switches.rows, answeredControlIds, version, history],
   );
-  const queued = useMemo(() => [...compactRows, ...switches.rows], [compactRows, switches.rows]);
+  // A row the record dropped waits for its turn or for proof it won't run: ask for that proof.
+  const droppedRows = queued.filter((row) => held.current.controls.get(row.id)?.droppedAt != null);
+  const droppedKey = droppedRows.map((row) => row.id).join(",");
+  useEffect(() => {
+    if (droppedKey) revalidate();
+  }, [droppedKey, revalidate]);
 
   return {
     queued,
