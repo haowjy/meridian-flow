@@ -818,6 +818,14 @@ else
           ...(await rig.repos.turns.listLatestLocalRequesterText([rig.threadId as never])).values(),
         ].join(""),
       ).not.toContain("M5 hidden preview");
+
+      // A send after a handed-back leaf chains from the graph, and its reply never sees M5.
+      const m6 = (await rig.send(rig.threadId, "M6 after the hidden leaf")).userTurnId;
+      const last = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
+      await last.execute();
+      await processDetachedWork.drain();
+      expect((await rowOf(rig, m6)).by).not.toBeNull();
+      expect(JSON.stringify(rig.gateway.requests.at(-1))).not.toContain("M5 hidden preview");
     });
 
     it("row 38: a replay returns the stored decision after the compaction that held the message dies", async () => {
