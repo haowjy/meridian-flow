@@ -111,16 +111,6 @@ msgstr ""
 msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 msgstr ""
 
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-#~ msgid "{0, plural, one {drafted # document} other {drafted # documents}}"
-#~ msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-#~ msgid "{0, plural, one {edited # document} other {edited # documents}}"
-#~ msgstr ""
-
 #. placeholder {0}: readDocuments.size
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
@@ -412,16 +402,8 @@ msgid "A file named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-#~ msgid "A file named {candidate} already exists in this location."
-#~ msgstr ""
-
-#: src/features/project/context/context-entry-name.ts
 msgid "A file named {name} already exists in this location."
 msgstr ""
-
-#: src/features/project/context/context-entry-name.ts
-#~ msgid "A file named {trimmed} already exists in this location."
-#~ msgstr ""
 
 #. placeholder {0}: identityNote.name
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -429,16 +411,8 @@ msgid "A folder named {0} already exists in this location."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-#~ msgid "A folder named {candidate} already exists in this location."
-#~ msgstr ""
-
-#: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
 msgstr ""
-
-#: src/features/project/context/context-entry-name.ts
-#~ msgid "A folder named {trimmed} already exists in this location."
-#~ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
 #: src/core/editor/images/ImageIngressExtension.ts
@@ -527,10 +501,6 @@ msgstr ""
 msgid "Add usage"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Added"
-#~ msgstr ""
-
 #: src/features/chat/ChangeViewRows.tsx
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "After"
@@ -557,10 +527,6 @@ msgstr ""
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
 msgstr ""
-
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "AI edits wait here for your review."
-#~ msgstr ""
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "AI write mode"
@@ -645,11 +611,6 @@ msgstr ""
 #: src/features/editor/DraftReviewBand.tsx
 msgid "Apply"
 msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Apply all"
-#~ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Apply all changes"
@@ -935,11 +896,6 @@ msgstr ""
 msgid "Chats in this Work share its goal and scratch files."
 msgstr ""
 
-#: src/components/app/composer/Composer.tsx
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Check submission status"
-#~ msgstr ""
-
 #: src/features/chat/command-descriptor.ts
 msgid "Checked Work"
 msgstr ""
@@ -963,10 +919,6 @@ msgstr "我来说两句"
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Choose a document or enter a web address or document path."
 msgstr ""
-
-#: src/features/project/context/IdentityChips.tsx
-#~ msgid "Choose a home"
-#~ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
@@ -1104,11 +1056,6 @@ msgstr ""
 msgid "Column options"
 msgstr ""
 
-#. placeholder {0}: proposal.contributingTurnIds.length
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Combines {0} AI turns"
-#~ msgstr ""
-
 #: src/components/app/composer/Composer.tsx
 msgid "Commands"
 msgstr ""
@@ -1167,10 +1114,6 @@ msgstr ""
 #: src/components/app/ConnectionBanner.tsx
 msgid "Connection lost. Retrying… attempt {0}"
 msgstr ""
-
-#: src/features/project/dock/DockHeader.tsx
-#~ msgid "Context"
-#~ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 #: src/features/chat/compaction/useControlTurnAnnouncements.ts
@@ -1311,10 +1254,6 @@ msgstr ""
 msgid "Couldn't confirm whether this applied. Check what is left before you try again."
 msgstr ""
 
-#: src/features/chat/ReviewMessageText.tsx
-#~ msgid "Couldn't confirm whether this applied. It will update when you're back online."
-#~ msgstr ""
-
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't confirm whether this discarded. Check what is left before you try again."
 msgstr ""
@@ -1400,14 +1339,6 @@ msgstr ""
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard. Check your connection and try again."
 msgstr ""
-
-#: src/features/chat/ReviewMessageText.tsx
-#~ msgid "Couldn't discard. Try again."
-#~ msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Couldn't draft"
-#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
@@ -1608,14 +1539,6 @@ msgstr "未能发送你的消息。"
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr ""
-
-#: src/components/app/composer/Composer.tsx
-#~ msgid "Couldn't send. Nothing was lost."
-#~ msgstr ""
-
-#: src/components/app/composer/Composer.tsx
-#~ msgid "Couldn't send. Your message was not lost."
-#~ msgstr ""
 
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Couldn't start a new brief. Try again."
@@ -1855,11 +1778,6 @@ msgstr ""
 msgid "Discard"
 msgstr ""
 
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewHeader.tsx
-#~ msgid "Discard all"
-#~ msgstr ""
-
 #: src/features/project/work/WorkChanges.tsx
 msgid "Discard all changes"
 msgstr ""
@@ -1912,10 +1830,6 @@ msgstr ""
 msgid "Divider"
 msgstr ""
 
-#: src/features/project/dock/DockHeader.tsx
-#~ msgid "Dock view"
-#~ msgstr ""
-
 #: src/features/chat/useDraftDock.ts
 msgid "Document"
 msgstr ""
@@ -1962,27 +1876,6 @@ msgstr ""
 msgid "Draft review"
 msgstr ""
 
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Drafted"
-#~ msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-#~ msgid "drafted {0}"
-#~ msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Drafted file"
-#~ msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Drafting"
-#~ msgstr "起草中"
-
-#: src/features/project/work/WorkDrafts.tsx
-#~ msgid "Drafts to review"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/images/ImageIngressOverlay.tsx
 msgid "Drop image to insert it"
 msgstr ""
@@ -2027,11 +1920,6 @@ msgstr ""
 #: src/features/draft-review/ReviewChangeRow.tsx
 msgid "Edited"
 msgstr ""
-
-#. placeholder {0}: editedDocuments.size
-#: src/features/chat/thinking-digest.ts
-#~ msgid "edited {0}"
-#~ msgstr ""
 
 #. placeholder {0}: formatRelativeTime(project.updatedAt, now)
 #: src/features/home/ProjectLibrary.tsx
@@ -2395,10 +2283,6 @@ msgstr ""
 msgid "In a draft"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Includes your edits"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Inline code"
 msgstr ""
@@ -2683,10 +2567,6 @@ msgstr ""
 msgid "Merge cells"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Merged"
-#~ msgstr ""
-
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Merged cells stay where they are."
 msgstr ""
@@ -2788,10 +2668,6 @@ msgstr ""
 #: src/features/project/context/LinkUpdateNote.tsx
 msgid "Moved to {0}"
 msgstr ""
-
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Moved to composer."
-#~ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Moved to the message box."
@@ -2979,10 +2855,6 @@ msgstr ""
 msgid "No notes yet. The AI keeps its notes for this chat here."
 msgstr ""
 
-#: src/features/project/dock/DockChangesView.tsx
-#~ msgid "No pending changes"
-#~ msgstr ""
-
 #: src/features/billing/BillingPage.tsx
 msgid "No plans available."
 msgstr ""
@@ -3132,10 +3004,6 @@ msgstr ""
 msgid "Open conversation"
 msgstr ""
 
-#: src/features/project/dock/DockDocumentTitle.tsx
-#~ msgid "Open document"
-#~ msgstr ""
-
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Open existing"
 msgstr ""
@@ -3234,10 +3102,6 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "Paused to reread"
 msgstr ""
-
-#: src/features/project/work/WorkDrafts.tsx
-#~ msgid "Pending draft"
-#~ msgstr ""
 
 #: src/features/project/work/WorkChanges.tsx
 msgid "Pending drafts couldn’t load"
@@ -3463,10 +3327,6 @@ msgstr ""
 msgid "Remove reference"
 msgstr ""
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Removed"
-#~ msgstr ""
-
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/ContextTreeRows.tsx
@@ -3484,10 +3344,6 @@ msgstr ""
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename project: {title}"
 msgstr ""
-
-#: src/features/project/context/IdentityChips.tsx
-#~ msgid "Rename this document or move it somewhere else in your project."
-#~ msgstr ""
 
 #: src/features/project/work/WorkTitles.tsx
 msgid "Rename Work"
@@ -3509,10 +3365,6 @@ msgstr ""
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens the documents you had open when you switch devices."
 msgstr "切换设备时，会重新打开你之前打开的文档。"
-
-#: src/features/account/WorkingSetSyncPreferenceRow.tsx
-#~ msgid "Reopens your last document and chat when you switch devices"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
@@ -3566,10 +3418,6 @@ msgstr ""
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume my documents on any device"
 msgstr "在任何设备上继续处理我的文档"
-
-#: src/features/account/WorkingSetSyncPreferenceRow.tsx
-#~ msgid "Resume where I left off on any device"
-#~ msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
@@ -3629,15 +3477,6 @@ msgstr ""
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Returned from the billing portal."
 msgstr ""
-
-#: src/features/chat/DraftDock.tsx
-#: src/features/editor/DraftReviewChip.tsx
-#~ msgid "Review draft"
-#~ msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Rewrote"
-#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
@@ -3939,11 +3778,6 @@ msgstr ""
 #: src/features/project/work/WorkCollection.tsx
 msgid "Start a Work"
 msgstr ""
-
-#: src/components/app/composer/Composer.tsx
-#: src/features/chat/UserTurn.tsx
-#~ msgid "Start over"
-#~ msgstr ""
 
 #: src/features/editor/SessionEditor.tsx
 msgid "Start writing…"
@@ -4254,10 +4088,6 @@ msgstr ""
 msgid "The AI provider turned this request down."
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
-#~ msgid "The AI provider turned this request down. Trying again won't help until that's fixed."
-#~ msgstr ""
-
 #: src/features/project/context/ContextViewer.tsx
 msgid "The assistant referred to this document, but it isn't there now. It may have been renamed, deleted, or never finished being created."
 msgstr ""
@@ -4409,10 +4239,6 @@ msgid "This change is no longer reversible."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "This change is too old to undo."
-#~ msgstr ""
-
-#: src/features/chat/TurnEditsReceipt.tsx
 msgid "This change no longer matches the chapter text, so it can't be reversed."
 msgstr ""
 
@@ -4552,16 +4378,8 @@ msgid "This document was deleted from your project after the draft started. Chec
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document was renamed to a name that is now in use. Check it, then apply again."
-msgstr ""
-
-#: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft is no longer here. It may have been applied or discarded elsewhere."
 msgstr ""
-
-#: src/features/project/context/IdentityChips.tsx
-#~ msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
-#~ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
@@ -4854,10 +4672,6 @@ msgstr ""
 msgid "Untitled document"
 msgstr ""
 
-#: src/features/project/work/WorkChangeFile.tsx
-#~ msgid "Untitled manuscript"
-#~ msgstr ""
-
 #: src/lib/project-title.ts
 msgid "Untitled project"
 msgstr ""
@@ -4979,10 +4793,6 @@ msgstr "你在想什么？"
 msgid "Where were we?"
 msgstr "我们说到哪儿了？"
 
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Why this is marked merged"
-#~ msgstr ""
-
 #: src/features/chat/compaction/QueuedControlRows.tsx
 msgid "Withdraw"
 msgstr ""
@@ -5057,14 +4867,6 @@ msgstr "写作中"
 msgid "Writing the handoff brief"
 msgstr ""
 
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Wrote"
-#~ msgstr ""
-
-#: src/features/chat/command-descriptor.ts
-#~ msgid "Wrote file"
-#~ msgstr ""
-
 #: src/features/project/RecencyGroupedList.tsx
 msgid "Yesterday"
 msgstr "昨天"
@@ -5110,10 +4912,6 @@ msgstr ""
 #: src/features/chat/InterruptResponseFeedback.tsx
 msgid "Your answer may not have reached the agent."
 msgstr ""
-
-#: src/features/project/dock/ReviewOperationCard.tsx
-#~ msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
-#~ msgstr ""
 
 #: src/features/chat/UserTurn.tsx
 msgid "Your message"
