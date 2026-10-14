@@ -2079,8 +2079,8 @@ msgstr "File suggestions"
 msgid "File this document"
 msgstr "File this document"
 
+#: src/features/project/context/PendingDocumentPath.tsx
 #: src/features/project/mobile/MobileProject.tsx
-#: src/features/project/routing/EditorRouteChrome.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Files"
 msgstr "Files"

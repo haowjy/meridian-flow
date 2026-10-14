@@ -17,11 +17,12 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import type { ContextTab } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
-
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
+import { DocumentDraftHint } from "@/features/editor/DocumentDraftHint";
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { useAiDraftLauncher } from "../dock/useAiDraftLauncher";
 import { MobileChangeBar } from "./MobileChangeBar";
@@ -30,15 +31,18 @@ import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileReviewHeader } from "./MobileReviewHeader";
 
 export function MobileDocumentReview({
-  documentId,
+  projectId,
+  tab,
   onCloseDraftOnly,
   children,
 }: {
-  documentId: string;
+  projectId: string;
+  tab: ContextTab;
   /** Set for a draft-only document: its review closes the document instead of returning to live. */
   onCloseDraftOnly?: () => void;
   children: ReactNode;
 }) {
+  const { documentId } = tab;
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
@@ -62,6 +66,7 @@ export function MobileDocumentReview({
         ) : (
           <LiveDraftEntry documentId={documentId} />
         )}
+        <DocumentDraftHint projectId={projectId} tab={tab} />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         {itemKey ? (
           <ReviewBottom header={header} listOpen={listOpen} onListOpenChange={setListOpen} />
