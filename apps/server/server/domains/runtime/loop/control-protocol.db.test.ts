@@ -1848,6 +1848,30 @@ else
                 await interleave();
               });
           },
+          /**
+           * Runs `interleave` once, at the first boundary a pending switch can apply behind:
+           * a separate pre-claim apply step where one exists, otherwise the run claim.
+           */
+          beforeSwitchApplies(interleave: () => Promise<unknown>) {
+            let armed = true;
+            const fire = async () => {
+              if (!armed) return;
+              armed = false;
+              await interleave();
+            };
+            const delivery = rig.delivery as unknown as Record<string, unknown>;
+            const preClaim = delivery.applyDueSwitches;
+            if (typeof preClaim === "function")
+              delivery.applyDueSwitches = async (...args: unknown[]) => {
+                await fire();
+                return preClaim.apply(rig.delivery, args);
+              };
+            rig.runClaim.startExecution = (threadId, executionId, settle) =>
+              start(threadId, executionId, async () => {
+                await settle();
+                await fire();
+              });
+          },
           retry: (replyTurnId: string) =>
             rig.orchestrator.retryReply({
               threadId: rig.threadId,
@@ -1886,10 +1910,13 @@ else
       });
 
       it("refuses a Retry a newer message overtook and leaves the queued switch pending", async () => {
-        const { rig, whileClaiming, retry } = await failedReplyRig();
-        whileClaiming(async () => {
+        const { rig, beforeSwitchApplies, retry } = await failedReplyRig();
+        // The switch is already queued when Retry starts; the message lands after Retry's
+        // eligibility reads and before the switch applies, so applying would bury it.
+        await switchMode(rig, "draft");
+        expect(await switchTurns(rig)).toEqual([]);
+        beforeSwitchApplies(async () => {
           await rig.send(rig.threadId, "A newer message");
-          await switchMode(rig, "draft");
         });
 
         const replyTurnId = crypto.randomUUID();

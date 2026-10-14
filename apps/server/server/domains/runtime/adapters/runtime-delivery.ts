@@ -514,7 +514,9 @@ export function createDeliveryAdapter(
    * transaction (the chat's mode, the switch turn at the active leaf, the
    * control's ack) when `next` says a run follows it, or a Retry runs. A
    * switch queued while setup was in flight is found by the retry loop in
-   * `prepareAndCommit`, whose commit validates this very selection.
+   * `prepareAndCommit`, whose commit validates this very selection. An
+   * optimistic preparation attempt can commit the switch before its reservation;
+   * a discarded attempt leaves the switch applied.
    */
   async function selectRunStart(
     threadId: ThreadId,
