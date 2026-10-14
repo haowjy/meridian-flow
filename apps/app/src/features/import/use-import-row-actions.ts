@@ -22,6 +22,7 @@ export function useImportRowActions(info: ImportRowInfo | undefined): ImportRowA
   const failure = info?.failure;
   const notStarted = info?.notStarted;
   const run = info?.run;
+  const preparing = info?.preparing;
   return useMemo(() => {
     if (!imports) return null;
     const { coordinator } = imports;
@@ -30,6 +31,8 @@ export function useImportRowActions(info: ImportRowInfo | undefined): ImportRowA
         tryAgain: () => coordinator.tryAgain(notStarted.importId),
         discard: () => void coordinator.discard(notStarted.importId),
       };
+    // Nothing has arrived to confirm giving up, so Stop ends the run at once.
+    if (preparing) return { stop: () => void coordinator.stop(preparing.importId) };
     if (run)
       return {
         retryFailed: () => void coordinator.retry(run.importId),
@@ -43,5 +46,5 @@ export function useImportRowActions(info: ImportRowInfo | undefined): ImportRowA
         else imports.openContinue(failure.importId);
       },
     };
-  }, [imports, failure, notStarted, run]);
+  }, [imports, failure, notStarted, run, preparing]);
 }

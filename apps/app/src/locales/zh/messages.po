@@ -196,12 +196,6 @@ msgstr ""
 msgid "{0} isn't in {section}."
 msgstr ""
 
-#. placeholder {0}: run.arrived
-#. placeholder {1}: run.total
-#: src/features/import/reason-copy.ts
-msgid "{0} of {1} files have arrived."
-msgstr ""
-
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
@@ -302,7 +296,7 @@ msgstr ""
 
 #: src/features/import/milestones.ts
 msgid "{failed, plural, one {# file didn't import.} other {# files didn't import.}}"
-msgstr ""
+msgstr "{failed, plural, other {# 个文件未能导入。}}"
 
 #: src/core/editor/images/image-imports.ts
 msgid "{filename} could not be read from that site. It stayed a link."
@@ -391,7 +385,7 @@ msgstr ""
 
 #: src/features/import/StopImportDialog.tsx
 msgid "{remaining, plural, one {# file hasn't arrived.} other {# files haven't arrived.}}"
-msgstr ""
+msgstr "{remaining, plural, other {# 个文件尚未到达。}}"
 
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
@@ -416,6 +410,10 @@ msgstr ""
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "{title} removed from Favorites"
 msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "{total, plural, one {{arrived} of # file has arrived.} other {{arrived} of # files have arrived.}}"
+msgstr "{total, plural, other {已到达 {arrived} 个,共 # 个文件。}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -3367,6 +3365,10 @@ msgstr ""
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
 msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "Preparing your files."
+msgstr "正在准备你的文件。"
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"

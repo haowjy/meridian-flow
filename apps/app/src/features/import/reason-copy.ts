@@ -93,9 +93,16 @@ function unhandled(code: never): string {
   return serverError();
 }
 
+/** What the mark says between reading the selection and the server's answer. */
+export const preparingSentence = () => t`Preparing your files.`;
+
 /** What a running import's mark says, on hover and at the top of its menu. */
 export function runSentence(run: ImportRunInfo): string {
-  const progress = t`${run.arrived} of ${run.total} files have arrived.`;
+  const { arrived, total } = run;
+  const progress = plural(total, {
+    one: `${arrived} of # file has arrived.`,
+    other: `${arrived} of # files have arrived.`,
+  });
   switch (run.kind) {
     case "sending":
       return t`Sending your files. ${progress}`;

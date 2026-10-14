@@ -32,6 +32,8 @@ export type ImportRowInfo = {
   arriving?: true;
   /** An import into this folder is still reading what the writer chose. */
   reading?: true;
+  /** Hashing and planning: the selection is read, the server has not answered. Stop ends it. */
+  preparing?: { importId: string };
   /** The plan was refused or lost; this row carries the import's warning, Try again and Discard. */
   /** The accepted import's own state, carried by its root row, destination or area header. */
   run?: ImportRunInfo;

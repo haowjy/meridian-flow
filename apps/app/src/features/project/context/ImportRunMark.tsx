@@ -19,7 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { refusalSentence, runSentence } from "@/features/import/reason-copy";
+import { preparingSentence, refusalSentence, runSentence } from "@/features/import/reason-copy";
 import { useImportRowActions } from "@/features/import/use-import-row-actions";
 
 const MARK_BOX =
@@ -28,6 +28,15 @@ const MARK_BOX =
 export function ImportRunMark({ info }: { info: ImportRowInfo | undefined }) {
   const actions = useImportRowActions(info);
   if (info?.reading) return <SpinnerMark label={t`Reading your files`} />;
+  if (info?.preparing)
+    return (
+      <MarkMenu message={preparingSentence()} warn={false}>
+        <MenuAction onSelect={actions?.stop}>
+          <Square className="size-3.5 text-muted-foreground" aria-hidden />
+          <Trans>Stop import</Trans>
+        </MenuAction>
+      </MarkMenu>
+    );
   const run = info?.run;
   if (run?.kind === "stopping") return <SpinnerMark label={runSentence(run)} />;
   if (run) {

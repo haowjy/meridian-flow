@@ -196,12 +196,6 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
-#. placeholder {0}: run.arrived
-#. placeholder {1}: run.total
-#: src/features/import/reason-copy.ts
-msgid "{0} of {1} files have arrived."
-msgstr "{0} of {1} files have arrived."
-
 #. placeholder {0}: children.length
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "{0} running"
@@ -416,6 +410,10 @@ msgstr "{title} added to Favorites"
 #: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "{title} removed from Favorites"
 msgstr "{title} removed from Favorites"
+
+#: src/features/import/reason-copy.ts
+msgid "{total, plural, one {{arrived} of # file has arrived.} other {{arrived} of # files have arrived.}}"
+msgstr "{total, plural, one {{arrived} of # file has arrived.} other {{arrived} of # files have arrived.}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -3367,6 +3365,10 @@ msgstr "Plans"
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
 msgstr "Preferences"
+
+#: src/features/import/reason-copy.ts
+msgid "Preparing your files."
+msgstr "Preparing your files."
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Preview not available"

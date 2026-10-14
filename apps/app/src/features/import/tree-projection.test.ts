@@ -410,6 +410,15 @@ describe("withImportRows", () => {
     expect(atRoot.root.import?.reading).toBe(true);
   });
 
+  it("marks the destination as preparing until the server answers", () => {
+    const preparing = importOf({ phase: { kind: "preparing" }, folderId: "dest", rows: [] });
+    const view = withImportRows(catalogOf(dir("dest", "Lore")), "kb", [preparing]);
+    expect(view.children("root")[0].import?.preparing).toEqual({ importId: "i" });
+    const answered = importOf({ phase: { kind: "preparing" }, folderId: "dest", accepted: {} });
+    const after = withImportRows(catalogOf(dir("dest", "Lore")), "kb", [answered]);
+    expect(after.children("root")[0].import?.preparing).toBeUndefined();
+  });
+
   it("offers Retry only while this tab holds the files", () => {
     const accepted = {
       entries: [entry(1, "m1", null, { state: "failed", reason: "upload_failed" })],

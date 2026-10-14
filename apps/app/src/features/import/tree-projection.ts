@@ -182,6 +182,8 @@ function runMarks(
     const anchorId = (folderId: string | null) => folderId ?? rootId;
     if (local?.phase.kind === "reading")
       for (const anchor of anchors) add(anchorId(anchor.folderId), { reading: true });
+    if (local?.phase.kind === "preparing" && !state.status && state.stop === "none")
+      for (const anchor of anchors) add(anchorId(anchor.folderId), { preparing: { importId } });
     const run = runInfoOf(importId, state);
     const info: ImportRowInfo | null =
       local?.phase.kind === "not-started"
