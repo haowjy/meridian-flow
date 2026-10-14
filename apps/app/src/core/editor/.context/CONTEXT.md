@@ -286,9 +286,13 @@ lifetime.
   cursors both leave the front view's caret. Undo is the other half: the room is shared, undo authorship is
   not. y-tiptap tags every editor's local write with the one global `ySyncPluginKey`
   origin, so two editors on one Y.Doc would each capture the other's typing.
-  `UndoOwnershipExtension` gives each editor its own origin (stamped on its binding's
-  writes, and used by its Discards) and its UndoManager keeps only those, so Ctrl+Z in
-  either view undoes only that view's own typing and Discards.
+  `UndoOwnershipExtension` gives each surface (the Editor, the dock) its own origin (stamped
+  on its binding's writes, and used by its Discards) and its UndoManager keeps only those,
+  so Ctrl+Z in either view undoes only that view's own typing and Discards. The history
+  (`SurfaceHistory`) belongs to the room's `DocumentSession.historyFor(surface)`, not the
+  editor: a presenter handoff rebuilds the editor, and an UndoManager made by y-tiptap dies
+  with it. Each editor a surface mounts adopts the session's history through
+  `yUndoOptions.undoManager`; Collaboration detaches and re-attaches it across views.
   The stamp is written by an exact-version `pnpm patch` of `@tiptap/y-tiptap@3.0.5`
   (`patches/@tiptap__y-tiptap@3.0.5.patch`): the binding gains `ownershipMeta`, and
   `_prosemirrorChanged` sets that meta key on its own PM-to-Y transaction. Wrapping the

@@ -9,6 +9,10 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
+import {
+  createSurfaceHistory,
+  type SurfaceHistory,
+} from "@/core/editor/extensions/UndoOwnershipExtension";
 import { createLocalPresence } from "@/core/editor/local-presence";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
 import { createReviewRuntime, type ReviewRuntime } from "@/features/draft-review/review-runtime";
@@ -33,7 +37,9 @@ export function createReviewEditor(
   paragraphs: string[],
   /** A room another editor is already bound to: bind to it unseeded, as the dock and the Editor tab do. */
   sharedDoc?: Y.Doc,
-): { editor: Editor; doc: Y.Doc } {
+  /** The history a session keeps for a surface: an editor rebuilt over it carries on from the one before. */
+  adopted?: SurfaceHistory,
+): { editor: Editor; doc: Y.Doc; history: SurfaceHistory } {
   const doc = sharedDoc ?? new Y.Doc({ gc: false });
   const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   if (!sharedDoc) {
@@ -47,6 +53,7 @@ export function createReviewEditor(
       }
     }, "seed");
   }
+  const history = adopted ?? createSurfaceHistory(fragment);
   const element = document.createElement("div");
   const pane = createManuscriptPane();
   pane.append(element);
@@ -58,10 +65,11 @@ export function createReviewEditor(
       presence: createLocalPresence(new Awareness(doc)),
       showCollaborationDecorations: false,
       enableDraftInlineReview: true,
+      history,
     }),
   });
   editors.push({ editor, pane });
-  return { editor, doc };
+  return { editor, doc, history };
 }
 
 /** Absolute editor position of the first character of `needle`. */
