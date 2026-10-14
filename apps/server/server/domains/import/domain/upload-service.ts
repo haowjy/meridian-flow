@@ -254,12 +254,11 @@ export function createImportUploadService(deps: {
         };
       });
     },
-    async listOpen(userId: string) {
-      return Promise.all(
-        (await repo.listOpen(userId)).map((record) => importSummary(repo, record)),
-      );
-    },
   };
+}
+
+export async function queryOpenImports(repo: ImportRepository, userId: string) {
+  return Promise.all((await repo.listOpen(userId)).map((record) => importSummary(repo, record)));
 }
 
 export async function importSummary(

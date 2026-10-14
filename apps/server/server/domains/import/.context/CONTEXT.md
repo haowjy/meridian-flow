@@ -86,3 +86,15 @@ targets and hrefs, preserving adjacent links that spell the same address. The
 organizer binds selected targets directly by their planned document ids; ordinary
 unresolved links keep address-based ahead refs. There is no release-to-address
 fallback for selected targets.
+
+
+## Organize transaction seam (D2)
+
+Keep `OrganizeQueue` (claim, heartbeat and release with token predicates) separate
+from the repository. Add one organize transaction entry before build, reset and
+reveal callers: lock the import, check organizing/token/generation, acquire the
+project lifecycle gate shared and check liveness, then run repository and Context
+staging writes in that same transaction. The generation reset persists placement,
+increments generation, resets prepared entries set-wise and discards the old stage.
+Do not add token arguments to upload mutations or open a second Context transaction.
+The entry awaits lane B's staged-creation boundary; it is not an upload capability.

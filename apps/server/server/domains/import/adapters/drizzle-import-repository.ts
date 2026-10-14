@@ -196,12 +196,6 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           ),
         );
     },
-    async skipEntries(id, states, reason) {
-      await tx()
-        .update(importEntries)
-        .set({ state: "skipped", reason })
-        .where(and(eq(importEntries.importId, id), inArray(importEntries.state, states)));
-    },
     async refreshCounts(id) {
       const [counts] = await tx()
         .select({

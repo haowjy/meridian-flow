@@ -27,25 +27,6 @@ export function createImportAdmission(
   };
 }
 
-/** Run at most `limit` tasks at once, preserving input order in the results. */
-export async function mapBounded<T, R>(
-  items: readonly T[],
-  limit: number,
-  run: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await run(items[index]);
-      }
-    }),
-  );
-  return results;
-}
-
 /** The response deadline never releases admission while body/storage execution is still alive. */
 export async function inReceiveScope<Context, Result>(
   input: {

@@ -1,13 +1,14 @@
 /** Upload service composition; organize attaches to the durable queue in the next phase. */
+import { IMPORT_SCHEMES } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { createDrizzleContextParentLocations } from "../context/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { ObjectStorePort } from "../storage/index.js";
-import { createContextImportTreeWriter, IMPORT_AREAS } from "./adapters/context-tree-writer.js";
+import { createContextImportTreeWriter } from "./adapters/context-tree-writer.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
 import { sweepImportObjects } from "./domain/object-sweep.js";
 import { createImportAdmission } from "./domain/receive-admission.js";
-import { createImportUploadService, importSummary } from "./domain/upload-service.js";
+import { createImportUploadService, queryOpenImports } from "./domain/upload-service.js";
 import type { OrganizeWake } from "./ports/organize-wake.js";
 
 export { IMPORT_LIMITS, ImportError } from "./domain/manifest.js";
@@ -25,7 +26,7 @@ export function createProductionImportService(
     objects: deps.objects,
     admission: processAdmission,
     tree: createContextImportTreeWriter(
-      createDrizzleContextParentLocations(deps.db, { projectId, userId }, IMPORT_AREAS),
+      createDrizzleContextParentLocations(deps.db, { projectId, userId }, IMPORT_SCHEMES),
     ),
     wake: deps.wake ?? { wake() {} },
     reportError: (cause) =>
@@ -39,9 +40,7 @@ export function createProductionImportService(
 }
 export async function listOpenImports(db: Database, userId: string) {
   const repository = createDrizzleImportRepository(db);
-  return Promise.all(
-    (await repository.listOpen(userId)).map((record) => importSummary(repository, record)),
-  );
+  return queryOpenImports(repository, userId);
 }
 export function createImportObjectSweeper(db: Database, objects: ObjectStorePort) {
   const repository = createDrizzleImportRepository(db);

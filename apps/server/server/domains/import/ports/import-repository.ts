@@ -89,7 +89,6 @@ export interface ImportRepository {
     patch: Pick<ImportEntryPatch, "state" | "reason">,
     ids?: string[],
   ): Promise<void>;
-  skipEntries(id: string, states: ImportEntryState[], reason: ImportEntryReason): Promise<void>;
   refreshCounts(id: string): Promise<ImportCounts>;
   hasAwaiting(id: string): Promise<boolean>;
   listOpen(userId: string): Promise<ImportRecord[]>;

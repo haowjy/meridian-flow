@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Use one import open-list query and remove unused upload-era helpers.
+
 - Keep timed-out receives fenced until execution settles; prepare receipts before ordered batch admission.
 
 - Use one database-time policy for import maintenance and shared attention counts.

@@ -11,7 +11,7 @@ import { createInMemoryObjectStore } from "../storage/index.js";
 import { createDrizzleImportRepository } from "./adapters/drizzle-import-repository.js";
 import { sweepImportObjects } from "./domain/object-sweep.js";
 import { createImportAdmission } from "./domain/receive-admission.js";
-import { createImportUploadService } from "./domain/upload-service.js";
+import { createImportUploadService, queryOpenImports } from "./domain/upload-service.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" && !!process.env.DATABASE_URL;
 describe.runIf(enabled)("durable upload", () => {
@@ -99,7 +99,7 @@ describe.runIf(enabled)("durable upload", () => {
     expect((await service().stop(input.importId, projectId)).state).toBe("cancelled");
     release();
     await receive;
-    expect(await service().listOpen(userId)).toEqual([]);
+    expect(await queryOpenImports(repository, userId)).toEqual([]);
     expect((await repository.entries(input.importId)).every((e) => !e.receipt)).toBe(true);
     await sweepImportObjects(repository, objects, { importId: input.importId });
     expect(await objects.list(`imports/${input.importId}/`)).toMatchObject({
@@ -168,7 +168,7 @@ describe.runIf(enabled)("durable upload", () => {
     expect(attempts.filter((r) => r.status === "fulfilled")).toHaveLength(2);
     expect(await repository.countOpen(userId)).toBe(3);
     await db.update(projects).set({ deletedAt: new Date() }).where(eq(projects.id, projectId));
-    expect(await service().listOpen(userId)).toEqual([]);
+    expect(await queryOpenImports(repository, userId)).toEqual([]);
     expect(await repository.countOpen(userId)).toBe(0);
   });
   it("records changed receipts and explicit missing-file skips, then serializes retry and give-up", async () => {
