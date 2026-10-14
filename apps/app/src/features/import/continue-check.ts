@@ -1,13 +1,13 @@
 /**
  * Checks a new selection against a stored import before anything is sent, and
- * pairs its files with the stored ones afterwards. Roots are matched one to one
+ * pairs its files with the stored entry ids afterwards. Roots are matched one to one
  * by what they hold (kind, name, every file's path and size, then digests), never
  * by order, so two `Notes.md` roots chosen the other way round still match and an
  * unchanged copy cannot stand in for a changed one. The first difference found is
  * the one the writer is told.
  */
 import type { ImportEntryStatus, ImportManifest } from "@meridian/contracts";
-import type { HeldFile } from "./manifest";
+import type { BuiltManifest, HeldFile } from "./manifest";
 import type { Selection } from "./selection";
 
 export type SelectionDifference = {
@@ -18,14 +18,6 @@ export type SelectionDifference = {
 export type StoredImport = {
   roots: readonly { rootId: number; kind: "folder" | "file"; name: string }[];
   entries: Iterable<ImportEntryStatus>;
-};
-
-export type CheckOptions = {
-  /**
-   * The server is still planning and will resume only for the very same
-   * selection, so a file left out at the start must still be left out.
-   */
-  exact?: boolean;
 };
 
 type StoredFile = { entryId: number; size: number; sha256: string };
@@ -123,7 +115,6 @@ function compareRoot(
   stored: StoredRoot,
   candidate: CandidateRoot,
   digests: boolean,
-  exact: boolean,
 ): SelectionDifference | null {
   const nameOf = (path: string) => lastSegment(path || stored.name);
   for (const [path, want] of stored.files) {
@@ -135,21 +126,14 @@ function compareRoot(
   }
   for (const path of candidate.files.keys()) {
     if (stored.files.has(path)) continue;
-    // Left out at the start and readable now: not part of this import, unless the
-    // server must see the very same selection again.
-    if (wasLeftOut(stored, path)) {
-      if (exact) return { kind: "changed", name: nameOf(path) };
-      continue;
-    }
+    // Left out at the start and readable now: not part of this import.
+    if (wasLeftOut(stored, path)) continue;
     return { kind: "extra", name: nameOf(path) };
   }
   for (const path of candidate.unreadable) {
     if (stored.files.has(path) || wasLeftOut(stored, path)) continue;
     return { kind: "unreadable", name: nameOf(path) };
   }
-  if (exact)
-    for (const path of stored.leftOut)
-      if (!candidate.unreadable.has(path)) return { kind: "missing", name: nameOf(path) };
   return null;
 }
 
@@ -166,7 +150,6 @@ function matchRoots(
   roots: readonly StoredRoot[],
   candidates: CandidateRoot[],
   digests: boolean,
-  exact: boolean,
 ): RootMatch {
   const groups = new Map<string, CandidateRoot[]>();
   for (const candidate of candidates)
@@ -174,7 +157,7 @@ function matchRoots(
   const known = new Map<string, SelectionDifference | null>();
   const differs = (root: StoredRoot, candidate: CandidateRoot) => {
     const at = `${root.rootId}:${candidate.rootId}`;
-    if (!known.has(at)) known.set(at, compareRoot(root, candidate, digests, exact));
+    if (!known.has(at)) known.set(at, compareRoot(root, candidate, digests));
     return known.get(at) ?? null;
   };
   const owner = new Map<CandidateRoot, StoredRoot>();
@@ -207,55 +190,35 @@ function matchRoots(
 export function compareStructure(
   stored: StoredImport,
   selection: Selection,
-  options: CheckOptions = {},
 ): SelectionDifference | null {
-  const match = matchRoots(
-    storedRoots(stored),
-    fromSelection(selection),
-    false,
-    options.exact ?? false,
-  );
+  const match = matchRoots(storedRoots(stored), fromSelection(selection), false);
   return match.kind === "differs" ? match.difference : null;
 }
 
-/** After hashing: every file the import needs has the same digest in the new manifest. */
-export function compareDigests(
-  stored: StoredImport,
-  manifest: ImportManifest,
-  options: CheckOptions = {},
-): SelectionDifference | null {
-  const match = matchRoots(
-    storedRoots(stored),
-    fromManifest(manifest),
-    true,
-    options.exact ?? false,
-  );
-  return match.kind === "differs" ? match.difference : null;
-}
+export type DigestCheck =
+  | { kind: "match"; held: Map<number, HeldFile> }
+  | { kind: "mismatch"; difference: SelectionDifference };
 
 /**
- * Held files by the stored entry id they will be sent as. A resumed import
- * numbers its files afresh, so they pair by what they are, never by number or
- * order. Nothing is adopted from a selection that is not the stored one.
+ * After hashing: every file the import needs has the same digest in the new
+ * manifest. A match carries the new files by the stored entry id they will be
+ * sent as. A resumed import keeps its entry ids, but a new selection numbers
+ * its files afresh, so they pair by what they are, never by number or order.
  */
-export function matchHeld(
-  stored: StoredImport,
-  manifest: ImportManifest,
-  held: ReadonlyMap<number, HeldFile>,
-): Map<number, HeldFile> {
-  const matched = new Map<number, HeldFile>();
+export function compareDigests(stored: StoredImport, built: BuiltManifest): DigestCheck {
   const roots = storedRoots(stored);
-  const match = matchRoots(roots, fromManifest(manifest), true, false);
-  if (match.kind === "differs") return matched;
+  const match = matchRoots(roots, fromManifest(built.manifest), true);
+  if (match.kind === "differs") return { kind: "mismatch", difference: match.difference };
+  const held = new Map<number, HeldFile>();
   for (const root of roots) {
     const candidate = match.pairs.get(root.rootId);
     for (const [path, want] of root.files) {
       const entryId = candidate?.files.get(path)?.entryId;
-      const file = entryId === undefined ? undefined : held.get(entryId);
-      if (file) matched.set(want.entryId, file);
+      const file = entryId === undefined ? undefined : built.held.get(entryId);
+      if (file) held.set(want.entryId, { ...file, entryId: want.entryId });
     }
   }
-  return matched;
+  return { kind: "match", held };
 }
 
 /** Files the continued import will send: the ones the server still waits for. */

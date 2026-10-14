@@ -1,6 +1,6 @@
 import type { ImportEntryStatus, ImportManifest } from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
-import { compareDigests, compareStructure, matchHeld, outstanding } from "./continue-check";
+import { compareDigests, compareStructure, outstanding } from "./continue-check";
 import { type BuiltManifest, buildManifest } from "./manifest";
 import type { Selection } from "./selection";
 
@@ -78,7 +78,11 @@ describe("continue import checks", () => {
         { entryId: 1, rootId: 0, path: "Lore/Sects.md", size: 5, sha256: "DIFFERENT" },
       ],
     } as ImportManifest;
-    expect(compareDigests(stored, manifest)).toEqual({ kind: "changed", name: "Sects.md" });
+    const built = { manifest, held: new Map() };
+    expect(compareDigests(stored, built)).toEqual({
+      kind: "mismatch",
+      difference: { kind: "changed", name: "Sects.md" },
+    });
   });
 
   it("counts only what the server still waits for", () => {
@@ -150,16 +154,21 @@ describe("continue import with roots that share a name", () => {
     const stored = storedFor(await buildManifest(await loose("a", "bbbb"), options));
     const again = await loose("bbbb", "a");
     expect(compareStructure(stored, again)).toBeNull();
-    expect(compareDigests(stored, (await buildManifest(again, options)).manifest)).toBeNull();
+    expect(compareDigests(stored, await buildManifest(again, options)).kind).toBe("match");
   });
 
   it("refuses a changed copy among identical same-name files, and adopts one file per entry", async () => {
     const stored = storedFor(await buildManifest(await loose("a", "a"), options));
     const changed = await buildManifest(await loose("a", "b"), options);
-    expect(compareDigests(stored, changed.manifest)).toEqual({ kind: "changed", name: "Notes.md" });
+    expect(compareDigests(stored, changed)).toEqual({
+      kind: "mismatch",
+      difference: { kind: "changed", name: "Notes.md" },
+    });
 
     const same = await buildManifest(await loose("a", "a"), options);
-    const adopted = matchHeld(stored, same.manifest, same.held);
+    const checked = compareDigests(stored, same);
+    if (checked.kind !== "match") throw new Error("expected a match");
+    const adopted = checked.held;
     expect([...adopted.keys()].sort()).toEqual([0, 1]);
     expect(new Set(adopted.values()).size).toBe(2);
   });
@@ -170,8 +179,9 @@ describe("continue import with roots that share a name", () => {
     const stored = storedFor(await buildManifest(folders(first, second), options));
     const again = await buildManifest(folders(second, first), options);
     expect(compareStructure(stored, folders(second, first))).toBeNull();
-    expect(compareDigests(stored, again.manifest)).toBeNull();
-    const adopted = matchHeld(stored, again.manifest, again.held);
+    const checked = compareDigests(stored, again);
+    if (checked.kind !== "match") throw new Error("expected a match");
+    const adopted = checked.held;
     expect(await adopted.get(0)?.file.text()).toBe("one");
     expect(await adopted.get(2)?.file.text()).toBe("dos");
   });
@@ -193,7 +203,7 @@ describe("continue import with files that could not be read", () => {
     ]);
     const again = await book(["Gone.md"]);
     expect(compareStructure(stored, again)).toBeNull();
-    expect(compareDigests(stored, (await buildManifest(again, options)).manifest)).toBeNull();
+    expect(compareDigests(stored, await buildManifest(again, options)).kind).toBe("match");
   });
 
   it("refuses when a file the import needs can no longer be read", async () => {
@@ -201,17 +211,5 @@ describe("continue import with files that could not be read", () => {
     const again = folders({});
     again.roots[0].unreadable = [{ path: "Fine.md", reason: "permission_denied" }];
     expect(compareStructure(stored, again)).toEqual({ kind: "unreadable", name: "Fine.md" });
-  });
-
-  it("asks for the exact selection while the server is still planning", async () => {
-    const stored = storedFor(await buildManifest(await book(["Gone.md"]), options), [
-      { rootId: 0, path: "Gone.md" },
-    ]);
-    const readable = folders({ "Fine.md": "fine", "Gone.md": "back" });
-    expect(compareStructure(stored, readable)).toBeNull();
-    expect(compareStructure(stored, readable, { exact: true })).toEqual({
-      kind: "changed",
-      name: "Gone.md",
-    });
   });
 });

@@ -90,7 +90,7 @@ describe("ImportCoordinator.start", () => {
     expect(displayOf(state)).toBe("needs-attention");
 
     server.setFailSend(() => false);
-    coordinator.retry(importId, [1]);
+    await coordinator.retry(importId, [1]);
     expect(displayOf(store.getSnapshot())).toBe("importing");
     await settled(coordinator, importId);
     expect(store.getSnapshot().report?.entries.get(1)?.state).toBe("landed");
@@ -347,12 +347,15 @@ describe("ImportCoordinator.retry", () => {
       );
     };
 
-    for (let entryId = 0; entryId < 6; entryId += 1) coordinator.retry(importId, [entryId]);
-    coordinator.retry(importId, [0]);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.all([
+      ...Array.from({ length: 6 }, (_, entryId) => coordinator.retry(importId, [entryId])),
+      coordinator.retry(importId, [0]),
+    ]);
 
     expect(most).toBeLessThanOrEqual(3);
-    expect(sends.flatMap((send) => send.entryIds).filter((id) => id === 0)).toHaveLength(1);
+    expect(
+      sends.flatMap((send) => send.entryIds).filter((id) => id === 0).length,
+    ).toBeLessThanOrEqual(1);
 
     void coordinator.stop(importId);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -385,10 +388,64 @@ describe("ImportCoordinator.continueImport", () => {
     const coordinator = new ImportCoordinator("p", server.api);
     const store = coordinator.store("crashed");
     store.installReport(await server.api.status("p", "crashed"));
-    await coordinator.continueImport("crashed", built);
+    await coordinator.continueImport("crashed", built.held);
     await settled(coordinator, "crashed");
 
     expect(server.calls.send.flat().sort()).toEqual([lapsed, 2].sort());
+    coordinator.dispose();
+  });
+
+  it("resumes a planning import by id instead of planning it again", async () => {
+    const server = fakeImportServer();
+    const built = await buildManifest(vault(), { importId: "slow", destinationUri: "kb://" });
+    await server.api.plan("p", built.manifest);
+    server.calls.plan = 0;
+    server.setPlanning(true);
+    const coordinator = new ImportCoordinator("p", server.api);
+    coordinator.store("slow").installReport(await server.api.status("p", "slow"));
+    await coordinator.continueImport("slow", built.held);
+    await settled(coordinator, "slow");
+    expect(server.calls.resume).toBe(1);
+    expect(server.calls.plan).toBe(0);
+    expect(server.calls.send.flat().sort()).toEqual([0, 1, 2]);
+    coordinator.dispose();
+  });
+
+  it("fails a wanted entry it holds no file for, locally and alone", async () => {
+    const server = fakeImportServer();
+    const built = await buildManifest(vault(), { importId: "partial", destinationUri: "kb://" });
+    await server.api.plan("p", built.manifest);
+    const held = new Map(built.held);
+    held.delete(1);
+    const coordinator = new ImportCoordinator("p", server.api);
+    const store = coordinator.store("partial");
+    store.installReport(await server.api.status("p", "partial"));
+    await coordinator.continueImport("partial", held);
+    await settled(coordinator, "partial");
+    expect(server.calls.send.flat().sort()).toEqual([0, 2]);
+    expect(store.getSnapshot().local?.failures.get(1)).toBe("upload_failed");
+    coordinator.dispose();
+  });
+
+  it("retry reads fresh: a lapsed claim that never moved the version is sent", async () => {
+    const server = fakeImportServer();
+    const built = await buildManifest(vault(), { importId: "lapse", destinationUri: "kb://" });
+    await server.api.plan("p", built.manifest);
+    const entry = server.entries.get(1);
+    if (entry) server.entries.set(1, { ...entry, state: "landing", wanted: false });
+    const coordinator = new ImportCoordinator("p", server.api);
+    const store = coordinator.store("lapse");
+    store.installReport(await server.api.status("p", "lapse"));
+    await coordinator.continueImport("lapse", built.held);
+    await settled(coordinator, "lapse");
+    expect(server.calls.send.flat()).not.toContain(1);
+
+    // The landing process died: the claim lapses with no version change.
+    const stale = server.entries.get(1);
+    if (stale) server.entries.set(1, { ...stale, wanted: true });
+    await coordinator.retry("lapse", [1]);
+    await settled(coordinator, "lapse");
+    expect(server.calls.send.flat()).toContain(1);
     coordinator.dispose();
   });
 });

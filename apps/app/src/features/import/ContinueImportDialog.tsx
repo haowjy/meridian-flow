@@ -26,14 +26,14 @@ import {
 } from "./continue-check";
 import type { ImportCoordinator } from "./import-coordinator";
 import { fullyRead } from "./import-state";
-import { type BuiltManifest, buildManifest, bytesToHash } from "./manifest";
+import { buildManifest, bytesToHash, type HeldFile } from "./manifest";
 import { PickZone, useSelectionPicker } from "./SelectionPicker";
 import { useSelectionReader } from "./use-selection-reader";
 
 type Step =
   | { kind: "choose" }
   | { kind: "checking"; percent: number; files: number }
-  | { kind: "match"; built: BuiltManifest; send: number }
+  | { kind: "match"; held: Map<number, HeldFile>; send: number }
   | { kind: "mismatch"; difference: SelectionDifference }
   | { kind: "failed" };
 
@@ -101,9 +101,7 @@ export function ContinueImportDialog({
         const report = store.getSnapshot().report;
         if (!fullyRead(report)) throw new Error("report");
         const stored = { roots: report.roots, entries: [...report.entries.values()] };
-        // A plan the server has not finished resumes only for the very same selection.
-        const exact = report.summary.state === "planning";
-        const structural = compareStructure(stored, selection, { exact });
+        const structural = compareStructure(stored, selection);
         if (structural) return setStep({ kind: "mismatch", difference: structural });
         const files = selection.roots.reduce((sum, root) => sum + root.files.length, 0);
         const total = bytesToHash(selection);
@@ -115,9 +113,10 @@ export function ContinueImportDialog({
           onHashed: (bytes) =>
             setStep({ kind: "checking", percent: total ? (bytes / total) * 100 : 100, files }),
         });
-        const hashed = compareDigests(stored, built.manifest, { exact });
-        if (hashed) return setStep({ kind: "mismatch", difference: hashed });
-        setStep({ kind: "match", built, send: outstanding(stored.entries) });
+        const checked = compareDigests(stored, built);
+        if (checked.kind === "mismatch")
+          return setStep({ kind: "mismatch", difference: checked.difference });
+        setStep({ kind: "match", held: checked.held, send: outstanding(stored.entries) });
       } catch {
         if (!control.signal.aborted) setStep({ kind: "failed" });
       }
@@ -127,9 +126,9 @@ export function ContinueImportDialog({
 
   const send = () => {
     if (step.kind !== "match") return;
-    const { built } = step;
+    const { held } = step;
     onClose();
-    void coordinator.continueImport(importId, built);
+    void coordinator.continueImport(importId, held);
   };
 
   return (

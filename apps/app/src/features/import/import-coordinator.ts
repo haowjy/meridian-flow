@@ -6,7 +6,6 @@
 import type { ImportFailureReason, ImportSummary } from "@meridian/contracts";
 import { ImportRequestError } from "@/client/api/imports-api";
 import { clientRowsFor } from "./client-rows";
-import { matchHeld } from "./continue-check";
 import type { ImportDestination } from "./destination";
 import { type ImportApi, importApi } from "./import-api-port";
 import type { ImportState } from "./import-state";
@@ -234,10 +233,11 @@ export class ImportCoordinator {
   }
 
   /**
-   * Continue import: adopt a checked selection for an import already on the server.
-   * Resumes the plan if the server is still planning, then sends what is outstanding.
+   * Continue import: adopt files already checked against the stored import, keyed
+   * by its entry ids. Resumes the plan if the server is still planning, then reads
+   * the import fresh and sends what it marks wanted.
    */
-  async continueImport(importId: string, built: BuiltManifest) {
+  async continueImport(importId: string, held: ReadonlyMap<number, HeldFile>) {
     const store = this.store(importId);
     const summary = store.getSnapshot().report?.summary;
     if (!summary) return;
@@ -251,18 +251,35 @@ export class ImportCoordinator {
         roots: state.report?.roots.map(({ rootId, kind, name }) => ({ rootId, kind, name })) ?? [],
         rows: [],
         handedOff: new Set(),
-        total: built.manifest.entries.length,
-        held: built.held,
-        manifest: built.manifest,
+        total: held.size,
+        held,
+        manifest: null,
         failures: new Map(),
         retrying: new Set(),
       },
     }));
-    if (summary.state === "planning") {
-      await this.plan(store, built, run);
-      return;
+    if (summary.state === "planning" && !(await this.resumePlan(store, run))) return;
+    await this.sendWanted(store, run);
+  }
+
+  /** Ask the server to finish planning from what it stored. False when it could not. */
+  private async resumePlan(store: ImportStore, run: Run): Promise<boolean> {
+    store.setLocal((local) => ({ ...local, phase: { kind: "preparing" } }));
+    try {
+      const answer = await this.api.resume(this.projectId, store.importId, run.controller.signal);
+      if (retired(run)) return false;
+      store.installReport(answer);
+      return true;
+    } catch {
+      if (!retired(run)) store.setLocal((local) => ({ ...local, phase: { kind: "idle" } }));
+      return false;
     }
-    this.send(store, run);
+  }
+
+  /** One fresh full read, then send what it marks wanted (or just `only`). */
+  private async sendWanted(store: ImportStore, run: Run, only?: ReadonlySet<number>) {
+    await store.refresh(true);
+    this.send(store, run, only);
   }
 
   /** Try again after "Import didn't start". Same id, same manifest, same files. */
@@ -290,24 +307,33 @@ export class ImportCoordinator {
 
   // ---- Uploading
 
-  /** Queue every file the server still wants and this tab holds (or just `only`). */
+  /**
+   * Queue every file the server wants (or just `only`), looked up by entry id. A
+   * wanted entry this tab holds no file for fails locally, never as an empty queue.
+   */
   private send(store: ImportStore, run: Run, only?: ReadonlySet<number>) {
     if (retired(run)) return;
-    const state = store.getSnapshot();
-    const { local, report } = state;
-    if (!local?.manifest || !local.held || !report) return;
-    const matched = matchHeld(
-      { roots: report.roots, entries: report.entries.values() },
-      local.manifest,
-      local.held,
-    );
+    const { local, report } = store.getSnapshot();
+    if (!local?.held || !report) return;
     const files: HeldFile[] = [];
+    const missing: number[] = [];
     for (const entry of report.entries.values()) {
       if (only && !only.has(entry.entryId)) continue;
       if (!entry.wanted) continue;
-      const file = matched.get(entry.entryId);
+      const file = local.held.get(entry.entryId);
       if (file) files.push({ ...file, entryId: entry.entryId });
+      else missing.push(entry.entryId);
     }
+    if (missing.length)
+      store.setLocal((current) => {
+        const failures = new Map(current.failures);
+        const retrying = new Set(current.retrying);
+        for (const entryId of missing) {
+          failures.set(entryId, "upload_failed");
+          retrying.delete(entryId);
+        }
+        return { ...current, failures, retrying };
+      });
     run.queue.add(files);
     if (run.queue.idle) this.sent(store);
     else store.setLocal((current) => ({ ...current, phase: { kind: "uploading" } }));
@@ -377,7 +403,7 @@ export class ImportCoordinator {
   }
 
   /** Send these failed files again (or every failed file when `entryIds` is empty). */
-  retry(importId: string, entryIds?: readonly number[]) {
+  async retry(importId: string, entryIds?: readonly number[]) {
     const store = this.store(importId);
     const { local, report } = store.getSnapshot();
     if (!local?.held || !report) return;
@@ -393,15 +419,15 @@ export class ImportCoordinator {
       for (const id of wanted) failures.delete(id);
       return { ...current, failures, retrying: new Set([...current.retrying, ...wanted]) };
     });
-    this.send(store, this.runFor(store), wanted);
+    await this.sendWanted(store, this.runFor(store), wanted);
   }
 
   /** Keep importing after "Couldn't stop": this tab sends what is left. */
-  resume(importId: string) {
+  async resume(importId: string) {
     const store = this.store(importId);
     store.update((state) => ({ ...state, stop: "none" }));
     store.setLocal((local) => ({ ...local, phase: { kind: "idle" } }));
-    this.send(store, this.runFor(store));
+    await this.sendWanted(store, this.runFor(store));
   }
 
   // ---- Stopping

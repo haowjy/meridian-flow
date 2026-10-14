@@ -12,6 +12,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
   const entries = new Map<number, ImportEntryStatus>();
   let manifest: ImportManifest | null = null;
   let finished = false;
+  let planning = false;
   let version = 1;
   const calls = { plan: 0, send: [] as number[][], finish: 0, resume: 0, dismiss: 0 };
   const counts = (): ImportCounts => {
@@ -30,7 +31,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
   };
   const status = (): ImportStatus => ({
     importId: manifest?.importId ?? "",
-    state: finished ? "finished" : "ready",
+    state: finished ? "finished" : planning ? "planning" : "ready",
     destination: { folderUri: manifest?.destination.folderUri ?? "kb://", folderId: null },
     counts: counts(),
     lastActivityAt: new Date().toISOString(),
@@ -98,6 +99,7 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
     },
     async resume() {
       calls.resume += 1;
+      planning = false;
       return status();
     },
     async status() {
@@ -114,6 +116,8 @@ export function fakeImportServer(options: { failSend?: (entryId: number) => bool
     api,
     calls,
     entries,
+    /** The next status answers `planning` until `resume` is called. */
+    setPlanning: (value: boolean) => (planning = value),
     setFailSend: (fn: (entryId: number) => boolean) => (options.failSend = fn),
   };
 }
