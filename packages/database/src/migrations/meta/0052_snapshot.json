@@ -1,6 +1,6 @@
 {
-  "id": "372afb0f-286c-44b2-b593-5d391c081ee5",
-  "prevId": "ce19e0c8-ab0e-462b-ac61-9dabaedfaeef",
+  "id": "11b81689-a333-4bec-bcb0-179bc16c4e45",
+  "prevId": "e604346d-d1fd-47fc-9fd6-1b0daad39c38",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9577,13 +9577,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "rebase_cuts": {
-          "name": "rebase_cuts",
-          "type": "bytea[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::bytea[]"
         },
         "live_cut": {
           "name": "live_cut",

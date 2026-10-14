@@ -88,8 +88,6 @@ export const documentBranches = pgTable(
      * base was ever written, and rebase refuses it.
      */
     baseRevision: jsonb("base_revision").$type<DraftBaseRevision>(),
-    /** Encoded rebase cuts, oldest first, retained for late-peer recovery. */
-    rebaseCuts: byteaColumn("rebase_cuts").array().notNull().default(sql`'{}'::bytea[]`),
     schemaVersion: integer("schema_version")
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
