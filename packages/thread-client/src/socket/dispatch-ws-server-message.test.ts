@@ -52,6 +52,14 @@ function subscribedMessage(): WsServerMessage {
       runningTurnId: null,
       activity: { children: [] },
       pending: { items: [] },
+      runState: {
+        version: "1",
+        items: [],
+        sentThrough: 0,
+        execution: null,
+        mode: "direct",
+        blocked: null,
+      },
       resumeAfterSeq: "1",
     },
   } as unknown as WsServerMessage;

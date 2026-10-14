@@ -24,6 +24,14 @@ const LIVE_STATE = {
   runningTurnId: null,
   activity: { children: [] },
   pending: { items: [] },
+  runState: {
+    version: "1",
+    items: [],
+    sentThrough: 0,
+    execution: null,
+    mode: "direct" as const,
+    blocked: null,
+  },
   resumeAfterSeq: "1",
 };
 

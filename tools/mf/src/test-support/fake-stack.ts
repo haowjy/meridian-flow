@@ -109,6 +109,14 @@ function liveState(seq: string, pendingItems: unknown[] = []) {
     runningTurnId: null,
     activity: { children: [] },
     pending: { items: pendingItems },
+    runState: {
+      version: seq,
+      items: pendingItems,
+      sentThrough: 0,
+      execution: null,
+      mode: "direct",
+      blocked: null,
+    },
     resumeAfterSeq: seq,
   };
 }
@@ -179,6 +187,10 @@ function createFake() {
       pending: {
         items: pendingItems,
         ...(blockedForUsage ? { blocked: { reason: "credits_exhausted" } } : {}),
+      },
+      runState: {
+        ...liveState(String(journal.length), pendingItems).runState,
+        blocked: blockedForUsage ? { reason: "credits_exhausted" } : null,
       },
       runningTurnId,
       status:
