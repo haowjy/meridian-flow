@@ -3,7 +3,12 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { getContextTabs, isDraftOnly, useContextTabsStore } from "@/client/stores";
+import {
+  getContextTabs,
+  isDraftOnly,
+  ThreadStoreProvider,
+  useContextTabsStore,
+} from "@/client/stores";
 import * as account from "@/features/project/context/account-feature-context";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { dockDocument, useDockDocumentStore } from "@/features/project/dock/dock-document-store";
@@ -109,9 +114,11 @@ it("a join seen first by one Work keeps the review another Work has on screen", 
   };
   await withReactRoot(
     <QueryClientProvider client={new QueryClient()}>
-      <PresentedDocumentContext.Provider value={presented}>
-        <DraftOnlySettlement projectId="project-a" editorWorkId="work-b" />
-      </PresentedDocumentContext.Provider>
+      <ThreadStoreProvider now={0}>
+        <PresentedDocumentContext.Provider value={presented}>
+          <DraftOnlySettlement projectId="project-a" editorWorkId="work-b" />
+        </PresentedDocumentContext.Provider>
+      </ThreadStoreProvider>
     </QueryClientProvider>,
     async () => {
       await settleReact(() => expect(openReview).toHaveBeenCalled());
