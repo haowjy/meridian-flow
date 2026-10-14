@@ -9,7 +9,8 @@
  * alone. It speaks queued and applied transitions (the one announcer for a
  * switch; a failure stays with the journal owner's keyed announcement), marks
  * the Works and project thread lists stale when a switch applies, and asks for
- * a snapshot while the ledger waits for proof.
+ * a snapshot while the ledger waits for proof. It reads only the snapshot the chat's history
+ * host accepted (passed in); the query cache is read, observer-free, only for fetch state.
  *
  * One ledger host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it
  * between the center and the dock, so a chat has one mounted `ChatView` and so one ledger.
@@ -20,7 +21,7 @@ import { t } from "@lingui/core/macro";
 import type { Turn } from "@meridian/contracts/protocol";
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { withdrawThreadControl } from "@/client/api/threads-api";
@@ -28,8 +29,9 @@ import type { JournalSwitch, SwitchAnswer } from "@/client/chat-submissions/owne
 import { invalidateProjectThreadData } from "@/client/query/project-invalidation";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import {
+  type DeserializedThreadSnapshot,
   snapshotRequestCount,
-  threadSnapshotQueryOptions,
+  useThreadSnapshotCache,
 } from "@/client/query/thread-snapshot-query";
 import { announce, announceError } from "@/client/stores";
 import {
@@ -106,17 +108,22 @@ export function useSwitchLedger(input: {
   writeMode: AiWriteMode;
   pending: ThreadPendingInbox;
   turns: readonly Turn[];
+  /**
+   * The snapshot the history host accepted and applied, with its request stamp. The ledger
+   * reads no other: a response the host rejects never stands for the rendered base.
+   */
+  snapshot: DeserializedThreadSnapshot | null;
   /** The first successful history load is in the transcript: what is there now is not news. */
   historyLoaded: boolean;
   journal: SwitchJournal;
 }): SwitchLedgerView {
-  const { threadId, projectId, pending, turns, historyLoaded, journal } = input;
+  const { threadId, projectId, pending, turns, snapshot, historyLoaded, journal } = input;
   const queryClient = useQueryClient();
   useSingleHostWarning(threadId);
   const [ledger, dispatch] = useReducer(ledgerReducer, EMPTY_LEDGER);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
-  const snapshot = useQuery({ ...threadSnapshotQueryOptions(threadId), enabled: false });
+  const cache = useThreadSnapshotCache(threadId);
 
   useLayoutEffect(() => {
     dispatch({
@@ -145,20 +152,19 @@ export function useSwitchLedger(input: {
     });
   }, [pending]);
 
-  const data = snapshot.data;
   useLayoutEffect(() => {
-    if (!data) return;
+    if (!snapshot) return;
     dispatch({
       type: "snapshot",
-      request: data.requestSeq ?? 0,
-      pending: data.liveState.pending.items.flatMap((item) =>
+      request: snapshot.requestSeq ?? 0,
+      pending: snapshot.liveState.pending.items.flatMap((item) =>
         item.intent === "control" && item.control?.kind === "write_mode"
           ? [{ id: item.id, mode: item.control.mode, serverSeq: item.seq }]
           : [],
       ),
-      dividers: dividersOf(data.turns),
+      dividers: dividersOf(snapshot.turns),
     });
-  }, [data]);
+  }, [snapshot]);
 
   const dividers = useMemo(() => dividersOf(turns), [turns]);
   useLayoutEffect(() => dispatch({ type: "transcript", dividers }), [dividers]);
@@ -201,10 +207,10 @@ export function useSwitchLedger(input: {
   useProofLoop({
     need: proofNeed(ledger),
     snapshot: {
-      requestSeq: snapshot.data?.requestSeq,
-      dataUpdatedAt: snapshot.dataUpdatedAt,
-      errorUpdatedAt: snapshot.errorUpdatedAt,
-      isFetching: snapshot.isFetching,
+      requestSeq: snapshot?.requestSeq,
+      dataUpdatedAt: cache?.dataUpdatedAt ?? 0,
+      errorUpdatedAt: cache?.errorUpdatedAt ?? 0,
+      isFetching: cache?.fetchStatus === "fetching",
     },
     acquire: revalidate,
   });

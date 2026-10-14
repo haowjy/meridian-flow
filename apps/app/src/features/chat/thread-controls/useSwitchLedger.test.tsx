@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 /**
- * The ledger's shell with real React and real TanStack Query, and an injected API and journal:
- * the proof loop that settles a switch no live source shows, and what Withdraw announces.
+ * The ledger's shell with real React and real TanStack Query, the real `useThreadSnapshotSync`
+ * as the chat's host, and an injected API, store and journal: the proof loop that settles a
+ * switch no live source shows, the ledger reading only what the host accepted, and what
+ * Withdraw announces.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,22 +13,43 @@ vi.mock("@lingui/core/macro", () => ({
 const api = vi.hoisted(() => ({
   getThreadSnapshot: vi.fn(),
   deserializeThreadSnapshot: (wire: unknown) => wire,
+  toThreadSnapshotApplyOptions: (snapshot: unknown) => snapshot,
   withdrawThreadControl: vi.fn(),
 }));
 vi.mock("@/client/api/threads-api", () => api);
-const announcements = vi.hoisted(() => ({ announce: vi.fn(), announceError: vi.fn() }));
+/** The thread store's floor: a snapshot older than the live changes is rejected by the host. */
+const store = vi.hoisted(() => ({ floor: 1 }));
+const announcements = vi.hoisted(() => ({
+  announce: vi.fn(),
+  announceError: vi.fn(),
+  useThreadActions: () => ({
+    acceptsThreadSnapshot: (_id: string, seq: string) => Number(seq) >= store.floor,
+    applyThreadSnapshot: () => undefined,
+  }),
+  useIsThreadPendingCreation: () => false,
+}));
 vi.mock("@/client/stores", () => announcements);
+vi.mock("@/client/copilot/MeridianCopilotProvider", () => ({
+  useMeridianAgent: () => ({ observeSnapshot: () => undefined }),
+}));
+vi.mock("@/client/providers/TransportProvider", () => ({
+  useThreadTransport: () => ({ subscribe: () => () => undefined }),
+}));
+vi.mock("@/features/project/context/account-feature-context", () => {
+  const signal = new AbortController().signal;
+  return { useAccountEpochSignal: () => signal, useAccountId: () => "A" };
+});
 vi.mock("@/client/query/project-invalidation", () => ({
   invalidateProjectThreadData: vi.fn(),
 }));
 
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { HttpResponseError } from "@/client/api/http-client";
-import { threadSnapshotQueryOptions } from "@/client/query/thread-snapshot-query";
+import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { type SwitchJournal, type SwitchLedgerView, useSwitchLedger } from "./useSwitchLedger";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -60,13 +83,13 @@ let client: QueryClient;
 let view: SwitchLedgerView;
 let records: ReturnType<typeof record>[] = [];
 let withdrawOutcome: "removed" | "admitted" | "kept" = "removed";
+let turns: unknown[] = [];
 let repaint: () => void = () => undefined;
 
 function Probe() {
   const [, render] = React.useReducer((n: number) => n + 1, 0);
   repaint = render;
-  // The live host: any producer of the snapshot key, not necessarily useThreadSnapshotSync.
-  useQuery({ ...threadSnapshotQueryOptions("T"), staleTime: 0 });
+  const host = useThreadSnapshotSync("T");
   const journal: SwitchJournal = {
     pending: records as unknown as SwitchJournal["pending"],
     submit: () => true,
@@ -77,9 +100,10 @@ function Probe() {
   view = useSwitchLedger({
     threadId: "T",
     projectId: "P",
-    writeMode: "direct",
+    writeMode: host.thread?.aiWriteMode ?? "direct",
     pending: EMPTY,
-    turns: [],
+    turns: turns as never,
+    snapshot: host.snapshot,
     historyLoaded: true,
     journal,
   });
@@ -95,6 +119,8 @@ const show = async (next: typeof records) => {
 beforeEach(async () => {
   vi.clearAllMocks();
   records = [];
+  turns = [];
+  store.floor = 1;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   root = createRoot(document.createElement("div"));
 });
@@ -130,6 +156,36 @@ describe("useSwitchLedger", () => {
     expect(view.writeMode).toBe("direct");
     await tick(150);
     expect(api.getThreadSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it("never retires the overlay on a snapshot the history host rejects", async () => {
+    // S applied and its divider renders; the proof fetch's response is overtaken by a newer
+    // durable change, so the host rejects it. Only an accepted snapshot may stand for the
+    // rendered base, so the toolbar keeps S's mode until one arrives.
+    const divider = {
+      id: "turn-S",
+      role: "system",
+      metadata: { kind: "write_mode_switch", mode: "draft", controlMessageId: "S" },
+    };
+    let release: (value: unknown) => void = () => undefined;
+    const overtaken = { ...wire(), nextSeq: "2", turns: [divider] };
+    overtaken.thread.aiWriteMode = "draft";
+    api.getThreadSnapshot
+      .mockImplementationOnce(async () => wire())
+      .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+      .mockImplementation(() => new Promise(() => undefined));
+    await mount();
+    await tick();
+    await show([record("S", { posted: true })]);
+    turns = [divider];
+    store.floor = 2;
+    await show([]);
+    await tick();
+    expect(view.writeMode).toBe("draft");
+    store.floor = 3;
+    await act(async () => release(overtaken));
+    await tick();
+    expect(view.writeMode).toBe("draft");
   });
 
   it("announces a Withdraw only once its outcome is known", async () => {
