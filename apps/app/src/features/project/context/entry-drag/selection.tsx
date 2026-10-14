@@ -36,7 +36,7 @@ export type EntrySelection = {
   click(entry: SelectableEntry, event: MouseEvent | KeyboardEvent): boolean;
   /** What a drag of this row carries, in screen order; a row outside the selection goes alone. */
   dragged(entry: SelectableEntry): SelectableEntry[];
-  /** Selects exactly these keys (after a move). */
+  /** Selects exactly these keys (after a move), even one; none returns to the open row. */
   replace(keys: readonly string[]): void;
   clear(): void;
   /** Rows announce themselves while mounted; the open row says so. */
@@ -111,7 +111,7 @@ export function useEntrySelection(): EntrySelection {
         return withoutNested(rows);
       },
       replace(keys) {
-        setExplicit(keys.length > 1 ? new Set(keys) : null);
+        setExplicit(keys.length > 0 ? new Set(keys) : null);
       },
       clear() {
         setExplicit(null);
