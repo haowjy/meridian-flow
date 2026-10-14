@@ -565,8 +565,6 @@ function ReadableProjectDestination({
       }),
     [contextRemoval, projectId, user.userId],
   );
-  const itemStillListed = (itemKey: string | undefined) =>
-    !editorDrafts.files || editorDrafts.files.some((file) => file.draft.itemKey === itemKey);
   const setEditorReviewItemKey = useCallback((itemKey: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
@@ -806,16 +804,10 @@ function ReadableProjectDestination({
                       workId: next.work,
                       rootThreadId: next.chat,
                     },
-                    {
-                      replace: true,
-                      // The coordinator relocates the document the address names,
-                      // or falls back to another. Either way the review follows
-                      // the address until ReviewAddressOwner, which knows
-                      // the document's identity, decides it no longer applies.
-                      // An item the drafts list no longer holds (a Discard took it)
-                      // names nothing, so the fallback document opens without it.
-                      itemKey: itemStillListed(address.itemKey) ? address.itemKey : undefined,
-                    },
+                    // The review selector is not passed: the command keeps it only when the
+                    // address names the same document (a rename), and a fallback document
+                    // opens without one.
+                    { replace: true },
                   );
                 else if (next.screen === "work")
                   void go(toDestination({ kind: "works" }), { replace: true });

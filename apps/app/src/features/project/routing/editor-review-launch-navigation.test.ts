@@ -10,8 +10,8 @@ import { createProjectNavigation } from "./project-navigation";
 const projectId = "550e8400-e29b-41d4-a716-446655440000";
 const workId = "700db898-57fb-4ffa-8366-46ad6a3880be";
 
-function setup(lookup: () => Promise<{ kind: "failed" }>) {
-  const history = createMemoryHistory({ initialEntries: [`/p/${projectId}/chats`] });
+function setup(lookup: () => Promise<{ kind: "failed" }>, path = `/p/${projectId}/chats`) {
+  const history = createMemoryHistory({ initialEntries: [path] });
   const navigation = createProjectNavigation(
     {
       read: () => ({
@@ -30,7 +30,9 @@ function setup(lookup: () => Promise<{ kind: "failed" }>) {
     },
     () => ({ work: { kind: "none" } }),
   );
-  const parsed = parseProjectAddress(`/p/${projectId}/chats`);
+  const cut = path.indexOf("?");
+  const parsed =
+    cut < 0 ? parseProjectAddress(path) : parseProjectAddress(path.slice(0, cut), path.slice(cut));
   if (parsed.kind !== "valid") throw new Error("Invalid fixture address");
   const open = createEditorDocumentCommand({
     projectId,
@@ -82,5 +84,19 @@ describe("review launch navigation", () => {
     );
     expect(result.kind).toBe("applied");
     expect(history.location.href).toContain("item=draft-1");
+  });
+
+  it("opening a different document drops the address's review item (Discard's fallback repair)", async () => {
+    const { open, history } = setup(
+      vi.fn(async () => ({ kind: "failed" as const })),
+      `/p/${projectId}/editor/manuscript/gone.md?work=${workId}&item=draft-1`,
+    );
+    const result = await open(
+      { scheme: "manuscript", path: "/fallback.md", documentId: "doc-2", workId },
+      { replace: true },
+    );
+    expect(result.kind).toBe("applied");
+    expect(history.location.href).toContain("/fallback.md");
+    expect(history.location.href).not.toContain("item=");
   });
 });
