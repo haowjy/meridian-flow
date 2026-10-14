@@ -7,7 +7,11 @@
  */
 import { type ProjectId, parseContextUri, type UserId, type WorkId } from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
-import { classifyFiletype, filetypeForExtension } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  DEFAULT_FILETYPE,
+  filetypeForExtension,
+} from "@meridian/contracts/protocol";
 import type { HandBackResult } from "@meridian/contracts/threads";
 import type { WorkSlug } from "@meridian/contracts/works";
 import type {
@@ -43,8 +47,12 @@ export function chatReferenceResolver(scope: ChatReferenceScope): ResolveReferen
   return ({ uri }) => {
     const parsed = parseContextUri(uri);
     if (!parsed.ok) return null;
-    const extension = parsed.value.path.split("/").at(-1)?.split(".").at(-1) ?? "";
-    const fileType = filetypeForExtension(extension);
+    // The URI is all the occurrence keeps: a name with no extension is a document of the default
+    // type, and an extension nothing registers resolves to nothing.
+    const name = parsed.value.path.split("/").at(-1) ?? "";
+    const fileType = name.includes(".")
+      ? filetypeForExtension(name.slice(name.lastIndexOf(".") + 1))
+      : DEFAULT_FILETYPE;
     if (!fileType || classifyFiletype(fileType).kind === "unknown") return null;
     const { scheme, authority } = parsed.value;
     let owner: StableReferenceAuthority | null = null;
