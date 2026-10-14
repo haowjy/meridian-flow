@@ -24,8 +24,10 @@ import {
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createChangeTrailWorker } from "../domains/collab/adapters/change-trail-worker.js";
+import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-branch-push.js";
 import { createDrizzleChangeTrailReader } from "../domains/collab/adapters/drizzle-change-trail-reader.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
+import type { BranchCriticalSections } from "../domains/collab/domain/branch-critical-sections.js";
 import {
   type CollabDomain,
   createCollabDomain,
@@ -436,6 +438,8 @@ export async function createProductionAppPorts(input: {
   eventSink: EventSink;
   eventQuery?: EventQuery;
   environment?: NodeJS.ProcessEnv;
+  /** Tests pass an observed branch lease adapter; production builds its own. */
+  criticalSections?: BranchCriticalSections;
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
@@ -488,6 +492,7 @@ export async function createProductionAppPorts(input: {
     db,
     availability: projectContextAvailability,
     catalog: contextCatalog,
+    pending: createDrizzleWorkDraftPendingStore(db),
   });
   const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
@@ -559,6 +564,7 @@ export async function createProductionAppPorts(input: {
   });
   const documentSync = createCollabDomain({
     db,
+    ...(input.criticalSections ? { criticalSections: input.criticalSections } : {}),
     backgroundTasks,
     arrivals,
     catalogMutations: contextCatalog,

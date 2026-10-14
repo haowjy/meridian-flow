@@ -38,7 +38,7 @@ function snapshot(branchId: string): BranchSnapshot {
 }
 
 describe("thread-core branch leases", () => {
-  it("an immediate access and an ordered close both finish, whichever leases first", async () => {
+  it("an immediate access holding its leases and an ordered close queued behind it both finish", async () => {
     const mutex = new KeyedMutex();
     const held: string[] = [];
     const run = mutex.run.bind(mutex);
@@ -48,11 +48,14 @@ describe("thread-core branch leases", () => {
         return fn();
       });
     const sections = createBranchCriticalSections(mutex);
+    // The edit's own update, journaled as the staged write the access commits.
+    const edit: { update: Uint8Array } = { update: new Uint8Array() };
     const store = {
       getBranch: async (id: string) => snapshot(id),
       updateBranchSnapshot: async () => true,
       deferUntilCommit: () => false,
       ...unimplementedBranchMutations(),
+      commitBranchMutation: async () => true,
     };
     const branchCoordinator = createBranchCoordinator({ store, criticalSections: sections });
     const coordinator = createBranchAgentEditCoordinator({
@@ -76,7 +79,7 @@ describe("thread-core branch leases", () => {
         shiftBatch: () => [
           {
             docId: documentId,
-            update: new Uint8Array(),
+            update: edit.update,
             meta: { origin: "agent:turn-1", seq: 0 },
             mutation: { mode: "threadPeer", branchGeneration: 1, threadId, wId: 1 },
           } as never,
@@ -96,26 +99,39 @@ describe("thread-core branch leases", () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    // An immediate edit: it changes the peer, so it reads (and would commit) the draft branch.
+    // The one order run: the immediate edit holds its leases at the gate, the close queues behind.
     const immediate = coordinator.withDocument(documentId, async (doc) => {
       inside();
       await gate;
+      doc.once("update", (update: Uint8Array) => {
+        edit.update = update;
+      });
       doc.getText("probe").insert(0, "edit");
       return "edited";
     });
-    await entered;
-    const close = sections.withBranches([PEER, UPSTREAM], async () => "closed");
-    release();
-    const settled = await Promise.race([
-      Promise.allSettled([immediate, close]),
-      new Promise<"cycle">((resolve) => setTimeout(() => resolve("cycle"), 1_000)),
-    ]);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await entered;
+      const close = sections.withBranches([PEER, UPSTREAM], async () => "closed");
+      release();
+      const timeout = new Promise<never>((_, reject) => {
+        deadline = setTimeout(
+          () => reject(new Error("the edit and the close wait in a cycle")),
+          1_000,
+        );
+      });
+      await expect(Promise.race([Promise.all([immediate, close]), timeout])).resolves.toEqual([
+        "edited",
+        "closed",
+      ]);
+    } finally {
+      clearTimeout(deadline);
+      release();
+    }
 
-    expect(settled, "neither waits on the other forever").not.toBe("cycle");
     expect(held.slice(0, 2), "the access took both leases, draft branch first").toEqual([
       UPSTREAM,
       PEER,
     ]);
-    expect(await close).toBe("closed");
   });
 });

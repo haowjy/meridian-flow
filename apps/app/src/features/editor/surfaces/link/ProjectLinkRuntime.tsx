@@ -53,6 +53,7 @@ export function useEditorLinkDestination(): LinkDestination {
     (document, gesture) =>
       openDocument({
         documentId: document.documentId,
+        ...(document.focus ? { focus: true as const } : {}),
         workId: workId ?? undefined,
         disposition: gesture === "new-tab" ? "background" : "current",
       }),

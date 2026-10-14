@@ -11,6 +11,7 @@ import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import { armEditorFocus } from "@/features/editor/focus-on-open";
 import { RailScratchSection } from "../chat/ChatScratch";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { serverTabFromFile } from "../context/context-tab-from-file";
@@ -68,10 +69,15 @@ export function LeftSidebar({
   // and the Editor path everywhere else (see `use-dock-placement`).
   const placement = useDockPlacement();
   const openDocument = useOpenProjectDocument(projectId);
-  const handleSelectFile = (scheme: ProjectContextTreeScheme, file: ContextFile) => {
+  const handleSelectFile = (
+    scheme: ProjectContextTreeScheme,
+    file: ContextFile,
+    options?: { focus?: true },
+  ) => {
     if (placement.besideChat) {
       const tab = serverTabFromFile(scheme, file, {});
       if (tab) {
+        if (options?.focus) armEditorFocus(file.documentId);
         placement.commit(tab);
         return;
       }
@@ -80,7 +86,11 @@ export function LeftSidebar({
       onSelectContextPath(file.path, scheme);
       return;
     }
-    void openDocument({ documentId: file.documentId, workId: editorWorkId ?? undefined });
+    void openDocument({
+      documentId: file.documentId,
+      workId: editorWorkId ?? undefined,
+      ...options,
+    });
   };
   // On the Chat screen the row to highlight is the document open in the dock.
   const dockDocument = useDockDocument(activeScreen, projectId);

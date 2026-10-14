@@ -12,17 +12,45 @@ import {
 
 export type ProjectResourceLocation = ResourceLocation & { provisional: boolean };
 
-/** Current identities outrank obsolete remint aliases when both exist in the account catalog. */
+/** One projection's identity lookup: by stable handle, or by document id with its alias rule. */
+export type ResourceIdentityIndex = {
+  byHandle(handle: string): ResourceRecord | null;
+  /** A current identity outranks another resource's obsolete remint alias. */
+  byDocumentId(documentId: string): ResourceRecord | null;
+};
+
+/** The only reading of the durable alias dictionary; build it once per projection. */
+export function resourceIdentityIndex(records: readonly ResourceRecord[]): ResourceIdentityIndex {
+  const handles = new Map<string, ResourceRecord>();
+  const current = new Map<string, ResourceRecord[]>();
+  const aliases = new Map<string, ResourceRecord[]>();
+  const add = (index: Map<string, ResourceRecord[]>, id: string, record: ResourceRecord) =>
+    index.set(id, [...(index.get(id) ?? []), record]);
+  for (const record of records) {
+    handles.set(record.resource.handle, record);
+    add(current, record.resource.identity.documentId, record);
+    for (const alias of Object.keys(record.resource.aliases)) add(aliases, alias, record);
+  }
+  return {
+    byHandle: (handle) => handles.get(handle) ?? null,
+    byDocumentId(documentId) {
+      const owners = current.get(documentId);
+      if (owners && owners.length > 1)
+        throw new Error("Document identity resolves to multiple resources");
+      if (owners) return owners[0] ?? null;
+      const obsolete = aliases.get(documentId);
+      if (obsolete && obsolete.length > 1)
+        throw new Error("Document alias resolves to multiple resources");
+      return obsolete?.[0] ?? null;
+    },
+  };
+}
+
 export function resourceForDocumentIdentity(
   records: readonly ResourceRecord[],
   documentId: string,
 ): ResourceRecord | null {
-  const current = records.filter(({ resource }) => resource.identity.documentId === documentId);
-  if (current.length > 1) throw new Error("Document identity resolves to multiple resources");
-  if (current[0]) return current[0];
-  const aliases = records.filter(({ resource }) => documentId in resource.aliases);
-  if (aliases.length > 1) throw new Error("Document alias resolves to multiple resources");
-  return aliases[0] ?? null;
+  return resourceIdentityIndex(records).byDocumentId(documentId);
 }
 
 export function projectResourceNeedsRepair(

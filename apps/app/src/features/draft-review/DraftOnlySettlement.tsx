@@ -2,7 +2,7 @@
 
 import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { DraftRef } from "@/client/query/draft-command-record";
 import {
   currentDraftCommandRecords,
@@ -14,6 +14,9 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useOptionalAccountResourceReplica } from "@/features/project/context/account-feature-context";
+import { useDockDocumentStore } from "@/features/project/dock/dock-document-store";
+import { useOptionalOpenEditorReview } from "@/features/project/dock/editor-review-handoff";
+import { usePresentedDocument } from "@/features/project/presented-document";
 import {
   type DraftOnlyContainer,
   type DraftOnlyPresentation,
@@ -116,6 +119,42 @@ function WorkSettlement({
     resources,
     workId,
   ]);
+
+  const presented = usePresentedDocument();
+  const presentedRef = useRef(presented);
+  presentedRef.current = presented;
+  const openReview = useOptionalOpenEditorReview();
+  // A draft-only tab is for a document that is hidden until Apply. When the draft
+  // is still active and its document is no longer new, the document went live (a
+  // join: New file, a link's Create): the tab becomes that document's ordinary
+  // tab, and a tab the writer was looking at opens the draft's review over it,
+  // the view the chip's Draft choice gives.
+  useEffect(() => {
+    if (drafts.status !== "ready") return;
+    for (const draft of lifecycle.presentations(projectId)) {
+      const row = drafts.drafts?.find((candidate) => candidate.itemKey === draft.itemKey);
+      if (draft.workId !== workId || !row || row.isNew) continue;
+      const current = presentedRef.current;
+      const shown =
+        current?.container === draft.container &&
+        current.documentId === draft.documentId &&
+        current.draftOnly;
+      void lifecycle.promote(draft).then((promoted) => {
+        if (!promoted || !shown) return;
+        if (draft.container === "dock") {
+          useDockDocumentStore.getState().setDocumentReview({ workId, itemKey: draft.itemKey });
+          return;
+        }
+        void openReview?.({
+          workId,
+          documentId: draft.documentId,
+          itemKey: draft.itemKey,
+          contextLocation: draft.contextLocation,
+          isNew: false,
+        }).catch(() => undefined);
+      });
+    }
+  }, [lifecycle, membership, drafts.drafts, drafts.status, projectId, workId, openReview]);
 
   return null;
 }

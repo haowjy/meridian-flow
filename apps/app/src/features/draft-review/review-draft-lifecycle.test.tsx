@@ -79,6 +79,8 @@ let removal: ContextRemovalCoordinator;
 let search: ProjectSearch;
 let writes: number;
 const draftB = { documentId: "document-b", itemKey: "draft-b" };
+// document-a is draft-only (hidden until Apply), so its list row is new.
+const listedA = { ...listed, isNew: true };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const tabs = () => getContextTabs("project-a").tabs;
 async function open(p: () => ScopeProbe) {
@@ -117,7 +119,7 @@ beforeEach(() => {
   });
   removal.bindRouteSelection("project-a", revision, { kind: "server", documentId: "document-a" });
   fixture = createReviewScopeFixture({ removal });
-  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listedA, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-a" ? ["1", "2"] : ["3"])),
     itemKey: id,
@@ -132,7 +134,6 @@ afterEach(() => {
 });
 
 it.each([
-  [false, false],
   [false, true],
   [true, false],
 ])("header refuses offline Discard without removal or navigation (browser=%s, manager=%s)", async (browser, manager) => {
@@ -197,6 +198,28 @@ it("draft-only Discard keeps both containers until its own terminal success; ref
     expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
     expect(useDockDocumentStore.getState().occupant).toBeNull();
     expect(writes).toBe(1);
+  });
+});
+
+it("a draft-only tab becomes the live document's tab once its draft stops being new (a join)", async () => {
+  await fixture.render(async (p) => {
+    await open(p);
+    expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(true);
+    // The document went live under the draft: the same item, no longer new.
+    fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
+    await act(async () => {
+      await p().queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.workDrafts("project-a", "work-a"),
+      });
+    });
+    await settleReact(() =>
+      expect(tabs().some((tab) => tab.kind !== "new" && tab.draftOnly)).toBe(false),
+    );
+    expect(
+      tabs()
+        .map((tab) => tab.documentId)
+        .sort(),
+    ).toEqual(["document-a", "document-b"]);
   });
 });
 
@@ -365,7 +388,7 @@ it("an unopened list follows a remote write and disposition through updated list
         itemKey: id,
       }));
       fixture.network.listWorkDrafts.mockResolvedValue({
-        items: [listed, { ...listedB, updatedAt: stamp }],
+        items: [listedA, { ...listedB, updatedAt: stamp }],
       });
       await act(async () => {
         await p().queryClient.invalidateQueries({

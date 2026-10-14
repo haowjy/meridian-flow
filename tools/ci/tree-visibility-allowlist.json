@@ -6,11 +6,6 @@
       "reason": "The tree view and hidden-node lifecycle: the one owner of the hidden predicate"
     },
     {
-      "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts",
-      "forms": ["write"],
-      "reason": "Live creation writer: inserts and updates live rows; every read goes through the view, and hidden rows are written only by the tree owner"
-    },
-    {
       "path": "apps/server/server/domains/context/adapters/context-fs/drizzle-tree-mutation-store.ts",
       "forms": ["read", "write"],
       "reason": "Live mover: CAS-inspects through the view, moves and deletes rows, enumerates subtrees including hidden contents (they move with their folder; absorb and split need them)"

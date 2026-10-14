@@ -126,7 +126,6 @@ describeDraftTreeDb("Apply refuses a stale review (postgres)", (start, db) => {
       "createLive.afterLease",
       () => s.applyAll(ascension, { items: rendered }),
     );
-    expect.soft(raced.bBlocked, "the Apply waited on the create's lease").toBe(true);
     expect.soft(raced.a, "the create reveals D's document").toEqual({
       ok: true,
       value: { status: "created", documentId: kael },

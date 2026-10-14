@@ -5,6 +5,7 @@ import type { DocumentProjectionDiagnostics } from "../domain/document-projectio
 import type {
   PostDurabilityNoticeService,
   ReversalNoticeDiagnostics,
+  TurnInverseNoticePort,
 } from "../domain/reversal-notices.js";
 import type { TurnReversalServiceDeps } from "../domain/turn-reversal-service.js";
 
@@ -28,6 +29,10 @@ export const UNSUPPORTED_REVERSE_THREAD_CONTEXT: TurnReversalAccess["reverseThre
 
 export const SILENT_POST_DURABILITY_NOTICES: PostDurabilityNoticeService = {
   async recordAwarenessDegraded() {},
+};
+
+export const SILENT_TURN_INVERSE_NOTICES: TurnInverseNoticePort = {
+  async record() {},
 };
 
 export const SILENT_DOCUMENT_PROJECTION_DIAGNOSTICS: DocumentProjectionDiagnostics = {

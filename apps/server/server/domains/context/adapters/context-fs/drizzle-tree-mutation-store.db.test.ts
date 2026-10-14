@@ -96,7 +96,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps file and folder namespace claims exclusive in either order", async () => {
       const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
-      await store.createDocument({
+      await store.createDocumentRecordIfAbsent({
         folderId: null,
         name: "file",
         extension: "",
@@ -118,7 +118,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).rejects.toMatchObject({ name: "ContextEntryConflictError", occupantKind: "folder" });
       await expect(
-        store.createDocument({
+        store.createDocumentRecordIfAbsent({
           folderId: null,
           name: "folder",
           extension: "",
@@ -632,7 +632,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const [index, fileFirst] of [true, false, true, false].entries()) {
         const name = `Clash ${index}`;
         const file = () =>
-          left.createDocument({
+          left.createDocumentRecordIfAbsent({
             folderId: null,
             name,
             extension: "",
