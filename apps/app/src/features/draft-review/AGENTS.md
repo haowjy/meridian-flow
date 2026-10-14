@@ -78,7 +78,10 @@ Paths outside this directory are relative to `apps/app/src`.
   (`handle.projectNow()`) and sends that frame, so words typed inside the debounce apply. Per-change
   Apply and a headless file Apply keep the frame their row was drawn from.
 - A held Discard owns its history and a lease on its room until Undo (`useHeadlessDiscards`),
-  whether the row was expanded or collapsed. A row is drawn only from a room its reader holds.
+  whether the row was expanded or collapsed. A row is drawn only from a room its reader holds. The hook's
+  lifetime is one Work: a same-chat Work rebind retires its rows, leases and pending work.
+- A text Discard is only ever an editor or room edit; with neither available it waits and never falls back to
+  item Discard (server close), which is for created, binary and live-deleted items.
 - An Apply whose change a peer removed while it waited keeps its Applying and its failure on
   the file (`reconcileChangeRecords`), never on a surviving twin and never as a row.
 - Every rendered Apply (per change, open new document, whole item) carries the frame its

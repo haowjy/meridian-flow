@@ -142,7 +142,7 @@ it.each([
   );
 });
 
-it("a whole-draft Apply owns the draft's one claim from the click, through preparation, and a preparation failure lands on the draft", async () => {
+it("a whole-draft Apply owns the draft's one claim from the click through preparation, a preparation failure lands on the draft, and an account change revokes the command before it sends", async () => {
   let ready!: () => void;
   const preparing = new Promise<void>((resolve) => (ready = resolve));
   const first = applyDraft(queryClient, {
@@ -162,6 +162,40 @@ it("a whole-draft Apply owns the draft's one claim from the click, through prepa
   expect(apply).not.toHaveBeenCalled();
   expect(pendingDraftCommand(records(), draft)).toBeNull();
   expect(draftCommandFailure(records(), draft)?.code).toBe("apply-offline");
+
+  // An account change while it prepares revokes the claim: no request, no published result, preparation released.
+  {
+    bindDraftCommandAccount("a");
+    let accounts = 0;
+    const item = vi
+      .spyOn(draftsApi, "applyDraft")
+      .mockResolvedValue({ status: "applied", itemClosed: true, overrode: [] } as never);
+    for (const run of [
+      (prepare: () => Promise<never>) => applyDraft(queryClient, { scope: "item", draft, prepare }),
+      (prepare: () => Promise<never>) =>
+        applyChanges(queryClient, {
+          scope: "change",
+          draft,
+          targets: targets("c"),
+          baseKey: "k",
+          prepare,
+        }),
+    ]) {
+      let finish!: () => void;
+      const preparing = new Promise<void>((resolve) => (finish = resolve));
+      const release = vi.fn();
+      const pending = run((async () => {
+        await preparing;
+        return { snapshot: "c25hcA==", synced: async () => {}, release };
+      }) as never);
+      bindDraftCommandAccount(`other-${accounts++}`);
+      finish();
+      expect(await pending).toEqual({ kind: "blocked" });
+      expect(release).toHaveBeenCalledOnce();
+    }
+    expect(item).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+  }
 });
 
 it("the strip's Apply is pending at the click, reads the room inside the command, releases it on every path, and a failed read lands on the file", async () => {
@@ -201,37 +235,4 @@ it("the strip's Apply is pending at the click, reads the room inside the command
   const acquire = vi.fn();
   expect(await applyChatChanges(queryClient, draft, acquire)).toEqual({ kind: "blocked" });
   expect(acquire).not.toHaveBeenCalled();
-});
-
-it("an account change during preparation revokes the command: no request, no published result, preparation released", async () => {
-  bindDraftCommandAccount("a");
-  let accounts = 0;
-  const item = vi
-    .spyOn(draftsApi, "applyDraft")
-    .mockResolvedValue({ status: "applied", itemClosed: true, overrode: [] } as never);
-  for (const run of [
-    (prepare: () => Promise<never>) => applyDraft(queryClient, { scope: "item", draft, prepare }),
-    (prepare: () => Promise<never>) =>
-      applyChanges(queryClient, {
-        scope: "change",
-        draft,
-        targets: targets("c"),
-        baseKey: "k",
-        prepare,
-      }),
-  ]) {
-    let finish!: () => void;
-    const preparing = new Promise<void>((resolve) => (finish = resolve));
-    const release = vi.fn();
-    const pending = run((async () => {
-      await preparing;
-      return { snapshot: "c25hcA==", synced: async () => {}, release };
-    }) as never);
-    bindDraftCommandAccount(`other-${accounts++}`);
-    finish();
-    expect(await pending).toEqual({ kind: "blocked" });
-    expect(release).toHaveBeenCalledOnce();
-  }
-  expect(item).not.toHaveBeenCalled();
-  expect(apply).not.toHaveBeenCalled();
 });

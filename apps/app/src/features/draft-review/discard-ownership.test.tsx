@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
- * Headless Discard state lives for one Work beneath the persistent chat: rebinding the same chat to another
- * Work retires its rows and Undo authority and fences a Discard still pending in the old Work.
+ * Who owns a Discard. A text draft's Discard is an undoable edit: with no editor to own it, it never closes the
+ * item on the server. Headless Discard state lives for one Work beneath the persistent chat: rebinding the same
+ * chat to another Work retires its rows and Undo authority and fences a Discard still pending in the old Work.
  */
 import { act } from "react";
 import { expect, it, vi } from "vitest";
@@ -11,10 +12,17 @@ import { projectRoom } from "@/features/draft-review/review-frame";
 import { reviewChanges } from "@/features/draft-review/review-model";
 import { useHeadlessDiscards } from "@/features/draft-review/useHeadlessDiscards";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/useWorkDraftCommands";
-import { createReviewScopeFixture, listed, workC } from "@/test-support/draft-review-scope";
+import {
+  createReviewScopeFixture,
+  draftA,
+  listed,
+  meta,
+  workC,
+} from "@/test-support/draft-review-scope";
 import { seedReviewBase } from "@/test-support/inline-review-editor";
+import { settleReact } from "@/test-support/react-dom-harness";
 
-it("a same-chat Work rebind retires the old Work's Discard rows, Undo and pending completions", async () => {
+it("a text Discard without an editor never closes the item, and a same-chat Work rebind retires the old Work's Discard rows, Undo and pending completions", async () => {
   vi.useFakeTimers();
   const fixture = createReviewScopeFixture();
   const room = new DocumentSession({ roomKey: "r", persistence: { kind: "none" } });
@@ -30,6 +38,8 @@ it("a same-chat Work rebind retires the old Work's Discard rows, Undo and pendin
   let discards!: ReturnType<typeof useHeadlessDiscards>;
   let scope = "";
   let answerMeta!: (meta: never) => void;
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
+  fixture.network.getDraftMeta.mockResolvedValueOnce(meta as never);
   fixture.network.getDraftMeta.mockReturnValue(new Promise((resolve) => (answerMeta = resolve)));
   function Probe() {
     const commands = useBoundWorkDraftCommands();
@@ -42,6 +52,16 @@ it("a same-chat Work rebind retires the old Work's Discard rows, Undo and pendin
     await fixture.render(
       async (read) => {
         expect(scope).toBe("work-a");
+        const controller = () => read().presented.controller;
+        await act(async () => controller().enterInlineReview(draftA.documentId, draftA.itemKey));
+        await settleReact(() => expect(read().presented.roomOwner.roomName).toBe(meta.roomName));
+        expect(controller().wholeItem).toBe(false);
+        await act(async () => {
+          const outcome = await controller().discard(draftA.documentId, draftA.itemKey);
+          expect(outcome).toEqual({ kind: "blocked" });
+        });
+        expect(fixture.network.discardDraft).not.toHaveBeenCalled();
+
         const change = reviewChanges(projectRoom(room.document))[0];
         await act(async () => discards.discardChange(file, change, 0, "r"));
         await act(async () => discards.discardFile(file, "thread"));
