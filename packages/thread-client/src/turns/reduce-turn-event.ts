@@ -62,7 +62,7 @@ export type TurnStore = {
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
   /** Adds the write-mode divider a `meridian.write_mode.switched` frame names (see `ensureSwitchTurnIn`). */
-  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts): void;
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts, seq: string): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   /** Adapter hook: ask the host to refetch. Reduction never depends on it. */
   invalidateThreadSnapshot?(threadId: string): void;
@@ -1100,7 +1100,7 @@ export function createTurnReducer(options: TurnReducerOptions): TurnReducer {
         // the divider; the run-state slice answers the writer's control from the same frame.
         if (event.name === WRITE_MODE_SWITCHED_EVENT) {
           const switched = readWriteModeSwitched(event.value);
-          if (switched) store.ensureSwitchTurn(threadId, switched);
+          if (switched) store.ensureSwitchTurn(threadId, switched, seq ?? "0");
           return;
         }
         // Durable custom projections are consumed by live listeners — the

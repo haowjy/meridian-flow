@@ -5,7 +5,13 @@
  * `UserMessageBlock` shape: serializing its document again gives the blocks that were handed
  * back. `prependMessageDoc` puts that document above what the writer has typed.
  */
-import { type ProjectId, parseContextUri, type UserId, type WorkId } from "@meridian/contracts";
+import {
+  isProjectScopedScheme,
+  type ProjectId,
+  parseContextUri,
+  type UserId,
+  type WorkId,
+} from "@meridian/contracts";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import {
   classifyFiletype,
@@ -14,6 +20,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { HandBackResult } from "@meridian/contracts/threads";
 import type { WorkSlug } from "@meridian/contracts/works";
+import { imageCapable as imageFile } from "./occurrences";
 import type {
   BuiltMessageDoc,
   MessageDoc,
@@ -36,12 +43,16 @@ export type ChatReferenceScope = {
   work: { id: WorkId; slug: WorkSlug | null };
   /** The lineage's first chat, which owns a No Work chat's Scratch. */
   rootThreadId: string;
+  /** That first chat's handle (`c12`), the name a lineage URI carries; null until it is known. */
+  rootThreadRef: string | null;
 };
 
 /**
  * Resolve a handed-back reference from its URI and the chat it came from. The occurrence keeps
- * only the document and URI, so the owner is read off the URI's authority; a URI outside the
- * chat's own owners resolves to nothing and comes back as its link text.
+ * only the document and URI, so the owner is read off the URI's authority and a chip is built
+ * only when the chat can prove that owner. Any other URI (another lineage, another Work, a
+ * handle not yet known, an authority the scheme doesn't take) resolves to nothing and comes
+ * back as its link text.
  */
 export function chatReferenceResolver(scope: ChatReferenceScope): ResolveReference {
   return ({ uri }) => {
@@ -57,7 +68,7 @@ export function chatReferenceResolver(scope: ChatReferenceScope): ResolveReferen
     const { scheme, authority } = parsed.value;
     let owner: StableReferenceAuthority | null = null;
     if (authority.kind === "lineage") {
-      if (scheme === "scratch")
+      if (scheme === "scratch" && scope.rootThreadRef === authority.rootThreadRef)
         owner = {
           kind: "lineage",
           projectId: scope.projectId,
@@ -65,10 +76,11 @@ export function chatReferenceResolver(scope: ChatReferenceScope): ResolveReferen
           rootThreadRef: authority.rootThreadRef,
         };
     } else if (authority.kind === "none") {
-      if (scope.work.slug === null)
+      // `@/` names No Work's uploads; No Work owns no Scratch and a project-wide scheme takes no owner.
+      if (scheme === "uploads" && scope.work.slug === null)
         owner = { kind: "work", projectId: scope.projectId, workId: scope.work.id, workSlug: null };
     } else if (authority.kind === "work") {
-      if (authority.workSlug === scope.work.slug)
+      if (!isProjectScopedScheme(scheme) && authority.workSlug === scope.work.slug)
         owner = {
           kind: "work",
           projectId: scope.projectId,
@@ -153,6 +165,9 @@ function chip(
 ): MessageInlineNode | null {
   const facts = resolve(target);
   if (!facts) return null;
+  // The message itself says it carried an image; a name with no extension can't.
+  const known: ReferenceFacts =
+    imageCapable && !imageFile(facts.fileType) ? { ...facts, fileType: "image" } : facts;
   // The upload was adopted at admission, so it is an ordinary document now.
   return {
     type: "composerReference",
@@ -160,7 +175,7 @@ function chip(
       reference: {
         documentId: target.documentId,
         uri: target.uri,
-        ...facts,
+        ...known,
         label,
         imageCapable,
         upload: null,

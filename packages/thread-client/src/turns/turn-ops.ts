@@ -98,19 +98,26 @@ export function ensureAssistantTurnIn(
 /** The facts a `meridian.write_mode.switched` frame carries about its divider turn. */
 export type SwitchTurnFacts = { turnId: string; controlId: string; mode: AiWriteMode };
 
+/** A divider a `switched` frame added, held until a snapshot covers that frame's seq. */
+export type HeldDividers = ReadonlyMap<string, { turn: Turn; seq: string }>;
+
 /**
  * Adds the write-mode divider a `meridian.write_mode.switched` frame names, at the end of the
  * thread, as a complete `system` turn carrying the metadata the divider reads. The frame is the
  * only live announcement of that turn, so this is how a stream follower gets the divider with no
- * snapshot; the stored turn replaces it by id. The same array comes back when it is already there.
+ * snapshot; the stored turn replaces it by id. The divider is also held at the frame's seq: a
+ * snapshot read before the switch still lacks it, and `applySnapshotTo` puts it back until a
+ * snapshot covers the frame. The same state comes back when it is already there.
  */
 export function ensureSwitchTurnIn(
-  existing: Turn[],
+  state: { turns: Turn[]; dividers: HeldDividers },
   threadId: string,
   facts: SwitchTurnFacts,
+  seq: string,
   createdAt: string,
-): Turn[] {
-  if (existing.some((turn) => turn.id === facts.turnId)) return existing;
+): { turns: Turn[]; dividers: HeldDividers } {
+  const { turns: existing } = state;
+  if (existing.some((turn) => turn.id === facts.turnId)) return state;
   const turn: Turn = {
     id: facts.turnId,
     threadId,
@@ -138,7 +145,10 @@ export function ensureSwitchTurnIn(
     siblingIds: [],
     responses: [],
   };
-  return [...existing, turn];
+  return {
+    turns: [...existing, turn],
+    dividers: new Map(state.dividers).set(facts.turnId, { turn, seq }),
+  };
 }
 
 /**
@@ -208,19 +218,25 @@ export function removeTurnsIn(
 }
 
 /**
- * A server snapshot's turns, less those a removal the snapshot does not cover has taken out;
- * tombstones the snapshot covers (`seq < nextSeq`) go, because its turn list lacks them from
- * then on.
+ * A server snapshot's turns, less those a removal the snapshot does not cover has taken out, and
+ * plus the dividers a frame the snapshot does not cover has added; both fences are the same
+ * (`seq < nextSeq` is covered), because a covering snapshot lists the stored turns itself.
  */
 export function applySnapshotTo(
-  tombstones: Tombstones,
+  fences: { tombstones: Tombstones; dividers: HeldDividers },
   serverTurns: readonly Turn[],
   nextSeq: string,
-): { turns: Turn[]; tombstones: Tombstones } {
+): { turns: Turn[]; tombstones: Tombstones; dividers: HeldDividers } {
+  const { tombstones, dividers } = fences;
   const live = new Map([...tombstones].filter(([, seq]) => compareSeq(seq, nextSeq) >= 0));
+  const held = new Map([...dividers].filter(([, { seq }]) => compareSeq(seq, nextSeq) >= 0));
+  const kept = live.size ? serverTurns.filter((turn) => !live.has(turn.id)) : [...serverTurns];
+  const present = new Set(kept.map((turn) => turn.id));
+  const missing = [...held].filter(([id]) => !present.has(id));
   return {
-    turns: live.size ? serverTurns.filter((turn) => !live.has(turn.id)) : [...serverTurns],
+    turns: missing.length ? [...kept, ...missing.map(([, { turn }]) => turn)] : kept,
     tombstones: live.size === tombstones.size ? tombstones : live,
+    dividers: held.size === dividers.size ? dividers : held,
   };
 }
 

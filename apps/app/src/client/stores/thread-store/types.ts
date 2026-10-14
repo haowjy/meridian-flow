@@ -65,7 +65,7 @@ export type ThreadStoreActions = {
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
   /** Add the write-mode divider a `switched` frame names (see `ensureSwitchTurnIn`). */
-  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts): void;
+  ensureSwitchTurn(threadId: string, facts: SwitchTurnFacts, seq: string): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(

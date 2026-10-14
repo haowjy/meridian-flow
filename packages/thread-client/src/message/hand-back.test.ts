@@ -10,6 +10,7 @@ const scope = {
   userId: "u1",
   work: { id: "w1", slug: null },
   rootThreadId: "t1",
+  rootThreadRef: "c1",
 } as never;
 const resolve = chatReferenceResolver(scope);
 
@@ -59,6 +60,33 @@ describe("hand-back composer content", () => {
         composerDocFromHandedBack([{ userTurnId: "f", blocks: foreign }], resolve),
       ),
     ).toMatchObject({ text: "[x](manuscript://@other/x.md)", references: [] });
+
+    // Another lineage's document is not this chat's to own: its link text comes back, never a chip.
+    const other: UserMessageBlock[] = [
+      {
+        type: "reference",
+        text: "[x](scratch://@/c9/x.md)",
+        documentId: "doc-o",
+        uri: "scratch://@/c9/x.md" as never,
+      },
+    ];
+    expect(
+      serializeMessageDoc(composerDocFromHandedBack([{ userTurnId: "o", blocks: other }], resolve)),
+    ).toMatchObject({ text: "[x](scratch://@/c9/x.md)", references: [] });
+
+    // An image with no extension in its name is still an image when the message carried one.
+    const plain: UserMessageBlock[] = [
+      {
+        type: "reference",
+        text: "[sketch](scratch://@/c1/sketch)",
+        documentId: "doc-s",
+        uri: "scratch://@/c1/sketch" as never,
+      },
+      { type: "image", documentId: "doc-s", uri: "scratch://@/c1/sketch" as never },
+    ];
+    const kept = composerDocFromHandedBack([{ userTurnId: "s", blocks: plain }], resolve);
+    expect(serializeMessageDoc(kept).blocks).toEqual(plain);
+    expect(JSON.stringify(kept)).toContain('"fileType":"image"');
 
     // An image block with no chip before it (an API client) comes back as an image-capable chip.
     const bare: UserMessageBlock[] = [

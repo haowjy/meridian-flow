@@ -20,6 +20,7 @@ const resolve = chatReferenceResolver({
   userId: uuid(2),
   work: { id: uuid(3), slug: null },
   rootThreadId: uuid(4),
+  rootThreadRef: "c1",
 } as never);
 const returned = composerDocFromHandedBack(
   [

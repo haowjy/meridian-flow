@@ -16,6 +16,7 @@ import {
   createTurnReducer,
   ensureAssistantTurnIn,
   ensureSwitchTurnIn,
+  type HeldDividers,
   isOptimisticTurnId,
   OPTIMISTIC_TURN_ID_PREFIX,
   patchTurnStatusIn,
@@ -70,6 +71,8 @@ type ThreadStoreSliceState = ThreadStoreState & {
   snapshotNextSeqFloorByThread: Record<string, string>;
   /** Turns removed from the conversation, until a snapshot covering the removal arrives. */
   tombstonesByThread: Record<string, Tombstones>;
+  /** Dividers a `switched` frame added that no accepted snapshot covers yet. */
+  dividersByThread: Record<string, HeldDividers>;
   durableBlockCursorByThread: Record<string, string>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
@@ -247,6 +250,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           runStateByThread: {},
           snapshotNextSeqFloorByThread: {},
           tombstonesByThread: {},
+          dividersByThread: {},
           durableBlockCursorByThread: {},
           liveMeta: {},
           pendingCreation: { threadIds: {} },
@@ -512,18 +516,25 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             reducer.applyEvent(threadId, event, seq);
           },
 
-          ensureSwitchTurn(threadId, facts) {
+          ensureSwitchTurn(threadId, facts, seq) {
             set((state) => {
-              const existing = state.turnsByThread[threadId] ?? [];
+              const held = {
+                turns: state.turnsByThread[threadId] ?? [],
+                dividers: state.dividersByThread[threadId] ?? new Map(),
+              };
               const next = ensureSwitchTurnIn(
-                existing,
+                held,
                 threadId,
                 facts,
+                seq,
                 new Date(state.now).toISOString(),
               );
-              return next === existing
+              return next === held
                 ? state
-                : { turnsByThread: { ...state.turnsByThread, [threadId]: next } };
+                : {
+                    turnsByThread: { ...state.turnsByThread, [threadId]: next.turns },
+                    dividersByThread: { ...state.dividersByThread, [threadId]: next.dividers },
+                  };
             });
           },
 
@@ -584,7 +595,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               const localTurns = state.turnsByThread[threadId] ?? [];
               const runningTurnId = lifecycle.runningTurnId;
               const applied = applySnapshotTo(
-                state.tombstonesByThread[threadId] ?? new Map(),
+                {
+                  tombstones: state.tombstonesByThread[threadId] ?? new Map(),
+                  dividers: state.dividersByThread[threadId] ?? new Map(),
+                },
                 serverTurns,
                 nextSeq,
               );
@@ -601,6 +615,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               const nextState: Partial<ThreadStoreSliceState> = {
                 turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
                 tombstonesByThread: { ...state.tombstonesByThread, [threadId]: tombstones },
+                dividersByThread: { ...state.dividersByThread, [threadId]: applied.dividers },
               };
 
               const reconciledInterruptResponses = reconcileInterruptResponsesForThread(

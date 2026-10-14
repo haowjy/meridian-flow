@@ -37,6 +37,7 @@ import { type ReactNode, useCallback, useMemo, useReducer, useRef } from "react"
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
+import { useLineage } from "@/client/query/useLineageTitle";
 import {
   useIsThreadPendingCreation,
   useRunState,
@@ -418,6 +419,10 @@ export function ChatView({
     return recorded;
   }
 
+  const lineage = useLineage(
+    projectId,
+    activeThread ? { rootThreadId: activeThread.rootThreadId } : null,
+  );
   const stopScope = useMemo<ChatReferenceScope | null>(
     () =>
       activeThread && activeWork
@@ -426,9 +431,10 @@ export function ChatView({
             userId: accountId as UserId,
             work: { id: activeWork.id, slug: activeWork.slug },
             rootThreadId: activeThread.rootThreadId,
+            rootThreadRef: lineage?.rootThreadRef ?? null,
           }
         : null,
-    [accountId, activeThread, activeWork, projectId],
+    [accountId, activeThread, activeWork, lineage?.rootThreadRef, projectId],
   );
   const chatStop = useChatStop({ threadId, accountId, scope: stopScope });
   function handleStop() {
