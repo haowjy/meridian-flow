@@ -136,17 +136,9 @@ export function validateResourceRecordUpdate(
         }),
     );
     const previousContent = previous?.resource.content;
-    const sameAcknowledgedCache =
-      previous?.resource.lifecycle.kind === "acknowledged" &&
-      previous.resource.identity.documentId === adoption.documentId &&
-      previous.resource.identity.revision === adoption.identityRevision &&
-      previousContent?.kind === "exact" &&
-      previousContent.initialization !== "reserved" &&
-      previousContent.databaseName === adoption.exactDatabaseName &&
-      !previous.intents.some((intent) =>
-        intent.attempts.some((attempt) => attempt.attemptId === adoption.transitionId),
-      );
-    const acquiredServerCache =
+    // A new obligation is witnessed either by the local create that produced the content, or by an
+    // acknowledged resource whose content is not yet acquired or is already this exact cache.
+    const acknowledgedExactCache =
       previous?.resource.lifecycle.kind === "acknowledged" &&
       resource.lifecycle.kind === "acknowledged" &&
       previous.resource.identity.documentId === adoption.documentId &&
@@ -155,7 +147,7 @@ export function validateResourceRecordUpdate(
         (previousContent.initialization !== "reserved" &&
           previousContent.databaseName === adoption.exactDatabaseName));
     const createdLocalContent = previous?.resource.lifecycle.kind === "local" && source;
-    if (!createdLocalContent && !sameAcknowledgedCache && !acquiredServerCache)
+    if (!createdLocalContent && !acknowledgedExactCache)
       throw new Error("Session adoption requires created or acquired exact content");
   }
   if (resource.obligations.canonicalRefresh) {
