@@ -23,6 +23,7 @@ import type {
   PrefixCachePredictionReason,
   PrefixCachePredictionState,
 } from "./prefix-cache-prediction.js";
+import type { RunState } from "./run-state.js";
 
 export interface ModelResponseReceivedRow {
   id: string;
@@ -188,6 +189,12 @@ export type OrchestratorEvent =
       threadId: string;
       /** Full recomputed pending inbox, so the client replaces the tray state wholesale. */
       pending: ThreadPendingInbox;
+    }
+  | {
+      type: "run_state.changed";
+      threadId: string;
+      /** The record without its version: the journal row's own seq is the version. */
+      runState: Omit<RunState, "version">;
     }
   | {
       /** Ephemeral full status refresh when non-lease background work starts or settles. */
