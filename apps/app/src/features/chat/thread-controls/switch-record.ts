@@ -19,7 +19,12 @@
 import { headSeq } from "@meridian/contracts/protocol";
 import type { PendingInboxItem, ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
-import type { RunStateRecord } from "@/client/run-state/run-state-view";
+import {
+  answerIntent,
+  type RunStateRecord,
+  type RunStateView,
+  receiveRecord,
+} from "@/client/run-state/run-state-view";
 
 export const isWriteModeControl = (item: PendingInboxItem) =>
   item.intent === "control" && item.control?.kind === "write_mode";
@@ -71,4 +76,17 @@ export function recordFromAnswer(
     mode: answer.mode,
     items: answer.pending ? [...others, answer.pending] : others,
   };
+}
+
+/**
+ * Take a frame into the view. A `write_mode.switched` frame is also the answer for its
+ * control's intent: the apply it reports is that control's effect, at the frame's seq.
+ */
+export function receiveFrame(view: RunStateView, frame: SwitchFrame): RunStateView {
+  const record = recordFromFrame(view.record, frame);
+  if (!record) return view;
+  const next = receiveRecord(view, record);
+  return frame.kind === "switched"
+    ? answerIntent(next, "switch", frame.controlId, frame.seq)
+    : next;
 }
