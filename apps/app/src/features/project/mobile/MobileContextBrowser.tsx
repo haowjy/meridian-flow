@@ -13,7 +13,6 @@ import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { InlineEdit } from "@/components/ui/use-inline-edit";
 import { preparingSentence, refusalSentence, runSentence } from "@/features/import/reason-copy";
 import {
-  type ImportedTree,
   type ImportRowInfo,
   type PendingRow,
   rowKind,
