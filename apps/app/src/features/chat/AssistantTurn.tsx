@@ -1,12 +1,7 @@
 /** AssistantTurn — single render path for assistant turns. */
 
 import { Trans } from "@lingui/react/macro";
-import {
-  type Block,
-  isProviderDeclined,
-  isTerminalTurnStatus,
-  type Turn,
-} from "@meridian/contracts/protocol";
+import { isProviderDeclined, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import {
   type AssistantView,
   isImageBlock,

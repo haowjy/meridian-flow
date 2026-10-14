@@ -23,6 +23,8 @@ import { type AiWriteMode, aiWriteModeSchema } from "../works/ai-write-mode.js";
 export const MESSAGES_DELIVERED_EVENT = "meridian.messages.delivered" as const;
 export const EXECUTION_ENDED_EVENT = "meridian.execution.ended" as const;
 export const WRITE_MODE_SWITCHED_EVENT = "meridian.write_mode.switched" as const;
+/** `meridian.run_state`: the chat's whole `RunState`, stamped with its stream version. */
+export const RUN_STATE_EVENT = "meridian.run_state" as const;
 
 export type RunStartedMeta = {
   writeMode: AiWriteMode | null;
