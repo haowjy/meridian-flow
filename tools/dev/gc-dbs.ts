@@ -1,6 +1,5 @@
 #!/usr/bin/env tsx
 /** Drop local project-prefixed databases that no live git worktree owns. */
-import { realpathSync } from "node:fs";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
 import {
@@ -12,19 +11,10 @@ import {
 import {
   applyDevEnvToProcess,
   resolveCurrentRepoRoot,
-  resolveMainCheckoutRoot,
+  resolveLiveWorktreeDatabaseNames,
   resolveMainDatabaseNames,
-  resolveWorktreeDatabaseName,
-  runGit,
 } from "./lib/dev-env";
 import { classifyTestDatabaseCleanup } from "./lib/test-db-lifecycle";
-import { resolveSessionIdentity } from "./session-identity";
-
-interface WorktreeInfo {
-  path: string;
-  branchName: string;
-  detachedHeadRef?: string;
-}
 
 function parseArgs(argv: string[]): { yes: boolean } {
   const yes = argv.includes("--yes") || argv.includes("-y");
@@ -35,72 +25,10 @@ function parseArgs(argv: string[]): { yes: boolean } {
   return { yes };
 }
 
-function parseWorktreeList(outputText: string): WorktreeInfo[] {
-  const worktrees: WorktreeInfo[] = [];
-  let current: Partial<WorktreeInfo> = {};
-
-  const flush = () => {
-    if (!current.path) return;
-    worktrees.push({
-      path: current.path,
-      branchName: current.branchName ?? "HEAD",
-      detachedHeadRef: current.detachedHeadRef,
-    });
-    current = {};
-  };
-
-  for (const line of outputText.split("\n")) {
-    if (!line.trim()) {
-      flush();
-      continue;
-    }
-
-    const [key, ...rest] = line.split(" ");
-    const value = rest.join(" ");
-    if (key === "worktree") current.path = value;
-    if (key === "HEAD") current.detachedHeadRef = value.slice(0, 7);
-    if (key === "branch") current.branchName = value.replace(/^refs\/heads\//, "");
-  }
-
-  flush();
-  return worktrees;
-}
-
 function databaseUrlForName(baseUrl: string, databaseName: string): string {
   const url = new URL(baseUrl);
   url.pathname = `/${databaseName}`;
   return url.toString();
-}
-
-function resolveLiveWorktreeDatabaseNames(
-  repoRoot: string,
-  baseDbNames: readonly string[],
-): Set<string> {
-  const mainRoot = realpathSync(resolveMainCheckoutRoot(repoRoot));
-  const worktrees = parseWorktreeList(runGit(repoRoot, ["worktree", "list", "--porcelain"]));
-  const live = new Set<string>();
-
-  for (const worktree of worktrees) {
-    let worktreeRealpath: string;
-    try {
-      worktreeRealpath = realpathSync(worktree.path);
-    } catch {
-      continue;
-    }
-    if (worktreeRealpath === mainRoot) continue;
-
-    const identity = resolveSessionIdentity({
-      branchName: worktree.branchName,
-      detachedHeadRef: worktree.detachedHeadRef,
-      repoRootRealpath: worktreeRealpath,
-    });
-
-    for (const baseDbName of baseDbNames) {
-      live.add(resolveWorktreeDatabaseName(baseDbName, identity.slug));
-    }
-  }
-
-  return live;
 }
 
 async function confirmDrop(databaseNames: readonly string[]): Promise<boolean> {
