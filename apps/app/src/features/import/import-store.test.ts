@@ -42,7 +42,7 @@ function summary(version: string, state: ImportSummary["state"] = "ready"): Impo
   };
 }
 
-function report(version: string, entries: ImportEntryStatus[]): ImportStatus {
+function status(version: string, entries: ImportEntryStatus[]): ImportStatus {
   return {
     ...summary(version),
     roots: [{ rootId: 0, kind: "file", name: "Ch 1.md", id: null }],
@@ -54,10 +54,10 @@ function report(version: string, entries: ImportEntryStatus[]): ImportStatus {
 describe("ImportStore", () => {
   it("applies a cut on top of a full read and adopts a root's new id", () => {
     const store = new ImportStore("p", "import-1");
-    store.installReport(report("1", [planned]));
+    store.installStatus(status("1", [planned]));
     store.seedSummary(summary("2", "finished"));
     // A newer summary alone does not move the cursor past changes not yet read.
-    expect(store.getSnapshot().report?.cursor).toBe("1");
+    expect(store.getSnapshot().status?.cursor).toBe("1");
 
     store.applyChanges({
       ...summary("2", "finished"),
@@ -66,17 +66,17 @@ describe("ImportStore", () => {
       entries: [landed],
     });
 
-    expect(store.getSnapshot().report?.cursor).toBe("2");
-    expect(store.getSnapshot().report?.entries.get(0)?.state).toBe("landed");
-    expect(store.getSnapshot().report?.roots[0]?.id).toBe("doc-0");
+    expect(store.getSnapshot().status?.cursor).toBe("2");
+    expect(store.getSnapshot().status?.entries.get(0)?.state).toBe("landed");
+    expect(store.getSnapshot().status?.roots[0]?.id).toBe("doc-0");
   });
 
   it("never lets an older answer replace a newer one", () => {
     const store = new ImportStore("p", "import-1");
-    store.installReport({ ...report("3", [landed]), state: "finished" });
-    store.installReport(report("1", [planned]));
+    store.installStatus({ ...status("3", [landed]), state: "finished" });
+    store.installStatus(status("1", [planned]));
 
-    expect(store.getSnapshot().report?.summary.version).toBe("3");
-    expect(store.getSnapshot().report?.entries.get(0)?.state).toBe("landed");
+    expect(store.getSnapshot().status?.summary.version).toBe("3");
+    expect(store.getSnapshot().status?.entries.get(0)?.state).toBe("landed");
   });
 });

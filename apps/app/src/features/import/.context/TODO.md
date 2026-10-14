@@ -26,8 +26,3 @@ Delete an entry when it ships.
   (D1 re-check run 4b). This may be pre-existing catalog wake latency rather
   than import code; reproduce on `main` before fixing. Evidence:
   `evidence/d1-fix/run4-delete-timeline.txt`.
-
-- **The store and coordinator still name the import status `report`.**
-  `import-store.ts` (`state.report`, `installReport`) and its callers kept the
-  old name when the contract became `ImportStatus`. Follow-up: rename them to
-  status in one change.

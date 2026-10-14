@@ -1,6 +1,7 @@
 /** Failure reasons and refusals as sentences. The server sends codes; the app writes the words. */
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import type { ImportEntryReason, ImportRefusalCode } from "@meridian/contracts";
+import type { ImportRunInfo } from "@/client/query/context-catalog-projection";
 
 const serverError = () => t`Something went wrong on our side. Try again.`;
 
@@ -90,4 +91,22 @@ export function refusalSentence(code: ImportRefusalCode | null): string {
 function unhandled(code: never): string {
   void code;
   return serverError();
+}
+
+/** What a running import's mark says, on hover and at the top of its menu. */
+export function runSentence(run: ImportRunInfo): string {
+  const progress = t`${run.arrived} of ${run.total} files have arrived.`;
+  switch (run.kind) {
+    case "sending":
+      return t`Sending your files. ${progress}`;
+    case "stopping":
+      return t`Stopping the import.`;
+    case "interrupted":
+      return t`The import paused. ${progress} Continue to send the rest.`;
+    case "failed":
+      return plural(run.failed, {
+        one: "# file didn't import.",
+        other: "# files didn't import.",
+      });
+  }
 }

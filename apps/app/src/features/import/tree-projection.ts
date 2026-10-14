@@ -32,6 +32,7 @@ import type {
 import { filenameForDisplay } from "./display-name";
 import { effectiveEntry, fullyRead, type ImportState } from "./import-state";
 import type { ImportTarget } from "./placements";
+import { runInfoOf } from "./run-mark";
 
 /** What the projection reads of one import: its state and the coordinator's evidence. */
 export type ProjectedImport = {
@@ -95,8 +96,8 @@ function nodesOf(item: ProjectedImport): Nodes {
 
 function buildNodes(item: ProjectedImport): Node[] {
   const { state, seen, bridges } = item;
-  const report = fullyRead(state.report) ? state.report : null;
-  if (!report) {
+  const status = fullyRead(state.status) ? state.status : null;
+  if (!status) {
     return (state.local?.rows ?? []).map((row) => ({
       id: row.id,
       parentId: row.parentId,
@@ -112,7 +113,7 @@ function buildNodes(item: ProjectedImport): Node[] {
     }));
   }
   const nodes: Node[] = [];
-  for (const folder of report.folders.values()) {
+  for (const folder of status.folders.values()) {
     if (folder.state === "deleted") continue;
     nodes.push({
       id: folder.id,
@@ -128,7 +129,7 @@ function buildNodes(item: ProjectedImport): Node[] {
     });
   }
   const canRetry = state.local?.held != null;
-  for (const raw of report.entries.values()) {
+  for (const raw of status.entries.values()) {
     const entry = effectiveEntry(state, raw);
     if (entry.state === "skipped" || entry.state === "deleted" || entry.state === "not_imported")
       continue;
@@ -162,10 +163,10 @@ function buildNodes(item: ProjectedImport): Node[] {
 
 /**
  * The rows that carry a run's own status instead of a file's, from each import's
- * target: the destination while the selection is read, and after a refusal the root
- * row of each picked folder, where Try again and Discard live. A run with no root
- * row to carry it (loose files, an unreadable marker, a routed export) marks its
- * destination or each affected area header.
+ * target: the destination while the selection is read, and the root row of each
+ * picked folder once the import is sending, interrupted, failed or refused (where
+ * its menu lives). A run with no root row to carry it (loose files, an unreadable
+ * marker, a routed export) marks its destination or each affected area header.
  */
 function runMarks(
   imports: readonly ProjectedImport[],
@@ -175,17 +176,22 @@ function runMarks(
   const marks = new Map<string, ImportRowInfo>();
   const add = (id: string, info: ImportRowInfo) => marks.set(id, { ...marks.get(id), ...info });
   for (const { importId, state, target } of imports) {
+    if (!target) continue;
     const local = state.local;
-    if (!local || !target) continue;
     const anchors = target.anchors.filter((anchor) => anchor.scheme === scheme);
     const anchorId = (folderId: string | null) => folderId ?? rootId;
-    if (local.phase.kind === "reading")
+    if (local?.phase.kind === "reading")
       for (const anchor of anchors) add(anchorId(anchor.folderId), { reading: true });
-    if (local.phase.kind !== "not-started") continue;
-    const notStarted = { importId, code: local.phase.code };
-    for (const id of target.rootIds) add(id, { notStarted });
-    if (target.rootIds.length === 0 || local.roots.some((root) => root.kind === "file"))
-      for (const anchor of anchors) add(anchorId(anchor.folderId), { notStarted });
+    const run = runInfoOf(importId, state);
+    const info: ImportRowInfo | null =
+      local?.phase.kind === "not-started"
+        ? { notStarted: { importId, code: local.phase.code } }
+        : run && { run };
+    if (!info) continue;
+    for (const id of target.rootIds) add(id, info);
+    const roots = local?.roots ?? state.status?.roots ?? [];
+    if (target.rootIds.length === 0 || roots.some((root) => root.kind === "file"))
+      for (const anchor of anchors) add(anchorId(anchor.folderId), info);
   }
   return marks;
 }

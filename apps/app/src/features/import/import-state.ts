@@ -35,7 +35,7 @@ export type LocalRun = {
   retrying: ReadonlySet<number>;
 };
 
-export type ReportData = {
+export type StatusData = {
   summary: ImportSummary;
   roots: ImportStatus["roots"];
   /** The plan's folders, by id. */
@@ -43,29 +43,29 @@ export type ReportData = {
   entries: ReadonlyMap<number, ImportEntryStatus>;
   /**
    * The version through which every entry change has been read: a full read, then
-   * each `since` cut. Null until the full report is read. The summary can be newer
+   * each `since` cut. Null until the full status is read. The summary can be newer
    * (the open-imports list moves it); this never moves past changes not yet read.
    */
   cursor: string | null;
 };
 
-/** Whether every entry has been read, so `since` cuts are valid and the report can be drawn. */
-export function fullyRead(report: ReportData | null | undefined): report is ReportData & {
+/** Whether every entry has been read, so `since` cuts are valid and the status can be drawn. */
+export function fullyRead(status: StatusData | null | undefined): status is StatusData & {
   cursor: string;
 } {
-  return report?.cursor != null;
+  return status?.cursor != null;
 }
 
 /**
  * Stop here as this tab asked for it, whether or not it holds the files: a
- * reloaded tab can stop an import too. `stopped` with no report means the import
+ * reloaded tab can stop an import too. `stopped` with no status means the import
  * ended here before the server heard of it.
  */
 export type StopCommand = "none" | "stopping" | "failed" | "stopped";
 
 export type ImportState = {
   importId: string;
-  report: ReportData | null;
+  status: StatusData | null;
   local: LocalRun | null;
   stop: StopCommand;
   /** Local clock when the server's `lastActivityAt` last changed in front of this tab. */
@@ -77,9 +77,9 @@ export type ImportState = {
  * knows better: it failed. Reads (counts, rows) use these numbers.
  */
 export function effectiveCounts(state: ImportState): ImportCounts | null {
-  const summary = state.report?.summary;
+  const summary = state.status?.summary;
   if (!summary) return null;
-  const entries = state.report?.entries;
+  const entries = state.status?.entries;
   const local = state.local;
   if (!entries?.size || !local || (!local.failures.size && !local.retrying.size))
     return summary.counts;

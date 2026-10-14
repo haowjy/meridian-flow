@@ -1,5 +1,10 @@
 /** The projection rules, keyed by node id: pure inputs, no coordinator. */
-import type { ImportEntryStatus, ImportFolderStatus, ImportSummary } from "@meridian/contracts";
+import type {
+  ImportEntryStatus,
+  ImportFolderStatus,
+  ImportStatus,
+  ImportSummary,
+} from "@meridian/contracts";
 import { describe, expect, it } from "vitest";
 import type {
   CatalogContextView,
@@ -93,6 +98,15 @@ const summary = {
   state: "ready",
   destination: { folderUri: "kb://", folderId: null },
 } as ImportSummary;
+const zeroCounts = {
+  total: 0,
+  landed: 0,
+  failed: 0,
+  arriving: 0,
+  deleted: 0,
+  notImported: 0,
+  skipped: 0,
+};
 const row = (
   id: string,
   parentId: string | null,
@@ -147,13 +161,23 @@ function importOf(parts: {
   roots?: NonNullable<ImportState["local"]>["roots"];
   seen?: string[];
   bridges?: string[];
+  /** The server's word: counts, last activity and the picked roots as the status holds them. */
+  server?: {
+    counts?: Partial<ImportSummary["counts"]>;
+    lastActivityAt?: string;
+    roots?: ImportStatus["roots"];
+  };
 }): ProjectedImport {
   const state: ImportState = {
     importId: "i",
-    report: parts.accepted
+    status: parts.accepted
       ? {
-          summary,
-          roots: [],
+          summary: {
+            ...summary,
+            counts: { ...zeroCounts, ...parts.server?.counts },
+            lastActivityAt: parts.server?.lastActivityAt ?? new Date().toISOString(),
+          },
+          roots: parts.server?.roots ?? [],
           folders: new Map((parts.accepted.folders ?? []).map((f) => [f.id, f])),
           entries: new Map((parts.accepted.entries ?? []).map((e) => [e.entryId, e])),
           cursor: "1",
@@ -393,5 +417,64 @@ describe("withImportRows", () => {
     const held = withImportRows(catalogOf(), "kb", [importOf({ accepted, held: true })]);
     const node = held.children("root")[0];
     expect(node.kind === "file" && node.import?.failure?.canRetry).toBe(true);
+  });
+});
+
+describe("run marks", () => {
+  const book = dir("book", "Book");
+  const picked: ImportStatus["roots"] = [{ rootId: 0, kind: "folder", name: "Book", id: "book" }];
+  const runOf = (item: ProjectedImport) =>
+    withImportRows(catalogOf(book), "kb", [item]).children("root")[0]?.import?.run;
+
+  it("marks a root folder sending, with how many files arrived", () => {
+    const run = runOf(
+      importOf({
+        accepted: { entries: [entry(0, "a", null), entry(1, "b", null, { state: "landed" })] },
+        held: true,
+        server: { counts: { total: 2, landed: 1, arriving: 1 }, roots: picked },
+      }),
+    );
+    expect(run).toMatchObject({ kind: "sending", arrived: 1, total: 2, remaining: 1 });
+  });
+
+  it("marks a reloaded tab's image-only import interrupted on its root, with nothing to retry", () => {
+    const run = runOf(
+      importOf({
+        accepted: { entries: [entry(0, "img", null)] },
+        server: {
+          counts: { total: 1, arriving: 1 },
+          lastActivityAt: "2000-01-01T00:00:00.000Z",
+          roots: picked,
+        },
+      }),
+    );
+    expect(run).toMatchObject({ kind: "interrupted", arrived: 0, total: 1, canRetry: false });
+  });
+
+  it("marks failed files on the root, and offers Retry only when this tab holds them", () => {
+    const server = { counts: { total: 1, failed: 1 }, roots: picked };
+    const accepted = { entries: [entry(0, "img", null, { state: "failed" as const })] };
+    expect(runOf(importOf({ accepted, held: true, server }))).toMatchObject({
+      kind: "failed",
+      canRetry: true,
+    });
+    expect(runOf(importOf({ accepted, server }))).toMatchObject({
+      kind: "failed",
+      canRetry: false,
+    });
+  });
+
+  it("marks the destination when the picked root is a file", () => {
+    const view = withImportRows(catalogOf(), "kb", [
+      importOf({
+        accepted: { entries: [entry(0, "a", null)] },
+        held: true,
+        server: {
+          counts: { total: 1, arriving: 1 },
+          roots: [{ rootId: 0, kind: "file", name: "a.png", id: null }],
+        },
+      }),
+    ]);
+    expect(view.root.import?.run?.kind).toBe("sending");
   });
 });

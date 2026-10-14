@@ -114,15 +114,15 @@ describe("ImportCoordinator.begin", () => {
 
     const state = store.getSnapshot();
     expect([...(state.local?.failures.keys() ?? [])]).toEqual([1]);
-    expect(state.report?.entries.get(0)?.state).toBe("landed");
-    expect(state.report?.entries.get(2)?.state).toBe("landed");
+    expect(state.status?.entries.get(0)?.state).toBe("landed");
+    expect(state.status?.entries.get(2)?.state).toBe("landed");
     expect(displayOf(state)).toBe("needs-attention");
 
     server.setFailSend(() => false);
     await coordinator.retry(importId, [1]);
     expect(displayOf(store.getSnapshot())).toBe("importing");
     await settled(coordinator, importId);
-    expect(store.getSnapshot().report?.entries.get(1)?.state).toBe("landed");
+    expect(store.getSnapshot().status?.entries.get(1)?.state).toBe("landed");
     expect(store.getSnapshot().local?.failures.size).toBe(0);
   });
 
@@ -255,12 +255,12 @@ describe("ImportCoordinator.stop", () => {
     server.api.finish = finish;
     expect(await coordinator.stop(importId)).toBe("stopped");
     expect(displayOf(store.getSnapshot())).toBe("finished");
-    expect(store.getSnapshot().report?.summary.counts.notImported).toBe(1);
+    expect(store.getSnapshot().status?.summary.counts.notImported).toBe(1);
   });
 });
 
-/** A report the server holds for an import another tab started: one file still arriving. */
-function serverReport(): ImportStatus {
+/** A status the server holds for an import another tab started: one file still arriving. */
+function serverStatus(): ImportStatus {
   return {
     importId: "elsewhere",
     state: "ready",
@@ -292,7 +292,7 @@ describe("ImportCoordinator.stop on an import this tab does not hold", () => {
       });
     const coordinator = new ImportCoordinator("p", server.api);
     const store = coordinator.store("elsewhere");
-    store.installReport(serverReport());
+    store.installStatus(serverStatus());
     expect(displayOf(store.getSnapshot())).toBe("paused");
 
     const stopping = coordinator.stop("elsewhere");
@@ -303,10 +303,10 @@ describe("ImportCoordinator.stop on an import this tab does not hold", () => {
     expect(displayOf(store.getSnapshot())).toBe("couldnt-stop");
 
     server.api.finish = async () => ({
-      ...serverReport(),
+      ...serverStatus(),
       state: "finished",
       version: "2",
-      counts: { ...serverReport().counts, arriving: 0, notImported: 1 },
+      counts: { ...serverStatus().counts, arriving: 0, notImported: 1 },
     });
     expect(await coordinator.stop("elsewhere")).toBe("stopped");
     expect(displayOf(store.getSnapshot())).toBe("finished");
@@ -478,7 +478,7 @@ describe("ImportCoordinator.continueImport", () => {
 
     const coordinator = new ImportCoordinator("p", server.api);
     const store = coordinator.store("crashed");
-    store.installReport(await server.api.status("p", "crashed"));
+    store.installStatus(await server.api.status("p", "crashed"));
     await coordinator.continueImport("crashed", built.held);
     await settled(coordinator, "crashed");
 
@@ -493,7 +493,7 @@ describe("ImportCoordinator.continueImport", () => {
     server.calls.plan = 0;
     server.setPlanning(true);
     const coordinator = new ImportCoordinator("p", server.api);
-    coordinator.store("slow").installReport(await server.api.status("p", "slow"));
+    coordinator.store("slow").installStatus(await server.api.status("p", "slow"));
     await coordinator.continueImport("slow", built.held);
     await settled(coordinator, "slow");
     expect(server.calls.resume).toBe(1);
@@ -510,7 +510,7 @@ describe("ImportCoordinator.continueImport", () => {
     held.delete(1);
     const coordinator = new ImportCoordinator("p", server.api);
     const store = coordinator.store("partial");
-    store.installReport(await server.api.status("p", "partial"));
+    store.installStatus(await server.api.status("p", "partial"));
     await coordinator.continueImport("partial", held);
     await settled(coordinator, "partial");
     expect(server.calls.send.flat().sort()).toEqual([0, 2]);
@@ -526,7 +526,7 @@ describe("ImportCoordinator.continueImport", () => {
     if (entry) server.entries.set(1, { ...entry, state: "landing", wanted: false });
     const coordinator = new ImportCoordinator("p", server.api);
     const store = coordinator.store("lapse");
-    store.installReport(await server.api.status("p", "lapse"));
+    store.installStatus(await server.api.status("p", "lapse"));
     await coordinator.continueImport("lapse", built.held);
     await settled(coordinator, "lapse");
     expect(server.calls.send.flat()).not.toContain(1);
@@ -681,7 +681,7 @@ describe("ImportCoordinator acquisition", () => {
     await publish(elsewhere("imp", 1, [binary(0, "landing"), binary(1, "failed")]));
 
     const view = coordinator.view("imp");
-    expect(view?.state.report?.entries.get(1)?.state).toBe("failed");
+    expect(view?.state.status?.entries.get(1)?.state).toBe("failed");
     expect(coordinator.getSnapshot().documents.get("m1")).toEqual({ importId: "imp", entryId: 1 });
     coordinator.dispose();
   });
@@ -831,7 +831,7 @@ describe("ImportCoordinator seen ids and bridges", () => {
     const importId = start(coordinator, vault());
     const store = await settled(coordinator, importId);
     const rows = store.getSnapshot().local?.rows ?? [];
-    const plan = [...(store.getSnapshot().report?.folders.keys() ?? [])];
+    const plan = [...(store.getSnapshot().status?.folders.keys() ?? [])];
     const view = () => coordinator.view(importId);
     expect(rows).toEqual([]);
     expect(plan.length).toBeGreaterThan(0);

@@ -247,7 +247,7 @@ function DirRow({
             />
           </span>
           {drop.dropState === "over" ? (
-            <span className="mr-1 shrink-0 text-caption text-ink-muted">
+            <span className="ml-2 mr-1 shrink-0 text-caption text-ink-muted">
               <Trans>Import here</Trans>
             </span>
           ) : null}

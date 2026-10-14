@@ -106,6 +106,11 @@ msgstr "{0, plural, other {# 次调用}}"
 msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
 msgstr ""
 
+#. placeholder {0}: run.failed
+#: src/features/import/reason-copy.ts
+msgid "{0, plural, one {# file didn't import.} other {# files didn't import.}}"
+msgstr ""
+
 #. placeholder {0}: step.send
 #: src/features/import/ContinueImportDialog.tsx
 msgid "{0, plural, one {# file hasn't arrived yet.} other {# files haven't arrived yet.}}"
@@ -189,6 +194,12 @@ msgstr ""
 #. placeholder {0}: destination.name
 #: src/features/project/context/ContextViewer.tsx
 msgid "{0} isn't in {section}."
+msgstr ""
+
+#. placeholder {0}: run.arrived
+#. placeholder {1}: run.total
+#: src/features/import/reason-copy.ts
+msgid "{0} of {1} files have arrived."
 msgstr ""
 
 #. placeholder {0}: children.length
@@ -1203,6 +1214,10 @@ msgstr ""
 #: src/features/import/ContinueImportDialog.tsx
 #: src/features/import/ImportDocumentNotice.tsx
 msgid "Continue import"
+msgstr ""
+
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Continue import…"
 msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
@@ -3700,6 +3715,10 @@ msgstr ""
 msgid "Retry changes"
 msgstr ""
 
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Retry failed files"
+msgstr ""
+
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Retry import"
 msgstr ""
@@ -3905,6 +3924,10 @@ msgstr ""
 msgid "Sending your answer…"
 msgstr ""
 
+#: src/features/import/reason-copy.ts
+msgid "Sending your files. {progress}"
+msgstr ""
+
 #: src/features/chat/thread-message-renderer.tsx
 msgid "Sent a message to {line}"
 msgstr ""
@@ -4083,7 +4106,12 @@ msgid "Stop compaction"
 msgstr ""
 
 #: src/features/import/StopImportDialog.tsx
+#: src/features/project/context/ImportRunMark.tsx
 msgid "Stop here"
+msgstr ""
+
+#: src/features/project/context/ImportRunMark.tsx
+msgid "Stop import"
 msgstr ""
 
 #: src/features/chat/FormBlock.tsx
@@ -4119,6 +4147,10 @@ msgstr ""
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 #: src/features/chat/derivation/useHandoffBrief.ts
 msgid "Stopping the handoff brief"
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "Stopping the import."
 msgstr ""
 
 #: src/features/draft-review/operation-change-text.ts
@@ -4375,6 +4407,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
+msgstr ""
+
+#: src/features/import/reason-copy.ts
+msgid "The import paused. {progress} Continue to send the rest."
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx

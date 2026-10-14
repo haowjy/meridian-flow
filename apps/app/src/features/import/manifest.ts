@@ -1,6 +1,6 @@
 /**
  * Builds the import manifest from a selection: roots, folders, SHA-256, sniff
- * bytes and frontmatter. Hashing happens here, after Import, never in the dialog.
+ * bytes and frontmatter. Hashing happens here, after Import, once the import has begun.
  */
 import {
   IMPORT_ADMISSION,

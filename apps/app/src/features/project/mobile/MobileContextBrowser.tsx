@@ -12,7 +12,7 @@ import type {
 } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { InlineEdit } from "@/components/ui/use-inline-edit";
-import { refusalSentence } from "@/features/import/reason-copy";
+import { refusalSentence, runSentence } from "@/features/import/reason-copy";
 import { useImportRowActions } from "@/features/import/use-import-row-actions";
 import { useImportedCatalog } from "@/features/import/use-imported-catalog";
 import { cn } from "@/lib/utils";
@@ -342,9 +342,9 @@ function currentImportInfo(view: CatalogContextView, dir: ContextDir): ImportRow
     .find((child) => child.kind === "dir" && child.entryId === dir.entryId)?.import;
 }
 
-/** Says in words what the run is doing here, with Try again and Discard where it did not start. */
+/** Says in words what the run is doing here; the mark's menu carries the commands that state allows. */
 function MobileRunStatus({ info }: { info: ImportRowInfo | undefined }) {
-  if (!info?.reading && !info?.notStarted) return null;
+  if (!info?.reading && !info?.notStarted && !info?.run) return null;
   return (
     <div
       role="status"
@@ -354,6 +354,8 @@ function MobileRunStatus({ info }: { info: ImportRowInfo | undefined }) {
       <span className="min-w-0 flex-1">
         {info.notStarted ? (
           <Trans>Import didn't start. {refusalSentence(info.notStarted.code)}</Trans>
+        ) : info.run ? (
+          runSentence(info.run)
         ) : (
           <Trans>Reading your files</Trans>
         )}

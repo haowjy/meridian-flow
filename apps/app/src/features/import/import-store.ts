@@ -1,5 +1,5 @@
 /**
- * One import as a passive cache: the merged report (full read plus `since` cuts
+ * One import as a passive cache: the merged status (full read plus `since` cuts
  * plus this tab's own upload answers) and what this tab is doing for it. It never
  * reads, polls or ends itself; the coordinator does, and surfaces subscribe.
  */
@@ -16,7 +16,7 @@ import {
   fullyRead,
   type ImportState,
   type LocalRun,
-  type ReportData,
+  type StatusData,
 } from "./import-state";
 
 export class ImportStore {
@@ -27,7 +27,7 @@ export class ImportStore {
     readonly projectId: string,
     importId: string,
   ) {
-    this.state = { importId, report: null, local: null, stop: "none", activitySeenAt: null };
+    this.state = { importId, status: null, local: null, stop: "none", activitySeenAt: null };
   }
 
   readonly subscribe = (listener: () => void) => {
@@ -59,32 +59,32 @@ export class ImportStore {
   /** Install a summary seen in the open-imports list (no entries). The cursor stays. */
   seedSummary(summary: ImportSummary) {
     this.update((state) => {
-      const current = state.report?.summary;
+      const current = state.status?.summary;
       if (current && compareVersions(current.version, summary.version) >= 0) return state;
       return {
         ...state,
         ...noteActivity(state, summary),
-        report: state.report
-          ? { ...state.report, summary }
+        status: state.status
+          ? { ...state.status, summary }
           : { summary, roots: [], folders: new Map(), entries: new Map(), cursor: null },
       };
     });
   }
 
   /** A full read, from the plan's answer or a first load. An older read changes nothing. */
-  installReport(report: ImportStatus) {
+  installStatus(status: ImportStatus) {
     this.update((state) => {
-      const cursor = state.report?.cursor;
-      if (cursor != null && compareVersions(cursor, report.version) > 0) return state;
+      const cursor = state.status?.cursor;
+      if (cursor != null && compareVersions(cursor, status.version) > 0) return state;
       return {
         ...state,
-        ...noteActivity(state, report),
-        report: {
-          summary: newerSummary(state.report?.summary, summaryOf(report)),
-          roots: report.roots,
-          folders: new Map(report.folders.map((folder) => [folder.id, folder])),
-          entries: new Map(report.entries.map((entry) => [entry.entryId, entry])),
-          cursor: report.version,
+        ...noteActivity(state, status),
+        status: {
+          summary: newerSummary(state.status?.summary, summaryOf(status)),
+          roots: status.roots,
+          folders: new Map(status.folders.map((folder) => [folder.id, folder])),
+          entries: new Map(status.entries.map((entry) => [entry.entryId, entry])),
+          cursor: status.version,
         },
       };
     });
@@ -93,44 +93,44 @@ export class ImportStore {
   /** Entries this tab's own uploads answered. */
   mergeEntries(entries: readonly ImportEntryStatus[]) {
     this.update((state) => {
-      if (!state.report) return state;
-      const merged = new Map(state.report.entries);
+      if (!state.status) return state;
+      const merged = new Map(state.status.entries);
       for (const entry of entries) merged.set(entry.entryId, entry);
-      return { ...state, report: { ...state.report, entries: merged } };
+      return { ...state, status: { ...state.status, entries: merged } };
     });
   }
 
   /** A `since` cut on top of a full read. */
   applyChanges(changes: ImportStatusChanges) {
     this.update((state) => {
-      const report = state.report;
-      if (!fullyRead(report)) return state;
+      const status = state.status;
+      if (!fullyRead(status)) return state;
       // An answer to an older request: what it says is already known.
-      if (compareVersions(changes.version, report.cursor) < 0) return state;
+      if (compareVersions(changes.version, status.cursor) < 0) return state;
       // A poll that found nothing changes nothing, so nothing downstream re-renders.
       if (
         changes.entries.length === 0 &&
         changes.folders.length === 0 &&
         changes.roots.length === 0 &&
-        changes.version === report.cursor &&
-        changes.version === report.summary.version
+        changes.version === status.cursor &&
+        changes.version === status.summary.version
       )
         return state;
-      const entries = new Map(report.entries);
+      const entries = new Map(status.entries);
       for (const entry of changes.entries) entries.set(entry.entryId, entry);
       const folders = changes.folders.length
-        ? mergeFolders(report.folders, changes.folders)
-        : report.folders;
+        ? mergeFolders(status.folders, changes.folders)
+        : status.folders;
       const moved = new Map(changes.roots.map((root) => [root.rootId, root]));
       return {
         ...state,
         ...noteActivity(state, changes),
-        report: {
-          ...report,
+        status: {
+          ...status,
           roots: moved.size
-            ? report.roots.map((root) => moved.get(root.rootId) ?? root)
-            : report.roots,
-          summary: newerSummary(report.summary, summaryOf(changes)),
+            ? status.roots.map((root) => moved.get(root.rootId) ?? root)
+            : status.roots,
+          summary: newerSummary(status.summary, summaryOf(changes)),
           folders,
           entries,
           cursor: changes.version,
@@ -149,8 +149,8 @@ function mergeFolders(
   return merged;
 }
 
-function summaryOf(report: ImportSummary): ImportSummary {
-  const { importId, state, destination, counts, lastActivityAt, version } = report;
+function summaryOf(status: ImportSummary): ImportSummary {
+  const { importId, state, destination, counts, lastActivityAt, version } = status;
   return { importId, state, destination, counts, lastActivityAt, version };
 }
 
@@ -164,14 +164,14 @@ function newerSummary(current: ImportSummary | undefined, incoming: ImportSummar
 }
 
 function noteActivity(state: ImportState, summary: ImportSummary): Partial<ImportState> {
-  const previous = state.report?.summary.lastActivityAt;
+  const previous = state.status?.summary.lastActivityAt;
   if (previous === undefined || previous === summary.lastActivityAt) return {};
   return { activitySeenAt: Date.now() };
 }
 
 /** The display state of an import right now. */
 export function displayOf(state: ImportState, now = Date.now()): ImportDisplayState {
-  const summary = state.report?.summary ?? null;
+  const summary = state.status?.summary ?? null;
   const reported = summary ? Date.parse(summary.lastActivityAt) : Number.NaN;
   const activityFresh =
     (Number.isFinite(reported) && now - reported < ACTIVITY_FRESH_MS) ||
@@ -185,4 +185,4 @@ export function displayOf(state: ImportState, now = Date.now()): ImportDisplaySt
   });
 }
 
-export type { ReportData };
+export type { StatusData };
