@@ -87,9 +87,13 @@ export function createEditorDocumentCommand({
       // carries; any other document starts without one.
       // A draft-only tab has no live document: its own review identity is the only
       // destination that resolves, so every re-select or restore of it carries that.
+      // A request naming an open draft-only tab without carrying it (a repair's fallback) gets
+      // that tab's review the same way a click on it does.
+      const addressedTab =
+        options?.tab ?? openDraftOnlyTabFor(getContextTabs(projectId).tabs, requested);
       const itemKey =
         options?.itemKey ??
-        (options?.tab ? reviewItemKeyOf(options.tab, requested.workId) : undefined) ??
+        (addressedTab ? reviewItemKeyOf(addressedTab, requested.workId) : undefined) ??
         (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
         { projectId, accountId, address: current.address, noWorkId: current.noWorkId },
@@ -265,6 +269,16 @@ export function prepareEditorDestination(
     } as ProjectAddress,
     state,
   };
+}
+function openDraftOnlyTabFor(
+  tabs: readonly ContextTab[],
+  request: ContextRouteRequest,
+): ContextTab | undefined {
+  if (!request.workId) return undefined;
+  const workId = request.workId;
+  return editorTabsForWork(tabs, workId).find(
+    (tab) => isDraftOnly(tab) && contextTabMatchesRoute(tab, { ...request, workId }),
+  );
 }
 function reviewItemKeyOf(tab: ContextTab, workId: string | undefined): string | undefined {
   return workId ? reviewEntryOf(tab, workId)?.itemKey : undefined;
