@@ -907,11 +907,12 @@ smoke verification.
 
 ## Review commands against a replying model (browser, mock stack)
 
-The strip's and the Work page's Apply all and Discard all while a reply is still writing. Use a Work in
-`aiWriteMode: draft` and an owned project, and drive both pages in `agent-browser` (desktop 1440x900). `./mf` only
-sets up the Work, a thread bound to it and the scripted turns, and reads durable state (`doc read`, the drafts list,
-`thread view`) after each click. Per-change controls on the rows stay locked while a reply streams; this recipe does
-not cover them.
+The chat strip is disabled while a reply is still writing, and the Work page's Apply all and Discard all keep
+working. Use a Work in `aiWriteMode: draft` and an owned project, and drive both pages in `agent-browser` (desktop
+1440x900). `./mf` only sets up the Work, a thread bound to it and the scripted turns, and reads durable state (`doc
+read`, the drafts list, `thread view`) after each click. Per-change controls on the rows stay locked while a reply
+streams; this recipe does not cover them. Strip commands during a reply come with the review rework
+(`diff-based-review`, ruling W4).
 
 **Holding a reply mid-write.** A reply saves once per model response, after all of that response's tools have
 run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 120 to
@@ -919,12 +920,10 @@ run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold
 --no-wait`, and click about one second later. An earlier turn must already have saved a draft edit to the document, so
 it is listed.
 
-1. **Strip Discard during the reply.** Open the Work's chat. While the reply runs, click Discard on the strip and
-   confirm. PASS: one request goes out and the strip's list empties. Live text is unchanged, and the later writes fail.
-   The expanded failed row reads "You discarded the text it edited, so the change wasn't kept. The AI will read it
-   again." Not the old "This change was updated. Check it and discard again."
-2. **Strip Apply during the reply.** Same setup, click Apply. PASS: live shows the text saved before the click. The
-   reply finishes and the strip lists the late writes ("1 change", Discard, Apply) for the next review.
+1. **Strip disabled during the reply.** Open the Work's chat. While the reply runs, the strip's Apply and Discard are
+   disabled (the page states this recipe's rule; the strip itself shows no reason). PASS: clicking sends no request. After the reply finishes they enable.
+2. **Strip commands after the reply.** Click Apply on the strip. PASS: only this chat's changes apply; other chats' and
+   the writer's changes stay pending.
 3. **Work page Apply all during the reply.** Work page, Files tab, "All changes" menu, Apply all changes. PASS: live
    has the text saved before the click, and the document is still under Changes to review for the late writes.
 4. **Work page Discard all during the reply.** The same menu, Discard all changes, confirm (at 390x844 too: the question
