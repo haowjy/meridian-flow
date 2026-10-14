@@ -83,11 +83,11 @@ export function useSwitchLedger(input: {
   writeMode: AiWriteMode;
   pending: ThreadPendingInbox;
   turns: readonly Turn[];
-  /** The chat's history is in the transcript: what is there now is not news. */
-  historySettled: boolean;
+  /** The first successful history load is in the transcript: what is there now is not news. */
+  historyLoaded: boolean;
   journal: SwitchJournal;
 }): SwitchLedgerView {
-  const { threadId, projectId, pending, turns, historySettled, journal } = input;
+  const { threadId, projectId, pending, turns, historyLoaded, journal } = input;
   const queryClient = useQueryClient();
   const [ledger, dispatch] = useReducer(ledgerReducer, EMPTY_LEDGER);
   const latest = useRef({ journal, projectId });
@@ -140,8 +140,8 @@ export function useSwitchLedger(input: {
   const dividers = useMemo(() => dividersOf(turns), [turns]);
   useLayoutEffect(() => dispatch({ type: "transcript", dividers }), [dividers]);
   useLayoutEffect(() => {
-    if (historySettled) dispatch({ type: "settled" });
-  }, [historySettled]);
+    if (historyLoaded) dispatch({ type: "settled" });
+  }, [historyLoaded]);
 
   // The driver may be any pane's: the answer reaches whichever pane shows this chat.
   const { onAnswered } = journal;
