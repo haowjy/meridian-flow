@@ -1,4 +1,4 @@
-/** Announces which stored document ids now answer to which current id, once per identity revision. */
+/** Announces each projection to its readers and each live identity change to its listeners. */
 import { type ResourceRecord, resourceIdentityIndex } from "@meridian/resource-replica";
 
 /** `from` was this resource's id before an identity change; `to` is the id it answers to now. */
@@ -7,21 +7,25 @@ export type ResourceIdentityChange = {
   handle: string;
   from: string;
   to: string;
-  /** Already true when this account first observed the resource (a replay, not a live change). */
-  initial: boolean;
 };
 
 export class ResourceIdentityFeed {
   private readonly identityRevisions = new Map<string, number>();
-  private readonly latest = new Map<string, ResourceIdentityChange[]>();
   private readonly listeners = new Set<(change: ResourceIdentityChange) => void>();
+  private readonly projectionListeners = new Set<(records: readonly ResourceRecord[]) => void>();
+  private projection: readonly ResourceRecord[] | null = null;
 
-  /** Replays what is already known, then delivers each change as it is observed. */
+  /** Delivers each change observed from now on; a change already seen is not replayed. */
   subscribe(listener: (change: ResourceIdentityChange) => void): () => void {
-    for (const changes of this.latest.values())
-      for (const change of changes) listener({ ...change, initial: true });
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  /** The current projection now, and every later one. Readers resolve ids against it, not history. */
+  subscribeProjection(listener: (records: readonly ResourceRecord[]) => void): () => void {
+    if (this.projection) listener(this.projection);
+    this.projectionListeners.add(listener);
+    return () => this.projectionListeners.delete(listener);
   }
 
   /**
@@ -29,6 +33,7 @@ export class ResourceIdentityFeed {
    * the same id is the real document, and stored references to it must stay where they are.
    */
   observe(records: readonly ResourceRecord[]): void {
+    this.projection = records;
     const index = resourceIdentityIndex(records);
     for (const record of records) {
       const { handle, identity, aliases } = record.resource;
@@ -36,20 +41,12 @@ export class ResourceIdentityFeed {
       if (known === identity.revision) continue;
       this.identityRevisions.set(handle, identity.revision);
       const projectId = record.intents[0]?.projectId;
-      const changes = projectId
-        ? Object.keys(aliases)
-            .filter((alias) => index.byDocumentId(alias) === record)
-            .map((from) => ({
-              projectId,
-              handle,
-              from,
-              to: identity.documentId,
-              initial: known === undefined,
-            }))
-        : [];
-      if (changes.length) this.latest.set(handle, changes);
-      else this.latest.delete(handle);
-      for (const change of changes) for (const listener of this.listeners) listener(change);
+      if (known === undefined || !projectId) continue;
+      for (const from of Object.keys(aliases))
+        if (index.byDocumentId(from) === record)
+          for (const listener of this.listeners)
+            listener({ projectId, handle, from, to: identity.documentId });
     }
+    for (const listener of this.projectionListeners) listener(records);
   }
 }
