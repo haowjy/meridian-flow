@@ -24,6 +24,7 @@ import { DocumentSession } from "../editor/document-session";
 import { DocumentSessionAuthorityStore } from "../editor/document-session-authority-store";
 import { createDocumentSessionCrossContextCoordination } from "../editor/document-session-cross-context-coordination";
 import { DocumentSessionRegistry } from "../editor/document-session-registry-implementation";
+import type { LocalDocumentSessionTransfer } from "../editor/local-document-session-adoption";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { ResourceContentAccess } from "./resource-content-access";
 import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption";
@@ -328,4 +329,11 @@ it("settles a revocation that queues behind the commit without deadlock", async 
   // The drain ran after the commit, so nothing at or below its fence is admitted afterwards.
   await expect(registry.admit(projectId, documentId, "150")).rejects.toThrow(/revoked/);
   void access;
+});
+
+it("keeps the commit hooks synchronous: an async hook does not typecheck", () => {
+  // The coordinator ignores a hook's return value, so a promise would run after the lock is gone.
+  // @ts-expect-error `undefined` rejects the promise an `async` hook returns
+  const prepare: LocalDocumentSessionTransfer["prepareCommit"] = async () => undefined;
+  expect(prepare).toBeTypeOf("function");
 });

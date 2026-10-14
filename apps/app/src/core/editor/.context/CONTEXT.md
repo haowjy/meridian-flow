@@ -38,8 +38,9 @@ the side. No generation is stored before the one fenced commit that admits it.
 That commit is `Coordination.admit(..., { adoption })`: one operation-lock
 section in which `store.admit` decides the fences and writes
 `adopting-local -> bindable`, then the lease installs and content ownership
-converts. Its `prepareCommit`/`completeCommit` hooks return `void` because Web
-Locks are not reentrant. Every pass re-derives its step from durable state with a
+converts. Its `prepareCommit`/`completeCommit` hooks return `undefined`, so an `async`
+hook does not typecheck (a `void` return would accept one); Web Locks are not
+reentrant. Every pass re-derives its step from durable state with a
 fresh admission, so reload, a busy lock, a fence refusal or a failed
 acknowledgement all resume the same way. `ResourceContentAccess.abortTransfer`
 settles both reservation owners (the content entry and the registry facet) and
