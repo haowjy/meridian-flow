@@ -486,11 +486,11 @@ function live(ledger: Ledger): LedgerEntry[] {
 }
 
 /**
- * The server keeps one queued switch: a switch to the other mode withdraws it, and a repeat of
- * the same mode changes nothing. Show that before the answer, but only against a predecessor
- * the server has said it holds queued. One still unanswered may have been applied on arrival
- * (an idle chat applies at once), and an applied one stays a row: folding either would leave
- * a frame with neither a row nor a divider.
+ * The server keeps one queued switch: a switch to the other mode withdraws it,
+ * and a repeat of the same mode changes nothing. Show that before the answer.
+ * Only a switch that nothing has answered is predicted, and only against a
+ * predecessor the server can still cancel (sending, posted or queued); one the
+ * server has listed or answered is its word, and an applied one stays a row.
  */
 function foldSwitchBack(entries: readonly LedgerEntry[]): LedgerEntry[] {
   const dropped = new Set<LedgerEntry>();
@@ -498,7 +498,9 @@ function foldSwitchBack(entries: readonly LedgerEntry[]): LedgerEntry[] {
   for (const entry of entries) {
     if (entry.failed) continue;
     const unanswered = entry.state === "sending" || entry.state === "posted";
-    if (open?.state === "queued" && unanswered) {
+    // The server can only cancel what it still holds: an applied switch stays its own row.
+    const cancellable = open && open.state !== "applied";
+    if (open && cancellable && unanswered) {
       if (open.mode !== entry.mode) {
         dropped.add(open);
         dropped.add(entry);

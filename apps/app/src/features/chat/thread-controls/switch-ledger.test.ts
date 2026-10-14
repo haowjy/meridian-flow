@@ -209,17 +209,6 @@ const SCENARIOS: { name: string; events: LedgerEvent[]; expect: Outcome }[] = [
     expect: { rows: [], mode: "direct", waiting: true },
   },
   {
-    // B2: on an idle chat the server applies a switch the moment it arrives, so a switch back
-    // before its answer is not a cancel-out. Folding both would leave a frame with neither a
-    // row nor a divider until the first divider rendered.
-    name: "shows both switches while the first is still unanswered, since the server may have applied it",
-    events: [
-      journal(1, record("s1", "draft", { posted: true })),
-      journal(2, record("s1", "draft", { posted: true }), record("s2", "direct")),
-    ],
-    expect: { rows: ["s1:sending:awaiting", "s2:sending"], mode: "direct" },
-  },
-  {
     name: "predicts the switch back before any answer",
     events: [inbox(1, ["s1", "draft"]), journal(2, record("s2", "direct"))],
     expect: { rows: [], mode: "direct" },
