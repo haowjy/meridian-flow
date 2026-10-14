@@ -982,8 +982,7 @@ export function createDeliveryAdapter(
       withThreadLock: threadLock.withThreadLock,
       findMessage: inbox.findMessage,
       enqueue,
-      // The control route applies an idle switch itself; a reply's release
-      // wake reaches one the reply kept from it.
+      // A switch never wakes the chat: it waits for the run something else starts.
       async enqueueWithoutWake(draft) {
         const message = await inbox.enqueue(draft);
         await appendPending(draft.threadId);

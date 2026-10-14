@@ -1,6 +1,6 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
 import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createOrchestratorEventProjector,
@@ -8,7 +8,6 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
-import { createDrizzleThreadLock } from "../adapters/drizzle-thread-lock.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import {
