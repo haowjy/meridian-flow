@@ -36,7 +36,7 @@ idempotency key on each drain, as above; replaying a key does not drain again.
 3. Add usage opens Settings → Usage. The note has no Dismiss X. The message
    box remains editable. Notes stay above DraftDock, not between it and the box.
 4. Reload both chats. The note and row statuses survive. Inspect
-   `./mf api GET /api/threads/<id>/snapshot --json`: `liveState.pending.blocked`
+   `./mf api GET /api/threads/<id>/snapshot --json`: `liveState.runState.blocked`
    is `{ "reason": "credits_exhausted" }`, with the waiting message's id.
 5. `./mf thread send <id> "Another kept message" --json --timeout 10s`
    exits 1 with `status: "blocked", reason: "credits_exhausted"`, not timeout.
@@ -66,7 +66,7 @@ COMMIT;
 
 Within the ordinary server wake interval, replies start automatically. The
 note and waiting statuses clear at start, before reply completion. Confirm the
-saved words are answered and `liveState.pending.blocked` is absent. Leave a
+saved words are answered and `liveState.runState.blocked` is null. Leave a
 positive balance and stop only this stack with `pnpm dev --stop`.
 
 ## Withdrawal and delayed CLI replay regressions
@@ -75,7 +75,7 @@ On an existing chat with a completed reply and exhausted usage:
 
 1. Enqueue a compact control through
    `./mf api POST /api/threads/<id>/controls --data '{"id":"<uuid>","control":{"kind":"compact"}}' --json`.
-   Wait for `liveState.pending.blocked`.
+   Wait for `liveState.runState.blocked`.
 2. Withdraw it with `./mf api POST /api/threads/<id>/controls/<uuid>/withdraw --json`.
    With no other pending message/control, the note and waiting labels disappear.
    Read `threads.inbox_blocked_reason` through the owned database: it must be null,

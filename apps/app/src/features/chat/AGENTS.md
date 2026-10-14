@@ -143,27 +143,24 @@ invocation card; copy comes from structured handle/outcome metadata, never
 notice-text parsing. Keep this visibility rule aligned with
 `threads/domain/visible-conversation-policy.ts`.
 
-The run controller (`client/copilot/ThreadRunController.ts`) follows a chat by
-the pure rule in `client/copilot/run-follow.ts`, from server-decided run identity
-facts (a turn's execution, position and the messages it was reserved for, a
-message's deliverer, an execution's end), never by transcript ancestry or
-timers. Those facts are write-once, so what binds, when the chat settles and
-which turn Stop targets (the running execution's highest `Turn.position`) do not
-depend on the order a tab learns them. Two inputs are ordered by seq instead:
-the pending projection (an older one is ignored) and the stream cursor that
-routes un-addressed deltas (a snapshot older than the stream's last start or
-end merges its facts but does not move it). A writer message in the chat's
-pending inbox, or just admitted by this tab, is owed until delivered, so every
-tab keeps Stop while one is undelivered. A Stop waiting for work lands only on
-an execution that takes on or delivers a message owed at the press, and never
-on one that serves a message owed after the press; later sends don't retire
-it, so separate press-time work is still stopped. Retry stand-ins reconcile by
-their request's execution or `metadata.retryReplyId`, read from the same facts
-(`useRunFacts`, reactive to the controller).
-`useThreadRunResume` attaches the snapshot's open execution only while settled.
-The composer shows Stop while a reply streams, a placeholder is pending, or the
-controller is unsettled, except while owed messages wait on an account that
-can't start a turn (`useOwedMessagesBlocked`).
+A chat's run state is one `RunStateView` per chat in the thread store
+(`useRunState`), fed by the one mounted subscriber (`useThreadSnapshotSync`) from
+snapshots, `meridian.run_state` frames and the answers to this tab's own writes.
+`@meridian/thread-client` owns every selector: `isBusy` (Stop and the composer's
+running state), `waitingWriterMessages` (the queued tray), `hiddenWriterTurns`
+(rows kept out of the transcript while a hand-back is in flight) and `switchState`.
+Nothing is inferred from execution identity, stream order or timers; a record
+replaces an older one by version, and this tab's own intents (a send, a switch,
+a withdrawal, a Stop) cover the gap until a record at or past their answer
+arrives. `ThreadRunController` only admits a send and recovers a lost admission;
+it follows nothing.
+
+Stop (`useChatStop`) cancels the running reply and hands every waiting writer
+message back into the composer, in send order as one plain editable message with
+a blank line between them, above what is typed. The press is written to the
+tab's composer draft (`handBacks`) before it is sent, so a reload re-posts it;
+the answer's content is prepended with one checked draft write that also records
+its `received` receipt, and only then is the command retired.
 
 The mounted snapshot-sync hook, not the run controller, owns addressed
 `meridian.block.upserted` projection for the whole
@@ -171,10 +168,10 @@ mounted thread lifetime. The existing upsert frame also carries historical card
 replacements. Update a loaded target turn without touching active-turn state;
 when the target turn is absent, invalidate/refetch the durable snapshot rather
 than creating a synthetic streaming turn. Store duplicate replacement as a
-reference-preserving no-op. The pending inbox remains generic for transport
-and model drain. `queuedWriterTurnIds` selects writer-provenance turns whose
+reference-preserving no-op. The run-state record remains generic for transport
+and model drain. `waitingWriterMessages` selects writer-provenance messages whose
 delivery state is still `waiting`; those accepted bubbles show `Queued` unless
-the pending inbox is usage-blocked. While blocked, pending writer bubbles show
+the record is usage-blocked. While blocked, pending writer bubbles show
 `Waiting for usage` and the composer shows the Add usage note. Otherwise
 `awaiting_run` has no inline label because the live indicator already signals a
 response is coming. There is no composer queue tray.

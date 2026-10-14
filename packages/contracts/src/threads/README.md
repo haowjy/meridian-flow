@@ -4,8 +4,8 @@
 runtime `control`. A control is not model-visible chat text. Its body is `{ kind: "compact", instructions?: string }`.
 Commands are writer-only, not tools.
 
-`PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. Snapshot pending state and
-`inbox.changed` share the same schema. A queued control has no transcript
+`PendingInboxItem.control` carries that body on control rows. `summary` shows the instructions when present. The snapshot's run-state record
+and `meridian.run_state` frames share the same schema. A queued control has no transcript
 position until a divider with `metadata.controlMessageId` starts it. Boundaries adopt every pending non-command row regardless of queued commands. At run start, waiting messages and notices run before the oldest command, which runs alone once no message remains. Stop only ends the turn.
 
 Manual dividers use role `compaction`, `trigger: "manual"`, and ordinary turn
@@ -26,17 +26,17 @@ contracts.
 ### Switch clock
 
 A control answer is read in one transaction under the thread lock and carries
-`seq` (the thread's journal head as a decimal string, in the socket's frame
-space: the snapshot's `nextSeq - 1`) and `mode` (the applied write mode).
-`pending` is the thread's queued write-mode switch, which may be another
-request's row. Every switch transition commits under that lock and appends
-its frames, so the state the answer reports is the server's switch state as
-of every frame at or below `seq`. The withdraw answer carries `pending`, `mode` and `seq`
-likewise, read after the acknowledgment, so a quiet chat's record can reach the answer.
+the chat's `runState` record, whose `version` is the thread's journal head in the
+socket's frame space and whose `mode` is the applied write mode. A queued switch
+(which may be another request's row) is an item of that record. Every switch
+transition commits under that lock and appends its frames, so the state the
+answer reports is the server's switch state as of every frame at or below
+`runState.version`. The withdraw answer carries the record likewise, read after
+the acknowledgment, so a quiet chat's record can reach the answer.
 An applied switch also projects `meridian.write_mode.switched`
 (`{ threadId, mode, controlId, turnId }`) at its own journal `seq`, ahead of
-the `meridian.inbox.changed` that empties the queue; catch-up replay delivers
-it. The snapshot's `thread.aiWriteMode`, `liveState.pending` and `nextSeq` are
+the `meridian.run_state` record that empties the queue; catch-up replay delivers
+it. The snapshot's `thread.aiWriteMode`, `liveState.runState` and `nextSeq` are
 one transaction; label that state `nextSeq - 1`.
 
 ### Failed reply Retry
@@ -63,10 +63,10 @@ fields. See
 
 ### Waiting for usage
 
-`ThreadPendingInbox.blocked` optionally carries `{ reason: "credits_exhausted" }`.
+`RunState.blocked` is `{ reason: "credits_exhausted" }` or null.
 This is an accepted message's durable start block, not an admission refusal or
 a failed assistant. The runtime delivery owner sets it on a credit-gated drain
 and clears it when the next turn starts or when no message or control remains
-pending (for example, after the last blocked control is withdrawn). Snapshot pending state, socket
-subscription state (including its validator) and `meridian.inbox.changed`
+pending (for example, after the last blocked control is withdrawn). The snapshot, socket
+subscription state (including its validator) and `meridian.run_state`
 preserve the same fact. Clients must not guess it from account balance.
