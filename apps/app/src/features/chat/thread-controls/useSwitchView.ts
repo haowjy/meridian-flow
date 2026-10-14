@@ -9,8 +9,9 @@
  * for a switch; a failure stays with the journal owner's keyed announcement), and marks the
  * Works and project thread lists stale when a switch applies.
  *
- * The bridge row, an applied switch whose divider has not rendered yet, is the transcript
- * layer's: it is keyed by the `write_mode.switched` frame's turn and leaves with its divider.
+ * The bridge row, an applied switch whose divider has not rendered yet, is derived here from the
+ * slice's applied facts and the dividers the transcript shows: it leaves with its divider. What
+ * has been spoken is the slice's too, so a remount repeats no announcement.
  *
  * One host per chat per tab: the desktop shell keeps one `ChatSurface` and moves it between
  * the center and the dock, so a chat has one mounted `ChatView` and so one view. Two would
@@ -21,7 +22,7 @@ import type { Turn } from "@meridian/contracts/protocol";
 import { readWriteModeSwitch } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
 import { withdrawThreadControl } from "@/client/api/threads-api";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
@@ -69,8 +70,6 @@ function useSingleHostWarning(threadId: string) {
   }, [threadId]);
 }
 
-type Applied = { turnId: string; controlId: string; mode: AiWriteMode };
-
 export type SwitchView = {
   rows: readonly QueuedControl[];
   /** The chat's mode as the writer should see it. */
@@ -93,38 +92,33 @@ export function useSwitchView(input: {
   const queryClient = useQueryClient();
   const actions = useThreadActions();
   const { dispatchRunState: dispatch } = actions;
-  const { view, news, applied: appliedNews } = useRunStateSlice(threadId);
+  const { view, news, applied, spoken } = useRunStateSlice(threadId);
   useSingleHostWarning(threadId);
-  const [applied, setApplied] = useState<readonly Applied[]>([]);
   const latest = useRef({ journal, projectId });
   latest.current = { journal, projectId };
-  const announcedQueued = useRef(0);
-  const announcedApplied = useRef(0);
 
   useLayoutEffect(
     () => dispatch(threadId, { type: "journal", switches: journal.pending }),
     [dispatch, threadId, journal.pending],
   );
 
-  // The slice decides what is news; this speaks each applied switch once and keeps its bridge.
+  // The slice decides what is news and how much of it was told (`spoken`, which outlives this
+  // mount); this speaks the rest and records that it did.
   useEffect(() => {
-    for (const entry of appliedNews) {
-      if (entry.n <= announcedApplied.current) continue;
-      announcedApplied.current = entry.n;
-      setApplied((known) => [...known, entry]);
+    const queued = news.filter((entry) => entry.n > spoken.queued);
+    const appliedNow = applied.filter((entry) => entry.n > spoken.applied);
+    if (queued.length === 0 && appliedNow.length === 0) return;
+    for (const entry of queued) announce(controlStatusCopy(entry.control, "queued"));
+    for (const entry of appliedNow) {
       announce(writeModeSwitchedCopy(entry.mode));
       void invalidateProjectThreadData(queryClient, latest.current.projectId);
     }
-  }, [appliedNews, queryClient]);
-
-  // The slice decides what is news; this speaks each queued switch once.
-  useEffect(() => {
-    for (const entry of news) {
-      if (entry.n <= announcedQueued.current) continue;
-      announcedQueued.current = entry.n;
-      announce(controlStatusCopy(entry.control, "queued"));
-    }
-  }, [news]);
+    dispatch(threadId, {
+      type: "spoken",
+      queued: news.at(-1)?.n ?? 0,
+      applied: applied.at(-1)?.n ?? 0,
+    });
+  }, [news, applied, spoken, dispatch, queryClient, threadId]);
 
   const revalidate = useCallback(
     () => void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) }),
@@ -176,14 +170,6 @@ export function useSwitchView(input: {
     () => new Set(turns.flatMap((turn) => (readWriteModeSwitch(turn) ? [turn.id] : []))),
     [turns],
   );
-  // Only a switch whose divider has not rendered yet needs the bridge.
-  useEffect(() => {
-    setApplied((known) =>
-      known.some((entry) => dividerIds.has(entry.turnId))
-        ? known.filter((entry) => !dividerIds.has(entry.turnId))
-        : known,
-    );
-  }, [dividerIds, applied]);
   const folded = useMemo(() => switchDisplay(view, input.writeMode), [view, input.writeMode]);
   const rows = useMemo<QueuedControl[]>(() => {
     const own = folded.rows.map((row) => ({
@@ -192,6 +178,7 @@ export function useSwitchView(input: {
       status: row.status,
       ...(row.awaitingServer ? { awaitingServer: true } : {}),
     }));
+    // The bridge: an applied switch whose divider has not rendered yet.
     const bridge = applied
       .filter(
         (entry) => !dividerIds.has(entry.turnId) && !own.some((row) => row.id === entry.controlId),

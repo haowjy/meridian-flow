@@ -57,21 +57,6 @@ export function switchDisplay(view: RunStateView, base: AiWriteMode) {
   );
 }
 
-/** A `meridian.write_mode.switched` frame's value, or null when it is malformed. */
-export function readSwitchedFrame(
-  value: unknown,
-): { turnId: string; controlId: string; mode: AiWriteMode } | null {
-  const frame = value as Partial<Record<string, unknown>> | undefined;
-  if (
-    !frame ||
-    typeof frame.turnId !== "string" ||
-    typeof frame.controlId !== "string" ||
-    (frame.mode !== "draft" && frame.mode !== "direct")
-  )
-    return null;
-  return { turnId: frame.turnId, controlId: frame.controlId, mode: frame.mode };
-}
-
 /** A queued write-mode switch the writer should hear about; `n` counts them, from 1. */
 export type QueuedNews = {
   n: number;
@@ -92,6 +77,11 @@ export type RunStateSlice = {
   /** The applied switches already seen, by their divider's turn. */
   appliedHeard: ReadonlySet<string>;
   applied: readonly AppliedNews[];
+  /**
+   * How much of `news` and `applied` the writer has been told, by `n`. It lives with the lists,
+   * so a remounted view speaks only what no mounted view has.
+   */
+  spoken: { queued: number; applied: number };
 };
 export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
   view: INITIAL_RUN_STATE_VIEW,
@@ -100,6 +90,7 @@ export const INITIAL_RUN_STATE_SLICE: RunStateSlice = {
   seed: null,
   appliedHeard: new Set(),
   applied: [],
+  spoken: { queued: 0, applied: 0 },
 };
 
 export type RunStateAction =
@@ -114,11 +105,20 @@ export type RunStateAction =
   | { type: "answer"; kind: RunStateIntent["kind"]; id: string; version: string }
   | { type: "drop"; kind: RunStateIntent["kind"]; id: string }
   | { type: "journal"; switches: readonly JournalSwitch[] }
+  /** The view told the writer of the news through these counts. */
+  | { type: "spoken"; queued: number; applied: number }
   | { type: "withdraw"; id: string; failed?: boolean }
   | { type: "withdrawn"; id: string; runState: RunState }
   | { type: "dropWithdraw"; id: string };
 
 export function reduceRunState(state: RunStateSlice, action: RunStateAction): RunStateSlice {
+  if (action.type === "spoken") {
+    const queued = Math.max(state.spoken.queued, action.queued);
+    const applied = Math.max(state.spoken.applied, action.applied);
+    return queued === state.spoken.queued && applied === state.spoken.applied
+      ? state
+      : { ...state, spoken: { queued, applied } };
+  }
   const view = reduceView(state.view, action);
   const record = view.record;
   const seeded =
@@ -226,5 +226,7 @@ function reduceView(view: RunStateView, action: RunStateAction): RunStateView {
       );
     case "dropWithdraw":
       return dropIntent(view, "withdraw", action.id);
+    case "spoken":
+      return view;
   }
 }

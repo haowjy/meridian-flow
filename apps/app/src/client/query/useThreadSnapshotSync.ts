@@ -17,6 +17,7 @@ import {
   parseSeq,
   RUN_STATE_EVENT,
   readRunState,
+  readWriteModeSwitched,
   WRITE_MODE_SWITCHED_EVENT,
 } from "@meridian/contracts/protocol";
 import type { RunState } from "@meridian/contracts/threads";
@@ -31,7 +32,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { toThreadSnapshotApplyOptions } from "@/client/api/threads-api";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
-import { readSwitchedFrame } from "@/client/run-state/run-state-slice";
 import { announceError, useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
 import {
   useAccountEpochSignal,
@@ -157,9 +157,14 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
               return;
             }
             if (event.type === EventType.CUSTOM && event.name === WRITE_MODE_SWITCHED_EVENT) {
-              const switched = readSwitchedFrame(event.value);
-              if (switched && parseSeq(seq) !== null)
+              const switched = readWriteModeSwitched(event.value);
+              if (switched && parseSeq(seq) !== null) {
+                // The divider turn is the transcript's, whatever the record says; the same
+                // frame answers the writer's control in the run-state slice.
+                flush();
+                actions.applyTurnEvent(threadId, event, seq);
                 actions.dispatchRunState(threadId, { type: "switched", seq, ...switched });
+              }
               return;
             }
             // Waiting messages that left the chat leave this transcript at the frame's seq.

@@ -44,6 +44,20 @@ export type WriteModeSwitchedValue = {
   turnId: string;
 };
 
+const writeModeSwitchedSchema = z.object({
+  mode: aiWriteModeSchema,
+  controlId: z.string(),
+  turnId: z.string(),
+});
+
+/** Reads a `meridian.write_mode.switched` CUSTOM value; null when malformed. */
+export function readWriteModeSwitched(
+  value: unknown,
+): Pick<WriteModeSwitchedValue, "mode" | "controlId" | "turnId"> | null {
+  const parsed = writeModeSwitchedSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 const runStartedMetaSchema = z.object({
   writeMode: aiWriteModeSchema.nullable().optional(),
   executionId: z.string().nullable().optional(),
