@@ -154,15 +154,17 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
    request left, so the server may hold it), and the message stays "Sending". Remove the route and
    Retry: the row becomes queued and Withdraw appears; it withdraws on the server. Reload instead
    and the switch is admitted before the message.
-5. Two tabs on one chat during a reply: switch in the typing tab. When the driving tab's answer
-   retires the record, the other tab keeps the row and the chosen mode through the retirement,
-   and Withdraw from the other tab empties the server's inbox and both tabs' rows. Withdraw an
-   unposted switch in one tab (abort `**/messages` so a message ahead holds it) and the watching
-   tab drops the row and the mode. Abort the watching tab's snapshot route and switch in the
-   other: its row stays until the route is restored and a fresh snapshot lands.
-   While a reply ends with a queued switch, observe the DOM (a MutationObserver over body text
-   and the toolbar label): no sample lacks both the row and the divider, and the toolbar never
-   shows the old mode.
+5. Two tabs on one chat during a reply: switch in the typing tab. The other tab shows the
+   queued row and the chosen mode at once (the driver stamps the server's answer on the journal
+   record, and every tab reads the stamp), and Withdraw from the other tab empties the server's
+   inbox and both tabs' rows. A hidden tab that chose a switch holds its row until a visible tab's
+   driver posts it and stamps the answer (wrap `window.fetch` in the choosing tab so its
+   `POST **/controls` never answers, pick, then show the other tab; the choosing tab never shows
+   "Couldn't switch" and converges on the queued row). Withdraw an unposted switch in one tab
+   (abort `**/messages` so a message ahead holds it) and the watching tab drops the row and the mode.
+   While a reply ends with a queued switch, observe the DOM (a MutationObserver and a
+   `requestAnimationFrame` sampler over body text and the toolbar label): no sample lacks both
+   the row and the divider, and the toolbar never shows the old mode.
 6. A refused first send with a switch queued behind it: abort the create route, send, switch,
    then set the message record's `state` to `rejected` in `localStorage` (the route tool can't
    return a 4xx). Edit returns to New chat with the message's draft and clears the switch.
@@ -183,3 +185,8 @@ reply with a long `delayMs` step (`./mf thread send <id> go --mock @script.json`
     switch back: "Switch to … queued", then "Switched to …", then nothing for the switch back.
     Reload with a switch queued: nothing is announced. A failed switch announces once, and
     Retry or Withdraw clears "Couldn't switch…".
+12. Phone (390x844) and desktop: repeat 2, 3 and 10 at both sizes. Sample the page as in 5: after
+    the switch back there is no frame with the cancelled row or the old mode, on the one device
+    and on the second device (three runs each). Reload with a queued switch: the first sampled
+    frame after load already shows the row and the queued mode (read from the journal stamp),
+    nothing is announced as queued, and the apply announces "Switched to …" once.
