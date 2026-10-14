@@ -9,7 +9,7 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { Editor } from "@tiptap/core";
 import { yUndoPluginKey } from "@tiptap/y-tiptap";
-import { act, useMemo } from "react";
+import { act, useLayoutEffect, useMemo } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -78,7 +78,11 @@ function OpenRuntime({ editor, doc }: { editor: Editor; doc: Y.Doc }) {
     onInlineModelAvailable: controller.inlineReviewModelAvailable,
   });
   useInlineReviewFocus({ editor, documentId: "document-a", itemKey: "draft-a" });
-  controller.setInlineReviewShown("document-a", "draft-a", true);
+  // The editor publishes the shown chrome from a layout effect, never during render.
+  const { setInlineReviewShown } = controller;
+  useLayoutEffect(() => {
+    setInlineReviewShown("document-a", "draft-a", true);
+  }, [setInlineReviewShown]);
   return null;
 }
 

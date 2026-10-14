@@ -7,7 +7,7 @@
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { draftAttributionQueryOptions } from "@/client/query/useDraftAttribution";
@@ -95,12 +95,18 @@ it("a row another surface's runtime made ready is actionable only once its room 
     renders.push({ rows: view.items.length, ready: view.status === "ready" });
     return null;
   }
-  const node = (enabled: boolean) => (
+  let collapse!: () => void;
+  function Reader() {
+    const [enabled, setEnabled] = useState(true);
+    collapse = () => setEnabled(false);
+    return <Probe enabled={enabled} />;
+  }
+  const node = (
     <QueryClientProvider client={client}>
-      <Probe enabled={enabled} />
+      <Reader />
     </QueryClientProvider>
   );
-  await withReactRoot(node(true), async () => {
+  await withReactRoot(node, async () => {
     await settleReact(() => expect(view.status).toBe("ready"));
     // No render offered a row before the room was held.
     expect(renders.filter((render) => render.rows > 0).every((render) => render.ready)).toBe(true);
@@ -112,9 +118,9 @@ it("a row another surface's runtime made ready is actionable only once its room 
     expect(leasedBy("headless-discard")).toEqual(["branch:draft"]);
 
     // The row's reader lets go (the file collapsed): the entry still holds the room, so Undo still lands.
-    registry.retained.delete(
-      [...registry.retained.keys()].find((k) => k.startsWith("room-review")) ?? "",
-    );
+    expect([...registry.retained.keys()].some((k) => k.startsWith("room-review"))).toBe(true);
+    await act(async () => collapse());
+    expect([...registry.retained.keys()].some((k) => k.startsWith("room-review"))).toBe(false);
     expect(leasedBy("headless-discard")).toEqual(["branch:draft"]);
     act(() => view.undoDiscard?.(view.discarded?.[0].id as string));
     expect(text(doc)).toContain("green");
