@@ -37,6 +37,7 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
+import { applyContextRemovalSearchUpdate } from "./context-removal-route-repair";
 import {
   bindDocumentAddressReview,
   documentAddressQueryOptions,
@@ -89,7 +90,6 @@ import {
   type NavigationOptions,
   type ProjectRouteCommands,
   type ProjectSearch,
-  projectSearchEquals,
   type RouteWorkResolution,
   routeWorkIssue,
   type WorkDetailTarget,
@@ -793,27 +793,15 @@ function ReadableProjectDestination({
             contextRemovalRoute={{
               transition: (_id, target, prepared) => closeDestination(target, prepared),
               readSearch: () => search,
-              updateSearch: (_id, update) => {
-                const next = update(search);
-                if (projectSearchEquals(next, search)) return;
-                if (next.scheme && next.path !== undefined)
-                  void openContext(
-                    {
-                      scheme: next.scheme,
-                      path: next.path,
-                      workId: next.work,
-                      rootThreadId: next.chat,
-                    },
-                    // The review selector is not passed: the command keeps it only when the
-                    // address names the same document (a rename), and a fallback document
-                    // opens without one.
-                    { replace: true },
-                  );
-                else if (next.screen === "work")
-                  void go(toDestination({ kind: "works" }), { replace: true });
-                else if (next.screen === "context")
-                  void go(toDestination({ kind: "editor" }), { replace: true });
-              },
+              updateSearch: (_id, update, relocated) =>
+                applyContextRemovalSearchUpdate({
+                  search,
+                  update,
+                  relocated,
+                  openContext,
+                  goWorks: () => void go(toDestination({ kind: "works" }), { replace: true }),
+                  goEditor: () => void go(toDestination({ kind: "editor" }), { replace: true }),
+                }),
             }}
             activeLocalDocumentId={editorDocument.localDocumentId}
             activeContextScheme={editorDocument.activeContextScheme}
