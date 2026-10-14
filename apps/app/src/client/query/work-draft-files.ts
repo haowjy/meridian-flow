@@ -13,7 +13,7 @@ export type ReviewFileTarget = {
   /** The active draft the row's verbs act on. */
   draft: ThreadDraftListItem;
   /** Absent from the live project until Apply. */
-  isNewDocument: boolean;
+  isNew: boolean;
 };
 
 /** The DB guarantees one active draft per document/Work; raw rows remain untouched. */
@@ -22,23 +22,21 @@ export function projectWorkDraftFiles(
   catalog: Pick<CatalogContextView, "findDocument"> | null,
 ): ReviewFileTarget[] {
   return sortDraftFiles(
-    drafts
-      .filter((draft) => draft.status === "active")
-      .map((draft) => {
-        const live = catalog?.findDocument(draft.documentId);
-        const location = live ? parseContextUri(live.uri) : null;
-        return {
-          documentId: draft.documentId,
-          documentName: live
-            ? (documentTitleFromUri(live.uri) ?? draft.documentName)
-            : draft.documentName,
-          contextLocation: location
-            ? { scheme: location.scheme, path: location.path }
-            : draft.contextLocation,
-          draft,
-          isNewDocument: draft.isNewDocument === true,
-        };
-      }),
+    drafts.map((draft) => {
+      const live = catalog?.findDocument(draft.documentId);
+      const location = live ? parseContextUri(live.uri) : null;
+      return {
+        documentId: draft.documentId,
+        documentName: live
+          ? (documentTitleFromUri(live.uri) ?? draft.documentName)
+          : draft.documentName,
+        contextLocation: location
+          ? { scheme: location.scheme, path: location.path }
+          : draft.contextLocation,
+        draft,
+        isNew: draft.isNew === true,
+      };
+    }),
   );
 }
 

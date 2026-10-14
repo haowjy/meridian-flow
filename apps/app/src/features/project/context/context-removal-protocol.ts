@@ -331,7 +331,8 @@ export function reduceRepresentedRemoval(
       },
     };
   }
-  const locator = routeTargetForTab(represented, selection.locator.workId);
+  // A review removal addresses its own Work's route, not whichever Work is routed now.
+  const locator = routeTargetForTab(represented, intent.reviewWorkId ?? selection.locator.workId);
   const identity: ContextRouteIdentity = {
     kind: represented.kind === "new" ? "local" : "server",
     documentId: represented.documentId,

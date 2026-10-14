@@ -11,9 +11,11 @@ import {
   runDraftBatch,
   runDraftSelection,
   runWholeDraftIntent,
+  runWorkWideCommand,
   startDraftCommand,
 } from "@/client/query/draft-command-executor";
-import { getContextTabs } from "@/client/stores";
+import type { DraftRef } from "@/client/query/draft-command-record";
+import { getContextTabs, matchesReviewItem } from "@/client/stores";
 import { routeTargetForTab } from "@/features/project/context/context-removal-planner";
 import {
   useIsCurrentContextRoute,
@@ -43,12 +45,44 @@ export function useWorkDraftCommands({
   const changesLocked = frozen;
   const commands = useMemo(() => {
     const scope = { projectId, workId };
+    /** An Apply that left no newer proposal promotes the draft-only document; the route follows. */
+    const promoteIfSettled = (
+      target: DraftRef,
+      generation: number | undefined,
+      tab: ReturnType<typeof getContextTabs>["tabs"][number] | undefined,
+    ) => {
+      const newest = newestKnownProposal(queryClient, target);
+      if (newest !== undefined && generation !== undefined && newest > generation) return;
+      void (async () => {
+        try {
+          await lifecycle.promote(target);
+          if (tab?.kind !== "tracked") return;
+          const route = routeTargetForTab(tab, workId);
+          if (openContextRoute && isCurrentContextRoute?.(route))
+            await openContextRoute(route, {
+              replace: true,
+              isCurrent: () => isCurrentContextRoute(route),
+            });
+        } catch {
+          // Applied stays applied; the document host reconciles navigation.
+        }
+      })();
+    };
+    const refOf = (draft: DraftReviewSelection): DraftRef => ({
+      ...scope,
+      documentId: draft.documentId,
+      itemKey: draft.itemKey,
+    });
+    const tabOf = (draft: DraftReviewSelection) =>
+      getContextTabs(projectId).tabs.find((candidate) =>
+        matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
+      );
     const sendWhole = (mode: "apply" | "discard", draft: DraftReviewSelection): CommandStart => {
       if (frozen) return { sent: false, outcome: Promise.resolve({ kind: "blocked" }) };
-      const target = { ...scope, documentId: draft.documentId, draftId: draft.draftId };
+      const target = { ...scope, documentId: draft.documentId, itemKey: draft.itemKey };
       const generation = newestKnownProposal(queryClient, target);
-      const tab = getContextTabs(projectId).tabs.find(
-        (candidate) => candidate.documentId === draft.documentId,
+      const tab = getContextTabs(projectId).tabs.find((candidate) =>
+        matchesReviewItem(candidate, { reviewWorkId: workId, reviewItemKey: draft.itemKey }),
       );
       const start = startDraftCommand(
         queryClient,
@@ -60,30 +94,16 @@ export function useWorkDraftCommands({
           completesDraft: true,
         },
         threadId,
-        () => {
-          if (mode === "discard") lifecycle.remove(target);
-        },
       );
       return {
         ...start,
         outcome: start.outcome.then((outcome) => {
-          if (outcome.kind === "applied") {
-            const newest = newestKnownProposal(queryClient, target);
-            if (newest === undefined || (generation !== undefined && newest <= generation)) {
-              void (async () => {
-                try {
-                  await lifecycle.promote(target);
-                  if (tab?.kind !== "tracked") return;
-                  const route = routeTargetForTab(tab, workId);
-                  if (openContextRoute && isCurrentContextRoute?.(route))
-                    await openContextRoute(route, {
-                      replace: true,
-                      isCurrent: () => isCurrentContextRoute(route),
-                    });
-                } catch {
-                  // Applied stays applied; the document host reconciles navigation.
-                }
-              })();
+          if (outcome.kind === "applied") promoteIfSettled(target, generation, tab);
+          if (outcome.kind === "discarded") {
+            try {
+              lifecycle.remove(target);
+            } catch {
+              /* The committed command must not be resent for route repair. */
             }
           }
           return outcome;
@@ -100,7 +120,7 @@ export function useWorkDraftCommands({
         : runDraftSelection(queryClient, scope, mode, draft, changes, threadId);
     const whole = (mode: "apply" | "discard", draft: DraftReviewSelection) =>
       runWholeDraftIntent(
-        { ...scope, documentId: draft.documentId, draftId: draft.draftId },
+        { ...scope, documentId: draft.documentId, itemKey: draft.itemKey },
         mode,
         () => sendWhole(mode, draft),
       );
@@ -124,10 +144,10 @@ export function useWorkDraftCommands({
       workId,
       threadId,
       startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => whole(mode, draft),
-      apply: (documentId: string, draftId: string) =>
-        whole("apply", { documentId, draftId }).outcome,
-      discard: (documentId: string, draftId: string) =>
-        whole("discard", { documentId, draftId }).outcome,
+      apply: (documentId: string, itemKey: string) =>
+        whole("apply", { documentId, itemKey }).outcome,
+      discard: (documentId: string, itemKey: string) =>
+        whole("discard", { documentId, itemKey }).outcome,
       applyChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
         selection("apply", draft, changes),
       discardChanges: (draft: DraftReviewSelection, changes: DraftSelection["selection"]) =>
@@ -136,13 +156,24 @@ export function useWorkDraftCommands({
         batch("apply", items),
       discardBatch: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
         batch("discard", items),
-      disposeDrafts: async (mode: "apply" | "discard", drafts: readonly DraftReviewSelection[]) =>
-        (
-          await runDraftBatch(
-            drafts.map((draft) => ({ draft })),
-            ({ draft }) => whole(mode, draft).outcome,
-          )
-        ).map(({ outcome }) => outcome),
+      /** Work Files' Apply all and Discard all: one server command over the listed items. */
+      disposeDrafts: async (
+        mode: "apply" | "discard",
+        drafts: readonly DraftReviewSelection[],
+      ): Promise<DraftCommandOutcome[]> => {
+        if (frozen) return drafts.map(() => ({ kind: "blocked" }));
+        const before = drafts.map((draft) => ({
+          generation: newestKnownProposal(queryClient, refOf(draft)),
+          tab: tabOf(draft),
+        }));
+        const outcomes = await runWorkWideCommand(queryClient, scope, mode, drafts, threadId);
+        outcomes.forEach((outcome, index) => {
+          if (outcome.kind === "discarded") lifecycle.remove(refOf(drafts[index]));
+          if (outcome.kind === "applied")
+            promoteIfSettled(refOf(drafts[index]), before[index].generation, before[index].tab);
+        });
+        return outcomes;
+      },
     };
   }, [
     projectId,

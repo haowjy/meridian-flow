@@ -22,7 +22,10 @@ and dock hosts.
   syntax lives in
   `apps/server/server/domains/runtime/gateway/adapters/mock/write-directive.ts`.
 - Drive the UI with `agent-browser` (snapshot → click by ref → re-snapshot).
-  Capture `agent-browser console` and `errors` at the end of every scenario —
+  Browsing live with no `?work=`, there is no Version chip for another Work's draft; the open
+  document's draft hint (below) says so instead. Use `?work=<the drafting Work>` for the chip.
+
+Capture `agent-browser console` and `errors` at the end of every scenario —
   a clean console is part of every pass criterion below.
 
 ### Controlled failures and evidence
@@ -118,6 +121,9 @@ class separately. Live remains exactly unchanged and the other class survives
 until its own Discard. Capture the previews, dispositions and readbacks, plus
 the change-list screenshot and browser errors. Stop only this worktree's stack.
 
+The per-change recipes below (tokens, closure classes, admission) belong to the review as it stands today; the
+diff-based review rework (work item `diff-based-review`) replaces per-change review and these with it.
+
 ## Coherent review reads (CLI)
 
 Stage two independent paragraph edits in a named Work. Save a preview and its
@@ -149,7 +155,7 @@ row's Review a silent no-op).
    Work page's Files tab ("Changes to review").
 2. The row must show the real document title, not a placeholder.
 3. Click the file's name. PASS: the app navigates to the Editor for that document
-   (`/editor/manuscript/<path>?work=…&draft=…` under the project URL) and the
+   (`/editor/manuscript/<path>?work=…&item=…` under the project URL) and the
    inline review UI appears in the editor. FAIL: nothing happens.
 4. Repeat with a draft that creates a **new** document (write directive
    targeting a filename that doesn't exist). PASS: the Work page row shows the
@@ -236,25 +242,31 @@ for ~200ms).
 ## Probe E — cold load and reload of a draft-only review
 
 1. Leave a pending new-document draft unapplied. Open its review, copy the
-   address (`/editor/manuscript/<name>.md?work=…&draft=…`), and open it in a
+   address (`/editor/manuscript/<name>.md?work=…&item=…`), and open it in a
    fresh tab, then reload. Run it at desktop width and as a phone (390px wide,
    coarse pointer).
-   PASS: the document opens in review at the same URL with `?draft=` kept,
+   PASS: the document opens in review at the same URL with `?item=` kept,
    and no other document shows at any point. Record the history writes with a
    `history.replaceState` wrapper installed before first load: there must be
    none beyond the router's own startup write. FAIL: the address ends on
-   another open document with `?draft=` dropped (a tab at a path spelling the
+   another open document with `?item=` dropped (a tab at a path spelling the
    route does not match, or a phone host rejecting the route before the
    address admitted it).
+
+## Probe E2 — one draft-only tab shared by two Works
+
+1. Have drafts for the same new document in Works Alpha and Beta. Open the review in both Works, then close
+   the tab (or Discard) in Alpha. PASS: Beta still has its review tab; closing or discarding in Beta then
+   removes the tab.
 
 ## Probe F — copied No Work review address, remote disposition, history writes
 
 1. Leave a pending new-document draft in No Work. Copy its review address
-   (`…/editor/manuscript/<name>.md?work=&draft=…`: the draft states its Work).
+   (`…/editor/manuscript/<name>.md?work=&item=…`: the draft states its Work).
    Select a named Work in this browser, then open the copied address cold, at
    desktop width and as a phone.
-   PASS: the same draft opens in review, `?draft=` kept, no history write beyond the
-   router's startup one. FAIL: `?draft=` dropped or another document shown.
+   PASS: the same draft opens in review, `?item=` kept, no history write beyond the
+   router's startup one. FAIL: `?item=` dropped or another document shown.
 2. Open a draft-only review in two pages in a named Work. From the Work page
    Changes to review `…` menu, Apply all in one.
    PASS: the other page leaves review in place within about a second and shows the
@@ -543,7 +555,7 @@ the review’s Work/draft address. Only the presenting host renders review.
 
 On Chat close the retained Editor tab, reload, and verify a dock-only review
 returns without a live-body or error frame. Apply and Discard remotely from a
-second tab, each twice in fresh Works; the dock promotes live or returns to Recent,
+second tab, each twice in fresh Works; the dock settles to the live document or returns to Recent,
 and reload preserves that result. Check no project boundary or maximum-depth
 console error occurs when an empty active preview/reset arrives before the
 settlement catalog. Hold that catalog read to widen the ordering, then release
@@ -554,7 +566,7 @@ the same review in an Editor tab, carry it to Chat, close the dock document (X)
 or use Close review on a new-document draft / Live version on a manuscript,
 then return immediately to Editor. Its tab, `draft` URL and marks survive;
 reload on Editor restores that review. Reload on Chat after closing the dock
-instead restores the native occupant (draft-only Editor overlays never persist).
+instead restores the native occupant (draft-only review entries never persist; the URL's `item=` rebuilds them).
 Capture screenshots with
 `page.screenshot()`, fresh API readback and console errors.
 
@@ -718,7 +730,7 @@ reuse another worktree's project, database, thread or browser session.
    live reads remain seeded until Apply. There must be one addition, not two.
 4. Apply that document's draft via
    `POST /api/projects/<project>/works/<work>/documents/<document>/draft/apply`
-   with `{"draftId":"<branch ID>"}`. Read via `./mf doc read <URI> --json`.
+   with `{"draftId":"<draft ID>","itemKey":"<item key>","commandId":"<uuid>"}`. Read via `./mf doc read <URI> --json`.
    Assert the entire `content` value, including terminal newlines:
    insertion `"Seed.\n\nAdded once.\n"`; replacement `"Alpha Gamma.\n"`.
 5. For named partial skips, script a turn inserting `One addition.` and
@@ -898,3 +910,118 @@ independent typing through the durable coordinator. Queue/retry evidence:
 `client/query/draft-command-executor.test.tsx` includes changed-effect evidence
 with unchanged stable keys. These are integration/adapter checks, not browser
 smoke verification.
+
+## Review commands against a replying model (browser, mock stack)
+
+The chat strip is disabled while a reply is still writing, and the Work page's Apply all and Discard all keep
+working. Use a Work in `aiWriteMode: draft` and an owned project, and drive both pages in `agent-browser` (desktop
+1440x900). `./mf` only sets up the Work, a thread bound to it and the scripted turns, and reads durable state (`doc
+read`, the drafts list, `thread view`) after each click. Per-change controls on the rows stay locked while a reply
+streams; this recipe does not cover them. Strip commands during a reply come with the review rework
+(`diff-based-review`, ruling W4).
+
+**Holding a reply mid-write.** A reply saves once per model response, after all of that response's tools have
+run, so the mock's `delayMs` (which delays the model, not the tools) cannot hold it. Send one response with 120 to
+300 chained `replace` calls on one document (each `find` is the previous `content`) with `./mf thread send
+--no-wait`, and click about one second later. An earlier turn must already have saved a draft edit to the document, so
+it is listed.
+
+1. **Strip disabled during the reply.** Open the Work's chat. While the reply runs, the strip's Apply and Discard are
+   disabled (the page states this recipe's rule; the strip itself shows no reason). PASS: clicking sends no request. After the reply finishes they enable.
+2. **Strip commands after the reply.** Click Apply on the strip. PASS: only this chat's changes apply; other chats' and
+   the writer's changes stay pending.
+3. **Work page Apply all during the reply.** Work page, Files tab, "All changes" menu, Apply all changes. PASS: live
+   has the text saved before the click, and the document is still under Changes to review for the late writes.
+4. **Work page Discard all during the reply.** The same menu, Discard all changes, confirm (at 390x844 too: the question
+   and both buttons stay on screen). PASS: the list is empty, live is unchanged, the in-flight writes fail "You discarded
+   this draft, so the change wasn't kept. The AI will read it again.", and a later write lands in a new draft.
+5. **Live-edit staleness.** Not covered here: an Apply with tokens from before a live edit refuses as `stale`, tested
+   by the DB suite (`draft-tree.apply-staleness.db.test.ts`).
+
+Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass. The API-level answers
+(`commandId` resend, conflict, unknown, `whole_item`, `cant_undo_elsewhere`) are covered by tests, not by this recipe.
+
+## Cold-open waterfall and the ahead-link chip (browser)
+
+Open a drafted document's review cold: a fresh `agent-browser` session with the auth state loaded, then `open` the
+review URL (`/editor/<scheme>/<name>?work=<workId>&item=<draftId>:<documentId>`). Wrap `fetch` and `WebSocket` in an
+init script, enlarge the Resource Timing buffer (Vite loads hundreds of modules), and watch for the first appearance
+of the draft's text in `document.body.innerText`. Record, ordered by start time: the address admission request
+(`reviewWorkId` and `itemKey` in its query), the draft preview request, the `/ws/yjs` connect and open, and the first
+text. PASS is the request order and the total from the address request to first text, not a threshold: say whether
+the three run as a serial chain.
+
+For the link chip, record every change of `data-link-chip` and `aria-description` on `a[data-meridian-link]` with
+`performance.now()` from the chip's first insertion, on a cold load, a load with `?work=`, in-app navigation, and with
+the `links/resolve` response held by an owned fetch seam. A live chapter holding an `ahead:` link to a document that
+exists only in a draft must settle on the "in a draft" state without reading "Doesn't exist yet" on the way.
+
+
+## A writer's New file joins the draft's document (browser, #757)
+
+A draft's new document is a real document with a draft, hidden live only because it is a
+draft. Making it live (New file, a link's Create, the AI) unhides it, and it stays one document
+with an ordinary draft over it. The device's instant create carries its destination, so the
+server joins the document waiting there. The only device work is identity: the reservation's id
+becomes the joined id, and what the writer typed is kept. No draft text is merged; the draft's
+text stays in the draft for review.
+
+Setup (own stack, `MODEL_PROVIDER=mock pnpm dev`): `./mf api` to create a Work with
+`aiWriteMode: "draft"` and a thread bound to it. `./mf thread send <thread> go --mock @script`
+with one scripted `write create` of `manuscript://Chapter 2` (give it text). Desktop 1440x900,
+then the phone 390x844 with touch emulation.
+
+1. **Online.** Open the project. Sidebar, Manuscript, New file, `Chapter 2`, Enter, and type a
+   line at once.
+   PASS: one `Chapter 2` row and one tab, on the draft's document (same id as the Work's draft
+   item, read with `./mf api`); the typed line is kept; the Work's review item is an edit, not
+   new. As soon as the create's answer lands, with no reload or navigation, the open document
+   shows the "Live" chip with the version menu, and Draft opens that draft's review. Measure
+   from the `create-untitled` response to the chip appearing. Check it inside the drafting
+   Work's chat and browsing live with no Work. Database: one `documents` row at that path
+   (`psql`, `hidden = false`).
+2. **Offline.** `agent-browser set offline on` before New file; New file `Chapter 2`, type a
+   line, set offline off. PASS: the same as step 1 once the connection returns; before it, the
+   row sits at `Chapter 2` in the Manuscript, not under Unfiled.
+3. **A rename while the create is out.** Offline, New file `Chapter 2`, rename it
+   `Chapter 2b`, reconnect. PASS: one row `Chapter 2b` on the draft's document; the rename is
+   not offered for repair.
+4. **A link's Create.** The Create button exists only on a link that reads "doesn't exist yet", and
+   following an "In a draft" link opens the review instead. So make the link in the editor (select
+   text, Link, destination `manuscript://Chapter 10`), open it so its "Create" dialog is up, have
+   the AI draft `Chapter 10` in the Work, then press Create. PASS: the same as step 1.
+5. **No regression.** New file at a free name, and at a name a visible document holds (the
+   second takes the free name, `Chapter 2 (2)`).
+
+6. **A draft-only tab open before the join.** Open the draft's `Chapter 2` first (the chat's "Edited"
+   line, the composer strip, or the Work page's Changes to review), then New file `Chapter 2` from the
+   sidebar. Repeat with that tab open but another tab selected, and reload afterwards. PASS: no "Couldn't
+   open this draft." card; the open tab becomes the document's ordinary tab with the draft's review over it
+   (the view the chip's Draft choice gives; an unselected tab simply becomes ordinary). A hand-typed address whose draft is gone shows
+   "This destination is unavailable.". Wrap `fetch` in an init script and log the bodies of
+   `working-set`, `context/availability` and `recent-documents`: none answers 400 or 404, and neither
+   `meridian:working-set` nor `meridian:account-recents` keeps the device's minted id.
+
+With no `?work=` the document shows the draft hint instead of the Live chip (see the next section).
+
+Capture `agent-browser console` and `errors` at the end of each: clean is part of the pass.
+
+## An open document says when a draft has changes to it (browser, #757)
+
+`GET /api/projects/:p/documents/:d/drafts` answers the active drafts in the project with changes to the
+document (`draftId`, `itemKey`, `label`, `originWorkId`), the same membership as the Work page's Changes to
+review. The editor shows a line under the identity row for every draft other than the one the view works
+in: "A draft has changes to this (Northern Arc)" with Review, or "2 drafts have changes to this" with a
+menu. Setup as in the join recipe, plus a second named Work in draft mode. Desktop 1440x900, check 1 also
+at 390x844.
+
+1. **The owner's flow, in No Work.** The AI drafts `manuscript://Chapter 2` in Work A. With no Work open,
+   New file `Chapter 2`. PASS: one row, and the hint naming Work A appears with no reload; Review opens
+   Work A's review of Chapter 2. Time the `create-untitled` response to the hint (a `fetch` wrapper and a
+   `MutationObserver` on `[data-document-draft-hint]`); note `uptime`.
+2. **A live document a draft edits.** Open it with no Work and from Work B: the hint. Open it in Work A: the
+   Live chip only, no hint.
+3. **After Discard** of Work A's draft (Work page, Discard all changes): the hint goes on this device at
+   once, and on another device on focus or the catalog wake.
+4. **A document no draft touches** shows no hint.
+5. **Two drafts** edit one document: "2 drafts have changes to this", and Review lists both by label.

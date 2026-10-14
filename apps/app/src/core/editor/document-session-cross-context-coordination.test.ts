@@ -7,7 +7,10 @@
 import "fake-indexeddb/auto";
 import { afterEach, expect, it, vi } from "vitest";
 import type { CrossContextLockManager } from "../cross-context-locks";
-import { DocumentSessionAuthorityStore } from "./document-session-authority-store";
+import {
+  DocumentSessionAuthorityStore,
+  type TerminalLineageReceipt,
+} from "./document-session-authority-store";
 import type { LocalSessionAuthority } from "./document-session-coordination-contract";
 import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
 import { DocumentSessionRegistry } from "./document-session-registry-implementation";
@@ -181,5 +184,44 @@ it("adopts a cached incarnation at a later admission generation and keeps its pe
   } finally {
     await coordination.close();
     await store.close();
+  }
+});
+
+it("hands the exact-ID deletion version to the local lineage terminal", async () => {
+  const accountId = nextAccount();
+  const registry = new DocumentSessionRegistry(
+    (id, local) =>
+      createDocumentSessionCrossContextCoordination({
+        accountId: id,
+        local,
+        locks: memoryLocks(),
+        secureContext: true,
+        createWakeChannel: null,
+        reconcileIntervalMs: 60_000,
+      }),
+    undefined,
+    accountId,
+  );
+  const receipts: TerminalLineageReceipt[] = [];
+  try {
+    registry.connectLocalResources({
+      terminal: {
+        continueTerminal: async (receipt, run) => {
+          receipts.push(receipt);
+          await run({ publish: async () => undefined, acknowledge: async () => undefined });
+          return "completed";
+        },
+      },
+      lineageHandleFor: async () => lineageHandle,
+      beginClose: () => undefined,
+      finishClose: async () => undefined,
+    });
+    await registry.admit(projectId, documentId, generation);
+    await registry.revokeDocument(projectId, documentId, "119", "terminal-remove:119", "42");
+    expect(receipts).toEqual([
+      expect.objectContaining({ lineageHandle, generation: "119", deletionVersion: "42" }),
+    ]);
+  } finally {
+    await registry.closeAccountRuntime();
   }
 });

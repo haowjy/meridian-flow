@@ -47,12 +47,23 @@ export const workC = {
 } as Work;
 
 export const listed = {
-  draftId: "draft-a",
+  draftId: "work-draft-a",
+  origin: "edited" as const,
+  isNew: false,
+  binary: false,
+  wholeItem: false,
+  conflict: null,
+  tokens: {
+    locationToken: "location-1",
+    liveTextToken: "live-1",
+    branchGenerationToken: "generation-1",
+  },
+  settling: false,
+  itemKey: "draft-a",
   documentId: "document-a",
   documentName: "Chapter 12",
   contextLocation: null,
-  status: "active" as const,
-  draftGeneration: 1,
+  branchGeneration: 1,
   actorThreads: [],
   updatedAt: "2026-10-07T00:00:00.000Z",
 };
@@ -66,9 +77,11 @@ export const operation = (id: string) => ({
 });
 
 export const preview = {
+  draftId: listed.draftId,
+  item: listed,
   status: "active" as const,
-  draftId: "draft-a",
-  draftGeneration: 1,
+  itemKey: "draft-a",
+  branchGeneration: 1,
 
   reviewRoomName: "review-room-a",
   liveRevisionToken: "live-1",
@@ -81,7 +94,7 @@ export const preview = {
 export const previewOf = (...ids: string[]) => ({ ...preview, operations: ids.map(operation) });
 
 /** The reviewed draft's identity, as a command names it. */
-export const draftA = { documentId: "document-a", draftId: "draft-a" };
+export const draftA = { documentId: "document-a", itemKey: "draft-a" };
 
 /** A selection of these changes (one class each). */
 export const change = (...ids: string[]) => ({
@@ -90,18 +103,28 @@ export const change = (...ids: string[]) => ({
   operationIds: ids,
 });
 
-export const applied = (draftClosed: boolean, id = "2") => ({
+export const applied = (itemClosed: boolean, id = "2") => ({
+  draftId: listed.draftId,
   status: "applied" as const,
-  draftId: "draft-a",
+  itemKey: "draft-a",
   operationIds: [id],
   closureClassIds: [`class-${id}`],
-  draftClosed,
+  itemClosed,
 });
 
-export const discarded = (draftClosed: boolean) => ({
+/** Item Apply's 200: the item settled with no notes. */
+export const itemApplied = (itemKey = "draft-a") => ({
+  draftId: listed.draftId,
+  status: "applied" as const,
+  itemKey,
+  item: { itemKey, status: "applied" as const, notes: [] },
+});
+
+export const discarded = (itemClosed: boolean) => ({
+  draftId: listed.draftId,
   status: "discarded" as const,
-  draftId: "draft-a",
-  draftClosed,
+  itemKey: "draft-a",
+  itemClosed,
 });
 
 export type ScopeProbe = {
@@ -121,7 +144,7 @@ export type ScopeProbe = {
   ) => Promise<() => DraftChangesView>;
 };
 
-export type ReviewedDraft = { documentId: string; draftId: string };
+export type ReviewedDraft = { documentId: string; itemKey: string };
 
 export async function renderReviewScopes(
   run: (probe: () => ScopeProbe) => Promise<void>,
@@ -141,7 +164,7 @@ export async function renderReviewScopes(
   } = {},
 ): Promise<void> {
   const {
-    reviewed: initialReviewed = { documentId: "document-a", draftId: "draft-a" },
+    reviewed: initialReviewed = { documentId: "document-a", itemKey: "draft-a" },
     onOpenDraft = () => {},
     surface = null,
     chatSurface = null,
@@ -192,7 +215,7 @@ export async function renderReviewScopes(
         <RunnerProbe />
         {lateMounted ? <LateReader /> : null}
         {lists.map(({ target, scope }) => (
-          <ChangeList key={target.draftId} target={target} scope={scope} />
+          <ChangeList key={target.itemKey} target={target} scope={scope} />
         ))}
         {surface}
       </>
@@ -231,7 +254,7 @@ export async function renderReviewScopes(
     current.third = third;
     return (
       <PresentedReviewScope value={presented}>
-        <DraftOnlySettlement projectId={options.projectId ?? "project-a"} />
+        <DraftOnlySettlement projectId={options.projectId ?? "project-a"} editorWorkId={work.id} />
         <DraftReviewBoundary value={presented}>
           <HeaderProbe />
         </DraftReviewBoundary>
@@ -282,6 +305,9 @@ export function createReviewScopeFixture(
   const network = {
     listWorkDrafts: vi.spyOn(draftsApi, "listWorkDrafts"),
     getDraftPreview: vi.spyOn(draftsApi, "getDraftPreview"),
+    applyAllDrafts: vi.spyOn(draftsApi, "applyAllDrafts"),
+    discardAllDrafts: vi.spyOn(draftsApi, "discardAllDrafts"),
+    observeDraftCommand: vi.spyOn(draftsApi, "observeDraftCommand"),
     applyDraft: vi.spyOn(draftsApi, "applyDraft"),
     applyDraftChanges: vi.spyOn(draftsApi, "applyDraftChanges"),
     discardDraft: vi.spyOn(draftsApi, "discardDraft"),

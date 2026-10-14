@@ -35,7 +35,7 @@ export type DraftReviewContextValue = {
   files: ReviewFileTarget[];
   drafts: ThreadDraftsStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
-  reviewRoomNameForDraft: (documentId: string, draftId: string) => string | null;
+  reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
   setActiveEditorDocumentId: (
     documentId: string | null,
@@ -170,9 +170,9 @@ export function useDraftReviewScopeValue({
   const fileForDocument = drafts.fileForDocument;
 
   const reviewRoomNameForDraft = useCallback(
-    (documentId: string, draftId: string) =>
+    (documentId: string, itemKey: string) =>
       controller.inlineReview?.documentId === documentId &&
-      controller.inlineReview.draftId === draftId
+      controller.inlineReview.itemKey === itemKey
         ? controller.reviewRoomName
         : null,
     [controller.inlineReview, controller.reviewRoomName],

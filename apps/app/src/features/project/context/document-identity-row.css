@@ -20,11 +20,19 @@
 [data-document-identity-row]:not([data-collapse="0"]) [data-identity-path] > :not(:first-child) {
   display: none;
 }
-[data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
+[data-document-identity-row]:is(
+    [data-collapse="2"],
+    [data-collapse="3"],
+    :is([data-collapse="4"], [data-collapse="5"])
+  )
   :is(.identity-show-label, .identity-command-label, .identity-discard .identity-command-short) {
   display: none;
 }
-[data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
+[data-document-identity-row]:is(
+    [data-collapse="2"],
+    [data-collapse="3"],
+    :is([data-collapse="4"], [data-collapse="5"])
+  )
   :is(
     .identity-discard .identity-command-icon,
     .identity-apply .identity-command-short,
@@ -32,7 +40,8 @@
   ) {
   display: inline;
 }
-[data-document-identity-row]:is([data-collapse="3"], [data-collapse="4"]) .identity-step-count {
+[data-document-identity-row]:is([data-collapse="3"], :is([data-collapse="4"], [data-collapse="5"]))
+  .identity-step-count {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -40,10 +49,14 @@
   clip-path: inset(50%);
   padding: 0;
 }
-[data-document-identity-row][data-collapse="4"] .identity-apply .identity-command-short {
+[data-document-identity-row]:is([data-collapse="4"], [data-collapse="5"])
+  .identity-apply
+  .identity-command-short {
   display: none;
 }
-[data-document-identity-row][data-collapse="4"] .identity-apply .identity-command-icon {
+[data-document-identity-row]:is([data-collapse="4"], [data-collapse="5"])
+  .identity-apply
+  .identity-command-icon {
   display: inline;
 }
 /* Extend only vertically: every visible box owns its full width, and gaps stay
@@ -64,26 +77,60 @@
   }
 }
 
-[data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
+/* A finger owns the whole 44px square, as in the phone shell. The row grows to
+   44px (DocumentIdentityBar), so the vertical extension above is unclipped. */
+@media (pointer: coarse) {
+  [data-document-identity-row] :is(button, [role="switch"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* Last resort, after every label has collapsed: the change list and stepper
+     give their place to Discard draft and Apply draft, which must stay reachable. */
+  [data-document-identity-row][data-collapse="5"] [data-review-secondary] {
+    display: none;
+  }
+}
+
+[data-document-identity-row]:is(
+    [data-collapse="2"],
+    [data-collapse="3"],
+    :is([data-collapse="4"], [data-collapse="5"])
+  )
   .identity-version-label {
   display: none;
 }
-[data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
+[data-document-identity-row]:is(
+    [data-collapse="2"],
+    [data-collapse="3"],
+    :is([data-collapse="4"], [data-collapse="5"])
+  )
   [data-draft-review-controls] {
   gap: 2px;
 }
-[data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
+[data-document-identity-row]:is(
+    [data-collapse="2"],
+    [data-collapse="3"],
+    :is([data-collapse="4"], [data-collapse="5"])
+  )
   :is(.identity-discard, .identity-apply, [role="switch"]) {
   padding-inline: 3px;
 }
-[data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
+[data-document-identity-row]:is(
+    [data-collapse="2"],
+    [data-collapse="3"],
+    :is([data-collapse="4"], [data-collapse="5"])
+  )
   .group\/chip
   > span {
   padding-inline: 3px;
   gap: 2px;
 }
 
-[data-document-identity-row]:is([data-collapse="2"], [data-collapse="3"], [data-collapse="4"])
+[data-document-identity-row]:is(
+    [data-collapse="2"],
+    [data-collapse="3"],
+    :is([data-collapse="4"], [data-collapse="5"])
+  )
   .identity-count-long {
   position: absolute;
   width: 1px;
@@ -91,9 +138,9 @@
   overflow: hidden;
   clip-path: inset(50%);
 }
-[data-document-identity-row][data-collapse="4"] .identity-spacer {
+[data-document-identity-row]:is([data-collapse="4"], [data-collapse="5"]) .identity-spacer {
   display: none;
 }
-[data-document-identity-row][data-collapse="4"] .group\/chip {
+[data-document-identity-row]:is([data-collapse="4"], [data-collapse="5"]) .group\/chip {
   margin-left: 0;
 }

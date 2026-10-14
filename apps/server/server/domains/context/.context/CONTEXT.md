@@ -39,8 +39,7 @@ unhiding either table. Location-only CAS tokens still fence moved identities.
 
 Runtime uses the context-owned `DocumentRevisions.current` port, never collab
 directly. Its adapter resolves the thread's current primary Work and write mode,
-checks project-final availability, and in draft mode checks the thread's Work
-manifest membership for `manuscript://` sources. It then delegates each
+checks project-final availability, then delegates each
 document to collab's effective reader. A document a re-read would not find
 returns null, even when its Y.Doc remains loaded in Hocuspocus. Draft reads
 pull live changes synchronously before selecting peer, Work draft, or live;
@@ -59,12 +58,63 @@ Each result also says which `version` it came from, `draft` or `live`.
 **Thread views (D14, D20).** A thread's port reads every source through its
 `ThreadContextView`: each document in the version that thread's writes change
 (`destination` from `domains/file-policy`), so drafted sources read the Work
-draft in draft mode and everything else reads live. Drafted sources this
-project stores (`isDrafted`, minus `user://`, which lives in the personal
-project's manifest) also list through the project manifest, so a draft-only
-create appears in `ls` and `search`. `version: "live"` on the view reads live text and the live
-manifest, and never touches a draft. `read`, `search` and `ls` build their port
-with the version the model named.
+draft in draft mode and everything else reads live. Which documents and folders
+exist is the tree view's answer (`tree/`): a drafted source's adapter has a
+draft placement and resolves its view once per command with
+`drafts.viewForWork` (live while the Work has no active draft; a read never
+makes one), so a draft's hidden create appears in `stat`, `read`, `ls`,
+`search` and `locate` in that draft only. `version: "live"` reads the live tree
+and live text, and never touches a draft. `read`, `search` and `ls` build their
+port with the version the model named.
+
+**Creates by placement (contract §6).** The port factory decides each adapter's
+placement once (`placementFor`); ContextFS delegates to that strategy
+(`adapters/context-fs/create-placement.ts`). A draft placement's
+`ensureTrackedDocument` and `writeBinary` make (or, for text, join) a hidden row
+through the `DraftCreatePort` (`drizzle-draft-creates.ts` over
+`tree/creates.ts` and `tree/end-use.ts`, with collab's branch half injected) in a command
+transaction that locks the drafting Work, ensures and locks its draft
+(`runInDraft`), then takes namespace keys. Whole-file writes, creates with text,
+untitled creates and `mkdir` refuse in a draft placement: a draft never seeds
+live Yjs. The in-memory port is explicitly live-only.
+
+The live create pipeline is `adapters/context-fs/live-create.ts`. A live create
+at a hidden document's or folder's path reveals it instead of inserting a twin;
+with content it discovers the candidate holding nothing, takes its live lease,
+and admits the content on a clone inside the reveal's transaction
+(`writeCollabMarkdownHeld`), applied to the warm room after commit. A draft's new
+document is a real document hidden only because it is a draft, so a create at its
+path unhides it and the draft stays an ordinary peer over it. The writer's instant
+create (`createUntitledDocument` with a `destination`, run by
+`LiveCreate.createOptimistic`) is never refused for a name: nothing at the path
+inserts the device's minted id; a draft's hidden text document there is unhidden,
+keeps its id, and the device's id forwards to it (`document_forwards`, written in
+the reveal's transaction; the answer is `joined`); a visible node there leaves
+the create at the first free name. A replay answers from the forward first, with
+the joined document's current address, and catalog entries carry `joinedFrom`.
+Link resolution follows forwards for ids no document holds. A nameless create
+takes `Untitled N`, skipping names hidden documents hold. `documentId` is a mint
+(an upload's reservation, an untitled create's client id). `retractCreate` reverses a create for a rolled-back reply
+or a failed create write: the router deletes a live create; a draft placement
+ends the draft's use unless another thread's committed text makes it stand, and
+collab deletes that Work's draft branch and its peers, then retires exactly those
+peers' rooms and thread state; another Work's peers on a shared hidden document
+are untouched.
+
+**End of use (contract §12).** A hidden node no active draft uses is tombstoned,
+never left live. `tree/end-use.ts` (collab's Discard and Work purge's disposal, a
+retracted create) and the create pickers tombstone it under its document lock,
+release its storage (live Yjs, every branch on it, derived rows, its own link rows)
+and prune emptied hidden folders bottom-up; a picture's object is deleted after
+commit. Every end of use locks through `acquireEndUseScope` (namespaces of the
+sources read, a re-read, then documents; a moved scope aborts and rediscovers).
+Reads repair what a bug left: `identityStatus` answering gone for a hidden, live,
+unused node schedules `tree/hidden-node-repair.ts` after the read, in its own
+transaction behind that scope, as tracked detached work; a create's candidate
+picker reports its own repair. Each is a `context.hidden-node.repaired` warn event
+after commit. Compose wires one repair into the link scope, the mover's link count
+and every create path (`hiddenNodeRepair` on the port factory). A draft create holds
+its source's namespace every command, not only when provisioning resolves it.
 Plain markdown convenience reads and versioned reads share collab serialization.
 
 
@@ -78,36 +128,26 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   affected subtrees, including unchanged entries and children moved out of the
   root. Never rely on a separate repair to restore visibility. An absent root
   means the subtree is gone from this scope, not pending refetch.
-  Project Manuscript entries use live-manifest membership. ContextFS
-  observations fail closed when membership cannot be read, while catalog
-  reconciliation aborts and preserves its last good tree. Mutation-triggered
-  Manuscript reconciliation reserves an availability generation, then publishes
-  the catalog commit and generation atomically after the aggregate commit; a
-  failed deferred repair is retried and never publishes its reserved generation.
-  Source refreshes and post-Apply/Discard document refreshes share this adapter's
-  deferred queue, retry policy, and failure reporting. Repairs coalesce per catalog
-  scope. A running batch stays frozen; refreshes committed during it queue one dirty rerun.
-  Overlapping pending scope groups merge transitively and retain per-scope
-  invalidations and per-authority generation maxima. All scopes and generations
-  in a batch publish atomically with one shared catalog commit ID; disjoint
-  groups may run concurrently. Queued and running requests are drain-tracked.
-  Exhausted Postgres lock timeouts are warnings; other failures remain errors.
-  Database locks still arbitrate independent processes.
-  A batch containing `refreshProjectDocuments` reserves a fresh generation before
-  any catalog scope lock, under a short `lock_timeout`; this supersedes older
-  source reservations for the same authority. Source-only batches publish their
-  commit-reserved generations. The route only attaches repair to `waitUntil`.
-  Post-draft refreshes settle after the queue reports failures, like detached source
-  repairs, so the transport cannot log exhausted contention again as an error.
-  `reserve` and `publishReserved` are required port methods with no non-atomic
-  fallback. Other project and Work sources retain their source-specific visibility.
+  Entries are the live tree view (`visibleDocuments(LIVE_TREE)`,
+  `visibleFolders(LIVE_TREE)`): a draft's hidden rows and folders never reach
+  it. Source refreshes (`refreshSources`) publish in the mutating transaction;
+  Apply's draft tree step and the Discard kernel reconcile their sources that
+  way too, so there is no post-commit catalog refresh for drafts.
+  Other project and Work sources retain their source-specific visibility.
   `ContextFS` owns result-aware single-source transactions;
   `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
   sources and Drizzle stores join those boundaries. Wake hints run only after
   commit and cannot fail a mutation.
-  Catalog publication deduplicates complete observations, including namespace
-  versions: a return to an earlier payload still publishes newer provenance,
-  even when deferred repair never saw the intermediate location.
+  Catalog publication compares entries without their stamps. A to B to A still
+  republishes: a move or delete names its node as an invalidation root, so the
+  return re-upserts the entry with the newer stamp.
+  Availability and namespace versions are separate. `advance` moves only the
+  availability generation (an authority-only change such as a Work's state is not
+  a namespace change); `publishNamespace` allocates a namespace observation
+  version, and only a change to a live file, folder or source calls it. One
+  `reconcileScopes` call stamps every scope it changed with one version. Stamps
+  are lower bounds: an entry is at least as new as its stamp, and one stamp can
+  cover several changes, so order by stamps but never read one as naming a change.
   Catalog replay limits are positive safe integers at HTTP boundaries and are
   defensively capped by the shared domain policy. Work catalog IDs pass through
   the canonical request-ID parser before authority resolution.
@@ -131,7 +171,9 @@ Plain markdown convenience reads and versioned reads share collab serialization.
   remain indistinguishable from missing IDs. The same lookup accepts exact folder
   IDs, returning canonical folder entries or independent tombstones. Folder
   tombstones retire namespace refresh work, never descendant document content;
-  reversible Work/lineage hiding remains authority unavailability.
+  reversible Work/lineage hiding remains authority unavailability. The optional
+  internal `view` reads a draft's view; omitted means live. Hidden rows outside
+  the view are missing, documents and folders alike.
 
 - **Unified `ContextPort`** — single port interface (`ports/context-port.ts`)
   providing `stat`/`read`/`write`/`writeBinary`/`mkdir`/`list`/`search` for all
@@ -172,20 +214,28 @@ router resolves to exact project-scoped Work authority before dispatch.
   uploaded image becomes its own binary document under `manuscript://assets/`,
   identified by `assetDocumentId` and addressed in prose as `asset:<documentId>`.
   The host document is only authorized, never mutated, so replacing an image in
-  one chapter cannot disturb another that references the same asset.
+  one chapter cannot disturb another that references the same asset. Signed URL
+  reads default to live; the additive `?workId=` resolves that Work's draft view
+  for both file authorization and figure identity.
 - **Document-link scope adapter** (`adapters/document-link-scope.ts`) —
   implements collab's `DocumentLinkScopes` port. Each snapshot resolves its
   project, owner and personal project once (by project, document or thread)
   and then loads only what each `prepare` names, skipping keys it already
-  holds: settlements by ahead id, rows by id, and every row at an exact or
-  extension-omitted address, each with the canonical URI its folder chain
-  spells now (deleted rows included). Readability comes from the file
-  policy's `listAccess` for the snapshot's reader; presence from `deleted_at`
-  plus the manifest membership ContextFS lists through, read only when a
-  manifest-governed row needs it (the live set, then a draft view's, which
-  includes draft-created and same-response staged documents). Images are
-  documents: the `asset:` rule reads the same rows. Nothing is cached between
-  operations. ContextFS search binds its source document IDs to one snapshot;
+  holds: an ahead ref's meanings, rows by id, and every row at an exact or
+  extension-omitted address (in a draft view, also whatever that draft has
+  at the exact address). Each view (`live` or `draft:<draftId>`) reads the
+  tree view's `identityStatus`: where a document sits in that view, and for
+  a hidden one, `presence: "draft"` with the draft it reads "in a draft" in
+  (the reader's own if it uses it, else the oldest active one) and that
+  draft's path; a document that draft created is an ordinary occupant only
+  in its own view. An ahead ref reads one meaning, the live settlement it
+  bound to when a document first went live at its path; a hidden document at
+  the path reads "in a draft" (oldest draft first). `pinHolder` names the holder
+  a reader door reads for, only one the reader may name and read by the
+  catalog's rule (an id alone is no capability), and only to spell relative links. Readability
+  comes from the file policy's `listAccess`, a hidden row's facts from the
+  draft it reads in. Images are documents: the `asset:` rule reads the same
+  rows. Nothing is cached between operations. ContextFS search binds its source document IDs to one snapshot;
   each chapter's read prepares its own document into it. The factory must
   receive the same scope instance as collab. Scope rules live in collab's
   [document authority notes](../../collab/.context/document-authority-and-schema.md).
@@ -218,11 +268,23 @@ router resolves to exact project-scoped Work authority before dispatch.
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
-| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
+| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant live document ID (a draft's hidden contents split off first and are never named); deleting an empty folder returns none. A move is the overwrite victim, then `tree/node-moves.ts`'s `moveNode`. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target, previousLocations? })` returns one canonical Context document or `null` for a ref-less address. A target is a discriminated `scheme` or `relative` value. Only chat (`previousLocations`) falls back to previous locations, and only after a current miss. |
-| `LinkAheadRegistry` | `register` (independent root transaction, namespace keys only), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
+| `LinkAheadRegistry` | `register` (throws `UnregistrableAheadRefError` for a ref it refuses for good: malformed id, an address `resolveCanonicalAddress` can never resolve, an id already registered elsewhere; independent root transaction: namespace keys only, idempotent per ref), `settleArrivals` (inside the arrival's locked transaction, no lock), `registerUnregistered` (anti-join recovery of client mints, one page in ahead-id order, one ref at a time, failures logged; returns the last key attempted on a full page). |
 | `DocumentArrivals` | Arrival hooks over the registry: `lockNamespaces` (namespace-only keys of documents' sources) and `settle`. |
-| `LiveMembership` | What a move needs of the live manifest: `members` (the note counts only live holders) and `transfer` (a cross-project move carries live membership to the destination project). |
+
+## Live folder operations and hidden nodes
+
+A draft's hidden rows stay where that draft placed them whatever the writer
+does to live folders (`tree/folder-normalization.ts`). A rename or move that
+lands a folder at a hidden folder's path absorbs it; a recursive delete, or a
+folder move to a source fewer drafts may hold (another project, out of `user://`
+into a project, or into a Work-owned or lineage Scratch source; see
+`tree/draft-ownership.ts`), first splits hidden contents into hidden twins at
+their old paths. Otherwise they move with the folder, and the change rows under
+it take the new source. History (vacated
+aliases, consumed claims) is written for visible nodes only; every moved,
+deleted or overwritten node's `location_version` is bumped once.
 
 ## Moves and the link note
 
@@ -237,13 +299,11 @@ Inside the transaction the move row-locks every mutated document (moved
 identities plus any overwrite victim), sorted, `FOR NO KEY UPDATE`
 (`lockMovedDocumentRows`). The weaker lock keeps journal FK insertion compatible
 while ordering the move against derive certification. After all DML and history
-a cross-project move (personal to project or back) moves the documents' live
-manifest membership to the destination project, then it settles ahead refs at the
+the new source row determines project membership. The move settles ahead refs at the
 destinations once (a folder move settles against its final tree), then
 `countIncomingLinks` sums `document_links` occurrences whose `doc:` ref names a
 moved document or whose `ahead:` ref is settled on one, from live content holders
-in the request project. A drafted holder is live only while the project's live
-manifest holds it. A moved holder's own links to unmoved documents are not
+in the request project. Hidden draft holders are excluded by the live tree view. A moved holder's own links to unmoved documents are not
 counted; personal and other-project holders are not counted. The receipt shape
 stays `linkUpdate: { links, documents }`.
 
@@ -274,11 +334,8 @@ writable. Both tracked-create doors (`createTrackedDocument`,
 `entry`); that is what refuses writer creation into a lineage. Never move the
 creation check to bind time or add a second lineage-creation guard downstream.
 
-Repair (`repairTrackedDocument`) restores membership and, if the document has
-no Yjs state, an empty one; it never reparses the stored projection, whose
-links spell pre-move paths. A document whose only content is a non-empty
-projection is incomplete, not repairable: repair fails with that message and
-leaves the row and its bytes as they are for recovery.
+A live create's identity, content and arrival commit in one aggregate, so no
+half-created document exists to repair; a visible row is used as it is.
 
 ## Ahead refs and arrivals
 
@@ -299,19 +356,27 @@ it. Arrival hooks, each once against the operation's final tree:
 | Arrival | Where | Locks already held |
 |---|---|---|
 | Tracked create (named, untitled, model create/copy, import) | creation aggregate, after content initialization | command transaction's namespace keys |
-| Binary upload, figure upload | `createBinaryDocument`, after publishing live membership in the same transaction | the store transaction's namespace keys |
-| Move-in (file, overwrite, folder) | tree store, once after all DML and any cross-project membership transfer | every participating namespace |
+| Binary upload, figure upload | `createBinaryDocument`, after persisting the live identity in the same transaction | the store transaction's namespace keys |
+| Move-in (file, overwrite, folder) | tree store, once after all DML | every participating namespace |
 | Work restore | after unhiding, with the hidden documents' namespace keys taken before any row reappears | thread forest → Work → namespaces |
-| Draft Apply (warm and recovery) | push completion that publishes membership: Work → arriving namespaces → holder lock | as listed |
+| Draft Apply (warm and recovery) | the draft tree step's `afterAdmission`, once for every reveal and restore of the batch | Work → draft → current and final namespaces → document locks |
 
-Draft-only rows and deleted rows are not arrivals.
+A draft's hidden create is no arrival: refs waiting at its address stay paths
+until the document goes live. A reveal is an arrival at the creator's path,
+through the creation aggregate. Deleted rows are not arrivals.
+
+An ahead ref binds once, for every holder (owner amendment 12a): the first
+live document at its path settles it, and nothing is rebound later. There are
+no holder bindings, draft settlements or Apply link cut, and a paste copies the
+ref as is. Refs in a draft's text register globally and best effort: an agent's
+mint, a link typed in the review room (debounced after the room admits it), and
+Apply's prerequisite for the branches it publishes (collab's
+`draft-branch-ahead-registration.ts`); a failed registration never fails Apply.
 
 `adapters/document-address.ts` owns server document addresses: the canonical
 address a document's folder chain spells now, a canonical address resolved to
 storage coordinates (project, scheme, Work, No Work lock coordinate, path), the
-document at an exact address (rendered path compared byte for byte), and
-`listsThroughLiveManifest(scheme)`, the one rule for which sources are live only
-through the project manifest. A document under a deleted folder reads as deleted
+document at an exact address (rendered path compared byte for byte). A document under a deleted folder reads as deleted
 at its address. The link scope, the ahead-ref registry, the move note, and the
 browser address lookup all read through it.
 
@@ -320,8 +385,8 @@ browser address lookup all read through it.
 `document_previous_locations` is direct-to-identity bookmark and chat history. Moves capture only their file/subtree before DML and
 record each vacated file path. Successful file/folder claims consume the exact
 previous location. Failed inserts and rolled-back commands consume nothing.
-Bootstrap uses the same store; hidden manifest identities are outside this
-namespace. Project/Work restore changes availability, not file locations.
+Bootstrap uses the same store. Project/Work restore changes availability, not file locations; Work
+cascade delete and restore nevertheless advance document/folder location versions.
 
 The Context command transaction receives the complete resolved scheme/Work set.
 Personal User scopes first share the personal-project provisioning owner lock.
@@ -458,34 +523,28 @@ currently available to the request owner in the requested project.
   document schema, while registered non-tracked metadata is a typed I/O fault.
 - Client-minted untitled documents use the distinct `createUntitledDocument`
   boundary: it atomically allocates `Untitled N` under the Document names
-  contract, persists `provisionalName`,
-  installs an empty Yjs authority, and records manifest membership in one
+  contract (past live documents and live folders' document aliases), persists
+  `provisionalName`, and installs an empty Yjs authority in one
   transaction. The client owns initial CRDT content; this path must never seed
   non-empty markdown. Router-level retries locate the ID
-  across every project scheme and authorized Work authority and return
+  (`ContextPort.locate`, the same scan) across every project scheme and authorized
+  Work authority and return
   `already-materialized` with the actual canonical scheme/path/Work. This is
   distinct from a true allocation conflict. Response `name` is always the full
   basename including extension. A successful basename change clears the flag in
   the shared tree-mutation store, while path-only moves preserve it.
-- Production text creation is one aggregate transaction: the context row, initial
-  Yjs authority/content, and effective manifest membership either all commit or
-  all roll back. Warm-room publication follows commit, so rollback cannot expose
-  checkpoint or manifest state that SQL rejected. Create/read/list/edit use that
-  manifest-aware view consistently, and observations fail closed when membership
-  authority is unavailable. New non-empty content is parsed into a detached
-  initialize-only checkpoint.
-  An older row missing membership is repaired on its next tracked-document touch;
-  repair seeds absent Yjs state from the row projection and preserves existing
-  canonical Yjs content. Work-scoped `scratch`/`uploads` stores resolve the project
-  through their Work and deliberately register in the live view, not a work-draft
-  view: the ws live-room gate checks the live project manifest.
+- Production text creation commits the context row and initial Yjs authority/content
+  together. Warm-room publication follows commit. Reads and listings use the selected
+  SQL tree view. Draft creation records a hidden live identity and the draft's tree use,
+  and never seeds live Yjs. Scratch and uploads are live Work-owned rows; the live-room
+  gate checks their tree identity and access, with no registration or repair step.
 - Work-scoped source provisioning and tree/content mutations lock and recheck the
   owning Work in their transaction. Work deletion takes the same lifecycle lock,
   while read paths never provision a missing source and instead return empty/not-found.
   so it cannot commit between authorization and a new scratch/upload mutation.
-- Cross-source moves preserve document identity and therefore preserve the same live
-  project-manifest membership; source scope is storage location, not a second
-  manifest namespace. The move commit must not rewrite document Yjs authority or journal rows.
+- Cross-source moves preserve document identity. The destination row determines
+  project visibility; no separate membership state moves. The move commit must not
+  rewrite document Yjs authority or journal rows.
 - `WriteProvenance` is mapped at the adapter boundary to collab update origins:
   agent provenance uses `turnId`, human provenance uses `userId`, and omitted
   provenance is system-originated.
@@ -520,15 +579,17 @@ currently available to the request owner in the requested project.
   internal exact-file cleanup; there is no path-only file-delete contract.
   Files contribute their one committed `documents.id`; recursive folder deletion
   contributes every committed descendant document ID, while an empty folder
-  contributes none. Post-commit membership callback failure is diagnostic; the
-  committed receipt remains successful.
+  contributes none.
 
 ## Negative space
 
 This slice uses generic context vocabulary. Do not reintroduce alternate auth
 adapter seams, sandbox filesystem assumptions, or upstream product naming.
 External connectors (google_drive/dropbox/notion) are schema-only — no
-implementation. The `results://` scheme does not exist.
+implementation. The `results://` scheme does not exist. Neither Recent list
+lives here: chat Recent (documents this chat touched) reads
+`turn_document_touches` in `threads`; the project's recently opened list is
+`domains/recent-documents`.
 
 ## Downlinks
 
@@ -541,6 +602,10 @@ Yjs authority, catalog, availability and identity-preserving move operations as
 Manuscript and KB. Its membership means not yet filed; a name alone does not
 change that membership. It has no Work qualifier and remains accessible to
 normal context tools and reference resolution.
+
+Markdown projections live in `document_markdown_projections`, not tree identity rows.
+Stores batch-read them through `readProjections` only when list word counts are requested.
+Text creation inserts the projection in its identity transaction; binary creation does not.
 
 ## Lineage Scratch ownership
 
@@ -573,3 +638,16 @@ durable Work-switch Notice names the previous canonical Scratch root.
 
 Creation conflicts carry `occupantKind` (`file` or `folder`) through ContextError
 and HTTP error data; it is absent when the failure cannot prove an occupant.
+
+
+## Browser review address admission
+
+Ordinary browser addresses resolve only in the live tree. The address request
+may carry a review selector (`reviewWorkId`, `itemKey`). The server matches
+that item key against the Work's active review items before selecting the whole
+draft's `TreeView`. The URL's `item=` and the selector's `itemKey` are the item
+key (`${draftId}:${documentId}`), never a branch id or a tree draft id; the old
+`draftBranchId` parameter answers unavailable. Candidate and identity availability reads use that same view,
+and the final read grant names the draft destination. Stale, foreign, or
+mismatched selectors answer unavailable without falling back to live. Mutation
+inspection still defaults to `LIVE_TREE`.

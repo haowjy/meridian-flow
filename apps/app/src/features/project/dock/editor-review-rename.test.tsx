@@ -15,13 +15,14 @@ import {
 } from "./editor-review-handoff";
 
 const documentId = "document-a";
-const draftId = "draft-a";
+const itemKey = "draft-a";
 const workId = "work-1";
 
 function Restore({ review }: { review: DraftReviewContextValue }) {
   const admit = useOpenEditorReview();
   return (
     <ReviewAddressOwner
+      admission="admitted"
       review={review}
       presented={{
         container: "editor",
@@ -29,7 +30,7 @@ function Restore({ review }: { review: DraftReviewContextValue }) {
         scheme: "manuscript",
         path: "chapters/renamed.md",
         draftOnly: false,
-        review: { workId, draftId },
+        review: { workId, itemKey },
       }}
       port={{ write: vi.fn(), admit }}
     />
@@ -44,7 +45,7 @@ describe("review restoration after a rename", () => {
       documentName: "A",
       contextLocation: { scheme: "manuscript", path: "chapters/old-name.md" },
       draft: {
-        draftId,
+        itemKey,
         documentId,
         documentName: "A",
         contextLocation: { scheme: "manuscript", path: "chapters/old-name.md" },
@@ -72,9 +73,9 @@ describe("review restoration after a rename", () => {
         await act(async () => undefined);
         expect(navigate).toHaveBeenCalledWith(
           expect.objectContaining({ documentId }),
-          expect.objectContaining({ draftId, replaceIfSameDocument: true }),
+          expect.objectContaining({ itemKey, replaceIfSameDocument: true }),
         );
-        expect(enterInlineReview).toHaveBeenCalledWith(documentId, draftId);
+        expect(enterInlineReview).toHaveBeenCalledWith(documentId, itemKey);
       },
     );
   });

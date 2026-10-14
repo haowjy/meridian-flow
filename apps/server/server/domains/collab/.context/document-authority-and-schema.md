@@ -109,13 +109,9 @@ it reads in) and binds it with `AsyncLocalStorage`; nothing loads yet. Each oper
 `prepare({ holders, docs, stored, refs, addresses, written })` with what its next
 synchronous block names: refs and `asset:` ids are extracted from the Yjs docs
 (markup `storedLinkKeys`), and one batch loads settlements, rows by
-id and rows at exact or extension-omitted addresses, readability through the
-file policy's list path, and manifest membership only when a row needs it.
-Membership is the same authority ContextFS lists through and is required (DB
-suites pass `everyRowMembership` or the real manifest); its failure propagates.
-A view's own manifest decides presence: a draft that removed a live document
-lacks it, and the live set only tells live from draft-only. A view whose
-membership was never loaded is a miss, not an absence.
+id and rows at exact or extension-omitted addresses. Readability comes from the
+file policy's list path; presence comes from the selected SQL tree view. A draft's
+hidden creates are visible only in drafts using them.
 `holder({ documentId, view })` returns the synchronous scope only from an open
 snapshot; it keeps that snapshot, so work deferred past the operation spells
 from it.

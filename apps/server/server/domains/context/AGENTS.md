@@ -16,7 +16,7 @@ trash/restore liveness belong to `adapters/lineage-scratch-lifecycle.ts`; reuse
 it rather than adding another guard. A hidden-to-live lineage transition settles
 waiting ahead refs under its namespace lock in the same transaction. A lineage
 root names Scratch ownership, never a reader: draft visibility for link answers
-comes from the selected Work's manifest (No Work when a request names a
+comes from the selected Work's draft tree view (No Work when a request names a
 lineage), so never pass `rootThreadId` as the viewing thread.
 
 `skills://` (a thread's skill files, D52) is not a context scheme: it is
@@ -93,11 +93,12 @@ identity-bound `upload.delete.ts`. Upload routes delegate all authority,
 classification, collision, persistence, and deletion decisions to `UploadIntake`.
 Composer reference removal never calls the separate upload-delete route.
 
-Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
+Browser bookmarks use `address.get.ts`. A validated review branch resolves its
+document by identity in its active draft tree, independent of path occupancy;
+its canonical address repairs old locators. Plain bookmarks use a current-occupant-first lookup with
 previous paths pointing directly to stable document IDs. Chat links use previous locations only when there is no current occupant;
 editor links carry a stable ref and never consult them. Every successful namespace claim consumes the exact old
-alias in the same transaction; source provisioning and hidden manifests are not
-path claims.
+alias in the same transaction; source provisioning is not a path claim.
 
 Metadata browsing uses the sibling catalog routes: complete compact snapshot,
 whole-commit changes, direct children, and stable-ID/canonical-URI lookup. Every
@@ -108,14 +109,15 @@ Yjs/projection changes do not publish.
 Catalog files preserve persisted tracked or binary classification. The context
 domain emits best-effort truth-free wake hints after commit through the existing
 authenticated thread socket; focus and bounded polling repair dropped hints.
-Project-catalog Manuscript files are filtered through the same live-manifest
-membership policy as ContextFS reads and lists. Draft Apply and Discard reconcile
-the project catalog after changing that membership so mounted trees receive a
-wake hint; the route schedules that refresh after its response
-(`scheduleDraftCatalogRefresh` in `server/lib/draft-review-route.ts`), never
-inside the Apply or Discard transaction. Manuscript mutation refresh waits for the aggregate commit before it
-reads membership, avoiding row-first visibility and cross-transaction lock
-cycles; KB, User, Unfiled, and Work catalogs keep their own visibility rules.
+The catalog is the live tree view, the same one ContextFS reads: a draft's
+hidden rows and folders never reach it. Draft Apply reconciles every source
+its tree step placed into or moved out of inside the completion transaction,
+warm or recovered (collab's `drizzle-draft-tree-step.ts`, F23), so a replica
+replaying from a pre-Apply cursor learns the revealed, restored and renamed
+nodes. Discard's kernel (collab's `drizzle-draft-discard.ts`) reconciles every
+source whose hidden nodes it tombstoned inside its own transaction the same way,
+for the writer's Discard and Work purge alike. Source refreshes publish in the
+mutating transaction.
 Routes authenticate and translate transport only; catalog transaction and replay
 policy live in the context domain.
 
@@ -123,20 +125,23 @@ Stored links resolve in batches at `POST /api/projects/[projectId]/links/resolve
 (`(ref, href)` pairs, answers in request order). A `doc:`/`ahead:` ref resolves
 through one prepared link scope keyed by (project, requesting account); a ref the
 reader cannot reach answers `gone` with no location, because a ref is not a
-capability. Ref-less links keep the address resolver; previous locations apply
-only when `baseUri` is null (chat).
+capability. A hidden document answers `inDraft` with the `draft` that names it
+and that draft's path. The route pins the holder (`holderDocumentId` wherever it
+now sits, else the one document at `baseUri`), only one the reader may name and
+read, and returns `holderUri` when the holder moved; the holder only spells
+relative links. An ahead ref stays a path until a document goes live at it, then
+binds once for every holder; there are no per-holder bindings. Ref-less links keep the address resolver; previous locations
+apply only when `baseUri` is null (chat).
 
 **A move writes nothing into any document.** Links name documents, so a rename
 re-spells on read. Moves flush durable link derivation (which also registers
 client-minted ahead refs) before namespace locking, then row-lock every mutated
 document (moved identities and any overwrite victim) with
 `lockMovedDocumentRows`, sorted, `FOR NO KEY UPDATE`. Never use `FOR UPDATE`
-there: journal FK inserts must remain compatible. After the DML a cross-project
-move carries live manifest membership to its destination project, then the move
+there: journal FK inserts must remain compatible. After the DML the move
 settles ahead refs waiting at its destinations (move-in arrival), then counts the
-note's `linkUpdate`: occurrences in the request project's live holders (live
-manifest members, for drafted sources) whose ref names a moved document
-(`links/move-link-count.ts`).
+note's `linkUpdate`: occurrences in the request project's live holders (visible in the live tree view) whose ref names a moved document
+(`links/move-link-count.ts`). Hidden draft holders are excluded by tree identity status.
 
 Every arrival (tracked create, upload, move-in, Work restore, Apply) settles ahead
 refs once, against its final tree, through `DocumentArrivals`; see

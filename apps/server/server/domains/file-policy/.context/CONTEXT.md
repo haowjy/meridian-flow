@@ -24,7 +24,11 @@ level = min(person term, lifecycle term, agent term)
 
 `domain/policy.ts` is pure. `SOURCE_RULES` there says which sources are
 drafted (`scratch://` and `uploads://` never are) and each source's agent cap.
-Ancestors come from walking `folders.parent_id`; there is no closure table.
+File facts resolve the Work through the canonical drafts resolver and read
+`tree.lineage(view, documentId)` for source and nearest-first folder ancestors.
+Hidden identities outside that draft have no facts, and neither does a Work's
+draft of a document it may not hold (`context/tree/draft-ownership.ts`: its
+project's, or its account's `user://`). There is no closure table.
 
 ## The service (`file-access.ts`)
 
@@ -35,9 +39,9 @@ proof, not a flag: it carries the principal, the facts it was decided on
 | Call | Use it for |
 |---|---|
 | `authorize(principal, target, need)` | Preflight for one target. Returns a `FileGrant` or a `FileAccessDenied`. Authoritative for reads; advisory for writes. |
-| `authorizeAt(principal, target, destination)` | Edit at an explicit destination, not the one the principal's mode picks. An undo reverses a write where it landed. |
+| `authorizeAt(principal, target, destination, need?)` | Access at an explicit destination, defaulting to edit. Undo reverses a write where it landed; deleted-live review uses a read-only destination grant after validating the active draft item and branch. Ordinary file grants still refuse the deleted file. |
 | `confirmEdit(grants)` | The authoritative re-check of edit grants, inside the write's transaction. Takes no lock: the caller has already locked the Works the grants' facts name (`grantWorkIds`) in its one id-ordered select. Reads facts once per grant, re-reads each agent chain, and re-runs the policy at each grant's own destination. A file whose owner or draft Work moved outside the locked set is refused, since locking it then would break the id order. Returns the refusals; it does not throw, so a reply can save the rest. Write seams call it through `lockSeamWorks`; the reply save locks the grants' Works itself first. |
-| `listAccess(principal, documentIds)` | Lists (`ls`, `search`, recent documents, link resolution, draft review). One facts query for every row; a row the principal can't read is absent from the map, so drop it. |
+| `listAccess(principal, documentIds, { draftViews }?)` | Lists (`ls`, `search`, recent documents, link resolution, draft review). Facts use each document's explicit draft view when supplied (link identity metadata chooses its active draft); otherwise the live view. A row the principal can't read is absent from the map, so drop it. |
 | `historyAccess(principal, documentId)` | Change-trail detail. Person term only, so a deleted document's captured evidence stays visible: `"available"`, `"deleted"` or `null`. |
 
 **Principals.** A person is `{ accountId }`. An agent adds

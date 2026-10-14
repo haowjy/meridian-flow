@@ -5,6 +5,7 @@ import {
   toDocHandle,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { spelledLinks } from "@meridian/markup/links";
 import type * as Y from "yjs";
@@ -17,18 +18,22 @@ import type {
   BranchPushAccess,
   CollabDomain,
   CollabDrafts,
+  CommandOutcome,
 } from "../../contracts.js";
 import {
   attributionFromMeta,
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
+import { createBranchCriticalSections } from "../../domain/branch-critical-sections.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { versioned } from "../../domain/document-revision.js";
+import { createDrafts } from "../../domain/drafts.js";
 import type { DocumentAuthorityHead } from "../../domain/ports/document-authority-heads.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
+import { createReplySaveFences } from "../../domain/reply-save-fences.js";
 import {
   enlistResponseParticipant,
   runResponseTransaction,
@@ -50,6 +55,7 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
+import { createInMemoryDraftStore, createInMemoryDraftWriteBoundary } from "./drafts.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
@@ -89,18 +95,35 @@ export function createInMemoryCollabDomain(): CollabDomain {
     resolveDocumentFiletype: async () => null,
     observability: createAgentEditObservabilityOptions({}),
   });
+  const drafts = createDrafts({
+    store: createInMemoryDraftStore(),
+    boundary: createInMemoryDraftWriteBoundary(),
+  });
   // No Work drafts exist in memory, so the pool routes both destinations to the live core.
+  const fileAccess = createAllowAllFileAccess();
   const agentEdit = createThreadPeerCorePool({
+    drafts,
+    branches: { getBranch: async () => null },
     liveUtilityCore: runtime.liveUtilityCore,
     createThreadCore: () => runtime.liveUtilityCore,
     pullThreadPeer: async () => undefined,
+    // Thread cores are the live core here, so nothing is ever pinned to a branch.
+    fences: createReplySaveFences({
+      liveUtilityCore: runtime.liveUtilityCore,
+      branches: { getBranch: async () => null },
+      criticalSections: createBranchCriticalSections(),
+      drafts,
+      fileAccess,
+      lockWorks: async () => {},
+      lockLiveDocuments: async () => {},
+    }),
     commitThreadResponseAtomically: (operation) => operation(),
     responseTransactionSettlement: {
       deferUntilCommit: () => false,
       deferUntilRollback: () => false,
     },
     responseTransactions: { enlist: enlistResponseParticipant, run: runResponseTransaction },
-    fileAccess: createAllowAllFileAccess(),
+    fileAccess,
     lockWorks: async () => {},
     lockLiveDocuments: async () => {},
   });
@@ -123,7 +146,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
         throw new Error("Durable inverse rollback requires the receipt-backed Postgres adapter");
       },
     },
-    branches: { async checkpointThreadPeer() {} },
     projections,
     notices: SILENT_POST_DURABILITY_NOTICES,
   });
@@ -173,6 +195,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       readVersionedMarkdown: runtime.markdownDocuments.readVersionedMarkdown,
       seedFromMarkdown: runtime.markdownDocuments.seedFromMarkdown,
       writeDocument: runtime.markdownDocuments.writeDocument,
+      withLiveDocument: runtime.markdownDocuments.withLiveDocument,
+      writeDocumentHeld: runtime.markdownDocuments.writeDocumentHeld,
       bindMarkdown: runtime.linkBinder.bindMarkdown,
       bindStatic: runtime.linkBinder.bindStatic,
     },
@@ -210,6 +234,20 @@ export function createInMemoryCollabDomain(): CollabDomain {
       links,
     ),
     drafts: createInMemoryDraftStub(),
+    draftResolver: {
+      drafts,
+      // No draft branches in memory: a whole draft leases nothing.
+      draftLeases: {
+        withDraftBranches: (_draftId, run) =>
+          createBranchCriticalSections().withBranches([], (lease) => run(lease, [])),
+      },
+      // No drafts in memory: a purged Work has none to dispose of.
+      workDraftDisposal: {
+        withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
+      },
+      // No draft branches in memory: nothing to register.
+      draftLinks: { flush: async () => {} },
+    },
     documentCreation,
   });
 }
@@ -217,9 +255,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
 const IN_MEMORY_BRANCH_PUSH_STUB: BranchPushAccess = {
   async recoverPendingLiveSettlements() {
     return 0;
-  },
-  async pushToLive() {
-    throw new Error("Branch push service is not configured");
   },
   async countPendingByWorkIds() {
     return new Map();
@@ -249,7 +284,6 @@ function createInMemoryBranchPeerStub(
       const read = await documents.readVersionedMarkdown(input.documentId);
       return read.ok ? read.value.revision : null;
     },
-    async pullThreadPeer() {},
     async flushBranchLivePull() {},
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveHashlines: (input) =>
@@ -268,40 +302,66 @@ function createInMemoryBranchPeerStub(
           holder: { uri: scope.holder.uri, view: LIVE_VIEW },
         });
       }),
-    async resolveManifestMembership() {
-      return { documentId: "" as DocumentId, members: [] };
+    async ensureCreatedDraftBranch() {
+      throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
     },
-    async reconcileProjectManifest() {},
-    async transferLiveManifestMembership() {},
-    async recordManifestDocumentCreated() {},
-    async recordManifestDocumentDeleted() {},
+    async retractCreatedDraftBranch() {
+      throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
+    },
   };
 }
 
 function createInMemoryDraftStub(): CollabDrafts {
+  const gone = async (input: { draftId: string }): Promise<CommandOutcome> => ({
+    kind: "result",
+    result: { status: "gone", draftId: input.draftId as DraftId },
+  });
   return {
     draftReview: {
       async list() {
         return [];
       },
+      async listItems() {
+        return { draftId: null, items: [], threadTitles: new Map() };
+      },
+      async draftsChangingDocument() {
+        return [];
+      },
+      async items() {
+        return { draftId: null, items: [] };
+      },
+      async resolveItem() {
+        return null;
+      },
+      async resolveItemByDocument() {
+        return null;
+      },
       async preview(input) {
-        return { status: "gone", draftId: input.draftId };
+        return { status: "gone", itemKey: input.itemKey };
       },
-      async applyWorkDraft(input) {
-        return {
-          status: "not_found",
-          draftId: input.draftId,
-        };
+      async lookupCommand() {
+        return { kind: "none" };
       },
-      async applyWorkDraftChanges(input) {
-        return { status: "gone", draftId: input.draftId };
-      },
-      async discardWorkDraft(input) {
-        return {
-          status: "discarded",
-          draftId: input.draftId,
-        };
-      },
+      applyItem: (input) => gone(input.item),
+      applyAll: gone,
+      applyChanges: async (input) => ({
+        kind: "result",
+        result: {
+          status: "gone",
+          draftId: input.envelope.draftId as DraftId,
+          itemKey: input.itemKey,
+        },
+      }),
+      discardItem: (input) => gone(input.item),
+      discardChanges: async (input) => ({
+        kind: "result",
+        result: {
+          status: "gone",
+          draftId: input.envelope.draftId as DraftId,
+          itemKey: input.itemKey,
+        },
+      }),
+      discardAll: gone,
     },
   };
 }

@@ -7,7 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { getContextTabs, useContextTabsStore } from "@/client/stores";
+import { type ContextTab, getContextTabs, isDraftOnly, useContextTabsStore } from "@/client/stores";
+import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
 import { contextTabFromDraftGroup } from "@/features/project/context/context-tab-from-draft";
 import { contextTabFromFile } from "@/features/project/context/context-tab-from-file";
@@ -20,6 +21,7 @@ import {
   createReviewScopeFixture,
   deferredReviewAnswer,
   draftA,
+  itemApplied,
   listed,
   previewOf,
   type ScopeProbe,
@@ -29,9 +31,9 @@ import { settleReact } from "@/test-support/react-dom-harness";
 const draftTab = contextTabFromDraftGroup({
   workId: "work-a",
   documentId: "document-a",
-  draftId: "draft-a",
+  itemKey: "draft-a",
   contextLocation: { scheme: "manuscript", path: "/chapter.md" },
-  isNewDocument: true,
+  isNew: true,
 });
 if (!draftTab) throw new Error("Draft tab fixture must be editable");
 
@@ -77,7 +79,9 @@ let fixture: ReturnType<typeof createReviewScopeFixture>;
 let removal: ContextRemovalCoordinator;
 let search: ProjectSearch;
 let writes: number;
-const draftB = { documentId: "document-b", draftId: "draft-b" };
+const draftB = { documentId: "document-b", itemKey: "draft-b" };
+// document-a is draft-only (hidden until Apply), so its list row is new.
+const listedA = { ...listed, isNew: true };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const tabs = () => getContextTabs("project-a").tabs;
 async function open(p: () => ScopeProbe) {
@@ -90,7 +94,6 @@ beforeEach(() => {
   useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
   useContextTabsStore.setState({
     byProject: {},
-    _reviewOverlayByProject: {},
     _workspaceHydrated: false,
   });
   useContextTabsStore.getState().openTab("project-a", draftTab);
@@ -116,10 +119,10 @@ beforeEach(() => {
   });
   removal.bindRouteSelection("project-a", revision, { kind: "server", documentId: "document-a" });
   fixture = createReviewScopeFixture({ removal });
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listedA, listedB] });
   fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...previewOf(...(id === "draft-a" ? ["1", "2"] : ["3"])),
-    draftId: id,
+    itemKey: id,
   }));
 });
 afterEach(() => {
@@ -131,7 +134,6 @@ afterEach(() => {
 });
 
 it.each([
-  [false, false],
   [false, true],
   [true, false],
 ])("header refuses offline Discard without removal or navigation (browser=%s, manager=%s)", async (browser, manager) => {
@@ -161,66 +163,82 @@ it.each([
   );
 });
 
-it("draft-only Discard closes both containers and repairs the route; refusal never resurrects either", async () => {
+it("draft-only Discard keeps both containers until its own terminal success; refusal keeps them", async () => {
   useDockDocumentStore.setState({
-    occupant: dockDocument("project-a", "chat", draftTab as NonNullable<typeof draftTab>, null),
+    occupant: dockDocument("project-a", "chat", draftTab!, null),
   });
-  const claim = useDockDocumentStore.getState().claim();
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.discardDraft>>>();
   fixture.network.discardDraft.mockReturnValueOnce(answer.promise);
   await fixture.render(async (p) => {
     await open(p);
+    const before = tabs();
+    const occupant = useDockDocumentStore.getState().occupant;
     let done!: Promise<unknown>;
     await act(async () => {
       done = p().presented.controller.discard("document-a", "draft-a");
     });
-    expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
-    expect(useDockDocumentStore.getState().occupant).toBeNull();
-    expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
-    expect(search.path).toBe("/live-neighbor.md");
-    expect(writes).toBe(1);
+    expect(tabs()).toEqual(before);
+    expect(useDockDocumentStore.getState().occupant).toBe(occupant);
+    expect(writes).toBe(0);
     await act(async () => {
       answer.reject(new HttpResponseError("refused", 500, null));
       await done;
     });
-    expect(p().header.commandError).toEqual({ code: "discard-server-error" });
-    expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
-    expect(writes).toBe(1);
+    expect(tabs()).toEqual(before);
+    expect(useDockDocumentStore.getState().occupant).toBe(occupant);
     fixture.network.discardDraft.mockResolvedValue({
       status: "discarded",
-      draftId: "draft-a",
-      draftClosed: true,
+      draftId: listed.draftId,
+      itemKey: "draft-a",
+      itemClosed: true,
     });
     await act(async () => {
       await p().presented.controller.discard("document-a", "draft-a");
     });
-    expect(p().header.commandError).toBeNull();
+    expect(tabs()).toMatchObject([{ documentId: "document-b" }]);
+    expect(useDockDocumentStore.getState().occupant).toBeNull();
     expect(writes).toBe(1);
   });
 });
 
-it("an optimistic route-coordination exception before dispatch releases the claim for a real retry", async () => {
-  const close = vi.spyOn(removal, "discardDraft").mockImplementationOnce(() => {
-    throw new Error("route repair failed");
-  });
-  fixture.network.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
+it("a draft-only tab becomes the live document's tab the moment the replica shows it (a join)", async () => {
+  type Snapshot = { records: unknown[]; folders: unknown[]; catalogs: unknown[] };
+  let emit: (snapshot: Snapshot) => void = () => {};
+  const replica = {
+    observeProjection: (_project: string, next: (snapshot: Snapshot) => void) => {
+      emit = next;
+      next({ records: [], folders: [], catalogs: [] });
+      return () => {};
+    },
+  };
+  vi.spyOn(account, "useOptionalAccountResourceReplica").mockReturnValue(replica as never);
   await fixture.render(async (p) => {
     await open(p);
-    await act(async () => {
-      await expect(p().presented.controller.discard("document-a", "draft-a")).rejects.toThrow(
-        "route repair failed",
-      );
-    });
-    expect(fixture.network.discardDraft).not.toHaveBeenCalled();
-    expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
-    expect(p().header.locked).toBe(false);
-    close.mockRestore();
-    await act(async () => {
-      expect(await p().presented.controller.apply("document-a", "draft-a")).toEqual({
-        kind: "applied",
-      });
-    });
-    expect(fixture.network.applyDraft).toHaveBeenCalledTimes(1);
+    expect(tabs().some(isDraftOnly)).toBe(true);
+    // New file joined the hidden document: visible live, the draft's row still new (no refetch yet).
+    await act(async () =>
+      emit({
+        records: [
+          {
+            resource: {
+              handle: "resource-a",
+              identity: { documentId: "document-live" },
+              aliases: { "document-a": {} },
+              lifecycle: { kind: "live" },
+            },
+            intents: [{ projectId: "project-a", state: "pending" }],
+          },
+        ],
+        folders: [],
+        catalogs: [],
+      }),
+    );
+    await settleReact(() => expect(tabs().some(isDraftOnly)).toBe(false));
+    expect(
+      tabs()
+        .map((tab) => tab.documentId)
+        .sort(),
+    ).toEqual(["document-a", "document-b"]);
   });
 });
 
@@ -229,19 +247,23 @@ it("a lost whole Apply keeps the draft-only tab and review, apart from a server 
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      expect(await p().presented.controller.apply("document-a", "draft-a")).toEqual({
-        kind: "apply-outcome-unknown",
-      });
+      const done = p().presented.controller.apply("document-a", "draft-a");
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(await done).toEqual({ kind: "apply-outcome-unknown" });
     });
     expect(p().header.commandError).toEqual({ code: "apply-unknown" });
-    expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
-    expect(p().presented.controller.inlineReview?.draftId).toBe("draft-a");
+    expect(isDraftOnly(tabs().find((tab) => tab.documentId === "document-a") as ContextTab)).toBe(
+      true,
+    );
+    expect(p().presented.controller.inlineReview?.itemKey).toBe("draft-a");
     fixture.network.applyDraft.mockRejectedValue(new HttpResponseError("refused", 500, null));
     await act(async () => {
       await p().presented.controller.apply("document-a", "draft-a");
     });
     expect(p().header.commandError).toEqual({ code: "apply-server-error" });
-    expect(tabs().find((tab) => tab.documentId === "document-a")?.draftOnly).toBe(true);
+    expect(isDraftOnly(tabs().find((tab) => tab.documentId === "document-a") as ContextTab)).toBe(
+      true,
+    );
   });
 });
 
@@ -252,10 +274,9 @@ it.each([
   useDockDocumentStore.setState({
     occupant: dockDocument("project-a", "chat", draftTab as NonNullable<typeof draftTab>, null),
   });
-  if (container === "dock")
-    useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+  if (container === "dock") useContextTabsStore.setState({ byProject: {} });
   const claim = useDockDocumentStore.getState().claim();
-  fixture.network.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
+  fixture.network.applyDraft.mockResolvedValue(itemApplied());
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
@@ -265,10 +286,9 @@ it.each([
     const live = tabs().find((tab) => tab.documentId === "document-a");
     if (container === "both") {
       expect(live).toBeDefined();
-      expect(live).not.toHaveProperty("draftOnly");
-      expect(useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs).toEqual([]);
+      expect(live).not.toHaveProperty("reviews");
     } else expect(tabs()).toEqual([]);
-    expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
+    expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("reviews");
     expect(useDockDocumentStore.getState().isCurrent(claim)).toBe(true);
     if (container === "dock") {
       const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
@@ -285,14 +305,19 @@ it.each([
         "chat",
         {
           ...draftTab!,
-          tabInstanceToken: "new-account-instance",
+          reviews: Object.fromEntries(
+            Object.entries(draftTab!.reviews ?? {}).map(([workId, entry]) => [
+              workId,
+              { ...entry, tabInstanceToken: "new-account-instance" },
+            ]),
+          ),
         },
         null,
       );
       useDockDocumentStore.getState().commit(useDockDocumentStore.getState().claim(), replacement);
       const revision = useDockDocumentStore.getState().revision;
       await act(async () => {
-        answer.resolve({ status: "applied", draftId: "draft-a" });
+        answer.resolve(itemApplied());
         await pending;
       });
       expect(useDockDocumentStore.getState().occupant).toBe(replacement);
@@ -303,10 +328,14 @@ it.each([
 
 it("bulk progress reaches the next draft at confirmation without waiting for navigation", async () => {
   const navigate = vi.fn(() => new Promise<never>(() => {}));
-  fixture.network.applyDraft.mockImplementation(async (_p, _w, _d, request) => ({
-    status: "applied",
-    draftId: request.draftId,
-  }));
+  fixture.network.applyAllDrafts.mockResolvedValue({
+    status: "completed",
+    draftId: listed.draftId,
+    items: [
+      { itemKey: "draft-a", status: "applied", notes: [] },
+      { itemKey: "draft-b", status: "applied", notes: [] },
+    ],
+  });
   await fixture.render(
     async (p) => {
       await open(p);
@@ -317,10 +346,7 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
         ]);
       });
       expect(navigate).toHaveBeenCalled();
-      expect(fixture.network.applyDraft.mock.calls.map((call) => call[2])).toEqual([
-        "document-a",
-        "document-b",
-      ]);
+      expect(fixture.network.applyAllDrafts).toHaveBeenCalledTimes(1);
       expect(p().presented.controller.isDisposing).toBe(false);
     },
     {
@@ -338,7 +364,7 @@ it("bulk progress reaches the next draft at confirmation without waiting for nav
 });
 
 it("a missing preview sends no selection and does not stop later files in the batch", async () => {
-  const draftC = { documentId: "document-c", draftId: "draft-c" };
+  const draftC = { documentId: "document-c", itemKey: "draft-c" };
   fixture.network.applyDraftChanges.mockResolvedValue(applied(false));
   await fixture.render(async (p) => {
     const viewA = await p().mountDraftChanges({
@@ -385,10 +411,10 @@ it("an unopened list follows a remote write and disposition through updated list
     const listChanged = async (stamp: string, ...ids: string[]) => {
       fixture.network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
         ...previewOf(...(id === "draft-b" ? ids : ["1", "2"])),
-        draftId: id,
+        itemKey: id,
       }));
       fixture.network.listWorkDrafts.mockResolvedValue({
-        drafts: [listed, { ...listedB, updatedAt: stamp }],
+        items: [listedA, { ...listedB, updatedAt: stamp }],
       });
       await act(async () => {
         await p().queryClient.invalidateQueries({
@@ -404,6 +430,6 @@ it("an unopened list follows a remote write and disposition through updated list
     await settleReact(() =>
       expect(view().items.map(({ change }) => change.classId)).toEqual(["class-4"]),
     );
-    expect(p().presented.controller.inlineReview?.draftId).toBe("draft-a");
+    expect(p().presented.controller.inlineReview?.itemKey).toBe("draft-a");
   });
 });

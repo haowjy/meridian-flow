@@ -1,13 +1,20 @@
 /** Contract tests for switching a Work's AI write mode (D40, D59). */
 
-import type { UserId, WorkId } from "@meridian/contracts/runtime";
+import type { DraftId } from "@meridian/contracts";
+import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { WorkPushPolicyStore } from "./branch-push-contracts.js";
-import type { WorkDraftPending } from "./work-draft-pending.js";
+import {
+  type ApplyResult,
+  DraftApplyStaleError,
+  type DraftPublication,
+} from "./draft-publication.js";
+import type { DraftReviewItem } from "./draft-review-items.js";
 import { createWorkPushPolicy } from "./work-push-policy.js";
 
 const WORK_ID = "00000000-0000-4000-8000-000000000001" as WorkId;
 const USER_ID = "00000000-0000-4000-8000-000000000002" as UserId;
+const DRAFT_ID = "00000000-0000-4000-8000-000000000004" as DraftId;
 
 function createHarness() {
   const events: string[] = [];
@@ -16,43 +23,35 @@ function createHarness() {
       events.push(`policy:${policy}`);
     }),
   };
-  const workDraftPending: WorkDraftPending = {
-    list: vi.fn(async () => []),
-    countPendingByWorkIds: vi.fn(async () => new Map()),
-  };
-  const applyPendingDraft = vi.fn(
-    async ({ draft }: { draft: Awaited<ReturnType<WorkDraftPending["list"]>>[number] }) => {
-      events.push(`push:${draft.branch.branchId}`);
-      return {
-        status: "noop" as const,
-        branchId: draft.branch.branchId,
-        documentId: draft.branch.documentId,
-        branchGeneration: draft.branch.generation,
-        reason: "no_active_rows" as const,
-      };
-    },
-  );
+  const list = vi.fn(async (): Promise<DraftReviewItem[]> => []);
+  const applyItems = vi.fn<DraftPublication["applyItems"]>(async (): Promise<ApplyResult> => {
+    events.push("apply");
+    return { status: "completed", draftId: DRAFT_ID, items: [] };
+  });
   const policy = createWorkPushPolicy({
     workPushPolicyStore,
-    workDraftPending,
-    applyPendingDraft,
+    reviewItems: { list },
+    publication: { applyItems },
+    drafts: {
+      activeForWork: async (workId) => ({
+        id: DRAFT_ID,
+        projectId: "00000000-0000-4000-8000-000000000005" as ProjectId,
+        status: "active",
+        originWorkId: workId,
+        originThreadId: null,
+        createdBy: USER_ID,
+        createdAt: new Date(0),
+      }),
+    },
   });
 
-  return {
-    applyPendingDraft,
-    events,
-    policy,
-    workDraftPending,
-    workPushPolicyStore,
-  };
+  return { applyItems, events, list, policy, workPushPolicyStore };
 }
 
 describe("work push policy", () => {
-  it("pushes every active draft before enabling auto policy", async () => {
+  it("applies the whole draft as one publication before enabling auto policy", async () => {
     const harness = createHarness();
-    vi.mocked(harness.workDraftPending.list).mockResolvedValue(
-      pendingDrafts("branch-a", "branch-b"),
-    );
+    harness.list.mockResolvedValue(pendingItems(2));
 
     await expect(
       harness.policy.setWorkPushPolicy({
@@ -62,37 +61,56 @@ describe("work push policy", () => {
         pushedByUserId: USER_ID,
       }),
     ).resolves.toEqual({ status: "updated", policy: "auto" });
-    expect(harness.events).toEqual(["push:branch-a", "push:branch-b", "policy:auto"]);
-    expect(harness.applyPendingDraft).toHaveBeenCalledWith({
-      draft: expect.objectContaining({
-        branch: expect.objectContaining({ branchId: "branch-a" }),
-      }),
-      pushedByUserId: USER_ID,
+    expect(harness.events).toEqual(["apply", "policy:auto"]);
+    expect(harness.applyItems).toHaveBeenCalledWith({
+      workId: WORK_ID,
+      draftId: DRAFT_ID,
+      selection: { kind: "all_pending" },
+      userId: USER_ID,
     });
   });
 
-  it("does not enable auto policy when a confirmed push fails", async () => {
+  it("does not enable auto policy when the confirmed Apply fails or stays stale", async () => {
     const harness = createHarness();
-    vi.mocked(harness.workDraftPending.list).mockResolvedValue(pendingDrafts("branch-a"));
-    harness.applyPendingDraft.mockRejectedValue(new Error("push failed"));
+    harness.list.mockResolvedValue(pendingItems(1));
+    harness.applyItems.mockRejectedValue(new Error("apply failed"));
 
     await expect(
       harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", pending: "apply" }),
-    ).rejects.toThrow("push failed");
+    ).rejects.toThrow("apply failed");
+    // A draft that stays stale after Apply reads it again doesn't switch either.
+    harness.applyItems.mockResolvedValue({ status: "stale", draftId: DRAFT_ID, staleItemKeys: [] });
+    await expect(
+      harness.policy.setWorkPushPolicy({ workId: WORK_ID, policy: "auto", pending: "apply" }),
+    ).rejects.toBeInstanceOf(DraftApplyStaleError);
     expect(harness.workPushPolicyStore.setWorkWriteMode).not.toHaveBeenCalled();
   });
 });
 
-function pendingDrafts(...branchIds: string[]) {
-  return branchIds.map((branchId) => ({
-    branch: {
-      branchId,
-      documentId: "00000000-0000-4000-8000-000000000003",
-      workId: WORK_ID,
-      generation: 1,
-      updatedAt: new Date("2026-01-01"),
-    },
-    rows: [],
-    actorThreadIds: [],
-  }));
+function pendingItems(count: number): DraftReviewItem[] {
+  return Array.from({ length: count }, (_, index) => {
+    const documentId =
+      `00000000-0000-4000-8000-00000000010${index}` as DraftReviewItem["documentId"];
+    return {
+      draftId: DRAFT_ID,
+      itemKey: `${DRAFT_ID}:${documentId}`,
+      documentId,
+      draftBranchId: `branch-${index}`,
+      branchGeneration: 1,
+      origin: "edited",
+      isNew: false,
+      binary: false,
+      documentName: null,
+      path: null,
+      conflict: null,
+      deletedLive: false,
+      tokens: { locationToken: "1", liveTextToken: null, branchGenerationToken: "1" },
+      pendingRows: 1,
+      wholeItem: false,
+      settling: false,
+      actorThreadIds: [],
+      lastActorTurnId: null,
+      updatedAt: new Date(0),
+    };
+  });
 }

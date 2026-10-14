@@ -19,10 +19,9 @@ export function createModelDocumentEdits(input: {
     let branchId: string | null = null;
     if (view?.kind === "draft") {
       const branch = await input.coordinator.withDocument(documentId, (liveDoc) =>
-        input.branches.resolveWorkDraftBranchForWork({ documentId, workId: view.workId, liveDoc }),
+        input.branches.ensureDraftBranch({ documentId, draftId: view.draftId, liveDoc }),
       );
       branchId = branch.branchId;
-      branch.doc.destroy();
     }
     return {
       model: true as const,

@@ -13,6 +13,7 @@ import * as Y from "yjs";
 import { createStaticDocumentLinkScopes } from "../adapters/in-memory/static-document-link-scopes.js";
 import type { BranchSnapshot } from "./branch-coordinator.js";
 import type {
+  PendingSettlementBatch,
   PreparedPushCommit,
   PushCommitStore,
   PushLineageRow,
@@ -73,6 +74,7 @@ function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
     documentId,
     kind: "work_draft",
     upstreamBranchId: null,
+    draftId: "draft-1",
     workId: WORK_ID,
     threadId: null,
     status: "active",
@@ -83,12 +85,7 @@ function branch(documentId: DocumentId, doc: Y.Doc): BranchSnapshot {
   };
 }
 
-function preparedPush(
-  transition: ReturnType<typeof createBranchPushTransition>,
-  documentId: DocumentId,
-  liveDoc: Y.Doc,
-  pushId: number,
-): PreparedPushCommit {
+function preparedPush(documentId: DocumentId, liveDoc: Y.Doc, pushId: number): PreparedPushCommit {
   const pushUpdate = Y.encodeStateAsUpdate(liveDoc, Y.encodeStateVector(liveDoc));
   const trail = {
     documentId,
@@ -104,13 +101,8 @@ function preparedPush(
     pushUpdate,
     idempotencyKey: `push-${pushId}`,
     trail,
-    pendingLiveSettlement: transition.prepare({
-      documentTitle: trail.documentTitle,
-      lockCutUpdate: Y.encodeStateAsUpdate(liveDoc),
-      pushUpdate,
-      trail,
-      sweepEvidence: null,
-    }),
+    documentTitle: trail.documentTitle,
+    lockCutUpdate: Y.encodeStateAsUpdate(liveDoc),
   };
 }
 
@@ -137,94 +129,89 @@ function coordinator(docs: ReadonlyMap<DocumentId, Y.Doc>) {
   };
 }
 
+/** One staged batch: completion records each document, then returns its projections. */
 function stores(
-  overrides: Partial<PushCommitStore & PendingSettlementStore>,
+  completed: DocumentId[],
 ): Pick<Parameters<typeof createBranchPushTransition>[0], "commitStore" | "settlementStore"> {
-  const settlements = new Map<
-    number,
-    ReturnType<typeof preparedPush>["pendingLiveSettlement"] & { push: PushLineageRow }
-  >();
+  let staged: PendingSettlementBatch | null = null;
   const commitStore: PushCommitStore = {
-    commitPush: async () => {
-      throw new Error("unexpected single push");
+    async commitPushBatch({ settlement, pushes }) {
+      const rows = pushes.map((prepared, index) => pushRow(prepared, index + 1));
+      staged = {
+        batchId: settlement.batchId,
+        claim: { token: settlement.claimToken, epoch: 1, kind: "warm", leaseExpiresAt: new Date() },
+        attemptCount: 0,
+        payloads: new Map(),
+        members: pushes.map((prepared, index) => ({
+          push: rows[index] as PushLineageRow,
+          documentTitle: prepared.documentTitle,
+          lockCutUpdate: prepared.lockCutUpdate,
+          pushUpdate: prepared.pushUpdate,
+          postCutUpdates: [],
+          trail: prepared.trail,
+          sweepEvidence: null,
+          joinVersion: 0,
+        })),
+      };
+      return { status: "inserted", pushes: rows };
     },
     commitDiscard: async () => {},
-    commitPushBatch: async () => ({ pushes: [] }),
     lockDraftWorks: async () => new Set<string>(),
+  };
+  const loaded = async () => {
+    if (!staged) throw new Error("no staged batch");
+    return staged;
   };
   const settlementStore: PendingSettlementStore = {
     joinAdmission: async () => {},
-    loadLiveSettlement: async (pushId) => {
-      const pending = settlements.get(pushId);
-      if (!pending) throw new Error(`missing settlement ${pushId}`);
-      return pending;
-    },
-    claimRecoverable: async () => null,
+    loadSettlementBatch: loaded,
+    claimRecoverableBatch: async () => null,
     renewClaim: async ({ claim }) => claim,
-    handoffClaim: async () => true,
     recordFailure: async () => true,
     block: async () => true,
-    settlePushTrail: async () => [],
-    withCompletionFence: async (_input, complete) => complete(),
-    listRecoverableSettlementIds: async () => [],
-  };
-  Object.assign(commitStore, overrides);
-  Object.assign(settlementStore, overrides);
-  const commit = commitStore.commitPush;
-  commitStore.commitPush = async (prepared) => {
-    const result = await commit(prepared);
-    if (result.status === "inserted") {
-      settlements.set(result.push.id, { ...prepared.pendingLiveSettlement, push: result.push });
-    }
-    return result;
-  };
-  const commitBatch = commitStore.commitPushBatch;
-  commitStore.commitPushBatch = async (input) => {
-    const result = await commitBatch(input);
-    input.pushes.forEach((prepared, index) => {
-      const push = result.pushes[index];
-      if (push) settlements.set(push.id, { ...prepared.pendingLiveSettlement, push });
-    });
-    return result;
-  };
-  return { commitStore, settlementStore };
-}
-
-describe("branch push change-event broadcast", () => {
-  it("emits each companion document only after that document completes", async () => {
-    const alpha = createCollabYDoc({ gc: false });
-    const beta = createCollabYDoc({ gc: false });
-    const completed: DocumentId[] = [];
-    const delivered: DocumentId[] = [];
-    const storeDeps = stores({
-      async commitPushBatch({ pushes }: { pushes: PreparedPushCommit[] }) {
-        const rows = pushes.map((prepared, index) => pushRow(prepared, index + 1));
-        return {
-          pushes: rows,
-          settlements: pushes.map((prepared, index) => ({
-            ...prepared.pendingLiveSettlement,
-            push: rows[index] as PushLineageRow,
+    async completeBatch(input) {
+      const batch = await loaded();
+      expect(
+        input.recheck(
+          batch.members.map((member) => ({
+            pushId: member.push.id,
+            documentId: member.push.documentId,
+            lockCutUpdate: member.lockCutUpdate,
+            postCutUpdates: [],
+            pushUpdate: member.pushUpdate,
           })),
-        };
-      },
-      async settlePushTrail({ push }: { push: PushLineageRow }) {
-        return [
+        ),
+      ).toBe("commit");
+      for (const member of batch.members) completed.push(member.push.documentId);
+      input.afterCommit(batch.members.map(({ push }) => push.documentId));
+      return {
+        status: "completed",
+        held: [],
+        outcomes: [],
+        projections: batch.members.map(({ push }) =>
           projection({
             revision: 1,
             documentId: push.documentId,
             changes: [projectedChange(`change-${push.id}`, String(push.id), null, push.documentId)],
           }),
-        ];
-      },
-      async withCompletionFence(
-        input: { documentId: DocumentId },
-        complete: () => "applied" | "already_applied" | "retry",
-      ) {
-        const result = complete();
-        completed.push(input.documentId);
-        return result;
-      },
-    });
+        ),
+      };
+    },
+    checkPublication: async (check) => ({ kind: "proceed", hold: [], payloads: check.payloads }),
+    prepareBranchLeases: async () => [],
+    loadRecoveryScope: async () => ({ payloads: new Map(), memberBranchIds: [] }),
+    listRecoverableBatchIds: async () => [],
+  };
+  return { commitStore, settlementStore };
+}
+
+describe("branch push change-event broadcast", () => {
+  it("emits every document of a batch only after the whole batch completes", async () => {
+    const alpha = createCollabYDoc({ gc: false });
+    const beta = createCollabYDoc({ gc: false });
+    const completed: DocumentId[] = [];
+    const delivered: DocumentId[] = [];
+    const storeDeps = stores(completed);
     const transition = createBranchPushTransition({
       links: createStaticDocumentLinkScopes(),
       ...storeDeps,
@@ -238,7 +225,7 @@ describe("branch push change-event broadcast", () => {
       codec: createAgentEditCodecFactory(mdxCodec({ schema })),
       changeEventDelivery: {
         deliver(message) {
-          expect(completed).toContain(message.documentId);
+          expect(completed).toEqual([DOCUMENT_A, DOCUMENT_B]);
           delivered.push(message.documentId);
         },
       },
@@ -248,9 +235,10 @@ describe("branch push change-event broadcast", () => {
       documentIds: [DOCUMENT_B, DOCUMENT_A],
       prepare: async ({ docs }) => ({
         kind: "push",
+        leasedBranchIds: [],
         pushes: [
-          preparedPush(transition, DOCUMENT_A, docs.get(DOCUMENT_A) as Y.Doc, 1),
-          preparedPush(transition, DOCUMENT_B, docs.get(DOCUMENT_B) as Y.Doc, 2),
+          preparedPush(DOCUMENT_A, docs.get(DOCUMENT_A) as Y.Doc, 1),
+          preparedPush(DOCUMENT_B, docs.get(DOCUMENT_B) as Y.Doc, 2),
         ],
         onConflict: () => "conflict",
         finish: () => "pushed",

@@ -61,6 +61,7 @@ vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: reviewHooks.foc
 const openDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => openDocument,
+  useProjectDocumentNavigationProjectId: () => "project-a",
 }));
 
 const queryClient = new QueryClient();
@@ -231,7 +232,7 @@ it("does not attribute the leaving review's room error to an incoming request", 
   controller.inlineReview = {
     kind: "inline",
     documentId: "leaving",
-    draftId: "failed-draft",
+    itemKey: "failed-draft",
     roomError: true,
   };
   controller.reviewRoomError = true;
@@ -241,7 +242,7 @@ it("does not attribute the leaving review's room error to an incoming request", 
         initial={{
           documentId: "incoming",
           projectId: "project-1",
-          reviewDraftId: "incoming-draft",
+          reviewItemKey: "incoming-draft",
         }}
       />,
       () => {

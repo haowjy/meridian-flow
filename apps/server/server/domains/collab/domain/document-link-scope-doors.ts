@@ -41,13 +41,17 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    // The lease spells nothing; the held write spells as the document it admits.
+    withLiveDocument: engine.withLiveDocument,
+    writeDocumentHeld: (input) =>
+      scopes.within(by(input.held.documentId), () => engine.writeDocumentHeld(input)),
   };
 }
 
 /**
  * A model call is scoped by its grant's project, which exists even for a
- * chapter the call is creating, and read as the account it acts for.
- * Each command binds its codec through DocumentLinksPort.
+ * chapter the call is creating, and read as the account it acts for; a
+ * call by the thread it reads in.
  */
 export function scopeAgentEdit(
   core: ThreadPeerAgentEditCore,
@@ -71,7 +75,8 @@ export function scopeAgentEdit(
     commitResponse: core.commitResponse,
     hasResponseDocument: core.hasResponseDocument,
     prepare: core.prepare,
-    responseDocuments: core.responseDocuments,
+    refuseStaged: core.refuseStaged,
+    retirePeer: core.retirePeer,
     responseDestination: core.responseDestination,
     invalidateThreadDocument: core.invalidateThreadDocument,
     evictThread: core.evictThread,
@@ -127,15 +132,11 @@ export function scopeBranchPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    pullThreadPeer: access.pullThreadPeer,
     flushBranchLivePull: access.flushBranchLivePull,
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
-    resolveManifestMembership: access.resolveManifestMembership,
-    reconcileProjectManifest: access.reconcileProjectManifest,
-    transferLiveManifestMembership: access.transferLiveManifestMembership,
-    recordManifestDocumentCreated: access.recordManifestDocumentCreated,
-    recordManifestDocumentDeleted: access.recordManifestDocumentDeleted,
+    ensureCreatedDraftBranch: access.ensureCreatedDraftBranch,
+    retractCreatedDraftBranch: access.retractCreatedDraftBranch,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

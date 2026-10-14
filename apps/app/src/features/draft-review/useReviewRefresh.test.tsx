@@ -21,7 +21,7 @@ afterEach(async () => {
   await sessions.dispose();
 });
 
-const review = { documentId: "document-a", draftId: "draft-a" };
+const review = { documentId: "document-a", itemKey: "draft-a" };
 const previewKey = projectQueryKeys.workDraftPreview("p", "w", "document-a", "draft-a");
 
 function Owner() {

@@ -21,6 +21,7 @@ import {
   isDocumentSchemaMajorMismatchError,
   type UpdateOrigin,
 } from "../domains/collab/index.js";
+import { LIVE_TREE, type TreeReader } from "../domains/context/tree/tree-view.js";
 import {
   type FileAccessChanges,
   FileEditRefusedError,
@@ -62,6 +63,7 @@ export type YjsGatewayConnection = {
 };
 
 export type YjsGatewayServices = {
+  liveDocuments: Pick<TreeReader, "findById">;
   fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit">;
   fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   documentSync: AppServices["documentSync"];
@@ -127,19 +129,11 @@ export function clientSchemaVersionFromRequest(request: Request): CollabSchemaVe
   return clientSchemaVersionFromSubprotocolHeader(request.headers.get("sec-websocket-protocol"));
 }
 
-export async function hasLiveManifestMembership(
-  documentSync: Pick<
-    AppServices["documentSync"],
-    "reconcileProjectManifest" | "resolveManifestMembership"
-  >,
-  projectId: string,
-  documentId: string,
+export async function hasLiveDocument(
+  tree: Pick<TreeReader, "findById">,
+  documentId: DocumentId,
 ): Promise<boolean> {
-  let membership = await documentSync.resolveManifestMembership({ projectId: projectId as never });
-  if (membership.members.includes(documentId)) return true;
-  await documentSync.reconcileProjectManifest(projectId as never);
-  membership = await documentSync.resolveManifestMembership({ projectId: projectId as never });
-  return membership.members.includes(documentId);
+  return (await tree.findById(LIVE_TREE, documentId)).kind === "found";
 }
 
 function permissionDenied(
@@ -269,21 +263,8 @@ async function classifyYjsConnectionAdmission(input: {
     documentId = room.documentId;
     fileTarget = { kind: "document", documentId };
     admitted = await roomAccess(services, userId, fileTarget);
-    const projectId = admitted.facts.projectId;
-    try {
-      if (!(await hasLiveManifestMembership(services.documentSync, projectId, documentId))) {
-        throw permissionDenied("permission-denied");
-      }
-    } catch (cause) {
-      if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
-      return {
-        kind: "refused",
-        close: WS_CLOSE.DOCUMENT_SCHEMA_STALE,
-        documentId,
-        clientSchemaVersion,
-        headSchemaVersion: cause.storedVersion,
-        serverSchemaVersion: cause.expectedVersion,
-      };
+    if (!(await hasLiveDocument(services.liveDocuments, documentId))) {
+      throw permissionDenied("permission-denied");
     }
     headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   } else {
@@ -777,6 +758,7 @@ export type YjsGateway = ReturnType<typeof createYjsGateway>;
 
 export function selectYjsGatewayServices(app: AppServices): YjsGatewayServices {
   return {
+    liveDocuments: app.liveDocuments,
     fileAccess: app.fileAccess,
     fileAccessChanges: app.fileAccessChanges,
     documentSync: app.documentSync,

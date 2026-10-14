@@ -21,9 +21,27 @@ export type DurableTrailRecord = {
   transactionalNotice?: NoticeInput;
 };
 
-/** Total parser for the frozen settlement trail input stored in jsonb. */
+/** A stored trail seed that does not parse: corruption, never a transient failure. */
+export class DurableTrailSeedError extends Error {
+  readonly name = "DurableTrailSeedError";
+}
+
+/**
+ * Total parser for the frozen settlement trail input stored in jsonb. Every
+ * validation failure, including the shared nested parsers' plain errors, leaves
+ * as `DurableTrailSeedError` so corruption is never retried as transient.
+ */
 export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
-  if (!isRecord(value)) throw new Error("Durable trail seed must be an object");
+  try {
+    return decodeDurableTrailSeedV1(value);
+  } catch (cause) {
+    if (cause instanceof DurableTrailSeedError) throw cause;
+    throw new DurableTrailSeedError("Invalid durable trail seed v1", { cause });
+  }
+}
+
+function decodeDurableTrailSeedV1(value: unknown): DurableTrailRecord {
+  if (!isRecord(value)) throw new DurableTrailSeedError("Durable trail seed must be an object");
   const {
     documentId,
     documentTitle,
@@ -44,16 +62,19 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
     !Array.isArray(journalOwners) ||
     !Array.isArray(changes)
   ) {
-    throw new Error("Invalid durable trail seed v1");
+    throw new DurableTrailSeedError("Invalid durable trail seed v1");
   }
   const owners = journalOwners.map(parseTrailOwner);
   const decodedChanges = changes.map((change, ordinal) => {
-    if (!isRecord(change)) throw new Error("Durable trail change must be an object");
+    if (!isRecord(change))
+      throw new DurableTrailSeedError("Durable trail change must be an object");
     const sequence =
       Number.isSafeInteger(change.sequence) && (change.sequence as number) >= 0
         ? (change.sequence as number)
         : (() => {
-            throw new Error("Durable trail change sequence must be a non-negative integer");
+            throw new DurableTrailSeedError(
+              "Durable trail change sequence must be a non-negative integer",
+            );
           })();
     return {
       change: { ...change, ordinal },
@@ -82,7 +103,7 @@ export function parseDurableTrailSeedV1(value: unknown): DurableTrailRecord {
 function parseTrailOwner(value: unknown): TrailOwner | null {
   if (value === null) return null;
   if (!isRecord(value) || !isUuidString(value.threadId) || !isUuidString(value.turnId)) {
-    throw new Error("Invalid durable trail owner");
+    throw new DurableTrailSeedError("Invalid durable trail owner");
   }
   return { threadId: value.threadId, turnId: value.turnId };
 }
@@ -100,13 +121,23 @@ export type ChangeTrailPersistence = {
     trails: readonly NormalizedTrail[];
     documentTitles: ReadonlyMap<string, string>;
     settlementRefinement?: {
-      pushId: string;
+      pushIds: readonly string[];
       currentVersion: boolean;
+      /** Of `pushIds`, those whose provisional changes leave the trail entirely. */
+      retiredPushIds?: readonly string[];
     };
   }): Promise<readonly CommittedChangeTrailProjection[]>;
-  replacePushContribution(
-    pushId: string,
-    replacement: TrailContributionReplacement,
+  /**
+   * Replaces several pushes' provisional contributions in one pass over each trail.
+   * A `retire` contribution removes the push's changes (it never reached live); its
+   * replacement names the owners only.
+   */
+  replacePushContributions(
+    contributions: readonly {
+      pushId: string;
+      replacement: TrailContributionReplacement;
+      retire?: boolean;
+    }[],
     context: { refineCurrentVersion: boolean },
   ): Promise<readonly CommittedChangeTrailProjection[]>;
   reopenOwners(owners: readonly NormalizedTrail["owner"][]): Promise<void>;

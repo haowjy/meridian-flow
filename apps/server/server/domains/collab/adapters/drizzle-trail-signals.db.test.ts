@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /** Dirty-signal capture, semantic readiness, and exact-cut acknowledgement on PostgreSQL. */
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -93,11 +94,6 @@ describe("change trail dirty signals (postgres)", () => {
       await db.update(schema.branchWriteJournal).set({ status: "active" });
       await clear();
       await harness.push(branch);
-      expect(await signals()).not.toEqual([]);
-      await clear();
-      await db
-        .update(schema.branchPushSettlementOutbox)
-        .set({ state: "pending", completedAt: null });
       expect(await signals()).not.toEqual([]);
       await clear();
       await db.update(schema.turns).set({ status: "error" }).where(eq(schema.turns.id, TURN_ID));
@@ -224,8 +220,21 @@ describe("change trail dirty signals (postgres)", () => {
           idempotencyKey: "inverse-only",
         })
         .returning();
+      const [batch] = await db
+        .insert(schema.branchPushSettlementBatches)
+        .values({
+          id: randomUUID(),
+          state: "pending",
+          claimToken: randomUUID(),
+          claimKind: "warm",
+          claimedAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        })
+        .returning();
+      if (!batch) throw new Error("batch not created");
       await db.insert(schema.branchPushSettlementOutbox).values({
         pushId: push.id,
+        batchId: batch.id,
         documentId: ALPHA_ID,
         documentTitle: "Alpha",
         lockCutUpdate: Buffer.from([0, 0]),
@@ -242,9 +251,16 @@ describe("change trail dirty signals (postgres)", () => {
       await writer().reconcileTerminalOwners();
       expect(await shell()).toMatchObject({ state: "settling" });
       await db
-        .update(schema.branchPushSettlementOutbox)
-        .set({ state: "completed", completedAt: new Date() })
-        .where(eq(schema.branchPushSettlementOutbox.pushId, push.id));
+        .update(schema.branchPushSettlementBatches)
+        .set({
+          state: "completed",
+          completedAt: new Date(),
+          claimToken: null,
+          claimKind: null,
+          claimedAt: null,
+          leaseExpiresAt: null,
+        })
+        .where(eq(schema.branchPushSettlementBatches.id, batch.id));
       await writer().reconcileTerminalOwners();
       expect(await shell()).toMatchObject({ state: "settled" });
     } finally {

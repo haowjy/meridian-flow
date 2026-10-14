@@ -47,24 +47,30 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   schemaType?: YjsTrackedSchemaType;
   showCollaborationDecorations?: boolean;
   /** Requested destination, including while the canonical room is still resolving. */
-  reviewDraftId?: string | null;
+  reviewItemKey?: string | null;
+  /** The hosting tab instance, whose focus-on-open intent the live editor claims. */
+  focusKey?: string;
 };
 
 const REVIEW_MARKS_WAIT_MS = 1500;
 
+/** What the editor body shows: the card only for a failed review room. */
+type EditorSurface = "pending" | "review-error" | `live:${string}` | `review:${string}`;
+
 export function EditorView(props: EditorViewProps) {
   const { controller, roomOwner } = useDraftReview();
   // Resolve once against the canonical scope binding, never host-mirrored room/Work fields.
-  const requestedDraftId = props.reviewDraftId ?? null;
+  const requestedItemKey = props.reviewItemKey ?? null;
   const review =
     controller.inlineReview?.documentId === props.documentId &&
-    controller.inlineReview.draftId === requestedDraftId
+    controller.inlineReview.itemKey === requestedItemKey
       ? controller.inlineReview
       : null;
-  const reviewRequested = requestedDraftId !== null;
+  const reviewRequested = requestedItemKey !== null;
   const sharedIdentity = {
     documentId: props.documentId,
     projectId: props.projectId,
+    viewingWorkId: controller.workId || undefined,
     schemaType: props.schemaType ?? "document",
     collaborationDecorations: props.showCollaborationDecorations ?? true,
   } as const;
@@ -80,7 +86,7 @@ export function EditorView(props: EditorViewProps) {
         surface: "review",
         roomName: review.roomName,
         workId: controller.workId,
-        draftId: review.draftId,
+        itemKey: review.itemKey,
       }
     : null;
   const surfaceOptions: EditorSurfaceOptions = {
@@ -94,7 +100,7 @@ export function EditorView(props: EditorViewProps) {
   const liveSession = props.session ?? null;
   // The writer handled the last change. A Discard leaves live as it is, so the
   // finished text is already the live editor: shown in place of the review's at
-  // the click, but inert, because nothing is known yet. The server's `draftClosed`
+  // the click, but inert, because nothing is known yet. The server's `itemClosed`
   // answer then makes it editable (the draft's text is the live text and its
   // room a dead generation; the review chrome stays, saying so). An answer that
   // did not close the draft withdraws it and the review comes back. A last Apply
@@ -123,7 +129,7 @@ export function EditorView(props: EditorViewProps) {
   // replaces the editor they were in, and restored over the successor. So the
   // successor shows only once the writer's unsent edits have reached it: the
   // place may sit inside them.
-  const draftKey = review ? `${review.documentId}:${review.draftId}` : null;
+  const draftKey = review ? `${review.documentId}:${review.itemKey}` : null;
   const placeHeld = draftKey !== null && hasReviewPlace(draftKey);
   // Cached preview availability does not certify a replacement editor's projection.
   const marksReady = constructed?.key === reviewKey && constructed.modelReady;
@@ -155,7 +161,9 @@ export function EditorView(props: EditorViewProps) {
   const schemaStale =
     snapshot?.connectionState?.kind === "reset" &&
     snapshot.connectionState.reason === WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason;
-  const terminal = review?.roomError || schemaStale || (props.draftOnly && !reviewRequested);
+  // Only a failed review room is terminal. A draft-only tab whose route has no
+  // review item yet is `pending`; a gone draft is the lifecycle closing its tab.
+  const terminal = review?.roomError || schemaStale;
 
   // Review chrome (the header, its change list, the phone's sheet) shows with
   // the review body and never before it, and then stays for the draft: a new
@@ -165,10 +173,10 @@ export function EditorView(props: EditorViewProps) {
   const { setInlineReviewShown } = controller;
   useLayoutEffect(() => {
     if (!review) return;
-    setInlineReviewShown(props.documentId, review.draftId, chromeShown);
-  }, [setInlineReviewShown, props.documentId, review?.draftId, chromeShown]);
+    setInlineReviewShown(props.documentId, review.itemKey, chromeShown);
+  }, [setInlineReviewShown, props.documentId, review?.itemKey, chromeShown]);
   const liveKey = liveSession ? `${editorMountKey(liveIdentity)}|${liveSession.document.guid}` : "";
-  const surface = terminal
+  const surface: EditorSurface = terminal
     ? "review-error"
     : settled
       ? `live:${liveKey}`
@@ -217,7 +225,7 @@ export function EditorView(props: EditorViewProps) {
         projectId: controller.projectId,
         workId: controller.workId,
         documentId: review.documentId,
-        draftId: review.draftId,
+        itemKey: review.itemKey,
       }
     : null;
   // The Discards this cover's review has had since it was on screen. A Discard
@@ -291,6 +299,7 @@ export function EditorView(props: EditorViewProps) {
                 held: !liveVisible || (reviewRequested && !closed),
               }}
               session={liveSession}
+              focusKey={props.focusKey}
               onConstructed={setLiveEditor}
             />
           </div>
@@ -321,7 +330,7 @@ export function EditorView(props: EditorViewProps) {
             <ReviewRuntime
               review={review}
               editor={reviewEditor}
-              onModelAvailable={(identity, documentId, draftId, operations) => {
+              onModelAvailable={(identity, documentId, itemKey, operations) => {
                 if (operations) {
                   shownModels.current.set(reviewKey, operations);
                   for (const key of shownModels.current.keys())
@@ -333,7 +342,7 @@ export function EditorView(props: EditorViewProps) {
                     ? { ...current, modelReady: true }
                     : current,
                 );
-                controller.inlineReviewModelAvailable(identity, documentId, draftId);
+                controller.inlineReviewModelAvailable(identity, documentId, itemKey);
               }}
             />
           </div>
@@ -352,11 +361,7 @@ function ReviewError({ props }: { props: EditorViewProps }) {
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
       <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
         <p className="font-medium text-foreground text-sm">
-          {props.reviewDraftId ? (
-            <Trans>Couldn't open review mode.</Trans>
-          ) : (
-            <Trans>Couldn't open this draft.</Trans>
-          )}
+          <Trans>Couldn't open review mode.</Trans>
         </p>
         <p className="text-muted-foreground text-xs">
           {props.draftOnly ? (
@@ -366,28 +371,28 @@ function ReviewError({ props }: { props: EditorViewProps }) {
           )}
         </p>
         <div className="flex justify-center gap-2">
-          {props.reviewDraftId ? (
+          {props.reviewItemKey ? (
             <Button
               type="button"
               size="sm"
               variant="secondary"
               onClick={() =>
-                controller.enterInlineReview(props.documentId, props.reviewDraftId as string)
+                controller.enterInlineReview(props.documentId, props.reviewItemKey as string)
               }
             >
               <Trans>Retry</Trans>
             </Button>
           ) : null}
-          {props.reviewDraftId &&
+          {props.reviewItemKey &&
           controller.inlineReview?.documentId === props.documentId &&
-          controller.inlineReview.draftId === props.reviewDraftId ? (
+          controller.inlineReview.itemKey === props.reviewItemKey ? (
             <Button
               type="button"
               size="sm"
               variant="secondary"
               disabled={controller.dispositionLocked}
               onClick={() =>
-                void controller.discard(props.documentId, props.reviewDraftId as string)
+                void controller.discard(props.documentId, props.reviewItemKey as string)
               }
             >
               <Trans>Discard draft</Trans>
@@ -413,7 +418,7 @@ function ReviewRuntime({
   onModelAvailable: (
     identity: string,
     documentId: string,
-    draftId: string,
+    itemKey: string,
     operations?: readonly ReviewOperation[],
   ) => void;
 }) {
@@ -421,28 +426,28 @@ function ReviewRuntime({
   const { registerInlineReviewRuntime, releaseInlineReviewRuntime } = controller;
   useEffect(() => {
     if (!editor) return;
-    registerInlineReviewRuntime({ editor, documentId: review.documentId, draftId: review.draftId });
+    registerInlineReviewRuntime({ editor, documentId: review.documentId, itemKey: review.itemKey });
     return () => releaseInlineReviewRuntime(editor);
   }, [
     registerInlineReviewRuntime,
     releaseInlineReviewRuntime,
     editor,
     review.documentId,
-    review.draftId,
+    review.itemKey,
   ]);
   useInlineReviewSync({
     editor,
     projectId: controller.projectId,
     workId: controller.workId,
     documentId: review.documentId,
-    draftId: review.draftId,
-    draftGeneration: review.draftGeneration,
+    itemKey: review.itemKey,
+    branchGeneration: review.branchGeneration,
     onInlineModelAvailable: onModelAvailable,
   });
   useInlineReviewFocus({
     editor,
     documentId: review.documentId,
-    draftId: review.draftId,
+    itemKey: review.itemKey,
   });
   return null;
 }

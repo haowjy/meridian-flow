@@ -48,7 +48,7 @@ export function useDraftReviewStateOwner(): DraftReviewStateOwner {
 export type InlineReviewRuntime = {
   editor: Editor;
   documentId: string;
-  draftId: string;
+  itemKey: string;
 };
 
 export type DraftReviewController = {
@@ -112,7 +112,7 @@ export type DraftReviewController = {
   discardChanges: SelectionCommand;
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
-  enterInlineReview: (documentId: string, draftId: string) => void;
+  enterInlineReview: (documentId: string, itemKey: string) => void;
   /**
    * The editor's room reports it is of a generation the server has closed
    * (`branch-generation-stale`). The review asks for a fresh read and keeps its
@@ -120,15 +120,15 @@ export type DraftReviewController = {
    */
   exitInlineReview: () => void;
   exitReview: () => void;
-  inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
+  inlineReviewModelAvailable: (identity: string, documentId: string, itemKey: string) => void;
   /** The review editor reports when its body is (or stops being) the painted one. */
-  setInlineReviewShown: (documentId: string, draftId: string, shown: boolean) => void;
+  setInlineReviewShown: (documentId: string, itemKey: string, shown: boolean) => void;
   /** Claim/release the single review-runtime slot. */
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
   startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => CommandStart;
-  apply: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
-  discard: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;
+  apply: (documentId: string, itemKey: string) => Promise<DraftCommandOutcome>;
+  discard: (documentId: string, itemKey: string) => Promise<DraftCommandOutcome>;
   disposeDrafts: (
     mode: "apply" | "discard",
     drafts: readonly DraftReviewSelection[],
@@ -177,8 +177,8 @@ export function useDraftReviewController({
     state.surface.kind === "inline" && state.surface.previewIdentity !== undefined;
 
   const enterInlineReview = useCallback(
-    (documentId: string, draftId: string) => {
-      const draft = { projectId, workId, documentId, draftId };
+    (documentId: string, itemKey: string) => {
+      const draft = { projectId, workId, documentId, itemKey };
       clearDraftReviewLaunchFailure(draft);
       // The review opens on the newest proposal the caches know of, and a command
       // already in flight on this draft (sent from the strip or the Work page)
@@ -186,8 +186,8 @@ export function useDraftReviewController({
       dispatch({
         type: "enterInline",
         documentId,
-        draftId,
-        draftGeneration: newestKnownProposal(queryClient, draft),
+        itemKey,
+        branchGeneration: newestKnownProposal(queryClient, draft),
         claim: draftClaim(queryClient, draft),
       });
     },
@@ -202,7 +202,7 @@ export function useDraftReviewController({
           projectId,
           workId,
           inline.documentId,
-          inline.draftId,
+          inline.itemKey,
         ),
       });
     }
@@ -214,15 +214,15 @@ export function useDraftReviewController({
   }, []);
 
   const inlineReviewModelAvailable = useCallback(
-    (identity: string, documentId: string, draftId: string) => {
-      dispatch({ type: "inlineModelAvailable", identity, documentId, draftId });
+    (identity: string, documentId: string, itemKey: string) => {
+      dispatch({ type: "inlineModelAvailable", identity, documentId, itemKey });
     },
     [],
   );
 
   const setInlineReviewShown = useCallback(
-    (documentId: string, draftId: string, shown: boolean) => {
-      dispatch({ type: "inlineShown", documentId, draftId, shown });
+    (documentId: string, itemKey: string, shown: boolean) => {
+      dispatch({ type: "inlineShown", documentId, itemKey, shown });
     },
     [],
   );
@@ -244,7 +244,7 @@ export function useDraftReviewController({
     dispatch({
       type: "changeFocused",
       documentId: review.documentId,
-      draftId: review.draftId,
+      itemKey: review.itemKey,
       focus: { classId: change.classId, operationIds: change.operationIds, keys: change.keys },
     });
   }, []);
@@ -258,16 +258,16 @@ export function useDraftReviewController({
       // The identity is checked before anything is touched: the open review, and
       // the editor showing it, are the ones this focus was meant for.
       const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
-      if (inline?.documentId !== review.documentId || inline.draftId !== review.draftId) return;
+      if (inline?.documentId !== review.documentId || inline.itemKey !== review.itemKey) return;
       reportFocusedChange(review, change);
       // The writer chose where to go: a place held across an editor swap yields to it.
       if (options?.scroll)
-        noteReviewNavigation(`${review.documentId}:${review.draftId}`, change.keys ?? []);
+        noteReviewNavigation(`${review.documentId}:${review.itemKey}`, change.keys ?? []);
       const runtime = inlineRuntimeRef.current;
       if (
         !runtime ||
         runtime.documentId !== review.documentId ||
-        runtime.draftId !== review.draftId ||
+        runtime.itemKey !== review.itemKey ||
         runtime.editor.isDestroyed
       )
         return;
@@ -299,7 +299,7 @@ export function useDraftReviewController({
         ...start,
         outcome: start.outcome.then((outcome) => {
           if (outcome.kind === "applied" || outcome.kind === "discarded")
-            dispatch({ type: "reviewDisposed", ...draft, draftGeneration: generation });
+            dispatch({ type: "reviewDisposed", ...draft, branchGeneration: generation });
           return outcome;
         }),
       };
@@ -307,11 +307,11 @@ export function useDraftReviewController({
     [commands.startDraft, queryClient, projectId, workId, dispatch],
   );
   const apply = useCallback(
-    (documentId: string, draftId: string) => startDraft("apply", { documentId, draftId }).outcome,
+    (documentId: string, itemKey: string) => startDraft("apply", { documentId, itemKey }).outcome,
     [startDraft],
   );
   const discard = useCallback(
-    (documentId: string, draftId: string) => startDraft("discard", { documentId, draftId }).outcome,
+    (documentId: string, itemKey: string) => startDraft("discard", { documentId, itemKey }).outcome,
     [startDraft],
   );
 

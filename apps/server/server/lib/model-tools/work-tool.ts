@@ -249,7 +249,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
     return {
       work: modelWork(work),
       recentThreads: threads.map(({ title, updatedAt, status }) => ({ title, updatedAt, status })),
-      drafts: drafts.map(({ workId: _workId, ...draft }) => draft),
+      drafts,
     } satisfies WorkShowResult;
   }),
   update: onSelectedWork(async (deps, thread, work, command) =>

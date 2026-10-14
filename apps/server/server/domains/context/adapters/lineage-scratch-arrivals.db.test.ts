@@ -14,13 +14,14 @@ import {
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-branch-push.js";
+import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
 import { createDrizzleProjectWorkRepository } from "../../projects/index.js";
 import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { createDrizzleDocumentArrivals } from "./document-arrivals.js";
-import { createDrizzleLinkAheadRegistry } from "./drizzle-link-ahead-registry.js";
 import { createDrizzleLineageScratchLifecycle } from "./lineage-scratch-lifecycle.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
@@ -59,7 +60,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
   for (const door of ["chat", "Work"] as const)
     it(`settles only live content through ${door} restore`, async () => {
       const db = database.current;
-      const registry = createDrizzleLinkAheadRegistry(db, async () => ({ members: [] }));
+      const registry = createTestLinkAheadRegistry(db);
       const arrivals = createDrizzleDocumentArrivals(db, registry);
       const lifecycle = createDrizzleLineageScratchLifecycle(db, undefined, arrivals);
       const threadRepo = createDrizzleThreadRepository(db, { lineageScratch: lifecycle });
@@ -71,7 +72,12 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         db,
         lineageScratch: lifecycle,
         arrivals,
-        projectionMutation: createWorkProjectionMutation({ db, availability, catalog }),
+        projectionMutation: createWorkProjectionMutation({
+          db,
+          availability,
+          catalog,
+          pending: createDrizzleWorkDraftPendingStore(db),
+        }),
         fileAccessChanges: createLocalFileAccessChanges(),
       });
       const note = crypto.randomUUID(),

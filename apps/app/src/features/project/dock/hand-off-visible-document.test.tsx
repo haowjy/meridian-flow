@@ -82,15 +82,15 @@ vi.mock("@/features/editor/useInlineReviewSync", () => ({
     editor,
     onInlineModelAvailable,
     documentId,
-    draftId,
+    itemKey,
   }: {
     editor: Editor | null;
-    onInlineModelAvailable: (model: string, documentId: string, draftId: string) => void;
+    onInlineModelAvailable: (model: string, documentId: string, itemKey: string) => void;
     documentId: string;
-    draftId: string;
+    itemKey: string;
   }) => {
     useEffect(() => {
-      if (editor) onInlineModelAvailable("model", documentId, draftId);
+      if (editor) onInlineModelAvailable("model", documentId, itemKey);
     }, [editor]);
   },
 }));
@@ -118,34 +118,54 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
   const tab = {
     ...panelTab,
     documentId: "document-a",
-    draftOnly,
-    reviewWorkId: "work-a",
-    reviewDraftId: "draft-a",
-    tabInstanceToken: "token",
+    ...(draftOnly
+      ? { reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "token" } } }
+      : {}),
   };
   fixture.network.listWorkDrafts.mockResolvedValue({
-    drafts: [
+    items: [
       {
         ...listed,
+        draftId: "whole-draft",
+        origin: "created",
+        binary: false,
+        wholeItem: true,
+        conflict: null,
+        settling: false,
+        tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
         contextLocation: { scheme: tab.scheme, path: tab.path },
-        isNewDocument: draftOnly,
+        isNew: draftOnly,
       },
     ],
   });
-  fixture.network.getDraftPreview.mockResolvedValue(preview);
-  let setEditorDraftId!: (draftId: string | undefined) => void;
-  const route = vi.fn(async (_target: unknown, options?: { draftId?: string }) => {
-    setEditorDraftId(options?.draftId);
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    draftId: "whole-draft",
+    item: {
+      ...listed,
+      draftId: "whole-draft",
+      origin: "edited",
+      isNew: false,
+      binary: false,
+      wholeItem: false,
+      conflict: null,
+      settling: false,
+      tokens: { locationToken: "location", liveTextToken: null, branchGenerationToken: null },
+    },
+  });
+  let setEditorItemKey!: (itemKey: string | undefined) => void;
+  const route = vi.fn(async (_target: unknown, options?: { itemKey?: string }) => {
+    setEditorItemKey(options?.itemKey);
     return { kind: "applied" as const };
   });
-  let editorDraftId: string | undefined;
+  let editorItemKey: string | undefined;
   let changeScreen!: (next: "chat" | "context") => void;
   let value!: ReturnType<typeof useDraftReviewScopeValue>;
   function Harness() {
     const [screen, setScreen] = useState<"chat" | "context">("context");
-    const [draftId, setDraftId] = useState<string | undefined>("draft-a");
-    editorDraftId = draftId;
-    setEditorDraftId = setDraftId;
+    const [itemKey, setItemKey] = useState<string | undefined>("draft-a");
+    editorItemKey = itemKey;
+    setEditorItemKey = setItemKey;
     const editorAddress = useEditorContainerAddress({
       active: screen === "context",
       accountId: "account-a",
@@ -156,7 +176,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
             ? { kind: "document", scheme: "manuscript", path: "panel.md" }
             : { kind: "chat-index" },
         work: { kind: "id", id: work.id as ParsedRequestId },
-        ...(screen === "context" ? { draftId } : {}),
+        ...(screen === "context" ? { itemKey } : {}),
       },
       documentId: screen === "context" ? tab.documentId : null,
       workId: "work-a",
@@ -171,7 +191,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         scheme: "manuscript",
         path: tab.path,
         documentId: tab.documentId,
-        draftId: screen === "context" ? draftId : undefined,
+        itemKey: screen === "context" ? itemKey : undefined,
         draftOnly,
       },
     });
@@ -206,7 +226,7 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
           review: plan.review,
         });
       if (next === "context" && !plan?.review)
-        void route({}, { draftId: editorAddress?.address.draftId });
+        void route({}, { itemKey: editorAddress?.address.itemKey });
       setScreen(next);
       plan?.afterCommit();
     };
@@ -218,15 +238,16 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         <PresentedDocumentContext.Provider value={presented}>
           <DraftReviewBoundary value={value}>
             <ReviewAddressOwner
+              admission="admitted"
               review={value}
               presented={presented}
               port={{
                 write: (address) =>
                   screen !== "context"
                     ? useDockDocumentStore.getState().setDocumentReview(address)
-                    : setDraftId(address?.draftId),
+                    : setItemKey(address?.itemKey),
                 admit: (target) =>
-                  value.controller.enterInlineReview(target.documentId, target.draftId),
+                  value.controller.enterInlineReview(target.documentId, target.itemKey),
               }}
             />
             <div data-container="editor">
@@ -266,12 +287,12 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         expect(container.querySelector('[data-container="dock"]')?.textContent).not.toContain(
           "Couldn't open this draft.",
         );
-        expect(value.controller.inlineReview?.draftId).toBe(selected?.draftId);
+        expect(value.controller.inlineReview?.itemKey).toBe(selected?.itemKey);
         expect(container.querySelectorAll('[data-prose="review"]')).toHaveLength(1);
         await act(async () => changeScreen("context"));
         expect(route).toHaveBeenLastCalledWith(
           expect.objectContaining({ workId: "work-a" }),
-          expect.objectContaining({ draftId: "draft-a" }),
+          expect.objectContaining({ itemKey: "draft-a" }),
         );
         expect(useDockDocumentStore.getState().occupant).toBeNull();
         expect(container.querySelector('[data-container="editor"]')?.textContent).toContain(
@@ -281,8 +302,8 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
         await act(async () => useDockDocumentStore.getState().closeDocument());
         expect(useDockDocumentStore.getState().occupant).toBeNull();
         await act(async () => changeScreen("context"));
-        expect(editorDraftId).toBe("draft-a");
-        await settleReact(() => expect(value.controller.inlineReview?.draftId).toBe("draft-a"));
+        expect(editorItemKey).toBe("draft-a");
+        await settleReact(() => expect(value.controller.inlineReview?.itemKey).toBe("draft-a"));
         expect(container.querySelector('[data-container="editor"]')?.textContent).toContain(
           "Valid draft prose",
         );
@@ -290,10 +311,10 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
           await act(async () => changeScreen("chat"));
           await act(async () => value.controller.exitInlineReview());
           expect(useDockDocumentStore.getState().occupant?.review).toBeNull();
-          expect(editorDraftId).toBe("draft-a");
+          expect(editorItemKey).toBe("draft-a");
           await act(async () => changeScreen("context"));
-          expect(editorDraftId).toBe("draft-a");
-          await settleReact(() => expect(value.controller.inlineReview?.draftId).toBe("draft-a"));
+          expect(editorItemKey).toBe("draft-a");
+          await settleReact(() => expect(value.controller.inlineReview?.itemKey).toBe("draft-a"));
         }
       },
     );

@@ -46,11 +46,10 @@ state a later `read` forks from.
 Preview and selective disposition consume the same `ReadReviewCut` port and
 pure `domain/review-cut.ts` derivation. The adapter's first branch read fixes a
 root read-only repeatable-read snapshot. Branch generation/bytes, all history
-statuses, live journal/head, manifest memberships, thread titles and prepared
-link scopes join that snapshot. It uses no room reads, pulls, provisioning or
-repair. Missing manifest drafts inherit the captured live membership without
-creating a branch. Pinned memberships open a fresh link scope rather than
-joining a caller's older tree snapshot. Returned bytes and scopes are detached;
+statuses, live journal/head, the resolved review item, thread titles and the
+live and draft link views join that snapshot. It uses no room reads, pulls,
+provisioning or repair. A review item with no work-draft branch refuses `gone`
+rather than creating one. Returned bytes and scopes are detached;
 the snapshot closes before rich-difference derivation.
 
 The draft token hashes this observation, including both link views and history
@@ -137,8 +136,12 @@ that safe:
   stops when there are none. Otherwise it takes its live snapshot before
   opening its root transaction, never while holding it: the snapshot needs its
   own connection, and pulls that each hold one while waiting for another
-  exhaust the pool and deadlock. The root transaction lists the branches again,
-  since one can close in between.
+  exhaust the pool and deadlock. The branch list is read again, since one can
+  close in between. Every pull takes its branch leases first and its root
+  transaction second, the save's order, and keeps the leases through the
+  write: a live pull leases one branch at a time; a thread-peer pull leases the
+  peer and its upstream together, so a per-change Discard cannot refork the
+  upstream between capture and peer persistence.
 - **Room loads read in the caller's transaction.** A room opened under a
   command transaction loads its journal snapshot and validates its handle's
   authority generation through that transaction. The transaction may already
@@ -388,10 +391,10 @@ uses the existing generation-reset path, closing old review rooms
 and clearing current pending journal evidence through the Work projection mutation
 seam (the catalog wake hint). The infrastructure branch remains reusable, as for
 full Discard; future AI writes populate the new generation. Pushed history stays
-pushed. The terminal `draftDisposition` is `applied` when any current-generation
+pushed. The terminal `itemDisposition` is `applied` when any current-generation
 journal row reached live, otherwise `discarded`, even if the last action was
-Discard. Success responses expose `draftClosed`; only closed responses expose
-`draftDisposition`. Whole Apply is unchanged.
+Discard. Success responses expose `itemClosed`; only closed responses expose
+`itemDisposition`. Whole Apply is unchanged.
 
 ### Live writes versus CLI replacement
 

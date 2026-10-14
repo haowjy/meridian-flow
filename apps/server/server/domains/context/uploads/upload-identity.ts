@@ -1,8 +1,9 @@
 /** Identity projection for upload authorization and existing document consumers. */
 import type { Filetype } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { documents, uploadIntakes } from "@meridian/database/schema";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { uploadIntakes } from "@meridian/database/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { LIVE_TREE, visibleDocumentFields, visibleDocuments } from "../tree/tree-view.js";
 
 export interface UploadIdentity {
   intakeId: string | null;
@@ -28,13 +29,12 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
   const query = async (ids: readonly string[], uploadsOnly: boolean) => {
     if (ids.length === 0) return [];
     const rows = await db
-      .select({ document: documents, intake: uploadIntakes })
-      .from(documents)
-      .leftJoin(uploadIntakes, eq(documents.id, uploadIntakes.documentId))
+      .select({ document: visibleDocumentFields(liveDocuments), intake: uploadIntakes })
+      .from(liveDocuments)
+      .leftJoin(uploadIntakes, eq(liveDocuments.id, uploadIntakes.documentId))
       .where(
         and(
-          inArray(documents.id, [...ids] as never[]),
-          isNull(documents.deletedAt),
+          inArray(liveDocuments.id, [...ids] as never[]),
           uploadsOnly ? eq(uploadIntakes.state, "finalized") : undefined,
         ),
       );
@@ -64,3 +64,5 @@ export function createDrizzleUploadIdentityPort(db: Database): UploadIdentityPor
     lookupDocuments: (documentIds) => query(documentIds, false),
   };
 }
+
+const liveDocuments = visibleDocuments(LIVE_TREE);

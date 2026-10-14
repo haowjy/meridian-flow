@@ -7,6 +7,7 @@ import { act } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as projectsApi from "@/client/api/projects-api";
 import { resetDraftCommandRecords } from "@/client/query/draft-command-record";
+import type { ContextTab } from "@/client/stores";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import * as handoff from "@/features/project/dock/editor-review-handoff";
 import { MobileDocumentReview } from "@/features/project/mobile/MobileDocumentReview";
@@ -62,13 +63,13 @@ it("focuses this document, then applies and discards its classes without closing
   const other = {
     ...listed,
     documentId: "document-b",
-    draftId: "draft-b",
+    itemKey: "draft-b",
     documentName: "Other chapter",
   };
-  network.listWorkDrafts.mockResolvedValue({ drafts: [listed, other] });
+  network.listWorkDrafts.mockResolvedValue({ items: [listed, other] });
   network.getDraftPreview.mockImplementation(async (_p, _w, _d, id) => ({
     ...preview,
-    draftId: id,
+    itemKey: id,
   }));
   const answer = deferredReviewAnswer<ReturnType<typeof applied>>();
   network.applyDraftChanges.mockReturnValueOnce(answer.promise);
@@ -99,7 +100,9 @@ it("focuses this document, then applies and discards its classes without closing
           "work-a",
           "document-a",
           {
-            draftId: "draft-a",
+            commandId: expect.any(String),
+            draftId: "work-draft-a",
+            itemKey: "draft-a",
             operationIds: ["1"],
             liveRevisionToken: "live-1",
             draftRevisionToken: "draft-1",
@@ -118,7 +121,9 @@ it("focuses this document, then applies and discards its classes without closing
           "work-a",
           "document-a",
           {
-            draftId: "draft-a",
+            commandId: expect.any(String),
+            draftId: "work-draft-a",
+            itemKey: "draft-a",
             closureClassIds: ["class-2"],
             memberPartKeys: [],
             admissionTokens: ["class-2"],
@@ -132,7 +137,7 @@ it("focuses this document, then applies and discards its classes without closing
       expect(navigate).not.toHaveBeenCalled();
     },
     {
-      surface: <DraftReviewBand documentId="document-a" draftId="draft-a" onOpenDraft={navigate} />,
+      surface: <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate} />,
       host: (children) => (
         <I18nProvider i18n={i18n}>
           <TooltipProvider>
@@ -150,7 +155,7 @@ it.each([
   "desktop",
   "phone",
 ] as const)("%s steps with marks hidden without restoring them", async (surface) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
   const navigate = vi.fn();
   vi.spyOn(handoff, "useOpenEditorReview").mockReturnValue(navigate);
@@ -184,7 +189,7 @@ it.each([
       editor.commands.setInlineReviewMarksVisible(false);
       probe().presented.controller.registerInlineReviewRuntime({
         documentId: "document-a",
-        draftId: "draft-a",
+        itemKey: "draft-a",
         editor,
       });
       const paragraphs = [...editor.view.dom.querySelectorAll("p")];
@@ -210,9 +215,9 @@ it.each([
     {
       surface:
         surface === "desktop" ? (
-          <DraftReviewBand documentId="document-a" draftId="draft-a" onOpenDraft={navigate} />
+          <DraftReviewBand documentId="document-a" itemKey="draft-a" onOpenDraft={navigate} />
         ) : (
-          <MobileDocumentReview documentId="document-a">
+          <MobileDocumentReview projectId="project-a" tab={reviewedTab}>
             <div />
           </MobileDocumentReview>
         ),
@@ -228,3 +233,11 @@ it.each([
     },
   );
 });
+
+/** The tab of the document under review; a local reservation, which has no drafts to hint at. */
+const reviewedTab = {
+  kind: "new",
+  documentId: "document-a",
+  name: "Chapter",
+  resourceHandle: "handle-a",
+} as unknown as ContextTab;

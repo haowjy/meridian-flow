@@ -6,9 +6,9 @@ over its owner-gated operations.
 
 ## What it owns
 
-- **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
+- **Default bootstrap** — `ProjectBootstrapRepository.ensureDefaultBootstrap(userId)`
   idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Uploads source. Bootstrap creates no thread.
-- **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a manifest identity before it is returned. It does not seed a chapter document or Work-owned sources.
+- **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a catalog source before it is returned. It does not seed a chapter document or Work-owned sources.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
 
@@ -36,8 +36,8 @@ translate those to `title` and `description` in `ProjectDto`.
 
 | Contract | Purpose |
 |---|---|
-| `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
-| `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
+| `ProjectBootstrapRepository.ensureDefaultBootstrap(userId)` | Returns the converged `ProjectBootstrapResult` for the authenticated user. |
+| `ProjectBootstrapRepository.ensureDefaultBootstrapReady(userId)` | Auth path: trusts the durable completion flag as its lock-free fast path. Incomplete bootstrap is retried transactionally; seed failures leave no partial bootstrap and return false without failing unrelated requests. |
 | `ProjectBootstrapResult` | Project, manuscript document/source, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works. The Drizzle adapter cascades child visibility atomically; cascade is DB-only and covered by DB tests. Shared adapter conformance covers lifecycle policy only. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
@@ -72,14 +72,12 @@ translate those to `title` and `description` in `ProjectDto`.
   serializes the exact email key before inspecting its owner; it does not define
   additional email canonicalization.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
-  never from `markdown_projection`. Any admission or checkpoint means initialized.
-- The project, locked No Work, chapter row, initialize-only canonical seed, live manifest
-  membership, No Work Uploads source, and readiness flag commit in one ambient
+  never from the Markdown projection. Any admission or checkpoint means initialized.
+- The project, locked No Work, chapter row, initialize-only canonical seed, No Work Uploads source, and readiness flag commit in one ambient
   transaction. Interruption leaves no partial bootstrap.
 - Auth provisioning treats the durable readiness flag as authoritative; legacy
   data repair belongs to a future import, not a process-local readiness overlay.
-- Readiness becomes true only after document authority and manifest membership
-  are durable, rather than merely after row existence.
+- Readiness becomes true only after document authority is durable, rather than merely after row existence.
 - Omitted and explicit-null root-create `workId` both bind the project's locked
   No Work as primary. Only the writer's Chat rebind changes a chat's Work; the
   model's `work switch` never rebinds ([rule](../../runtime/.context/tools.md#permissions)).
@@ -92,10 +90,12 @@ translate those to `title` and `description` in `ProjectDto`.
   exact: ID resolution never falls back to slug resolution or vice versa.
 - Work deletion never blocks on children. Under the Work lifecycle lock and in
   one transaction, it soft-deletes each primary chat and its live descendant
-  threads, plus live Work context sources/documents/folders, closes active Work
-  draft branches, and marks each child with `deletedByWorkId`. That marker is
+  threads, plus live Work context sources/documents/folders, and marks each child
+  with `deletedByWorkId`. The Work's drafts and their branches are untouched, so
+  restore returns them as they were (decision 3: origin is provenance). That marker is
   the exact restore set; separately
-  trashed children remain trashed. Existing child read paths hide the cascade
+  trashed children remain trashed. Document and folder cascade delete/restore increment `location_version`.
+  Existing child read paths exclude the cascade
   using their normal soft-delete/active-branch predicates. A trashed thread
   cannot be restored independently while its Work remains deleted.
 - Restore clears only children marked by that Work deletion and is available
@@ -104,11 +104,18 @@ translate those to `title` and `description` in `ProjectDto`.
   not yet run. The `work-purge` recovery job runs hourly, in batches of 100;
   it commits expired Work and owned-row deletion before best-effort upload/result
   blob cleanup. Blob failures are warned and left to orphan sweeping. No Work remains locked against deletion.
+  Purge disposes of the drafts the Work originated (F10) through collab's
+  `WorkDraftDisposal` port: every branch of them leased before the transaction, then,
+  after the deleted/cutoff proof, each draft locked, the set proved unchanged (else
+  one retry from discovery), the namespaces and hidden documents locked, and each
+  active draft discarded whole through the Discard kernel, so every hidden document
+  they created is tombstoned and released. The draft rows then go with the Work;
+  never through the public Discard, which refuses a deleted Work.
   Purge defers only `threads_origin_turn_id_turns_id_fk` within that transaction,
   deletes turns before threads, and lets owner cascades remove prompt bakes and
   image decisions. Provenance deletion stays forbidden outside purge.
   A fork or handoff rebound to another Work retains its source turns and bake:
-  purge leaves that source Work hidden while the external reference exists,
+  purge leaves that source Work soft-deleted while the external reference exists,
   rather than cascading into the other Work's chat. `purge.retained` records the
   dependency. Keyset paging passes retained sources and still removes up to 100
   eligible Works per sweep. References can extend storage retention beyond the

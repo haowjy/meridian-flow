@@ -42,21 +42,25 @@ vi.mock("@/features/editor/SessionEditor", () => ({
     return <p>Document prose</p>;
   },
 }));
+vi.mock("@/features/editor/ReviewPlaceCapture", () => ({
+  ReviewPlaceCapture: () => null,
+  useEditorFocusOwned: () => () => false,
+}));
 vi.mock("@/features/editor/useInlineReviewFocus", () => ({ useInlineReviewFocus: () => {} }));
 vi.mock("@/features/editor/useInlineReviewSync", () => ({
   useInlineReviewSync: ({
     editor,
     onInlineModelAvailable,
     documentId,
-    draftId,
+    itemKey,
   }: {
     editor: Editor | null;
-    onInlineModelAvailable: (model: string, documentId: string, draftId: string) => void;
+    onInlineModelAvailable: (model: string, documentId: string, itemKey: string) => void;
     documentId: string;
-    draftId: string;
+    itemKey: string;
   }) => {
     useEffect(() => {
-      if (editor) onInlineModelAvailable("model", documentId, draftId);
+      if (editor) onInlineModelAvailable("model", documentId, itemKey);
     }, [editor]);
   },
 }));
@@ -68,7 +72,14 @@ vi.mock("@/components/app/PaintHold", () => ({
     work({ read: undefined }),
   usePaintCoverProjection: () => () => {},
 }));
-const resources = { acquireCatalog: vi.fn(), acquireCatalogAfter: vi.fn() };
+const resources = {
+  acquireCatalog: vi.fn(),
+  acquireCatalogAfter: vi.fn(),
+  observeProjection: (_project: string, next: (snapshot: unknown) => void) => {
+    next({ records: [], folders: [], catalogs: [] });
+    return () => {};
+  },
+};
 let fixture: ReturnType<typeof createReviewScopeFixture>;
 let promote: ReturnType<typeof vi.spyOn>;
 let replica: ReturnType<typeof vi.spyOn>;
@@ -99,19 +110,18 @@ describe("DraftReviewProvider remote settlement", () => {
     useDockDocumentStore.setState(useDockDocumentStore.getInitialState(), true);
     useContextTabsStore.setState({
       byProject: {},
-      _reviewOverlayByProject: {},
       _workspaceHydrated: false,
     });
     const tab = contextTabFromDraftGroup({
       workId: "work-a",
       documentId: "document-a",
-      draftId: "draft-a",
+      itemKey: "draft-a",
       contextLocation: { scheme: "manuscript", path: "/chapter.md" },
-      isNewDocument: true,
+      isNew: true,
     });
     if (!tab) throw new Error("Draft tab fixture must be editable");
     useContextTabsStore.getState().openTab("project-a", tab);
-    fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+    fixture.network.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, isNew: true }] });
     // An observation joined from before the Apply would say the document is absent.
     resources.acquireCatalog.mockResolvedValue({ entries: new Map() });
     resources.acquireCatalogAfter.mockResolvedValue({
@@ -133,13 +143,12 @@ describe("DraftReviewProvider remote settlement", () => {
     ["both", "apply"],
     ["both", "discard"],
   ] as const)("settles remote %s %s from a catalog read after omission", async (container, mode) => {
-    const tab = useContextTabsStore.getState()._reviewOverlayByProject["project-a"]?.tabs[0];
+    const tab = useContextTabsStore.getState().byProject["project-a"]?.tabs[0];
     if (!tab) throw new Error("Missing draft overlay");
     useDockDocumentStore.setState({
-      occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", draftId: "draft-a" }),
+      occupant: dockDocument("project-a", "chat", tab, { workId: "work-a", itemKey: "draft-a" }),
     });
-    if (container === "dock")
-      useContextTabsStore.setState({ _reviewOverlayByProject: {}, byProject: {} });
+    if (container === "dock") useContextTabsStore.setState({ byProject: {} });
     let finishCatalog!: () => void;
     resources.acquireCatalogAfter.mockImplementation(
       () =>
@@ -169,10 +178,11 @@ describe("DraftReviewProvider remote settlement", () => {
       return (
         <PresentedDocumentContext.Provider value={presented}>
           <DraftReviewBoundary value={selected}>
-            <DraftOnlySettlement projectId="project-a" />
+            <DraftOnlySettlement projectId="project-a" editorWorkId="work-a" />
             <ReviewAddressOwner
               review={selected}
               presented={presented}
+              admission="admitted"
               port={{
                 write: (address) => useDockDocumentStore.getState().setDocumentReview(address),
                 admit: (target) => {
@@ -180,7 +190,7 @@ describe("DraftReviewProvider remote settlement", () => {
                   // A second admission of this unchanged intrinsic address is the
                   // observable cycle; stop it here so act can report the regression.
                   expect(admission).toHaveBeenCalledTimes(1);
-                  selected?.controller.enterInlineReview(target.documentId, target.draftId);
+                  selected?.controller.enterInlineReview(target.documentId, target.itemKey);
                 },
               }}
             />
@@ -213,7 +223,11 @@ describe("DraftReviewProvider remote settlement", () => {
             projectId="project-a"
             openContextRoute={async () => ({ kind: "cancelled" }) as never}
           >
-            {container === "dock" ? <DockReview /> : <DraftOnlySettlement projectId="project-a" />}
+            {container === "dock" ? (
+              <DockReview />
+            ) : (
+              <DraftOnlySettlement projectId="project-a" editorWorkId="work-a" />
+            )}
           </EditorReviewHandoffProvider>
         </TooltipProvider>
       </QueryClientProvider>,
@@ -223,10 +237,10 @@ describe("DraftReviewProvider remote settlement", () => {
         await act(async () => undefined);
         expect(resources.acquireCatalogAfter).not.toHaveBeenCalled();
 
-        fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [] });
+        fixture.network.listWorkDrafts.mockResolvedValue({ items: [] });
         const emptyPreview = {
           ...preview,
-          draftGeneration: mode === "discard" ? 2 : 1,
+          branchGeneration: mode === "discard" ? 2 : 1,
           operations: [],
           hunks: [],
         };
@@ -245,15 +259,15 @@ describe("DraftReviewProvider remote settlement", () => {
         // Empty active preview arrives before the live catalog, just like a remote
         // room reset. Lifecycle alone decides whether this overlay promotes or closes.
         if (container === "dock") {
-          expect(selected?.controller.inlineReview?.draftId).toBe("draft-a");
-          expect(useDockDocumentStore.getState().occupant?.tab).toHaveProperty("draftOnly", true);
+          expect(selected?.controller.inlineReview?.itemKey).toBe("draft-a");
+          expect(useDockDocumentStore.getState().occupant?.tab).toHaveProperty("reviews");
           expect(useContextTabsStore.getState().byProject).toEqual({});
         }
         await act(async () => finishCatalog());
         await vi.waitFor(() => {
           if (container !== "dock") expect(mode === "apply" ? promote : discard).toHaveBeenCalled();
           if (mode === "apply")
-            expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("draftOnly");
+            expect(useDockDocumentStore.getState().occupant?.tab).not.toHaveProperty("reviews");
           else expect(useDockDocumentStore.getState().occupant).toBeNull();
         });
         if (container === "dock" && mode === "apply") {

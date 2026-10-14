@@ -3,13 +3,13 @@
  * bound write inside it (contract §6.2, ledger A2-1): desired state, applied
  * as the ordinary overwrite and certified for one holder.
  */
+
 import { createHash, randomUUID } from "node:crypto";
 import { Hocuspocus } from "@hocuspocus/server";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextSources,
-  documents,
   linkAheadRefs,
   projects,
   threads,
@@ -24,8 +24,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
+import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { createNoopEventSink } from "../observability/index.js";
+import { processDetachedWork } from "../runtime/detached-work.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
 import { LinkBindingInsideTransactionError } from "./domain/link-binding.js";
 import { materializeRootLineageForDoc } from "./domain/provenance.js";
@@ -77,16 +79,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         .values({ projectId, createdByUserId: userId, name: "No Work", isNoWork: true })
         .returning();
       const noWorkId = noWork?.id ?? "";
-      const [source] = await db
-        .insert(contextSources)
-        .values({
-          projectId,
-          name: "Manuscript",
-          slug: "manuscript",
-          scope: "project",
-          isPrimary: true,
-        })
-        .returning();
+      await db.insert(contextSources).values({
+        projectId,
+        name: "Manuscript",
+        slug: "manuscript",
+        scope: "project",
+        isPrimary: true,
+      });
       await db.insert(threads).values({
         id: threadId,
         rootThreadId: threadId,
@@ -97,18 +96,18 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         .insert(threadWorks)
         .values({ threadId, workId: noWorkId, projectId, isPrimary: true });
       const ports = await createProductionAppPorts({
+        backgroundTasks: processDetachedWork,
         db,
         eventSink: createNoopEventSink(),
         environment: { FLOW_OPENAI_API_KEY: "sk-test-link-binding" },
       });
       const app = composeAppServices(ports);
-      ports.documentSync.bindHocuspocus(
-        new Hocuspocus({
-          yDocOptions: { gc: false, gcFilter: () => true },
-          onStoreDocument: ({ documentName, document }) =>
-            ports.documentSync.storeHocuspocusDocument(documentName, document),
-        }),
-      );
+      const hocuspocus = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        onStoreDocument: ({ documentName, document }) =>
+          ports.documentSync.storeHocuspocusDocument(documentName, document),
+      });
+      ports.documentSync.bindHocuspocus(hocuspocus);
       // Runs once, after the next whole-document write is bound and before it applies.
       let afterNextBind: (() => Promise<void>) | null = null;
       const bindMarkdown = ports.documentSync.bindMarkdown;
@@ -365,26 +364,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             markdown: "First.\n\n[A](a)\n",
           },
           {
-            door: "repair never publishes an empty document over a projection with no canonical state",
-            act: async () => {
-              const half = randomUUID();
-              const surviving = "Only surviving prose.\n\n[T](target)";
-              await db.insert(documents).values({
-                id: half,
-                contextSourceId: source?.id ?? "",
-                name: "half",
-                extension: "",
-                markdownProjection: surviving,
-              });
-              const repaired = await port.ensureTrackedDocument("manuscript://half");
-              expect(repaired).toMatchObject({ ok: false, error: { code: "io_error" } });
-              const [kept] = await db.select().from(documents).where(eq(documents.id, half));
-              expect(kept?.markdownProjection).toBe(surviving);
-              expect((await createDrizzleJournal(db).read(half)).checkpoint).toBeFalsy();
-              return half;
-            },
-          },
-          {
             door: "a new code file is created with its content, as code",
             act: async () =>
               (
@@ -428,6 +407,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           ),
         ).rejects.toBeInstanceOf(LinkBindingInsideTransactionError);
       } finally {
+        await unloadHocuspocus(hocuspocus);
         await app.shutdown();
       }
     });

@@ -24,12 +24,12 @@ export function useOpenReviewChanges(
   // A surface outside the open review reads nothing.
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const documentId = inline?.documentId ?? null;
-  const draftId = inline?.draftId ?? null;
+  const itemKey = inline?.itemKey ?? null;
   const { preview, observed } = useDraftPreview(
     controller.projectId,
     controller.workId,
     documentId,
-    draftId,
+    itemKey,
     {
       enabled: inline !== null,
     },
@@ -38,9 +38,9 @@ export function useOpenReviewChanges(
   // The review lists the changes of the generation it shows. A preview of
   // another one is the next proposal on its way in (the review re-enters it) or
   // the close's own reset: it is not this review's to list.
-  const shown = inline?.draftGeneration;
+  const shown = inline?.branchGeneration;
   const own =
-    active && (shown === undefined || active.draftGeneration === shown)
+    active && (shown === undefined || active.branchGeneration === shown)
       ? reviewChangesOfPreview(active)
       : null;
   // While the review and its preview disagree about the generation (the next
@@ -49,20 +49,20 @@ export function useOpenReviewChanges(
   // intents as they are now: its rows keep taking clicks, and a click already
   // made is not in it. Each click is resolved against the draft as it is when it
   // is sent. Only the draft's own earlier observation is kept, never another's.
-  const held = useRef<{ draftId: string | null; observed: ActivePreview | null }>({
-    draftId: null,
+  const held = useRef<{ itemKey: string | null; observed: ActivePreview | null }>({
+    itemKey: null,
     observed: null,
   });
-  if (own && observed?.status === "active") held.current = { draftId, observed };
+  if (own && observed?.status === "active") held.current = { itemKey, observed };
   const records = useChangeCommandRecords();
-  const heldObserved = held.current.draftId === draftId ? held.current.observed : null;
-  const hiddenKey = draftId
+  const heldObserved = held.current.itemKey === itemKey ? held.current.observed : null;
+  const hiddenKey = itemKey
     ? [
         ...intentKeys(records, {
           projectId: controller.projectId,
           workId: controller.workId,
           documentId: documentId ?? "",
-          draftId,
+          itemKey,
         }).hidden,
       ]
         .sort()
@@ -80,15 +80,15 @@ export function useOpenReviewChanges(
     active !== null &&
     heldObserved !== null &&
     shown !== undefined &&
-    (active.draftGeneration < shown || reviewChangesOfPreview(active).length > 0);
+    (active.branchGeneration < shown || reviewChangesOfPreview(active).length > 0);
   const changes = own ?? (keeping ? heldChanges : NO_CHANGES);
   const settling = keeping && changes.length > 0;
   const draftRef = useMemo(
     () =>
-      documentId && draftId
-        ? { projectId: controller.projectId, workId: controller.workId, documentId, draftId }
+      documentId && itemKey
+        ? { projectId: controller.projectId, workId: controller.workId, documentId, itemKey }
         : null,
-    [controller.projectId, controller.workId, documentId, draftId],
+    [controller.projectId, controller.workId, documentId, itemKey],
   );
   const { items, hiding } = useChangeItems(draftRef, changes);
   const completion = inline?.completion;
@@ -97,7 +97,7 @@ export function useOpenReviewChanges(
     ? "idle"
     : active
       ? adoptsGeneration(inline, {
-          draftGeneration: active.draftGeneration,
+          branchGeneration: active.branchGeneration,
           proposal: reviewChangesOfPreview(active).length > 0,
         }) && !settling
         ? "loading"
@@ -113,7 +113,7 @@ export function useOpenReviewChanges(
   return {
     inline,
     documentId,
-    draftId,
+    itemKey,
     preview,
     active,
     changes,

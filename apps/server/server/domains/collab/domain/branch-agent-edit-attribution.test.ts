@@ -46,6 +46,7 @@ function fixture(existingUpstream?: Y.Doc) {
     documentId,
     kind: "work_draft",
     upstreamBranchId: branchId === "peer" ? "draft" : null,
+    draftId: "draft-1",
     workId: null,
     threadId: null,
     status: "active",
@@ -58,7 +59,6 @@ function fixture(existingUpstream?: Y.Doc) {
     threadId,
     model,
     codec,
-    liveCoordinator: { withDocument: async (_id, fn) => fn(upstream), recover: async () => {} },
     branchCoordinator: createBranchCoordinator({
       store: {
         getBranch: async (id) => snapshot(id),
@@ -74,8 +74,7 @@ function fixture(existingUpstream?: Y.Doc) {
         generation: 1,
         doc: cloneYDoc(baseline),
       }),
-      ensureThreadPeerBranch: async () => ({ branchId: "peer" }),
-      ensureWorkDraftBranch: async () => ({ branchId: "draft" }),
+      ensureThreadPeerBranch: async () => snapshot("peer"),
       listActiveWorkDraftBranchIds: async () => ["draft"],
     },
     journalRows: {

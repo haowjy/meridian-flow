@@ -117,7 +117,9 @@ policy-free.
   fields. `renderLsResult` gives the model plain text (D61): the folder URI,
   then entries relative to it, folders ending in `/`, with one parenthesis
   for kind, details and `read-only` when any apply; `  (empty)` for an empty
-  folder; one line per source at the root. `skills://` listings share the
+  folder (or empty source root); one line per source at the root. A missing
+  folder, including another view's hidden folder, refuses `not_found` and
+  explains that writing a file below it creates it (F26, D65). `skills://` listings share the
   shape. Word counts come from the projection the listing query already
   loads, counted only when `verbose` is set.
 - `work` returns typed Works (`ModelWork`, `WorkShowResult` in

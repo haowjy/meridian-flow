@@ -77,7 +77,12 @@ export const projectQueryKeys = {
     ["projects", projectId, "documents", documentId, "writer-handoff-loss"] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,
-  workDraftPreview: (projectId: string, workId: string, documentId: string, draftId?: string) =>
+  /** The drafts with changes to one document; invalidated with the Work draft lists. */
+  documentDraftHints: (projectId: string, documentId: string) =>
+    ["projects", projectId, "document-draft-hints", documentId] as const,
+  documentDraftHintsOf: (projectId: string) =>
+    ["projects", projectId, "document-draft-hints"] as const,
+  workDraftPreview: (projectId: string, workId: string, documentId: string, itemKey?: string) =>
     [
       "projects",
       projectId,
@@ -86,7 +91,7 @@ export const projectQueryKeys = {
       "documents",
       documentId,
       "draft",
-      draftId ?? null,
+      itemKey ?? null,
     ] as const,
   contextCatalog: (projectId: string, scope: CatalogScope) =>
     ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,

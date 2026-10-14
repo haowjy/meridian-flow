@@ -20,11 +20,18 @@ import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 
 /**
  * The confirmation page's lifecycle. `checking` waits for the server's count,
- * `submitting` carries the writer's choice, `failed` keeps it for the retry,
+ * `submitting` carries the writer's choice, `finishing` acknowledges recovery,
+ * `failed` keeps the choice for the retry,
  * and `archivedMidway` is a refused Apply because the Work was archived while
  * the switch ran.
  */
-type ConfirmationPhase = "checking" | "ready" | "submitting" | "failed" | "archivedMidway";
+type ConfirmationPhase =
+  | "checking"
+  | "ready"
+  | "submitting"
+  | "finishing"
+  | "failed"
+  | "archivedMidway";
 
 /**
  * A plain switch (nothing pending locally) stays on the choices page, failure
@@ -103,6 +110,9 @@ export function useSelectedWorkWriteModeToolbarControl({
           ? confirm(outcome === "archived" ? "archivedMidway" : "failed")
           : { workId: work.id, page: "choices", phase: "failed" },
       );
+      settle("stay");
+    } else if (outcome.status === "pending") {
+      setInteraction(confirm("finishing"));
       settle("stay");
     } else if (outcome.status === "updated") {
       setInteraction(choices(work.id));
@@ -351,6 +361,11 @@ function Confirmation({
           </Trans>
         )}
       </h2>
+      {phase === "finishing" && (
+        <p className="mt-[var(--chat-space-inline)] text-caption" role="status">
+          <Trans>Apply is finishing. You're still in Draft.</Trans>
+        </p>
+      )}
       {phase === "failed" ? (
         <p className="mt-[var(--chat-space-inline)] text-caption text-destructive" role="alert">
           {choice === "apply" ? (

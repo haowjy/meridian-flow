@@ -1,6 +1,10 @@
 import type {
   DocumentAuthorityId,
   DocumentId,
+  DraftCommandId,
+  DraftCommandKind,
+  DraftCommandResult,
+  DraftId,
   ModelResponseId,
   ThreadId,
   TurnId,
@@ -29,13 +33,14 @@ import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { modelResponses, threads, turns } from "./agent-threads";
 import { documents, works } from "./content";
 import { documentEdits } from "./document-edits";
+import { drafts } from "./drafts";
 import { users } from "./users";
 
 type DocumentBranchKind = "work_draft" | "thread_peer";
 type DocumentBranchStatus = "active" | "closed";
 type BranchWriteJournalSource = "agent" | "writer";
 type BranchWriteJournalStatus = "active" | "pushed" | "discarded" | "rollback_pending";
-type BranchPushSettlementState = "pending" | "blocked" | "completed";
+type BranchPushSettlementState = "pending" | "blocked" | "completed" | "abandoned";
 type BranchPushSettlementClaimKind = "warm" | "recovery";
 type BranchPushSettlementUpdateSource = "journal" | "staged_push" | "initial_reconcile";
 type ChangeTrailOwnerKind = "turn" | "shared";
@@ -57,12 +62,14 @@ export const documentBranches = pgTable(
         onDelete: "set null",
       },
     ),
-    workId: uuid("work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "restrict" }),
-    deletedByWorkId: uuid("deleted_by_work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "set null" }),
+    /**
+     * The draft this branch belongs to (decision 3: a draft is its own record). A thread
+     * peer carries its upstream Work-draft branch's draft.
+     */
+    draftId: uuid("draft_id")
+      .$type<DraftId>()
+      .notNull()
+      .references(() => drafts.id, { onDelete: "cascade" }),
     threadId: uuid("thread_id")
       .$type<ThreadId>()
       .references(() => threads.id, { onDelete: "cascade" }),
@@ -82,15 +89,12 @@ export const documentBranches = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex("document_branches_active_work_draft")
-      .on(table.documentId, table.workId)
+    uniqueIndex("document_branches_active_draft_document")
+      .on(table.documentId, table.draftId)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    index("document_branches_active_work_draft_by_work")
-      .on(table.workId, table.id, table.generation)
+    index("document_branches_active_work_draft_by_draft")
+      .on(table.draftId, table.id, table.generation)
       .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    index("document_branches_deleted_by_work_idx")
-      .on(table.deletedByWorkId)
-      .where(sql`${table.deletedByWorkId} IS NOT NULL`),
     uniqueIndex("document_branches_active_thread_peer")
       .on(table.documentId, table.threadId)
       .where(sql`${table.kind} = 'thread_peer' AND ${table.status} = 'active'`),
@@ -98,7 +102,7 @@ export const documentBranches = pgTable(
     check("document_branches_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
       "document_branches_owner_shape",
-      sql`(${table.kind} = 'work_draft' AND ${table.workId} IS NOT NULL AND ${table.threadId} IS NULL) OR (${table.kind} = 'thread_peer' AND ${table.threadId} IS NOT NULL)`,
+      sql`(${table.kind} = 'work_draft' AND ${table.threadId} IS NULL) OR (${table.kind} = 'thread_peer' AND ${table.threadId} IS NOT NULL)`,
     ),
   ],
 );
@@ -184,27 +188,15 @@ export const pushLineage = pgTable(
   ],
 );
 
-/** Durable authority for classifying and completing one staged branch push. */
-export const branchPushSettlementOutbox = pgTable(
-  "branch_push_settlement_outbox",
+/**
+ * One settlement identity for a batch of staged pushes: recovery claims the batch
+ * whole, and one completion transaction settles every member.
+ */
+export const branchPushSettlementBatches = pgTable(
+  "branch_push_settlement_batches",
   {
-    pushId: bigint("push_id", { mode: "number" })
-      .primaryKey()
-      .references(() => pushLineage.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
+    id: uuid("id").primaryKey(),
     state: text("state").$type<BranchPushSettlementState>().notNull().default("pending"),
-    documentTitle: text("document_title").notNull(),
-    lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
-    pushUpdate: byteaColumn("push_update").notNull(),
-    trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
-    joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
-    classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
-      .notNull()
-      .default(0),
-    settledJoinVersion: bigint("settled_join_version", { mode: "number" }),
     claimToken: uuid("claim_token"),
     claimEpoch: bigint("claim_epoch", { mode: "number" }).notNull().default(1),
     claimKind: text("claim_kind").$type<BranchPushSettlementClaimKind>(),
@@ -216,42 +208,120 @@ export const branchPushSettlementOutbox = pgTable(
     lastError: text("last_error"),
     blockedAt: timestamp("blocked_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    /** A publication step refused the staged batch; nothing of it reached live. */
+    abandonedAt: timestamp("abandoned_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => [
-    index("branch_push_settlement_outbox_recovery")
+    index("branch_push_settlement_batches_recovery")
       .on(table.availableAt, table.leaseExpiresAt, table.createdAt)
       .where(sql`${table.state} = 'pending'`),
-    index("branch_push_settlement_outbox_document_unresolved")
-      .on(table.documentId)
-      .where(sql`${table.state} <> 'completed'`),
+    // Writer admissions join unresolved members; few batches are ever unresolved.
+    index("branch_push_settlement_batches_unresolved")
+      .on(table.id)
+      .where(sql`${table.state} IN ('pending', 'blocked')`),
     check(
-      "branch_push_settlement_outbox_state_valid",
-      sql`${table.state} IN ('pending', 'blocked', 'completed')`,
+      "branch_push_settlement_batches_state_valid",
+      sql`${table.state} IN ('pending', 'blocked', 'completed', 'abandoned')`,
     ),
     check(
-      "branch_push_settlement_outbox_terminal_shape",
+      "branch_push_settlement_batches_terminal_shape",
       sql`(
-        (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-        OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
-        OR (${table.state} = 'pending' AND ${table.blockedAt} IS NULL AND ${table.completedAt} IS NULL)
+        (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL AND ${table.blockedAt} IS NULL AND ${table.abandonedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'blocked' AND ${table.blockedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.abandonedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'abandoned' AND ${table.abandonedAt} IS NOT NULL AND ${table.lastErrorCode} IS NOT NULL AND ${table.completedAt} IS NULL AND ${table.blockedAt} IS NULL AND ${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
+        OR (${table.state} = 'pending' AND ${table.blockedAt} IS NULL AND ${table.completedAt} IS NULL AND ${table.abandonedAt} IS NULL)
       )`,
     ),
     check(
-      "branch_push_settlement_outbox_claim_shape",
+      "branch_push_settlement_batches_claim_shape",
       sql`${table.state} <> 'pending' OR (
         (${table.claimToken} IS NOT NULL AND ${table.claimKind} IS NOT NULL AND ${table.claimedAt} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL)
         OR (${table.claimToken} IS NULL AND ${table.claimKind} IS NULL AND ${table.claimedAt} IS NULL AND ${table.leaseExpiresAt} IS NULL)
       )`,
     ),
     check(
-      "branch_push_settlement_outbox_claim_kind_valid",
+      "branch_push_settlement_batches_claim_kind_valid",
       sql`${table.claimKind} IS NULL OR ${table.claimKind} IN ('warm', 'recovery')`,
     ),
     check(
+      "branch_push_settlement_batches_counters_valid",
+      sql`${table.attemptCount} >= 0 AND ${table.claimEpoch} >= 0`,
+    ),
+  ],
+);
+
+/** A publication step's durable input, staged with its batch and read on claim and recovery. */
+export const branchPushSettlementPayloads = pgTable(
+  "branch_push_settlement_payloads",
+  {
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
+    stepKind: text("step_kind").notNull(),
+    payload: jsonb("payload").$type<unknown>().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.batchId, table.stepKind] })],
+);
+
+/**
+ * An item a publication step kept out of a batch, and why: staged with the batch
+ * when the pre-staging check decided it, written in completion otherwise.
+ */
+export const branchPushSettlementHolds = pgTable(
+  "branch_push_settlement_holds",
+  {
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
+    itemKey: text("item_key").notNull(),
+    /** The text member held with the item; null for a branchless item. */
+    documentId: uuid("document_id").$type<DocumentId>(),
+    reason: jsonb("reason").$type<unknown>().notNull(),
+    decidedIn: text("decided_in").$type<"check" | "completion">().notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.batchId, table.itemKey] }),
+    check(
+      "branch_push_settlement_holds_decided_in_valid",
+      sql`${table.decidedIn} IN ('check', 'completion')`,
+    ),
+  ],
+);
+
+/** One staged push of a settlement batch: its lock cut, update, trail and joins. */
+export const branchPushSettlementOutbox = pgTable(
+  "branch_push_settlement_outbox",
+  {
+    pushId: bigint("push_id", { mode: "number" })
+      .primaryKey()
+      .references(() => pushLineage.id, { onDelete: "cascade" }),
+    batchId: uuid("batch_id")
+      .notNull()
+      .references(() => branchPushSettlementBatches.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    documentTitle: text("document_title").notNull(),
+    lockCutUpdate: byteaColumn("lock_cut_update").notNull(),
+    pushUpdate: byteaColumn("push_update").notNull(),
+    trailSeed: jsonb("trail_seed").$type<unknown>().notNull(),
+    joinVersion: bigint("join_version", { mode: "number" }).notNull().default(0),
+    classifiedJoinVersion: bigint("classified_join_version", { mode: "number" })
+      .notNull()
+      .default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("branch_push_settlement_outbox_document").on(table.documentId),
+    uniqueIndex("branch_push_settlement_outbox_batch_document").on(table.batchId, table.documentId),
+    check(
       "branch_push_settlement_outbox_counters_valid",
-      sql`${table.attemptCount} >= 0 AND ${table.joinVersion} >= 0 AND ${table.claimEpoch} >= 0 AND ${table.classifiedJoinVersion} <= ${table.joinVersion} AND (${table.settledJoinVersion} IS NULL OR ${table.settledJoinVersion} <= ${table.joinVersion})`,
+      sql`${table.joinVersion} >= 0 AND ${table.classifiedJoinVersion} <= ${table.joinVersion}`,
     ),
   ],
 );
@@ -560,5 +630,55 @@ export const changeTrailDirtyLog = pgTable(
   },
   (table) => [
     index("change_trail_dirty_log_owner_seq").on(table.threadId, table.turnId, table.seq),
+  ],
+);
+
+/**
+ * The record of one writer Apply or Discard, keyed by the client's command id so a resend
+ * answers the first command's outcome. It lives beside the batches it points at, which keeps
+ * `drafts.ts` free of an import cycle.
+ */
+export const draftCommands = pgTable(
+  "draft_commands",
+  {
+    id: uuid("id").$type<DraftCommandId>().primaryKey(),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .notNull()
+      .references(() => works.id, { onDelete: "cascade" }),
+    draftId: uuid("draft_id")
+      .$type<DraftId>()
+      .references(() => drafts.id, { onDelete: "cascade" }),
+    accountId: uuid("account_id")
+      .$type<UserId>()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<DraftCommandKind>().notNull(),
+    /** Hash of the canonical command envelope; another digest under this id is a conflict. */
+    requestDigest: text("request_digest").notNull(),
+    /** Set when an Apply stages; completion or withdrawal settles the row with the batch. */
+    settlementBatchId: uuid("settlement_batch_id").references(
+      () => branchPushSettlementBatches.id,
+      { onDelete: "set null" },
+    ),
+    state: text("state").$type<"pending" | "done">().notNull().default("pending"),
+    result: jsonb("result").$type<DraftCommandResult>(),
+    createdAt: createdAt(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("draft_commands_work").on(table.workId),
+    index("draft_commands_settlement_batch")
+      .on(table.settlementBatchId)
+      .where(sql`${table.settlementBatchId} IS NOT NULL`),
+    check(
+      "draft_commands_kind_valid",
+      sql`${table.kind} IN ('apply_items', 'apply_changes', 'discard_items', 'discard_changes', 'discard_draft')`,
+    ),
+    check("draft_commands_state_valid", sql`${table.state} IN ('pending', 'done')`),
+    check(
+      "draft_commands_done_shape",
+      sql`(${table.state} = 'done') = (${table.completedAt} IS NOT NULL)`,
+    ),
   ],
 );

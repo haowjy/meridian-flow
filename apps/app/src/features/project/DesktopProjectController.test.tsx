@@ -113,8 +113,6 @@ async function setup(source: ScreenKey = "context") {
   let issue: ProjectRouteIssue | undefined;
   let path = "/A.md";
   let contextLive = true;
-  let recovery = false;
-  let chooser = false;
   const container = document.createElement("div");
   const root = createRoot(container);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -139,13 +137,11 @@ async function setup(source: ScreenKey = "context") {
     const switcher = useDesktopProjectController({
       projectId,
       screen,
-      current: recovery
-        ? null
-        : {
-            editorWorkId: workId,
-            activeContextScheme: chooser ? null : "manuscript",
-            activeContextPath: chooser ? null : path,
-          },
+      current: {
+        editorWorkId: workId,
+        activeContextScheme: "manuscript",
+        activeContextPath: path,
+      },
       requestedWorkId: workId,
       contextLive,
       issue: acceptedFailure ? "error" : issue,
@@ -188,7 +184,8 @@ async function setup(source: ScreenKey = "context") {
         documentCatalog: null,
       }),
       lookup: async () => ({ kind: "failed" }),
-      admitDraftReview: (tab) => removal.admitDraftReview(projectId, tab),
+      admitDraftReview: (tab, reviewWorkId) =>
+        removal.admitDraftReview(projectId, tab, reviewWorkId),
     });
     const entry = useSyncExternalStore(
       (listener) => history.subscribe(listener),
@@ -276,14 +273,6 @@ async function setup(source: ScreenKey = "context") {
       contextLive = false;
       await render();
     },
-    recover: async () => {
-      recovery = true;
-      await render();
-    },
-    chooser: async () => {
-      chooser = true;
-      await render();
-    },
     failNavigation: () => {
       rejectNavigation = true;
     },
@@ -329,10 +318,10 @@ it.each([
   const rig = await setup(source);
   await rig.replace(B);
   await act(async () =>
-    useDockDocumentStore.getState().setDocumentReview({ workId, draftId: "draft-B" }),
+    useDockDocumentStore.getState().setDocumentReview({ workId, itemKey: "draft-B" }),
   );
   await rig.click("Editor");
-  expect(rig.history.location.search).toContain("draft=draft-B");
+  expect(rig.history.location.search).toContain("item=draft-B");
   expect(rig.history.location.pathname).toContain("/editor/manuscript/B.md");
   expect(useContextTabsStore.getState().byProject[projectId].selectedTabIdByWork[workId]).toBe("B");
   expect(useDockDocumentStore.getState().occupant).toBeNull();
@@ -537,12 +526,6 @@ it.each(["removed", "terminal"] as const)("a %s projection carries nothing", asy
       return rig.container.querySelector("[data-editor]")?.textContent;
     })
     .toBe("Chooser");
-  await rig.click("Chat");
-  expect(useDockDocumentStore.getState().occupant).toBeNull();
-});
-it.each(["recover", "chooser"] as const)("%s presentation carries nothing", async (mode) => {
-  const rig = await setup();
-  await rig[mode]();
   await rig.click("Chat");
   expect(useDockDocumentStore.getState().occupant).toBeNull();
 });

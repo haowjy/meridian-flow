@@ -17,6 +17,7 @@ import {
   WORK_ID,
 } from "./test-support/change-trail-postgres-harness.js";
 
+import { reviewDriver } from "./test-support/draft-review-requests.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -32,7 +33,8 @@ describe("forward card inverse", () => {
     kind,
     placement,
   }) => {
-    const { harness, view, responseId, context, target } = await fixture();
+    const { harness, view, responseId, context } = await fixture();
+    const review = reviewDriver(view.collab.draftReview);
     try {
       const changes =
         kind === "insert"
@@ -68,7 +70,6 @@ describe("forward card inverse", () => {
             eq(schema.documentBranches.kind, "work_draft"),
           ),
         );
-      const draftTarget = { ...target, draftId: branch.id };
       const original = "Alpha Beta.\n\nBlue.\n";
       const edited =
         kind === "insert"
@@ -78,23 +79,11 @@ describe("forward card inverse", () => {
             : "Alpha Gamma.\n\nSilver.\n";
       expect(await view.draftMarkdown(branch.id)).toBe(edited);
       if (placement === "applied")
-        expect(
-          await view.collab.draftReview.applyWorkDraft({
-            ...draftTarget,
-            userId: USER_ID as never,
-          }),
-        ).toMatchObject({ status: "applied" });
+        expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
       if (placement === "mixed") {
-        const preview = await view.collab.draftReview.preview(draftTarget);
-        if (preview.status !== "active") throw new Error("Missing draft");
+        const preview = await review.activePreview(ALPHA_ID);
         expect(
-          await view.collab.draftReview.applyWorkDraftChanges({
-            ...draftTarget,
-            userId: USER_ID as never,
-            operationIds: [preview.operations[0].operationId],
-            liveRevisionToken: preview.liveRevisionToken,
-            draftRevisionToken: preview.draftRevisionToken,
-          }),
+          await review.applyChanges(ALPHA_ID, preview, [preview.operations[0].operationId]),
         ).toMatchObject({ status: "applied" });
       }
       const mixedLive = await harness.liveMarkdown(ALPHA_ID);
@@ -149,12 +138,7 @@ describe("forward card inverse", () => {
         if (placement === "mixed") expect(await harness.liveMarkdown(ALPHA_ID)).toBe(mixedLive);
       }
       if (placement !== "applied")
-        expect(
-          await view.collab.draftReview.applyWorkDraft({
-            ...draftTarget,
-            userId: USER_ID as never,
-          }),
-        ).toMatchObject({ status: "applied" });
+        expect(await review.applyItem(ALPHA_ID)).toMatchObject({ status: "applied" });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe(edited);
     } finally {
       harness.cancelScheduledPulls();
@@ -164,7 +148,8 @@ describe("forward card inverse", () => {
 });
 
 it("Discard of the mixed document's Undo change reactivates its applied part", async () => {
-  const { harness, view, responseId, context, target } = await fixture();
+  const { harness, view, responseId, context } = await fixture();
+  const review = reviewDriver(view.collab.draftReview);
   try {
     for (const [find, content] of [
       ["Beta", "Gamma"],
@@ -184,23 +169,12 @@ it("Discard of the mixed document's Undo change reactivates its applied part", a
         ),
       ).toMatchObject({ status: "success" });
     await harness.commit(responseId);
-    const [draft] = await view.collab.draftReview.list({
-      projectId: PROJECT_ID as never,
-      workId: WORK_ID,
-    });
-    const scope = { ...target, draftId: draft.draftId, userId: USER_ID as never };
-    const preview = await view.collab.draftReview.preview(scope);
-    if (preview.status !== "active") throw new Error("Missing draft");
+    const preview = await review.activePreview(ALPHA_ID);
     const gamma = preview.operations.find((operation) => operation.afterExcerpt === "Gamma");
     if (!gamma) throw new Error("Missing Gamma change");
-    expect(
-      await view.collab.draftReview.applyWorkDraftChanges({
-        ...scope,
-        operationIds: [gamma.operationId],
-        liveRevisionToken: preview.liveRevisionToken,
-        draftRevisionToken: preview.draftRevisionToken,
-      }),
-    ).toMatchObject({ status: "applied" });
+    expect(await review.applyChanges(ALPHA_ID, preview, [gamma.operationId])).toMatchObject({
+      status: "applied",
+    });
     expect(
       await view.collab.reverseTurn({
         threadId: THREAD_ID,
@@ -209,19 +183,9 @@ it("Discard of the mixed document's Undo change reactivates its applied part", a
         actor: { type: "user", userId: USER_ID },
       }),
     ).toMatchObject({ status: "reversed" });
-    const inverse = await view.collab.draftReview.preview(scope);
-    if (inverse.status !== "active") throw new Error("Missing inverse");
+    const inverse = await review.activePreview(ALPHA_ID);
     expect(inverse.operations).toHaveLength(1);
-    expect(
-      await view.collab.draftReview.discardWorkDraft({
-        ...scope,
-        closureClassIds: [inverse.operations[0].closureClassId],
-        admissionTokens: [inverse.operations[0].admissionToken],
-        memberPartKeys: inverse.operations[0].partKey ? [inverse.operations[0].partKey] : [],
-        liveRevisionToken: inverse.liveRevisionToken,
-        draftRevisionToken: inverse.draftRevisionToken,
-      }),
-    ).toMatchObject({ status: "discarded" });
+    expect(await review.discardChanges(ALPHA_ID, inverse)).toMatchObject({ status: "discarded" });
     expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",
     });

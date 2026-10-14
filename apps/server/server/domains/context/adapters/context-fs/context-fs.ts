@@ -9,10 +9,10 @@ import { type CanonicalContextAuthority, canonicalContextUri } from "@meridian/c
 import {
   classifyFiletype,
   type Filetype,
-  filenameForBinary,
   filetypeForKnownPath,
   filetypeForPath,
   folderDocumentName,
+  type ParsedDocumentFilename,
   parseDocumentFilename,
   type YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
@@ -25,7 +25,6 @@ import type {
   BranchPeerShadowAccess,
   DocumentCreationAggregate,
   DocumentLinkScopes,
-  DocumentSeedOrigin,
   EffectiveReadVersion,
   HashlineRead,
   MarkdownDocumentStore,
@@ -54,10 +53,13 @@ import type {
 } from "../../ports/context-adapter.js";
 import { schemeCapabilities } from "../../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
-import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
-import { ContextEntryConflictError } from "../../ports/context-document-store.js";
+import {
+  type ContextDocument,
+  type ContextDocumentStore,
+  ContextEntryConflictError,
+} from "../../ports/context-document-store.js";
 import type {
-  ContextCreateUntitledDocumentOptions,
+  AdapterCreateUntitledOptions,
   ContextListOptions,
   ContextScheme,
   ContextWriteBinaryOptions,
@@ -71,10 +73,31 @@ import type {
   ContextTreeMutationStore,
   PreparedContextMove,
 } from "../../ports/context-tree-mutation-store.js";
-import { resolveVisibleDocumentMembership } from "../../visible-document-membership.js";
+import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { LineageScratchUnavailableError } from "../lineage-scratch-lifecycle.js";
 import { BoundWrites, binaryTrackedWriteFault, DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
+import {
+  AMBIGUOUS_PATH_FAULT,
+  type ContextPlacement,
+  type CreatePlacement,
+  createPlacement,
+} from "./create-placement.js";
+import { resolveCreateTarget } from "./create-target.js";
+import { LiveCreate } from "./live-create.js";
 import { matchDocument } from "./match.js";
+
+/**
+ * A document path's leaf through the name codec: its folders and canonical parts, null for
+ * the source root, or the `invalid_name` fault a leaf that can't name a document is.
+ */
+function parseDocumentPath(
+  path: string,
+): Result<(ParsedDocumentFilename & { dir: string[] }) | null, AdapterFault> {
+  const { dir, filename } = splitPath(path);
+  if (!filename) return Ok(null);
+  const parsed = parseDocumentFilename(filename);
+  return parsed.ok ? Ok({ dir, ...parsed.value }) : Err(parsed.error);
+}
 
 export interface ContextFSDeps {
   /** Search spells its source's chapters from one snapshot; each read prepares its own. */
@@ -82,10 +105,7 @@ export interface ContextFSDeps {
   store: ContextDocumentStore;
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore &
-    Pick<
-      BranchPeerShadowAccess,
-      "readEffectiveHashlines" | "readEffectiveMarkdown" | "resolveManifestMembership"
-    >;
+    Pick<BranchPeerShadowAccess, "readEffectiveHashlines" | "readEffectiveMarkdown">;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
@@ -96,27 +116,11 @@ export interface ContextFSDeps {
    * document binds its links as that document's address (contract §6.2).
    */
   holder: { projectId: string; authority?: CanonicalContextAuthority };
-  /** The project manifest that decides which documents of a drafted source exist (D20). */
-  manifestView?: {
-    projectId: string;
-    workId?: string | null;
-    threadId?: string | null;
-    responseId?: string | null;
-  };
+  /** Where creates land and what reads see; the port factory decides it (`placementFor`). */
+  placement: ContextPlacement;
   /** The thread reading through this adapter; without one, reads are live. */
   threadView?: ThreadContextView;
 }
-
-class DocumentCreationFault extends Error {
-  constructor(readonly fault: AdapterFault) {
-    super("message" in fault ? fault.message : fault.code);
-  }
-}
-
-/** Folder-id of `null` is the source root; `MISSING` means the path is absent. */
-const MISSING = Symbol("missing-folder");
-const UNTITLED_NAME_PATTERN = /^Untitled (\d+)$/;
-const UNTITLED_ALLOCATION_ATTEMPTS = 32;
 
 function trackedSchemaForPersistedFiletype(
   filetype: string | null | undefined,
@@ -171,7 +175,7 @@ function moveFiletypeTransition(
  * Owns path ↔ folder-tree resolution and folder auto-creation; delegates
  * single-node persistence to a {@link ContextDocumentStore}.
  *
- * Content is Yjs-canonical: folder tree and `markdown_projection` stay in the
+ * Content is Yjs-canonical: folder tree and Markdown projections stay in the
  * store, but read/write content flows through the collab domain. The store's
  * markdown is only a search/listing projection cache.
  *
@@ -187,9 +191,9 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly store: ContextDocumentStore;
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: ContextFSDeps["documentSync"];
-  private readonly documentCreation: DocumentCreationAggregate;
   private readonly commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
-  private readonly manifestView?: ContextFSDeps["manifestView"];
+  private readonly placement: CreatePlacement;
+  private readonly liveCreate: LiveCreate;
   private readonly readView?: ThreadContextView;
   private readonly scheme: ContextScheme;
   private readonly holder: ContextFSDeps["holder"];
@@ -208,7 +212,7 @@ export class ContextFS implements ContextSchemeAdapter {
     this.store = deps.store;
     this.mutationStore = deps.mutationStore;
     this.documentSync = deps.documentSync;
-    this.documentCreation =
+    const documentCreation =
       deps.documentCreation ??
       createDocumentCreationAggregate({
         atomic: (operation) => deps.store.transaction(operation),
@@ -216,7 +220,7 @@ export class ContextFS implements ContextSchemeAdapter {
       });
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction: deps.commandTransaction ?? {
-        run: (operation) => deps.store.transaction(operation),
+        run: (operation) => deps.store.transaction(() => operation({ draft: null })),
       },
       serializeThroughCallbacks: true,
       mapThrownError: (error) =>
@@ -228,9 +232,13 @@ export class ContextFS implements ContextSchemeAdapter {
                 reason: `work_${error.state}`,
                 workSlug: error.workSlug ?? null,
               }
-            : undefined,
+            : error instanceof ContextEntryConflictError
+              ? {
+                  code: "conflict",
+                  ...(error.occupantKind ? { occupantKind: error.occupantKind } : {}),
+                }
+              : undefined,
     });
-    this.manifestView = deps.manifestView;
     this.readView = deps.threadView;
     this.scheme = deps.scheme;
     this.holder = deps.holder;
@@ -240,16 +248,23 @@ export class ContextFS implements ContextSchemeAdapter {
       commandExecutor: this.commandExecutor,
       projectId: deps.holder.projectId,
       holderUri: (path) => this.holderUri(path),
-      findDocument: async (path) => {
-        const { dir, filename } = splitPath(path);
-        if (!filename) return null;
-        const folderId = await this.findFolderId(dir);
-        if (folderId === MISSING) return null;
-        const parsed = parseDocumentFilename(filename);
-        if (!parsed.ok) return null;
-        const { name, extension } = parsed.value;
-        return this.store.findDocument(folderId, name, extension);
-      },
+      findDocument: (path) => this.findDocumentAt(LIVE_TREE, path),
+    });
+    this.liveCreate = new LiveCreate({
+      store: deps.store,
+      executor: this.commandExecutor,
+      documentSync: deps.documentSync,
+      documentCreation,
+      boundWrites: this.boundWrites,
+      projectId: deps.holder.projectId,
+      holderUri: (path) => this.holderUri(path),
+      syncFault: (error) => this.syncFault(error),
+    });
+    this.placement = createPlacement(deps.placement, {
+      store: deps.store,
+      executor: this.commandExecutor,
+      documentSync: deps.documentSync,
+      liveCreate: this.liveCreate,
     });
   }
 
@@ -269,151 +284,43 @@ export class ContextFS implements ContextSchemeAdapter {
     }
   }
 
-  private async createTrackedDocumentAtomically(input: {
-    id?: string;
-    folderId: string | null;
-    name: string;
-    extension: string;
-    filetype: Filetype;
-    /** Bound before the command transaction; null creates an empty document. */
-    content: BoundWrite | null;
-    provisionalName?: boolean;
-    options?: ContextWriteOptions;
-  }): Promise<Result<{ document: ContextDocument; markdown: string }, AdapterFault>> {
-    const documentId = input.id ?? crypto.randomUUID();
-    let document: ContextDocument | null = null;
-    try {
-      const created = await this.documentCreation.createDocumentAtomically({
-        documentId: documentId as never,
-        persistIdentity: async () => {
-          document = await this.store.createDocumentRecordIfAbsent({
-            id: documentId,
-            folderId: input.folderId,
-            name: input.name,
-            extension: input.extension,
-            markdown: "",
-            filetype: input.filetype,
-            provisionalName: input.provisionalName,
-            ...(input.options?.metadata ? { metadata: input.options.metadata } : {}),
-          });
-          return document !== null;
-        },
-        persistMembership: () => this.store.recordDocumentMembership(documentId),
-        initializeContent: async () => {
-          if (input.content === null || input.content.markdown.length === 0) {
-            await this.documentCreation.ensureDocument(documentId);
-            return "";
-          }
-          const provenance = input.options?.origin;
-          const origin: DocumentSeedOrigin =
-            provenance?.type === "import"
-              ? {
-                  type: "import",
-                  userId: provenance.userId,
-                  source: provenance.source,
-                  filename: provenance.filename,
-                  sourceId: provenance.sourceId,
-                }
-              : { type: "system" };
-          const seeded = await this.documentSync.seedFromMarkdown(
-            documentId,
-            input.content,
-            origin,
-          );
-          if (!seeded.ok) {
-            throw new DocumentCreationFault(this.syncFault(seeded.error));
-          }
-          return input.content.markdown;
-        },
-      });
-      if (!created.created) return Err({ code: "conflict" });
-      if (!document) {
-        return Err({ code: "io_error", message: "Created document identity was not returned" });
-      }
-      return Ok({ document, markdown: created.value });
-    } catch (error) {
-      if (error instanceof DocumentCreationFault) return Err(error.fault);
-      if (error instanceof ContextEntryConflictError)
-        return Err({ code: "conflict", occupantKind: error.occupantKind });
-      throw error;
-    }
+  /**
+   * What reads see: a draft placement's Work's active draft, unless the thread asked for
+   * the live text; live otherwise. Resolved once per command, never creating a draft.
+   */
+  private readTreeView(): Promise<TreeView> {
+    return this.placement.readView(this.readView?.version);
   }
 
   /**
-   * Restores a half-created document's membership and, if it has no Yjs state,
-   * an empty one. The stored projection is never reparsed: it spells links as
-   * they were addressed when it was written, and a move since then would turn
-   * a stale path back into a link. So a document whose only content is that
-   * projection is incomplete, not repairable: it stays as it is, bytes kept,
-   * rather than becoming an empty document that reads as a successful repair.
+   * The document at `path` in `view` under its canonical name, or null. A path two of the
+   * view's files share is the draft clash fault, never one of them.
    */
-  private async repairTrackedDocument(
-    document: ContextDocument,
-  ): Promise<Result<void, AdapterFault>> {
-    try {
-      await this.documentCreation.repairDocumentAtomically({
-        documentId: document.id as never,
-        initializeContent: async () => {
-          if (document.markdown.length > 0) {
-            const canonical = await this.documentSync.readAsMarkdown(document.id);
-            if (!canonical.ok && canonical.error.code === "not_found") {
-              throw new DocumentCreationFault(
-                this.syncFault({
-                  code: "corrupt_state",
-                  documentId: document.id,
-                  message: `Document ${document.id} has stored text but no canonical state; it was left as it is for recovery`,
-                }),
-              );
-            }
-          }
-          await this.documentCreation.ensureDocument(document.id);
-        },
-        persistMembership: () => this.store.recordDocumentMembership(document.id),
-      });
-      return Ok(undefined);
-    } catch (error) {
-      if (error instanceof DocumentCreationFault) return Err(error.fault);
-      throw error;
-    }
-  }
-
-  /** Resolve a folder chain without creating; `MISSING` if any segment is absent. */
-  private async findFolderId(dir: string[]): Promise<string | null | typeof MISSING> {
-    let parentId: string | null = null;
-    for (const name of dir) {
-      const existing = await this.store.findFolder(parentId, name);
-      if (!existing) return MISSING;
-      parentId = existing.id;
-    }
-    return parentId;
-  }
-
-  /** Resolve a folder chain, creating missing segments. Always returns a folder id. */
-  private async ensureFolderId(dir: string[]): Promise<string | null> {
-    let parentId: string | null = null;
-    for (const name of dir) {
-      const existing = await this.store.findFolder(parentId, name);
-      parentId = existing ? existing.id : (await this.store.createFolder(parentId, name)).id;
-    }
-    return parentId;
+  private async findDocumentAt(
+    view: TreeView,
+    path: string,
+  ): Promise<Result<ContextDocument | null, AdapterFault>> {
+    const parsed = parseDocumentPath(path);
+    if (!parsed.ok || !parsed.value) return Ok(null);
+    const { dir, name, extension } = parsed.value;
+    const found = await this.store.resolveDocumentAt(
+      view,
+      joinPath(dir.join("/"), renderFilename(name, extension)),
+    );
+    if (found.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
+    return Ok(found.kind === "found" ? found.node : null);
   }
 
   async stat(path: string): Promise<Result<AdapterFileRef | null, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) return Ok(null);
-
-    const folderId = await this.findFolderId(dir);
-    if (folderId === MISSING) return Ok(null);
-
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return Err(parsed.error);
-    const { name, extension } = parsed.value;
-    const doc = await this.store.findDocument(folderId, name, extension);
-    if (!doc) return Ok(null);
-    if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
+    const parsed = parseDocumentPath(path);
+    if (!parsed.ok) return parsed;
+    const found = await this.findDocumentAt(await this.readTreeView(), path);
+    if (!found.ok) return found;
+    const doc = found.value;
+    if (!doc || !parsed.value) return Ok(null);
 
     const base = {
-      path: joinPath(dir.join("/"), renderFilename(doc.name, doc.extension)),
+      path: joinPath(parsed.value.dir.join("/"), renderFilename(doc.name, doc.extension)),
       documentId: doc.id,
       sizeBytes: doc.sizeBytes ?? undefined,
       updatedAt: doc.updatedAt,
@@ -447,18 +354,12 @@ export class ContextFS implements ContextSchemeAdapter {
   async read(
     path: string,
   ): Promise<Result<{ content: string; documentId?: string } | null, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) return Ok(null);
-
-    const folderId = await this.findFolderId(dir);
-    if (folderId === MISSING) return Ok(null);
-
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return Err(parsed.error);
-    const { name, extension } = parsed.value;
-    const doc = await this.store.findDocument(folderId, name, extension);
+    const parsed = parseDocumentPath(path);
+    if (!parsed.ok) return parsed;
+    const found = await this.findDocumentAt(await this.readTreeView(), path);
+    if (!found.ok) return found;
+    const doc = found.value;
     if (!doc) return Ok(null);
-    if (!(await this.isVisibleDocument(doc.id))) return Ok(null);
     if (doc.fileType !== null) {
       return {
         ok: false,
@@ -476,16 +377,21 @@ export class ContextFS implements ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
+    const refused = this.placement.refuse("take a whole-file write");
+    if (refused) return Err(refused);
     // An actor's overwrite keeps the refs of links it leaves in place; import and system writes bind fresh.
     const actor = options?.origin?.type === "agent" || options?.origin?.type === "human";
-    return this.boundWrites.command(
-      async () => {
-        const existing = await this.boundWrites.lookup(path);
-        if (!existing.ok) return existing;
-        return this.boundWrites.bind(path, existing.value, content, actor ? "current" : undefined);
-      },
-      (bound) => this.writeInTransaction(path, bound, options),
+    const existing = await this.boundWrites.lookup(path);
+    if (!existing.ok) return existing;
+    const bound = await this.boundWrites.bind(
+      path,
+      existing.value,
+      content,
+      actor ? "current" : undefined,
     );
+    if (!bound.ok) return bound;
+    if (!existing.value) return this.liveCreate.create(path, bound.value, options);
+    return this.commandExecutor.run(() => this.overwriteInTransaction(path, bound.value, options));
   }
 
   private holderUri(path: string): string {
@@ -497,43 +403,18 @@ export class ContextFS implements ContextSchemeAdapter {
     return canonicalContextUri(this.scheme, canonicalPath, this.holder.authority);
   }
 
-  private async writeInTransaction(
+  private async overwriteInTransaction(
     path: string,
     content: BoundWrite,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) {
-      return { ok: false, error: { code: "io_error", message: "Cannot write to source root" } };
-    }
-    const folderId = await this.ensureFolderId(dir);
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return Err(parsed.error);
-    const { name, extension, filetype } = parsed.value;
-    if (classifyFiletype(filetype).kind !== "tracked") return Err(binaryTrackedWriteFault(path));
-    const existing = await this.store.findDocument(folderId, name, extension);
-    if (existing && existing.fileType !== null) {
-      return Err(binaryTrackedWriteFault(path));
-    }
-    if (!this.boundWrites.boundFor(path, content, existing)) {
+    const found = await this.findDocumentAt(LIVE_TREE, path);
+    if (!found.ok) return found;
+    const existing = found.value;
+    if (existing && existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
+    if (!existing || !this.boundWrites.boundFor(path, content, existing)) {
       return Err({ code: "stale_target" });
     }
-    if (existing && !(await this.isVisibleDocument(existing.id))) {
-      const repaired = await this.repairTrackedDocument(existing);
-      if (!repaired.ok) return repaired;
-    }
-    if (!existing) {
-      const created = await this.createTrackedDocumentAtomically({
-        folderId,
-        name,
-        extension,
-        filetype: filetype,
-        content,
-        options,
-      });
-      return created.ok ? Ok({ documentId: created.value.document.id }) : created;
-    }
-
     const write = await writeCollabMarkdown({
       documentSync: this.documentSync,
       documentId: existing.id,
@@ -564,15 +445,15 @@ export class ContextFS implements ContextSchemeAdapter {
     markdown: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    const refused = this.placement.refuse("create a file with text");
+    if (refused) return Err(refused);
     let bound: BoundWrite | null = null;
     if (markdown.length > 0) {
       const binding = await this.boundWrites.bind(path, null, markdown);
       if (!binding.ok) return binding;
       bound = binding.value;
     }
-    return this.commandExecutor.run(() =>
-      this.createTrackedDocumentInTransaction(path, bound, options),
-    );
+    return this.liveCreate.create(path, bound, options);
   }
 
   async createBoundDocument(
@@ -580,52 +461,23 @@ export class ContextFS implements ContextSchemeAdapter {
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    const refused = this.placement.refuse("create a file with text");
+    if (refused) return Err(refused);
     if (bound && !this.boundWrites.boundFor(path, bound, null)) {
       return Err({ code: "io_error", message: `Content was bound for another document` });
     }
-    return this.commandExecutor.run(() =>
-      this.createTrackedDocumentInTransaction(path, bound, options),
-    );
+    return this.liveCreate.create(path, bound, options);
   }
 
-  private async createTrackedDocumentInTransaction(
-    path: string,
-    content: BoundWrite | null,
-    options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string }, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
-    const folderId = await this.ensureFolderId(dir);
-    const parsed = parseDocumentFilename(filename);
-    if (!parsed.ok) return Err(parsed.error);
-    const { name, extension, filetype } = parsed.value;
-    if (classifyFiletype(filetype).kind !== "tracked") return Err(binaryTrackedWriteFault(path));
-    const existing = await this.store.findDocument(folderId, name, extension);
-    if (existing) {
-      if (existing.fileType !== null) return Err(binaryTrackedWriteFault(path));
-      if (!(await this.isVisibleDocument(existing.id))) {
-        const repaired = await this.repairTrackedDocument(existing);
-        if (!repaired.ok) return repaired;
-      }
-      return Err({ code: "conflict", occupantKind: "file" });
-    }
-    const created = await this.createTrackedDocumentAtomically({
-      id: options?.documentId,
-      folderId,
-      name,
-      extension,
-      filetype,
-      content,
-      options,
-    });
-    return created.ok ? Ok({ documentId: created.value.document.id }) : created;
-  }
-
-  async locateDocument(documentId: string) {
+  async locateDocument(documentId: string, options?: { includeDeleted?: boolean }) {
     const sourceId = await this.store.existingContextSourceId();
     if (!sourceId) return Ok(null);
-    const located = await this.store.findDocumentById(documentId);
-    if (!located || located.contextSourceId !== sourceId || !located.active) return Ok(null);
+    const located = await this.store.findDocumentById(await this.readTreeView(), documentId);
+    if (!located && options?.includeDeleted) {
+      const last = await this.store.findDocumentLastLocation(documentId);
+      return last ? Ok({ documentId, path: last.path, name: last.name }) : Ok(null);
+    }
+    if (!located || located.contextSourceId !== sourceId) return Ok(null);
     return Ok({
       documentId: located.document.id,
       path: located.path,
@@ -635,191 +487,82 @@ export class ContextFS implements ContextSchemeAdapter {
 
   async createUntitledDocument(
     path: string,
-    options: ContextCreateUntitledDocumentOptions,
+    options: AdapterCreateUntitledOptions,
   ): Promise<
     Result<
-      { status: "created" | "already-exists"; documentId: string; path: string; name: string },
+      {
+        status: "created" | "already-exists" | "joined";
+        documentId: string;
+        path: string;
+        name: string;
+      },
       AdapterFault
     >
   > {
-    return this.commandExecutor.run(() => this.createUntitledDocumentInTransaction(path, options));
-  }
-
-  private async createUntitledDocumentInTransaction(
-    path: string,
-    options: ContextCreateUntitledDocumentOptions,
-  ): Promise<
-    Result<
-      { status: "created" | "already-exists"; documentId: string; path: string; name: string },
-      AdapterFault
-    >
-  > {
+    const refused = this.placement.refuse("create an untitled file");
+    if (refused) return Err(refused);
     if (!isUuid(options.documentId)) {
       return Err({ code: "invalid_operation", message: "documentId must be a UUID" });
     }
-
-    const sourceId = await this.store.contextSourceId();
-    const existing = await this.store.findDocumentById(options.documentId);
-    if (existing) {
-      if (existing.contextSourceId !== sourceId || !existing.active) {
-        return Err({
-          code: "conflict",
-        });
-      }
-      const repaired = await this.repairTrackedDocument(existing.document);
-      if (!repaired.ok) return repaired;
-      return Ok({
-        status: "already-exists",
-        documentId: existing.document.id,
-        path: existing.path,
-        name: renderFilename(existing.document.name, existing.document.extension),
-      });
+    const dir = path.split("/").filter(Boolean);
+    let leaf: { name: string; extension: string; filetype: Filetype } | null = null;
+    if (options.name !== undefined) {
+      const target = resolveCreateTarget(joinPath(path, options.name));
+      if (!target.ok) return target;
+      leaf = target.value;
     }
-
-    const folderSegments = path.split("/").filter(Boolean);
-    const folderId = await this.ensureFolderId(folderSegments);
-    let lastNumber = 0;
-    for (let attempt = 0; attempt < UNTITLED_ALLOCATION_ATTEMPTS; attempt += 1) {
-      const documents = await this.store.listDocuments(folderId);
-      const folders = await this.store.listFolders(folderId);
-      const occupied = [
-        ...documents.map((document) => renderFilename(document.name, document.extension)),
-        ...folders.map((folder) => folderDocumentName(folder.name)),
-      ];
-      const maxNumber = occupied.reduce((max, name) => {
-        const match = UNTITLED_NAME_PATTERN.exec(name);
-        if (!match) return max;
-        const suffix = Number(match[1]);
-        return Number.isSafeInteger(suffix) && suffix < Number.MAX_SAFE_INTEGER
-          ? Math.max(max, suffix)
-          : max;
-      }, lastNumber);
-      lastNumber = maxNumber + 1;
-      const name = `Untitled ${lastNumber}`;
-      const created = await this.createTrackedDocumentAtomically({
-        id: options.documentId,
-        folderId,
-        name,
-        extension: "",
-        filetype: "markdown",
-        content: null,
-        provisionalName: true,
-        options: { origin: options.origin },
-      });
-      if (created.ok) {
-        const document = created.value.document;
-        return Ok({
-          status: "created",
-          documentId: document.id,
-          path: joinPath(path, renderFilename(document.name, document.extension)),
-          name: renderFilename(document.name, document.extension),
-        });
-      } else if (created.error.code !== "conflict") return created;
-
-      const collision = await this.store.findDocumentById(options.documentId);
-      if (!collision) continue;
-      if (collision.contextSourceId !== sourceId || !collision.active) {
-        return Err({
-          code: "conflict",
-        });
-      }
-      const repaired = await this.repairTrackedDocument(collision.document);
-      if (!repaired.ok) return repaired;
-      return Ok({
-        status: "already-exists",
-        documentId: collision.document.id,
-        path: collision.path,
-        name: renderFilename(collision.document.name, collision.document.extension),
-      });
-    }
-    return Err({ code: "conflict" });
-  }
-
-  async ensureTrackedDocument(
-    path: string,
-    options?: ContextEnsureTrackedOptions,
-  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
-    return this.commandExecutor.run(() => this.ensureTrackedDocumentInTransaction(path, options));
-  }
-
-  private async ensureTrackedDocumentInTransaction(
-    path: string,
-    options?: ContextEnsureTrackedOptions,
-  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) {
-      return { ok: false, error: { code: "io_error", message: "Cannot create source root" } };
-    }
-    const parsed = options?.parsedFilename
-      ? Ok(options.parsedFilename)
-      : parseDocumentFilename(filename, { sourceExtension: options?.sourceExtension });
-    if (!parsed.ok) return Err(parsed.error);
-    const { name, extension, filetype } = parsed.value;
-    if (classifyFiletype(filetype).kind !== "tracked") return Err(binaryTrackedWriteFault(path));
-    const folderId = await this.ensureFolderId(dir);
-    const existing = await this.store.findDocument(folderId, name, extension);
-    if (existing && existing.fileType !== null) {
-      return Err(binaryTrackedWriteFault(path));
-    }
-    if (existing) {
-      if (!(await this.isVisibleDocument(existing.id))) {
-        const repaired = await this.repairTrackedDocument(existing);
-        if (!repaired.ok) return repaired;
-      } else {
-        await this.documentSync.ensureDocument(existing.id);
-      }
-      return Ok({ documentId: existing.id, created: false });
-    }
-
-    const created = await this.createTrackedDocumentAtomically({
-      folderId,
-      name,
-      extension,
-      filetype,
-      content: null,
-      options,
+    const created = await this.liveCreate.createOptimistic({
+      dir,
+      leaf,
+      documentId: options.documentId as DocumentId,
+      ...(options.expectFolderId ? { expectFolderId: options.expectFolderId } : {}),
+      options: { origin: options.origin },
     });
-    return created.ok ? Ok({ documentId: created.value.document.id, created: true }) : created;
+    if (!created.ok) return created;
+    const { status, documentId, name } = created.value;
+    // A replayed join knows only its target: the router reads that document's address.
+    return Ok({
+      status,
+      documentId,
+      path: created.value.path ?? (name ? joinPath(path, name) : ""),
+      name: name ?? (created.value.path ?? "").split("/").at(-1) ?? "",
+    });
   }
 
-  async writeBinary(
+  ensureTrackedDocument(
+    path: string,
+    options?: ContextEnsureTrackedOptions,
+  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
+    return this.placement.ensureTracked(path, options);
+  }
+
+  /**
+   * Reverse this adapter's create of `documentId` for a rolled-back reply or a failed
+   * create write (§12.5): a live create is deleted by the router; a draft's create ends
+   * the draft's use unless another contribution makes it stand.
+   */
+  retractCreate(
+    _path: string,
+    documentId: string,
+  ): Promise<Result<{ placement: "live" | "draft" }, AdapterFault>> {
+    return this.placement.retract(documentId);
+  }
+
+  writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<{ documentId?: string }, AdapterFault>> {
-    const { dir, filename } = splitPath(path);
-    if (!filename) {
-      return { ok: false, error: { code: "io_error", message: "Cannot write to source root" } };
-    }
-    return this.commandExecutor.run(async () => {
-      const folderId = await this.ensureFolderId(dir);
-      const parsed = parseDocumentFilename(filename);
-      if (!parsed.ok) return Err(parsed.error);
-      const { name, extension } = filenameForBinary(
-        parsed.value,
-        options.fileType,
-        options.mimeType,
-      );
-      const doc = await this.store.createBinaryDocument({
-        id: options.documentId,
-        folderId,
-        name,
-        extension,
-        fileType: options.fileType,
-        storageUrl: options.storageUrl,
-        mimeType: options.mimeType,
-        sizeBytes: options.sizeBytes,
-        ...(options.metadata ? { metadata: options.metadata } : {}),
-      });
-      return Ok({ documentId: doc.id });
-    });
+  ): Promise<Result<{ documentId: string; placement: "live" | "draft" }, AdapterFault>> {
+    return this.placement.writeBinary(path, options);
   }
 
   async mkdir(path: string, _options?: ContextWriteOptions): Promise<Result<void, AdapterFault>> {
     const segments = path.split("/").filter(Boolean);
     // The source root always exists — empty `mkdir` is a no-op.
     if (segments.length === 0) return Ok(undefined);
+    const refused = this.placement.refuse("make an empty folder");
+    if (refused) return Err(refused);
     return this.commandExecutor.run(async () => {
-      await this.ensureFolderId(segments);
+      await this.store.ensureFolderPath(segments);
       return Ok(undefined);
     });
   }
@@ -828,16 +571,23 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
     options?: ContextListOptions,
   ): Promise<Result<AdapterFileEntry[], AdapterFault>> {
+    const view = await this.readTreeView();
     // Every segment of `path` is a folder name (no trailing filename to split).
-    const folderId = await this.findFolderId(path.split("/").filter(Boolean));
-    if (folderId === MISSING) return Ok([]);
-    const membership = await this.resolveVisibleMembership();
+    const folder = await this.store.resolveFolderAt(view, path);
+    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
+    if (folder.kind === "not_found") return Err({ code: "not_found" });
+    const folderId = folder.node?.id ?? null;
 
     const [folders, documents] = await Promise.all([
-      this.store.listFolders(folderId),
-      this.listVisibleDocuments(folderId, membership),
+      this.store.listFolders(view, folderId),
+      this.store.listDocuments(view, folderId),
     ]);
 
+    const projections = options?.wordCounts
+      ? await this.store.readProjections(
+          documents.filter((doc) => doc.fileType === null).map((doc) => doc.id),
+        )
+      : new Map<string, string>();
     const entries: AdapterFileEntry[] = folders.map((folder) => ({
       path: joinPath(path, folder.name),
       kind: "directory" as const,
@@ -860,8 +610,9 @@ export class ContextFS implements ContextSchemeAdapter {
               editable: true as const,
               filetype: doc.filetype ?? DEFAULT_EDITABLE_FILETYPE,
               schemaType: trackedSchema?.value ?? "document",
-              // The listing query already loaded the projection, so a count costs no query.
-              ...(options?.wordCounts ? { wordCount: countWords(doc.markdown) } : {}),
+              ...(options?.wordCounts
+                ? { wordCount: countWords(projections.get(doc.id) ?? "") }
+                : {}),
             }
           : {
               editable: false as const,
@@ -878,8 +629,7 @@ export class ContextFS implements ContextSchemeAdapter {
     pathPrefix?: string,
   ): Promise<Result<AdapterSearchHit[], AdapterFault>> {
     const prefix = pathPrefix?.replace(/\/+$/, "") ?? "";
-    const membership = await this.resolveVisibleMembership();
-    const documents = await this.collectDocuments("", null, membership);
+    const documents = await this.collectDocuments(await this.readTreeView(), "", null);
     const searchable = documents.filter(
       ({ path, document }) =>
         document.fileType === null && (!prefix || path === prefix || path.startsWith(`${prefix}/`)),
@@ -924,18 +674,16 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   private async collectDocuments(
+    view: TreeView,
     path: string,
     folderId: string | null,
-    membership: Set<string> | null,
   ): Promise<Array<{ path: string; document: ContextDocument }>> {
     const out: Array<{ path: string; document: ContextDocument }> = [];
-    for (const doc of await this.listVisibleDocuments(folderId, membership)) {
+    for (const doc of await this.store.listDocuments(view, folderId)) {
       out.push({ path: joinPath(path, renderFilename(doc.name, doc.extension)), document: doc });
     }
-    for (const folder of await this.store.listFolders(folderId)) {
-      out.push(
-        ...(await this.collectDocuments(joinPath(path, folder.name), folder.id, membership)),
-      );
+    for (const folder of await this.store.listFolders(view, folderId)) {
+      out.push(...(await this.collectDocuments(view, joinPath(path, folder.name), folder.id)));
     }
     return out;
   }
@@ -1013,31 +761,6 @@ export class ContextFS implements ContextSchemeAdapter {
       : read;
   }
 
-  private async isVisibleDocument(documentId: string): Promise<boolean> {
-    const membership = await this.resolveVisibleMembership();
-    return !membership || membership.has(documentId);
-  }
-
-  private async resolveVisibleMembership(): Promise<Set<string> | null> {
-    const view = this.manifestView;
-    if (!view) return null;
-    // A live view lists the live manifest and never touches a draft.
-    const live = this.readView?.version === "live" && this.readView.draftWork !== null;
-    return resolveVisibleDocumentMembership({
-      view: live ? { projectId: view.projectId } : view,
-      resolver: this.documentSync,
-    });
-  }
-
-  private async listVisibleDocuments(
-    folderId: string | null,
-    membership: Set<string> | null,
-  ): Promise<ContextDocument[]> {
-    const rows = await this.store.listDocuments(folderId);
-    if (!membership) return rows;
-    return rows.filter((row) => membership.has(row.id));
-  }
-
   private mutationFault(error: ContextTreeMutationError): AdapterFault {
     switch (error.code) {
       case "destination_missing":
@@ -1061,9 +784,8 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
   ): Promise<Result<ContextLocationToken | null, AdapterFault>> {
     const sourceId = await this.store.contextSourceId();
-    const token = await this.mutationStore.inspect(sourceId, path);
-    if (token?.kind === "file" && !(await this.isVisibleDocument(token.nodeId))) return Ok(null);
-    return Ok(token);
+    // The mover inspects the live tree: a hidden node is never moved or deleted live.
+    return Ok(await this.mutationStore.inspect(sourceId, path));
   }
 
   private async commitPreparedMove(
@@ -1121,9 +843,6 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitProvisionalGraduation(
     source: Extract<ContextLocationToken, { kind: "file" }>,
   ): Promise<Result<void, AdapterFault>> {
-    if (!(await this.isVisibleDocument(source.nodeId))) {
-      return Err({ code: "invalid_operation" });
-    }
     const committed = await this.mutationStore.commitProvisionalGraduation(source);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok(undefined);
@@ -1132,8 +851,6 @@ export class ContextFS implements ContextSchemeAdapter {
   private async commitRecursiveDelete(
     command: ContextTreeDeleteCommand,
   ): Promise<Result<AdapterDeleteResult, AdapterFault>> {
-    if (command.root.kind === "file" && !(await this.isVisibleDocument(command.root.nodeId)))
-      return Err({ code: "invalid_operation" });
     const committed = await this.mutationStore.commitRecursiveDelete(command);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({

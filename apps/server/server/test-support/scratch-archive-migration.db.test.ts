@@ -65,6 +65,9 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       };
       const before =
         await target`SELECT id, markdown_projection, metadata, deleted_at FROM documents ORDER BY id`;
+      const retiredManifestRows =
+        await target`SELECT id FROM documents WHERE kind = 'manifest' ORDER BY id`;
+      const retiredManifestIds = new Set(retiredManifestRows.map((row) => row.id));
       const yjs = await target`SELECT * FROM document_yjs_heads`;
       expect(yjs.every((head) => head.schema_version === 1_000_000)).toBe(true);
       const checkpoints = await target`SELECT * FROM document_yjs_checkpoints ORDER BY id`;
@@ -139,71 +142,6 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         { ahead_id: id(34), settled_document_id: null },
         { ahead_id: id(35), settled_document_id: id(18) },
       ]);
-      const chapter = await readChapter();
-      expect(chapter).toMatchObject({ ok: true });
-      if (!chapter.ok)
-        throw new Error("Could not render the migrated chapter", { cause: chapter.error });
-      expect(chapter.value).toContain(
-        "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
-      );
-      expect(chapter.value).toContain(
-        "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map.md>)",
-      );
-      // Exercise the actual lifecycle reader, not just the migrated row shape.
-      const intakeRepository = createDrizzleUploadIntakeRepository(db);
-      const reservation = await intakeRepository.transaction(() =>
-        intakeRepository.lockForFinalize(id(2), "reserved-intake"),
-      );
-      expect(reservation).toMatchObject({
-        state: "reserved",
-        owner: { kind: "work", workId: id(4), workSlug: null },
-        canonicalUri: "unfiled://Scratch (2)/map.png",
-        finalPath: "Scratch (2)/map.png",
-        objectKey: `uploads/${id(2)}/${id(21)}`,
-      });
-      expect(
-        await intakeRepository.transaction(() =>
-          intakeRepository.finalize(id(2), "reserved-intake"),
-        ),
-      ).toEqual({ ...reservation, state: "finalized" });
-      expect(
-        await target`SELECT context_source_id, work_id, final_path, canonical_uri, object_key, fingerprint FROM upload_intakes`,
-      ).toEqual([
-        {
-          context_source_id: id(8),
-          work_id: id(4),
-          final_path: "Scratch (2)/map.png",
-          canonical_uri: "unfiled://Scratch (2)/map.png",
-          object_key: `uploads/${id(2)}/${id(21)}`,
-          fingerprint: "retained-fingerprint",
-        },
-      ]);
-      // This fixture freezes the archival migration chain. Supply the additive
-      // prerequisite of today's snapshot reader without changing that history.
-      await target.unsafe(
-        await readFile(path.join(migrations, "0038_namespace_observation_schema.sql"), "utf8"),
-      );
-      const catalog = createDrizzleContextCatalog(db);
-      const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });
-      expect(snapshot.entries).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            entryId: id(14),
-            uri: "unfiled://Scratch (2)/nested/deep/jade-map.md",
-          }),
-          expect.objectContaining({ entryId: id(15), uri: "unfiled://Scratch (2)/root-note.md" }),
-        ]),
-      );
-      expect(snapshot.entries.some((entry) => entry.entryId === id(16))).toBe(false);
-      expect(
-        (
-          await catalog.snapshot({
-            kind: "work",
-            projectId: id(2) as never,
-            workId: id(4) as never,
-          })
-        ).entries,
-      ).toEqual([]);
       const online = (
         await readFile(path.join(migrations, "0035_context_source_online_indexes.sql"), "utf8")
       ).split("--> statement-breakpoint");
@@ -211,12 +149,9 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
         path.join(migrations, "0035_context_source_online_indexes.sql"),
         path.join(directory, "0035_context_source_online_indexes.sql"),
       );
-      // This historical upgrade stops at its online-index migration. Later
-      // schema migrations are intentionally absent from this fixture directory.
-      await writeFile(
-        path.join(directory, "meta/_journal.json"),
-        JSON.stringify({ ...journal, entries: journal.entries.slice(0, 36) }),
-      );
+      // The retry cuts replay 0035 as the newest applied migration; later ones apply after.
+      const throughOnline = { ...journal, entries: journal.entries.slice(0, 36) };
+      await writeFile(path.join(directory, "meta/_journal.json"), JSON.stringify(throughOnline));
       // A failed concurrent build leaves an invalid remnant. The real runner
       // removes that remnant without touching the still-valid old guard.
       await expect(
@@ -259,6 +194,85 @@ describe.skipIf(!enabled)("Scratch archival migration (postgres)", () => {
       ).toEqual([{ count: 2 }]);
       expect(
         await target`SELECT conname FROM pg_constraint WHERE conrelid = 'context_sources'::regclass AND NOT convalidated`,
+      ).toEqual([]);
+      // The current app reads the migrated rows at the current schema.
+      await cp(migrations, directory, { recursive: true });
+      await runMigrations({ databaseUrl: databaseUrl ?? "", migrationsDirectory: directory });
+      expect(
+        await target`SELECT document_id AS id, markdown FROM document_markdown_projections ORDER BY document_id`,
+      ).toEqual(
+        before
+          .filter((row) => !retiredManifestIds.has(row.id))
+          .map((row) => ({ id: row.id, markdown: row.markdown_projection })),
+      );
+      // Scratch archival preserves content; the later retirement removes only manifest storage.
+      expect(retiredManifestIds.size).toBe(2);
+      expect(
+        (await target`SELECT id FROM documents`).filter((row) => retiredManifestIds.has(row.id)),
+      ).toEqual([]);
+      expect(
+        await target`SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'documents' AND column_name = 'kind'`,
+      ).toEqual([]);
+      const chapter = await readChapter();
+      expect(chapter).toMatchObject({ ok: true });
+      if (!chapter.ok)
+        throw new Error("Could not render the migrated chapter", { cause: chapter.error });
+      expect(chapter.value).toContain(
+        "[Old Scratch](<unfiled://Scratch (2)/nested/deep/jade-map>)",
+      );
+      expect(chapter.value).toContain(
+        "[Unfiled note](<unfiled://Scratch (2)/nested/deep/jade-map>)",
+      );
+      // Exercise the actual lifecycle reader, not just the migrated row shape.
+      const intakeRepository = createDrizzleUploadIntakeRepository(db);
+      const reservation = await intakeRepository.transaction(() =>
+        intakeRepository.lockForFinalize(id(2), "reserved-intake"),
+      );
+      expect(reservation).toMatchObject({
+        state: "reserved",
+        owner: { kind: "work", workId: id(4), workSlug: null },
+        canonicalUri: "unfiled://Scratch (2)/map.png",
+        finalPath: "Scratch (2)/map.png",
+        objectKey: `uploads/${id(2)}/${id(21)}`,
+      });
+      expect(
+        await intakeRepository.transaction(() =>
+          intakeRepository.finalize(id(2), "reserved-intake"),
+        ),
+      ).toEqual({ ...reservation, state: "finalized" });
+      expect(
+        await target`SELECT context_source_id, work_id, final_path, canonical_uri, object_key, fingerprint FROM upload_intakes`,
+      ).toEqual([
+        {
+          context_source_id: id(8),
+          work_id: id(4),
+          final_path: "Scratch (2)/map.png",
+          canonical_uri: "unfiled://Scratch (2)/map.png",
+          object_key: `uploads/${id(2)}/${id(21)}`,
+          fingerprint: "retained-fingerprint",
+        },
+      ]);
+      const catalog = createDrizzleContextCatalog(db);
+      const snapshot = await catalog.snapshot({ kind: "project", projectId: id(2) as never });
+      expect(snapshot.entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            entryId: id(14),
+            uri: "unfiled://Scratch (2)/nested/deep/jade-map",
+          }),
+          expect.objectContaining({ entryId: id(15), uri: "unfiled://Scratch (2)/root-note" }),
+        ]),
+      );
+      expect(snapshot.entries.some((entry) => entry.entryId === id(16))).toBe(false);
+      expect(
+        (
+          await catalog.snapshot({
+            kind: "work",
+            projectId: id(2) as never,
+            workId: id(4) as never,
+          })
+        ).entries,
       ).toEqual([]);
     } finally {
       await db.close();

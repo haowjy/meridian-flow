@@ -13,10 +13,10 @@ waited for a second connection) is fixed by snapshotting first. These paths
 still hold one connection while acquiring another, on purpose for lock
 order, so enough concurrent callers can exhaust the pool the same way:
 
-- `pullThreadPeer` in `domain/branch-pulls.ts`, called inside a caller's
-  transaction: its live snapshots and its `run(...)` each need a connection.
-- `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: locks the
-  thread in one transaction, then opens a separate root transaction.
+- `ensureThreadPeerBranch` in `adapters/drizzle-branches.ts`: with no ambient
+  transaction it takes the thread lock and writes in one root transaction.
+  Called inside an ambient transaction, it holds that connection for the
+  thread lock and opens a separate root transaction for the writes.
 - `createDeferredLiveProjectionCoordinator.withDocument` in
   `adapters/hocuspocus-coordinator.ts`: inside a response transaction, reads
   committed state on a second connection.
@@ -94,8 +94,3 @@ Thread-peer branches and Work-draft branches have independent generation
 counters. A reset bumps the Work-draft generation; thread peers must be
 individually evicted. Missing one invalidation path reintroduces stale state.
 A unified generation scheme or tiered invalidation API is the long-term shape.
-
-## N+1 manifest resolution
-
-Tree-level membership operations (recursive `ls`, `grep`) perform N+1 manifest
-resolution lookups. Memoized per walk; the cursor-based root cause is unfixed.

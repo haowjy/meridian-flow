@@ -1,13 +1,29 @@
 import type * as Y from "yjs";
 import type { ConcurrentUpdate } from "../apply/types.js";
 
+export const hostSaveLeaseBrand: unique symbol = Symbol("HostSaveLease");
+export interface HostSaveLease {
+  readonly [hostSaveLeaseBrand]: true;
+}
+export type DiscardedWriteReason = Extract<StagedWriteRejectionReason, `discarded_${string}`>;
+
 /** The helper's authority base, independent of the generations its staged writes name. */
 export interface StagedHelperCut {
   generation: number;
   state: Uint8Array;
 }
 
-export type StagedWriteRejectionReason = "discard" | "inverse" | "integration";
+/**
+ * Why a staged write did not land. `discarded_*` come from a Discard that retired the thread's peer:
+ * the whole draft, this created document, or this edited document's text.
+ */
+export type StagedWriteRejectionReason =
+  | "discard"
+  | "inverse"
+  | "integration"
+  | "discarded_draft"
+  | "discarded_document"
+  | "discarded_edit";
 
 export interface StagedWriteReplayResult {
   rejectedWrites?: readonly { writeId: string; reason: StagedWriteRejectionReason }[];
@@ -46,6 +62,7 @@ export interface DocumentCoordinator {
     helperCut: StagedHelperCut;
     entries: readonly import("./update-journal.js").JournalBatchAppendEntry[];
     commit: boolean;
+    access?: DocumentLockOptions;
   }): Promise<StagedWriteReplayResult>;
 
   /** Immutable host generation bound to this canonical document, when supported. */
@@ -76,6 +93,7 @@ export interface DocumentCoordinator {
     liveJournalSeq?: number;
     attemptId?: string;
     reportingCut?: Uint8Array;
+    access?: DocumentLockOptions;
   }): Promise<ConcurrentUpdate[]>;
 
   /**
@@ -89,4 +107,15 @@ export interface DocumentLockOptions {
   /** Maximum wait to acquire the lock. Callback duration is not timed. */
   timeoutMs?: number;
   signal?: AbortSignal;
+  /**
+   * The host branch a staged thread-peer write was pinned to (`InteractionContext.branchId`):
+   * the coordinator resolves exactly this one and never provisions another.
+   */
+  pinnedBranchId?: string;
+  /**
+   * A host lock the caller already holds over this document (a reply's save takes its
+   * branches' locks before its transaction); the coordinator runs under it instead of
+   * acquiring its own. Opaque to this package.
+   */
+  lease?: HostSaveLease;
 }

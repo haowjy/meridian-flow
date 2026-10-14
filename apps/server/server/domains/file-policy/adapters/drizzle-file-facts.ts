@@ -1,8 +1,8 @@
 /**
  * Postgres file facts (file-access §2, §5): follows
  * `documents → folders → context_sources → (project | work → project)` with
- * every lifecycle on the way. Ancestors come from walking `folders.parent_id`
- * (D56); a list query over a folder's subtree recurses the same way.
+ * every lifecycle on the way. The tree view supplies draft locations and
+ * lineage (D56); hidden identities outside the caller's draft have no facts.
  */
 import { type ContextUriScheme, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type {
@@ -14,18 +14,22 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contentDocumentPredicate,
-  contextSources,
-  documents,
-  projects,
-  threads,
-  works,
-} from "@meridian/database/schema";
+import { contextSources, projects, threads, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "../../collab/adapters/drizzle-drafts.js";
+import { createDrafts } from "../../collab/domain/drafts.js";
 import { lineageHasLiveMember } from "../../context/index.js";
+import { draftMayHold, type SourceOwner } from "../../context/tree/draft-ownership.js";
+import {
+  createTreeReader,
+  identityDocuments,
+  type TreeView,
+} from "../../context/tree/tree-view.js";
 import type { FileFacts, FileNode, FileOwnerRef, FileWorkFacts } from "../domain/types.js";
 import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
 
@@ -34,6 +38,8 @@ const effectiveProjectId = sql<ProjectId>`coalesce(${contextSources.projectId}, 
 type WorkRow = {
   id: WorkId;
   projectId: ProjectId;
+  /** The account that owns the Work's project: its draft's holder (`draftMayHold`). */
+  accountId: UserId;
   slug: string | null;
   isNoWork: boolean;
   archivedAt: Date | null;
@@ -43,50 +49,74 @@ type WorkRow = {
 type FolderRow = { id: FolderId; deleted: boolean };
 
 export function createDrizzleFileFacts(db: Database): FileFactsPort {
+  const drafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db),
+  });
+  const viewForWork = (workId?: WorkId): Promise<TreeView> =>
+    drafts.viewForWork(workId && isUuid(workId) ? workId : null);
   async function load(request: FileFactsRequest): Promise<FileFacts | null> {
     const target = request.target;
+    const draftWorkId = target.kind === "draft" ? target.workId : request.draftWorkId;
+    const view = await viewForWork(draftWorkId);
     const base =
       target.kind === "container"
         ? await loadContainer(db, target.scheme, target.owner)
-        : await loadDocument(db, target.documentId);
+        : await loadDocument(db, target.documentId, view);
     if (!base) return null;
     const facts: FileFacts = { ...base, target };
-    const draftWorkId = target.kind === "draft" ? target.workId : request.draftWorkId;
     if (draftWorkId === undefined) return facts;
     const draftWork = await readWork(db, draftWorkId);
-    // A Work's draft of another project's document doesn't exist.
-    if (draftWork && draftWork.projectId !== facts.projectId) return null;
+    // A Work's draft of a document it may not hold doesn't exist.
+    if (draftWork && !draftMayHold(draftWork, ownerOf(facts))) return null;
     return { ...facts, draftWork: draftWork ? workFacts(draftWork) : missingWork(draftWorkId) };
   }
 
   return {
     load,
-    async loadList(documentIds, draftWorkId) {
+    async loadList(documentIds, draftWorkId, draftViews) {
       const ids = [...new Set(documentIds)].filter(isUuid);
       const out = new Map<DocumentId, FileFacts>();
       if (ids.length === 0) return out;
-      const rows = await documentRows(db).where(
-        and(inArray(documents.id, ids), contentDocumentPredicate()),
-      );
+      const defaultView = await viewForWork(draftWorkId);
+      const groups = new Map<string, { view: TreeView; ids: DocumentId[] }>();
+      for (const id of ids) {
+        const view = draftViews?.get(id) ?? defaultView;
+        const key = view.kind === "live" ? "live" : view.draftId;
+        const group = groups.get(key);
+        if (group) group.ids.push(id);
+        else groups.set(key, { view, ids: [id] });
+      }
       const draftRow = draftWorkId === undefined ? undefined : await readWork(db, draftWorkId);
-      for (const row of rows) {
-        if (!isContextUriScheme(row.scheme)) continue;
-        const documentId = row.documentId as DocumentId;
-        const target = { kind: "document", documentId } as const;
-        const base: FileFacts = {
-          ...documentBase(row, documentId, []),
-          scheme: row.scheme,
-          target,
-        };
-        if (draftWorkId === undefined) {
-          out.set(documentId, base);
-          continue;
+      const tree = createTreeReader(db);
+      for (const { view, ids } of groups.values()) {
+        const documents = identityDocuments(view);
+        const rows = await documentRows(db, view).where(inArray(documents.id, ids));
+        const lineages = await tree.lineages(
+          view,
+          rows.map((row) => row.documentId as DocumentId),
+        );
+        for (const row of rows) {
+          if (!isContextUriScheme(row.scheme)) continue;
+          const documentId = row.documentId as DocumentId;
+          const lineage = lineages.get(documentId);
+          if (!lineage) continue;
+          const target = { kind: "document", documentId } as const;
+          const base: FileFacts = {
+            ...documentBase(row, documentId, lineage.folders),
+            scheme: row.scheme,
+            target,
+          };
+          if (draftWorkId === undefined) {
+            out.set(documentId, base);
+            continue;
+          }
+          if (draftRow && !draftMayHold(draftRow, ownerOf(base))) continue;
+          out.set(documentId, {
+            ...base,
+            draftWork: draftRow ? workFacts(draftRow) : missingWork(draftWorkId),
+          });
         }
-        if (draftRow && draftRow.projectId !== base.projectId) continue;
-        out.set(documentId, {
-          ...base,
-          draftWork: draftRow ? workFacts(draftRow) : missingWork(draftWorkId),
-        });
       }
       return out;
     },
@@ -95,7 +125,12 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
 
 type BaseFacts = Omit<FileFacts, "target" | "draftWork">;
 
-function documentRows(db: Database) {
+function ownerOf(facts: BaseFacts): SourceOwner {
+  return { projectId: facts.projectId, accountId: facts.ownerAccountId, scheme: facts.scheme };
+}
+
+function documentRows(db: Database, view: TreeView) {
+  const documents = identityDocuments(view);
   return currentDrizzleDb(db)
     .select({
       documentId: documents.id,
@@ -148,13 +183,18 @@ function documentBase(
   };
 }
 
-async function loadDocument(db: Database, documentId: DocumentId): Promise<BaseFacts | null> {
+async function loadDocument(
+  db: Database,
+  documentId: DocumentId,
+  view: TreeView,
+): Promise<BaseFacts | null> {
+  const documents = identityDocuments(view);
   if (!isUuid(documentId)) return null;
-  const [row] = await documentRows(db)
-    .where(and(eq(documents.id, documentId), contentDocumentPredicate()))
-    .limit(1);
+  const [row] = await documentRows(db, view).where(eq(documents.id, documentId)).limit(1);
   if (!row || !isContextUriScheme(row.scheme)) return null;
-  const folders = row.folderId ? await readFolderChain(db, row.folderId) : [];
+  const lineage = await createTreeReader(db).lineage(view, documentId);
+  if (!lineage) return null;
+  const folders = lineage.folders;
   return { ...documentBase(row, documentId, folders), scheme: row.scheme };
 }
 
@@ -232,43 +272,28 @@ function sourceAncestors(
   ];
 }
 
-/** The folder and its parents, nearest first. */
-async function readFolderChain(db: Database, folderId: FolderId): Promise<FolderRow[]> {
-  const rows = await currentDrizzleDb(db).execute<{
-    id: string;
-    deleted: boolean;
-    depth: number;
-  }>(sql`
-    WITH RECURSIVE chain AS (
-      SELECT id, parent_id, deleted_at IS NOT NULL AS deleted, 0 AS depth
-      FROM folders WHERE id = ${folderId}::uuid
-      UNION ALL
-      SELECT f.id, f.parent_id, f.deleted_at IS NOT NULL, c.depth + 1
-      FROM folders f JOIN chain c ON f.id = c.parent_id
-    )
-    SELECT id::text, deleted, depth FROM chain ORDER BY depth
-  `);
-  return rows.map((row) => ({ id: row.id as FolderId, deleted: row.deleted }));
-}
-
 async function readWork(db: Database, workId: WorkId): Promise<WorkRow | null> {
   if (!isUuid(workId)) return null;
   const [row] = await currentDrizzleDb(db)
     .select({
       id: works.id,
       projectId: works.projectId,
+      accountId: projects.userId,
       slug: works.slug,
       isNoWork: works.isNoWork,
       archivedAt: works.archivedAt,
       deletedAt: works.deletedAt,
     })
     .from(works)
+    .innerJoin(projects, eq(projects.id, works.projectId))
     .where(eq(works.id, workId))
     .limit(1);
   return row ?? null;
 }
 
-function workFacts(row: WorkRow): FileWorkFacts {
+function workFacts(
+  row: Pick<WorkRow, "id" | "slug" | "isNoWork" | "archivedAt" | "deletedAt">,
+): FileWorkFacts {
   return {
     id: row.id,
     slug: row.slug,

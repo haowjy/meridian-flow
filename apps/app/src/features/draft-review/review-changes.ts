@@ -16,11 +16,14 @@ import {
   operationKey,
   type ReviewHunk,
   type ReviewOperation,
+  type ThreadDraftListItem,
 } from "@meridian/contracts/drafts";
 import type { ChangeSelection } from "@/client/query/draft-command-record";
+import { wholeItemHidden } from "@/client/query/draft-projection";
 import {
   attributionThreadIds,
   type ChangeAttribution,
+  type ChangeChat,
   changeAttribution,
 } from "./change-attribution";
 import {
@@ -148,35 +151,58 @@ type ActivePreview = Extract<DraftPreviewResponse, { status: "active" }>;
 
 /**
  * `reviewChanges` of a preview, derived once per preview object: the header,
- * the manuscript, the bar and the dock all read the same list, and the preview
+ * the manuscript, the bar and the dock all read this one list, and the preview
  * (immutable, shared by the query cache) is its identity.
  */
 function changesOf(preview: ActivePreview): readonly ReviewChange[] {
-  let changes = reviewChanges(preview.operations, preview.hunks);
-  // A draft-only document has no live target for selective commands.
-  if (changes.length > 0 && preview.isNewDocument) {
-    const first = changes[0];
-    const attribution = preview.operations.length
-      ? changeAttribution(preview.operations)
-      : first.attribution;
-    changes = [
-      {
-        ...first,
-        classId: `draft:${preview.draftId}`,
-        operations: [...preview.operations],
-        operationIds: preview.operations.map((op) => op.operationId),
-        keys: preview.operations.map(operationKey),
-        markKeys: changes.flatMap((change) => change.markKeys),
-        change: changeTextForHunks(preview.hunks, preview.operations),
-        attribution,
-        threadIds: attributionThreadIds(attribution),
-        includesWriterEdits: changes.some((change) => change.includesWriterEdits),
-        merged: changes.some((change) => change.merged),
-        target: { kind: "draft" },
-      },
-    ];
-  }
-  return changes;
+  if (wholeItemHidden(preview)) return [];
+  const changes = reviewChanges(preview.operations, preview.hunks);
+  return preview.item.wholeItem ? [wholeItemChange(preview.item, changes, preview)] : changes;
+}
+
+/**
+ * The one change of a whole-item item (created, binary or deleted live), whatever
+ * its operation count: it has no live target for selective commands, so item
+ * Apply and Discard settle it. A branchless item (an image, an empty create)
+ * has no preview and passes none; it still shows one change, by its file name.
+ */
+export function wholeItemChange(
+  item: ThreadDraftListItem,
+  changes: readonly ReviewChange[] = [],
+  preview?: Pick<ActivePreview, "operations" | "hunks">,
+): ReviewChange {
+  const classId = `draft:${item.itemKey}`;
+  const operations = preview?.operations ?? [];
+  const attribution: ChangeAttribution = operations.length
+    ? changeAttribution(operations)
+    : item.actorThreads.length
+      ? {
+          kind: "chats",
+          chats: item.actorThreads.map(({ threadId, title }) => ({
+            threadId,
+            title: title?.trim() || null,
+            turnId: null,
+            toolCallId: null,
+          })) as [ChangeChat, ...ChangeChat[]],
+        }
+      : { kind: "you" };
+  return {
+    classId,
+    operations: [...operations],
+    operationIds: operations.map((op) => op.operationId),
+    keys: operations.map(operationKey),
+    anchorOperationId: changes[0]?.anchorOperationId ?? classId,
+    markKeys: changes.length ? changes.flatMap((change) => change.markKeys) : [classId],
+    tone: changes[0]?.tone ?? "ai",
+    includesWriterEdits: changes.some((change) => change.includesWriterEdits),
+    merged: changes.some((change) => change.merged),
+    change: preview
+      ? changeTextForHunks(preview.hunks, operations)
+      : { runs: item.documentName ? [{ kind: "added", text: item.documentName }] : [] },
+    attribution,
+    threadIds: attributionThreadIds(attribution),
+    target: { kind: "draft" },
+  };
 }
 
 /**

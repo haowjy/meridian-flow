@@ -126,7 +126,13 @@ export function TranscriptReference({
   // ref, so it is never gone.
   const gone = Boolean(documentId) && resolution?.available === false;
   const missing =
-    chip?.state !== "dashed" ? undefined : gone ? t`No longer available` : t`Doesn't exist yet`;
+    chip?.state === "draft"
+      ? t`In a draft`
+      : chip?.state !== "dashed"
+        ? undefined
+        : gone
+          ? t`No longer available`
+          : t`Doesn't exist yet`;
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -137,6 +143,7 @@ export function TranscriptReference({
           tabIndex={0}
           aria-disabled={!follow}
           aria-description={missing}
+          title={chip?.state === "draft" ? missing : undefined}
           {...(chip ? linkChipAttributes(chip) : {})}
           onClick={follow}
           onKeyDown={(event) => {

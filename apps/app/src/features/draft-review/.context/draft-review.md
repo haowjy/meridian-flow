@@ -180,7 +180,7 @@ or promotes a draft-only tab. A later preview that omits a failed selection
 retires it; a later list omitting a failed draft retires that failure.
 
 Selection `incomplete_class` becomes `stale` and refetches; focus follows shared
-operations if regrouping changed the class ID. `draft_only` refreshes as `stale` (a racing selective request cannot target a
+operations if regrouping changed the class ID. `whole_item` refreshes as `stale` (a racing selective request cannot target a
 whole-draft item). `gone` is not held: the change leaves with failure feedback.
 Applied/discarded selections produce no success toast.
 Only `applied`/`discarded` answers can supply closure, never refusal or stale.
@@ -205,7 +205,7 @@ Synchronous subscription dispatch preserves entry/answer ordering in one flush,
 without consulting the last rendered review identity.
 
 `inlineReview.completion` is the reducer's retained state, not a second command
-store. A covering claim predicts `pending`; `draftClosed: true` supplies `closed`.
+store. A covering claim predicts `pending`; `itemClosed: true` supplies `closed`.
 A non-closing answer or failed/released claim withdraws pending. Closed stays
 sticky while that review remains open, including after claim release. Opening
 later adopts only current cache/claim evidence, not an old closing answer.
@@ -238,7 +238,7 @@ The reducer owns shown generation R and completion K:
 | Row | Input | Result |
 |---|---|---|
 | E | Enter the draft | R is the newest proposal the caches know (a cached preview that lists changes, the list row, a claim); K is the claim's if it acted on R; none known leaves R unresolved |
-| C1, C2 | Claim at R begins covering the last changes, or is answered `draftClosed` | K is pending, or closed (a closed K never goes back) |
+| C1, C2 | Claim at R begins covering the last changes, or is answered `itemClosed` | K is pending, or closed (a closed K never goes back) |
 | C3 | Claim at R ends without a close | A pending K is withdrawn; a closed one stays |
 | C4, C5 | Claim below R, or above it (or R unresolved) | Ignored, or re-enter the claim's generation (a claim that does not cover the last changes sends no action: it acted on a cached preview, which O3 has already taken up) |
 | O1, O2 | Preview or list read below R, or at R | Ignored, or content refresh only |
@@ -320,21 +320,37 @@ addresses no-op; absent/empty focus normalizes there. The route-level handoff is
 latest-wins and above shell selection. Claiming requires successful route command
 and matching Work/path/document/membership; it owns no paint state.
 
+A live document that other drafts have changes to says so from any view
+(`DocumentDraftHint` under the identity row, fed by `useDocumentDraftHints`, one read per
+document: `GET /documents/:d/drafts`, answering `{ draftId, itemKey, label, originWorkId }`).
+`draft-hint-review.ts` holds the only two Work-shaped steps (hide the view's own Work draft,
+and map a hint to today's review address); the draft selector replaces just that file. The
+read re-reads on the Work draft lists' signals: commands, catalog wakes, identity changes,
+focus and reconnect.
+
 New-document drafts have server document/Yjs state but no live catalog
-membership. A synthesized `draftOnly` tab carries transient `reviewWorkId` and
-`reviewDraftId` in the review overlay, never durable workspace identity.
-Overlay identity includes document, Work and draft; navigation consumes the
+membership. A synthesized tab carries per-Work `reviews` entries (`{workId: {itemKey, tabInstanceToken}}`);
+the entries are the one draft-only fact (`isDraftOnly(tab)`), dropping the last closes the tab
+(`withoutReviewEntry` decides what a removal leaves, for planner and commit alike), and it is the
+document's one tab in the workspace, never persisted.
+Navigation consumes the
 row’s own `contextLocation`, without restricting its document scheme. Hosts acquire only its
 branch; phone `MobileDraftOnlyDocumentHost` delegates to `ContextEditorMountHost`.
 Close review closes only the container used, without discarding the draft; it can be reopened.
-Readable-address admission enriches/absorbs the overlay rather than hiding a
-durable tab beneath it. Another Work cannot resolve that overlay.
+Readable-address admission enriches that one tab; a join (`reconcile-resource`) absorbs
+it into the resource's tab. Another Work cannot resolve it. The editor card
+"Couldn't open review mode." means a failed review room only; a draft-only tab with no
+review item yet is pending, and a gone draft is the lifecycle closing its tab.
 
 `draft-only-lifecycle.ts` defines promotion/removal once over Editor-tab and dock
 adapters. Both containers settle; Close is container-local. The Editor adapter
 delegates exact-instance removal, promotion and route repair to
 `ContextRemovalCoordinator`; the dock adapter settles its stored occupant without
-claiming a revision. Both adapters are bound to the account epoch; closed epochs
+claiming a revision. Dock admission (`dockDocument`) keeps only the selected review's entry, so
+the dock lists one presentation, Discard is that address alone, and becoming live is
+document-wide and keeps the dock's chosen review. Promotion happens once per document whichever
+Work's observer saw it; an Editor continuation reopens the review the container showed,
+and only while that address is still current. Both adapters are bound to the account epoch; closed epochs
 cannot enumerate or settle presentations. Hidden restore candidates are not lifecycle presentations:
 
 - Confirmed Apply promotes through `promoteAppliedDraft`, drops the marker and
@@ -356,8 +372,8 @@ cannot enumerate or settle presentations. Hidden restore candidates are not life
   address before promotion/removal. A preview `gone`/404 is not this catalog evidence: it keeps the draft-only error
   destination with Retry/Close. Remote confirmed-Discard omission plus fresh
   catalog absence closes it.
-- Editor overlay tabs are never persisted and are skipped by durable route
-  continuity. The dock persists its review address and rebuilds the overlay from
+- Draft-only Editor tabs are never persisted and are skipped by durable route
+  continuity. The dock persists its review address and rebuilds its tab from
   the Work’s draft list. `pullContextCatalogOnHint` wakes mounted draft lists after manifest
   changes so another page can classify remote Apply/Discard without reload.
 

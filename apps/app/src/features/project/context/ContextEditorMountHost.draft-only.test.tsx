@@ -33,7 +33,7 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller: {
       workId: "work-a",
-      inlineReview: review.reviewing ? { documentId: "document-a", draftId: "draft-a" } : null,
+      inlineReview: review.reviewing ? { documentId: "document-a", itemKey: "draft-a" } : null,
       reviewRoomError: false,
     },
     reviewRoomNameForDraft: () => review.room,
@@ -43,14 +43,14 @@ vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
 vi.mock("@/features/editor/EditorView", () => ({
   EditorView: (props: {
     session?: unknown;
-    reviewDraftId?: string | null;
+    reviewItemKey?: string | null;
     draftOnly?: boolean;
   }) => (
     <div
       data-editor
       data-retains-draft-on-error={String(props.draftOnly === true)}
       data-live-session={String(props.session !== undefined)}
-      data-review-draft={props.reviewDraftId ?? ""}
+      data-review-draft={props.reviewItemKey ?? ""}
     />
   ),
 }));
@@ -123,7 +123,10 @@ describe("ContextEditorMountHost draft-only review", () => {
       const hostedTab = (
         promoted
           ? tab
-          : { ...tab, draftOnly: true, reviewWorkId: "work-a", reviewDraftId: "draft-a" }
+          : {
+              ...tab,
+              reviews: { "work-a": { itemKey: "draft-a", tabInstanceToken: "token" } },
+            }
       ) as ComponentProps<typeof ContextEditorMountHost>["trackedTabs"][number];
       return (
         <PresentedDocumentContext.Provider value={presented}>

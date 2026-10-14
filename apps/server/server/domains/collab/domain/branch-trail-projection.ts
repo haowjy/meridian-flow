@@ -353,33 +353,41 @@ export function preparedTrailChanges(input: {
     }));
   });
 }
-export async function persistDurableTrailRecord(
-  record: DurableTrailRecord,
-  push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null },
+/** Records every committed push's trail in one pass over each trail: one version per commit. */
+export async function persistDurableTrailRecords(
+  committed: readonly {
+    record: DurableTrailRecord;
+    push: { id: number; threadId?: ThreadId | null; turnId?: TurnId | null };
+  }[],
   persistence: Pick<ChangeTrailPersistence, "record">,
   notices?: NoticePort,
 ): Promise<void> {
-  const pushId = String(push.id);
-  const changes = record.changes.map((change) => ({ ...change, pushId }));
   const normalized = normalizeTrailPushes(
-    record.threadIds.map((threadId) => ({
-      pushId,
-      receiptId: record.receiptId,
-      threadId,
-      changes,
-      journalOwners: record.journalOwners,
-    })),
+    committed.flatMap(({ record, push }) => {
+      const pushId = String(push.id);
+      const changes = record.changes.map((change) => ({ ...change, pushId }));
+      return record.threadIds.map((threadId) => ({
+        pushId,
+        receiptId: record.receiptId,
+        threadId,
+        changes,
+        journalOwners: record.journalOwners,
+      }));
+    }),
   );
   await persistence.record({
     trails: normalized,
-    documentTitles: new Map([[record.documentId, record.documentTitle]]),
+    documentTitles: new Map(
+      committed.map(({ record }) => [record.documentId, record.documentTitle]),
+    ),
   });
-  if (record.transactionalNotice) {
+  for (const { record, push } of committed) {
+    if (!record.transactionalNotice) continue;
     await notices?.record({
       ...record.transactionalNotice,
       data: {
         ...record.transactionalNotice.data,
-        pushId,
+        pushId: String(push.id),
         threadId: push.threadId ?? null,
         turnId: push.turnId ?? null,
       },

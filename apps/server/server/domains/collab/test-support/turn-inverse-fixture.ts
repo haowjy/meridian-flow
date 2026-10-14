@@ -1,5 +1,6 @@
 // Shared admission fixture for durable inverse boundaries.
 import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
@@ -35,4 +36,22 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
   };
   const target = { projectId: PROJECT_ID as never, workId: WORK_ID, documentId: ALPHA_ID };
   return { harness, view, responseId, context, target };
+}
+
+/** The document's work-draft branch id: what `view.draftMarkdown` reads. */
+export async function draftBranchId(
+  db: ReturnType<typeof createTestDatabase>,
+  documentId: string,
+): Promise<string> {
+  const [branch] = await db
+    .select({ id: schema.documentBranches.id })
+    .from(schema.documentBranches)
+    .where(
+      and(
+        eq(schema.documentBranches.documentId, documentId),
+        eq(schema.documentBranches.kind, "work_draft"),
+      ),
+    );
+  if (!branch) throw new Error(`No work draft branch for ${documentId}`);
+  return branch.id;
 }

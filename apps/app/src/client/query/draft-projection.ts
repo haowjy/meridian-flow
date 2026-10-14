@@ -66,6 +66,12 @@ export type DraftProjection = {
 };
 
 const NONE: ReadonlySet<string> = new Set();
+const hiddenWholeItems = new WeakSet<DraftPreviewResponse>();
+
+/** Whole-item changes can have no operations; an emptied projection still needs its own hide witness. */
+export function wholeItemHidden(preview: DraftPreviewResponse): boolean {
+  return hiddenWholeItems.has(preview);
+}
 
 /** `whole`: a whole-draft command has taken every change of this generation. */
 export function projectDraft(
@@ -75,6 +81,7 @@ export function projectDraft(
 ): DraftProjection {
   if (whole && observed.status === "active") {
     const emptied = { ...observed, operations: [], hunks: [] };
+    hiddenWholeItems.add(emptied);
     return { preview: emptied, inline: { preview: emptied, restoring: NONE } };
   }
   const preview = previewWithoutKeys(observed, intents.hidden);
@@ -91,11 +98,15 @@ export function projectDraft(
 
 /** Work files are a projection too: no intent ever removes a cached server row. */
 export function projectDraftList<
-  T extends { documentId: string; draftId: string; draftGeneration?: number },
+  T extends { documentId: string; itemKey: string; branchGeneration?: number | null },
 >(observed: T[], scope: { projectId: string; workId: string }, records: ChangeCommandRecords): T[] {
   return observed.filter(
     (row) =>
-      wholeDraftDisposition(records, { ...scope, ...row }, row.draftGeneration, observed) !==
-      "apply",
+      wholeDraftDisposition(
+        records,
+        { ...scope, ...row },
+        row.branchGeneration ?? undefined,
+        observed,
+      ) !== "apply",
   );
 }

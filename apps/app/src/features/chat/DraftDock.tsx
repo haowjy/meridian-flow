@@ -1,13 +1,15 @@
 /** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place. Failures stay on their file. */
+
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Plural, Trans } from "@lingui/react/macro";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
+import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { useDraftView } from "@/features/draft-review/useDraftView";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { DockFailureText } from "./DraftDockMessages";
 import type { DockFile } from "./draft-dock-files";
@@ -141,6 +143,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
+      <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>
   );
 }
@@ -161,13 +164,13 @@ function DockFileLine({
   expanded: boolean;
   summary?: (trouble: ReactNode) => ReactNode;
 }) {
-  const touch = usePhoneShell() ?? false;
+  const touch = useCoarsePointer();
   const view = useDraftView(
     {
       projectId: dock.projectId,
       workId: dock.workId,
       documentId: file.row.documentId,
-      draftId: file.row.draft.draftId,
+      itemKey: file.row.draft.itemKey,
     },
     { controller: dock.controller, enabled: expanded },
   );
@@ -307,7 +310,7 @@ function TroubleLine({
 
 /** One document's review door, independent of the strip's expansion toggle. */
 function DockFileName({ file, onReview }: { file: DockFile; onReview: () => void }) {
-  const touch = usePhoneShell() ?? false;
+  const touch = useCoarsePointer();
   return (
     <button
       type="button"

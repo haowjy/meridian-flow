@@ -13,7 +13,9 @@ import {
   change,
   createReviewScopeFixture,
   deferredReviewAnswer,
+  discarded,
   draftA,
+  itemApplied,
   listed,
   operation,
   preview,
@@ -23,7 +25,7 @@ import {
 import { settleReact } from "@/test-support/react-dom-harness";
 
 let fixture: ReturnType<typeof createReviewScopeFixture>;
-const draftB = { documentId: "document-b", draftId: "draft-b" };
+const draftB = { documentId: "document-b", itemKey: "draft-b" };
 const listedB = { ...listed, ...draftB, documentName: "Chapter 13" };
 const ids = (p: ScopeProbe) => p.header.view.items.map(({ change }) => change.classId);
 const failure = (p: ScopeProbe) =>
@@ -37,7 +39,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   resetDraftCommandRecords();
   fixture = createReviewScopeFixture();
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(preview);
 });
 afterEach(() => {
@@ -62,7 +64,7 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
   const answer = deferredReviewAnswer<DraftDiscardResponse>();
   fixture.network.discardDraft
     .mockReturnValueOnce(answer.promise)
-    .mockResolvedValue({ status: "stale", draftId: "draft-a" });
+    .mockResolvedValue({ status: "stale", draftId: listed.draftId, itemKey: "draft-a" });
   await fixture.render(async (p) => {
     await open(p);
     let done!: Promise<unknown>;
@@ -77,8 +79,9 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
     await act(async () => {
       answer.resolve({
         status: "stale",
-        draftId: "draft-a",
-        draftClosed: true,
+        draftId: listed.draftId,
+        itemKey: "draft-a",
+        itemClosed: true,
       } as DraftDiscardResponse);
       await done;
     });
@@ -91,14 +94,12 @@ it("a stale last Discard ignores bogus closure and restores the refreshed change
 });
 
 it("a whole batch continues after a late refusal, attributes it to the departed file and never navigates back", async () => {
-  const draftC = { documentId: "document-c", draftId: "draft-c" };
+  const draftC = { documentId: "document-c", itemKey: "draft-c" };
   fixture.network.listWorkDrafts.mockResolvedValue({
-    drafts: [listed, listedB, { ...listed, ...draftC, documentName: "Chapter 14" }],
+    items: [listed, listedB, { ...listed, ...draftC, documentName: "Chapter 14" }],
   });
   const answer = deferredReviewAnswer<Awaited<ReturnType<typeof fixture.network.applyDraft>>>();
-  fixture.network.applyDraft
-    .mockReturnValueOnce(answer.promise)
-    .mockResolvedValue({ status: "applied", draftId: "draft-b" });
+  fixture.network.applyAllDrafts.mockReturnValueOnce(answer.promise as never);
   const navigate = vi.fn();
   await fixture.render(
     async (p) => {
@@ -110,31 +111,37 @@ it("a whole batch continues after a late refusal, attributes it to the departed 
       await p().openDraft(draftC);
       await act(async () => p().presented.controller.enterInlineReview("document-c", "draft-c"));
       await act(async () => {
-        answer.reject(new HttpResponseError("refused", 500, null));
+        answer.resolve({
+          status: "completed",
+          draftId: listed.draftId,
+          items: [
+            {
+              itemKey: "draft-a",
+              status: "held",
+              reason: { code: "path_taken", path: "/chapter" },
+            },
+            { itemKey: "draft-b", status: "applied", notes: [] },
+          ],
+        } as never);
         await done;
       });
-      expect(fixture.network.applyDraft.mock.calls.map((call) => call[2])).toEqual([
-        "document-a",
-        "document-b",
-      ]);
+      expect(fixture.network.applyAllDrafts).toHaveBeenCalledTimes(1);
       await settleReact(() =>
         expect(
           p().header.failedElsewhere.map(({ row, failure }) => [row.documentId, failure.code]),
-        ).toEqual([["document-a", "apply-server-error"]]),
+        ).toEqual([["document-a", "apply-refused"]]),
       );
       expect(p().header.commandError).toBeNull();
       expect(navigate).not.toHaveBeenCalled();
-      expect(p().presented.controller.inlineReview?.draftId).toBe("draft-c");
+      expect(p().presented.controller.inlineReview?.itemKey).toBe("draft-c");
     },
     { onOpenDraft: navigate },
   );
 });
 
 it("a batch's current-file failure leaves its review usable and unfinished", async () => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
-  fixture.network.applyDraft
-    .mockRejectedValueOnce(new HttpResponseError("refused", 500, null))
-    .mockResolvedValue({ status: "applied", draftId: "draft-b" });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
+  fixture.network.applyAllDrafts.mockRejectedValue(new HttpResponseError("refused", 500, null));
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
@@ -143,12 +150,9 @@ it("a batch's current-file failure leaves its review usable and unfinished", asy
     expect(p().header.commandError).toEqual({ code: "apply-server-error" });
     expect(p().header.finished).toBe(false);
     expect(p().header.completing).toBeNull();
-    expect(p().presented.controller.inlineReview).toMatchObject({ draftId: "draft-a" });
+    expect(p().presented.controller.inlineReview).toMatchObject({ itemKey: "draft-a" });
     expect(p().presented.controller.inlineReview?.completion).toBeUndefined();
-    expect(fixture.network.applyDraft.mock.calls.map((call) => call[2])).toEqual([
-      "document-a",
-      "document-b",
-    ]);
+    expect(fixture.network.applyAllDrafts).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -179,7 +183,7 @@ it.each([
   "apply",
   "discard",
 ] as const)("offline whole %s batch refuses every file before reconnect", async (mode) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
   await fixture.render(async (p) => {
     await open(p);
     vi.useFakeTimers();
@@ -224,14 +228,17 @@ it.each([
   await fixture.render(async (p) => {
     await open(p);
     await act(async () => {
-      const outcome = await (mode === "apply"
-        ? p().presented.controller.applyChanges
-        : p().presented.controller.discardChanges)(draftA, change("2"));
-      expect(outcome).toEqual({ kind: "change-refused", mode, code: "unknown" });
+      const done = (
+        mode === "apply"
+          ? p().presented.controller.applyChanges
+          : p().presented.controller.discardChanges
+      )(draftA, change("2"));
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(await done).toEqual({ kind: "change-refused", mode, code: "unknown" });
     });
     expect(ids(p())).toEqual(["class-1", "class-2"]);
     expect(failure(p())).toMatchObject({ mode, code: "unknown" });
-    expect(endpoint).toHaveBeenCalledTimes(1);
+    expect(endpoint).toHaveBeenCalledTimes(4);
     expect(p().header.finished).toBe(false);
   });
 });
@@ -252,7 +259,7 @@ it.each([
   "applyDraft",
   "discardDraft",
 ] as const)("offline header %s stays here and reconnect dispatches neither real export", async (command) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed, listedB] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed, listedB] });
   const navigate = vi.fn();
   await fixture.render(
     async (p) => {
@@ -268,7 +275,7 @@ it.each([
         code: command === "applyDraft" ? "apply-offline" : "discard-offline",
       });
       expect(p().header.locked).toBe(false);
-      expect(p().presented.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(p().presented.controller.inlineReview?.itemKey).toBe("draft-a");
       expect(navigate).not.toHaveBeenCalled();
       await reconnect();
       expect(fixture.network.applyDraft).not.toHaveBeenCalled();
@@ -401,33 +408,30 @@ it.each([
   "apply",
   "discard",
 ] as const)("a late whole %s answer must not close the next generation already under review", async (mode) => {
-  fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  fixture.network.listWorkDrafts.mockResolvedValue({ items: [listed] });
   fixture.network.getDraftPreview.mockResolvedValue(previewOf("1", "2"));
   const answer = deferredReviewAnswer<void>();
   if (mode === "apply")
-    fixture.network.applyDraft.mockReturnValueOnce(
-      answer.promise.then(() => ({ status: "applied", draftId: "draft-a" })),
-    );
-  else
-    fixture.network.discardDraft.mockReturnValueOnce(
-      answer.promise.then(() => ({ status: "discarded", draftId: "draft-a", draftClosed: true })),
-    );
+    fixture.network.applyDraft.mockReturnValueOnce(answer.promise.then(() => itemApplied()));
+  else fixture.network.discardDraft.mockReturnValueOnce(answer.promise.then(() => discarded(true)));
 
   await fixture.render(async (p) => {
     await act(async () => p().presented.controller.enterInlineReview("document-a", "draft-a"));
-    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(1));
+    await settleReact(() =>
+      expect(p().presented.controller.inlineReview?.branchGeneration).toBe(1),
+    );
     let done!: Promise<unknown>;
     await act(async () => {
       done = p().presented.controller[mode]("document-a", "draft-a");
     });
     const nextPreview = {
       ...previewOf("new"),
-      draftGeneration: 2,
+      branchGeneration: 2,
       reviewRoomName: "room-generation-2",
     };
-    const nextRow = { ...listed, draftGeneration: 2, updatedAt: "2026-10-09T01:00:00Z" };
+    const nextRow = { ...listed, branchGeneration: 2, updatedAt: "2026-10-09T01:00:00Z" };
     fixture.network.getDraftPreview.mockResolvedValue(nextPreview);
-    fixture.network.listWorkDrafts.mockResolvedValue({ drafts: [nextRow] });
+    fixture.network.listWorkDrafts.mockResolvedValue({ items: [nextRow] });
     await act(async () => {
       p().queryClient.setQueryData(
         projectQueryKeys.workDraftPreview("project-a", "work-a", "document-a", "draft-a"),
@@ -435,12 +439,14 @@ it.each([
       );
       p().queryClient.setQueryData(projectQueryKeys.workDrafts("project-a", "work-a"), [nextRow]);
     });
-    await settleReact(() => expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2));
+    await settleReact(() =>
+      expect(p().presented.controller.inlineReview?.branchGeneration).toBe(2),
+    );
     await act(async () => {
       answer.resolve();
       await done;
     });
-    expect(p().presented.controller.inlineReview?.draftGeneration).toBe(2);
+    expect(p().presented.controller.inlineReview?.branchGeneration).toBe(2);
   });
 });
 
@@ -449,11 +455,14 @@ it.each([
   "discard",
 ] as const)("a new document's one change dispatches whole %s", async (mode) => {
   fixture.network.listWorkDrafts.mockResolvedValue({
-    drafts: [{ ...listed, isNewDocument: true }],
+    items: [{ ...listed, isNew: true, wholeItem: true }],
   });
-  fixture.network.getDraftPreview.mockResolvedValue({ ...preview, isNewDocument: true });
-  fixture.network.applyDraft.mockResolvedValue({ status: "applied", draftId: "draft-a" });
-  fixture.network.discardDraft.mockResolvedValue({ status: "discarded", draftId: "draft-a" });
+  fixture.network.getDraftPreview.mockResolvedValue({
+    ...preview,
+    item: { ...listed, isNew: true, wholeItem: true },
+  });
+  fixture.network.applyDraft.mockResolvedValue(itemApplied());
+  fixture.network.discardDraft.mockResolvedValue(discarded(true));
   await fixture.render(async (p) => {
     await open(p);
     expect(p().header.view.items).toHaveLength(1);
@@ -461,9 +470,16 @@ it.each([
       await p().header.view[mode](p().header.view.items[0].change);
     });
     const request = mode === "apply" ? fixture.network.applyDraft : fixture.network.discardDraft;
-    expect(request).toHaveBeenCalledWith("project-a", "work-a", "document-a", {
-      draftId: "draft-a",
-    });
+    expect(request).toHaveBeenCalledWith(
+      "project-a",
+      "work-a",
+      "document-a",
+      expect.objectContaining({
+        draftId: listed.draftId,
+        itemKey: "draft-a",
+        commandId: expect.any(String),
+      }),
+    );
     expect(fixture.network.applyDraftChanges).not.toHaveBeenCalled();
   });
 });

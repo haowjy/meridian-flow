@@ -47,7 +47,8 @@ const USER = crypto.randomUUID() as UserId;
 const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
-const DRAFT: LinkView = { kind: "draft", workId: crypto.randomUUID() };
+const DRAFT_ID = crypto.randomUUID();
+const DRAFT: LinkView = { kind: "draft", draftId: DRAFT_ID };
 const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -175,6 +176,7 @@ async function harness(
       },
     }),
     refreshDocumentProjection: async () => {},
+    drafts: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => ({
       // A copy's source read asks for nodes; a plain read shows facts spelled
       // in a reply's pinned draft, not the live grant it was routed with.
@@ -205,7 +207,7 @@ async function harness(
     [TARGET, "target"],
     [HIDDEN, "hidden"],
   ] as const) {
-    await userStore.createDocument({
+    await userStore.createDocumentRecordIfAbsent({
       id,
       folderId: null,
       name,
@@ -232,7 +234,7 @@ async function harness(
     threadId: crypto.randomUUID(),
     draftWork: null,
   });
-  call.context = { port, livePort: () => port, resolution: {} as never };
+  call.context = { port, resolution: {} as never };
   const registrations = createModelToolRegistrations(deps).map(
     (registration): ToolRegistration =>
       registration.definition.type === "function" &&
@@ -382,7 +384,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`), [TARGET]: [] },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`), [TARGET]: [] },
       };
     },
   },
@@ -701,7 +703,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT.workId}`) },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`) },
       };
     },
   },
@@ -792,7 +794,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT.workId}`) },
+        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT_ID}`) },
       };
     },
   },

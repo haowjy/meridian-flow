@@ -7,10 +7,7 @@ export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-st
 export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
-export {
-  createDrizzleDocumentLinkScopes,
-  type LinkScopeMembership,
-} from "./adapters/document-link-scope.js";
+export { createDrizzleDocumentLinkScopes } from "./adapters/document-link-scope.js";
 export { createDrizzleLinkAheadRegistry } from "./adapters/drizzle-link-ahead-registry.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export {
@@ -61,7 +58,6 @@ export type {
   ContextCatalogMutationPort,
   ContextCatalogWakePort,
   ProjectCatalogLifecyclePort,
-  ProjectDocumentCatalogRefreshPort,
 } from "./ports/context-catalog.js";
 export type {
   ContextDocumentStore,
@@ -143,6 +139,8 @@ export {
   type ScratchOwner,
   scratchOwnerFor,
 } from "./scratch-owner.js";
+export { createHiddenNodeRepair, type HiddenNodeRepair } from "./tree/hidden-node-repair.js";
+export * from "./tree/tree-view.js";
 export {
   createInMemoryUnifiedContextPortFactory,
   createProductionUnifiedContextPortFactory,

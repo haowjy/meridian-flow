@@ -6,11 +6,17 @@ import type {
   UnexpectedWriteErrorDetail,
   WriteIdempotencyHitDetail,
 } from "@meridian/agent-edit/integration";
-import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import {
+  type EventSink,
+  emitEvent,
+  errorMessageOf,
+  unknownToEventPayload,
+} from "../../observability/index.js";
 import type { BranchAgentEditDiagnostics } from "../domain/branch-agent-edit.js";
 import type { BranchPullDiagnostics } from "../domain/branch-pulls.js";
 import type { SweepProjectionDiagnostics } from "../domain/branch-push-contracts.js";
 import type { DocumentProjectionDiagnostics } from "../domain/document-projection-refresher.js";
+import type { DraftBranchAheadDiagnostics } from "../domain/draft-branch-ahead-registration.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ResponseTransactionDiagnostics } from "../domain/response-transaction.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
@@ -31,6 +37,23 @@ export function createBranchPullDiagnostics(eventSink?: EventSink): BranchPullDi
   };
 }
 
+export function createDraftBranchAheadDiagnostics(
+  eventSink?: EventSink,
+): DraftBranchAheadDiagnostics {
+  return {
+    registrationFailed({ branchId, cause }) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "collab.draft_links",
+        name: "registration.failed",
+        correlation: { branchId },
+        payload: unknownToEventPayload(cause),
+      });
+    },
+  };
+}
+
 export function createResponseTransactionDiagnostics(
   eventSink?: EventSink,
 ): ResponseTransactionDiagnostics {
@@ -43,6 +66,7 @@ export function createResponseTransactionDiagnostics(
       payload: {
         responseTransactionId: input.responseTransactionId,
         ...unknownToEventPayload(input.cause),
+        ...errorMessageOf(input.cause),
       },
     });
   };
@@ -75,6 +99,21 @@ export function createBranchAgentEditDiagnostics(
         payload,
       });
     },
+    replyPinMismatch(payload) {
+      if (!eventSink) return;
+      emitEvent(eventSink, {
+        level: "error",
+        source: "collab.reply_save_fences",
+        name: "reply_pin.identity_mismatch",
+        correlation: {
+          documentId: payload.documentId,
+          draftId: payload.pin.draftId,
+          peerBranchId: payload.pin.peerBranchId,
+          upstreamBranchId: payload.pin.upstreamBranchId,
+        },
+        payload: { threadId: payload.threadId ?? null, refusal: "integration" },
+      });
+    },
   };
 }
 
@@ -102,7 +141,8 @@ export function createSweepProjectionDiagnostics(
         level: "warn",
         source: "collab.change_event",
         name: "sweep_projection.unavailable",
-        payload: { pushId, documentId, ...unknownToEventPayload(cause) },
+        correlation: { pushId: String(pushId) },
+        payload: { documentId, ...unknownToEventPayload(cause) },
       });
     },
   };
@@ -356,16 +396,6 @@ function idempotencyHitObserver(
 
 export function createDraftReviewDiagnostics(eventSink?: EventSink): DraftReviewDiagnostics {
   return {
-    dispositionMaintenanceFailed({ documentId, draftId, cause }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.draft_review",
-        name: "disposition.maintenance_failed",
-        correlation: { documentId },
-        payload: { draftId, error: String(cause) },
-      });
-    },
     unattributedHunks({ documentId, hunkIds }) {
       if (!eventSink) return;
       emitEvent(eventSink, {

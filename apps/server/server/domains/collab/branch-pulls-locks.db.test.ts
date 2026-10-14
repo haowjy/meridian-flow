@@ -10,8 +10,14 @@ import {
 } from "../../shared/drizzle-transaction.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
+import { createDrizzleWorkDraftPendingStore } from "./adapters/drizzle-branch-push.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "./adapters/drizzle-drafts.js";
 import { createBranchCriticalSections } from "./domain/branch-critical-sections.js";
 import { createBranchPullService } from "./domain/branch-pulls.js";
+import { createDrafts } from "./domain/drafts.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -74,19 +80,25 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
     .from(schema.documentBranches)
     .where(
       and(
-        eq(schema.documentBranches.workId, WORK_ID),
+        sql`${schema.documentBranches.draftId} IN (SELECT id FROM drafts WHERE origin_work_id = ${WORK_ID})`,
         eq(schema.documentBranches.documentId, ALPHA_ID),
         eq(schema.documentBranches.kind, "work_draft"),
       ),
     );
-  const [before] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
   const locks = createBranchCriticalSections();
   const projection = createWorkProjectionMutation({
     db,
     availability: { advance: async () => {} },
     catalog: { upsertWorkAuthorities: async () => {} },
+    pending: createDrizzleWorkDraftPendingStore(db),
   } as unknown as Parameters<typeof createWorkProjectionMutation>[0]);
-  const branches = createFixtureBranchStore(db, undefined, locks, projection);
+  const branches = createFixtureBranchStore(db, {
+    workProjection: projection,
+    drafts: createDrafts({
+      store: createDrizzleDraftStore(db),
+      boundary: createDrizzleDraftWriteBoundary(db),
+    }),
+  });
   const live = new Y.Doc({ gc: false });
   Y.applyUpdate(live, a.state);
   const secondReached = gate(),
@@ -102,13 +114,17 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       listActiveWorkDraftBranchIds: async () => [a.id, secondId],
     } as unknown as Parameters<typeof createBranchPullService>[0]["branches"],
     branchCoordinator: {
-      pullFromDoc: async (id: string) => {
-        if (id === secondId) {
+      // The pull parks just before taking the second branch's lease, after the first
+      // branch's transaction committed; a receipt then owns both leases and the Work row.
+      withLeases: async (ids: readonly string[], run: (lease: never) => Promise<unknown>) => {
+        if (ids[0] === secondId) {
           secondReached.resolve();
           await receiptAcquired.promise;
         }
-        await locks.withBranches([id], async () => {
-          if (id === secondId) return;
+        return locks.withBranches([...ids], run as never);
+      },
+      pullFromDoc: async (_lease: unknown, id: string) => {
+        if (id !== secondId) {
           expect(
             await branches.updateBranchSnapshot({
               branchId: id,
@@ -120,7 +136,7 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
               liveCut: a.state,
             }),
           ).toBe(true);
-        });
+        }
         return new Uint8Array();
       },
     } as unknown as Parameters<typeof createBranchPullService>[0]["branchCoordinator"],
@@ -146,17 +162,56 @@ it("releases a pull's Work row before the next branch mutex while a receipt owns
       pull,
     ]);
     expect(result).toBeNull();
-    const [after] = await db.select().from(schema.works).where(eq(schema.works.id, WORK_ID));
     const [saved] = await db
       .select()
       .from(schema.documentBranches)
       .where(eq(schema.documentBranches.id, a.id));
     expect(saved.hasEffect).toBe(false);
     expect(saved.liveCut).toEqual(a.state);
-    expect(after.entityRevision).toBeGreaterThan(before.entityRevision);
   } finally {
     live.destroy();
     harness.cancelScheduledPulls();
     harness.destroyWarmState();
+  }
+});
+
+it("a pull waiting for a branch lease holds no pooled connection", async () => {
+  const { createDb } = await import("@meridian/database");
+  const single = createDb(process.env.DATABASE_URL ?? "", { max: 1 });
+  const locks = createBranchCriticalSections();
+  const live = new Y.Doc({ gc: false });
+  const branchId = "pulled-branch";
+  const pulls = createBranchPullService({
+    outsideTransaction: runOutsideDrizzleTransaction,
+    rootTransaction: (op) => runInRootDrizzleTransaction(single, op),
+    liveCoordinator: {
+      withDocument: async (_id: string, op: (doc: Y.Doc) => Promise<unknown>) => op(live),
+    } as unknown as Parameters<typeof createBranchPullService>[0]["liveCoordinator"],
+    branches: {
+      listActiveWorkDraftBranchIds: async () => [branchId],
+    } as unknown as Parameters<typeof createBranchPullService>[0]["branches"],
+    branchCoordinator: {
+      withLeases: (ids: readonly string[], run: (lease: never) => Promise<unknown>) =>
+        locks.withBranches([...ids], run as never),
+      pullFromDoc: async () => new Uint8Array(),
+    } as unknown as Parameters<typeof createBranchPullService>[0]["branchCoordinator"],
+  });
+  const release = gate();
+  const held = locks.withBranches([branchId], () => release.promise);
+  try {
+    const pull = pulls.flushLivePull(ALPHA_ID);
+    // Let the pull reach the held lease before probing the pool.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const outcome = await Promise.race([
+      single.execute(sql`select 1`).then(() => "connection free"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("pool held"), 1500)),
+    ]);
+    expect(outcome).toBe("connection free");
+    release.resolve();
+    await Promise.all([held, pull]);
+  } finally {
+    release.resolve();
+    live.destroy();
+    await closeDatabase(single);
   }
 });

@@ -23,8 +23,8 @@ It is the single local contract reference; this file maps ownership.
 | Review composition, construction receipt and paint readiness | `features/editor/EditorView.tsx` |
 | Common editor construction | `features/editor/SessionEditor.tsx` |
 | Active editor projection and live presence lease | `useActiveReviewBinding.ts` |
-| Remote draft-only settlement | `DraftOnlySettlement.tsx` |
-| Cross-container promotion/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
+| Remote draft-only settlement, and a draft-only tab settled in place the moment the replica shows its document live (a join; never a drafts refetch) | `DraftOnlySettlement.tsx` |
+| Cross-container settlement/removal | `draft-only-lifecycle.ts` (Editor route repair delegates to the context removal coordinator) |
 | Catalog-labelled files and stable order | `client/query/work-draft-files.ts`, exposed by `useWorkDrafts.ts` |
 | Domain change/action index and attribution | `review-changes.ts`, `change-attribution.ts` |
 | Claim-to-review completion projection | `useReviewCommandCompletion.ts` |
@@ -40,8 +40,9 @@ Paths outside this directory are relative to `apps/app/src`.
 ## Load-bearing rules
 
 - Review navigation consumes the row’s own `contextLocation`; file policy alone
-  decides which schemes can have drafts. Draft-only Editor overlays are keyed
-  by document, Work and draft, and visible only in their owning Work.
+  decides which schemes can have drafts. A draft-only Editor tab is the
+  document's one tab (review metadata on it, never a second tab), visible only in its
+  review Work.
 
 - A slow or refused chapter never locks another chapter. Archived Works remain
   globally read-only; chat generation explicitly gates chat batch controls.
@@ -78,12 +79,13 @@ Paths outside this directory are relative to `apps/app/src`.
 - Change-row excerpts read complete ordered hunk runs, including attributed
   insertions, never the operations’ first-hunk summaries. Only row CSS truncates
   their display; repeated words in separate runs remain separate.
-- Draft-only tabs belong to the transient review overlay. Only Apply promotion
-  makes one durable; a gone/404 read is not remote-Discard evidence. Apply and
+- A draft-only tab is the document's one workspace tab and is never persisted: its
+  address (document and item key) reopens it. Apply settles the same tab in place
+  (`settle-draft` drops the review metadata); a gone/404 read is not remote-Discard evidence. Apply and
   Discard settle every container through `draft-only-lifecycle.ts`; Close and
   Back to live stay with the container used. A review tab is identified by
-  document, Work and draft (`ReviewDraftTabIdentity`): Close and Discard consume
-  that exact tab, never another Work's review of the same document. Promotion needs a resolved live
+  document, Work and draft (`ReviewItemTabIdentity`): Close and Discard remove
+  that exact tab. Settling needs a resolved live
   presentation of the same document, Work and draft, never a flag transition.
 - Presentational components receive props and callbacks, not controllers.
   Layout belongs to components; pane continuity belongs to shared `PaintHold`.

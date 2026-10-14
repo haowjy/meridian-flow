@@ -7,11 +7,6 @@ to tracking issues. Delete an entry when it ships.
 
 [haowjy/meridian-flow#144](https://github.com/haowjy/meridian-flow/issues/144)
 
-Delete + rename shipped (PR #145): `rename.post.ts`, `delete.post.ts` routes,
-client mutation hooks, desktop context menu + kebab, mobile trailing action
-button. All context routes share `_helpers.ts` (resolveContextRoute,
-sanitizePath, contextErrorToHttp). Inline name forms share `useInlineNameForm`.
-
 Remaining from #144 — **manuscript ordering + drag-reorder:**
 
 Sibling order is derived by the catalog projection (dirs-first, then
@@ -30,14 +25,3 @@ document, though the port accepts a `documentIds` batch. Compaction calls it
 twice (before the summary and once per successor-prepare attempt) over every
 document recorded in the history it checks. Unmeasured; batch it if those
 round trips show in compaction latency.
-
-## Cache link-scope membership by manifest head
-
-`adapters/document-link-scope.ts` reads manifest membership through the same
-resolver ContextFS lists through, which flushes the manifest and replays it
-per snapshot. With real membership a live model read's scope costs about
-21 ms p50 on a 1,000-document project, but a single draft-view operation
-costs about 49 ms, of which about 33 ms is the manifest flush and replays
-(`729-730-scope-benchmark.log` in the model-tool-surface work directory).
-Cache membership per snapshot key by manifest head sequence and draft branch
-state, without weakening the flush that keeps reads fresh; measure first.

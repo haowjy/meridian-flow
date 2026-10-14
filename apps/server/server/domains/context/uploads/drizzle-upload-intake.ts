@@ -1,17 +1,12 @@
 /** Drizzle lifecycle adapter for authoritative upload intake reservations. */
 import { type Filetype, renderFilename, type UploadOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import {
-  contextSources,
-  documents,
-  projects,
-  uploadIntakes,
-  works,
-} from "@meridian/database/schema";
+import { contextSources, projects, uploadIntakes, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { allocateFilename } from "../context/paths.js";
+import { LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
 import type {
   ReserveUploadResult,
   UploadIntakeRepository,
@@ -172,13 +167,12 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
         );
         const [documentNames, reservedNames] = await Promise.all([
           activeDb
-            .select({ name: documents.name, extension: documents.extension })
-            .from(documents)
+            .select({ name: liveDocuments.name, extension: liveDocuments.extension })
+            .from(liveDocuments)
             .where(
               and(
-                eq(documents.contextSourceId, owner.sourceId),
-                isNull(documents.folderId),
-                isNull(documents.deletedAt),
+                eq(liveDocuments.contextSourceId, owner.sourceId),
+                isNull(liveDocuments.folderId),
               ),
             ),
           activeDb
@@ -347,3 +341,5 @@ export function createDrizzleUploadIntakeRepository(db: Database): UploadIntakeR
     },
   };
 }
+
+const liveDocuments = visibleDocuments(LIVE_TREE);

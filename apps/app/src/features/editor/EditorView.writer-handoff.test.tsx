@@ -57,8 +57,8 @@ vi.mock("@/features/editor/useInlineReviewSync", () => ({
   useInlineReviewSync: (options: import("./useInlineReviewSync").UseInlineReviewSyncOptions) => {
     useEffect(() => {
       if (options.editor)
-        options.onInlineModelAvailable?.("preview-1", options.documentId, options.draftId);
-    }, [options.editor, options.documentId, options.draftId, options.onInlineModelAvailable]);
+        options.onInlineModelAvailable?.("preview-1", options.documentId, options.itemKey);
+    }, [options.editor, options.documentId, options.itemKey, options.onInlineModelAvailable]);
   },
 }));
 
@@ -70,7 +70,7 @@ let review: ReturnType<typeof useDraftReview> | null = null;
 let unmountReview!: () => void;
 function WorkList() {
   const { drafts } = useWorkDrafts("project-a", "work-a");
-  return <output data-work-list>{drafts?.map((draft) => draft.draftId).join(",")}</output>;
+  return <output data-work-list>{drafts?.map((draft) => draft.itemKey).join(",")}</output>;
 }
 
 function Scope() {
@@ -120,7 +120,7 @@ beforeEach(() => {
   resetDraftCommandRecords();
   review = null;
   heldCarryLookup = null;
-  mocks.listWorkDrafts.mockResolvedValue({ drafts: [listed] });
+  mocks.listWorkDrafts.mockResolvedValue({ items: [listed] });
   mocks.getDraftPreview.mockResolvedValue(previewOf("2"));
 });
 
@@ -220,11 +220,11 @@ async function withWriterReview(
 function successor(room: string, ids: string[], listedDraft: boolean) {
   mocks.getDraftPreview.mockResolvedValue({
     ...previewOf(...ids),
-    draftGeneration: 2,
+    branchGeneration: 2,
     reviewRoomName: room,
   });
   mocks.listWorkDrafts.mockResolvedValue({
-    drafts: listedDraft ? [{ ...listed, draftGeneration: 2 }] : [],
+    items: listedDraft ? [{ ...listed, branchGeneration: 2 }] : [],
   });
 }
 const previewKey = projectQueryKeys.workDraftPreview("project-a", "work-a", documentId, "draft-a");
@@ -292,7 +292,7 @@ it("delivers unmounted writing before publishing the draft list after acknowledg
     expect(old.document.isDestroyed).toBe(true);
     expect(runtime.wire(newRoom).sent.length).toBeGreaterThan(0);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
-    mocks.listWorkDrafts.mockResolvedValue({ drafts: [{ ...listed, draftGeneration: 2 }] });
+    mocks.listWorkDrafts.mockResolvedValue({ items: [{ ...listed, branchGeneration: 2 }] });
     await acknowledge(newRoom);
     expect(document.querySelector("[data-work-list]")?.textContent).toBe("draft-a");
     expect(runtime.pool.peek(newRoom)).toBeUndefined();
@@ -311,7 +311,7 @@ it("preserves successor typing made before writer carry resolution", async () =>
         () =>
           new Promise((resolve) => {
             locate = (room) =>
-              resolve({ ...previewOf("5"), draftGeneration: 2, reviewRoomName: room });
+              resolve({ ...previewOf("5"), branchGeneration: 2, reviewRoomName: room });
           }),
       );
       runtime
@@ -353,7 +353,7 @@ it("keeps native unacknowledged writing through HTTP-before-reset remote whole D
         await testQueryClient.invalidateQueries({ queryKey: listKey });
         await vi.advanceTimersByTimeAsync(0);
       });
-      expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(review?.controller.inlineReview?.itemKey).toBe("draft-a");
       expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
       await act(async () => {
         const socket = DocumentSocketHarness.instances.at(-1);
@@ -369,10 +369,10 @@ it("keeps native unacknowledged writing through HTTP-before-reset remote whole D
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(testQueryClient.getQueryData(previewKey)).toMatchObject({
-        draftGeneration: 2,
+        branchGeneration: 2,
         operations: [],
       });
-      expect(review?.controller.inlineReview?.draftId).toBe("draft-a");
+      expect(review?.controller.inlineReview?.itemKey).toBe("draft-a");
       expect(document.querySelector("[data-work-list]")?.textContent).toBe("");
       await act(async () => {
         releaseCarry(newRoom);
@@ -383,12 +383,12 @@ it("keeps native unacknowledged writing through HTTP-before-reset remote whole D
       mocks.getDraftPreview.mockResolvedValue({
         ...previewOf("writer"),
         operations: [{ ...previewOf("writer").operations[0], kind: "writer" }],
-        draftGeneration: 2,
+        branchGeneration: 2,
         reviewRoomName: newRoom,
       });
       await acknowledge(newRoom);
       expect(surfaces()).toEqual(["review"]);
-      expect(review?.controller.inlineReview?.draftGeneration).toBe(2);
+      expect(review?.controller.inlineReview?.branchGeneration).toBe(2);
       expect(testQueryClient.getQueryData(previewKey)).toMatchObject({
         operations: [expect.objectContaining({ kind: "writer" })],
       });

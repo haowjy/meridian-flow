@@ -119,13 +119,16 @@ export function DocumentIdentityBar({
   const { controller } = useDraftReview();
   const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
-  const reviewDraftId =
-    review?.documentId === tab.documentId && review.shown ? review.draftId : null;
+  const reviewItemKey =
+    review?.documentId === tab.documentId && review.shown ? review.itemKey : null;
+  // A review that has been entered but not yet painted is a review destination in flight:
+  // it must not read as the live document's chip until its preview answers.
+  const reviewPending = review?.documentId === tab.documentId && !review.shown;
   const openDraft = (row: ReviewFileTarget) => openReviewFile(row, controller.workId);
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
   const showChip =
-    !reviewDraftId && !readOnly && location.provisional && location.scheme !== "uploads";
+    !reviewItemKey && !readOnly && location.provisional && location.scheme !== "uploads";
   const placementOpen = fieldOpen && showChip;
 
   return (
@@ -133,7 +136,7 @@ export function DocumentIdentityBar({
       className={cn(
         "@container min-w-0",
         variant === "header" ? "flex-1" : "shrink-0",
-        reviewDraftId &&
+        reviewItemKey &&
           variant === "band" &&
           "bg-dock-surface shadow-[inset_0_-1px_0_var(--color-border)]",
       )}
@@ -150,6 +153,8 @@ export function DocumentIdentityBar({
         className={cn(
           "flex items-center gap-1 font-mono text-ink-subtle text-sm",
           variant === "header" ? "h-10" : ["px-4", IDENTITY_BAR_BAND_CLASS],
+          // The row grows so every control can own a 44px target (document-identity-row.css).
+          "[@media(pointer:coarse)]:h-11",
         )}
       >
         {placementOpen ? (
@@ -184,10 +189,10 @@ export function DocumentIdentityBar({
             }
           />
         )}
-        {reviewDraftId ? (
+        {reviewItemKey ? (
           <DraftReviewBand
             documentId={tab.documentId}
-            draftId={reviewDraftId}
+            itemKey={reviewItemKey}
             onOpenDraft={openDraft}
             onCloseDraftOnly={onCloseDraftOnly}
           />
@@ -211,7 +216,7 @@ export function DocumentIdentityBar({
             <NamespaceFailureMark failure="set-location" message={passiveFailure} />
           )
         ) : null}
-        {!reviewDraftId ? <DraftReviewChip documentId={tab.documentId} /> : null}
+        {!reviewItemKey && !reviewPending ? <DraftReviewChip documentId={tab.documentId} /> : null}
         <IdentityChipSlot
           projectId={projectId}
           tab={tab}
@@ -221,10 +226,10 @@ export function DocumentIdentityBar({
           }}
         />
       </div>
-      {reviewDraftId ? (
+      {reviewItemKey ? (
         <DraftReviewFailureNotices
           documentId={tab.documentId}
-          draftId={reviewDraftId}
+          itemKey={reviewItemKey}
           onOpenDraft={openDraft}
         />
       ) : null}
@@ -301,7 +306,7 @@ function useIdentityRowFit(ref: React.RefObject<HTMLDivElement | null>) {
     if (!row) return;
     const fit = () => {
       row.setAttribute("data-measuring", "");
-      for (let priority = 0; priority <= 4; priority++) {
+      for (let priority = 0; priority <= 5; priority++) {
         row.dataset.collapse = String(priority);
         const children = [...row.children].filter(
           (child) => child instanceof HTMLElement && getComputedStyle(child).display !== "none",

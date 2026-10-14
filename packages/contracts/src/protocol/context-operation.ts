@@ -14,7 +14,7 @@ export type ContextError =
   | { code: "conflict"; uri: string; occupantKind?: "file" | "folder" }
   | { code: "stale_source"; uri: string }
   | { code: "stale_target"; uri: string }
-  | { code: "invalid_operation"; uri: string; message?: string }
+  | { code: "invalid_operation"; uri: string; message?: string; reason?: "ambiguous_path" }
   | {
       code: "context_unavailable";
       uri: string;

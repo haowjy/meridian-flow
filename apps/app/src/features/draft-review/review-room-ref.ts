@@ -11,7 +11,7 @@ export function reviewRoomRef(
     projectId: string;
     workId: string;
     documentId: string;
-    draftId: string;
+    itemKey: string;
   },
   roomKey: string,
 ): BranchRoomRef {
@@ -45,7 +45,7 @@ export function reviewRoomRef(
             draft.projectId,
             draft.workId,
             draft.documentId,
-            draft.draftId,
+            draft.itemKey,
           ),
         }),
       ]);

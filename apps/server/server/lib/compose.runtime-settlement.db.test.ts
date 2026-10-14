@@ -4,6 +4,7 @@ import { renderAgentEditResult, splitHashline } from "@meridian/agent-edit";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { applyDraftDocument } from "../domains/collab/test-support/apply-draft-document.js";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { testFileGrant } from "../test-support/file-grants.js";
 
@@ -58,6 +59,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "runtime-settlement",
         aiWriteMode: "direct",
       });
+      // The Work already has its draft, as if an earlier write ensured it (contract §2.5).
+      await db
+        .insert(schema.drafts)
+        .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
@@ -160,9 +165,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID },
         threadId: THREAD_ID,
       });
-      await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
-        projectId: PROJECT_ID,
-      });
       const responseId = await runtimes.insertModelResponse(THREAD);
       await bindEditAgent(runtime, THREAD_ID);
 
@@ -212,9 +214,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const drafts = await db
         .select({
           documentId: schema.documentBranches.documentId,
-          workId: schema.documentBranches.workId,
+          workId: schema.drafts.originWorkId,
         })
         .from(schema.documentBranches)
+        .innerJoin(schema.drafts, eq(schema.drafts.id, schema.documentBranches.draftId))
         .where(
           and(
             eq(schema.documentBranches.kind, "work_draft"),
@@ -343,12 +346,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ),
         );
       if (!draft) throw new Error("the reply's draft is missing");
-      await ports.documentSync.pushToLive({ branchId: draft.id, pushedByUserId: USER_ID });
+      expect(
+        await applyDraftDocument(ports.documentSync.draftReview, {
+          workId: WORK_ID as never,
+          documentId: DOC_ID as never,
+          userId: USER_ID as never,
+        }),
+      ).toMatchObject({ status: "applied" });
       await app.changeTrailDelivery.drain();
 
       const live = await ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Agent final.\n\nAgent prelude.");
-      const [settlement] = await db.select().from(schema.branchPushSettlementOutbox);
+      const [settlement] = await db.select().from(schema.branchPushSettlementBatches);
       expect(settlement).toMatchObject({ state: "completed" });
       const trails = await db.select().from(schema.changeTrailShells);
       expect(trails).toHaveLength(1);

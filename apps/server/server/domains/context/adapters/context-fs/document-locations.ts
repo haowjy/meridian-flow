@@ -1,21 +1,15 @@
-/** Transactional namespace claims and direct-to-identity document location history. */
+/** Transactional namespace locks and live-path occupancy checks for context commands. */
 import { folderDocumentName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  contentDocumentPredicate,
-  contextSources,
-  documentPreviousLocations,
-  documents,
-  folders,
-  projects,
-  works,
-} from "@meridian/database/schema";
+import { contextSources, documents, projects, works } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
 import { ContextEntryConflictError } from "../../ports/context-document-store.js";
+import { LIVE_TREE, visibleDocuments, visibleFolders } from "../../tree/tree-view.js";
+import { loadWorkRestoreNamespaceRows } from "../../tree/tree-view-sql.js";
 
 export type ContextNamespace = {
   projectId: string;
@@ -41,18 +35,36 @@ export async function lockNamespaceKeys(
 /**
  * Seam C (file-access §5): Work rows in id order, the bound edit grants'
  * confirmation, then every advisory lock sorted by key, before provisioning
- * or publishing any source.
+ * or publishing any source. A draft write's Work joins the Work locks, and
+ * `afterWorkLocks` (the draft row, contract §14) runs before any namespace key.
  */
 export async function lockContextNamespaces(
   db: Database,
   owner: { projectId: string; userId: string },
   scopes: readonly ContextCommandScope[],
+  options: {
+    workIds?: readonly string[];
+    sourceIds?: readonly string[];
+    afterWorkLocks?: () => Promise<void>;
+  } = {},
 ): Promise<void> {
-  const workIds = [...new Set(scopes.flatMap((scope) => (scope.workId ? [scope.workId] : [])))];
+  const sources = await sourceNamespaces(db, options.sourceIds ?? []);
+  const workIds = [
+    ...new Set([
+      ...scopes.flatMap((scope) => (scope.workId ? [scope.workId] : [])),
+      ...(options.workIds ?? []),
+      ...sources.flatMap((source) => (source.workId ? [source.workId] : [])),
+    ]),
+  ];
   await requireLockedActiveWorks(db, workIds);
+  await options.afterWorkLocks?.();
   await lockAdvisoryKeys(db, [
     ...(scopes.some((scope) => scope.scheme === "user") ? [owner.userId] : []),
     ...scopes.map((scope) => contextNamespaceKey({ ...owner, ...scope })),
+    ...sources.flatMap((source) =>
+      source.scheme === "user" && source.userId ? [source.userId] : [],
+    ),
+    ...sources.map(contextNamespaceKey),
   ]);
 }
 
@@ -74,24 +86,26 @@ export async function lockContextSources(
 
 /**
  * Namespace keys of the sources these documents occupy now, deleted rows included (a restore
- * locks before it unhides). Arrivals that are not authored writes (Apply, Work restore) take
- * these after their Work locks and before any holder lock (contract §9.2, O6).
+ * locks before it unhides), together with explicit sources (an Apply's final locations), in one
+ * sorted acquisition. Arrivals that are not authored writes (Apply, Work restore) take these
+ * after their Work locks and before any holder lock (contract §9.2, O6).
  */
 export async function lockDocumentNamespaces(
   db: Database,
   documentIds: readonly string[],
+  sourceIds: readonly string[] = [],
 ): Promise<void> {
-  if (documentIds.length === 0) return;
-  const rows = await currentDrizzleDb(db)
-    .selectDistinct({ sourceId: documents.contextSourceId })
-    .from(documents)
-    .where(inArray(documents.id, [...new Set(documentIds)]));
+  if (documentIds.length === 0 && sourceIds.length === 0) return;
+  const rows =
+    documentIds.length === 0
+      ? []
+      : await currentDrizzleDb(db)
+          .selectDistinct({ sourceId: documents.contextSourceId })
+          .from(documents)
+          .where(inArray(documents.id, [...new Set(documentIds)]));
   await lockNamespaceKeys(
     db,
-    await sourceNamespaces(
-      db,
-      rows.map((row) => row.sourceId),
-    ),
+    await sourceNamespaces(db, [...rows.map((row) => row.sourceId), ...sourceIds]),
   );
 }
 
@@ -166,94 +180,15 @@ export async function readTreeLocations(
     SELECT d.id::text, p.path || '/' || d.name ||
       CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS path, 'file' AS kind
     FROM documents d JOIN paths p ON d.folder_id = p.id
-    WHERE d.context_source_id = ${source.sourceId} AND d.deleted_at IS NULL AND d.kind = 'content'
+    WHERE d.context_source_id = ${source.sourceId} AND d.deleted_at IS NULL
   `);
 }
 
-/** Called only after a successful claim; an outer rollback restores consumed history. */
-export async function claimDocumentLocation(
-  db: Database,
-  sourceId: string,
-  parentId: string | null,
-  filename: string,
-): Promise<void> {
-  const tx = currentDrizzleDb(db);
-  const rows = await tx.execute<{ path: string }>(sql`
-    WITH RECURSIVE parents AS (
-      SELECT id, parent_id, name AS path FROM folders WHERE id = ${parentId}::uuid
-      UNION ALL
-      SELECT f.id, f.parent_id, f.name || '/' || p.path FROM folders f JOIN parents p ON f.id = p.parent_id
-    )
-    SELECT path FROM parents WHERE parent_id IS NULL
-  `);
-  const path = parentId === null ? filename : `${rows[0]?.path}/${filename}`;
-  if (parentId !== null && !rows[0]) throw new Error("Namespace parent not found");
-  await tx
-    .delete(documentPreviousLocations)
-    .where(
-      and(
-        eq(documentPreviousLocations.contextSourceId, sourceId),
-        eq(documentPreviousLocations.path, path),
-      ),
-    );
-}
-
-/** Record all vacated files, then consume every destination occupant, including folders. */
-export async function recordDocumentMove(
-  db: Database,
-  sourceId: string,
-  destinationSourceId: string,
-  previous: readonly NamespaceLocation[],
-  sourcePath: string,
-  destinationPath: string,
-): Promise<void> {
-  const tx = currentDrizzleDb(db);
-  const vacated = previous.filter((entry) => entry.kind === "file");
-  // Bound statement parameter counts, not the atomic operation. Every batch joins the same transaction.
-  for (let offset = 0; offset < vacated.length; offset += 500) {
-    const batch = vacated.slice(offset, offset + 500);
-    await tx
-      .update(documents)
-      .set({ locationVersion: sql`${documents.locationVersion} + 1` })
-      .where(
-        inArray(
-          documents.id,
-          batch.map((entry) => entry.id),
-        ),
-      );
-    await tx.delete(documentPreviousLocations).where(
-      and(
-        eq(documentPreviousLocations.contextSourceId, sourceId),
-        inArray(
-          documentPreviousLocations.path,
-          batch.map((entry) => entry.path),
-        ),
-      ),
-    );
-    await tx.insert(documentPreviousLocations).values(
-      batch.map((entry) => ({
-        contextSourceId: sourceId,
-        path: entry.path,
-        documentId: entry.id,
-      })),
-    );
-  }
-  const occupiedPaths = previous.map(
-    (entry) => destinationPath + entry.path.slice(sourcePath.length),
-  );
-  for (let offset = 0; offset < occupiedPaths.length; offset += 500) {
-    await tx
-      .delete(documentPreviousLocations)
-      .where(
-        and(
-          eq(documentPreviousLocations.contextSourceId, destinationSourceId),
-          inArray(documentPreviousLocations.path, occupiedPaths.slice(offset, offset + 500)),
-        ),
-      );
-  }
-}
-
-/** Caller holds the logical namespace lock; folder aliases participate in document claims. */
+/**
+ * Caller holds the logical namespace lock; a folder's document alias participates in
+ * document claims. Only the live tree occupies a path: a hidden node never blocks a live
+ * entry.
+ */
 export async function hasOppositeContextEntry(
   db: Database,
   sourceId: string,
@@ -263,35 +198,37 @@ export async function hasOppositeContextEntry(
 ): Promise<boolean> {
   const tx = currentDrizzleDb(db);
   if (kind === "file") {
+    const vf = visibleFolders(LIVE_TREE);
     const siblings = await tx
-      .select({ name: folders.name })
-      .from(folders)
+      .select({ name: vf.name })
+      .from(vf)
       .where(
         and(
-          eq(folders.contextSourceId, sourceId),
-          parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
-          isNull(folders.deletedAt),
+          eq(vf.contextSourceId, sourceId as never),
+          parentId === null ? isNull(vf.parentId) : eq(vf.parentId, parentId as never),
         ),
       );
     return siblings.some((row) => folderDocumentName(row.name) === filename);
   }
+  const vd = visibleDocuments(LIVE_TREE);
   const [row] = await tx
-    .select({ id: documents.id })
-    .from(documents)
+    .select({ id: vd.id })
+    .from(vd)
     .where(
       and(
-        eq(documents.contextSourceId, sourceId),
-        contentDocumentPredicate(),
-        parentId === null ? isNull(documents.folderId) : eq(documents.folderId, parentId),
-        sql`CASE WHEN ${documents.extension} = '' THEN ${documents.name} ELSE ${documents.name} || '.' || ${documents.extension} END = ${folderDocumentName(filename)}`,
-        isNull(documents.deletedAt),
+        eq(vd.contextSourceId, sourceId as never),
+        parentId === null ? isNull(vd.folderId) : eq(vd.folderId, parentId as never),
+        sql`CASE WHEN ${vd.extension} = '' THEN ${vd.name} ELSE ${vd.name} || '.' || ${vd.extension} END = ${folderDocumentName(filename)}`,
       ),
     )
     .limit(1);
   return !!row;
 }
 
-/** Check the complete arriving Work tree before restoring either table. */
+/**
+ * Check the complete arriving Work tree before restoring either table. Hidden rows are a
+ * draft's and stay hidden through a restore, so they neither arrive nor occupy (F11).
+ */
 export async function guardWorkContextRestore(db: Database, workId: string): Promise<void> {
   const sources = await currentDrizzleDb(db)
     .select({ id: contextSources.id })
@@ -304,25 +241,7 @@ export async function guardWorkContextRestore(db: Database, workId: string): Pro
       sources.map((row) => row.id),
     ),
   );
-  const rows = await currentDrizzleDb(db).execute<{
-    source: string;
-    parent: string | null;
-    name: string;
-    kind: "file" | "folder";
-    arriving: boolean;
-  }>(sql`
-    SELECT d.context_source_id AS source, d.folder_id AS parent,
-      d.name || CASE WHEN d.extension = '' THEN '' ELSE '.' || d.extension END AS name,
-      'file' AS kind, coalesce(d.deleted_by_work_id = ${workId}::uuid, false) AS arriving
-    FROM documents d WHERE d.kind = 'content'
-      AND d.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
-      AND (d.deleted_at IS NULL OR d.deleted_by_work_id = ${workId}::uuid)
-    UNION ALL
-    SELECT f.context_source_id, f.parent_id, f.name, 'folder',
-      coalesce(f.deleted_by_work_id = ${workId}::uuid, false)
-    FROM folders f WHERE f.context_source_id IN (SELECT id FROM context_sources WHERE work_id = ${workId}::uuid)
-      AND (f.deleted_at IS NULL OR f.deleted_by_work_id = ${workId}::uuid)
-  `);
+  const rows = await loadWorkRestoreNamespaceRows(currentDrizzleDb(db), workId);
   const files = new Map<string, boolean>();
   const directories = new Map<string, boolean>();
   const folderAliases = new Map<string, boolean>();

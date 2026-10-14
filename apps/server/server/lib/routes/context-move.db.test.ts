@@ -6,6 +6,7 @@ import {
   createTestDocumentLinkScopes,
   testLinkDeps,
 } from "../../domains/collab/test-support/document-link-scopes.js";
+import { createDrizzleContextCatalog } from "../../domains/context/adapters/context-catalog.js";
 import { createDrizzleLineageScratchLifecycle } from "../../domains/context/adapters/lineage-scratch-lifecycle.js";
 import {
   createAllowAllFileAccess,
@@ -133,6 +134,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileAccess: createAllowAllFileAccess(),
         db,
         workProjectionMutation: createTestWorkProjectionMutation(db),
+        catalogMutations: createDrizzleContextCatalog(db),
       });
       collab.bindHocuspocus(
         new Hocuspocus({
@@ -188,7 +190,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        manifestMembership: collab,
+        drafts: collab.drafts,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
       if (!authority) throw new Error("missing Work authority");
@@ -960,9 +962,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
     it("promotes scratch into manuscript, graduating provisional naming without touching Yjs authority", async () => {
-      const { projectId, workId, collab, port } = await arrangeUntitled();
-      const manifestBefore = await collab.resolveManifestMembership({ projectId });
-      expect(manifestBefore.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
+      const { projectId, workId, port } = await arrangeUntitled();
       const documentYjsBefore = await yjsState(DOCUMENT_ID);
 
       await expect(
@@ -1009,8 +1009,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         value: { documentId: DOCUMENT_ID },
       });
 
-      const manifestAfter = await collab.resolveManifestMembership({ projectId });
-      expect(manifestAfter.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
       expect(await yjsState(DOCUMENT_ID)).toEqual(documentYjsBefore);
     });
 
@@ -1122,7 +1120,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("graduates provisional naming in place on a deliberate stay-put", async () => {
-      const { projectId, workId, collab, port } = await arrangeUntitled();
+      const { workId, port } = await arrangeUntitled();
       const rowBefore = await db
         .select()
         .from(schema.documents)
@@ -1158,8 +1156,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.documents.id, DOCUMENT_ID));
       expect(rowAfter[0]).toEqual({ ...rowBefore[0], provisionalName: false });
       expect(await yjsState(DOCUMENT_ID)).toEqual(yjsBefore);
-      const manifest = await collab.resolveManifestMembership({ projectId });
-      expect(manifest.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
     });
 
     it("keeps provisional naming across a system move without the writer-placement option", async () => {
@@ -1290,8 +1286,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db
         .insert(schema.documents)
         .values({ id: otherHolder, contextSourceId: otherSource, name: "other", extension: "" });
-      // A certified holder row the live manifest does not hold (draft-only, as between an
-      // Apply's content and manifest pushes): not live, not counted.
+      // A hidden draft holder is not live and contributes no incoming-link count.
       const nonLiveHolder = crypto.randomUUID();
       const [manuscript] = await db
         .select({ id: schema.contextSources.id })
@@ -1308,6 +1303,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextSourceId: manuscript.id,
         name: "draft-only",
         extension: "",
+        hidden: true,
       });
       const ahead = crypto.randomUUID();
       await db.insert(schema.linkAheadRefs).values({
@@ -1329,7 +1325,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         row(holder, target, 2),
         row(target, unmoved), // the moved document's own outgoing link
         row(otherHolder, target), // another project
-        row(nonLiveHolder, target), // not in the live manifest
+        row(nonLiveHolder, target), // hidden
         {
           sourceDocumentId: aheadHolder as never,
           linkKey: `ahead:${ahead}`,

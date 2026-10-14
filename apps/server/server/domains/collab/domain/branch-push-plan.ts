@@ -1,4 +1,4 @@
-/** Pure document materialization and effect-verification primitives for branch pushes. */
+/** Pure document materialization and integration primitives for branch pushes. */
 import { createHash } from "node:crypto";
 import {
   type BlockRef,
@@ -12,6 +12,7 @@ import {
 import * as Y from "yjs";
 import type { BranchJournalRow, PublicationBlockChange } from "./branch-push-contracts.js";
 import { documentDifference } from "./document-difference.js";
+
 export class BranchPushEffectVerificationError extends Error {
   constructor(
     readonly operation: string,
@@ -97,14 +98,11 @@ export function stablePushIdempotencyKey(input: {
   branchId: string;
   generation: number;
   journalIds: number[];
-  publicationKind: "content" | "manifest";
 }): string {
   return createHash("sha256")
     .update(input.branchId)
     .update("\0")
     .update(String(input.generation))
-    .update("\0")
-    .update(input.publicationKind)
     .update("\0")
     .update([...input.journalIds].sort((a, b) => a - b).join(","))
     .digest("hex");

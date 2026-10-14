@@ -20,7 +20,7 @@ export type ReviewFocusRequest = {
   /** The launch that made it; a newer launch replaces the request. */
   sequence: number;
   documentId: string;
-  draftId: string;
+  itemKey: string;
   operationIds: readonly string[];
 };
 
@@ -38,7 +38,7 @@ export function FocusOpenedReview({
 
   useEffect(() => {
     const open = controller.inlineReview;
-    if (open?.documentId !== request.documentId || open.draftId !== request.draftId) {
+    if (open?.documentId !== request.documentId || open.itemKey !== request.itemKey) {
       if (entered.current) onDone();
       return;
     }
@@ -51,8 +51,8 @@ export function FocusOpenedReview({
       candidate.operationIds.some((operationId) => wanted.has(operationId)),
     );
     if (change) {
-      const { documentId, draftId } = request;
-      controller.focusReviewChange({ documentId, draftId }, change, { scroll: true });
+      const { documentId, itemKey } = request;
+      controller.focusReviewChange({ documentId, itemKey }, change, { scroll: true });
     }
     onDone();
   }, [active, changes, controller, onDone, preview, request]);

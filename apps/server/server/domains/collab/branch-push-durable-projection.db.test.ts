@@ -40,13 +40,13 @@ describe("branch-push durable projection (postgres)", () => {
     cold.destroyWarmState();
   });
 
-  it("recovery refines the trail version already settled for the same joined revision", async () => {
+  it("a joined revision publishes one trail version across a rolled-back completion", async () => {
     let faulted = false;
     const harness = createHarness(db, {
       afterDurableCommit: async ({ appendWriterPrefix }) => {
         await appendWriterPrefix(ALPHA_ID, "Joined writer: ");
       },
-      afterSettlement: async () => {
+      beforeCompletionCommit: () => {
         if (faulted) return;
         faulted = true;
         throw new Error("injected fault after joined revision settlement");
@@ -56,14 +56,15 @@ describe("branch-push durable projection (postgres)", () => {
     await expect(harness.push(branchId)).rejects.toThrow(
       "injected fault after joined revision settlement",
     );
+    // Trail settlement shares the completion transaction: the fault rolled it back.
     const [before] = await db.select().from(schema.changeTrailShells);
-    expect(before?.version).toBe(2);
+    expect(before?.version).toBe(1);
 
     await expirePendingClaims(db);
     const cold = createHarness(db);
     await expect(cold.recoverPendingLiveSettlements()).resolves.toBe(1);
     const [after] = await db.select().from(schema.changeTrailShells);
-    expect(after?.version).toBe(before?.version);
+    expect(after?.version).toBe(2);
     harness.destroyWarmState();
     cold.destroyWarmState();
   });

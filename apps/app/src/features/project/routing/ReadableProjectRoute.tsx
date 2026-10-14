@@ -12,15 +12,15 @@ import {
   getProjectDocumentAddress,
 } from "@/client/api/projects-api";
 import type { ContextOwner } from "@/client/query/context-request-options";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorkDrafts } from "@/client/query/useWorkDrafts";
 import {
   type ContextTab,
   getContextTabs,
+  isDraftOnly,
   isEditorScheme,
-  matchesReviewDraft,
+  matchesReviewItem,
   useContextTabs,
   useContextTabsStore,
 } from "@/client/stores";
@@ -37,6 +37,12 @@ import {
   chatSurfaceThreadId,
   useProjectChatNavigation,
 } from "./chat-navigation";
+import {
+  bindDocumentAddressReview,
+  documentAddressQueryOptions,
+  reviewAddressRouteBinding,
+  reviewBoundAddressResult,
+} from "./document-address-review";
 import {
   DocumentSwitchFailureProvider,
   destinationFailure,
@@ -352,29 +358,22 @@ function ReadableProjectDestination({
         isError: false,
         refetch: () => undefined,
       };
+  const addressBinding = bindDocumentAddressReview(address.itemKey, addressWorkId);
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
-  const documentLookup = useQuery({
-    queryKey: [
-      ...projectQueryKeys.documentAddresses(projectId),
-      documentDestination?.scheme,
-      documentDestination?.path,
-      addressOwner.rootThreadId ?? addressOwner.workId,
-      addressCatalog?.normalized.generation,
-      addressCatalog?.normalized.appliedRevision,
-    ],
-    queryFn: () => {
-      if (!documentDestination) throw new Error("Document address is required");
-      return getProjectDocumentAddress(
+  const documentLookup = useQuery(
+    documentAddressQueryOptions(
+      {
         projectId,
-        documentDestination.scheme,
-        documentDestination.path,
-        addressOwner,
-      );
-    },
-    enabled: !!documentDestination && editorWork.status === "present",
-    staleTime: 0,
-    retry: false,
-  });
+        destination: documentDestination,
+        owner: addressOwner,
+        binding: addressBinding,
+        workResolved: editorWork.status === "present",
+        catalogGeneration: addressCatalog?.normalized.generation,
+        catalogRevision: addressCatalog?.normalized.appliedRevision,
+      },
+      getProjectDocumentAddress,
+    ),
+  );
   const { selection } = useContextRemovalProject(projectId);
   const boundDocumentId = routeContinuityDocumentId({
     selection,
@@ -385,7 +384,7 @@ function ReadableProjectDestination({
   });
   const localDocumentAddress = useMemo(
     () =>
-      documentDestination
+      documentDestination && addressBinding.kind === "plain"
         ? resolveLocalDocumentAddress(
             projectId,
             documentDestination,
@@ -397,6 +396,7 @@ function ReadableProjectDestination({
         : undefined,
     [
       addressCatalog,
+      addressBinding.kind,
       documentDestination,
       addressOwner.workId,
       addressOwner.rootThreadId,
@@ -407,7 +407,8 @@ function ReadableProjectDestination({
   const editorDrafts = useWorkDrafts(projectId, documentDestination ? workId : null);
   const reconciledDocumentAddress = reconcileDocumentAddress(
     localDocumentAddress,
-    documentLookup.data,
+    reviewBoundAddressResult(addressBinding, documentLookup.data),
+    addressBinding.kind === "plain" ? "live" : "review",
   );
   const gated = gateLiveView(
     reconciledDocumentAddress.result,
@@ -418,10 +419,26 @@ function ReadableProjectDestination({
       isError: addressCatalogError,
     },
     editorDrafts,
-    (documentId) => workspaceTabs.some((tab) => !tab.draftOnly && tab.documentId === documentId),
+    (documentId) => workspaceTabs.some((tab) => !isDraftOnly(tab) && tab.documentId === documentId),
+    reconciledDocumentAddress.view,
   );
   const documentResult = gated.result;
+  const reviewRouteBinding = reviewAddressRouteBinding(
+    addressBinding,
+    documentResult,
+    selection,
+    documentDestination,
+    workId,
+  );
+  useLayoutEffect(() => {
+    if (!reviewRouteBinding) return;
+    contextRemoval.bindRouteSelection(projectId, reviewRouteBinding.revision, {
+      kind: "server",
+      documentId: reviewRouteBinding.documentId,
+    });
+  }, [contextRemoval, projectId, reviewRouteBinding?.revision, reviewRouteBinding?.documentId]);
   const draftOnly = gated.outcome === "ready" ? gated.draftOnly : undefined;
+  const reviewItemKey = address.itemKey ?? draftOnly?.draft.itemKey;
   const addressDocumentId =
     documentResult && documentResult.kind !== "unavailable"
       ? documentResult.document.documentId
@@ -474,15 +491,16 @@ function ReadableProjectDestination({
       (localDocumentId
         ? undefined
         : (documentIssue ??
-          (draftOnly
+          (reviewItemKey
             ? // Review installs the tab; until it has, the address is still being repaired.
-              address.draftId === draftOnly.draft.draftId &&
-              workspaceTabs.some((tab) =>
-                matchesReviewDraft(tab, {
-                  documentId: draftOnly.documentId,
-                  reviewWorkId: workId ?? "",
-                  reviewDraftId: draftOnly.draft.draftId,
-                }),
+              address.itemKey === reviewItemKey &&
+              workspaceTabs.some(
+                (tab) =>
+                  (address.itemKey && !isDraftOnly(tab) && tab.documentId === addressDocumentId) ||
+                  matchesReviewItem(tab, {
+                    reviewWorkId: workId ?? "",
+                    reviewItemKey,
+                  }),
               )
               ? undefined
               : "loading"
@@ -506,7 +524,7 @@ function ReadableProjectDestination({
     return {
       ...address,
       destination: next,
-      draftId: undefined,
+      itemKey: undefined,
       workView: undefined,
       worksView: undefined,
     };
@@ -517,7 +535,7 @@ function ReadableProjectDestination({
     return workDetailAddress(address, target);
   }
   const contextDestination = useCallback(
-    (target: ContextRouteRequest, preparedTab?: ContextTab, draftId?: string) =>
+    (target: ContextRouteRequest, preparedTab?: ContextTab, itemKey?: string) =>
       prepareEditorDestination(
         {
           projectId,
@@ -527,7 +545,7 @@ function ReadableProjectDestination({
         },
         target,
         preparedTab,
-        draftId,
+        itemKey,
       ),
     [projectId, user.userId],
   );
@@ -542,25 +560,28 @@ function ReadableProjectDestination({
             (result) => result.resolutions[0] ?? { kind: "failed" as const },
             () => ({ kind: "failed" as const }),
           ),
-        admitDraftReview: (installed) => contextRemoval.admitDraftReview(projectId, installed),
+        admitDraftReview: (installed, reviewWorkId) =>
+          contextRemoval.admitDraftReview(projectId, installed, reviewWorkId),
       }),
     [contextRemoval, projectId, user.userId],
   );
-  const setEditorReviewDraftId = useCallback((draftId: string | null, changeId?: string) => {
+  const itemStillListed = (itemKey: string | undefined) =>
+    !editorDrafts.files || editorDrafts.files.some((file) => file.draft.itemKey === itemKey);
+  const setEditorReviewItemKey = useCallback((itemKey: string | null, changeId?: string) => {
     const current = latest.current;
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
     const { address } = current;
     // A review names its Work: an address that left it implicit states the Editor's own now.
     const work =
-      draftId && address.work.kind === "absent" && current.editorWorkId
+      itemKey && address.work.kind === "absent" && current.editorWorkId
         ? workSelectionFor(address.destination, current.editorWorkId, current.noWorkId)
         : address.work;
     void current.navigation.replaceIfCurrent(ticket, {
       ...address,
       work,
-      draftId: draftId ?? undefined,
-      changeId: draftId ? changeId : undefined,
+      itemKey: itemKey ?? undefined,
+      changeId: itemKey ? changeId : undefined,
     });
   }, []);
   const closeDestination = useCallback(
@@ -683,7 +704,7 @@ function ReadableProjectDestination({
             ...options,
             ...(editorContainerAddress?.documentId === tab.documentId &&
             editorContainerAddress.workId === workId
-              ? { draftId: editorContainerAddress.address.draftId }
+              ? { itemKey: editorContainerAddress.address.itemKey }
               : {}),
           },
         );
@@ -746,7 +767,7 @@ function ReadableProjectDestination({
               // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
               result={documentResult}
               localFile={reconciledDocumentAddress.localFile}
-              draftOnlyId={draftOnly?.draft.draftId}
+              reviewItemKey={reviewItemKey}
               workId={workId}
               noWorkId={noWorkId}
               navigation={navigation}
@@ -791,7 +812,9 @@ function ReadableProjectDestination({
                       // or falls back to another. Either way the review follows
                       // the address until ReviewAddressOwner, which knows
                       // the document's identity, decides it no longer applies.
-                      draftId: address.draftId,
+                      // An item the drafts list no longer holds (a Discard took it)
+                      // names nothing, so the fallback document opens without it.
+                      itemKey: itemStillListed(address.itemKey) ? address.itemKey : undefined,
                     },
                   );
                 else if (next.screen === "work")
@@ -805,15 +828,24 @@ function ReadableProjectDestination({
             activeContextFolder={search.folder ?? null}
             activeContextPath={editorDocument.activeContextPath}
             activeContextChat={editorDocument.activeContextChat}
-            reviewDraftId={address.draftId}
+            reviewItemKey={address.itemKey}
             reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
+            reviewAddressAdmission={
+              documentIssue === "error"
+                ? "failed"
+                : documentIssue === "unavailable"
+                  ? "unavailable"
+                  : addressDocumentId
+                    ? "admitted"
+                    : "pending"
+            }
             onSelectScreen={selectScreen}
             onSelectContextScheme={(scheme) => browse(scheme)}
             onExitContextScheme={() => browse(null)}
             onSelectContextFolder={(path) => browse(search.scheme ?? null, path)}
             onOpenContextTarget={openContext}
-            onSetEditorReviewDraftId={setEditorReviewDraftId}
+            onSetEditorReviewItemKey={setEditorReviewItemKey}
           />
         </ProjectDocumentNavigationProvider>
       </ChatNavigationProvider>

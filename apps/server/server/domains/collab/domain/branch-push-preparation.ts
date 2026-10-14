@@ -8,11 +8,7 @@ import {
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { BranchSnapshot } from "./branch-coordinator.js";
-import type {
-  BranchJournalRow,
-  PreparedPush,
-  PreparedPushCommit,
-} from "./branch-push-contracts.js";
+import type { BranchJournalRow, PreparedPush } from "./branch-push-contracts.js";
 import { publicationBlockChanges } from "./branch-push-plan.js";
 import {
   journalAttributionByChangedBlock,
@@ -125,7 +121,7 @@ export async function preparePushUnderLiveLock(
         pushUpdate: phase.pushUpdate,
         idempotencyKey: phase.idempotencyKey,
         receiptId,
-      } satisfies Omit<PreparedPushCommit, "pushedByUserId" | "trail" | "pendingLiveSettlement">,
+      } satisfies PreparedPush["prepared"],
     };
   } finally {
     afterDoc.destroy();
