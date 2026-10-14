@@ -5,17 +5,20 @@ import { useMemo } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useImportsSnapshot, useOptionalImports } from "./ImportProvider";
 import { withImportRows } from "./tree-projection";
+import { type ImportedTree, plainTree } from "./tree-rows";
 
-export function useImportedCatalog(
+export function useImportedTree(
   catalog: CatalogContextView | null,
   scheme: ProjectContextTreeScheme,
-): CatalogContextView | null {
+): ImportedTree | null {
   const snapshot = useImportsSnapshot(useOptionalImports()?.coordinator ?? null);
   return useMemo(
     () =>
-      catalog && snapshot.imports.length > 0
-        ? withImportRows(catalog, scheme, snapshot.imports)
-        : catalog,
+      !catalog
+        ? null
+        : snapshot.imports.length > 0
+          ? withImportRows(catalog, scheme, snapshot.imports)
+          : plainTree(catalog),
     [catalog, scheme, snapshot],
   );
 }

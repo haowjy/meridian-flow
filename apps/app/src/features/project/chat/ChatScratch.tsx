@@ -21,6 +21,7 @@ import { type CSSProperties, useMemo, useRef } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { useContextTabs } from "@/client/stores";
 import type { DrillNode, DrillTree } from "@/components/app/DrillInMenu";
+import { plainTree } from "@/features/import/tree-rows";
 import {
   DeleteConfirmationDialog,
   type DeleteTarget,
@@ -332,7 +333,7 @@ function ScratchEntry({
         scheme: "scratch",
         owner: entry.owner,
         capabilities,
-        catalog: entry.catalog,
+        tree: plainTree(entry.catalog),
         activeScheme: "scratch",
         activePath: entry.catalog.findDocument(openId ?? "")?.path ?? null,
         onSelectFile: (_scheme, file) => {

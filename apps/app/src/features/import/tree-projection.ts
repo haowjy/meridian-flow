@@ -1,6 +1,7 @@
 /**
  * Import rows over a catalog view: a pure function of the catalog and the
- * coordinator's snapshot, keyed by node id. It never writes back.
+ * coordinator's snapshot, keyed by node id, returned as a tree of `TreeRow`s that
+ * keeps real catalog nodes apart from rows only an import draws. It never writes back.
  *
  * For each node an import knows (predicted before the plan answers, the status's
  * plan nodes after), the rows are:
@@ -22,17 +23,20 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { renderFilename } from "@meridian/contracts/protocol";
-import type {
-  CatalogContextView,
-  CatalogDirectory,
-  CatalogFile,
-  CatalogNode,
-  ImportRowInfo,
-} from "@/client/query/context-catalog-projection";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { filenameForDisplay } from "./display-name";
 import { effectiveEntry, fullyRead, type ImportState } from "./import-state";
 import type { ImportTarget } from "./placements";
 import { runInfoOf } from "./run-mark";
+import {
+  type ImportedTree,
+  type ImportRowInfo,
+  type PendingRow,
+  plainTree,
+  rowKind,
+  rowName,
+  type TreeRow,
+} from "./tree-rows";
 
 /** What the projection reads of one import: its state and the coordinator's evidence. */
 export type ProjectedImport = {
@@ -46,7 +50,7 @@ export type ProjectedImport = {
   target: ImportTarget | null;
 };
 
-type Failure = NonNullable<NonNullable<CatalogFile["import"]>["failure"]>;
+type Failure = NonNullable<ImportRowInfo["failure"]>;
 
 /** One node an import knows, however it came to know it. */
 type Node = {
@@ -198,12 +202,12 @@ function runMarks(
   return marks;
 }
 
-/** Layers every given import's nodes over `catalog`; the view is unchanged when none touch it. */
+/** Layers every given import's nodes over `catalog`; the tree is the catalog's own when none touch it. */
 export function withImportRows(
   catalog: CatalogContextView,
   scheme: ProjectContextTreeScheme,
   imports: readonly ProjectedImport[],
-): CatalogContextView {
+): ImportedTree {
   const held = (id: string) =>
     catalog.findDocument(id) !== null || catalog.normalized.entries.get(id)?.kind === "folder";
   const nodes = new Map<string, Node & { importId: string }>();
@@ -255,90 +259,65 @@ export function withImportRows(
   }
 
   const run = runMarks(imports, scheme, catalog.root.entryId);
-  if (nodes.size === 0 && run.size === 0) return catalog;
+  if (nodes.size === 0 && run.size === 0) return plainTree(catalog);
 
-  const marks = (node: CatalogNode): CatalogNode => {
-    const id = node.kind === "dir" ? node.entryId : node.documentId;
-    const known = nodes.get(id);
+  /** The mark on a real folder or the area root: arriving below it, and the run's own state. */
+  const folderStatus = (id: string): ImportRowInfo | undefined => {
     const status = run.get(id);
-    if (node.kind === "dir") {
-      if (!arrivingFolders.has(id) && !status) return node;
-      return {
-        ...node,
-        import: { ...(arrivingFolders.has(id) ? { arriving: true as const } : {}), ...status },
-      };
-    }
-    const arriving = known?.arriving === true || node.importPending === true;
-    if (!known?.failure && !arriving) return node;
-    return {
-      ...node,
-      import: {
-        ...(arriving ? { arriving: true as const } : {}),
-        ...(known?.failure ? { failure: known.failure } : {}),
-      },
-    };
+    if (!arrivingFolders.has(id) && !status) return undefined;
+    return { ...(arrivingFolders.has(id) ? { arriving: true as const } : {}), ...status };
   };
 
-  const overlay = (node: Node, parentId: string): CatalogNode => {
-    if (node.kind === "dir") {
-      const dir: CatalogDirectory = {
-        kind: "dir",
-        entryId: node.id,
-        parentId,
-        name: node.name,
-        path: "",
-        uri: "",
-        import: {
-          client: true,
-          ...(node.stalled ? {} : { arriving: true as const }),
-          ...run.get(node.id),
+  const catalogRows = (parentId: string): TreeRow[] =>
+    (nodes.has(parentId) && !held(parentId) ? [] : catalog.children(parentId)).map((node) => {
+      if (node.kind === "dir") {
+        const status = folderStatus(node.entryId);
+        return status ? { origin: "catalog", node, status } : { origin: "catalog", node };
+      }
+      const known = nodes.get(node.documentId);
+      const arriving = known?.arriving === true || node.importPending === true;
+      if (!known?.failure && !arriving) return { origin: "catalog", node };
+      return {
+        origin: "catalog",
+        node,
+        status: {
+          ...(arriving ? { arriving: true as const } : {}),
+          ...(known?.failure ? { failure: known.failure } : {}),
         },
       };
-      return dir;
-    }
-    const file: CatalogFile = {
-      kind: "file",
-      entryId: node.id,
-      parentId,
-      documentId: node.id,
-      name: node.name,
-      path: "",
-      uri: "",
-      provisionalName: false,
-      hasProperties: false,
-      importPending: true,
-      editable: false,
-      disposition: "binary",
-      fileType: "binary",
-      import: {
-        client: true,
-        ...(node.stalled ? {} : { arriving: true as const }),
-        ...(node.failure ? { failure: node.failure } : {}),
-      },
-    };
-    return file;
-  };
+    });
 
-  const sorted = (list: CatalogNode[]) =>
-    list.sort((a, b) =>
-      a.kind !== b.kind ? (a.kind === "dir" ? -1 : 1) : a.name.localeCompare(b.name),
-    );
+  const pendingRow = (node: Node, parentId: string): PendingRow => ({
+    origin: "import",
+    id: node.id,
+    parentId,
+    kind: node.kind,
+    name: node.name,
+    status:
+      node.kind === "dir"
+        ? { ...(node.stalled ? {} : { arriving: true as const }), ...run.get(node.id) }
+        : {
+            ...(node.stalled ? {} : { arriving: true as const }),
+            ...(node.failure ? { failure: node.failure } : {}),
+          },
+  });
 
-  const cache = new Map<string, readonly CatalogNode[]>();
-  const children = (parentId: string): readonly CatalogNode[] => {
+  const sorted = (list: TreeRow[]) =>
+    list.sort((a, b) => {
+      const [ak, bk] = [rowKind(a), rowKind(b)];
+      return ak !== bk ? (ak === "dir" ? -1 : 1) : rowName(a).localeCompare(rowName(b));
+    });
+
+  const cache = new Map<string, readonly TreeRow[]>();
+  const rows = (parentId: string): readonly TreeRow[] => {
     const cached = cache.get(parentId);
     if (cached) return cached;
-    const real = nodes.has(parentId) && !held(parentId) ? [] : catalog.children(parentId);
-    const added = (byParent.get(parentId) ?? []).map((node) => overlay(node, parentId));
-    const result = added.length === 0 ? real.map(marks) : sorted([...real.map(marks), ...added]);
+    const real = catalogRows(parentId);
+    const added = (byParent.get(parentId) ?? []).map((node) => pendingRow(node, parentId));
+    const result = added.length === 0 ? real : sorted([...real, ...added]);
     cache.set(parentId, result);
     return result;
   };
 
-  const root = run.get(catalog.root.entryId);
-  return {
-    ...catalog,
-    ...(root ? { root: { ...catalog.root, import: root } } : {}),
-    children,
-  };
+  return { root: catalog.root, rows, statusOf: folderStatus };
 }

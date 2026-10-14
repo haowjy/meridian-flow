@@ -4,8 +4,8 @@
  * from the run mark, Retry failed files, Continue import and Stop.
  */
 import { useMemo } from "react";
-import type { ImportRowInfo } from "@/client/query/context-catalog-projection";
 import { useOptionalImports } from "./ImportProvider";
+import type { ImportRowInfo } from "./tree-rows";
 
 export type ImportRowActions = {
   retry?: () => void;

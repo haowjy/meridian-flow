@@ -10,7 +10,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Loader2, Play, RotateCcw, Square, Trash2, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-import type { ImportRowInfo } from "@/client/query/context-catalog-projection";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { preparingSentence, refusalSentence, runSentence } from "@/features/import/reason-copy";
+import type { ImportRowInfo } from "@/features/import/tree-rows";
 import { useImportRowActions } from "@/features/import/use-import-row-actions";
 
 const MARK_BOX =

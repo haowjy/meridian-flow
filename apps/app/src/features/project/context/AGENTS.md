@@ -37,9 +37,13 @@ destination one level at a time (scheme → folder → file), driven by `?scheme
 `?folder=` / `?path=` params.
 
 Imports add rows and marks without touching the replica: both shells render
-`features/import`'s projection over the catalog view (`useImportedCatalog`), and
-`ImportRunMark` on the row its `targetOf` names. Never write import rows into the
-replica or the catalog; see [features/import](../../import/AGENTS.md).
+`features/import`'s tree (`useImportedTree`: `TreeRow`s, a real catalog node with
+its marks or a `PendingRow` only the import draws), and `ImportRunMark` on the
+row its `targetOf` names. A pending row has no URI or document capabilities, so
+navigation and namespace actions take the catalog variant, and document lookup
+stays on the canonical catalog. `ImportRowStatus.tsx` holds the status content
+both shells share (`PendingRowStatus`, `ImportFailureMark`). Never write import
+rows into the replica or the catalog; see [features/import](../../import/AGENTS.md).
 
 Shared across both shells:
 - **File suggestions** (`file-suggestions/`): reusable client-side flattening,

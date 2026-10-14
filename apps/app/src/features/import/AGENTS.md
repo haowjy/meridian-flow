@@ -77,7 +77,11 @@ cleanup.
   bridge, nothing). An overlay sits in the area of its nearest catalog ancestor by
   id (the planned area only for nodes at an area root), and an import none of
   whose nodes can land in a scheme is skipped, so an unrelated scheme keeps its
-  own view. It never writes back.
+  own view. It never writes back. Its output is an `ImportedTree` (`tree-rows.ts`):
+  `TreeRow` is a catalog node with its marks, or a `PendingRow` (id, parent, name,
+  kind, status) with no URI, editor classification or document capabilities; marks
+  are read by target id (`statusOf`). The catalog module knows no import types, and
+  callers look documents up on the canonical catalog.
 - **One store per import** (`ImportStore`) is a passive cache: the full read,
   `?since=` cuts and this tab's own upload answers merge into one import status
   (`ImportStatus`, held as `state.status`). It never reads or polls.
