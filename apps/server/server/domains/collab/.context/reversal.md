@@ -20,8 +20,16 @@ refusals. The GET availability route serves Work receipts by turn target only.
   reversal endpoints are gone; the card and the model both use the one inverse
   engine above. A card Undo skips a part by name when its draft was discarded
   (`expired`, reason `discarded`) or an earlier writer edit depends on it
-  (`cant_undo_dependent`), and inverts the rest. A model `write undo` of a draft
-  edit after the chat's Work moved refuses `cant_undo_elsewhere`.
+  (`cant_undo_dependent`), and inverts the rest. Those are named skips of parts
+  that are targets. A turn's edit targets (`readTurnEditTargets`,
+  `adapters/drizzle-turn-edit-targets.ts`) exclude tombstoned documents through
+  the tree's `documentNotDeletedSql` (`context/tree/tree-view-sql.ts`), so a
+  discarded draft-created document, or one the writer deleted, is never an
+  inverse target and drops out of Undo as it already does from lineage. Final
+  address liveness stays with the lineage reader;
+  [#844](https://github.com/haowjy/meridian-flow/issues/844) plans to split the
+  target list by reader. A model `write undo` of a draft edit after the chat's
+  Work moved refuses `cant_undo_elsewhere`.
 - **Effective actions**: `inverse-actions.ts` indexes accepted Undo targets per
   part and subtracts only effective Redo consumption. Rolled-back actions have
   no stack effect. Card placement/partial selection and model strict stack

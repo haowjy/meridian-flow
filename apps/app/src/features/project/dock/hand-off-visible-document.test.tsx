@@ -25,14 +25,20 @@ afterEach(() => vi.useRealTimers());
 
 // Real review/address owners compose with both document hosts; only session,
 // TipTap construction and paint are substituted, never the controller.
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { act, type ReactNode, useEffect, useState } from "react";
 import {
   DraftReviewBoundary,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
-import { createReviewScopeFixture, listed, preview, work } from "@/test-support/draft-review-scope";
+import {
+  createReviewScopeFixture,
+  listed,
+  preview,
+  ReviewTestProviders,
+  work,
+} from "@/test-support/draft-review-scope";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import * as account from "../context/account-feature-context";
 import { ContextDocumentHost } from "../context/ContextDocumentHost";
@@ -271,9 +277,9 @@ it.each([true, false])("review follows both hand-offs, draft-only=%s", async (dr
   const query = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   try {
     await withReactRoot(
-      <QueryClientProvider client={query}>
+      <ReviewTestProviders client={query}>
         <Harness />
-      </QueryClientProvider>,
+      </ReviewTestProviders>,
       async () => {
         const container = document.getElementById("root");
         if (!container) throw new Error("Missing harness root");

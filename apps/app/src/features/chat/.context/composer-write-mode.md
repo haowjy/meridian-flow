@@ -91,7 +91,7 @@ turn is held out and the subscriber's gap-only refresh brings both.
 
 No client path writes a write mode into a cache: a snapshot may insert a project-list row with its
 mode but never rewrites an existing row's, and a queued or cancelled switch (the control's POST) and a `switched` frame invalidate the Works query
-and the project thread lists instead. So does a change in the ids of the record's `write_mode`
+and the project thread lists instead (the chat feed is not among them: it waits for the switch turn). So does a change in the ids of the record's `write_mode`
 items (another tab's queue, cancel or withdrawal): `useSwitchView` compares that key between
 records, taking the first record as its baseline, and calls `invalidateWriteModeReads`.
 

@@ -4,6 +4,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { ThreadStoreProvider } from "@/client/stores";
 import { listed } from "@/test-support/draft-review-scope";
 import { settleReact, withReactRoot } from "@/test-support/react-dom-harness";
 import { useWriteModeToolbarControl } from "./WriteModeControl";
@@ -37,8 +38,10 @@ describe("write-mode control draft count", () => {
     }
     await withReactRoot(
       <QueryClientProvider client={queryClient}>
-        <Probe workId="work-a" />
-        <Probe workId="work-b" />
+        <ThreadStoreProvider now={0}>
+          <Probe workId="work-a" />
+          <Probe workId="work-b" />
+        </ThreadStoreProvider>
       </QueryClientProvider>,
       () =>
         settleReact(() => {

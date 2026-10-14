@@ -2,7 +2,7 @@
 /** Real provider, editor paint, session and pool replacement. Only HTTP and the wire are fake. */
 
 import { branchRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { act, useEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -30,6 +30,7 @@ import {
   draftA,
   listed,
   previewOf,
+  ReviewTestProviders,
   work,
 } from "@/test-support/draft-review-scope";
 import { createEditorSessions } from "@/test-support/editor-sessions";
@@ -168,9 +169,9 @@ async function run(run: (client: QueryClient, room: string) => Promise<void>, en
   mocks.getDraftPreview.mockResolvedValue({ ...previewOf("2"), reviewRoomName: room });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await withReactRoot(
-    <QueryClientProvider client={client}>
+    <ReviewTestProviders client={client}>
       <Scope />
-    </QueryClientProvider>,
+    </ReviewTestProviders>,
     async () => {
       if (enter) {
         await act(async () => review?.controller.enterInlineReview(documentId, draftA.itemKey));
