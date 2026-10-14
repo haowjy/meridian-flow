@@ -129,9 +129,11 @@ Two interfaces are the only paths between the visual layer and the substrate:
   account clock and inserts confirmed creations into the project-list cache;
   it does not own a second project list. See "Thread
   snapshot reconciliation" below.
-- **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
-  subscribe/cancel contract for live agent events. Runtime chat uses
-  `WsThreadTransport`, which connects to `/api/threads/ws`.
+- **`ThreadTransport`** (from `@meridian/thread-client`) — the
+  subscribe/cancel contract for live agent events. Runtime chat uses the
+  package's `ThreadSocketClient`, composed in
+  `src/client/providers/TransportProvider.tsx`, which connects to
+  `/api/threads/ws`.
 
 The server's [durable event journal](../../server/server/domains/threads/.context/CONTEXT.md)
 backs replay across restarts; [live-update guidance](../src/features/chat/.context/thread-live-updates.md)
@@ -142,14 +144,18 @@ and reducer evolution stay contained.
 
 ## Unified live block reducer
 
-`core/session/reduce-turn-event.ts` maps the live sequenced `AGUIEvent` stream
-straight into ThreadStore actions: `ensureAssistantTurn`, `upsertAssistantBlock`,
-and `patchTurnStatus`. There is no separate live-turn view model; live and
+The turn reducer lives in `@meridian/thread-client` (`src/turns/`) and is shared
+with `./mf`. It maps the live sequenced `AGUIEvent` stream into ThreadStore
+actions (`ensureAssistantTurn`, `upsertAssistantBlock`, `patchTurnStatus`)
+through the `TurnStore` port; the thread store is its adapter and owns one
+reducer instance (`applyTurnEvent`, `applyDurableBlockEvent` actions). Optimistic
+reconciliation, cache invalidation, thread-list patches, `liveMeta`, seq floors,
+and the interrupt response UI stay here. There is no separate live-turn view model; live and
 settled assistant turns are the same `Turn` rows in `turnsByThread`, with
 in-flight blocks marked `status: "partial"`.
 
 Rendering flows through `AssistantTurn` →
-`partitionTurn` (`features/chat/partition-turn.ts`): ordered turn blocks become
+`partitionTurn` (`@meridian/thread-client`, `src/view/partition-turn.ts`, reached through `viewTranscript`): ordered turn blocks become
 one ordered list of process, text, and artifact items. Process items collapse
 into a default-collapsed `Thinking` fold in place; text and artifacts stay
 visible and close the open process run. `groupDeliverySegments` normalizes tool

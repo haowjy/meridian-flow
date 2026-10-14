@@ -101,21 +101,15 @@ per-message subscriptions. Live `DocumentSession`s subscribe to
 The two client socket types use their canonical transport seams.
 `TappedWebSocket` observes each room-scoped Hocuspocus socket's final binary
 frames.
-`SocketLifecycleController` observes the thread/agent socket's lifecycle and
-final string frames. Both are active only behind the build-time debug gate;
+`@meridian/thread-client` owns `SocketLifecycleController` and the thread socket
+client. The app's `TransportProvider` injects its wire-tap adapter to observe
+lifecycle and final string frames. Both are active only behind the build-time debug gate;
 default production builds retain native WebSockets without capture, while the
 explicit `VITE_DEBUG_OVERLAY=1` build override includes the debug observers.
 Neither seam parses or retains frames, and observer failures never escape into
 product transport.
 `socketEpoch` distinguishes reconnects while each registered tap owns
 page-lifetime sequencing.
-
-Thread close observation runs before the controller's current-socket guard so
-controlled closes from teardown, manual reconnect, and ping timeout remain
-visible. The guard still fences every product callback, state transition, and
-reconnect decision for stale socket generations. Lifecycle observers receive
-only the socket epoch, numeric close code, and `wasClean`; URL and raw close
-reason text do not cross the core observer contract.
 
 Core owns only the late-bound, transport-specific `YjsWireTap` and
 `ThreadWireTap` contracts. The debug feature registers both implementations in
@@ -133,18 +127,12 @@ preserving the dependency direction
 and must only emit allowlisted classifications and identifiers; no agent, user,
 tool, catchup, or error content may enter an `EventRecord`.
 
-The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
-`resume`, `pong`, and `interrupt.respond`; its server vocabulary is `connected`,
-`subscribed`, `event`, `gap`, `error`, and `ping`. Turn cancellation is an HTTP
-operation through `cancelTurn`, not a WebSocket message. Keep these names aligned
-with `@meridian/contracts/protocol` rather than inferring them from UI actions.
-
-A `gap` means the server could not replay from the client's cursor. Its frame
-carries `fromSeq`/`toSeq`; the transport advances the subscription's resume point
-to `toSeq` before re-subscribing, so the next read asks for history the server
-can serve. The truncated catch-up that follows is skipped by the monotonic seq
-guard, and the `onGap` consumers refetch the thread snapshot as the real resync.
-A gap burst coalesces into one resync rather than one per gap.
+Thread protocol, cursor and deadline contracts belong to the
+[shared thread client](../../../../../../packages/thread-client/.context/CONTEXT.md).
+The app supplies browser WebSocket creation, URL, API error conversion, HTTP
+cancellation, connectivity hints and debug-gated observation through
+`TransportProvider`. App `onGap` consumers refetch snapshots; a gap burst
+coalesces into one app resync rather than one per gap.
 
 ## Shared connectivity hints
 
@@ -176,23 +164,3 @@ new hints. Working-set pagehide/hidden-visibility flushes are persistence signal
 its preference owner binds recovery only for the committed account epoch.
 Local document peers and session wakeup keep their content-recovery listeners,
 independent of network jitter, cooldowns, or unrelated connection successes.
-
-## Thread socket deadlines
-
-`SocketLifecycleController` owns the attempt phases: connecting, transport-open
-awaiting the protocol `connected` frame, and connected. One watchdog starts at
-socket creation and ends only on `connected`, close, or teardown. Its default
-is 10 seconds (`handshakeTimeoutMs` is injectable); opening or receiving other
-frames does not extend it. The separate 45-second ping deadline starts on open
-and resets on every inbound frame. Expiry of either deadline retires the socket
-before requesting native close and uses the same reconnect backoff as a network
-close, without waiting for a close acknowledgement. Retired sockets cannot drive
-product callbacks. Both timers are cancelled on retirement or teardown; protocol
-`connected` cancels only the handshake watchdog.
-
-Protocol readiness lives in this lifecycle, not in a second transport flag.
-Subscriptions still resume from the last delivered cursor after `connected`;
-catch-up and gap reconciliation are unchanged. These deadlines bound handshake
-wait and inbound silence, not time to recovery: retries still depend on the
-server/network returning and browser timers running (background suspension can
-delay either deadline).

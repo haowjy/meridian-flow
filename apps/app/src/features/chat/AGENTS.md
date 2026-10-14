@@ -44,10 +44,25 @@ in the same pane. Lifecycle transfers publish a new editor mount; typing does
 not.
 Pending upload bytes do not persist. Successfully uploaded reference atoms do.
 
+## Who decides what the transcript shows
+
+`ChatView` builds a `TranscriptViewInput` from what it reads (stored turns, the
+optimistic handoff seed, Retry stand-ins, the fork's inherited prefix,
+`awaitingSubagents`, queued writer ids) and calls `viewTranscript` from
+`@meridian/thread-client` once. The view's `turns` (stand-ins placed) feed the
+composer and announcements; `TurnList` draws its `rows`, and `AssistantTurn` and
+`UserTurn` draw the `items` and `writer` text they are handed. No component
+selects, filters or classifies raw turns for row building, response groups,
+`continuesResponse`, partitioning, tool pairing, visibility or stand-in
+placement. The app formats counts and words (`thinking-digest.ts`,
+`compact-count.ts`); the package emits counts. Composer, row-action, control-row,
+interrupt and announcement decisions still live here until the chat session
+moves them. `./mf thread view` prints the same view model.
+
 ## Mental model
 
-An assistant turn renders as one **ordered list of render items** (see
-`partition-turn.ts`), in block order. Each item is one of three tiers:
+An assistant turn renders as one **ordered list of render items** (from the
+view model's `partition-turn.ts` in `@meridian/thread-client`), in block order. Each item is one of three tiers:
 
 - **Process** (collapsed) — a contiguous run of reasoning and process tools,
   folded into one `Thinking` disclosure in place. Its visible label becomes a
@@ -103,7 +118,7 @@ lists every direct child.
 
 `subagent/ActivityContext.tsx` indexes activity, invocation cards, and completion
 notices by child thread, ref, and execution. A saved running card with no live
-lease is `unknown`, not running. `transcript-model.ts` classifies turns and
+lease is `unknown`, not running. `viewTranscript` (`@meridian/thread-client`, `src/view/`) classifies turns and
 derives transcript rows, response parts, delivery rows, and reveal targets in
 one pass. Rows have kinds (turn, compaction divider, handoff brief card,
 `from` reference) and stay index-aligned with the visible turns; grouping
@@ -196,7 +211,7 @@ composer mode, and review state live in
 5. **Only a finished turn ends a reply.** A notification-woken continuation, a
    server-stamped steer, or background subagents still running keep the reply
    open: no action row, no exchange gap. `continuesResponse` in
-   `transcript-model.ts` is the one rule; see
+   the view model's `transcript-model.ts` is the one rule; see
    [`.context/turn-rhythm-and-actions.md`](.context/turn-rhythm-and-actions.md).
 6. **Block render keys are positional.** Use `blockRenderKey(block)` —
    `turnId::sequence`. Never key by `block.id`. Prose, images, and custom cards

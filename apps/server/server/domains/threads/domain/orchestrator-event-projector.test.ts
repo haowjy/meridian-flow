@@ -15,18 +15,16 @@ import {
 } from "./orchestrator-event-projector.js";
 
 describe("tool results", () => {
-  it("sends the typed result beside the model's text", () => {
+  it("sends the typed result beside the model's text, and states a cancellation on the finish", () => {
     const projector = createOrchestratorEventProjector();
-    projector.project({
-      type: "turn.created",
-      turn: {
-        id: "turn-1",
-        threadId: "thread-1",
-        role: "assistant",
-        blocks: [],
-        writeMode: "direct",
-      } as never,
-    });
+    const turn = {
+      id: "turn-1",
+      threadId: "thread-1",
+      role: "assistant",
+      blocks: [],
+      writeMode: "direct",
+    } as never;
+    projector.project({ type: "turn.created", turn });
     const result = { schema: "meridian.agent-edit.v1", command: "read", status: "success" };
     const events = projector.project({
       type: "tool.result",
@@ -40,6 +38,13 @@ describe("tool results", () => {
       content: "status: success; path: ch1.md",
       result,
     });
+
+    const finish = (type: "turn.completed" | "turn.cancelled") => {
+      projector.project({ type: "turn.created", turn });
+      return projector.project({ type, turn }).find((e) => e.type === EventType.RUN_FINISHED);
+    };
+    expect(finish("turn.completed")).not.toHaveProperty("result");
+    expect(finish("turn.cancelled")).toMatchObject({ result: { stopReason: "user_cancelled" } });
   });
 });
 

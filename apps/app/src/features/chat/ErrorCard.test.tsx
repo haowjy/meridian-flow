@@ -6,11 +6,12 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { Turn } from "@meridian/contracts/protocol";
+import { projectWriterText, viewTranscript } from "@meridian/thread-client";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
-import { AssistantTurn } from "./AssistantTurn";
+import { AssistantTurn, type AssistantTurnProps } from "./AssistantTurn";
 import { ErrorBlock } from "./ErrorBlock";
 import { UserTurn } from "./UserTurn";
 
@@ -60,7 +61,13 @@ const failedTurn = {
 } as Turn;
 
 const writerRow = (submissionRecovery: UserTurnRecovery | null) =>
-  render(createElement(UserTurn, { turn: failedTurn, submissionRecovery }));
+  render(
+    createElement(UserTurn, {
+      turn: failedTurn,
+      writer: projectWriterText(failedTurn),
+      submissionRecovery,
+    }),
+  );
 
 describe("writer-row failure card", () => {
   it("draws one row of status text, Retry and Edit, silent to screen readers", async () => {
@@ -110,6 +117,15 @@ describe("writer-row failure card", () => {
   });
 });
 
+/** The assistant row as `TurnList` hands it over: items and response from the view model. */
+const replyRow = (turn: Turn, props: Omit<AssistantTurnProps, "turn" | "view" | "response">) => {
+  const view = viewTranscript({ turns: [turn], activity: { awaitingSubagents: false } });
+  const items = view.items.get(turn.id);
+  const response = view.rows[0]?.response;
+  if (!items || !response) throw new Error("Expected a reply row");
+  return createElement(AssistantTurn, { turn, view: items, response, ...props });
+};
+
 describe("reply ErrorBlock", () => {
   it("lets the writer retry a provider-declined reply in the current alert, not history or read-only", async () => {
     const onRetry = vi.fn();
@@ -117,6 +133,7 @@ describe("reply ErrorBlock", () => {
       ...failedTurn,
       role: "assistant" as const,
       blocks: [],
+      responses: [],
       metadata: {
         retryable: false,
         providerError: { status: 404, message: "retired model" },
@@ -124,8 +141,7 @@ describe("reply ErrorBlock", () => {
     };
     const replyRetry = { onRetry, refused: false, requestLost: false };
     const host = await render(
-      createElement(AssistantTurn, {
-        turn,
+      replyRow(turn, {
         endsTranscript: true,
         replyRetry: { ...replyRetry, refused: true },
       }),
@@ -146,12 +162,10 @@ describe("reply ErrorBlock", () => {
     await act(async () => (retry as HTMLButtonElement).click());
     expect(onRetry).toHaveBeenCalledTimes(1);
 
-    const history = await render(
-      createElement(AssistantTurn, { turn, endsTranscript: false, replyRetry }),
-    );
+    const history = await render(replyRow(turn, { endsTranscript: false, replyRetry }));
     expect(history.textContent).toBe("The AI provider turned this request down.");
     expect(history.querySelector("[data-reply-retry]")).toBeNull();
-    const readOnly = await render(createElement(AssistantTurn, { turn, endsTranscript: true }));
+    const readOnly = await render(replyRow(turn, { endsTranscript: true }));
     expect(readOnly.querySelector("[data-reply-retry]")).toBeNull();
   });
 

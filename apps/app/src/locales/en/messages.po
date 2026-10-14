@@ -121,7 +121,7 @@ msgstr "{0, plural, one {Changes in # more document did not apply} other {Change
 #~ msgid "{0, plural, one {edited # document} other {edited # documents}}"
 #~ msgstr "{0, plural, one {edited # document} other {edited # documents}}"
 
-#. placeholder {0}: readDocuments.size
+#. placeholder {0}: digest.readDocuments
 #: src/features/chat/thinking-digest.ts
 msgid "{0, plural, one {read # document} other {read # documents}}"
 msgstr "{0, plural, one {read # document} other {read # documents}}"

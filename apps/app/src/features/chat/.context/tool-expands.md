@@ -20,7 +20,7 @@ debugging concern and belong behind a dev-only setting, never in chat.
 Tier 2 is keyed by **tool name**. The two document tools share one renderer:
 `read` carries reading and skimming, and `write` carries creating, copying,
 editing, removing and reverting. Which of those a row is comes from
-`tool-command.ts`, and what to do about it comes from
+`tool-command.ts` (in `@meridian/thread-client`), and what to do about it comes from
 `command-descriptor.ts`, including the expand's shape. A renderer never
 switches on a command itself.
 
@@ -30,7 +30,7 @@ result): operation, Work name, before and after. `work-receipt-copy.ts`
 localizes them into the sentence, in Work names. Reads keep one minimal
 generic row; failures title with the failure verb and open onto the
 structured message. A mutation receipt's
-`inverse` (`workReceipt` in `tool-command.ts`) makes create/update/delete
+`inverse` (`workReceipt` in `@meridian/thread-client`) makes create/update/delete
 reversible, and that action lives on the turn edits receipt, not on this row:
 the reversal seam (`/api/threads/:id/context/reverse`) is turn-scoped and turn
 lineage owns Undo authority. This row stays a record.

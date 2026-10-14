@@ -1,6 +1,17 @@
 /** Maps tool commands to their transcript labels and metadata. */
 import { t } from "@lingui/core/macro";
 import type { JsonValue } from "@meridian/contracts/protocol";
+import type { ToolView } from "@meridian/thread-client";
+import {
+  copySourcePath,
+  documentToolFailed,
+  humanizeSkillSlug,
+  stringInput,
+  type ToolCommand,
+  toolCommand,
+  toolInputObject,
+  workReceipt,
+} from "@meridian/thread-client";
 import {
   BookOpen,
   Copy,
@@ -16,19 +27,7 @@ import {
   Undo2,
   Wrench,
 } from "lucide-react";
-
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
-import type { ToolView } from "./group-delivery-segments";
-import {
-  copySourcePath,
-  documentToolFailed,
-  humanizeSkillSlug,
-  stringInput,
-  type ToolCommand,
-  toolCommand,
-  toolInputObject,
-  workReceipt,
-} from "./tool-command";
 import { workReceiptLine } from "./work-receipt-copy";
 
 export type ToolActivityPhrase = {

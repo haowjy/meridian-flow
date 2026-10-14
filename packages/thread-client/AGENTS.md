@@ -1,0 +1,27 @@
+# @meridian/thread-client
+
+The framework-free thread socket and message-document core shared by the app
+and `./mf`. Keep protocol readiness, deadlines, cursor recovery and turn
+reduction (`turns/`) here so the clients cannot disagree. Every chat decision
+between the server and the screen is headed here: design A's run-state reader
+and the chat session belong in this package, never in `apps/app`. Reply
+following stays client-owned until they land.
+
+- Platform differences enter through injected ports at each composition root.
+  No React, stores, browser or Node globals at module evaluation,
+  `import.meta.env`, or DOM types in the public surface.
+- Depend on `@meridian/contracts` and the light `@meridian/markup/links`
+  subpath, never app or server code, Yjs or ProseMirror.
+- Event application lives here: `createTurnReducer` over a `TurnStore` port.
+  The app's Zustand store and `InMemoryTurnStore` both implement it, and the
+  app's parity test keeps them equal. Do not fork reducer behavior into a client.
+- The transcript view model lives in `view/`: `viewTranscript` decides the rows
+  a chat shows and what each reply's items are, over plain inputs, as pure
+  functions. The app draws its output and `./mf thread view` prints it. It emits
+  counts, kinds and numbers; Lingui and `Intl` strings stay in the app. Memoized
+  by input identity (`WeakMap`) so unchanged turns keep their items.
+- Clients own HTTP, auth, persistence, printing and editor lifecycle.
+  Observers must not affect product transport behavior.
+
+Read [the contracts](.context/CONTEXT.md) for socket composition, deadline and
+recovery guarantees, and message-document serialization.

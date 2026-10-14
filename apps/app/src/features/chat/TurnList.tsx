@@ -1,11 +1,14 @@
 /** Renders the transcript and owns its scroll viewport. */
 
 import { t } from "@lingui/core/macro";
-import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import { isTerminalTurnStatus } from "@meridian/contracts/protocol";
+import { answeredControlIds } from "@meridian/contracts/threads";
+import type { InheritedMark, TranscriptView, ViewRow } from "@meridian/thread-client";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
+import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { AssistantTurn } from "./AssistantTurn";
@@ -13,8 +16,6 @@ import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { CompactionDivider } from "./compaction/CompactionDivider";
-import { answeredCompactionIds } from "./compaction/compaction-model";
-
 import { HandoffBriefCard } from "./derivation/HandoffBriefCard";
 import { ForkPointRule, InheritedSourceHeader } from "./derivation/InheritedMarks";
 import type { InheritedView } from "./derivation/inherited-view";
@@ -24,24 +25,17 @@ import { QueuedControlRows } from "./thread-controls/QueuedControlRows";
 import type { QueuedControl } from "./thread-controls/thread-controls";
 import type { ThreadControls } from "./thread-controls/useThreadControls";
 import { WriteModeDivider } from "./thread-controls/WriteModeDivider";
-import { buildTranscriptModel, type InheritedMark, type TranscriptRow } from "./transcript-model";
-import type { ReplyRetry } from "./useReplyRetry";
-
-export { continuesResponse } from "./transcript-model";
-
-import type { UserTurnRecovery } from "@/client/chat-submissions/presentation";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
+import type { ReplyRetry } from "./useReplyRetry";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 
 export type TurnListProps = {
   threadId: string;
-  /** Settled history with the live turn merged in by id, oldest first. */
-  turns: Turn[];
+  /** What the transcript shows, decided by `viewTranscript`: rows, items and writer text. */
+  view: TranscriptView;
   historySettled: boolean;
-  /** Background subagents are still running; their notification will wake the latest reply. */
-  awaitingSubagents?: boolean;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
   /** Accessible label for the scroll log region. */
@@ -50,7 +44,6 @@ export type TurnListProps = {
   changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered failed submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
-  queuedWriterTurnIds?: ReadonlySet<string>;
   waitingForUsage?: boolean;
   /** Writer commands: queued `/compact`, withdrawal, and Stop on a running divider. */
   controls?: ThreadControls | null;
@@ -80,7 +73,7 @@ export type TurnListProps = {
  * queued commands at the tail.
  */
 type ListRow =
-  | TranscriptRow
+  | ViewRow
   | { kind: "inherited-failed" }
   | { kind: "queued-controls"; controls: readonly QueuedControl[] };
 
@@ -95,15 +88,13 @@ const TOP_INSET = 24;
 
 export function TurnList({
   threadId,
-  turns,
+  view,
   historySettled,
-  awaitingSubagents = false,
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
   changeTrails = {},
   submissionRecoveryByTurnId,
-  queuedWriterTurnIds,
   waitingForUsage,
   controls = null,
   brief = null,
@@ -116,35 +107,29 @@ export function TurnList({
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
-  const inheritedTranscript = inherited?.transcript ?? null;
-  const transcript = useMemo(
-    () => buildTranscriptModel(turns, awaitingSubagents, inheritedTranscript),
-    [turns, awaitingSubagents, inheritedTranscript],
-  );
-  const visibleTurns = transcript.visibleTurns;
-  const lastAssistantIdx = findLastLocalAssistantIndex(transcript.rows);
-  let lastReplyRowIdx = transcript.rows.length - 1;
-  while (lastReplyRowIdx > 0 && transcript.rows[lastReplyRowIdx]?.kind === "write-mode")
-    lastReplyRowIdx -= 1;
+  const { rows } = view;
+  const visibleTurns = useMemo(() => rows.map((row) => row.turn), [rows]);
+  const lastAssistantIdx = findLastLocalAssistantIndex(rows);
+  let lastReplyRowIdx = rows.length - 1;
+  while (lastReplyRowIdx > 0 && rows[lastReplyRowIdx]?.kind === "write-mode") lastReplyRowIdx -= 1;
   // A command runs only when no message waits, so queued commands sit at the
   // tail, after every queued message: they take no position until they run.
   const tailControls = useMemo(() => {
-    const answered = answeredCompactionIds(turns);
+    const answered = answeredControlIds(view.turns);
     return (controls?.queued ?? NO_CONTROLS).filter((control) => !answered.has(control.id));
-  }, [controls?.queued, turns]);
+  }, [controls?.queued, view.turns]);
   // List rows are transcript rows shifted down by the alert, when it shows.
   const rowOffset = onRetryInherited ? 1 : 0;
   const listRows = useMemo<ListRow[]>(
     () => [
       ...(onRetryInherited ? [{ kind: "inherited-failed" as const }] : []),
-      ...transcript.rows,
+      ...rows,
       ...(tailControls.length
         ? [{ kind: "queued-controls" as const, controls: tailControls }]
         : []),
     ],
-    [onRetryInherited, tailControls, transcript.rows],
+    [onRetryInherited, tailControls, rows],
   );
-  const { continuing, partsByFinalTurnId } = transcript;
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
     for (const shell of Object.values(changeTrails)) {
@@ -161,7 +146,7 @@ export function TurnList({
       const row = listRows[index];
       if (!row) return index;
       if (row.kind === "inherited-failed") return INHERITED_FAILED_KEY;
-      return row.kind === "queued-controls" ? QUEUED_CONTROLS_KEY : row.turn.id;
+      return row.kind === "queued-controls" ? QUEUED_CONTROLS_KEY : row.renderKey;
     },
     overscan: 8,
     paddingStart: TOP_INSET,
@@ -203,7 +188,7 @@ export function TurnList({
     // The launch card lives in the origin turn; only "latest" follows the child forward.
     resolveTurnId: (turnId, subagentThreadId, subagentBlock) =>
       subagentThreadId && subagentBlock !== "card"
-        ? transcript.resolveRevealTurnId(subagentThreadId, turnId)
+        ? (view.revealTurnByChildThreadId.get(subagentThreadId) ?? turnId)
         : turnId,
     historySettled,
     viewportRef,
@@ -222,7 +207,7 @@ export function TurnList({
   }, [tailFollowRevision, enterFollow]);
 
   const renderTranscriptRow = useCallback(
-    (row: TranscriptRow, idx: number) => {
+    (row: ViewRow, idx: number) => {
       const turn = row.turn;
       // Inherited rows are the source's history: read-only, and owned by the source.
       const local = !row.inherited;
@@ -260,16 +245,20 @@ export function TurnList({
           />
         );
       }
-      if (turn.role === "user") {
+      const writer = view.writer.get(turn.id);
+      if (writer) {
         return (
           <UserTurn
             turn={turn}
+            writer={writer}
             submissionRecovery={local ? submissionRecoveryByTurnId?.get(turn.id) : undefined}
-            queued={local && queuedWriterTurnIds?.has(turn.id)}
+            queued={row.queued}
             waitingForUsage={waitingForUsage}
           />
         );
       }
+      const items = view.items.get(turn.id);
+      if (!items || !row.response) return null;
       // A divider is a row: once one follows a failed reply, that failure is
       // history. The queued-controls tail is not a row and never counts. An
       // inherited reply is the source's history, even with nothing below it.
@@ -301,12 +290,13 @@ export function TurnList({
         <AssistantTurn
           threadId={row.inherited?.ownerThreadId ?? threadId}
           turn={turn}
-          responseParts={partsByFinalTurnId.get(turn.id)}
+          view={items}
+          response={row.response}
           threadUsage={local ? threadUsage : null}
-          deliveryEvents={transcript.deliveryEventsFor(turn.id)}
+          deliveries={row.deliveries}
           isLatestAssistant={idx === lastAssistantIdx}
           endsTranscript={endsTranscript}
-          continuesResponse={continuing[idx] ?? false}
+          continuesResponse={row.continuing}
           replyRetry={retry}
           standIn={standIn !== null}
           onRespondToInterrupt={local ? onRespondToInterrupt : undefined}
@@ -327,14 +317,11 @@ export function TurnList({
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
-      queuedWriterTurnIds,
       waitingForUsage,
       threadId,
       threadUsage,
-      transcript,
+      view,
       visibleTurns.length,
-      continuing,
-      partsByFinalTurnId,
     ],
   );
 
@@ -420,9 +407,13 @@ export function TurnList({
                   data-chat-turn-row={transcriptRow ? "settled" : row.kind}
                   data-chat-turn-role={transcriptRow?.turn.role}
                   data-chat-turn-kind={row.kind}
-                  data-chat-turn-continues={
-                    continuing[virtualItem.index - rowOffset] ? "" : undefined
+                  // Compaction and handoff-seed rows draw no turn of their own; the id lets a comparison match them.
+                  data-turn-id={
+                    transcriptRow && (row.kind === "compaction" || row.kind === "handoff-seed")
+                      ? transcriptRow.turn.id
+                      : undefined
                   }
+                  data-chat-turn-continues={transcriptRow?.continuing ? "" : undefined}
                   data-chat-turn-inherited={transcriptRow?.inherited ? "" : undefined}
                   ref={virtualizer.measureElement}
                   className="absolute inset-x-0 top-0"
@@ -505,7 +496,7 @@ function InheritedRow({
 }
 
 /** Index of this thread's own last settled assistant turn, or -1 if none; inherited rows never count. */
-function findLastLocalAssistantIndex(rows: readonly TranscriptRow[]): number {
+function findLastLocalAssistantIndex(rows: readonly ViewRow[]): number {
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i];
     if (!row || row.inherited) continue;

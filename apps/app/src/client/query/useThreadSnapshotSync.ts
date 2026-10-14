@@ -7,17 +7,13 @@
  * installs that owner synchronously after first-send admission succeeds.
  */
 import { EventType, EXECUTION_ENDED_EVENT, parseSeq } from "@meridian/contracts/protocol";
+import { isDurableBlockEvent, isWellFormedDurableBlockEvent } from "@meridian/thread-client";
 import { useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { toThreadSnapshotApplyOptions } from "@/client/api/threads-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
-import {
-  applyDurableBlockEvent,
-  isDurableBlockEvent,
-  isWellFormedDurableBlockEvent,
-} from "@/core/session/reduce-turn-event";
 import { pendingInboxFromEvent } from "@/features/chat/pending-inbox";
 import {
   useAccountEpochSignal,
@@ -146,7 +142,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
                   return;
                 controller.flushPendingDeltas(threadId);
                 if (!current(expected) || !actions.acceptDurableBlockSeq(threadId, seq)) return;
-                applyDurableBlockEvent(actions, threadId, event);
+                actions.applyDurableBlockEvent(threadId, event);
               },
               onGap: () => refresh(expected),
             },

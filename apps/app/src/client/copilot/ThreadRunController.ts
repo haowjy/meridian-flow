@@ -11,6 +11,8 @@ import {
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
 import type { JsonValue, ThreadPendingInbox } from "@meridian/contracts/threads";
+import type { InterruptRespondInput, ThreadTransport } from "@meridian/thread-client";
+import { isDurableBlockEvent } from "@meridian/thread-client";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -26,8 +28,6 @@ import { threadAvailability } from "@/client/chat-submissions/thread-availabilit
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
-import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
-import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 import {
   EMPTY_THREAD_PENDING_INBOX,
   owedWriterMessageIds,
@@ -661,7 +661,7 @@ export class ThreadRunController {
     // One frame boundary for the stream: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
-      if (live()) applyAguiEventToStore(this.actions, threadId, event);
+      if (live()) this.actions.applyTurnEvent(threadId, event);
     });
     let lastPushedTurn: string | undefined;
     const subscription: Subscription = {
