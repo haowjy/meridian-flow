@@ -91,11 +91,14 @@ function QueuedControlRow({
           <Trans>Retry</Trans>
         </Button>
       ) : null}
-      {onStop && status !== "applied" && !control.awaitingServer ? (
+      {onStop && status !== "applied" && !(failed && control.awaitingServer) ? (
         <Button
           type="button"
           variant="quiet"
           size="meta"
+          // The row has Stop from its first frame so it never changes height. While the
+          // post is in flight the server may hold the switch and hasn't said, so Stop waits.
+          disabled={control.awaitingServer}
           aria-label={controlStopLabel(control.control)}
           onClick={() => onStop(control)}
         >
