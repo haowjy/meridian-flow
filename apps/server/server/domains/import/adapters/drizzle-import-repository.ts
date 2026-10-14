@@ -7,7 +7,7 @@ import type {
 } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { importEntries, importProgress, imports } from "@meridian/database/schema";
-import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   type DrizzleTransactionParticipant,
@@ -37,6 +37,11 @@ function entry(row: typeof importEntries.$inferSelect): ImportEntry {
     order: row.ordinal,
     version: String(row.version),
     state: row.state as ImportEntryState,
+    kind: row.kind as ImportEntry["kind"],
+    entryId: row.entryId,
+    parentId: row.parentId,
+    ...(row.area ? { area: row.area as ImportArea } : {}),
+    prepared: row.prepared,
     created: row.created,
     attemptId: row.attemptId,
     leaseUntil: row.leaseUntil,
@@ -48,6 +53,7 @@ function entry(row: typeof importEntries.$inferSelect): ImportEntry {
 /** Column-owned patch fields with their column and SQL type; every other patch field is payload. */
 const COLUMNS: Record<keyof ImportEntryColumnPatch, readonly [column: string, type: string]> = {
   state: ["state", "text"],
+  prepared: ["prepared", "boolean"],
   created: ["created", "boolean"],
   attemptId: ["attempt_id", "uuid"],
   leaseUntil: ["lease_until", "timestamptz"],
@@ -150,9 +156,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         count: sql<number>`count(*)::int`,
       })
       .from(importEntries)
-      .where(
-        and(eq(importEntries.importId, id), sql`${importEntries.spec}->>'entryId' is not null`),
-      )
+      .where(and(eq(importEntries.importId, id), isNotNull(importEntries.entryId)))
       .groupBy(importEntries.state);
     const result: ImportCounts = {
       total: 0,
@@ -204,17 +208,19 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         await tx()
           .insert(importEntries)
           .values(
-            nodes.slice(offset, offset + 200).map(({ id, state, ...planned }, index) => ({
-              id,
-              importId: input.id,
-              ordinal: offset + index,
-              spec: {
-                ...planned,
-                prepared: false,
-                prependOnRetry: false,
-              } satisfies ImportEntryPayload,
-              state,
-            })),
+            nodes
+              .slice(offset, offset + 200)
+              .map(({ id, state, kind, entryId, parentId, area, ...planned }, index) => ({
+                id,
+                importId: input.id,
+                ordinal: offset + index,
+                spec: { ...planned, prependOnRetry: false } satisfies ImportEntryPayload,
+                kind,
+                entryId,
+                parentId,
+                area: area ?? null,
+                state,
+              })),
           );
       for (const node of nodes) changed(input.id, node.id);
       if (!nodes.length) changed(input.id);
@@ -270,12 +276,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       const [row] = await tx()
         .select()
         .from(importEntries)
-        .where(
-          and(
-            eq(importEntries.importId, importId),
-            sql`${importEntries.spec}->>'entryId' = ${String(entryId)}`,
-          ),
-        );
+        .where(and(eq(importEntries.importId, importId), eq(importEntries.entryId, entryId)));
       return row ? entry(row) : null;
     },
     async hasUnfinished(importId) {
@@ -285,7 +286,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         .where(
           and(
             eq(importEntries.importId, importId),
-            sql`${importEntries.spec}->>'kind' <> 'folder'`,
+            ne(importEntries.kind, "folder"),
             sql`${importEntries.state} NOT IN ('landed','skipped','deleted')`,
           ),
         )
@@ -300,7 +301,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
           and(
             eq(importEntries.importId, importId),
             eq(importEntries.state, "planned"),
-            sql`(${importEntries.spec}->>'prepared')::boolean = false`,
+            eq(importEntries.prepared, false),
           ),
         )
         .limit(1);
@@ -317,11 +318,11 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
       return rows.map(entry);
     },
     async nextPlanningGroup(importId) {
-      const unprepared = sql`(${importEntries.spec}->>'prepared')::boolean = false`;
+      const unprepared = eq(importEntries.prepared, false);
       const [first] = await tx()
         .select({
-          parentId: sql<string | null>`${importEntries.spec}->>'parentId'`,
-          area: sql<string | null>`${importEntries.spec}->>'area'`,
+          parentId: importEntries.parentId,
+          area: importEntries.area,
         })
         .from(importEntries)
         .where(
@@ -338,8 +339,8 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
             eq(importEntries.importId, importId),
             eq(importEntries.state, "planned"),
             eq(importEntries.created, false),
-            sql`${importEntries.spec}->>'parentId' IS NOT DISTINCT FROM ${first.parentId}`,
-            sql`${importEntries.spec}->>'area' IS NOT DISTINCT FROM ${first.area}`,
+            sql`${importEntries.parentId} IS NOT DISTINCT FROM ${first.parentId}::uuid`,
+            sql`${importEntries.area} IS NOT DISTINCT FROM ${first.area}`,
           ),
         )
         .orderBy(importEntries.ordinal);
@@ -374,7 +375,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         .select({
           id: importEntries.id,
           importId: importEntries.importId,
-          entryId: sql<string>`${importEntries.spec}->>'entryId'`,
+          entryId: importEntries.entryId,
         })
         .from(importEntries)
         .where(
@@ -382,7 +383,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
             scope.importId ? eq(importEntries.importId, scope.importId) : undefined,
             sql`${importEntries.attemptId} IS NOT NULL`,
             inArray(importEntries.state, ["deleted", "not_imported"]),
-            sql`${importEntries.spec}->>'kind' = 'binary'`,
+            eq(importEntries.kind, "binary"),
             or(isNull(importEntries.leaseUntil), lte(importEntries.leaseUntil, now)),
             or(
               isNull(importEntries.objectSweptAt),
@@ -395,7 +396,7 @@ export function createDrizzleImportRepository(db: Database): ImportRepository {
         )
         .orderBy(importEntries.leaseUntil)
         .limit(scope.limit);
-      return rows.map((row) => ({ ...row, entryId: Number(row.entryId) }));
+      return rows.map((row) => ({ ...row, entryId: row.entryId as number }));
     },
     async markSwept(ids, at) {
       if (!ids.length) return;

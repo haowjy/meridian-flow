@@ -20,19 +20,24 @@ export interface ImportRecord {
   createdAt?: Date;
 }
 /**
- * What `import_entries.spec` holds: the planned node and the payload state no query or
- * lease logic filters on. Nothing a column owns is ever written here.
+ * What `import_entries.spec` holds: the planned node fields no query or lease logic
+ * filters on. Nothing a column owns is ever written here.
  */
-export interface ImportEntryPayload extends Omit<PlannedNode, "id" | "state"> {
-  prepared: boolean;
+export interface ImportEntryPayload
+  extends Omit<PlannedNode, "id" | "state" | "kind" | "entryId" | "parentId" | "area"> {
   prependOnRetry: boolean;
 }
-/** What import_entries columns own: identity, order, lifecycle, lease and sweep state. */
+/** What import_entries columns own: identity, order, planned kind and tree position, lifecycle, lease and sweep state. */
 export interface ImportEntryColumns {
   id: string;
   order: number;
   version: string;
   state: ImportEntryState;
+  kind: PlannedNode["kind"];
+  entryId: number | null;
+  parentId: string | null;
+  area?: ImportArea;
+  prepared: boolean;
   created: boolean;
   attemptId: string | null;
   leaseUntil: Date | null;
@@ -43,13 +48,20 @@ export interface ImportEntryColumns {
 export type ImportEntry = ImportEntryPayload & ImportEntryColumns;
 /** Mutable payload fields. */
 export type ImportEntryPayloadPatch = Partial<
-  Pick<ImportEntryPayload, "name" | "reason" | "reasonParams" | "prepared" | "prependOnRetry">
+  Pick<ImportEntryPayload, "name" | "reason" | "reasonParams" | "prependOnRetry">
 >;
 /** Mutable column fields. */
 export type ImportEntryColumnPatch = Partial<
   Pick<
     ImportEntryColumns,
-    "state" | "created" | "attemptId" | "leaseUntil" | "storageUrl" | "uri" | "objectSweptAt"
+    | "state"
+    | "prepared"
+    | "created"
+    | "attemptId"
+    | "leaseUntil"
+    | "storageUrl"
+    | "uri"
+    | "objectSweptAt"
   >
 >;
 /** The only fields a caller may change; every other entry field is fixed at planning. */

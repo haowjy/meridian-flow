@@ -38,7 +38,15 @@ export const importEntries = pgTable(
       .notNull()
       .references(() => imports.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
+    /** Planned node fields no query filters on. */
     spec: jsonb("spec").notNull(),
+    kind: text("kind").notNull(),
+    /** The manifest file's id; null for folders. */
+    entryId: integer("entry_id"),
+    parentId: uuid("parent_id"),
+    area: text("area"),
+    /** Whether the planning chunk has reserved this entry's name. */
+    prepared: boolean("prepared").notNull().default(false),
     state: text("state").notNull(),
     created: boolean("created").notNull().default(false),
     attemptId: uuid("attempt_id"),
@@ -55,7 +63,7 @@ export const importEntries = pgTable(
     index("import_entries_object_sweep")
       .on(table.leaseUntil)
       .where(
-        sql`${table.attemptId} IS NOT NULL AND ${table.state} IN ('deleted','not_imported') AND ${table.spec}->>'kind' = 'binary'`,
+        sql`${table.attemptId} IS NOT NULL AND ${table.state} IN ('deleted','not_imported') AND ${table.kind} = 'binary'`,
       ),
   ],
 );

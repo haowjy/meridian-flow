@@ -105,8 +105,9 @@ per landing through batched `currentUris`, so hrefs follow moves; the context ho
 only the allocation seen at preparation.
 
 `import_entries` has one owner per field. Columns own identity, order, version,
-state, created, lease, storage, uri and sweep state; `spec` is the typed
-`ImportEntryPayload` (the planned node plus prepared and prependOnRetry). `ImportEntryPatch` is the only mutable surface, split into payload and
+state, planned kind, entry id, parent id and area, prepared, created, lease, storage,
+uri and sweep state, so every query filters on a typed column. `spec` is the typed
+`ImportEntryPayload` (the remaining planned node fields plus prependOnRetry). `ImportEntryPatch` is the only mutable surface, split into payload and
 column fields at the repository boundary; a column field is never written to `spec`.
 
 ## Reports and activity

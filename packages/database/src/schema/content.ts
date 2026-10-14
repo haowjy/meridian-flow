@@ -348,7 +348,7 @@ export const uploadIntakes = pgTable(
   (table) => [
     unique("upload_intakes_project_intake_unique").on(table.projectId, table.intakeId),
     unique("upload_intakes_document_unique").on(table.documentId),
-    uniqueIndex("upload_intakes_source_path_live")
+    uniqueIndex("upload_intakes_source_path_exact_live")
       .on(table.contextSourceId, table.finalPath)
       .where(sql`${table.state} <> 'deleted'`),
     check(
