@@ -22,6 +22,7 @@
  * The shared context assembler owns all rendering, including image projection
  * across the complete request's occurrence budget.
  */
+
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice } from "../../notices/index.js";
@@ -32,6 +33,7 @@ import {
   workUpdateMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { ShownLinkShowing } from "../ports/shown-links.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { formatNotices } from "./context-builder.js";
@@ -117,7 +119,7 @@ export async function drainInbox(input: {
     // second append, and carries the turn into the run's accumulator. The
     // adopted blocks render the request, not the plain inbox body: rich content
     // (images, reference reads, skill anchors) lives on the persisted turn.
-    const existing = await input.persistence.repos.turns.findById(message.id as TurnId);
+    const existing = await turnGraph(input.persistence.repos.turns).findById(message.id as TurnId);
     if (existing) {
       let blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
       const extraTurns: Turn[] = [];
@@ -164,7 +166,7 @@ export async function drainInbox(input: {
     ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null)
     : input.expectedLeafTurnId;
   const activeLeafTurn = activeLeaf
-    ? await input.persistence.repos.turns.findById(activeLeaf)
+    ? await turnGraph(input.persistence.repos.turns).findById(activeLeaf)
     : null;
   if (activeLeaf && !activeLeafTurn) throw new Error(`Missing causal turn: ${activeLeaf}`);
   const plan = planMessageTurns({

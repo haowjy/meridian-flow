@@ -2,20 +2,12 @@
  * MeridianCopilotProvider — exposes Meridian's shared thread run controller.
  *
  * Constructs one `ThreadRunController` per `ThreadTransport` so chat surfaces
- * can submit, resume, cancel, and teardown runs without AG-UI client plumbing.
+ * can submit, recover admissions, and answer interrupts without AG-UI client plumbing.
  * The historical provider/context names stay as the app seam while the value is
  * now the direct transport controller.
  */
 
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useLayoutEffect,
-  useMemo,
-  useSyncExternalStore,
-} from "react";
+import { createContext, type ReactNode, useContext, useLayoutEffect, useMemo } from "react";
 
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadActions } from "@/client/stores";
@@ -24,8 +16,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 
-import type { RunFacts } from "./run-follow";
-import { type RunFollowStatus, ThreadRunController } from "./ThreadRunController";
+import { ThreadRunController } from "./ThreadRunController";
 
 const MeridianAgentContext = createContext<ThreadRunController | null>(null);
 
@@ -35,28 +26,6 @@ export function useMeridianAgent(): ThreadRunController {
     throw new Error("useMeridianAgent must be used within MeridianCopilotProvider");
   }
   return controller;
-}
-
-/** Whether the run controller follows work for this chat (the composer's working state and Stop). */
-export function useRunFollowStatus(threadId: string): RunFollowStatus {
-  const controller = useMeridianAgent();
-  const subscribe = useCallback(
-    (listener: () => void) => controller.subscribeRunFollow(listener),
-    [controller],
-  );
-  const read = useCallback(() => controller.runFollowStatus(threadId), [controller, threadId]);
-  return useSyncExternalStore(subscribe, read, read);
-}
-
-/** The chat's run identity facts as the run controller has merged them; renders when they change. */
-export function useRunFacts(threadId: string): RunFacts {
-  const controller = useMeridianAgent();
-  const subscribe = useCallback(
-    (listener: () => void) => controller.subscribeRunFollow(listener),
-    [controller],
-  );
-  const read = useCallback(() => controller.runFacts(threadId), [controller, threadId]);
-  return useSyncExternalStore(subscribe, read, read);
 }
 
 export function MeridianCopilotProvider({ children }: { children: ReactNode }) {

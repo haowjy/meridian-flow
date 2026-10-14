@@ -97,3 +97,35 @@ it("a thread upsert inserts a new list row with its mode but never rewrites an e
   } as never);
   expect([row()?.aiWriteMode, row()?.effectiveAiWriteMode]).toEqual(["direct", "direct"]);
 });
+
+it("drops an optimistic row whose admission answer names a message another tab handed back", () => {
+  // Risk: a delayed admission answer bringing back a message that already left the chat.
+  const store = setup();
+  const actions = store.getState();
+  const row = actions.appendUserTurn("thread-1", [{ type: "text", text: "Steer" }]);
+  actions.removeTurns("thread-1", ["turn-server-1"], "7000");
+  actions.acknowledgeUserTurn("thread-1", row.id, "turn-server-1", "6001");
+  expect(actions.turns("thread-1")).toEqual([]);
+  // A snapshot read before the removal does not bring it back either.
+  actions.applyThreadSnapshot(
+    { id: "thread-1", projectId: "project-1" } as never,
+    [{ id: "turn-server-1", role: "user", blocks: [] } as never],
+    {
+      nextSeq: "6500",
+      lifecycle: { actionRequired: false, runningTurnId: null },
+    },
+  );
+  expect(store.getState().turns("thread-1")).toEqual([]);
+
+  // A newer snapshot clears the removal's tombstone while the optimistic row still waits for its
+  // answer; the late answer must still find the removal.
+  const waiting = actions.appendUserTurn("thread-2", [{ type: "text", text: "Steer" }]);
+  actions.removeTurns("thread-2", ["turn-server-2"], "7000");
+  actions.applyThreadSnapshot({ id: "thread-2", projectId: "project-1" } as never, [], {
+    nextSeq: "8000",
+    lifecycle: { actionRequired: false, runningTurnId: null },
+  });
+  expect(actions.turns("thread-2")?.map((turn) => turn.id)).toEqual([waiting.id]);
+  actions.acknowledgeUserTurn("thread-2", waiting.id, "turn-server-2", "6001");
+  expect(actions.turns("thread-2")).toEqual([]);
+});

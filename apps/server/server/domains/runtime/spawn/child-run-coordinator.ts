@@ -86,7 +86,7 @@ export interface ChildRunCoordinatorDeps {
       ThreadRepository,
       "updateSpawnLifecycle" | "findLiveByProjectRef" | "findById" | "lockByIdIncludingDeleted"
     >;
-    turns: Pick<TurnRepository, "findById">;
+    turns: Parameters<typeof resolveReadableThread>[0]["turns"];
     subagentThreads: SubagentThreadFactory;
     transaction: ThreadRepositories["transaction"];
   };

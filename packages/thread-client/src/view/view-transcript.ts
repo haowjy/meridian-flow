@@ -5,6 +5,7 @@
  * with the caller.
  */
 import type { Turn } from "@meridian/contracts/protocol";
+import { retryTargetOf } from "../run-state/retry";
 import { type AssistantView, viewAssistantTurn } from "./assistant-view";
 import { groupDeliveryEvents } from "./delivery-groups";
 import { isOptimisticTurnId } from "./optimistic-turn-id";
@@ -39,6 +40,22 @@ export type TranscriptViewInput = {
   standIns?: readonly Turn[];
   /** Ids of accepted writer turns the model hasn't read yet. */
   queued?: ReadonlySet<string>;
+  /**
+   * Writer turns a hand-back request in flight hides (`hiddenWriterTurns`): they leave the
+   * transcript with no row, as they will when the server's answer removes them.
+   */
+  hidden?: ReadonlySet<string>;
+  /**
+   * Failed replies whose accepted Retry the stored turns do not show yet: the Retry's target,
+   * carried explicitly. A Retry the turns do show says so itself (`metadata.retryOf`, on a stored
+   * turn or a stand-in).
+   */
+  retried?: ReadonlySet<string>;
+  /**
+   * A queued switch applies when the next run starts (`awaiting_run` in the record). Its notice
+   * then sits before that run's reply stand-in (`controlSlot`), where its turn will land.
+   */
+  switchAwaitsRun?: boolean;
   /** Called for a persisted record that misses its contract. The caller decides where it is reported. */
   onContractFailure?: (failure: PersistedContractFailure) => void;
 };
@@ -80,6 +97,12 @@ export type TranscriptView = {
   writer: ReadonlyMap<string, WriterText>;
   /** Items of every turn row that is not a writer message (replies, custom-block system cards), by turn id. */
   items: ReadonlyMap<string, AssistantView>;
+  /**
+   * The index in `rows` before which a queued switch's notice sits: the first reply stand-in
+   * the server doesn't have yet when `switchAwaitsRun`, else `rows.length` (the tail). A switch
+   * a reply holds the chat for applies after that reply, so it stays at the tail.
+   */
+  controlSlot: number;
   /** Where a child's latest line is shown: child thread id to the reply's turn id. */
   revealTurnByChildThreadId: ReadonlyMap<string, string>;
 };
@@ -96,10 +119,20 @@ const NO_DELIVERIES: readonly (readonly DeliveryEvent[])[] = [];
 
 export function viewTranscript(input: TranscriptViewInput): TranscriptView {
   const standIns = input.standIns ?? [];
-  const turns = placeStandIns(
+  const placed = placeStandIns(
     input.opening ? [input.opening, ...input.turns] : input.turns,
     standIns,
   );
+  // The transcript is not a log: a failed reply the writer retried is not drawn (its Retry
+  // is, in its place), and neither is a message handed back. Stand-ins were placed first, with
+  // the failed reply as their anchor, so a pending Retry sits exactly where it was. A chain of
+  // failed retries draws only the newest. The turns stay in the store; this is drawing only.
+  const retried = new Set(input.retried);
+  for (const turn of placed) {
+    const target = retryTargetOf(turn);
+    if (target !== null) retried.add(target);
+  }
+  const turns = placed.filter((turn) => !retried.has(turn.id) && !input.hidden?.has(turn.id));
   // Provenance is stated, never read from an id's shape: only the server's own turns are named.
   const stored = new Set(input.turns.map((turn) => turn.id));
   const unconfirmed = new Set(standIns.map((turn) => turn.id).filter((id) => !stored.has(id)));
@@ -138,9 +171,31 @@ export function viewTranscript(input: TranscriptViewInput): TranscriptView {
       queued: row.kind === "turn" && !row.inherited && (input.queued?.has(turn.id) ?? false),
     };
   });
+  // The chat's next run is the Retry whose failed reply is still the last reply: a stand-in
+  // that newer replies have overtaken (a lost Retry from earlier history) never qualifies, so
+  // a switch's notice cannot jump up into old history. With none, the slot is the tail.
+  const overtaken = (standIn: Turn) => {
+    const target = retryTargetOf(standIn);
+    const at = placed.findIndex((turn) => turn.id === target);
+    return (
+      at >= 0 &&
+      placed.some(
+        (turn, index) => index > at && turn.role === "assistant" && turn.id !== standIn.id,
+      )
+    );
+  };
+  const standInReplies = new Set(
+    standIns
+      .filter((turn) => turn.role === "assistant" && !stored.has(turn.id) && !overtaken(turn))
+      .map((turn) => turn.id),
+  );
+  const standInAt = input.switchAwaitsRun
+    ? rows.findIndex((row) => row.kind === "turn" && standInReplies.has(row.turn.id))
+    : -1;
   return {
     turns,
     rows,
+    controlSlot: standInAt < 0 ? rows.length : standInAt,
     writer,
     items,
     revealTurnByChildThreadId: model.latestRevealTurnByChildThreadId,

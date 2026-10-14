@@ -30,7 +30,7 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     into `@meridian/thread-client`'s `InMemoryTurnStore` and applies each sequenced
     event through the same `createTurnReducer` the app uses. `thread view` runs the
     shared `viewTranscript` (`@meridian/thread-client`) over the hydrated turns and the
-    snapshot's pending inbox, then prints its rows: text as `you:`, `reply: 3 steps,
+    snapshot record's waiting writer messages (`liveState.runState.items`), then prints its rows: text as `you:`, `reply: 3 steps,
     read 2 docs`, `compaction:`, `queued: N`, or `--json` as the versioned
     `chatView: 2` envelope (row identity, kind, items, and `inputs`, which states what
     the view was computed from: no local records, stand-ins, opening seed or live
@@ -55,8 +55,10 @@ shim with the root's `tsx`. Read [AGENTS.md](../AGENTS.md) before editing.
     `not_observed` means the follow had a replay gap, or a compared turn's events
     were not seen from its start. `liveView` compares this CLI follower's reduced
     status and final text with the stored turn. It is not a certificate of any
-    browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI
-    and the visible-turn policy, and the app reconciles to the server at turn end.
+    browser screen: it leaves out tools, reasoning, interrupts, the optimistic UI,
+    the visible-turn policy, write-mode dividers, queued rows and row placement, and
+    the app reconciles to the server at turn end. `ReducedThread.compare` checks
+    exactly `status` and `finalText`; a missing divider can't make it `differs`.
     `differs` is a lead to investigate, `matches` does not prove the screen was
     right, and it never changes the claim or exit code. The planned rule
     ([claims are proofs](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/engineering/dev-cli/mf-claims-are-proofs.md))
@@ -120,12 +122,13 @@ add CLI socket timers or tune the package's deadlines to a command's
 `--timeout` (see the
 [package's deadline contract](../../../packages/thread-client/.context/CONTEXT.md)).
 Terminal/auth closes remain exit 4. `stream.ts` only
-maps events, prints them and runs the existing CLI follow predicates. They don't
-read design A's run state yet, so send still cannot prove which reply answered
-its message. `tail --until-idle` reads an initial snapshot and
+maps events, prints them and runs the existing CLI follow predicates. Their run-state
+reads go through the shared `@meridian/thread-client` module (`commands/thread/run-state.ts`):
+`liveState.runState` and `meridian.run_state` frames. Send still cannot prove which reply
+answered its message until B. `tail --until-idle` reads an initial snapshot and
 returns at once if idle. After a turn finish/failure, journaled lease/pending update or idle subscription state it
-confirms a snapshot: null `liveState.runningTurnId`, `status.kind: "asleep"`
-(no awake lease), and no writer-provenance message in `liveState.pending.items`.
+confirms a snapshot: `isBusy` false for `liveState.runState` (no open execution, no
+writer-provenance message in `items`) and `status.kind: "asleep"` (no awake lease).
 One command-scoped subscription and event mapper remain alive through every
 confirmation. Checkpoints drain queued events, await the snapshot, then consume
 frames received during the request before confirming again. The result's
@@ -148,18 +151,36 @@ the tail envelope adds `snapshotUnavailable: true`. Absent `stillRunning` and
 in `result.ts`, in precedence order: `running` for a running turn,
 `owed` for pending writer messages, `lease_awake` for an awake lease with
 neither, then `unconfirmed` (including no snapshot or an idle-looking snapshot
-without confirmed completion). `lease_awake` is what a timeout reports when
-the server still holds a run lease after its turn ended, for example after a
-restart orphans a reply: orphan repair on this checkout leaves the lease row
-and publishes no change to asleep
-([#799](https://github.com/haowjy/meridian-flow/issues/799)). Expiry clears it
-only at read time; the next command is an until-idle tail to check again, not
-a writer action that clears the lease. Don't poll until expiry to hide this. The pending projection is
-mandatory. Before reporting complete, send checks that the admitted user turn id
-is absent from `liveState.pending.items` (writer admission uses that same id for
-the inbox row). If it remains, send returns 6 `unproven` / `owed` with
-`stillRunning` and a next until-idle tail, not the earlier run's answer.
-This guard does not prove which reply answered; phase 2 still owns that binding.
+without confirmed completion). `lease_awake` is a timeout whose snapshot shows neither a running turn nor an owed
+message but still reports `status.kind: "awake"`: the record and the status disagree,
+so idle is unconfirmed. It is not a claim about the record, and the next command is an
+until-idle tail to check again. Don't poll to hide it.
+
+The run-state record (`liveState.runState`, one whole record per snapshot, `subscribed`
+state or `meridian.run_state` frame) is what `./mf` reads for busy, owed and
+usage-blocked. The rules are the package's selectors over the view (`isBusy`,
+`isOwed`, `usageBlockedMessages`, `isBlockedForUsage`, `writerMessages`), the same the
+app uses; `run-state.ts` only holds the view. Before reporting complete, send checks
+that its admitted user turn id is no longer owed: the record doesn't list it, and the
+record read is at or past its admission (`runStateVersion`; none when the admission has
+none, because its record is from after it). If it is still owed, send returns 6
+`unproven` / `owed` with `stillRunning` and a next until-idle tail, not the earlier
+run's answer. This guard does not prove which reply answered; that binding waits for B,
+and `send`'s message proof waits for B too.
+
+Events reach the shared turn reducer with their stream seq (`ReducedThread.apply(event,
+seq)`), as in the app, so a removal (`meridian.messages.handed_back`) tombstones its
+turns at the frame's seq and an older snapshot cannot bring a handed-back message
+back. A `meridian.write_mode.switched` frame installs its divider after its anchor
+turn the same way. When the anchor is a user turn the stream never carried (`send`
+starts with an empty store; another client's message), the store holds the divider
+out and `ReducedThread.awaitsAnchor()` says so. `followThread` (`stream.ts`) then
+hydrates one snapshot within the remaining deadline, at most once per 250 ms, with
+`observed: false` so the comparison stays honest. It never inserts the divider at
+the tail. This is the app's recovery rule, shared through the store's
+`dividersAwaitingAnchor`; sharing the reducer without it left `./mf` holding the
+divider forever.
+
 `respond` uses the shared interrupt sender and confirms its exact interrupt's
 journaled resolution (deadline: 6 `unconfirmed`). A replay gap makes `events`
 6 `replay_truncated` after printing the replay. Send recovers a lost HTTP

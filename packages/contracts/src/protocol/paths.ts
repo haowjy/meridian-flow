@@ -304,6 +304,11 @@ export function apiThreadCancelPath(threadId: string, turnId: string): string {
   return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
 }
 
+/** Chat Stop: cancels the running reply and hands the waiting writer messages back. */
+export function apiThreadStopPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/stop`;
+}
+
 /** Writer `/compact` commands queued on a thread's inbox. */
 export function apiThreadControlsPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/controls`;

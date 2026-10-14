@@ -29,35 +29,113 @@ transcript ancestry or stream order.
   `RUN_STARTED.rawEvent` repeats `{ writeMode, executionId,
   reservedForUserTurnIds, position }`. The reserved-for list is a hint, never
   proof; `position` (`Turn.position`) orders an execution's turns.
-- **Delivery.** Every acknowledgement goes through the adapter's one `ack`:
-  message rows it actually transitions record `delivered_by_turn_id` with
-  `delivered_at` and journal one `messages.delivered { byTurnId,
-  byTurnPosition, executionId, userTurnIds }`. Deliverers: response persistence (`ackWithResponse`, the
-  current assistant), a failed or cancelled assistant's close, a terminal
-  placeholder, a failed successor, assistant orphan repair. A child run's
-  pre-reservation abort delivers with no turn. Controls and notices record
-  none. A yield, a cancelled compaction and a compaction's orphan repair do not
-  acknowledge, so a later execution takes the messages on. Delivery is the only
-  "my message is done" fact; the snapshot joins it onto user turns
-  (`Turn.delivery`).
-- **End.** `endExecution` replaces every in-transaction release: it deletes the
-  row and journals `execution.ended` only when some turn carries the
-  execution, so an execution that reserved nothing is never observable. Every
-  live landing of an execution's last terminal turn ends it in that commit: a
-  close, a terminal placeholder or yield, and a compaction successor whose
-  preparation failed (`commitAdoption` returns it `terminal`, so the run exits
-  without a second landing). The
-  run owner's cleanup calls `releaseExecution`: unlock only when the row is
-  gone, end when every reserved turn is terminal, otherwise **abandon**
-  (expire the row now, unlock, journal nothing). `settleStaleExecution` runs
-  under a newly acquired claim before anything else (inside `startExecution`
-  before the new row is inserted, and in `materializeIdle`
-  and the repair lane, which also scans expired lease rows): repairs commit
-  first, then the end append and the row delete are one transaction. The end
-  is decided from turns carrying the id, never from the row's receipt arrays,
-  which repair clears. The snapshot reads `liveState.openExecutionId` inside its
-  own transaction, regardless of expiry: an execution on a snapshot turn that
-  is not open has ended. The WS `subscribed` state does not carry it.
+- **Delivery.** Every acknowledgement goes through the adapter's one `ack`: message rows it actually
+  transitions record `delivered_by_turn_id` with `delivered_at`, and the inbox write marks the chat so
+  its transaction publishes the run-state record. Deliverers: response persistence (`ackWithResponse`,
+  the current assistant), a failed or cancelled assistant's close, a terminal placeholder, a failed
+  successor, assistant orphan repair. A child run's pre-reservation abort delivers with no turn.
+  Controls and notices record none. A yield, a cancelled compaction and a compaction's orphan repair do
+  not acknowledge, so a later execution takes the messages on. Delivery is the only "my message is
+  done" fact; the snapshot joins it onto user turns (`Turn.delivery`).
+- **End.** One operation ends an execution: `RunClaim.release` deletes the lease row and, in that same
+  transaction, marks the chat so the closed `RunState` record (`execution: null`) is published with
+  the turn write that ended it. No separate end event exists; clients read the end as the record whose
+  `execution` is null. Every live landing of an execution's last terminal turn ends it in that commit:
+  a close, a terminal placeholder or yield, and a compaction successor whose preparation failed
+  (`commitAdoption` returns it `terminal`, so the run exits without a second landing). The run owner's
+  cleanup calls `releaseExecution`: unlock only when the row is gone, end when every reserved turn is
+  terminal, otherwise **abandon** (expire the row now, unlock, publish nothing). Ending, abandoning
+  and stale settlement live in `adapters/execution-settlement.ts`; delivery keeps selection,
+  preparation, switches, reservation, hand-back and Stop. `settleStaleExecution` runs under a newly
+  acquired claim before anything else (inside `startExecution` before the new row is inserted, and in
+  `materializeIdle` and the repair lane, which also scans expired lease rows): repairs commit first,
+  then the lease deletion and its record publication are one transaction. Whether an execution is
+  open is `runState.execution`, a function of rows (the lease row counts whatever its expiry, and a
+  turn must carry its execution id); the snapshot and the WS `subscribed` state both carry the record.
+
+## Run state: the record and its publication
+
+One `RunState` per chat (`packages/contracts/src/threads/run-state.ts`) says what the chat is doing:
+its waiting inbox (`items`), `sentThrough`, the open `execution`, the applied write `mode` and the
+usage `blocked` reason. It is a pure function of rows (`loop/run-state.ts`, read by
+`adapters/drizzle-run-state.ts`), never of the clock: the lease row counts whatever its expiry, and a
+turn must carry its execution id for the execution to show.
+
+- **Publication.** A transaction participant appends one `run_state.changed` journal row for every chat
+  marked changed, before the transaction commits, so a chat's last record follows its last input write.
+  Every adapter method that writes an input (inbox rows, the lease row, `threads.inbox_blocked_reason`,
+  and a due switch's mode (applied inside the run's reservation transaction) through `DeliveryStore.markRunStateChanged`) marks the chat, under the
+  chat's thread lock. A mark without the lock, or after the flush, throws. Savepoints fork the
+  participant's state and merge it back on release, so a rolled-back lock or mark disappears with it.
+  Work-context notices are not in the record and mark nothing. Releasing a lease row no turn carries
+  and that bound nothing changes nothing, so it marks nothing.
+- **Versions.** The stream frame `meridian.run_state` is the whole record; the hub stamps its own seq
+  (`journalSeq * 1000`) on it, live and on replay. The snapshot, the socket's `subscribed` state and
+  command answers read the record with the journal head (`journalSeq * 1000 + 999`).
+- **Answers.** Control and Retry answers carry `runState` from `answerRunState` under the thread
+  lock: if the transaction has an unpublished change it publishes first and answers with that record at
+  its stream version; otherwise it reads at the head, head last. The admission carries only
+  `runStateVersion` (the stream version of the record its own transaction published), stored in
+  `user_turn_admissions.run_state_version` so a replay answers the same value. Rows from before the
+  column answer `null`.
+
+## Stop and hand-back
+
+`POST /api/threads/:id/stop` (`StopRequest`: `requestId`, `seenThrough`, `seenExecutionId`, `mine`) is one
+chat command decided under the thread lock from rows (`RuntimeDelivery.stop`, `loop/stop-rule.ts`). It
+cancels the open execution and **hands back** the waiting writer messages no execution has taken on;
+their content comes back in the answer for the acting tab's composer. A message is either handed back or
+answered, never both: a message is handed back only if, under the lock, it is undelivered and in no
+receipt (or in the receipt of a compaction this same press cancels, which is stripped of it in the same
+transaction). Adoption and `bindTurn` validate under the same lock and refuse a flagged lease.
+
+- **The rule** (`decideStop`, pure, judged on the facts before any write). P is the writer rows at or
+  below `seenThrough` plus `mine`; L is the writer rows above it that are not `mine`. An execution
+  *takes on* a message when it is in the lease receipt or one of its turns delivered it. E (the lease
+  row, expiry ignored, when a turn carries its id) is cancelled when the writer saw it or it took on a
+  message in P, unless it took on a message in L. `decideHandBack` classifies each covered message:
+  `gone` (another request handed it back), hand back (undelivered, in no receipt, or in a cancelled
+  compaction's receipt), otherwise `answered`.
+- **`handBack`** is the same operation for the queue's x and Cancel queue (Q adds their route): scope
+  `ids` or `seen`, never cancels. Both write one `thread_hand_backs` row per request id in the request's
+  transaction (fingerprint of the body, `handed_back` / `answered` / `gone`, `cancelled_execution_id`).
+  **A replay returns that stored decision**, the handed-back messages' content read from their turns, and
+  a fresh `runState`; it flags nothing. The same id with another body is `HandBackConflictError` (409).
+  `gone` for a `seen` scope covers every row at or below `seenThrough` that another request handed back, however old.
+- **Applying a decision.** The hand-back row first (inbox rows reference it), then `inbox.ack` with
+  `{ handedBackBy }` (delivered, no deliverer), the cancelled compaction's receipt strip, one journal
+  event `messages.handed_back { userTurnIds, requestId }`, the usage-block clear, and `cancel_requested`
+  on E's row matched by execution id with no expiry predicate. The run session then aborts its own run
+  when it holds the flagged execution; a replay never aborts a newer one.
+- **Nothing is deleted.** The handed-back message's inbox row, turn and blocks stay for diagnostics.
+
+### Leaving the chat: the graph and the conversation
+
+The repository ports return the **conversation**: `TurnRepository.findById` and `listByThread`, and every
+`BlockRepository` read, drop a handed-back writer message and its blocks. The adapters own the one SQL
+predicate (`notHandedBackSql`), which also guards the transcript page keys, the count and ordinal SQL,
+`listMessageDeliveries`, `listLatestLocalRequesterText` and the chat-activity projection (`0049`). A reader
+of content that knows nothing about hand-back gets the safe read.
+
+The **graph** (positions, `prevTurnId`, the leaf, fork cutoffs) still holds the handed-back turn, because the
+leaf does not move: positions are unique per chat and allocated from it. It is a separate read,
+`turnGraph(turns)` (`listByThread`, `findById`, `latest`), exported only from
+`threads/ports/turn-graph.ts`. Biome's `noRestrictedImports` (`biome.json`) lets only the graph modules,
+adapters, tests and contract suites import that file, so an unlisted module cannot compile into the graph.
+Add a module to the override list only when it walks `prevTurnId` or positions and filters its output:
+`loadThreadConversationContext` (resolves forks and cutoffs on the graph, filters last), run start and
+`inbox-context` (the leaf), `run-session` (Retry's leaf and the switch walk), the snapshot, transcript-page
+cutoffs, the handoff brief's leaf, `thread-ls` and readable-thread origin lookups. The compaction projection
+drops a pin to a handed-back turn and resolves a cut at one by position (`resolveCut`).
+
+A compaction that starts before it reaches the loop's cancel read still holds the adopted message in its
+captured history. `executeCompaction` reads the lease's `cancelRequested` flag immediately before the
+summarizer call: a Stop on another server sets it in the transaction that hands the message back. The
+read is `RunClaim.readOwned(lease)`: this execution's own row (thread, execution id, holder) whatever its
+expiry, because Stop flags an expired lease that is still held. A missing or reassigned row cancels. The
+expiry-filtered `read()` reports such a lease as asleep and would let the handed-back message reach the
+summarizer. The orchestrator's cancel decision after a failure reads the same way.
+`stop-protocol.db.test.ts` row 37 pins the port defaults and row 14 the ordering.
 
 ## Command selection and release wake
 
@@ -77,9 +155,9 @@ boundary still closes that execution's batch. The selector returns at most one
 command per run. Stop only ends the current turn; release then follows the
 same rule.
 
-After a run releases its claim, `wakeIfRunnable` refreshes pending state and
-uses the same run-start selector as setup; `RunStarter.start` applies the pending
-write-mode switch, when a run is about to start, before it starts a drain. It re-reads after runs that found no
+After a run releases its claim, `wakeIfRunnable` uses the same run-start selector as
+setup; a due write-mode switch applies inside the admitted run start
+(`selectRunStart`), never in the wake, and in the transaction that reserves the run. It re-reads after runs that found no
 work and after setup cancellation, so work enqueued while a claim was held is
 not lost. A failed assistant acknowledges its adopted messages before release,
 so neither the reread nor the periodic sweep replays that execution. The wake has no
@@ -97,7 +175,7 @@ The bound Work must exist, but archiving does not freeze its chats: sends,
 retries, and interrupt answers remain admissible. The admission fence runs
 under the thread lock before writer-turn persistence.
 
-`UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly). Under the thread lock, on every turn-start attempt, the producer decides which reply the message joins, reading both the runner's live reply and the inbox there (a reply that ended, or a switch that applied, before the lock is visible): with a live assistant binding and no queued write-mode switch it joins that reply, is stamped `metadata.delivery: "steer"`, and admission returns that reply as `steersTurnId`, a Stop hint only; otherwise (idle, or behind a queued switch, which ends the reply instead) it is stamped `send` and `steersTurnId` is null. Which reply answers the message is never inferred from admission or stream order: it comes from [run identity](#run-identity). The stamp and the returned id come from that one decision and cannot disagree. Response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
+`UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata for `prepareAdoptedTurn` to load when the turn is adopted; the delivery commit persists the hidden `system`-role skill-body turn immediately after it. It also appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly). Under the thread lock, on every turn-start attempt, the producer decides which reply the message joins, reading both the runner's live reply and the inbox there (a reply that ended, or a switch that applied, before the lock is visible): with a live assistant binding and no queued write-mode switch it joins that reply and is stamped `metadata.delivery: "steer"`; otherwise (idle, or behind a queued switch, which ends the reply instead) it is stamped `send`. Admission answers the user turn and `runStateVersion` (the version of the record its own transaction published), never a reply id. Which reply answers the message is never inferred from admission or stream order: it comes from [run identity](#run-identity). Response grouping uses that stamp, not clock comparisons. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission.
 
 A writer send is never an inbox delivery: `writer-enqueue.ts` persists the
 writer's user turn with its own metadata (activated skill slugs or null) and no
@@ -136,7 +214,7 @@ thread lock, then uses the drain-start path. The protocol selects pending IDs,
 peeks notices, and reads the active leaf without the lock; prepares image
 decisions, references, skills, and turn drafts without writes; then takes the
 thread lock and validates the leaf and pending batch. A changed selection is
-discarded and retried for at most three attempts; attempt three prepares under
+discarded and retried for at most three attempts; attempt three, or any start whose selection holds a due write-mode switch, prepares under
 the lock. One ambient transaction consumes exactly the selected notice IDs,
 persists the first prompt bake and preparation effects, adopts the batch, and
 reserves/binds the assistant. Preparation failure leaves notices queued but
@@ -173,9 +251,9 @@ inbox metadata. See the [reply Retry API](../../../../../../docs/api/thread-repl
   receipt whose selector names a terminal turn
   ([recovery](recovery.md#settling-a-stale-lease)). The joined projection exposes `waiting` for an
   unadopted row behind a live bound run and `awaiting_run` for adopted rows or
-  no bound live run. Generic `ThreadPendingInbox` projects every provenance;
-  the app's `queuedWriterTurnIds` keeps writer rows in `waiting` so only those
-  bubbles show Queued.
+  no bound live run. The run-state record lists every provenance;
+  the package's `waitingWriterMessages` keeps writer rows in `waiting` so only
+  those bubbles show Queued.
 
 ## Materializing a batch
 
@@ -316,15 +394,16 @@ The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn 
 `prepareLoop` asks RuntimeDelivery to save `credits_exhausted` when a drain
 claim cannot pass `canStartTurn`. Delivery alone sets and clears the thread's
 `inbox_blocked_reason`: under the thread lock with a held, unbound claim, and
-in the same transaction as `inbox.changed`. A successful initial adoption
+the change marks the chat, so the transaction publishes the run-state record
+that carries `blocked`. A successful initial adoption
 clears it with binding the first turn. Every inbox retirement goes through the
 shared acknowledgement helper, which clears the marker when no message/control
 remains (notices alone cannot sustain a block). Empty-inbox refused wakes never
 install one. A failed publication rolls back the acknowledgement and clear.
 Repeated refused wakes do not republish an unchanged block.
 
-`readPendingInbox` includes `blocked: { reason: "credits_exhausted" }` only
+The run-state record's `blocked` is `{ reason: "credits_exhausted" }` only
 while message/control work remains pending. Snapshots, socket subscription
-state and `meridian.inbox.changed` carry the same projection. The ordinary
+state and `meridian.run_state` carry the same record. The ordinary
 server wake sweep retries after balance restoration; clients add no polling.
 The accepted writer turn remains saved, with no failed assistant placeholder.

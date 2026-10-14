@@ -13,6 +13,7 @@ export {
   createDrizzleRunClaim,
   type DrizzleRunClaimOptions,
 } from "./adapters/drizzle-run-claim.js";
+export { readRunStateAtHead } from "./adapters/drizzle-run-state.js";
 export { createDrizzleThreadLock } from "./adapters/drizzle-thread-lock.js";
 export {
   createInMemoryInbox,
@@ -86,10 +87,6 @@ export {
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export { finalizeOrphanedTurns } from "./loop/orphaned-placeholder.js";
-export {
-  projectPendingInbox,
-  readPendingInbox,
-} from "./loop/pending-inbox.js";
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,
@@ -135,7 +132,11 @@ export {
   RuntimeShuttingDownError,
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
-export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
+export {
+  type DeliveryProducer,
+  HandBackConflictError,
+  type RuntimeDelivery,
+} from "./loop/runtime-delivery.js";
 export {
   isSkillsUri,
   listSkillDir,

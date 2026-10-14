@@ -11,7 +11,10 @@ for repair (`compaction` and handoff seed `system`). A run or brief owns the
 same destination claim while active, so a pending placeholder discovered after
 acquiring that claim is orphaned. `finalizeOrphanedTurns` and the placeholder
 lane in `spawn/orphan-report-repair.ts` repair it; they also repair dead
-primary assistant turns. Compactions use `finalizeExecution`. Handoff seeds
+primary assistant turns. The finalizer takes a repair scope: `sweep` (the
+default) leaves a subagent's assistant alone, and `claimed`, used only by the
+full settlement under a newly taken claim, adds it and any unsettled
+compaction, with the child failure text. Compactions use `finalizeExecution`. Handoff seeds
 use `completeHandoffSeed` to write an unavailable card, interrupted recovery
 metadata and history read line.
 
@@ -24,6 +27,10 @@ Repair finalizes that reply and atomically retires and acknowledges its exact
 receipt, whether the reply belongs to a primary or child thread. Late messages
 that the dead run never adopted stay queued, and a crashed child publishes one
 failure report without starting again for the retired parent message.
+`settleStaleExecution` belongs to `adapters/execution-settlement.ts`, which
+owns acknowledgement, ending an execution, abandoning a claim and orphan
+retirement for the delivery adapter; the stale lease is read with
+`lockThreadReceipt` and ended by the one end operation, `runClaim.release`.
 Run-start repair is `settleStaleExecution(threadId)` with no `repair`,
 run inside `startExecution`'s claim callback: the full settlement above, before
 the replacement run's lease row exists.
@@ -36,15 +43,15 @@ repair to delivery's `settleStaleExecution(threadId, repair)`; the expired-lease
 lane calls it with no `repair` (a listed expired row is stale as listed, so the
 full settlement ends it). With a `repair`, one
 thread-lock transaction runs the repair, decides whether to delete the stale
-lease row, and journals the resulting inbox projection. After commit it
+lease row, and publishes the resulting run-state record in that transaction. After commit it
 publishes `thread.status`, so subscribers read asleep at once and a new message
 starts without waiting for the dead lease to expire. A rollback keeps both the
 unfinished turn and its lease and publishes nothing.
 
 - **Release only an empty receipt, never unconditionally.** Delivery captures
   the receipt's run and holder before the repair and re-reads it afterward. It
-  ends the execution (`execution.ended` journaled when a turn carries it) only
-  when the same execution and holder still own the row
+  ends the execution (lease deletion and the closed run-state record in one
+  transaction) only when the same execution and holder still own the row
   and both the turn selector and adopted-message IDs are empty. A sweep
   candidate can be stale: between selection and claim, its execution may have
   completed and a newer run may have adopted a message and died. A successful
@@ -57,7 +64,8 @@ unfinished turn and its lease and publishes nothing.
   chat stays awake with an empty inbox. Every path that writes a run's last
   terminal turn therefore releases its lease in the same transaction: a
   terminal placeholder, both `close` branches, and a failed compaction
-  successor (`failCompactionSuccessor`). A new terminal path must do the same
+  successor (`failCompactionSuccessor`, which lands through `splitAndContinue`'s
+  `terminal` result). A new terminal path must do the same
   instead of leaving release to session cleanup.
 - **Prove it against the DB.** The in-memory run claim is not a recovery
   parity authority (see `TODO`); recovery regressions belong in the
@@ -66,8 +74,8 @@ unfinished turn and its lease and publishes nothing.
 Every finalized orphan clears the dead turn selector and bound-turn set before
 later work can start. Non-reply repair, including a crashed compaction, clears
 the receipt without acknowledging its adopted messages so the next run can
-deliver them. Every path that finalizes orphans under the claim (run start,
-idle materialization, applying due write-mode switches) goes through the
+deliver them. Every path that finalizes orphans under the claim (run start and
+idle materialization) goes through the
 delivery adapter's one `repairOrphans` helper, so none can finalize a turn
 while stranding its receipt.
 

@@ -153,10 +153,10 @@ response grouping reads this fact rather than comparing client/server times.
 Historical card replacement is sent over the existing
 `meridian.block.upserted` frame. Replace a loaded historical turn in place; if
 it is absent, invalidate/refetch its durable snapshot rather than creating a
-fake streaming turn. Equal replay is a reference-preserving no-op. Pending
-inbox remains complete in the transport/model path; `queuedWriterTurnIds`
-(`pending-inbox.ts`) keeps writer-provenance rows still in `waiting`, and only
-those bubbles show Queued. `awaiting_run` has no label -- there is no separate
+fake streaming turn. Equal replay is a reference-preserving no-op. The
+run-state record remains complete in the transport/model path;
+`waitingWriterMessages` (`@meridian/thread-client`) keeps writer-provenance rows
+still in `waiting`, and only those bubbles show Queued. `awaiting_run` has no label -- there is no separate
 tray.
 
 ### Interrupt response settlement

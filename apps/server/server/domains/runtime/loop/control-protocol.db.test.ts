@@ -1,13 +1,18 @@
 /** Control queue ordering, start consumption, and withdrawal against PostgreSQL. */
-import type { ThreadPendingInbox, Turn } from "@meridian/contracts/threads";
-import { eq } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { Turn } from "@meridian/contracts/threads";
+import { eq, sql } from "drizzle-orm";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { journalEventsByThread } from "../../../test-support/journal-events.js";
+import { releaseLeaseUnderLock } from "../../../test-support/release-lease.js";
 import {
   createOrchestratorEventProjector,
-  cursorSeqForJournalHead,
+  eventSeqForJournalEvent,
   TurnStartConflictError,
 } from "../../threads/index.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import { createDrizzleRunClaim } from "../adapters/drizzle-run-claim.js";
+import { readRunStateAtHead } from "../adapters/drizzle-run-state.js";
 import { createCompactionFixture } from "./__tests__/compaction-db-fixture.js";
 import { scriptedSummarizer } from "./__tests__/scripted-summarizer.js";
 import {
@@ -24,7 +29,6 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? ""))
   describe.skip("control protocol", () => {});
 else
   describe("control protocol", async () => {
-    const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -32,9 +36,16 @@ else
     const { deleteDrizzleRows } = await import("../../../test-support/drizzle-reset.js");
     const { processDetachedWork } = await import("../detached-work.js");
     assertThrowawayDatabaseForRunDbTests(url);
-    const db = createDb(url, { max: 8 });
+    const { assertPublicationHooks, openAuditedDatabase } = await import(
+      "../../../test-support/run-state-publication.js"
+    );
+    // Publication pins run in a database this suite owns and drops.
+    const audited = await openAuditedDatabase(url, { max: 8 });
+    const db = audited.db;
     beforeEach(() => deleteDrizzleRows(db, [schema.users]));
-    afterAll(() => db.close());
+    afterAll(() => audited.close());
+    // Publication pins: no input write without a record, and the last record equals the rows.
+    afterEach(() => assertPublicationHooks(db));
 
     const fixture = createCompactionFixture(db);
     const lowUsage = { inputTokens: 100, outputTokens: 10 };
@@ -116,7 +127,7 @@ else
       return fromRow;
     }
 
-    /** The turn that delivered a message, and that `messages.delivered` journaled it once. */
+    /** The turn that delivered a message. */
     async function deliveredBy(messageId: string | undefined) {
       if (!messageId) throw new Error("No message");
       const [row] = await db
@@ -127,21 +138,22 @@ else
         .from(schema.threadInboxMessages)
         .where(eq(schema.threadInboxMessages.id, messageId));
       if (!row?.deliveredAt) return undefined;
-      const journaled = (await journal())
-        .filter(({ eventType }) => eventType === "messages.delivered")
-        .map(({ payload }) => payload as { byTurnId: string | null; userTurnIds: string[] })
-        .filter(({ userTurnIds }) => userTurnIds.includes(messageId));
-      expect(journaled.map(({ byTurnId }) => byTurnId)).toEqual([row.byTurnId]);
       return row.byTurnId;
     }
 
-    /** How many times an execution's end was journaled. */
-    async function endsOf(executionId: string | null) {
-      return (await journal()).filter(
-        ({ eventType, payload }) =>
-          eventType === "execution.ended" &&
-          (payload as { executionId: string }).executionId === executionId,
-      ).length;
+    /** Whether an execution that reserved a turn has ended: its lease row is gone. */
+    async function ended(executionId: string | null) {
+      if (!executionId || !/^[0-9a-f-]{36}$/.test(executionId)) return false;
+      const [carried] = await db
+        .select({ id: schema.turns.id })
+        .from(schema.turns)
+        .where(eq(schema.turns.executionId, executionId))
+        .limit(1);
+      const rows = await db
+        .select({ id: schema.threadRunLeases.executionId })
+        .from(schema.threadRunLeases)
+        .where(eq(schema.threadRunLeases.executionId, executionId));
+      return carried !== undefined && rows.length === 0;
     }
 
     /** Starts a reply; a due switch applies at its run-start boundary. */
@@ -310,8 +322,9 @@ else
         originType: "fork",
         originTurnId: answer.id,
       });
-      const findTurn = rig.repos.turns.findById.bind(rig.repos.turns);
-      rig.repos.turns.findById = async (id) => (id === answer.id ? null : findTurn(id));
+      const graph = turnGraph(rig.repos.turns);
+      const findTurn = graph.findById.bind(graph);
+      graph.findById = async (id) => (id === answer.id ? null : findTurn(id));
 
       await expect(
         rig.delivery.enqueueControl({
@@ -386,7 +399,7 @@ else
 
       const first = await drainControls(rig);
       await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
       expect(first.status).toBe("error");
       expect(failed).toMatchObject({ role: "assistant", status: "error" });
       if (!failed) throw new Error("Failed reply was not persisted");
@@ -445,7 +458,7 @@ else
         role: "assistant",
         status: "error",
       });
-      expect((await rig.repos.turns.getLatestByThread(rig.threadId))?.id).toBe(replyTurnId);
+      expect((await turnGraph(rig.repos.turns).latest(rig.threadId))?.id).toBe(replyTurnId);
       expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
       expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
       await expect(
@@ -470,7 +483,7 @@ else
       });
       await drainControls(rig);
       await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
       if (!failed) throw new Error("Failed reply was not persisted");
       const winningId = crypto.randomUUID();
       const first = await rig.orchestrator.retryReply({
@@ -499,7 +512,7 @@ else
     it("acknowledges a crashed reply's adopted messages and leaves queued work for Retry", async () => {
       const gateway = scriptedGateway({ usage: lowUsage });
       const rig = await manualFixture({ gateway });
-      const previous = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const previous = await turnGraph(rig.repos.turns).latest(rig.threadId);
       if (!previous) throw new Error("Expected fixture history");
       const adopted = [];
       let prevTurnId = previous.id;
@@ -580,7 +593,13 @@ else
         expect.objectContaining({ id: queued.id }),
       ]);
 
-      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
+      // The test starts each run itself; a release wake would take the claim first.
+      const recovery = createOrchestrator({
+        ...rig.deps,
+        runClaim: replacement,
+        delivery,
+        wakeIfRunnable: async () => {},
+      });
       const retry = await recovery.retryReply({
         threadId: rig.threadId,
         failedTurnId: orphan.id as never,
@@ -626,7 +645,7 @@ else
       });
       await drainControls(rig);
       await processDetachedWork.drain();
-      const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+      const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
       if (!failed) throw new Error("Failed reply was not persisted");
 
       const startExecution = rig.runClaim.startExecution.bind(rig.runClaim);
@@ -823,6 +842,25 @@ else
       expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
     });
 
+    it("answers a withdrawal with the record its own transaction published", async () => {
+      const rig = await manualFixture();
+      const withdrawn = await compactControl(rig);
+      await rig.send(rig.threadId, "B behind withdrawn compact");
+      const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
+      const record = (await journalEventsByThread(db, rig.threadId))
+        .filter((row) => row.eventType === "run_state.changed")
+        .at(-1);
+      // Not the old head's rows under an existing version: the record the withdrawal appended.
+      expect(answer.runState).toEqual({
+        ...(record?.payload as { runState: object }).runState,
+        version: eventSeqForJournalEvent(record?.seq as bigint, 0).toString(),
+      });
+      expect(answer.runState.items.map((item) => item.id)).not.toContain(withdrawn.id);
+      // A snapshot at that version agrees.
+      const snapshot = await readRunStateAtHead(db, rig.threadId);
+      expect({ ...snapshot, version: answer.runState.version }).toEqual(answer.runState);
+    });
+
     it("withdrawal is replay-safe before start and refused after start", async () => {
       const rig = await manualFixture();
       const withdrawn = await compactControl(rig);
@@ -831,15 +869,14 @@ else
       const answer = await rig.delivery.withdrawControl(rig.threadId, withdrawn.id);
       expect(answer).toMatchObject({
         outcome: "withdrawn",
-        pending: null,
-        mode: (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode,
+        runState: { mode: (await rig.repos.threads.findById(rig.threadId))?.aiWriteMode },
       });
-      // The answer's clock reaches the withdrawal's own inbox.changed frame.
+      // The answer's clock reaches the withdrawal's own run-state frame.
       const [withdrawal] = (await appendedFrames(appended)).filter((row) =>
-        row.frames.some((frame) => frame.name === "meridian.inbox.changed"),
+        row.frames.some((frame) => frame.name === "meridian.run_state"),
       );
-      expect(BigInt(answer.seq)).toBeGreaterThanOrEqual(
-        cursorSeqForJournalHead(withdrawal?.journalSeq as bigint),
+      expect(answer.runState.version).toBe(
+        eventSeqForJournalEvent(withdrawal?.journalSeq as bigint, 0).toString(),
       );
       expect(await rig.delivery.withdrawControl(rig.threadId, withdrawn.id)).toMatchObject({
         outcome: "withdrawn",
@@ -938,7 +975,10 @@ else
       await drainControls(rig);
 
       const retry = await rig.delivery.enqueueControl(input);
-      expect(retry).toMatchObject({ created: false, response: { id: input.id, pending: null } });
+      expect(retry).toMatchObject({
+        created: false,
+        response: { id: input.id, runState: { items: [] } },
+      });
       expect(retry.response.turnId).toBeTruthy();
       expect(
         (await rig.repos.turns.listByThread(rig.threadId)).filter(
@@ -1066,7 +1106,7 @@ else
       const run = await rig.orchestrator.prepare({ threadId: rig.threadId, drain: true });
 
       // Drop the owning DB session after the command's start commit, as a process crash does.
-      await rig.runClaim.release({
+      await releaseLeaseUnderLock(db, rig.runClaim, {
         threadId: rig.threadId,
         executionId: run.executionId,
         holderId: "fixture-owner",
@@ -1077,7 +1117,13 @@ else
         eventWriter: rig.eventWriter,
         runClaim: replacement,
       });
-      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
+      // The test starts each run itself; a release wake would take the claim first.
+      const recovery = createOrchestrator({
+        ...rig.deps,
+        runClaim: replacement,
+        delivery,
+        wakeIfRunnable: async () => {},
+      });
 
       await expect(recovery.prepare({ threadId: rig.threadId, drain: true })).rejects.toThrow(
         "no_pending_wake",
@@ -1124,7 +1170,13 @@ else
         eventWriter: rig.eventWriter,
         runClaim: replacement,
       });
-      const recovery = createOrchestrator({ ...rig.deps, runClaim: replacement, delivery });
+      // The test starts each run itself; a release wake would take the claim first.
+      const recovery = createOrchestrator({
+        ...rig.deps,
+        runClaim: replacement,
+        delivery,
+        wakeIfRunnable: async () => {},
+      });
 
       await (await recovery.prepare({ threadId: rig.threadId, drain: true })).execute();
       expect(JSON.stringify(rig.gateway.requests.at(-1))).toContain(
@@ -1215,9 +1267,9 @@ else
         );
         if (!lease) throw new Error("Expected a run claim");
         const queued = await switchMode(rig, "draft");
-        expect(queued.response.pending).not.toBeNull();
+        expect(queued.response.turnId).toBeNull();
         await rig.repos.threads.setTrashState(rig.threadId, "deleted");
-        await rig.runClaim.release(lease);
+        await releaseLeaseUnderLock(db, rig.runClaim, lease);
         await processDetachedWork.drain();
         await expect(rig.orchestrator.startDrain(rig.threadId)).rejects.toThrow("Thread not found");
         expect(await switchTurns(rig)).toEqual([]);
@@ -1239,7 +1291,7 @@ else
         await run.execute();
         await processDetachedWork.drain();
         expect((await rig.repos.turns.findById(reserved?.id as never))?.status).toBe("error");
-        expect(await endsOf(reserved?.executionId ?? null)).toBe(1);
+        expect(await ended(reserved?.executionId ?? null)).toBe(true);
         expect((await rig.runClaim.read(rig.threadId)).kind).toBe("asleep");
       });
 
@@ -1252,7 +1304,13 @@ else
         // the answer carries the pending switch for the toolbar.
         expect(queued).toMatchObject({
           created: true,
-          response: { pending: { id: queued.response.id }, turnId: null, mode: "direct" },
+          response: {
+            turnId: null,
+            runState: {
+              items: [expect.objectContaining({ id: queued.response.id })],
+              mode: "direct",
+            },
+          },
         });
         expect(await switchTurns(rig)).toEqual([]);
         expect(await threadMode(rig)).toBe("direct");
@@ -1284,12 +1342,12 @@ else
         expect(JSON.stringify(gateway.requests.at(-1)?.messages)).toContain(
           "The writer switched this chat to draft mode.",
         );
-        // The apply is a frame of its own, ahead of the inbox.changed that empties the queue.
+        // The apply is a frame of its own, ahead of the run-state frame that empties the queue.
         const frames = (await appendedFrames(appended)).flatMap((row) => row.frames);
         const names = frames.map((frame) => frame.name);
         const switched = names.indexOf("meridian.write_mode.switched");
         expect(switched).toBeGreaterThan(-1);
-        expect(names.lastIndexOf("meridian.inbox.changed")).toBeGreaterThan(switched);
+        expect(names.lastIndexOf("meridian.run_state")).toBeGreaterThan(switched);
         expect(frames[switched]).toMatchObject({
           value: {
             threadId: rig.threadId,
@@ -1301,6 +1359,26 @@ else
         expect(await rig.delivery.withdrawControl(rig.threadId, queued.response.id)).toMatchObject({
           outcome: "already_started",
         });
+
+        // The apply's own transaction publishes the record with the new mode, after the divider's
+        // turn.created.
+        const journal = await journalEventsByThread(db, rig.threadId);
+        const divider = journal.find(
+          (row) =>
+            row.eventType === "turn.created" &&
+            (row.payload as { turn: Turn }).turn.id === turn?.id,
+        );
+        const record = journal.find(
+          (row) => row.eventType === "run_state.changed" && row.seq > (divider?.seq as bigint),
+        );
+        expect(record).toBeDefined();
+        expect(record?.createdAt).toEqual(divider?.createdAt);
+        expect(record?.payload).toMatchObject({ runState: { mode: "draft" } });
+        expect(
+          (record?.payload as { runState: { items: { id: string }[] } }).runState.items.map(
+            (item) => item.id,
+          ),
+        ).not.toContain(queued.response.id);
       });
 
       it("leaves no turn and no notice for a switch and its switch back in an idle chat", async () => {
@@ -1308,8 +1386,7 @@ else
         const rig = await manualFixture({ gateway });
         await switchMode(rig, "draft");
         expect((await switchMode(rig, "direct")).response).toMatchObject({
-          pending: null,
-          mode: "direct",
+          runState: { items: [], mode: "direct" },
         });
         await rig.delivery.enqueue({
           threadId: rig.threadId,
@@ -1362,7 +1439,14 @@ else
         const tail = (await settled(rig)).slice(start);
 
         expect(queued?.response).toMatchObject({
-          pending: { deliveryState: "waiting", control: { kind: "write_mode", mode: "draft" } },
+          runState: {
+            items: expect.arrayContaining([
+              expect.objectContaining({
+                deliveryState: "waiting",
+                control: { kind: "write_mode", mode: "draft" },
+              }),
+            ]),
+          },
           turnId: null,
         });
         expect(outcome).toMatchObject({ status: "complete" });
@@ -1386,9 +1470,7 @@ else
           reply.indexOf("M2 behind the switch"),
         );
         expect(tail[2]?.metadata).not.toMatchObject({ delivery: "steer" });
-        // M2 does not join A, so admission names no reply: the client learns
-        // M2's answer from its RUN_STARTED, never A's id.
-        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, steersTurnId: null });
+        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id });
         expect(tail[4]).toMatchObject({ role: "assistant", status: "complete" });
         // A yielded with M2 undelivered, so A's execution ended and B, in a new
         // execution reserved for M2, delivered it.
@@ -1399,8 +1481,8 @@ else
         expect(b.executionId).not.toBe(a.executionId);
         expect(await deliveredBy(tail[0]?.id)).toBe(tail[1]?.id);
         expect(await deliveredBy(tail[2]?.id)).toBe(tail[4]?.id);
-        expect(await endsOf(a.executionId)).toBe(1);
-        expect(await endsOf(b.executionId)).toBe(1);
+        expect(await ended(a.executionId)).toBe(true);
+        expect(await ended(b.executionId)).toBe(true);
         expect(await threadMode(rig)).toBe("draft");
       });
 
@@ -1423,9 +1505,8 @@ else
         const tail = (await settled(rig)).slice(start);
 
         expect(tail.map((turn) => turn.role)).toEqual(["user", "assistant", "user", "assistant"]);
-        // M2 was steered into A, so admission names A; B, in A's execution,
-        // is reserved for M2 and delivers it.
-        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id, steersTurnId: tail[1]?.id });
+        // M2 was steered into A; B, in A's execution, is reserved for M2 and delivers it.
+        expect(admitted).toMatchObject({ userTurnId: tail[2]?.id });
         expect(tail[2]?.metadata).toMatchObject({ delivery: "steer" });
         const a = await identity(tail[1]?.id);
         const b = await identity(tail[3]?.id);
@@ -1435,7 +1516,7 @@ else
         expect(b.reservedForUserTurnIds).toEqual([tail[2]?.id]);
         expect(await deliveredBy(tail[0]?.id)).toBe(tail[1]?.id);
         expect(await deliveredBy(tail[2]?.id)).toBe(tail[3]?.id);
-        expect(await endsOf(a.executionId)).toBe(1);
+        expect(await ended(a.executionId)).toBe(true);
       });
 
       it("names no reply for a message admitted after the live reply ended and its switch pending", async () => {
@@ -1460,7 +1541,6 @@ else
         });
 
         const admitted = await rig.send(rig.threadId, "M2 after A ended");
-        expect(admitted.steersTurnId).toBeNull();
         expect(
           (await rig.repos.turns.findById(admitted.userTurnId as never))?.metadata,
         ).not.toMatchObject({ delivery: "steer" });
@@ -1503,7 +1583,6 @@ else
         const admitted = await rig.send(rig.threadId, "M2 retried after A ended");
 
         expect(calls).toBeGreaterThanOrEqual(2);
-        expect(admitted.steersTurnId).toBeNull();
         expect(
           (await rig.repos.turns.findById(admitted.userTurnId as never))?.metadata,
         ).not.toMatchObject({ delivery: "steer" });
@@ -1666,7 +1745,7 @@ else
           .where(eq(schema.threadRunLeases.threadId, rig.threadId));
         if (!lease) throw new Error("Expected the compaction's run lease");
         expect(lease.adoptedMessageIds).toEqual([run.userTurnId]);
-        await rig.runClaim.release({
+        await releaseLeaseUnderLock(db, rig.runClaim, {
           threadId: rig.threadId,
           executionId: run.executionId,
           holderId: "fixture-owner",
@@ -1717,37 +1796,39 @@ else
         const appended = vi.spyOn(rig.eventWriter, "appendEvent");
         const publishedQueues = () =>
           appended.mock.calls.flatMap(([, event]) =>
-            event.type === "inbox.changed"
-              ? [(event as { pending: ThreadPendingInbox }).pending.items.map((item) => item.id)]
-              : [],
+            event.type === "run_state.changed" ? [event.runState.items.map((item) => item.id)] : [],
           );
         expect((await switchMode(rig, "draft", first)).response).toMatchObject({
-          pending: { id: first },
+          runState: { items: [expect.objectContaining({ id: first })] },
           turnId: null,
         });
         appended.mockClear();
         expect(await switchMode(rig, "direct", back)).toMatchObject({
           created: true,
-          response: { id: back, pending: null, turnId: null, mode: "direct" },
+          response: { id: back, turnId: null, runState: { items: [], mode: "direct" } },
         });
         expect(publishedQueues()).toEqual([[]]);
         expect(await rig.delivery.selectPending(rig.threadId)).toEqual([]);
 
-        expect((await switchMode(rig, "draft", newer)).response.pending).toMatchObject({
-          id: newer,
-        });
+        expect((await switchMode(rig, "draft", newer)).response.runState.items).toContainEqual(
+          expect.objectContaining({ id: newer }),
+        );
         appended.mockClear();
         // Same mode as the queued switch: written settled, the queued one stays.
         // The answer names the thread's queued switch, not only its own row.
         expect((await switchMode(rig, "draft")).response).toMatchObject({
-          pending: { id: newer },
+          runState: { items: [expect.objectContaining({ id: newer })] },
           turnId: null,
         });
         expect(publishedQueues()).toEqual([[newer]]);
         // A retried cancel answers its own settled row.
         expect(await switchMode(rig, "direct", back)).toMatchObject({
           created: false,
-          response: { id: back, pending: { id: newer }, turnId: null, mode: "direct" },
+          response: {
+            id: back,
+            turnId: null,
+            runState: { items: [expect.objectContaining({ id: newer })], mode: "direct" },
+          },
         });
         await expect(switchMode(rig, "draft", back)).rejects.toMatchObject({
           statusCode: 409,
@@ -1775,7 +1856,7 @@ else
         });
         // Already in draft mode: a new draft request changes nothing.
         expect((await switchMode(rig, "draft")).response).toMatchObject({
-          pending: null,
+          runState: { items: [] },
           turnId: null,
         });
         expect(await switchTurns(rig)).toHaveLength(1);
@@ -1824,7 +1905,7 @@ else
         expect((await rig.delivery.readPendingProjection(rig.threadId)).blocked).toBeUndefined();
         const execution = await identity(reply?.id);
         expect(execution.executionId).not.toBeNull();
-        expect(await endsOf(execution.executionId)).toBe(1);
+        expect(await ended(execution.executionId)).toBe(true);
         expect(await deliveredBy(message.id)).toBe(reply?.id);
         expect(await db.select().from(schema.threadRunLeases)).toEqual([]);
       });
@@ -1851,7 +1932,7 @@ else
         await rig.send(rig.threadId, "Answer after the switch.");
         expect((await drainControls(rig)).status).toBe("error");
         await processDetachedWork.drain();
-        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
         if (!failed) throw new Error("Failed reply was not persisted");
         fail = false;
         const start = rig.runClaim.startExecution.bind(rig.runClaim);
@@ -1867,29 +1948,34 @@ else
                 await interleave();
               });
           },
-          /**
-           * Runs `interleave` once, at the first boundary a pending switch can apply behind:
-           * a separate pre-claim apply step where one exists, otherwise the run claim.
-           */
+          /** Runs `interleave` once, at the run claim: before the start selects anything. */
           beforeSwitchApplies(interleave: () => Promise<unknown>) {
             let armed = true;
-            const fire = async () => {
-              if (!armed) return;
-              armed = false;
-              await interleave();
-            };
-            const delivery = rig.delivery as unknown as Record<string, unknown>;
-            const preClaim = delivery.applyDueSwitches;
-            if (typeof preClaim === "function")
-              delivery.applyDueSwitches = async (...args: unknown[]) => {
-                await fire();
-                return preClaim.apply(rig.delivery, args);
-              };
             rig.runClaim.startExecution = (threadId, executionId, settle) =>
               start(threadId, executionId, async () => {
                 await settle();
-                await fire();
+                if (!armed) return;
+                armed = false;
+                await interleave();
               });
+          },
+          /**
+           * Runs `probe` once, in the preparation that follows the start's selection while the
+           * thread lock is held: the first history read under a granted advisory lock.
+           */
+          duringPreparation(probe: () => Promise<unknown>) {
+            const list = rig.repos.blocks.listByThread.bind(rig.repos.blocks);
+            let armed = true;
+            rig.repos.blocks.listByThread = async (...args) => {
+              const held = await db.execute(
+                sql`select 1 from pg_locks where locktype = 'advisory' and granted and database = (select oid from pg_database where datname = current_database())`,
+              );
+              if (armed && held.length > 0) {
+                armed = false;
+                await probe();
+              }
+              return list(...args);
+            };
           },
           retry: (replyTurnId: string) =>
             rig.orchestrator.retryReply({
@@ -1900,13 +1986,49 @@ else
         };
       }
 
-      it("applies a switch queued while Retry claims the chat and chains the retry after it", async () => {
-        const { gateway, rig, failed, whileClaiming, retry } = await failedReplyRig();
-        whileClaiming(() => switchMode(rig, "draft"));
+      it("applies a switch queued while Retry claims the chat with the Retry's reservation, or not at all", async () => {
+        const { gateway, rig, failed, beforeSwitchApplies, duringPreparation, retry } =
+          await failedReplyRig();
+        beforeSwitchApplies(() => switchMode(rig, "draft"));
+        const aborted = new AbortController();
+        const abort = () => aborted.abort();
+        duringPreparation(async () => abort());
 
+        // A start discarded after it selected the due switch leaves the switch pending.
+        await expect(
+          rig.orchestrator.prepare({
+            threadId: rig.threadId,
+            drain: true,
+            replyTurnId: crypto.randomUUID() as never,
+            retryOf: failed.id as never,
+            signal: aborted.signal,
+          }),
+        ).rejects.toThrow();
+        await processDetachedWork.drain();
+        expect(await switchTurns(rig)).toEqual([]);
+        expect(await threadMode(rig)).toBe("direct");
+        expect((await rig.delivery.selectPending(rig.threadId)).map((row) => row.intent)).toEqual([
+          "control",
+        ]);
+
+        // The Retry that follows applies it with its own reservation: mid-preparation, no other
+        // connection sees the mode, the switch turn or the acknowledgement.
+        const midway: { mode?: string; switches?: number; pending?: number } = {};
+        duringPreparation(async () => {
+          // Plain queries on the pool: the start's own transaction is not this connection's.
+          const [row] = await db.execute(sql`
+            select
+              (select ai_write_mode from threads where id = ${rig.threadId}) as mode,
+              (select count(*)::int from turns where thread_id = ${rig.threadId}
+                 and metadata->>'kind' = 'write_mode_switch') as switches,
+              (select count(*)::int from thread_inbox_messages where thread_id = ${rig.threadId}
+                 and intent = 'control' and delivered_at is null) as pending`);
+          Object.assign(midway, row);
+        });
         const replyTurnId = crypto.randomUUID();
         const started = await retry(replyTurnId);
         await processDetachedWork.drain();
+        expect(midway).toEqual({ mode: "direct", switches: 0, pending: 1 });
 
         // The Retry starts a reply, so the switch applies first, though it arrived after Retry's reads.
         const [switchTurn] = await switchTurns(rig);
@@ -1959,23 +2081,6 @@ else
         return { promise, open };
       }
 
-      async function journalOrder(threadId: string) {
-        const rows = await db
-          .select({
-            seq: schema.eventJournal.seq,
-            eventType: schema.eventJournal.eventType,
-            payload: schema.eventJournal.payload,
-          })
-          .from(schema.eventJournal)
-          .where(eq(schema.eventJournal.threadId, threadId as never))
-          .orderBy(schema.eventJournal.seq);
-        return rows.map((row) => ({
-          seq: row.seq,
-          type: row.eventType,
-          payload: row.payload as Record<string, unknown> & { turn?: { id: string } },
-        }));
-      }
-
       async function leaseRow(threadId: string) {
         const [row] = await db
           .select()
@@ -2005,7 +2110,7 @@ else
         if (!empty) throw new Error("Expected an empty lease");
         expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBeNull();
         await rig.delivery.releaseExecution(empty);
-        expect(await endsOf(empty.executionId)).toBe(0);
+        expect(await ended(empty.executionId)).toBe(false);
 
         const run = await rig.orchestrator.prepare({ threadId: rig.threadId, userText: "M1 asks" });
         const c = await rig.repos.turns.findById(run.executionTurnId);
@@ -2018,6 +2123,9 @@ else
 
         const done = run.execute();
         await summaryStarted.promise;
+        // The turn cancel endpoint (`./mf thread cancel`, a handoff brief's Stop), not the chat's
+        // Stop: it ends the compaction and leaves the message for the next execution. The chat's
+        // Stop hands the message back instead (`stop-protocol.db.test.ts`).
         expect(await rig.orchestrator.cancel(rig.threadId, run.executionTurnId)).toBe("cancelled");
         summaryReleased.open();
         expect(await done).toMatchObject({ status: "cancelled" });
@@ -2033,7 +2141,7 @@ else
         expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
           status: "cancelled",
         });
-        expect(await endsOf(e1.executionId)).toBe(1);
+        expect(await ended(e1.executionId)).toBe(true);
         const turns = await settled(rig);
         const reply = turns.find(
           (turn) => turn.role === "assistant" && turn.position > (c?.position ?? 0),
@@ -2042,26 +2150,11 @@ else
         expect(e2.executionId).not.toBe(e1.executionId);
         expect(e2.reservedForUserTurnIds).toEqual([run.userTurnId]);
         expect(await deliveredBy(run.userTurnId)).toBe(reply?.id);
-        expect(await endsOf(e2.executionId)).toBe(1);
+        expect(await ended(e2.executionId)).toBe(true);
         expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBeNull();
 
-        // Each end is journaled after its execution's last terminal turn, and
-        // E1's before E2 reserved anything.
-        const order = await journalOrder(rig.threadId);
-        const at = (match: (entry: (typeof order)[number]) => boolean) => order.findIndex(match);
-        const cCancelled = at(
-          (entry) => entry.type === "turn.cancelled" && entry.payload.turn?.id === c?.id,
-        );
-        const e1Ended = at(
-          (entry) =>
-            entry.type === "execution.ended" && entry.payload.executionId === e1.executionId,
-        );
-        const replyCreated = at(
-          (entry) => entry.type === "turn.created" && entry.payload.turn?.id === reply?.id,
-        );
-        expect(cCancelled).toBeGreaterThanOrEqual(0);
-        expect(e1Ended).toBeGreaterThan(cCancelled);
-        expect(replyCreated).toBeGreaterThan(e1Ended);
+        // E1's end precedes E2's first reserved turn.
+        expect(reply?.position ?? 0).toBeGreaterThan(c?.position ?? 0);
       });
 
       it("answers a Retry replay from its execution, before and after it reserves, and copies its messages", async () => {
@@ -2105,7 +2198,7 @@ else
         });
         await drainControls(rig);
         await processDetachedWork.drain();
-        const f1 = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const f1 = await turnGraph(rig.repos.turns).latest(rig.threadId);
         expect(f1).toMatchObject({ role: "assistant", status: "error" });
         expect((await identity(f1?.id)).reservedForUserTurnIds).toEqual([m1.id]);
 
@@ -2157,10 +2250,12 @@ else
           metadata: { retryOf: failedRetry?.id, retryReplyId: replyTurnId },
         });
         expect((await identity(c?.id)).reservedForUserTurnIds).toEqual([m1.id]);
-        expect(await rig.orchestrator.retryReply(retry)).toEqual({
+        // A replay answers the record as of the replay: the open execution is this Retry's.
+        expect(await rig.orchestrator.retryReply(retry)).toMatchObject({
           created: false,
           turn: null,
           executionId: accepted.executionId,
+          runState: { execution: { executionId: accepted.executionId } },
         });
         await expect(
           rig.orchestrator.retryReply({ ...retry, replyTurnId: crypto.randomUUID() as never }),
@@ -2180,7 +2275,7 @@ else
           turn: { id: replyTurnId },
           executionId: accepted.executionId,
         });
-        expect(await endsOf(accepted.executionId)).toBe(1);
+        expect(await ended(accepted.executionId)).toBe(true);
         // M1 was delivered once, by the first reply that failed it.
         expect(await deliveredBy(m1.id)).toBe(f1?.id);
       });
@@ -2195,7 +2290,7 @@ else
         });
         await drainControls(rig);
         await processDetachedWork.drain();
-        const failed = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const failed = await turnGraph(rig.repos.turns).latest(rig.threadId);
         expect(failed).toMatchObject({ role: "assistant", status: "error" });
         return failed?.id as never;
       }
@@ -2235,7 +2330,7 @@ else
           executionId: answer.executionId,
         });
         expect(rig.orchestrator.isThreadRunning(rig.threadId)).toBe(false);
-        expect(await endsOf(answer.executionId)).toBe(1);
+        expect(await ended(answer.executionId)).toBe(true);
         expect(await leaseRow(rig.threadId)).toBeUndefined();
       });
 
@@ -2275,12 +2370,13 @@ else
         // and the leaf only after the winner's reply finished.
         const latestRead = gate();
         const latestReleased = gate();
-        const getLatestByThread = rig.repos.turns.getLatestByThread.bind(rig.repos.turns);
-        rig.repos.turns.getLatestByThread = async (threadId) => {
-          rig.repos.turns.getLatestByThread = getLatestByThread;
+        const graph = turnGraph(rig.repos.turns);
+        const latest = graph.latest.bind(graph);
+        graph.latest = async (threadId) => {
+          graph.latest = latest;
           latestRead.open();
           await latestReleased.promise;
-          return getLatestByThread(threadId);
+          return latest(threadId);
         };
         const statusRead = gate();
         const read = rig.runClaim.read.bind(rig.runClaim);
@@ -2334,7 +2430,7 @@ else
         expect(await rig.repos.turns.findById(run.executionTurnId)).toMatchObject({
           status: "streaming",
         });
-        expect(await endsOf(e1.executionId)).toBe(0);
+        expect(await ended(e1.executionId)).toBe(false);
         expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBe(e1.executionId);
 
         // The next holder repairs, ends E1 and deletes its row before its own lease exists.
@@ -2356,24 +2452,7 @@ else
           metadata: { reason: "orphaned" },
         });
         expect(await deliveredBy(run.userTurnId)).toBe(run.executionTurnId);
-        expect(await endsOf(e1.executionId)).toBe(1);
-        const order = await journalOrder(rig.threadId);
-        const orphanError = order.findIndex(
-          (entry) => entry.type === "turn.error" && entry.payload.turn?.id === run.executionTurnId,
-        );
-        const ended = order.findIndex(
-          (entry) =>
-            entry.type === "execution.ended" && entry.payload.executionId === e1.executionId,
-        );
-        const next = order.findIndex(
-          (entry, index) =>
-            index > ended &&
-            entry.type === "turn.created" &&
-            (entry.payload.turn as unknown as Turn | undefined)?.role === "assistant",
-        );
-        expect(orphanError).toBeGreaterThanOrEqual(0);
-        expect(ended).toBeGreaterThan(orphanError);
-        expect(next).toBeGreaterThan(ended);
+        expect(await ended(e1.executionId)).toBe(true);
         const turns = await settled(rig);
         expect(turns.at(-1)).toMatchObject({ role: "assistant", status: "complete" });
         expect((await identity(turns.at(-1)?.id)).executionId).not.toBe(e1.executionId);
@@ -2384,7 +2463,7 @@ else
         // A crash after repair committed the turn's error but before the end:
         // the turn carries the execution, the expired row remains.
         const executionId = crypto.randomUUID();
-        const leaf = await rig.repos.turns.getLatestByThread(rig.threadId);
+        const leaf = await turnGraph(rig.repos.turns).latest(rig.threadId);
         const repaired = await rig.repos.turns.create({
           threadId: rig.threadId,
           prevTurnId: leaf?.id as never,
@@ -2433,8 +2512,8 @@ else
 
         expect(await leaseRow(rig.threadId)).toBeUndefined();
         expect(await leaseRow(legacy.id)).toBeUndefined();
-        expect(await endsOf(executionId)).toBe(1);
-        expect(await endsOf("run-before-identity")).toBe(0);
+        expect(await ended(executionId)).toBe(true);
+        expect(await ended("run-before-identity")).toBe(false);
         expect(await rig.runClaim.readOpenExecutionId(rig.threadId)).toBeNull();
       });
     });

@@ -1,20 +1,21 @@
 /**
- * The switch display as a table through the hook's own reducer. Each scenario is a list of
- * server facts (a snapshot, frames, answers, each carrying a seq) and this device's
- * intents, and asserts the toolbar mode and the rows after every event. The scenarios are
- * the reviewers' own scripts from five rounds of #760 review (R1, R4, F1 to F4, B1 from
- * rp1, rp3 and rp4, N2). Seqs read `J * 1000 + index` like the socket's; an answer's seq is
- * the journal head `J * 1000 + 999`.
+ * The switch display as a table through the run-state slice's own reducer. Each scenario is a list of
+ * server facts (a snapshot, run-state frames, answers, each a whole record carrying its
+ * version) and this device's intents, and asserts the toolbar mode and the rows after every
+ * event. The scenarios are the reviewers' own scripts from five rounds of #760 review (R1, R4,
+ * F1 to F4, B1 from rp1, rp3 and rp4, N2). Versions read `J * 1000 + index` like the stream's; an
+ * answer's version is the journal head `J * 1000 + 999`.
  */
+import type { RunState } from "@meridian/contracts/threads";
 import { expect, it } from "vitest";
 import type { JournalSwitch } from "@/client/chat-submissions/owner";
-import { type SwitchFrame, switchDisplay } from "./switch-record";
 import {
-  INITIAL_SWITCH_STATE,
-  reduceSwitch,
-  type SwitchAction,
-  type SwitchState,
-} from "./switch-reducer";
+  INITIAL_RUN_STATE_SLICE,
+  type RunStateAction,
+  type RunStateSlice,
+  reduceRunState,
+  switchDisplay,
+} from "./run-state-slice";
 
 type Mode = "draft" | "direct";
 type Queued = [id: string, mode: Mode];
@@ -30,11 +31,19 @@ const item = ([id, mode]: Queued) =>
     provenance: { kind: "writer" },
     deliveryState: "waiting",
   }) as never;
-const pending = (...queued: Queued[]) => ({ items: queued.map(item) });
+const runState = (version: string, mode: Mode, queued: Queued[]): RunState => ({
+  version,
+  items: queued.map(item),
+  sentThrough: 0,
+  execution: null,
+  mode,
+  blocked: null,
+});
 
 type Event =
   | { snapshot: number; mode: Mode; queued?: Queued[] }
-  | { frame: SwitchFrame }
+  | { record: string; mode: Mode; queued?: Queued[] }
+  | { switched: string; id: string }
   | { choose: string; mode: Mode; order: number; failed?: boolean; awaiting?: boolean }
   | { answer: string; j: number; mode: Mode; queued?: Queued }
   | { stamp: number; mode: Mode; queued?: Queued }
@@ -47,12 +56,14 @@ const snapshot = (j: number, mode: Mode, ...queued: Queued[]): Event => ({
   mode,
   queued,
 });
-const inbox = (seq: string, ...queued: Queued[]): Event => ({
-  frame: { kind: "inbox", seq, pending: pending(...queued) },
+/** A `meridian.run_state` frame: the whole record at its stream version. */
+const record = (seq: string, mode: Mode, ...queued: Queued[]): Event => ({
+  record: seq,
+  mode,
+  queued,
 });
-const switched = (seq: string, mode: Mode, controlId = "s1"): Event => ({
-  frame: { kind: "switched", seq, mode, controlId },
-});
+/** A `meridian.write_mode.switched` frame: the server's answer for its control, not a record. */
+const switched = (seq: string, id = "s1"): Event => ({ switched: seq, id });
 const choose = (id: string, mode: Mode, order: number): Event => ({ choose: id, mode, order });
 const answer = (id: string, j: number, mode: Mode, queued?: Queued): Event => ({
   answer: id,
@@ -62,19 +73,17 @@ const answer = (id: string, j: number, mode: Mode, queued?: Queued): Event => ({
 });
 
 type Journal = Record<string, JournalSwitch>;
-type Harness = { state: SwitchState; journal: Journal };
+type Harness = { state: RunStateSlice; journal: Journal };
 
-const answerFacts = (head_: string, mode: Mode, queued?: Queued) => ({
-  seq: head_,
-  mode,
-  pending: queued ? item(queued) : null,
+const answerFacts = (j: number, mode: Mode, queued?: Queued) => ({
+  runState: runState(head(j), mode, queued ? [queued] : []),
   at: 0,
 });
 
 /** One event through the reducer the hook runs, with the journal the hook would be handed. */
 function step({ state, journal }: Harness, event: Event): Harness {
-  const dispatch = (action: SwitchAction, next = journal) => ({
-    state: reduceSwitch(state, action),
+  const dispatch = (action: RunStateAction, next = journal) => ({
+    state: reduceRunState(state, action),
     journal: next,
   });
   const ingest = (next: Journal) =>
@@ -82,13 +91,21 @@ function step({ state, journal }: Harness, event: Event): Harness {
   if ("snapshot" in event)
     return dispatch({
       type: "snapshot",
-      snapshot: {
-        nextSeq: String(Number(head(event.snapshot)) + 1),
-        thread: { aiWriteMode: event.mode },
-        liveState: { pending: pending(...(event.queued ?? [])) },
-      },
+      runState: runState(head(event.snapshot), event.mode, event.queued ?? []),
     });
-  if ("frame" in event) return dispatch({ type: "frame", frame: event.frame });
+  if ("record" in event)
+    return dispatch({
+      type: "record",
+      runState: runState(event.record, event.mode, event.queued ?? []),
+    });
+  if ("switched" in event)
+    return dispatch({
+      type: "switched",
+      seq: event.switched,
+      controlId: event.id,
+      turnId: `divider-${event.id}`,
+      mode: "direct",
+    });
   if ("choose" in event)
     return ingest({
       ...journal,
@@ -107,7 +124,7 @@ function step({ state, journal }: Harness, event: Event): Harness {
       ...journal,
       [event.answer]: {
         ...journal[event.answer],
-        answer: answerFacts(head(event.j), event.mode, event.queued),
+        answer: answerFacts(event.j, event.mode, event.queued),
       } as JournalSwitch,
     });
   if ("stamp" in event)
@@ -121,7 +138,7 @@ function step({ state, journal }: Harness, event: Event): Harness {
         posted: true,
         refused: false,
         failed: false,
-        answer: answerFacts(head(event.stamp), event.mode, event.queued),
+        answer: answerFacts(event.stamp, event.mode, event.queued),
       },
     });
   if ("drop" in event) {
@@ -133,7 +150,7 @@ function step({ state, journal }: Harness, event: Event): Harness {
   return dispatch({
     type: "withdrawn",
     id: event.withdrawn,
-    answer: answerFacts(head(event.j), event.mode, event.queued),
+    runState: answerFacts(event.j, event.mode, event.queued).runState,
   });
 }
 
@@ -151,10 +168,10 @@ const SCENARIOS: {
     steps: [
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
       [choose("s2", "direct", 2), "direct", []],
-      [inbox(at(3)), "direct", []],
+      [record(at(3), "direct"), "direct", []],
       // Another device queues s3. Until s2's answer arrives its effect is unknown, so the
       // fold still lays it over s3: the transient is bounded by the answer, not by a proof.
-      [inbox(at(4), ["s3", "draft"]), "direct", []],
+      [record(at(4), "direct", ["s3", "draft"]), "direct", []],
       [answer("s2", 3, "direct"), "draft", ["s3:queued"]],
     ],
   },
@@ -185,7 +202,7 @@ const SCENARIOS: {
       [choose("s2", "direct", 2), "direct", []],
       [answer("s1", 2, "draft"), "direct", ["s2:sending"]],
       [answer("s2", 3, "direct"), "direct", []],
-      [switched(at(2), "draft"), "direct", []],
+      [switched(at(2)), "direct", []],
     ],
   },
   {
@@ -195,8 +212,8 @@ const SCENARIOS: {
       [choose("s2", "direct", 2), "direct", []],
       [answer("s2", 3, "direct"), "direct", []],
       // s1 applied before s2 cancelled nothing: its late frames are older than the answer.
-      [switched(at(2), "draft"), "direct", []],
-      [inbox(at(2, 1), ["s1", "draft"]), "direct", []],
+      [switched(at(2)), "direct", []],
+      [record(at(2, 1), "direct", ["s1", "draft"]), "direct", []],
     ],
   },
   {
@@ -212,10 +229,10 @@ const SCENARIOS: {
     name: "B1 (rp1): the reply-end apply never shows the old mode, or the applied row, between the divider and the inbox",
     steps: [
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
-      // The apply removed the queued row and set the mode in one transaction: no frame
-      // shows the new mode beside the row that caused it.
-      [switched(at(2), "draft"), "draft", []],
-      [inbox(at(2, 1)), "draft", []],
+      // The apply removed the queued row and set the mode in one transaction, and the record
+      // that follows holds both: no record shows the new mode beside the row that caused it.
+      [switched(at(2)), "draft", ["s1:queued"]],
+      [record(at(2, 1), "draft"), "draft", []],
     ],
   },
   {
@@ -224,7 +241,7 @@ const SCENARIOS: {
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
       [choose("s2", "direct", 2), "direct", []],
       [answer("s2", 3, "direct"), "direct", []],
-      [inbox(at(2), ["s1", "draft"]), "direct", []],
+      [record(at(2), "direct", ["s1", "draft"]), "direct", []],
     ],
   },
   {
@@ -245,9 +262,8 @@ const SCENARIOS: {
     ],
   },
   {
-    name: "a switch made before the first snapshot shows at once, and no frame invents a record",
+    name: "a switch made before the first record shows at once, over the thread row's mode",
     steps: [
-      [inbox(at(1), ["s1", "draft"]), "direct", []],
       [choose("s1", "draft", 1), "draft", ["s1:sending"]],
       [snapshot(2, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
     ],
@@ -277,7 +293,7 @@ const SCENARIOS: {
       [{ withdraw: "s1", failed: true }, "draft", ["s1:withdraw_failed"]],
       [{ withdraw: "s1" }, "direct", []],
       [{ withdrawn: "s1", j: 2, mode: "direct" }, "direct", []],
-      [inbox(at(2)), "direct", []],
+      [record(at(2), "direct"), "direct", []],
     ],
     retained: [],
   },
@@ -287,7 +303,7 @@ const SCENARIOS: {
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
       [{ withdraw: "s1" }, "direct", []],
       // The withdrawal's own frame is at J*1000; its answer is the head, J*1000+999.
-      [inbox(at(2)), "direct", []],
+      [record(at(2), "direct"), "direct", []],
       [{ withdrawn: "s1", j: 2, mode: "direct" }, "direct", []],
     ],
     retained: [],
@@ -297,18 +313,22 @@ const SCENARIOS: {
     steps: [
       [snapshot(1, "direct"), "direct", []],
       [choose("s1", "draft", 1), "draft", ["s1:sending"]],
-      [switched(at(2), "draft", "s1"), "draft", []],
+      // The frame answers s1 at its seq; the record of the same commit follows and retires it.
+      [switched(at(2)), "draft", ["s1:sending"]],
+      [record(at(2, 1), "draft"), "draft", []],
       // Another device switches back before s1's own answer arrives.
-      [switched(at(3), "direct", "s9"), "direct", []],
+      [switched(at(3), "s9"), "draft", []],
+      [record(at(3, 1), "direct"), "direct", []],
       [answer("s1", 2, "draft"), "direct", []],
     ],
   },
   {
-    name: "a frame that arrives before the first snapshot is applied when the snapshot is older",
+    name: "a record that arrives before the snapshot is the first record, and an older snapshot cannot replace it",
     steps: [
-      [inbox(at(2), ["s1", "draft"]), "direct", []],
+      [record(at(2), "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
       [snapshot(1, "direct"), "draft", ["s1:queued"]],
-      [switched(at(3), "draft", "s1"), "draft", []],
+      [switched(at(3)), "draft", ["s1:queued"]],
+      [record(at(3, 1), "draft"), "draft", []],
     ],
   },
   {
@@ -316,8 +336,16 @@ const SCENARIOS: {
     steps: [
       [snapshot(1, "direct"), "direct", []],
       [choose("s1", "draft", 1), "draft", ["s1:sending"]],
-      [switched(at(2), "draft", "s1"), "draft", []],
-      [switched(at(3), "direct", "s9"), "direct", []],
+      [switched(at(2)), "draft", ["s1:sending"]],
+      [record(at(2, 1), "draft"), "draft", []],
+      [switched(at(3), "s9"), "draft", []],
+      [record(at(3, 1), "direct"), "direct", []],
+      // Another device applies 32 more switches: none may evict s1's evidence.
+      ...Array.from({ length: 32 }, (_, i): [Event, Mode, string[]] => [
+        switched(at(4 + i), `x${i}`),
+        "direct",
+        [],
+      ]),
       // The journal still holds s1 unstamped; adding s2 re-adds it.
       [choose("s2", "draft", 2), "draft", ["s2:sending"]],
     ],
@@ -327,8 +355,10 @@ const SCENARIOS: {
     name: "answer evidence arrives before the intent: a frame ahead of the journal entry is not lost",
     steps: [
       [snapshot(1, "direct"), "direct", []],
-      [switched(at(2), "draft", "s1"), "draft", []],
-      [switched(at(3), "direct", "s9"), "direct", []],
+      [switched(at(2)), "direct", []],
+      [record(at(2, 1), "draft"), "draft", []],
+      [switched(at(3), "s9"), "draft", []],
+      [record(at(3, 1), "direct"), "direct", []],
       [choose("s1", "draft", 1), "direct", []],
     ],
     retained: [],
@@ -342,8 +372,10 @@ const SCENARIOS: {
         "direct",
         ["s1:failed:awaiting"],
       ],
-      [switched(at(2), "draft", "s1"), "draft", []],
-      [switched(at(3), "direct", "s9"), "direct", []],
+      [switched(at(2)), "direct", ["s1:failed:awaiting"]],
+      [record(at(2, 1), "draft"), "draft", []],
+      [switched(at(3), "s9"), "draft", []],
+      [record(at(3, 1), "direct"), "direct", []],
       [choose("s2", "direct", 2), "direct", []],
     ],
     retained: ["switch:s2"],
@@ -352,7 +384,8 @@ const SCENARIOS: {
     name: "a switched frame leaves no applied control queued: the next choice folds against the applied mode",
     steps: [
       [snapshot(1, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
-      [switched(at(2), "draft", "s1"), "draft", []],
+      [switched(at(2)), "draft", ["s1:queued"]],
+      [record(at(2, 1), "draft"), "draft", []],
       [choose("s2", "direct", 2), "direct", ["s2:sending"]],
     ],
   },
@@ -361,21 +394,17 @@ const SCENARIOS: {
     steps: [
       [snapshot(1, "direct", ["s0", "draft"]), "draft", ["s0:queued"]],
       [snapshot(2, "direct", ["s1", "draft"]), "draft", ["s1:queued"]],
-      [inbox(at(3), ["s3", "draft"]), "draft", ["s3:queued"]],
-      [inbox(at(3), ["s3", "draft"]), "draft", ["s3:queued"]],
+      [record(at(3), "direct", ["s3", "draft"]), "draft", ["s3:queued"]],
+      [record(at(3), "direct", ["s3", "draft"]), "draft", ["s3:queued"]],
     ],
     news: ["s3"],
   },
   {
-    name: "S1: with no snapshot, nothing from stamps or frames renders or is announced",
+    name: "S1: a stamp left over from before a reload is evidence, never a record: it makes no row and no news",
     steps: [
-      // The journal still holds a stamped switch from before the reload; the socket replays
-      // the frames of switches the server already applied.
       [{ stamp: 3, mode: "draft", queued: ["s1", "draft"] }, "direct", []],
-      [inbox(at(4), ["s1", "draft"]), "direct", []],
-      [switched(at(4, 1), "draft", "s1"), "direct", []],
-      [inbox(at(4, 2)), "direct", []],
-      // The retry loads: the snapshot is the first record, and what it holds is not news.
+      // The first record is whatever carrier brings one first, and what it holds is not news.
+      [record(at(4), "draft"), "draft", []],
       [snapshot(4, "draft"), "draft", []],
     ],
     retained: [],
@@ -388,13 +417,14 @@ const SCENARIOS: {
       [choose("s1", "draft", 1), "draft", ["s1:sending"]],
       [choose("s2", "direct", 2), "direct", []],
       // The first switch enqueues, applies on the idle chat and answers, while s2 waits behind it.
-      [inbox(at(2), ["s1", "draft"]), "direct", []],
-      [switched(at(2, 1), "draft", "s1"), "direct", ["s2:sending"]],
-      [inbox(at(2, 2)), "direct", ["s2:sending"]],
+      [record(at(2), "direct", ["s1", "draft"]), "direct", []],
+      [switched(at(2, 1)), "direct", []],
+      [record(at(2, 2), "draft"), "direct", ["s2:sending"]],
       [answer("s1", 2, "draft"), "direct", ["s2:sending"]],
       // Then s2 enqueues, applies and answers.
-      [inbox(at(3), ["s2", "direct"]), "direct", ["s2:queued"]],
-      [switched(at(3, 1), "direct", "s2"), "direct", []],
+      [record(at(3), "draft", ["s2", "direct"]), "direct", ["s2:queued"]],
+      [switched(at(3, 1), "s2"), "direct", ["s2:queued"]],
+      [record(at(3, 2), "direct"), "direct", []],
       [answer("s2", 3, "direct"), "direct", []],
     ],
     retained: [],
@@ -410,7 +440,7 @@ const SCENARIOS: {
 
 it("derives the switch rows and toolbar mode from server facts at one seq and unanswered intents", () => {
   for (const scenario of SCENARIOS) {
-    let harness: Harness = { state: INITIAL_SWITCH_STATE, journal: {} };
+    let harness: Harness = { state: INITIAL_RUN_STATE_SLICE, journal: {} };
     scenario.steps.forEach(([event, mode, rows], index) => {
       harness = step(harness, event);
       const shown = switchDisplay(harness.state.view, "direct");
@@ -432,4 +462,13 @@ it("derives the switch rows and toolbar mode from server facts at one seq and un
         `${scenario.name} (retained)`,
       ).toEqual(scenario.retained);
   }
+  // Risk (F19): `history` is the accepted snapshot's alone, and never goes back. A queued row
+  // that a record dropped waits on it, so an answer's or frame's record must not move it.
+  let state = reduceRunState(INITIAL_RUN_STATE_SLICE, {
+    type: "history",
+    runState: runState(at(5), "direct", []),
+  });
+  state = reduceRunState(state, { type: "record", runState: runState(at(6), "direct", []) });
+  state = reduceRunState(state, { type: "history", runState: runState(at(4), "direct", []) });
+  expect(state.history).toBe(at(5));
 });

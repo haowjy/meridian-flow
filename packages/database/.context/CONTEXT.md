@@ -227,12 +227,12 @@ migrations are named by role:
 
 | Role | Migration | Does |
 |---|---|---|
-| A1 | `0048_dbr_review_base_columns` | `document_branches.base_revision`, `push_lineage.apply_payload` (both metadata-only), and `has_effect` defaults `false` |
-| A2 | `0049_dbr_trail_owners_content_apply` | `change_trail_owners` gains the content-Apply arm |
-| B1 index drop | `0050_dbr_drop_edit_action_index` | no-transaction `DROP INDEX CONCURRENTLY` over `document_edits.action_id` |
-| B1 column drop | `0051_dbr_drop_edit_action_columns` | bounded `DROP COLUMN` for `action_id` and `consumes` |
-| B2 | `0052_dbr_drop_generation_from_indexes_and_parts` | no-transaction: rewrites `document_edit_parts` in committed batches (strip `generation`, `retired` becomes `discarded`), rebuilds the five indexes under temporary names then renames, adds `document_edit_parts_placement_kind_valid` `NOT VALID` beside the old check, validates it, then drops the old check |
-| B3 | `0053_dbr_drop_branch_generation_columns` | the anchor, marked `-- data-step: review-base-conversion@1`: guards, then drops `document_branches.generation`, `live_cut`, `discarded_state_vector`, `branch_write_journal.generation`, `push_lineage.branch_generation` |
+| A1 | `0050_dbr_review_base_columns` | `document_branches.base_revision`, `push_lineage.apply_payload` (both metadata-only), and `has_effect` defaults `false` |
+| A2 | `0051_dbr_trail_owners_content_apply` | `change_trail_owners` gains the content-Apply arm |
+| B1 index drop | `0052_dbr_drop_edit_action_index` | no-transaction `DROP INDEX CONCURRENTLY` over `document_edits.action_id` |
+| B1 column drop | `0053_dbr_drop_edit_action_columns` | bounded `DROP COLUMN` for `action_id` and `consumes` |
+| B2 | `0054_dbr_drop_generation_from_indexes_and_parts` | no-transaction: rewrites `document_edit_parts` in committed batches (strip `generation`, `retired` becomes `discarded`), rebuilds the five indexes under temporary names then renames, adds `document_edit_parts_placement_kind_valid` `NOT VALID` beside the old check, validates it, then drops the old check |
+| B3 | `0055_dbr_drop_branch_generation_columns` | the anchor, marked `-- data-step: review-base-conversion@1`: guards, then drops `document_branches.generation`, `live_cut`, `discarded_state_vector`, `branch_write_journal.generation`, `push_lineage.branch_generation` |
 
 Online rules for this chain, each a review rule beyond the lint:
 

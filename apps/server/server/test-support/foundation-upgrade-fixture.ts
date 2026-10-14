@@ -12,6 +12,8 @@ export async function seedMainShape(sql: postgres.Sql) {
   const bytes = Buffer.from([0, 0]);
   await sql`INSERT INTO users (id, external_id, email) VALUES (${id(1)}, 'foundation-upgrade', 'foundation@example.test')`;
   await sql`INSERT INTO projects (id, user_id, name, slug) VALUES (${id(2)}, ${id(1)}, 'Upgrade', 'upgrade')`;
+  // Every project has its locked No Work row (`slug` NULL) since the baseline.
+  await sql`INSERT INTO works (id, project_id, created_by_user_id, name, is_no_work) VALUES (${id(7)}, ${id(2)}, ${id(1)}, 'No Work', true)`;
   // Work 3 drafts; Work 4 was deleted with its draft branch closed; Work 5 never drafted.
   await sql`INSERT INTO works (id, project_id, created_by_user_id, name, slug, deleted_at) VALUES
     (${id(3)}, ${id(2)}, ${id(1)}, 'Drafting', 'drafting', NULL),

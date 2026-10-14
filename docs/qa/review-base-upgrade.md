@@ -1,14 +1,14 @@
 # Review-base upgrade proof
 
-A script-backed check that one `pnpm db:migrate` upgrades a populated train database (through `0047`, built from
-#757's foundation fixture plus Yjs-seeded drafts, ensured and soft-deleted-Work drafts, edits with `action_id` and
+A script-backed check that one `pnpm db:migrate` upgrades a populated train database (through `0049`, built from
+#757's foundation fixture (with its project's locked No Work row), #847's run-state migrations, plus Yjs-seeded drafts, ensured and soft-deleted-Work drafts, edits with `action_id` and
 `consumes`, `retired` and generation placements, `draft_commands` of every kind, and legacy pending, blocked and
 zero-member `draft_tree` batches) to the diff-based review model. Not part of `pnpm test:all`.
 
-The subject is migrations `0048` to `0053` and the registered data step `review-base-conversion@1`
-(`packages/database/src/migration-steps/review-base-conversion.ts`), which the runner executes between `0052` and
-`0053`, whose first line carries its marker. The step turns each active `work_draft` branch's `live_cut` into its
-`review_base`; `0053` drops the columns.
+The subject is migrations `0050` to `0055` and the registered data step `review-base-conversion@1`
+(`packages/database/src/migration-steps/review-base-conversion.ts`), which the runner executes between `0054` and
+`0055`, whose first line carries its marker. The step turns each active `work_draft` branch's `live_cut` into its
+`review_base`; `0055` drops the columns.
 
 ```bash
 DATABASE_URL=<local server url> pnpm --filter @meridian/server exec tsx scripts/prove-review-base-upgrade.ts
@@ -39,15 +39,15 @@ Assertions, each printed as `ok - ...`:
   restore and Apply on the new kernel is the R5c browser proof, not this script;
 - a second migrate is a no-op; a fresh install passes the preflight and the step finds nothing; fresh and upgraded
   schema dumps are equal;
-- a conversion interrupted after two rows, and 0052 cut at every statement, rerun to the same end state, with the
+- a conversion interrupted after two rows, and 0054 cut at every statement, rerun to the same end state, with the
   placement check enforcing after every cut;
-- the B3 guards (0053) fire when the step is bypassed, naming branch ids or unfinished batches, and destroy nothing; an unconvertible draft stops the run naming migration, step, branch
+- the B3 guards (0055) fire when the step is bypassed, naming branch ids or unfinished batches, and destroy nothing; an unconvertible draft stops the run naming migration, step, branch
   and document ids, says to repair or recover the baseline, and the repaired run finishes.
 
 Record the commit, date and the printed assertions in the active work directory.
 
 ## Last run
 
-2026-10-14, branch `feat/dbr-kf7` on `e17c72c1d` plus the sequence step: exit 0, **50 assertions passed** in 63 s
-(the new first one: the seeds moved `push_lineage_id_seq` and `context_availability_generation_seq`, and a second pass
-moves none), no `r4b_proof_*` database left on the server afterwards.
+2026-10-14, branch `feat/dbr-train-e0f3` (the re-landing merged with train tip `e0f3467db`, #847's `0048` and `0049`
+under our `0050` to `0055`): exit 0, **50 assertions passed**, the train database at `0049` (50 migrations applied),
+no `r4b_proof_*` database left on the server afterwards.

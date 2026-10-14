@@ -64,11 +64,17 @@ export function readCompactionFacts(turn: Turn): CompactionFacts {
   };
 }
 
-/** Every writer command a divider already answers: a queued item for one is no longer queued. */
+/**
+ * Every writer command a divider (compaction or write-mode switch) already answers: a queued
+ * item for one is no longer queued.
+ */
 export function answeredControlIds(turns: readonly Turn[]): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const turn of turns) {
-    const id = turn.role === "compaction" ? readCompactionFacts(turn).controlId : null;
+    const id =
+      turn.role === "compaction"
+        ? readCompactionFacts(turn).controlId
+        : (readWriteModeSwitch(turn)?.controlId ?? null);
     if (id) ids.add(id);
   }
   return ids;

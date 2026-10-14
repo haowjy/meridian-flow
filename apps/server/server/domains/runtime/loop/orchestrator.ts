@@ -100,6 +100,7 @@ import {
   writerSendMetadata,
 } from "../../threads/index.js";
 import { nextTurnPosition } from "../../threads/order-turns.js";
+import { turnGraph } from "../../threads/ports/turn-graph.js";
 import type { DetachedWorkTracker } from "../detached-work.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
@@ -128,7 +129,11 @@ import {
   type ForcedCompactionDecision,
 } from "./compaction/decision.js";
 import { FLOW_ABSOLUTE_CEILING } from "./compaction/index.js";
-import { executeCompaction, recordCompactionSummary } from "./compaction-phase.js";
+import {
+  CompactionCancelledError,
+  executeCompaction,
+  recordCompactionSummary,
+} from "./compaction-phase.js";
 import { failCompactionSuccessor } from "./compaction-successor.js";
 import type { TerminalCause } from "./execution-finalizer.js";
 import { type drainInbox, planMessageTurns } from "./inbox-context.js";
@@ -529,7 +534,8 @@ async function runDrainTurn(
       if (selection.next.kind === "none" && !input.replyTurnId) return null;
       const ctx = await loadRunStartContext(deps, setupThread);
       preparationError = ctx.contextError;
-      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
+      // `priorTurns` is the graph (the leaf, positions, known ids); `localTurns` the conversation.
+      const { priorTurns, localTurns, inheritedTurns, inheritedBlocks, prevTurnId } = ctx;
       const existingTurns = [...inheritedTurns, ...priorTurns];
       const previousTurn = prevTurnId
         ? (existingTurns.find((turn) => turn.id === prevTurnId) ?? null)
@@ -584,7 +590,7 @@ async function runDrainTurn(
       let plan = makePlan(preparationError ? [] : selection.notices);
       const referenceUserTurnId =
         [...plan.turns].reverse().find((turn) => turn.role === "user")?.id ??
-        [...priorTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
+        [...localTurns, ...inheritedTurns].reverse().find((turn) => turn.role === "user")?.id ??
         prevTurnId ??
         reservedTurnId;
       let preflight: Awaited<ReturnType<typeof prepareRequestContext>> | null = null;
@@ -601,7 +607,7 @@ async function runDrainTurn(
             pinnedRequestTurnIds: new Set(selection.outstanding.map((row) => row.id)),
             turns: [
               ...inheritedTurns,
-              ...priorTurns,
+              ...localTurns,
               ...(skillBody ? [skillBody.turn] : []),
               ...plan.turns,
             ],
@@ -671,7 +677,7 @@ async function runDrainTurn(
         referenceUserTurnId,
         preflight,
         messageTurns: plan.turns,
-        priorTurns,
+        localTurns,
         inheritedTurns,
         inheritedBlocks,
         executionAdmitted: selection.outstanding.length > 0 || !!input.replyTurnId,
@@ -747,7 +753,7 @@ async function runDrainTurn(
     referenceUserTurnId,
     preflight,
     messageTurns,
-    priorTurns,
+    localTurns,
     inheritedTurns,
     inheritedBlocks,
   } = setup;
@@ -769,7 +775,7 @@ async function runDrainTurn(
         reservedTurn,
         initialTurns: [
           ...inheritedTurns,
-          ...priorTurns,
+          ...localTurns,
           ...(skillBody ? [skillBody.turn] : []),
           ...messageTurns,
           ...setup.controlTurns,
@@ -798,14 +804,17 @@ async function loadRunStartContext(
   deps: OrchestratorDeps,
   thread: Thread,
 ): Promise<{
+  /** Every local turn: the graph, which owns the leaf, positions and known ids. */
   priorTurns: Turn[];
+  /** The local conversation: the graph minus handed-back writer messages. */
+  localTurns: Turn[];
   inheritedTurns: Turn[];
   inheritedBlocks: Block[];
   prevTurnId: TurnId | null;
   contextError: ThreadConversationContextError | null;
 }> {
   const { repos } = deps;
-  const priorTurns = await repos.turns.listByThread(thread.id);
+  const priorTurns = await turnGraph(repos.turns).listByThread(thread.id);
   let conversation: Awaited<ReturnType<typeof loadThreadConversationContext>>;
   try {
     conversation = await loadThreadConversationContext(
@@ -827,20 +836,25 @@ async function loadRunStartContext(
     });
     return {
       priorTurns,
+      localTurns: await repos.turns.listByThread(thread.id),
       inheritedTurns: [],
       inheritedBlocks: [],
       prevTurnId: thread.activeLeafTurnId ?? priorTurns.at(-1)?.id ?? null,
       contextError: error,
     };
   }
-  const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
-  const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
-  const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
-  const inheritedBlocks = conversation.blocks.filter((block) => inheritedTurnIds.has(block.turnId));
-  const sortedLeaf = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+  const { inherited, local } = conversation;
+  const sortedLeaf = priorTurns.at(-1) ?? inherited.turns.at(-1) ?? null;
   // The durable leaf owns causal chaining; position owns transcript ordering.
   const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
-  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId, contextError: null };
+  return {
+    priorTurns,
+    localTurns: local.turns,
+    inheritedTurns: inherited.turns,
+    inheritedBlocks: inherited.blocks,
+    prevTurnId,
+    contextError: null,
+  };
 }
 
 async function reconcileOrphanedPendingWrites(
@@ -2471,8 +2485,13 @@ async function executeLoop({
         // staged runtimes before surfacing cleanup failures, so a second failure
         // here should not hide the error that broke the response.
       }
-      const state = await deps.runClaim.read(input.threadId);
-      if (input.signal?.aborted || (state?.kind === "awake" && state.cancelRequested)) {
+      // The execution's own row, whatever its expiry: Stop cancels an expired lease that is still held.
+      const owned = await deps.runClaim.readOwned(input.lease);
+      if (
+        input.signal?.aborted ||
+        err instanceof CompactionCancelledError ||
+        owned?.cancelRequested
+      ) {
         await exitRun(false, abortTerminal());
       } else if (currentTurnKind(currentTurn) === "compaction") {
         emitEvent(eventSink, {
