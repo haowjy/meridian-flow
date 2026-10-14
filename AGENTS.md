@@ -151,8 +151,9 @@ The reporter also enforces a **wall-clock** and a **memory** ceiling.
   past `TEST_MEMORY_CEILING_MB` (default 4096).
 - Wall time blocks only in CI. On a shared host the identical 2,414 cases have
   measured between 45 s and 104 s, so a blocking local ceiling would be the
-  flake it exists to catch. `TEST_DURATION_CEILING_SECONDS` (default 150)
-  overrides; `TEST_DURATION_CEILING_STRICT=1` blocks locally too.
+  flake it exists to catch. `TEST_DURATION_CEILING_SECONDS` defaults to 150 for
+  the unit suite and 600 for the DB suite, which runs serially in CI; it overrides
+  both, and `TEST_DURATION_CEILING_STRICT=1` blocks locally too.
 - Peak memory is `base + workers × module graph`, so it tracks worker count far
   more than file count: `apps/app` alone (208 files) peaks the same as all 449,
   and `apps/server` reaches 3.5 GB with no jsdom at all. Deleting tests will not

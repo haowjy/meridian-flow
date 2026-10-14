@@ -40,10 +40,12 @@ every unit and DB run and compares the **expanded case count per test file**
   across two jobs and neither job sees the whole suite. Counts come from
   collection (`allTests()`), so skipped cases and `it.each` rows count.
 - The same reporter prints the run wall time and enforces
-  `TEST_DURATION_CEILING_SECONDS` (default 150) **only when `CI=true`**. The
-  identical suite has measured between 45 s and 104 s on a loaded shared host, so
-  a blocking local ceiling would flake on machine load rather than on a
-  regression. Set `TEST_DURATION_CEILING_STRICT=1` to block locally.
+  `TEST_DURATION_CEILING_SECONDS` **only when `CI=true`**. The default is 150 for
+  the unit suite and 600 for the DB suite, which runs serially in CI and so pays
+  the sum of every test rather than a fraction of it. The unit suite has measured
+  between 45 s and 104 s on a loaded shared host, so a blocking local ceiling
+  would flake on machine load rather than on a regression. Set
+  `TEST_DURATION_CEILING_STRICT=1` to block locally.
 - It also samples RSS across the whole process tree (descendants included, so a
   `forks` pool's children count) and enforces `TEST_MEMORY_CEILING_MB` (default
   4096) **on every run**. Memory blocks everywhere because it is a property of
