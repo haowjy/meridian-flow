@@ -120,12 +120,13 @@ add CLI socket timers or tune the package's deadlines to a command's
 `--timeout` (see the
 [package's deadline contract](../../../packages/thread-client/.context/CONTEXT.md)).
 Terminal/auth closes remain exit 4. `stream.ts` only
-maps events, prints them and runs the existing CLI follow predicates. They don't
-read design A's run state yet, so send still cannot prove which reply answered
-its message. `tail --until-idle` reads an initial snapshot and
+maps events, prints them and runs the existing CLI follow predicates. Their run-state
+reads go through the shared `@meridian/thread-client` module (`commands/thread/run-state.ts`):
+`liveState.runState` and `meridian.run_state` frames. Send still cannot prove which reply
+answered its message until B. `tail --until-idle` reads an initial snapshot and
 returns at once if idle. After a turn finish/failure, journaled lease/pending update or idle subscription state it
-confirms a snapshot: null `liveState.runningTurnId`, `status.kind: "asleep"`
-(no awake lease), and no writer-provenance message in `liveState.pending.items`.
+confirms a snapshot: `isBusy` false for `liveState.runState` (no open execution, no
+writer-provenance message in `items`) and `status.kind: "asleep"` (no awake lease).
 One command-scoped subscription and event mapper remain alive through every
 confirmation. Checkpoints drain queued events, await the snapshot, then consume
 frames received during the request before confirming again. The result's

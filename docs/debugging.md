@@ -163,10 +163,10 @@ at its final snapshot; it does not attribute replies to messages.
   `tail` remains a bounded live view and exits 0 when its wait expires.
 - `tail --until-idle` returns immediately if the initial snapshot is idle.
   Otherwise it follows from the last sequence and checks a snapshot after each
-  turn finish/failure, journaled lease/pending update or idle subscription state. Idle means
-  `liveState.runningTurnId` is null, `liveState.status.kind` is `asleep`
-  (no awake lease), and no writer-provenance message remains in
-  `liveState.pending.items`. A successor run or owed writer message keeps it
+  turn finish/failure, a journaled `meridian.run_state` record or idle subscription state. Idle means
+  the shared run-state module's `isBusy` is false for the snapshot's `liveState.runState` (no open
+  `execution`, no writer-provenance message in `items`) and `liveState.status.kind` is `asleep`
+  (no awake lease). A successor run or owed writer message keeps it
   following until a snapshot confirms idle or the deadline exits 124 with the
   timeout report. Durable `thread.status` alone is not evidence of idle.
   One subscription and event mapper stay alive through checkpoints, including
