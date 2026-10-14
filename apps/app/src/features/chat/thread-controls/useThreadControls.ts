@@ -77,12 +77,7 @@ export function useThreadControls(input: {
     (id: string, control: CompactControl) => {
       const request = enqueueThreadControl(threadId, { id, control }).then(
         (response) => {
-          dispatch({
-            type: "enqueued",
-            id,
-            pending: response.pending,
-            turnId: response.turnId,
-          });
+          dispatch({ type: "enqueued", id, queued: response.queued });
           revalidate();
         },
         () => {

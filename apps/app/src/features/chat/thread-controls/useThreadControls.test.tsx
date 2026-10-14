@@ -89,8 +89,9 @@ describe("useThreadControls", () => {
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
     expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
-    await act(async () => response.resolve({ id, pending: null, turnId: "c" }));
-    expect(latest.queued).toEqual([]);
+    // This request is still queued though the chat has no queued switch (`pending: null`).
+    await act(async () => response.resolve({ id, queued: true, pending: null, turnId: null }));
+    expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
     expect(invalidateQueries).toHaveBeenCalled();
   });
 
@@ -111,16 +112,8 @@ describe("useThreadControls", () => {
     await act(async () =>
       enqueued.resolve({
         id,
-        pending: {
-          id,
-          seq: 1,
-          intent: "control",
-          control: { kind: "compact" },
-          provenance: { kind: "writer", actorId: "w" },
-          deliveryState: "awaiting_run",
-          summary: "Compact conversation",
-          enqueuedAt: "2026-09-28T00:00:00.000Z",
-        },
+        queued: true,
+        pending: null,
         turnId: null,
       }),
     );
