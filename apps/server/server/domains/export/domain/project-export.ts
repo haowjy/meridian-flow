@@ -14,13 +14,13 @@ import {
   type UserId,
 } from "@meridian/contracts";
 import { Zip, ZipPassThrough } from "fflate";
-import { ExportLinkScope } from "../../collab/domain/export-link-scope.js";
-import type { CollabDomain } from "../../collab/index.js";
 import { exportFilename } from "../../context/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import { type ObjectStorePort, objectStoreKeyFromStorageUrl } from "../../storage/index.js";
+import type { ExportDocumentReader } from "../ports/export-documents.js";
 import type { ExportDocument, ExportSnapshotStore } from "../ports/export-snapshot.js";
 import { buildExportLayout, portableName } from "./export-layout.js";
+import { ExportLinkScope } from "./export-link-scope.js";
 
 export class ExportReadError extends Error {
   constructor(
@@ -35,7 +35,7 @@ export class ExportReadError extends Error {
 export function createProjectExport(deps: {
   snapshot: ExportSnapshotStore;
   pendingDrafts: { count(projectId: string): Promise<number> };
-  documents: Pick<CollabDomain, "readForExport" | "resolveManifestMembership">;
+  documents: ExportDocumentReader;
   files: Pick<FileAccess, "listAccess">;
   objects: Pick<ObjectStorePort, "get">;
 }) {

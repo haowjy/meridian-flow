@@ -1,10 +1,15 @@
+export { catalogSourceAuthority } from "./adapters/catalog-file-mapper.js";
 export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export { guardWorkContextRestore } from "./adapters/context-fs/document-locations.js";
 export { DrizzleContextDocumentStore } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
-export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
+export {
+  createDrizzleDocumentAddressStore,
+  listsThroughLiveManifest,
+  loadDocumentAddresses,
+} from "./adapters/document-address.js";
 export { createDrizzleDocumentArrivals } from "./adapters/document-arrivals.js";
 export { createDrizzleDocumentLinkHistory } from "./adapters/document-link-history.js";
 export {
