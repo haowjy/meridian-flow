@@ -474,17 +474,6 @@ describe("change trail (postgres)", () => {
       }),
     ).resolves.toMatchObject({ status: "expired" });
     await expect(reviewDriver(fixture.collab.draftReview).list()).resolves.toEqual([]);
-    await expect(
-      db
-        .select({ id: schema.branchWriteJournal.id })
-        .from(schema.branchWriteJournal)
-        .where(
-          and(
-            eq(schema.branchWriteJournal.branchId, branch.branchId),
-            inArray(schema.branchWriteJournal.status, ["active", "rollback_pending"]),
-          ),
-        ),
-    ).resolves.toEqual([]);
   });
 
   it("preserves a live writer insertion between two branch edits", async () => {

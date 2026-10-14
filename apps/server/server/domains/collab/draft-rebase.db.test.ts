@@ -260,7 +260,7 @@ describe("content rebase of a Work draft", () => {
     }
   });
 
-  it("seeds the base as the server client beside live's own ancestry", async () => {
+  it("seeds a new draft as the server client alone, sharing no ancestry with live", async () => {
     const { harness, view, draftRow, read } = await setup();
     try {
       const live = await view.liveCoordinator.withDocument(ALPHA_ID, async (doc) => [
@@ -269,8 +269,8 @@ describe("content rebase of a Work draft", () => {
       const clients = [
         ...Y.decodeStateVector(Y.encodeStateVectorFromUpdate((await draftRow()).state)).keys(),
       ];
-      expect(clients).toContain(DRAFT_SERVER_CLIENT_ID);
-      for (const client of live) expect(clients).toContain(client);
+      expect(clients).toEqual([DRAFT_SERVER_CLIENT_ID]);
+      for (const client of live) expect(clients).not.toContain(client);
       const { draft, base } = await read();
       expect(base).toEqual(draft);
     } finally {

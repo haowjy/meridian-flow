@@ -319,7 +319,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       expect(
         measuredQueries.filter((query) =>
-          query.startsWith('(select "drafts"."origin_work_id", "document_branches"."document_id"'),
+          query.startsWith(
+            '(select "drafts"."id", "drafts"."origin_work_id", "document_branches"."document_id"',
+          ),
         ),
       ).toHaveLength(2);
       expect(
